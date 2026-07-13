@@ -4,7 +4,11 @@
 
 Complete.
 
-Commit: `29bcc84` (`docs: describe capture architecture`)
+Commits:
+
+- `29bcc84` (`docs: describe capture architecture`) — исходная реализация;
+- `88f2f35` (`docs: address capture architecture review`) — первый раунд исправлений review;
+- `3133fac` (`docs: address second capture review`) — второй раунд исправлений review.
 
 ## Files
 
@@ -42,6 +46,50 @@ Result: exit `0`. Matches were found in the intended owners and references. `unt
 
 ```bash
 git diff --check -- architecture/stages/00-preflight architecture/stages/10-capture architecture/implementations
+```
+
+Result: exit `0`, no output.
+
+## Second review fixes
+
+Исправлены все четыре пункта второго review:
+
+- preflight условно проверяет `mergecap`, когда включён loopback-захват и требуется объединение файлов;
+- metadata eBPF backend содержит точное значение `Статус: будущая`, а недоступность первой версии остаётся в основном тексте;
+- в container backend используются формулировки «монтирований, терминала и настройки пользователя»;
+- в отчёт добавлены SHA первого (`88f2f35`) и второго (`3133fac`) раундов исправлений.
+
+### Focused second-review checks
+
+```bash
+rg -n 'mergecap|loopback-захват' architecture/stages/00-preflight/README.md architecture/implementations/capture-backends/netns-dumpcap.md
+```
+
+Result: exit `0`, ровно 2 строки. `netns-dumpcap.md` задаёт условие объединения loopback-файла, а preflight при этом условии требует `mergecap`.
+
+```bash
+rg -n '^Статус: будущая$' architecture/implementations/capture-backends/ebpf-cgroup.md
+rg -n 'недоступна для первой версии|не входит в первую версию' architecture/implementations/capture-backends/ebpf-cgroup.md
+```
+
+Result: обе команды завершились с exit `0`; первая вывела ровно 1 строку с точным metadata-значением, вторая — ровно 2 строки основного текста о недоступности первой версии.
+
+```bash
+rg -n 'mount, terminal|user-настроек' architecture/implementations/capture-backends/container.md
+```
+
+Result: exit `1`, no output. Удалена смешанная англо-русская формулировка.
+
+```bash
+rg -n 'монтирований, терминала и настройки пользователя' architecture/implementations/capture-backends/container.md
+```
+
+Result: exit `0`, ровно 1 строка с требуемой формулировкой.
+
+Повторно выполнены focused-проверки первого review: `dataset_usable`, `CAP-002|CAP-005`, `offload|snaplen` и `PCAPNG` завершились с exit `0` и вывели соответственно 5, 4, 10 и 1 строку; поиск скопированных подробных значений `TSO|GSO|GRO|LRO|snaplen = 256|snaplen = 0` завершился с exit `1`, no output.
+
+```bash
+git diff --check
 ```
 
 Result: exit `0`, no output.
