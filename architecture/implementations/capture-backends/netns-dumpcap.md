@@ -45,7 +45,7 @@ Domain Name System (DNS) proxy работает в основном namespace WS
 
 ## Запись и offload
 
-Перед запуском `dumpcap` helper проверяет интерфейсы через `ethtool`. Он пытается отключить Transmission Control Protocol (TCP) Segmentation Offload (TSO), Generic Segmentation Offload (GSO), Generic Receive Offload (GRO), Large Receive Offload (LRO), transmit (TX) и receive (RX) checksum offload. Неизменяемые возможности записываются как фактическое ограничение.
+Перед запуском `dumpcap` helper применяет [общую политику offload](../../common/platform.md#сетевая-разгрузка-и-длина-захвата) к интерфейсам. Неизменяемые возможности записываются как фактическое ограничение.
 
 Основной `dumpcap` не входит в target namespace и cgroup. Readiness проверяется по живому процессу, созданному файлу и существующему host-side интерфейсу. Детальные режимы времени и сигналы принадлежат [жизненному циклу стадии](../../stages/10-capture/lifecycle.md).
 
