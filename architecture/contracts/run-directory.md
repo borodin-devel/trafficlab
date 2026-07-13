@@ -42,6 +42,8 @@ run/20260713T123456.123456Z_01J.../
 ├── environment.json
 ├── lineage.json
 ├── events.jsonl
+├── metrics/
+│   └── resource.parquet
 ├── stages/
 │   ├── 00_preflight/
 │   │   ├── stage.json
@@ -85,6 +87,8 @@ run/20260713T123456.123456Z_01J.../
 └── logs/
 ```
 
+Канонический структурированный журнал запуска находится в корневом `events.jsonl`, а измерения ресурсов — в `metrics/resource.parquet`. Человекочитаемые журналы и журналы отдельных стадий размещаются в соответствующих каталогах `logs/`.
+
 `run.json`, `config.resolved.toml`, `environment.json`, `lineage.json` и `stages/` обязательны. `config.input.toml` отсутствует, если программа не получала исходную конфигурацию. Остальные каталоги и файлы появляются только у выполняемых стадий.
 
 Отдельная программа создаёт полноценный каталог запуска только со своими стадиями. Пример конвертации внешнего файла:
@@ -93,6 +97,8 @@ run/20260713T123456.123456Z_01J.../
 run/<id>/
 ├── run.json
 ├── config.resolved.toml
+├── environment.json
+├── lineage.json
 └── stages/
     ├── 00_external_input/
     ├── 20_convert/

@@ -7,7 +7,7 @@
 ## Файлы
 
 ```text
-logs/events.jsonl
+events.jsonl
 logs/console.log
 metrics/resource.parquet
 ```
@@ -33,7 +33,7 @@ worker process
     v
 logging listener process
     |
-    +-> JSONL
+    +-> events.jsonl
     +-> console
 ```
 

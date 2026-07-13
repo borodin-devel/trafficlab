@@ -129,7 +129,7 @@ source_run_id
 split_group
 ```
 
-`split_group` разделяет train, validation и test по целым сессиям.
+`split_group` разделяет целые сессии на обучающую (`train`), проверочную (`validation`) и тестовую (`test`) части.
 
 ## Ограниченное представление для языковой модели
 

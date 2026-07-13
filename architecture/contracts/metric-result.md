@@ -2,7 +2,7 @@
 
 ## Назначение
 
-Metric result — машиночитаемый результат сравнения исходного и синтетического наборов данных. Каждая метрика возвращает значение, направление оптимизации и диагностику. Отдельные результаты хранятся в `metrics.parquet`, сводка — в `comparison.json`, человекочитаемое представление — в `report.md`.
+Metric result — машиночитаемый результат сравнения исходного и синтетического наборов данных. Каждая метрика возвращает значение, направление оптимизации и диагностику. Отдельные результаты хранятся в `metrics.parquet`, сводка в формате JavaScript Object Notation (JSON) — в `comparison.json`, человекочитаемое представление — в `report.md`.
 
 Начальная `schema_version` обоих машиночитаемых файлов — `1.0.0`; версия изменяется по правилам семантического версионирования.
 
@@ -32,14 +32,18 @@ diagnostics: string
   "schema_version": "1.0.0",
   "comparison_id": "...",
   "source_artifact_id": "sha256:...",
-  "synthetic_artifact_ids": ["sha256:..."],
-  "hard_valid": true,
-  "quality_vector": [0.0, 0.0, 0.0, 0.0, 0.0],
-  "weighted_score": null
+  "results": [
+    {
+      "synthetic_artifact_id": "sha256:...",
+      "hard_valid": true,
+      "quality_vector": [0.0, 0.0, 0.0, 0.0, 0.0],
+      "weighted_score": null
+    }
+  ]
 }
 ```
 
-Позиции `quality_vector` имеют фиксированный смысл:
+Каждая запись `results[]` относится ровно к одному синтетическому артефакту. Позиции `results[].quality_vector` имеют фиксированный смысл:
 
 ```text
 quality_vector = [
@@ -51,13 +55,14 @@ quality_vector = [
 ]
 ```
 
-Логическое поле `hard_valid` истинно только тогда, когда пройдены все обязательные правила валидации. `weighted_score` необязателен и используется только для пользовательского интерфейса, сортировки и порога завершения.
+Логическое поле `results[].hard_valid` истинно только тогда, когда для указанного `results[].synthetic_artifact_id` пройдены все обязательные правила валидации. `results[].weighted_score` может быть `null` и используется только для пользовательского интерфейса, сортировки и порога завершения.
 
 ## Инварианты
 
 - Сводный score не заменяет отдельные строки метрик.
-- `quality_vector` всегда содержит `distribution_score`, `sequence_score`, `protocol_score`, `flow_score` и `classifier_score` в указанном порядке.
-- Многокритериальная оптимизация использует сам `quality_vector`, а не `weighted_score`.
+- `results` содержит запись для каждого сравниваемого синтетического артефакта, а значения `synthetic_artifact_id` в нём уникальны.
+- `results[].quality_vector` всегда содержит `distribution_score`, `sequence_score`, `protocol_score`, `flow_score` и `classifier_score` в указанном порядке.
+- Многокритериальная оптимизация использует сам `results[].quality_vector`, а не `results[].weighted_score`.
 - Сравнение выполняется над пакетами по [контракту набора данных](dataset.md), не непосредственно над Packet Capture Next Generation (PCAPNG).
 - Обучающие и тестовые данные метрик разделяются по целым сессиям.
 

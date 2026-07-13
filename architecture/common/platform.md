@@ -12,17 +12,17 @@
 
 Данные не описывают Wi-Fi retransmissions, radiotap, физический Virtual Local Area Network (VLAN), аппаратные временные метки, реальный Ethernet padding и поведение драйвера сетевого адаптера Windows.
 
-Unix domain sockets, pipe, First In First Out (FIFO), shared memory и стандартные потоки не являются IP-трафиком и не попадают в Packet Capture Next Generation (PCAPNG). Loopback внутри целевого namespace виден только при отдельном захвате этого интерфейса.
+Unix domain sockets, pipe, First In First Out (FIFO), shared memory и стандартные потоки не являются трафиком Internet Protocol (IP) и не попадают в Packet Capture Next Generation (PCAPNG). Loopback внутри целевого namespace виден только при отдельном захвате этого интерфейса.
 
 ## Режим сети WSL
 
-WSL может работать в режиме Network Address Translation (NAT) или mirrored networking. Режим определяется в preflight и сохраняется в метаданных запуска. Возможности IPv6, Virtual Private Network (VPN), multicast и доступа к Windows через localhost зависят от режима; стадия не предполагает их наличие без проверки.
+WSL может работать в режиме Network Address Translation (NAT) или mirrored networking. Режим определяется в preflight и сохраняется в метаданных запуска. Возможности Internet Protocol version 6 (IPv6), Virtual Private Network (VPN), multicast и доступа к Windows через localhost зависят от режима; стадия не предполагает их наличие без проверки.
 
-DNS tunneling Windows 11 может обходить ожидаемую точку пакетного захвата. Для воспроизводимого захвата целевой namespace использует явный DNS proxy в основном namespace WSL. Его адрес и фактическая конфигурация сохраняются в метаданных.
+Туннелирование Domain Name System (DNS) в Windows 11 может обходить ожидаемую точку пакетного захвата. Для воспроизводимого захвата целевой namespace использует явный DNS proxy в основном namespace WSL. Его адрес и фактическая конфигурация сохраняются в метаданных.
 
 ## Сетевая разгрузка и длина захвата
 
-Перед захватом helper проверяет и по возможности отключает TCP Segmentation Offload (TSO), Generic Segmentation Offload (GSO), Generic Receive Offload (GRO), Large Receive Offload (LRO), а также TX и RX checksum offload на экспериментальных интерфейсах. Запрошенные и фактические значения сохраняются раздельно. Валидатор учитывает функции, которые отключить не удалось.
+Перед захватом helper проверяет и по возможности отключает Transmission Control Protocol (TCP) Segmentation Offload (TSO), Generic Segmentation Offload (GSO), Generic Receive Offload (GRO), Large Receive Offload (LRO), а также transmit (TX) и receive (RX) checksum offload на экспериментальных интерфейсах. Запрошенные и фактические значения сохраняются раздельно. Валидатор учитывает функции, которые отключить не удалось.
 
 Рекомендуемая максимальная сохраняемая длина пакета — `snaplen = 256`. Она сохраняет заголовки, флаги и исходную длину, но сокращает payload. Значение `snaplen = 0` разрешает полный пакет для специальных исследований.
 
