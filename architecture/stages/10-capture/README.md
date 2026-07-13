@@ -64,7 +64,7 @@
 ## Доступные реализации
 
 - [Network namespace и dumpcap](../../implementations/capture-backends/netns-dumpcap.md) — основная.
-- [Extended Berkeley Packet Filter и cgroup](../../implementations/capture-backends/ebpf-cgroup.md) — исследовательская; не реализует CAP-контракт первой версии, включая `CAP-002` и `CAP-005`, и потребует новой версии контракта.
+- [Extended Berkeley Packet Filter и cgroup](../../implementations/capture-backends/ebpf-cgroup.md) — будущая; не реализует CAP-контракт первой версии, включая `CAP-002` и `CAP-005`, и потребует новой версии контракта.
 - [Контейнер](../../implementations/capture-backends/container.md) — дополнительная для контролируемых приложений.
 
 ## Предыдущая и следующая стадии
