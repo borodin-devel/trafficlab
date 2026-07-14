@@ -15,7 +15,7 @@ flow_id: string
 packet_index: uint64
 relative_time_ns: int64
 inter_arrival_ns: int64
-direction: enum[ingress, egress, unknown]
+direction: enum[ingress, egress, internal, unknown]
 original_length: uint32
 l4_protocol: enum[tcp, udp, icmp, icmpv6, other, none]
 src_endpoint_id: string

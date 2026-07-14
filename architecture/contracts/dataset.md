@@ -77,7 +77,7 @@ timestamp_ns: int64
 relative_time_ns: int64
 inter_arrival_ns: int64
 
-direction: enum[ingress, egress, unknown]
+direction: enum[ingress, egress, internal, unknown]
 
 captured_length: uint32
 original_length: uint32
@@ -124,12 +124,18 @@ l4_protocol
 packet_count
 ingress_packet_count
 egress_packet_count
+internal_packet_count
+unknown_packet_count
 ingress_bytes
 egress_bytes
+internal_bytes
+unknown_bytes
 direction_switch_count
 initial_direction
 tcp_termination_type
 ```
+
+`internal` означает наблюдение между двумя контролируемыми сторонами без потери информации о направлении. Оно является отдельным значением и не преобразуется в `ingress` или `egress`. Профиль потребителя может явно исключить `internal`, но обязан записать число исключённых наблюдений и причину в диагностике. То же правило явного исключения действует для `unknown`.
 
 ## `sessions.parquet`
 

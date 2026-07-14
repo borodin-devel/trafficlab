@@ -28,7 +28,7 @@
 
 ## Выходы
 
-Для каждого принятого входного кандидата автономного синтеза каталог `stages/60_validate_synthetic/` содержит `stage.json` и два отчёта по [контракту отчёта валидации](../../contracts/validation-report.md):
+Для каждого принятого кандидата выбранного профиля каталог его выполнения `stages/60_validate_synthetic/` содержит `stage.json` и два отчёта по [контракту отчёта валидации](../../contracts/validation-report.md). Это расположение одинаково для профилей `synthetic-events-v1`, `synthetic-rendered-v1` и `synthetic-active-v1`:
 
 - `validation.json` использует выбранный составной профиль, а его `validated_artifact_id` равен `artifact_id` в `synthetic-manifest.json`;
 - `dataset-validation.json` использует профиль `synthetic-dataset-v1`, а его `validated_artifact_id` равен `components.dataset.artifact_id`; отчёт проверяет пакет по единому [контракту набора данных](../../contracts/dataset.md) и согласованность его источника с компонентом `packet_events` того же манифеста.

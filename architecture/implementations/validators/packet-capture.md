@@ -1,5 +1,5 @@
 Статус: основная
-Контракт: [состояние стадии](../../contracts/stage.md)
+Контракт: [отчёт валидации](../../contracts/validation-report.md)
 Используется стадиями: [захват](../../stages/10-capture/README.md)
 
 # Первичная проверка пакетного захвата
@@ -24,17 +24,53 @@
 
 Структурно корректный файл может быть непригоден для анализа. Например, нулевое или меньшее заданного минимума число пакетов не означает повреждение контейнера PCAPNG, но не даёт достаточного набора данных.
 
-Результат хранит независимые признаки и машиночитаемую причину:
+## Профиль и правила
+
+Валидатор записывает отчёт по профилю `source-pcap-v1`. `validated_artifact_id` равен SHA-256 тех закрытых байтов PCAPNG, которые прочитаны правилами и переданы хешированию. Профиль содержит стабильные идентификаторы:
+
+| Идентификатор | Проверка | Входит в `structurally_valid` | Входит в `dataset_usable` |
+| --- | --- | --- | --- |
+| `PCAP-STRUCT-001` | Файл существует, превышает минимальный структурный размер, открывается как PCAPNG и полностью читается `capinfos`. | да | да |
+| `PCAP-STRUCT-002` | `tshark` последовательно читает все записи без ошибки контейнера. | да | да |
+| `PCAP-CONFIG-001` | Интерфейсы, инкапсуляция и `snaplen` согласованы с манифестом. | да | да |
+| `PCAP-TIME-001` | Временные метки всех записей разбираются и удовлетворяют политике временного порядка профиля. | да | да |
+| `PCAP-LENGTH-001` | Захваченная длина каждой записи не превышает исходную. | да | да |
+| `PCAP-HASH-001` | Сохранённый SHA-256 совпадает с хешем проверенных закрытых байтов. | да | да |
+| `PCAP-USABILITY-001` | Число пакетов достигает минимума профиля. | нет | да |
+| `PCAP-USABILITY-002` | Присутствуют обязательные семейства протоколов профиля. | нет | да |
+
+`summary.structurally_valid` истинно, только если пройдены все правила, отмеченные в соответствующей колонке. `summary.dataset_usable` истинно, только если пройдены все правила его колонки. Каноническим источником истины остаются записи `rules[]`; профильная сводка является их производной.
+
+## Результат
+
+Полный успешный отчёт имеет вид:
 
 ```json
 {
-  "structurally_valid": true,
-  "dataset_usable": false,
-  "reason": "packet_count_below_minimum"
+  "schema_version": "1.0.0",
+  "validated_artifact_id": "sha256:...",
+  "status": "pass",
+  "profile": "source-pcap-v1",
+  "rules": [
+    {"id": "PCAP-STRUCT-001", "status": "pass", "severity": "error", "observed": "pcapng", "expected": "pcapng"},
+    {"id": "PCAP-STRUCT-002", "status": "pass", "severity": "error", "observed": "all_records_read", "expected": "all_records_read"},
+    {"id": "PCAP-CONFIG-001", "status": "pass", "severity": "error", "observed": {"interfaces": 1, "snaplen": 262144}, "expected": {"interfaces": 1, "snaplen": 262144}},
+    {"id": "PCAP-TIME-001", "status": "pass", "severity": "error", "observed": "timestamps_valid", "expected": "timestamps_valid"},
+    {"id": "PCAP-LENGTH-001", "status": "pass", "severity": "error", "observed": 0, "expected": 0},
+    {"id": "PCAP-HASH-001", "status": "pass", "severity": "error", "observed": "sha256:...", "expected": "sha256:..."},
+    {"id": "PCAP-USABILITY-001", "status": "pass", "severity": "error", "observed": 1200, "expected": {"minimum": 100}},
+    {"id": "PCAP-USABILITY-002", "status": "pass", "severity": "error", "observed": ["tcp", "udp"], "expected": {"required": ["tcp"]}}
+  ],
+  "errors": 0,
+  "warnings": 0,
+  "summary": {
+    "structurally_valid": true,
+    "dataset_usable": true
+  }
 }
 ```
 
-Порог числа пакетов и обязательные семейства протоколов задаются конфигурацией стадии. Валидатор не решает, публиковать ли диагностический остаток.
+Порог числа пакетов и обязательные семейства протоколов задаются конфигурацией стадии. Причина каждого отказа хранится в `observed` и `expected` соответствующего правила. Валидатор не решает, публиковать ли диагностический остаток.
 
 ## Инварианты
 

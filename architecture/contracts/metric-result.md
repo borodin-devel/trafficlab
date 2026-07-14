@@ -14,14 +14,14 @@ source_artifact_id: string
 synthetic_artifact_id: string
 metric_id: string
 metric_family: string
-value: float64
+value: float64?
 optimization_direction: enum[minimize, maximize, target]
 target_value: float64?
 status: enum[pass, invalid, error]
 diagnostics: string
 ```
 
-`diagnostics` содержит сериализованный JSON-объект. Он не заменяет `value` и не влияет на его единицы измерения.
+`diagnostics` содержит сериализованный JSON-объект. При `status = pass` поле `value` содержит конечное числовое значение. При `status = invalid` или `status = error` поле `value` равно `null`, а диагностика объясняет причину. Числовые sentinel-значения для ошибок и недействительных результатов запрещены.
 
 ## Поля `comparison.json`
 
@@ -35,6 +35,7 @@ diagnostics: string
   "results": [
     {
       "synthetic_artifact_id": "sha256:...",
+      "status": "pass",
       "hard_valid": true,
       "quality_vector": [0.0, 0.0, 0.0, 0.0, 0.0],
       "weighted_score": null
@@ -43,7 +44,7 @@ diagnostics: string
 }
 ```
 
-Каждая запись `results[]` относится ровно к одному синтетическому артефакту. Позиции `results[].quality_vector` имеют фиксированный смысл:
+Каждая запись `results[]` относится ровно к одному синтетическому артефакту. `results[].status` принимает `pass`, `invalid` или `error` и агрегирует состояние обязательных результатов метрик этого кандидата. Значение `error` используется, если хотя бы один обязательный результат имеет `error`; иначе отсутствие или `invalid` хотя бы одного обязательного результата даёт `invalid`; только полный набор результатов `pass` даёт `pass`. Позиции числового `results[].quality_vector` имеют фиксированный смысл:
 
 ```text
 quality_vector = [
@@ -55,14 +56,16 @@ quality_vector = [
 ]
 ```
 
-Логическое поле `results[].hard_valid` истинно только тогда, когда для указанного `results[].synthetic_artifact_id` пройдены все обязательные правила валидации. `results[].weighted_score` может быть `null` и используется только для пользовательского интерфейса, сортировки и порога завершения.
+Логическое поле `results[].hard_valid` истинно только тогда, когда для указанного `results[].synthetic_artifact_id` пройдены все обязательные правила валидации. Если отсутствует хотя бы один обязательный результат либо он имеет `invalid` или `error`, статус кандидата не равен `pass`, а `quality_vector` и `weighted_score` равны `null`. Диагностика строк метрик и кандидата перечисляет каждый отсутствующий компонент и его причину. При полном успешном векторе `weighted_score` может оставаться `null`, если профиль не задаёт сводную оценку; это поле используется только для пользовательского интерфейса, сортировки и порога завершения.
 
 ## Инварианты
 
 - Сводный score не заменяет отдельные строки метрик.
 - `results` содержит запись для каждого сравниваемого синтетического артефакта, а значения `synthetic_artifact_id` в нём уникальны.
-- `results[].quality_vector` всегда содержит `distribution_score`, `sequence_score`, `protocol_score`, `flow_score` и `classifier_score` в указанном порядке.
-- Многокритериальная оптимизация использует сам `results[].quality_vector`, а не `results[].weighted_score`.
+- При `results[].status = pass` поле `quality_vector` содержит `distribution_score`, `sequence_score`, `protocol_score`, `flow_score` и `classifier_score` в указанном порядке; иначе оно равно `null`.
+- Многокритериальная оптимизация использует числовой `results[].quality_vector`, а не `results[].weighted_score`.
+- Кандидат с неполным вектором, `hard_valid = false` или статусом `invalid` либо `error` не участвует в ранжировании Парето и эволюционном отборе.
+- Ошибка, недействительность или отсутствие компонента никогда не представляется числовым sentinel-значением.
 - Сравнение выполняется над пакетами по [контракту набора данных](dataset.md), не непосредственно над Packet Capture Next Generation (PCAPNG).
 - Обучающие и тестовые данные метрик разделяются по целым сессиям.
 
