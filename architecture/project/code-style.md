@@ -8,7 +8,7 @@
 
 ```text
 поля пакета -> PacketEvent
-пакет PacketEvent -> FlowTable
+пакет событий `PacketEvent` -> FlowTable
 FlowTable -> FeatureTable
 признаки исходного и синтетического наборов -> MetricResult
 генотип + исходное значение генератора -> конфигурация кандидата
