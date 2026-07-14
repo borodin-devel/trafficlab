@@ -1,16 +1,18 @@
-"""Атомарная запись JSON-манифестов запусков."""
+"""Чтение и запись JSON-манифестов контрактов."""
 
 import json
 from pathlib import Path
 from typing import Any
 
+from trafficlab.runstore.atomic import atomic_write_json
+
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    atomic_write_json(path, value)
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return value
