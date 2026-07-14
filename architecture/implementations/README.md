@@ -4,7 +4,7 @@
 
 ## Семейства
 
-- [Backend захвата](capture-backends/) — реализации `CaptureBackend`.
+- [Механизмы захвата](capture-backends/) — реализации механизма захвата (`capture backend`) по интерфейсу `CaptureBackend`.
 - [Декодеры пакетов](packet-decoders/) — реализации `PacketDecoder`.
 - [Средства построения пакетов](packet-renderers/) — реализации `PacketRenderer`.
 - [Извлекатели признаков](feature-extractors/) — реализации `FeatureExtractor`.
