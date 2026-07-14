@@ -10,7 +10,7 @@
 
 ## Входы
 
-- `synthetic-manifest.json` по [контракту составного синтетического артефакта](../../contracts/packet-events.md#составной-синтетический-артефакт), через который доступны последовательность событий, материализованный Packet Capture Next Generation (PCAPNG) и, для active mode, захват со свидетельством изоляции;
+- `synthetic-manifest.json` по [контракту составного синтетического артефакта](../../contracts/packet-events.md#составной-синтетический-артефакт), через который доступны последовательность событий, материализованный Packet Capture Next Generation (PCAPNG) и, для режима активной эмуляции (`active-emulation`), захват со свидетельством изоляции;
 - исходный запрос генерации;
 - профиль проверки с физическими пределами, подмножеством канонического синтетического адресного пространства endpoint — конечных сетевых узлов — и настройками протоколов.
 
@@ -28,7 +28,7 @@
 
 ## Выходы
 
-Для каждого принятого входного offline-кандидата каталог `stages/60_validate_synthetic/` содержит `stage.json` и два отчёта по [контракту отчёта валидации](../../contracts/validation-report.md):
+Для каждого принятого входного кандидата автономного синтеза каталог `stages/60_validate_synthetic/` содержит `stage.json` и два отчёта по [контракту отчёта валидации](../../contracts/validation-report.md):
 
 - `validation.json` использует выбранный составной профиль, а его `validated_artifact_id` равен `artifact_id` в `synthetic-manifest.json`;
 - `dataset-validation.json` использует профиль `synthetic-dataset-v1`, а его `validated_artifact_id` равен `components.dataset.artifact_id`; отчёт проверяет пакет по единому [контракту набора данных](../../contracts/dataset.md) и согласованность его источника с компонентом `packet_events` того же манифеста.
