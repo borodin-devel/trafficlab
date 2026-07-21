@@ -552,6 +552,121 @@ def test_registry_rejects_unknown_component_name() -> None:
 
 
 @pytest.mark.unit
+def test_present_registry_with_no_components_rejects_unknown_row() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner |\n"
+                "| --- | --- |\n"
+                "| `ghost` | [Ghost](ghost/README.md) |\n"
+            )
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate_registries(corpus)}
+
+
+@pytest.mark.unit
+def test_absent_registry_root_with_no_components_is_skipped() -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": "# Architecture\n"})
+
+    assert validate_registries(corpus) == ()
+
+
+@pytest.mark.unit
+def test_registry_rejects_owner_link_with_trailing_junk() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner |\n"
+                "| --- | --- |\n"
+                "| `demo` | [Demo](demo/README.md) junk) |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate_registries(corpus)}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "owner_cell",
+    ["[Demo](demo/README.md)", '[Demo](demo/README.md "Owner")'],
+)
+def test_registry_accepts_exact_owner_link(owner_cell: str) -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner |\n"
+                "| --- | --- |\n"
+                f"| `demo` | {owner_cell} |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert validate_registries(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("root", "section", "headers", "cells"),
+    [
+        (
+            "traffic_models",
+            "Models",
+            ("Selectable name", "Planned name", "Owner"),
+            ("`demo`", "`demo`", "[Demo](demo/README.md)"),
+        ),
+        (
+            "traffic_models",
+            "Models",
+            ("Method", "Owner"),
+            ("`demo`", "[Demo](demo/README.md)"),
+        ),
+        (
+            "similarity_methods",
+            "Registered Methods",
+            ("Selectable name", "Owner"),
+            ("`demo`", "[Demo](demo/README.md)"),
+        ),
+        (
+            "genetic_models",
+            "Strategy Status",
+            ("Selectable name", "Status", "Owner"),
+            ("`demo`", "Selectable", "[Demo](demo/README.md)"),
+        ),
+    ],
+)
+def test_registry_rejects_conflicting_or_root_inappropriate_identity_headers(
+    root: str,
+    section: str,
+    headers: tuple[str, ...],
+    cells: tuple[str, ...],
+) -> None:
+    header = "| " + " | ".join(headers) + " |\n"
+    separator = "| " + " | ".join("---" for _ in headers) + " |\n"
+    row = "| " + " | ".join(cells) + " |\n"
+    corpus = corpus_from_mapping(
+        {
+            f"architecture/{root}/README.md": (
+                f"# Registry\n\n## {section}\n\n{header}{separator}{row}"
+            ),
+            f"architecture/{root}/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate_registries(corpus)}
+
+
+@pytest.mark.unit
 def test_non_plan_roadmap_entry_requires_evidence() -> None:
     corpus = corpus_from_mapping(
         {

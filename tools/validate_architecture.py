@@ -52,6 +52,13 @@ class _MarkdownLink:
 
 
 @dataclass(frozen=True, slots=True)
+class _InlineLink:
+    start: int
+    end: int
+    destination: str
+
+
+@dataclass(frozen=True, slots=True)
 class _RoadmapEntry:
     line: int
     level: int
@@ -277,9 +284,9 @@ def _reference_definitions(
     return definitions, frozenset(definition_lines)
 
 
-def _matched_bracket_closings(line: str) -> frozenset[int]:
+def _matched_brackets(line: str) -> dict[int, int]:
     unmatched_openings: list[int] = []
-    matched_closings: set[int] = set()
+    matched: dict[int, int] = {}
     escaped = False
     for index, character in enumerate(line):
         if escaped:
@@ -289,19 +296,40 @@ def _matched_bracket_closings(line: str) -> frozenset[int]:
         elif character == "[":
             unmatched_openings.append(index)
         elif character == "]" and unmatched_openings:
-            unmatched_openings.pop()
-            matched_closings.add(index)
-    return frozenset(matched_closings)
+            matched[index] = unmatched_openings.pop()
+    return matched
 
 
-def _inline_destinations(line: str) -> Iterator[str]:
-    matched_closings = _matched_bracket_closings(line)
+def _markdown_title_end(line: str, start: int) -> int | None:
+    closing_character = {
+        '"': '"',
+        "'": "'",
+        "(": ")",
+    }.get(line[start])
+    if closing_character is None:
+        return None
+
+    escaped = False
+    for index in range(start + 1, len(line)):
+        character = line[index]
+        if escaped:
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif character == closing_character:
+            return index + 1
+    return None
+
+
+def _inline_links(line: str) -> Iterator[_InlineLink]:
+    matched_brackets = _matched_brackets(line)
     cursor = 0
     while True:
         opening = line.find("](", cursor)
         if opening < 0:
             return
-        if opening not in matched_closings:
+        label_start = matched_brackets.get(opening)
+        if label_start is None:
             cursor = opening + 2
             continue
         destination_start = opening + 2
@@ -314,10 +342,7 @@ def _inline_destinations(line: str) -> Iterator[str]:
                 cursor = opening + 2
                 continue
             destination = line[destination_start + 1 : destination_end]
-            closing = line.find(")", destination_end + 1)
-            if closing < 0:
-                cursor = opening + 2
-                continue
+            suffix_start = destination_end + 1
         else:
             index = destination_start
             nested_parentheses = 0
@@ -338,13 +363,47 @@ def _inline_destinations(line: str) -> Iterator[str]:
                     break
                 index += 1
             destination = line[destination_start:index]
-            closing = line.find(")", index)
-            if closing < 0:
+            suffix_start = index
+
+        suffix_index = suffix_start
+        had_whitespace = False
+        while suffix_index < len(line) and line[suffix_index].isspace():
+            had_whitespace = True
+            suffix_index += 1
+
+        if suffix_index < len(line) and line[suffix_index] == ")":
+            closing = suffix_index
+        elif had_whitespace and suffix_index < len(line):
+            title_end = _markdown_title_end(line, suffix_index)
+            if title_end is None:
                 cursor = opening + 2
                 continue
+            suffix_index = title_end
+            while suffix_index < len(line) and line[suffix_index].isspace():
+                suffix_index += 1
+            if suffix_index >= len(line) or line[suffix_index] != ")":
+                cursor = opening + 2
+                continue
+            closing = suffix_index
+        else:
+            cursor = opening + 2
+            continue
 
-        yield re.sub(r"\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])", r"\1", destination)
+        yield _InlineLink(
+            label_start,
+            closing + 1,
+            re.sub(
+                r"\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])",
+                r"\1",
+                destination,
+            ),
+        )
         cursor = closing + 1
+
+
+def _inline_destinations(line: str) -> Iterator[str]:
+    for link in _inline_links(line):
+        yield link.destination
 
 
 def _reference_destinations(line: str, definitions: Mapping[str, str]) -> Iterator[str]:
@@ -985,6 +1044,11 @@ def validate_roadmap_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
 
 
 _REGISTRY_IDENTITY_HEADERS = ("Selectable name", "Planned name", "Method", "Name")
+_REGISTRY_SELECTED_IDENTITY_HEADERS = {
+    "traffic_models": "Selectable name",
+    "similarity_methods": "Method",
+    "genetic_models": "Name",
+}
 
 
 def _markdown_table_cells(line: str) -> tuple[str, ...] | None:
@@ -1101,27 +1165,25 @@ def _registry_tables(
     return tuple(tables), tuple(sorted(issues))
 
 
-def _registry_identity_index(headers: Sequence[str]) -> int:
-    return next(
-        index
-        for index, header in enumerate(headers)
-        if header in _REGISTRY_IDENTITY_HEADERS
-    )
-
-
 def _single_link_destination(cell: str, definitions: Mapping[str, str]) -> str | None:
     stripped = cell.strip()
-    is_inline_link = re.fullmatch(r"\[[^]\n]+\]\(.+\)", stripped) is not None
+    inline_links = tuple(_inline_links(stripped))
+    if inline_links:
+        if (
+            len(inline_links) == 1
+            and inline_links[0].start == 0
+            and inline_links[0].end == len(stripped)
+        ):
+            return inline_links[0].destination
+        return None
+
     is_reference_link = (
         re.fullmatch(r"\[[^]\n]+\](?:\[[^]\n]*\])?", stripped) is not None
     )
-    if not (is_inline_link or is_reference_link):
+    if not is_reference_link:
         return None
 
-    destinations = (
-        *tuple(_inline_destinations(stripped)),
-        *tuple(_reference_destinations(stripped, definitions)),
-    )
+    destinations = tuple(_reference_destinations(stripped, definitions))
     return destinations[0] if len(destinations) == 1 else None
 
 
@@ -1175,6 +1237,8 @@ def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
     issues: list[ValidationIssue] = []
 
     for root in registry_roots:
+        registry_path = root / "README.md"
+        registry = sources.get(registry_path)
         components = tuple(
             sorted(
                 directory
@@ -1182,10 +1246,8 @@ def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
                 if directory.parent == root
             )
         )
-        if not components:
+        if not components and registry is None:
             continue
-        registry_path = root / "README.md"
-        registry = sources.get(registry_path)
         if registry is None:
             issues.append(
                 ValidationIssue(
@@ -1207,7 +1269,23 @@ def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
         }
 
         for table in tables:
-            identity_index = _registry_identity_index(table.headers)
+            identity_indexes = [
+                index
+                for index, header in enumerate(table.headers)
+                if header in _REGISTRY_IDENTITY_HEADERS
+            ]
+            if len(identity_indexes) != 1:
+                issues.append(
+                    ValidationIssue(
+                        registry.path,
+                        table.line,
+                        "REG001",
+                        "registry table must contain exactly one identity column",
+                    )
+                )
+                continue
+
+            identity_index = identity_indexes[0]
             identity_header = table.headers[identity_index]
             owner_indexes = [
                 index for index, header in enumerate(table.headers) if header == "Owner"
@@ -1224,6 +1302,23 @@ def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
                 )
 
             is_genetic = root.name == "genetic_models"
+            unselectable_section = _is_explicit_unselectable_section(table.section)
+            expected_identity_header = (
+                "Planned name"
+                if not is_genetic and unselectable_section
+                else _REGISTRY_SELECTED_IDENTITY_HEADERS[root.name]
+            )
+            if identity_header != expected_identity_header:
+                issues.append(
+                    ValidationIssue(
+                        registry.path,
+                        table.line,
+                        "REG001",
+                        f"registry table identity column must be "
+                        f"{expected_identity_header}",
+                    )
+                )
+
             status_indexes = [
                 index
                 for index, header in enumerate(table.headers)
@@ -1237,19 +1332,6 @@ def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
                         table.line,
                         "REG001",
                         "genetic registry table must contain exactly one Status column",
-                    )
-                )
-
-            planned_table = identity_header == "Planned name"
-            unselectable_section = _is_explicit_unselectable_section(table.section)
-            if not is_genetic and planned_table and not unselectable_section:
-                issues.append(
-                    ValidationIssue(
-                        registry.path,
-                        table.line,
-                        "REG001",
-                        "planned registry table must be in an explicitly "
-                        "Unresolved, Unselectable section",
                     )
                 )
 
