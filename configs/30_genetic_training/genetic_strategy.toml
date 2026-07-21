@@ -1,0 +1,55 @@
+# Copy this file to .configs/genetic_strategy.toml before use.
+# The required capture, component choices, and search ranges stay commented
+# so this template cannot silently select an unintended training domain.
+
+schema_version = 1
+
+# Required: select exactly one reference mode, then replace the other example
+# values and uncomment the settings used by the run.
+# reference = "/path/to/reference.pcapng"
+# Neural-only alternative:
+# reference_directory = "/path/to/reference-captures"
+# Directional-package alternative; both fields are required together:
+# reference_contract = "/path/to/convert-attempt/artifact-status.toml"
+# reference_member = "uplink"
+# allowed_traffic_models = ["poisson_uniform", "poisson_empirical"]
+# similarity_method = "l2_ks_weighted"
+
+# Required hard bounds. Choose values appropriate for this run; none are
+# implicit. Reaching one before the model stop completes fails generation.
+# [resources.generation]
+# max_packets = 1000000
+# max_output_bytes = 1073741824
+# max_proposals = 10000000
+
+[strategy]
+name = "basic_generational"
+strategy_seed = 0
+population_size = 10
+elite_count = 1
+tournament_size = 3
+crossover_probability = 0.8
+parameter_mutation_probability = 0.2
+model_replacement_probability = 0.05
+offspring_attempt_limit = 100
+
+[strategy.stopping]
+maximum_generations = 50
+# Optional: stop when the selected method reaches this score.
+# target_score = 0.95
+# Optional: stop after this many complete generations without improvement.
+# no_improvement_generations = 10
+
+# Required when parameter_mutation_probability is positive: define at least
+# one mutable search parameter for every allowed model. Values below are only
+# examples and must be chosen for the run's real search domain.
+#
+# [strategy.search.poisson_uniform.arrival_rate_pps]
+# minimum = 1.0
+# maximum = 100.0
+# mutation_step = 5.0
+#
+# [strategy.search.poisson_empirical.arrival_rate_pps]
+# minimum = 1.0
+# maximum = 100.0
+# mutation_step = 5.0
