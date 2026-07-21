@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import re
 import stat
@@ -11,6 +12,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote_to_bytes, urlsplit
+
+from tools import _architecture_markdown as _markdown
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -43,19 +46,6 @@ class Corpus:
     markdown_files: tuple[SourceFile, ...]
     existing_paths: frozenset[PurePosixPath]
     directories: frozenset[PurePosixPath]
-
-
-@dataclass(frozen=True, slots=True)
-class _MarkdownLink:
-    line: int
-    destination: str
-
-
-@dataclass(frozen=True, slots=True)
-class _InlineLink:
-    start: int
-    end: int
-    destination: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +162,24 @@ def _raise_walk_error(error: OSError) -> None:
     raise error
 
 
+def _read_regular_utf8(path: Path, expected_status: os.stat_result) -> str:
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    try:
+        descriptor_status = os.fstat(descriptor)
+        if not stat.S_ISREG(descriptor_status.st_mode) or not os.path.samestat(
+            expected_status, descriptor_status
+        ):
+            raise OSError(
+                errno.ESTALE,
+                f"architecture file changed while being loaded: {path}",
+            )
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            content = stream.read()
+    finally:
+        os.close(descriptor)
+    return content.decode("utf-8")
+
+
 def load_corpus(repository_root: Path, architecture_root: Path) -> Corpus:
     """Load a safe immutable corpus snapshot from the filesystem boundary."""
     if architecture_root.is_symlink():
@@ -214,7 +222,8 @@ def load_corpus(repository_root: Path, architecture_root: Path) -> Corpus:
 
         for name in sorted(file_names):
             candidate = current_path / name
-            if not stat.S_ISREG(candidate.lstat().st_mode):
+            candidate_status = candidate.lstat()
+            if not stat.S_ISREG(candidate_status.st_mode):
                 continue
             relative = PurePosixPath(
                 candidate.relative_to(resolved_repository).as_posix()
@@ -224,7 +233,9 @@ def load_corpus(repository_root: Path, architecture_root: Path) -> Corpus:
                 resolved_architecture
             ):
                 markdown_files.append(
-                    SourceFile(relative, candidate.read_text(encoding="utf-8"))
+                    SourceFile(
+                        relative, _read_regular_utf8(candidate, candidate_status)
+                    )
                 )
 
     return Corpus(
@@ -235,260 +246,21 @@ def load_corpus(repository_root: Path, architecture_root: Path) -> Corpus:
     )
 
 
-def _visible_markdown_lines(text: str) -> tuple[tuple[int, str], ...]:
-    visible: list[tuple[int, str]] = []
-    fence_character: str | None = None
-    fence_length = 0
-    opening_pattern = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
-
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        if fence_character is not None:
-            closing_pattern = re.compile(
-                rf"^[ ]{{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*$"
-            )
-            if closing_pattern.match(line):
-                fence_character = None
-                fence_length = 0
-            continue
-
-        opening = opening_pattern.match(line)
-        if opening is not None:
-            fence = opening.group(1)
-            fence_character = fence[0]
-            fence_length = len(fence)
-            continue
-        visible.append((line_number, line))
-
-    return tuple(visible)
-
-
-def _reference_label(label: str) -> str:
-    return " ".join(label.split()).casefold()
-
-
-def _reference_definitions(
-    lines: Sequence[tuple[int, str]],
-) -> tuple[dict[str, str], frozenset[int]]:
-    definition_pattern = re.compile(
-        r"^[ ]{0,3}\[([^]\n]+)\]:[ \t]*(?:<([^>\n]*)>|([^\s]+))"
-    )
-    definitions: dict[str, str] = {}
-    definition_lines: set[int] = set()
-    for line_number, line in lines:
-        match = definition_pattern.match(line)
-        if match is None:
-            continue
-        label = _reference_label(match.group(1))
-        definitions.setdefault(label, match.group(2) or match.group(3))
-        definition_lines.add(line_number)
-    return definitions, frozenset(definition_lines)
-
-
-def _matched_brackets(line: str) -> dict[int, int]:
-    unmatched_openings: list[int] = []
-    matched: dict[int, int] = {}
-    escaped = False
-    for index, character in enumerate(line):
-        if escaped:
-            escaped = False
-        elif character == "\\":
-            escaped = True
-        elif character == "[":
-            unmatched_openings.append(index)
-        elif character == "]" and unmatched_openings:
-            matched[index] = unmatched_openings.pop()
-    return matched
-
-
-def _markdown_title_end(line: str, start: int) -> int | None:
-    closing_character = {
-        '"': '"',
-        "'": "'",
-        "(": ")",
-    }.get(line[start])
-    if closing_character is None:
-        return None
-
-    escaped = False
-    for index in range(start + 1, len(line)):
-        character = line[index]
-        if escaped:
-            escaped = False
-        elif character == "\\":
-            escaped = True
-        elif character == closing_character:
-            return index + 1
-    return None
-
-
-def _inline_links(line: str) -> Iterator[_InlineLink]:
-    matched_brackets = _matched_brackets(line)
-    cursor = 0
-    while True:
-        opening = line.find("](", cursor)
-        if opening < 0:
-            return
-        label_start = matched_brackets.get(opening)
-        if label_start is None:
-            cursor = opening + 2
-            continue
-        destination_start = opening + 2
-        while destination_start < len(line) and line[destination_start].isspace():
-            destination_start += 1
-
-        if destination_start < len(line) and line[destination_start] == "<":
-            destination_end = line.find(">", destination_start + 1)
-            if destination_end < 0:
-                cursor = opening + 2
-                continue
-            destination = line[destination_start + 1 : destination_end]
-            suffix_start = destination_end + 1
-        else:
-            index = destination_start
-            nested_parentheses = 0
-            escaped = False
-            while index < len(line):
-                character = line[index]
-                if escaped:
-                    escaped = False
-                elif character == "\\":
-                    escaped = True
-                elif character == "(":
-                    nested_parentheses += 1
-                elif character == ")":
-                    if nested_parentheses == 0:
-                        break
-                    nested_parentheses -= 1
-                elif character.isspace() and nested_parentheses == 0:
-                    break
-                index += 1
-            destination = line[destination_start:index]
-            suffix_start = index
-
-        suffix_index = suffix_start
-        had_whitespace = False
-        while suffix_index < len(line) and line[suffix_index].isspace():
-            had_whitespace = True
-            suffix_index += 1
-
-        if suffix_index < len(line) and line[suffix_index] == ")":
-            closing = suffix_index
-        elif had_whitespace and suffix_index < len(line):
-            title_end = _markdown_title_end(line, suffix_index)
-            if title_end is None:
-                cursor = opening + 2
-                continue
-            suffix_index = title_end
-            while suffix_index < len(line) and line[suffix_index].isspace():
-                suffix_index += 1
-            if suffix_index >= len(line) or line[suffix_index] != ")":
-                cursor = opening + 2
-                continue
-            closing = suffix_index
-        else:
-            cursor = opening + 2
-            continue
-
-        yield _InlineLink(
-            label_start,
-            closing + 1,
-            re.sub(
-                r"\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])",
-                r"\1",
-                destination,
-            ),
-        )
-        cursor = closing + 1
-
-
-def _inline_destinations(line: str) -> Iterator[str]:
-    for link in _inline_links(line):
-        yield link.destination
-
-
-def _reference_destinations(line: str, definitions: Mapping[str, str]) -> Iterator[str]:
-    occupied: list[tuple[int, int]] = []
-    explicit_pattern = re.compile(r"!?\[([^]\n]+)\]\[([^]\n]*)\]")
-    for match in explicit_pattern.finditer(line):
-        label = match.group(2) or match.group(1)
-        destination = definitions.get(_reference_label(label))
-        if destination is not None:
-            occupied.append(match.span())
-            yield destination
-
-    shortcut_pattern = re.compile(r"!?\[([^]\n]+)\]")
-    for match in shortcut_pattern.finditer(line):
-        if any(start <= match.start() < end for start, end in occupied):
-            continue
-        following = line[match.end() : match.end() + 1]
-        if following in {"(", "["}:
-            continue
-        destination = definitions.get(_reference_label(match.group(1)))
-        if destination is not None:
-            yield destination
-
-
-def _markdown_links(source: SourceFile) -> tuple[_MarkdownLink, ...]:
-    lines = _visible_markdown_lines(source.text)
-    definitions, definition_lines = _reference_definitions(lines)
-    links: list[_MarkdownLink] = []
-    for line_number, line in lines:
-        for destination in _inline_destinations(line):
-            links.append(_MarkdownLink(line_number, destination))
-        if line_number not in definition_lines:
-            for destination in _reference_destinations(line, definitions):
-                links.append(_MarkdownLink(line_number, destination))
-    return tuple(links)
-
-
-def _heading_text(line: str) -> str | None:
-    match = re.match(r"^[ ]{0,3}#{1,6}(?:[ \t]+(.*?)|[ \t]*)$", line)
-    if match is None:
-        return None
-    content = match.group(1) or ""
-    return re.sub(r"[ \t]+#+[ \t]*$", "", content).strip()
-
-
-def _heading_anchor(heading: str) -> str:
-    anchor: list[str] = []
-    for character in heading.casefold():
-        if character.isspace():
-            anchor.append("-")
-        elif character.isalnum() or character in {"_", "-"}:
-            anchor.append(character)
-    return "".join(anchor)
+def _markdown_links(source: SourceFile) -> tuple[_markdown.MarkdownLink, ...]:
+    return _markdown.markdown_links(source.text)
 
 
 def _heading_anchors(source: SourceFile) -> frozenset[str]:
-    anchors: set[str] = set()
-    duplicate_counts: dict[str, int] = {}
-    lines = _visible_markdown_lines(source.text)
-    setext_underline = re.compile(r"^[ ]{0,3}(?:=+|-+)[ \t]*$")
-    for index, (line_number, line) in enumerate(lines):
-        heading = _heading_text(line)
-        if (
-            heading is None
-            and line.strip()
-            and index + 1 < len(lines)
-            and lines[index + 1][0] == line_number + 1
-            and setext_underline.match(lines[index + 1][1])
-        ):
-            heading = line.strip()
-        if heading is None:
-            continue
-        base = _heading_anchor(heading)
-        duplicate_number = duplicate_counts.get(base, 0)
-        anchor = base if duplicate_number == 0 else f"{base}-{duplicate_number}"
-        duplicate_counts[base] = duplicate_number + 1
-        anchors.add(anchor)
-    return frozenset(anchors)
+    return _markdown.heading_anchors(source.text)
 
 
 def _decode_uri_component(component: str) -> str:
     return unquote_to_bytes(component).decode("utf-8")
 
 
-def _unsafe_link_issue(source: SourceFile, link: _MarkdownLink) -> ValidationIssue:
+def _unsafe_link_issue(
+    source: SourceFile, link: _markdown.MarkdownLink
+) -> ValidationIssue:
     return ValidationIssue(
         source.path,
         link.line,
@@ -558,7 +330,7 @@ def validate_identifiers(corpus: Corpus) -> tuple[ValidationIssue, ...]:
     for source in corpus.markdown_files:
         if source.path.name != "SRS.md":
             continue
-        for line_number, line in _visible_markdown_lines(source.text):
+        for line_number, line in _markdown.visible_markdown_lines(source.text):
             for match in declaration_pattern.finditer(line):
                 declarations.setdefault(match.group(1), []).append(
                     (source.path, line_number)
@@ -579,25 +351,25 @@ def validate_identifiers(corpus: Corpus) -> tuple[ValidationIssue, ...]:
 
 
 def validate_naming(corpus: Corpus) -> tuple[ValidationIssue, ...]:
-    """Return invalid architecture Markdown filename and directory issues."""
-    filename_pattern = re.compile(r"(?=.*[A-Z])[A-Z0-9_]+\.md")
+    """Return invalid architecture filename and directory issues."""
+    filename_pattern = re.compile(r"(?=.*[A-Z])[A-Z0-9_]+\.[a-z0-9]+")
     directory_pattern = re.compile(r"(?=.*[a-z])[a-z0-9_]+")
     issues: list[ValidationIssue] = []
 
-    markdown_paths = sorted(
+    architecture_paths = sorted(
         path
         for path in corpus.existing_paths
-        if _is_beneath(path, corpus.architecture_root)
-        and path.suffix.casefold() == ".md"
+        if _is_beneath(path, corpus.architecture_root) and path.name != ".gitkeep"
     )
-    for path in markdown_paths:
+    for path in architecture_paths:
         if filename_pattern.fullmatch(path.name) is None:
             issues.append(
                 ValidationIssue(
                     path,
                     1,
                     "NAM001",
-                    "Markdown filename must use uppercase snake case",
+                    "architecture filename must use uppercase snake case with a "
+                    "lowercase extension",
                 )
             )
 
@@ -677,6 +449,9 @@ def _level_two_heading_line(
 
 def validate_srs_structure(corpus: Corpus) -> tuple[ValidationIssue, ...]:
     """Return missing acceptance-criterion and traceability structure issues."""
+    declared_identifier = re.compile(
+        r"\*\*(?P<identifier>[A-Z0-9]+(?:-[A-Z0-9]+){2,})(?::)?\*\*"
+    )
     acceptance_identifier = re.compile(
         r"\*\*[A-Z0-9]+(?:-[A-Z0-9]+)*-AC-[A-Z0-9]+(?::)?\*\*"
     )
@@ -685,10 +460,23 @@ def validate_srs_structure(corpus: Corpus) -> tuple[ValidationIssue, ...]:
     for source in corpus.markdown_files:
         if source.path.name != "SRS.md":
             continue
-        lines = _visible_markdown_lines(source.text)
+        lines = _markdown.visible_markdown_lines(source.text)
         acceptance_line = _level_two_heading_line(lines, "Acceptance Criteria")
         traceability_line = _level_two_heading_line(lines, "Traceability")
 
+        if not any(
+            "-AC-" not in match.group("identifier")
+            for _, line in lines
+            for match in declared_identifier.finditer(line)
+        ):
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    1,
+                    "SRS002",
+                    "SRS does not declare a non-acceptance requirement identifier",
+                )
+            )
         if acceptance_line is None:
             issues.append(
                 ValidationIssue(
@@ -760,7 +548,7 @@ _ROADMAP_CANDIDATE_PATTERN = re.compile(
 def _roadmap_entries(
     source: SourceFile,
 ) -> tuple[tuple[_RoadmapEntry, ...], tuple[ValidationIssue, ...]]:
-    lines = _visible_markdown_lines(source.text)
+    lines = _markdown.visible_markdown_lines(source.text)
     candidates: list[tuple[int, int, re.Match[str] | None]] = []
     issues: list[ValidationIssue] = []
 
@@ -963,7 +751,7 @@ def validate_roadmaps(corpus: Corpus) -> tuple[ValidationIssue, ...]:
 
 
 def _resolved_local_link_target(
-    source: SourceFile, link: _MarkdownLink
+    source: SourceFile, link: _markdown.MarkdownLink
 ) -> PurePosixPath | None:
     try:
         parsed = urlsplit(link.destination)
@@ -979,6 +767,10 @@ def _resolved_local_link_target(
         )
     except (UnicodeDecodeError, ValueError):
         return None
+
+
+def _link_has_brief_scope_description(link: _markdown.MarkdownLink) -> bool:
+    return any(character.isalnum() for character in link.suffix)
 
 
 def validate_roadmap_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
@@ -1007,13 +799,14 @@ def validate_roadmap_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
             for path in component_paths
         )
 
-    central_targets = [
-        target
+    central_links = [
+        (link, target)
         for link in _markdown_links(central)
         if (target := _resolved_local_link_target(central, link)) is not None
     ]
     for path in component_paths:
-        count = central_targets.count(path)
+        matching_links = tuple(link for link, target in central_links if target == path)
+        count = len(matching_links)
         if count != 1:
             issues.append(
                 ValidationIssue(
@@ -1023,6 +816,16 @@ def validate_roadmap_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
                     f"central roadmap must link {path} exactly once; found {count}",
                 )
             )
+        for link in matching_links:
+            if not _link_has_brief_scope_description(link):
+                issues.append(
+                    ValidationIssue(
+                        central.path,
+                        link.line,
+                        "RDM005",
+                        "central roadmap link must include a brief scope description",
+                    )
+                )
 
         component = sources[path]
         backlink_count = sum(
@@ -1051,35 +854,6 @@ _REGISTRY_SELECTED_IDENTITY_HEADERS = {
 }
 
 
-def _markdown_table_cells(line: str) -> tuple[str, ...] | None:
-    text = line.strip()
-    if "|" not in text:
-        return None
-
-    cells: list[str] = []
-    cell: list[str] = []
-    escaped = False
-    for character in text:
-        if escaped:
-            cell.append(character)
-            escaped = False
-        elif character == "\\":
-            cell.append(character)
-            escaped = True
-        elif character == "|":
-            cells.append("".join(cell).strip())
-            cell = []
-        else:
-            cell.append(character)
-    cells.append("".join(cell).strip())
-
-    if text.startswith("|"):
-        cells.pop(0)
-    if text.endswith("|"):
-        cells.pop()
-    return tuple(cells)
-
-
 def _is_table_separator(cells: Sequence[str]) -> bool:
     return bool(cells) and all(
         re.fullmatch(r":?-{3,}:?", cell) is not None for cell in cells
@@ -1093,7 +867,7 @@ def _nearest_level_two_heading(
     for line_number, line in lines:
         if line_number >= before_line:
             break
-        candidate = _heading_text(line)
+        candidate = _markdown.heading_text(line)
         if re.match(r"^[ ]{0,3}##(?!#)(?:[ \t]+|$)", line) and candidate is not None:
             heading = candidate
     return heading
@@ -1102,32 +876,31 @@ def _nearest_level_two_heading(
 def _registry_tables(
     source: SourceFile,
 ) -> tuple[tuple[_RegistryTable, ...], tuple[ValidationIssue, ...]]:
-    lines = _visible_markdown_lines(source.text)
+    lines = _markdown.visible_markdown_lines(source.text)
     tables: list[_RegistryTable] = []
     issues: list[ValidationIssue] = []
     index = 0
 
     while index < len(lines):
         line_number, line = lines[index]
-        headers = _markdown_table_cells(line)
+        headers = _markdown.markdown_table_cells(line)
         if headers is None or not any(
             header in _REGISTRY_IDENTITY_HEADERS for header in headers
         ):
             index += 1
             continue
 
-        separator = (
-            _markdown_table_cells(lines[index + 1][1])
-            if index + 1 < len(lines)
-            else None
-        )
+        separator = None
+        if index + 1 < len(lines) and lines[index + 1][0] == line_number + 1:
+            separator = _markdown.markdown_table_cells(lines[index + 1][1])
         if separator is None or not _is_table_separator(separator):
             issues.append(
                 ValidationIssue(
                     source.path,
                     line_number,
                     "REG001",
-                    "registry table header must be followed by a separator row",
+                    "registry table header must be followed by a physically adjacent "
+                    "separator row",
                 )
             )
             index += 1
@@ -1144,12 +917,25 @@ def _registry_tables(
 
         row_index = index + 2
         rows: list[_RegistryRow] = []
+        previous_row_line = lines[index + 1][0]
         while row_index < len(lines):
             row_line, row_text = lines[row_index]
-            row_cells = _markdown_table_cells(row_text)
+            row_cells = _markdown.markdown_table_cells(row_text)
             if row_cells is None:
                 break
+            if row_line != previous_row_line + 1:
+                issues.append(
+                    ValidationIssue(
+                        source.path,
+                        row_line,
+                        "REG001",
+                        "registry table data row must be physically adjacent to the "
+                        "separator or previous row",
+                    )
+                )
+                break
             rows.append(_RegistryRow(row_line, row_cells))
+            previous_row_line = row_line
             row_index += 1
 
         tables.append(
@@ -1167,7 +953,7 @@ def _registry_tables(
 
 def _single_link_destination(cell: str, definitions: Mapping[str, str]) -> str | None:
     stripped = cell.strip()
-    inline_links = tuple(_inline_links(stripped))
+    inline_links = tuple(_markdown.inline_links(stripped))
     if inline_links:
         if (
             len(inline_links) == 1
@@ -1183,7 +969,7 @@ def _single_link_destination(cell: str, definitions: Mapping[str, str]) -> str |
     if not is_reference_link:
         return None
 
-    destinations = tuple(_reference_destinations(stripped, definitions))
+    destinations = tuple(_markdown.reference_destinations(stripped, definitions))
     return destinations[0] if len(destinations) == 1 else None
 
 
@@ -1208,7 +994,7 @@ def _owner_cell_is_valid(
         and not parsed.query
         and not parsed.fragment
         and decoded_path == expected_destination
-        and _resolved_local_link_target(source, _MarkdownLink(1, destination))
+        and _resolved_local_link_target(source, _markdown.MarkdownLink(1, destination))
         == component / "README.md"
     )
 
@@ -1259,8 +1045,8 @@ def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
             )
             continue
 
-        visible_lines = _visible_markdown_lines(registry.text)
-        definitions, _ = _reference_definitions(visible_lines)
+        visible_lines = _markdown.visible_markdown_lines(registry.text)
+        definitions, _ = _markdown.reference_definitions(visible_lines)
         tables, table_issues = _registry_tables(registry)
         issues.extend(table_issues)
         components_by_name = {component.name: component for component in components}

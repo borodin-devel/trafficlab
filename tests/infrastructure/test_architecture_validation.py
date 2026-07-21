@@ -1,8 +1,10 @@
 """Tests for deterministic architecture-corpus validation."""
 
+import os
 from pathlib import Path, PurePosixPath
 
 import pytest
+import tools.validate_architecture as architecture_validation
 from tools.validate_architecture import (
     ValidationIssue,
     corpus_from_mapping,
@@ -11,7 +13,10 @@ from tools.validate_architecture import (
     validate,
     validate_identifiers,
     validate_links,
+    validate_naming,
     validate_registries,
+    validate_roadmap_links,
+    validate_srs_structure,
 )
 
 
@@ -19,6 +24,28 @@ from tools.validate_architecture import (
 def test_broken_relative_link_is_rejected() -> None:
     corpus = corpus_from_mapping(
         {"architecture/README.md": "# Architecture\n\n[Missing](MISSING.md)\n"}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_soft_wrapped_inline_link_is_validated_at_its_start_line() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "# Architecture\n\n"
+                "For every method, [missing owner\n"
+                "documentation](MISSING.md) must also be read.\n"
+            )
+        }
     )
 
     assert validate_links(corpus) == (
@@ -182,6 +209,46 @@ def test_loader_rejects_symlinked_architecture_root(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="must not be a symlink"):
         load_corpus(tmp_path, architecture_root)
+
+
+@pytest.mark.unit
+def test_loader_rejects_descriptor_identity_change_and_uses_no_follow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    architecture_root = tmp_path / "architecture"
+    architecture_root.mkdir()
+    source = architecture_root / "README.md"
+    source.write_text("# Architecture\n", encoding="utf-8")
+    replacement = tmp_path / "REPLACEMENT.md"
+    replacement.write_text("# Replacement\n", encoding="utf-8")
+    real_open = os.open
+    opened_descriptors: list[int] = []
+
+    def swapped_open(
+        path: str | bytes | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if not isinstance(path, bytes) and Path(path) == source:
+            assert flags & os.O_NOFOLLOW
+            descriptor = real_open(replacement, flags, mode)
+            opened_descriptors.append(descriptor)
+            return descriptor
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(architecture_validation.os, "open", swapped_open)
+
+    with pytest.raises(OSError, match="changed while being loaded"):
+        load_corpus(tmp_path, architecture_root)
+
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_descriptors[0])
 
 
 @pytest.mark.unit
@@ -405,6 +472,50 @@ def test_structural_defect_is_rejected(
 
 
 @pytest.mark.unit
+def test_naming_checks_every_regular_architecture_file_except_gitkeep() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/bad-name.txt": "invalid name\n",
+            "architecture/empty/.gitkeep": "",
+        }
+    )
+
+    assert validate_naming(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/bad-name.txt"),
+            1,
+            "NAM001",
+            "architecture filename must use uppercase snake case with a lowercase "
+            "extension",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_srs_requires_a_non_acceptance_requirement_identifier() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/demo/SRS.md": (
+                "# Demo SRS\n\n"
+                "## Acceptance Criteria\n\n"
+                "- **DEM-AC-001:** The demonstration passes.\n\n"
+                "## Traceability\n\n"
+                "[Roadmap](ROADMAP.md)\n"
+            )
+        }
+    )
+
+    assert validate_srs_structure(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/demo/SRS.md"),
+            1,
+            "SRS002",
+            "SRS does not declare a non-acceptance requirement identifier",
+        ),
+    )
+
+
+@pytest.mark.unit
 def test_malformed_srs_traceability_link_returns_issues_instead_of_raising() -> None:
     corpus = corpus_from_mapping(
         {
@@ -454,6 +565,30 @@ def test_component_roadmap_must_link_back_to_central_once() -> None:
     )
 
     assert "RDM005" in {issue.code for issue in validate(corpus)}
+
+
+@pytest.mark.unit
+def test_central_roadmap_link_requires_a_brief_scope_description() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/project/ROADMAP.md": (
+                "# Central Roadmap\n\n[Demo](../apps/demo/ROADMAP.md)\n"
+            ),
+            "architecture/apps/demo/ROADMAP.md": (
+                "# Demo Roadmap\n\n"
+                "Part of the [central roadmap](../../project/ROADMAP.md).\n"
+            ),
+        }
+    )
+
+    assert validate_roadmap_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/project/ROADMAP.md"),
+            3,
+            "RDM005",
+            "central roadmap link must include a brief scope description",
+        ),
+    )
 
 
 @pytest.mark.unit
@@ -613,6 +748,59 @@ def test_registry_accepts_exact_owner_link(owner_cell: str) -> None:
     )
 
     assert validate_registries(corpus) == ()
+
+
+@pytest.mark.unit
+def test_registry_header_and_separator_must_be_physically_adjacent() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner |\n"
+                "```markdown\n"
+                "fenced example\n"
+                "```\n"
+                "| --- | --- |\n"
+                "| `demo` | [Demo](demo/README.md) |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert ValidationIssue(
+        PurePosixPath("architecture/traffic_models/README.md"),
+        5,
+        "REG001",
+        "registry table header must be followed by a physically adjacent separator row",
+    ) in validate_registries(corpus)
+
+
+@pytest.mark.unit
+def test_registry_data_rows_must_be_physically_adjacent() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner |\n"
+                "| --- | --- |\n"
+                "```markdown\n"
+                "fenced example\n"
+                "```\n"
+                "| `demo` | [Demo](demo/README.md) |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert ValidationIssue(
+        PurePosixPath("architecture/traffic_models/README.md"),
+        10,
+        "REG001",
+        "registry table data row must be physically adjacent to the separator or "
+        "previous row",
+    ) in validate_registries(corpus)
 
 
 @pytest.mark.unit
