@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Production Python targets Python 3.12 on Linux, primarily Ubuntu under WSL2; native Windows execution is unsupported.
-- uv owns dependency resolution and locking; setuptools builds source and wheel distributions.
+- uv owns dependency resolution and locking; setuptools builds a reproducible installable wheel.
 - Automated checks run unprivileged, use no live capture or host mutation, and invoke subprocesses with argument vectors rather than shell strings.
 - Source uses the proposed `src/trafficlab/` tree and tests mirror the infrastructure boundary under `tests/infrastructure/`.
 - Ruff uses Python 3.12 syntax, pyright uses strict mode, and production-package coverage has a 100 percent threshold.
@@ -33,7 +33,8 @@
 - Modify: `.gitignore`
 - Modify: `README.md`
 - Modify after verification: `architecture/infrastructure/ROADMAP.md`
-- Review after verification: `architecture/project/ROADMAP.md` and `ROADMAP.md`
+- Modify after verification: `architecture/project/ROADMAP.md`
+- Review after verification: `ROADMAP.md`
 
 **Interfaces:**
 
@@ -63,6 +64,7 @@ Create `tests/infrastructure/test_quality.py`:
 ```python
 """Tests for the repository-owned quality command interface."""
 
+import sys
 from collections.abc import Callable
 
 import pytest
@@ -94,6 +96,33 @@ def test_unknown_check_is_rejected() -> None:
     """Unknown command names cannot become subprocess arguments."""
     with pytest.raises(ValueError, match="unknown check: deploy"):
         select_checks("deploy")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("check_name", ["test", "coverage"])
+def test_pytest_checks_preserve_repository_import_path(check_name: str) -> None:
+    """Pytest gates use the active interpreter so local tools stay importable."""
+    (check,) = select_checks(check_name)
+
+    assert check.argv[:3] == (sys.executable, "-m", "pytest")
+
+
+@pytest.mark.unit
+def test_build_uses_locked_environment() -> None:
+    """The build gate must not resolve backend dependencies outside uv.lock."""
+    (check,) = select_checks("build")
+
+    assert check.argv == (
+        "/usr/bin/env",
+        "SOURCE_DATE_EPOCH=946684800",
+        sys.executable,
+        "-m",
+        "build",
+        "--no-isolation",
+        "--wheel",
+        "--outdir",
+        "dist",
+    )
 
 
 @pytest.mark.unit
@@ -187,10 +216,12 @@ CHECKS: tuple[Check, ...] = (
     Check("format", ("ruff", "format", "--check", ".")),
     Check("lint", ("ruff", "check", ".")),
     Check("typecheck", ("pyright",)),
-    Check("test", ("pytest",)),
+    Check("test", (sys.executable, "-m", "pytest")),
     Check(
         "coverage",
         (
+            sys.executable,
+            "-m",
             "pytest",
             "--cov=trafficlab",
             "--cov-report=term-missing:skip-covered",
@@ -200,10 +231,13 @@ CHECKS: tuple[Check, ...] = (
     Check(
         "build",
         (
+            # 2000-01-01 UTC is ZIP-safe and independent of checkout timestamps.
+            "/usr/bin/env",
+            "SOURCE_DATE_EPOCH=946684800",
             sys.executable,
             "-m",
             "build",
-            "--sdist",
+            "--no-isolation",
             "--wheel",
             "--outdir",
             "dist",
@@ -285,6 +319,8 @@ dev = [
   "pytest>=8.4.1",
   "pytest-cov>=6.2.1",
   "ruff>=0.12.4",
+  "setuptools>=80.9.0",
+  "wheel>=0.45.1",
 ]
 
 [tool.setuptools.dynamic]
@@ -361,7 +397,7 @@ Expected: `uv.lock` records a Python 3.12-compatible resolution and sync exits 0
 Run:
 
 ```bash
-uv run pytest tests/infrastructure -q
+uv run python -m pytest tests/infrastructure -q
 uv run ruff format --check src tests tools
 uv run ruff check src tests tools
 uv run pyright src tests tools
@@ -371,7 +407,10 @@ Expected: all infrastructure tests pass, formatting and linting report no change
 
 - [ ] **Step 6: Document the stable command interface**
 
-Replace the empty `README.md` with concise project orientation, relative links to `architecture/README.md` and `architecture/infrastructure/README.md`, supported Python/Linux constraints, and these exact commands:
+Replace the placeholder-only `README.md` with concise project orientation,
+relative links to `architecture/README.md` and
+`architecture/infrastructure/README.md`, an owner link for supported
+development constraints, and these exact commands:
 
 ```bash
 uv sync --locked --all-groups
@@ -393,17 +432,26 @@ Run:
 ```bash
 uv sync --locked --all-groups
 uv run python tools/quality.py all
-uv build --no-sources
+/usr/bin/env SOURCE_DATE_EPOCH=946684800 uv build --wheel --no-sources --no-build-isolation
 git diff --check
 ```
 
-Expected: sync leaves `uv.lock` unchanged; all formatting, lint, strict type, test, 100 percent coverage, and build gates pass; `uv build --no-sources` independently produces installable sdist and wheel artifacts through setuptools; and the diff has no whitespace errors.
+Expected: sync leaves `uv.lock` unchanged; all formatting, lint, strict type,
+test, 100 percent coverage, and build gates pass; the independent uv build
+produces an installable wheel through the synchronized setuptools environment;
+and the diff has no whitespace errors. Repeating either build with identical
+source and lock inputs produces the same wheel SHA-256.
 
 - [ ] **Step 8: Update roadmap evidence without changing architecture prose**
 
 In `architecture/infrastructure/ROADMAP.md`, change only the Stage 1, Step 1.1, and Substep 1.1.1 heading markers from `[PLAN]` to `[DONE]`. Add concise evidence under Substep 1.1.1 naming the locked `pyproject.toml`/`uv.lock`, `tools/quality.py`, the passing infrastructure tests, and the successful aggregate/build commands.
 
-Review `architecture/project/ROADMAP.md` under its parent-status rules. Because the other Stage 1 component roadmaps remain incomplete, do not mark central Stage 1 complete. Keep root `ROADMAP.md` as a relative pointer to the authoritative central roadmap unless validation proves an alignment change is required.
+In `architecture/project/ROADMAP.md`, record Stage 1, Step 1.1, and Substep
+1.1.1 as `[  7%]`. Cite the basis locally: infrastructure is 50% complete
+because one of its two equal-weight stages is `[DONE]`; the other six linked
+component roadmaps are `[PLAN]`; their equal-weight mean rounds from `50 / 7`
+to 7%. Keep root `ROADMAP.md` as a relative pointer to the authoritative
+central roadmap.
 
 - [ ] **Step 9: Review and commit the completed substage**
 
@@ -421,11 +469,32 @@ Expected: only the planned toolchain, tests, documentation, lock, ignore rules, 
 Then stage the exact planned files and commit:
 
 ```bash
-git add .gitignore README.md pyproject.toml uv.lock src/trafficlab/__init__.py tools/__init__.py tools/quality.py tests/infrastructure/test_package.py tests/infrastructure/test_quality.py docs/superpowers/plans/2026-07-21-repository-toolchain.md architecture/infrastructure/ROADMAP.md
+git add .gitignore README.md pyproject.toml uv.lock src/trafficlab/__init__.py tools/__init__.py tools/quality.py tests/infrastructure/test_package.py tests/infrastructure/test_quality.py docs/superpowers/plans/2026-07-21-repository-toolchain.md architecture/infrastructure/ROADMAP.md architecture/project/ROADMAP.md
 git commit -m "infra(toolchain): establish repeatable local checks"
 ```
 
 Expected: one focused `infra(toolchain)` commit and a clean worktree.
+
+## Build Reproducibility Decision
+
+- **Problem and severity:** Major. Setuptools 83 source distributions embed
+  generated current timestamps, so two builds from identical source and lock
+  inputs produced different sdist and wheel hashes under the original target.
+- **Evidence considered:** Archive listings localized sdist differences to
+  generated metadata timestamps. Setting `SOURCE_DATE_EPOCH=946684800` made
+  wheel bytes identical, while sdist tar metadata remained time-dependent.
+- **Decision:** The mandatory build target is the installable universal wheel.
+  It uses the synchronized setuptools/wheel packages without isolation and a
+  fixed 2000-01-01 UTC source-date epoch.
+- **Alternatives rejected:** Accepting nondeterministic artifacts violates the
+  infrastructure SAD. Adding a custom sdist normalizer or build backend adds an
+  unrequired packaging surface to the initial scaffold.
+- **Impact:** `tools/quality.py build` does not publish an sdist. A future sdist
+  target must normalize all generated archive metadata before becoming a
+  mandatory output.
+- **Verification:** Two successive wheel builds produced the identical SHA-256
+  `a2c81a53b9e3cd47cd3159719d2436414a862ba78b0706e6d4230f6d17f0b956`;
+  the wheel also installed and imported in a separate Python 3.12 environment.
 
 ## Self-Review
 

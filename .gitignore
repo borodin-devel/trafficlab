@@ -1,5 +1,14 @@
 /.superpowers/
 /.worktrees/
+/.venv/
+/.coverage
+/.pytest_cache/
+/.ruff_cache/
+/build/
+/dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
 TASK.md
 /run/
 /test_run/

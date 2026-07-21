@@ -2,21 +2,24 @@
 
 Part of the [central Trafficlab roadmap](../project/ROADMAP.md).
 
-## [PLAN] STAGE 1 — Repository Toolchain
+## [DONE] STAGE 1 — Repository Toolchain
 
 - **Task:** Complete the stage named by this heading through its ordered steps.
 - **Deliverable:** A usable, testable increment comprising the outputs declared by those steps.
 - **Applicable test types:** The test types declared by this stage's substeps.
 - **Completion criteria:** Every step and substep in this stage meets its completion criteria.
+- **Evidence:** Step 1.1 and Substep 1.1.1 are `[DONE]` with clean-environment,
+  unit, coverage, static-analysis, and package-build evidence.
 
-### [PLAN] STEP 1.1 — Create Python build and check configuration
+### [DONE] STEP 1.1 — Create Python build and check configuration
 
 - **Task:** Perform the implementation work named by this heading.
 - **Deliverable:** All outputs declared by this step's substeps.
 - **Applicable test types:** The test types declared by this step's substeps.
 - **Completion criteria:** Every substep in this step meets its completion criteria.
+- **Evidence:** Substep 1.1.1 passes every configured local check and INF-AC-001.
 
-#### [PLAN] SUBSTEP 1.1.1 — Establish repeatable local checks
+#### [DONE] SUBSTEP 1.1.1 — Establish repeatable local checks
 
 - **Objective:** Make one command set install, lint, type-check, test, and build.
 - **Implementation:** Add `pyproject.toml`, uv lock, pytest, coverage,
@@ -27,6 +30,13 @@ Part of the [central Trafficlab roadmap](../project/ROADMAP.md).
 - **Tests:** Clean-environment install, sample unit test, type and lint fixtures.
 - **Validation:** Execute every configured command from a clean environment.
 - **Completion criteria:** INF-AC-001 passes with documented commands.
+- **Evidence:** `pyproject.toml` and `uv.lock` define and lock the Python 3.12
+  environment; `tools/quality.py` exposes the documented fail-fast interface.
+  A source copy without an environment or generated metadata passed locked
+  synchronization, Ruff formatting and linting, strict pyright, 9 unit tests,
+  100% package coverage, reproducible wheel builds, isolated wheel
+  installation, and package import. Two identical builds produced SHA-256
+  `a2c81a53b9e3cd47cd3159719d2436414a862ba78b0706e6d4230f6d17f0b956`.
 
 ## [PLAN] STAGE 2 — Continuous Integration and Documentation
 

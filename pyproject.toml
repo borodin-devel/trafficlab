@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trafficlab"
+dynamic = ["version"]
+description = "Reproducible research suite for capturing and modelling Layer 2 traffic"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "pyarrow>=21.0.0",
+  "scapy>=2.6.1",
+]
+
+[dependency-groups]
+dev = [
+  "build>=1.3.0",
+  "pyright>=1.1.403",
+  "pytest>=8.4.1",
+  "pytest-cov>=6.2.1",
+  "ruff>=0.12.4",
+  "setuptools>=80.9.0",
+  "wheel>=0.45.1",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "trafficlab.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "unit: deterministic tests for one functional unit",
+  "integration: tests across component or process boundaries",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["trafficlab"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+
+[tool.pyright]
+include = ["src", "tests", "tools"]
+exclude = [".venv", "build", "dist"]
+extraPaths = ["src", "."]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+line-length = 88
+src = ["src"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "S", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+# This one audited boundary executes only constant argument vectors from CHECKS.
+"tools/quality.py" = ["S404", "S603"]
