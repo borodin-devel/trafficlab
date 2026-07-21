@@ -734,6 +734,107 @@ contract, take the safe local fast-forward option, verify merged `main`, remove
 only the owned `.worktrees/` checkout, and continue to the next central-roadmap
 deliverable.
 
+### Task 7: Enforce Whitespace on the Complete Tracked Tree
+
+**Files:**
+
+- Create: `tools/validate_whitespace.py`
+- Create: `tests/infrastructure/test_whitespace_validation.py`
+- Modify: `tools/quality.py`
+- Modify: `tests/infrastructure/test_quality.py`
+- Modify: `README.md`
+- Modify: only tracked planning documents currently reported by the complete-tree check
+
+**Interfaces:**
+
+- Consumes: the current repository `HEAD` and Git's object-format-aware empty
+  tree identifier.
+- Produces: a fixed `whitespace` quality command that fails for whitespace
+  errors committed anywhere in the tracked tree.
+
+- [ ] **Step 1: Reproduce the clean-checkout gap with a temporary committed-whitespace repository**
+
+Add a regression that commits a file with trailing whitespace in an isolated
+temporary Git repository and proves the current worktree-only check misses it.
+Also assert that the public quality vector delegates to the repository-owned
+validator and that documented local uv invocations are locked.
+
+- [ ] **Step 2: Implement the full-tree check without a shell**
+
+Compute the empty tree through `git hash-object -t tree --stdin`, then invoke
+`git diff --check <empty-tree> HEAD` with argument vectors. Propagate Git's
+exit code and diagnostics. Clean the finite baseline violations it reports
+without changing document meaning; use explicit Markdown breaks instead of
+trailing spaces where a hard break is intentional.
+
+- [ ] **Step 3: Verify and commit**
+
+Run the focused quality/whitespace tests, the actual named gate, Ruff, Pyright,
+the architecture gate, and diff hygiene. Commit the bounded correction as
+`bugfix(quality): check committed whitespace`.
+
+### Task 8: Close Architecture Validator Boundary Gaps
+
+**Files:**
+
+- Modify: `tools/validate_architecture.py`
+- Modify: `tests/infrastructure/test_architecture_validation.py`
+- Create or modify private validator modules only when extraction preserves the public facade
+
+**Interfaces:**
+
+- Preserves: `load_corpus()`, pure rule functions, `validate()`, and the
+  `python -m tools.validate_architecture architecture` CLI.
+- Strengthens: Required Checks 1, 4, 6, and 7 plus untrusted-file loading.
+
+- [ ] **Step 1: Add adversarial RED fixtures**
+
+Cover a missing soft-wrapped Markdown link target, a registry header and
+separator separated by a fence, a non-Markdown file with an invalid name, an
+AC-only SRS with traceability, and a bare central component-roadmap link. Add
+a no-follow loader boundary regression where practical.
+
+- [ ] **Step 2: Repair physical parsing and existing rule families**
+
+Preserve physical source spans while recognizing valid wrapped links; require
+table header/separator adjacency; validate every regular architecture filename
+while retaining the documented `.gitkeep` handling; require at least one
+non-acceptance requirement identifier in each SRS; and require a brief scope
+description for each central component-roadmap link. Read regular files through
+a no-follow descriptor and verify descriptor identity before decoding.
+
+- [ ] **Step 3: Control module growth and verify**
+
+Extract a cohesive private Markdown/parser boundary if the fixes would
+otherwise extend the monolith further. Run adversarial, focused, full, Ruff,
+Pyright, corpus, deterministic-output, and diff-hygiene checks. Commit as
+`bugfix(validation): close architecture boundary gaps`.
+
+### Task 9: Refresh Completion Evidence and Re-review Stage 2
+
+**Files:**
+
+- Modify: `architecture/infrastructure/ROADMAP.md`
+- Modify: this plan's decision log and self-review
+
+- [ ] **Step 1: Repeat complete and clean-clone verification**
+
+Run the locked aggregate gate twice as needed, compare wheel hashes, and run
+the gate from a fresh exact temporary clone of the corrected committed branch.
+Record the updated focused/full test counts and remove only that exact clone.
+
+- [ ] **Step 2: Refresh evidence without changing status arithmetic**
+
+Replace stale counts in Infrastructure Stage 2 evidence, name complete-tree
+whitespace validation and the added adversarial fixtures, and keep the central
+foundation at 14 percent because component completion arithmetic is unchanged.
+
+- [ ] **Step 3: Re-review and integrate**
+
+Request another independent review of the complete Stage 2 range, resolve all
+Critical and Important findings, rerun the locked aggregate gate, and use the
+safe local fast-forward completion path described in Task 6.
+
 ## Decision Log
 
 - **Minor — provider scheduling wording:** Infrastructure CONFIGS says the
@@ -752,13 +853,19 @@ deliverable.
   `3d3c42e5aac5ba805825da76410c181273ba90b1` and setup-uv v8.3.2 SHA
   `11f9893b081a58869d3b5fccaea48c9e9e46f990`, verified from their official
   GitHub release commits on 2026-07-21. Pin uv to the locally verified 0.11.25.
+- **Final-review correction:** Adversarial review showed that the original
+  worktree-only whitespace command was inert in clean CI and that existing
+  validator families missed wrapped links, physical table adjacency, non-Markdown
+  names, AC-only SRS documents, and bare central roadmap links. Tasks 7-9 make
+  those boundaries explicit before Stage 2 is integrated.
 
 ## Plan Self-Review
 
-- Spec coverage: Tasks 2-3 implement every mechanical corpus rule; Task 4
-  provides identical local commands and explicit failure propagation; Task 5
-  provides secure hosted CI; Task 6 supplies clean-environment evidence and
-  roadmap status arithmetic.
+- Spec coverage: Tasks 2-3 establish the corpus validator; final-review Task 8
+  closes adversarial gaps in existing rule families. Tasks 4 and 7 provide
+  locked local/CI commands, complete-tree whitespace enforcement, and explicit
+  failure propagation. Task 5 provides secure hosted CI; Tasks 6 and 9 supply
+  clean-environment evidence and roadmap status arithmetic.
 - Type consistency: all tasks use `Corpus`, `SourceFile`, `ValidationIssue`,
   immutable issue tuples, `Path` at the shell boundary, and `PurePosixPath` in
   the core.
