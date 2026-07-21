@@ -743,6 +743,11 @@ deliverable.
 - **Minor — duplicate central link:** Stage 1 evidence introduced a second link
   to the infrastructure roadmap. Task 1 restores the exact-once corpus rule
   without changing status meaning.
+- **Minor — capture-request substep test labels:** Task 3's committed-corpus
+  integration fixture found four capture-request roadmap substeps using
+  `Applicable test types` instead of the substep-owned `Tests` field required
+  by `architecture/VALIDATION.md`. Rename only those four roadmap field labels;
+  their test definitions and status meaning remain unchanged.
 - **Supply-chain choice:** Use checkout v7.0.1 SHA
   `3d3c42e5aac5ba805825da76410c181273ba90b1` and setup-uv v8.3.2 SHA
   `11f9893b081a58869d3b5fccaea48c9e9e46f990`, verified from their official

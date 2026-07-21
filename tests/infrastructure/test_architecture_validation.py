@@ -371,6 +371,155 @@ def test_every_duplicate_identifier_declaration_is_reported() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("files", "expected_code"),
+    [
+        ({"architecture/bad-name.md": "# Bad\n"}, "NAM001"),
+        ({"architecture/apps/demo/README.md": "# Demo\n"}, "DOC001"),
+        (
+            {
+                "architecture/demo/SRS.md": (
+                    "# SRS\n\n## Requirements\n\n- **DEM-FR-001:** Rule.\n"
+                )
+            },
+            "SRS002",
+        ),
+        (
+            {
+                "architecture/demo/ROADMAP.md": (
+                    "# Roadmap\n\n## [100%] STAGE 1 — Invalid\n"
+                )
+            },
+            "RDM001",
+        ),
+        ({"architecture/demo/NOTE.md": "# Note \n"}, "HYG001"),
+    ],
+)
+def test_structural_defect_is_rejected(
+    files: dict[str, str], expected_code: str
+) -> None:
+    assert expected_code in {
+        issue.code for issue in validate(corpus_from_mapping(files))
+    }
+
+
+@pytest.mark.unit
+def test_malformed_srs_traceability_link_returns_issues_instead_of_raising() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/demo/SRS.md": (
+                "# SRS\n\n"
+                "## Acceptance Criteria\n\n"
+                "- **DEM-AC-001:** Rule.\n\n"
+                "## Traceability\n\n"
+                "[Malformed](https://[invalid)\n"
+            )
+        }
+    )
+
+    assert {issue.code for issue in validate(corpus)} >= {"LNK003", "SRS002"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("central_link_count", [0, 2])
+def test_central_roadmap_must_link_each_component_once(
+    central_link_count: int,
+) -> None:
+    component_link = "[Demo](../apps/demo/ROADMAP.md)\n"
+    corpus = corpus_from_mapping(
+        {
+            "architecture/project/ROADMAP.md": (
+                "# Central Roadmap\n\n" + component_link * central_link_count
+            ),
+            "architecture/apps/demo/ROADMAP.md": (
+                "# Demo Roadmap\n\n"
+                "Part of the [central roadmap](../../project/ROADMAP.md).\n"
+            ),
+        }
+    )
+
+    assert "RDM005" in {issue.code for issue in validate(corpus)}
+
+
+@pytest.mark.unit
+def test_component_roadmap_must_link_back_to_central_once() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/project/ROADMAP.md": (
+                "# Central Roadmap\n\n[Demo](../apps/demo/ROADMAP.md)\n"
+            ),
+            "architecture/apps/demo/ROADMAP.md": "# Demo Roadmap\n",
+        }
+    )
+
+    assert "RDM005" in {issue.code for issue in validate(corpus)}
+
+
+@pytest.mark.unit
+def test_registry_must_cover_every_immediate_component() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n| Selectable name | Owner |\n| --- | --- |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate(corpus)}
+
+
+@pytest.mark.unit
+def test_non_plan_roadmap_entry_requires_evidence() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/demo/ROADMAP.md": (
+                "# Roadmap\n\n"
+                "## [DONE] STAGE 1 — Implemented\n\n"
+                "- **Task:** Complete the stage.\n"
+                "- **Deliverable:** An increment.\n"
+                "- **Applicable test types:** Unit.\n"
+                "- **Completion criteria:** The unit test passes.\n"
+            )
+        }
+    )
+
+    assert "RDM003" in {issue.code for issue in validate(corpus)}
+
+
+@pytest.mark.unit
+def test_parent_roadmap_status_reflects_immediate_children() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/demo/ROADMAP.md": (
+                "# Roadmap\n\n"
+                "## [PLAN] STAGE 1 — Parent\n\n"
+                "- **Task:** Complete the stage.\n"
+                "- **Deliverable:** An increment.\n"
+                "- **Applicable test types:** Unit.\n"
+                "- **Completion criteria:** The step is done.\n\n"
+                "### [DONE] STEP 1.1 — Child\n\n"
+                "- **Task:** Complete the step.\n"
+                "- **Deliverable:** An increment.\n"
+                "- **Applicable test types:** Unit.\n"
+                "- **Completion criteria:** The unit test passes.\n"
+                "- **Evidence:** Unit test passed.\n"
+            )
+        }
+    )
+
+    assert "RDM004" in {issue.code for issue in validate(corpus)}
+
+
+@pytest.mark.integration
+def test_repository_architecture_corpus_is_valid() -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    corpus = load_corpus(repository_root, repository_root / "architecture")
+
+    assert validate(corpus) == ()
+
+
+@pytest.mark.unit
 def test_main_prints_issues_and_returns_one(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

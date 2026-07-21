@@ -51,6 +51,15 @@ class _MarkdownLink:
     destination: str
 
 
+@dataclass(frozen=True, slots=True)
+class _RoadmapEntry:
+    line: int
+    level: int
+    number: str
+    status: str
+    body: tuple[tuple[int, str], ...]
+
+
 def _normalize_repository_path(
     path: str | PurePosixPath, *, allow_root: bool = False
 ) -> PurePosixPath:
@@ -496,9 +505,608 @@ def validate_identifiers(corpus: Corpus) -> tuple[ValidationIssue, ...]:
     return tuple(sorted(issues))
 
 
+def validate_naming(corpus: Corpus) -> tuple[ValidationIssue, ...]:
+    """Return invalid architecture Markdown filename and directory issues."""
+    filename_pattern = re.compile(r"(?=.*[A-Z])[A-Z0-9_]+\.md")
+    directory_pattern = re.compile(r"(?=.*[a-z])[a-z0-9_]+")
+    issues: list[ValidationIssue] = []
+
+    markdown_paths = sorted(
+        path
+        for path in corpus.existing_paths
+        if _is_beneath(path, corpus.architecture_root)
+        and path.suffix.casefold() == ".md"
+    )
+    for path in markdown_paths:
+        if filename_pattern.fullmatch(path.name) is None:
+            issues.append(
+                ValidationIssue(
+                    path,
+                    1,
+                    "NAM001",
+                    "Markdown filename must use uppercase snake case",
+                )
+            )
+
+    for directory in sorted(corpus.directories):
+        if not _is_beneath(directory, corpus.architecture_root):
+            continue
+        if directory_pattern.fullmatch(directory.name) is None:
+            issues.append(
+                ValidationIssue(
+                    directory,
+                    1,
+                    "NAM001",
+                    "architecture directory must use lowercase snake case",
+                )
+            )
+
+    return tuple(sorted(issues))
+
+
+def _component_directories(corpus: Corpus) -> tuple[PurePosixPath, ...]:
+    component_roots = {
+        corpus.architecture_root / name
+        for name in (
+            "apps",
+            "contracts",
+            "genetic_models",
+            "libs",
+            "scripts",
+            "similarity_methods",
+            "traffic_models",
+        )
+    }
+    components = {
+        directory
+        for directory in corpus.directories
+        if directory.parent in component_roots
+    }
+    components.update(
+        directory
+        for directory in (
+            corpus.architecture_root / "infrastructure",
+            corpus.architecture_root / "project",
+        )
+        if directory in corpus.directories
+    )
+    return tuple(sorted(components))
+
+
+def validate_component_documents(corpus: Corpus) -> tuple[ValidationIssue, ...]:
+    """Return missing required owner-document issues for each component."""
+    required_documents = ("README.md", "ROADMAP.md", "SAD.md", "SRS.md")
+    issues = [
+        ValidationIssue(
+            component / document,
+            1,
+            "DOC001",
+            f"component document is missing: {document}",
+        )
+        for component in _component_directories(corpus)
+        for document in required_documents
+        if component / document not in corpus.existing_paths
+    ]
+    return tuple(sorted(issues))
+
+
+def _level_two_heading_line(
+    lines: Sequence[tuple[int, str]], heading: str
+) -> int | None:
+    pattern = re.compile(
+        rf"^[ ]{{0,3}}##(?!#)[ \t]+{re.escape(heading)}"
+        r"(?:[ \t]+#+)?[ \t]*$"
+    )
+    return next(
+        (line_number for line_number, line in lines if pattern.fullmatch(line)), None
+    )
+
+
+def validate_srs_structure(corpus: Corpus) -> tuple[ValidationIssue, ...]:
+    """Return missing acceptance-criterion and traceability structure issues."""
+    acceptance_identifier = re.compile(
+        r"\*\*[A-Z0-9]+(?:-[A-Z0-9]+)*-AC-[A-Z0-9]+(?::)?\*\*"
+    )
+    issues: list[ValidationIssue] = []
+
+    for source in corpus.markdown_files:
+        if source.path.name != "SRS.md":
+            continue
+        lines = _visible_markdown_lines(source.text)
+        acceptance_line = _level_two_heading_line(lines, "Acceptance Criteria")
+        traceability_line = _level_two_heading_line(lines, "Traceability")
+
+        if acceptance_line is None:
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    1,
+                    "SRS002",
+                    "SRS is missing the Acceptance Criteria heading",
+                )
+            )
+        if not any(acceptance_identifier.search(line) for _, line in lines):
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    acceptance_line or 1,
+                    "SRS002",
+                    "SRS does not declare an acceptance-criterion identifier",
+                )
+            )
+        if traceability_line is None:
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    1,
+                    "SRS002",
+                    "SRS is missing the Traceability heading",
+                )
+            )
+        elif not any(
+            link.line > traceability_line
+            and _resolved_local_link_target(source, link) is not None
+            for link in _markdown_links(source)
+        ):
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    traceability_line,
+                    "SRS002",
+                    "SRS Traceability section has no local link",
+                )
+            )
+
+    return tuple(sorted(issues))
+
+
+_ROADMAP_STATUS_PATTERN = (
+    r"(?:PLAN|BLKD|CR_B|MK_B|MN_B|TSTR|DONE| {2}[1-9]%| [1-9][0-9]%)"
+)
+_ROADMAP_HEADING_PATTERNS = (
+    re.compile(
+        rf"^[ ]{{0,3}}## \[(?P<status>{_ROADMAP_STATUS_PATTERN})\] "
+        r"STAGE (?P<number>[1-9][0-9]*) — \S.*$"
+    ),
+    re.compile(
+        rf"^[ ]{{0,3}}### \[(?P<status>{_ROADMAP_STATUS_PATTERN})\] "
+        r"STEP (?P<number>[1-9][0-9]*\.[1-9][0-9]*) — \S.*$"
+    ),
+    re.compile(
+        rf"^[ ]{{0,3}}#### \[(?P<status>{_ROADMAP_STATUS_PATTERN})\] "
+        r"SUBSTEP (?P<number>[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*) "
+        r"— \S.*$"
+    ),
+)
+_ROADMAP_CANDIDATE_PATTERN = re.compile(
+    r"^[ ]{0,3}#{1,6}[ \t]+(?:\[[^]\n]+\][ \t]+|.*\b(?:STAGE|STEP|SUBSTEP)\b)",
+    re.IGNORECASE,
+)
+
+
+def _roadmap_entries(
+    source: SourceFile,
+) -> tuple[tuple[_RoadmapEntry, ...], tuple[ValidationIssue, ...]]:
+    lines = _visible_markdown_lines(source.text)
+    candidates: list[tuple[int, int, re.Match[str] | None]] = []
+    issues: list[ValidationIssue] = []
+
+    for index, (line_number, line) in enumerate(lines):
+        if re.match(r"^[ \t]*(?:-[ \t]+)?\*\*Status:\*\*", line):
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    line_number,
+                    "RDM001",
+                    "roadmap status must appear in its hierarchy heading",
+                )
+            )
+        if _ROADMAP_CANDIDATE_PATTERN.match(line) is None:
+            continue
+        match = next(
+            (
+                pattern.fullmatch(line)
+                for pattern in _ROADMAP_HEADING_PATTERNS
+                if pattern.fullmatch(line) is not None
+            ),
+            None,
+        )
+        candidates.append((index, line_number, match))
+        if match is None:
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    line_number,
+                    "RDM001",
+                    "invalid roadmap hierarchy heading",
+                )
+            )
+
+    entries: list[_RoadmapEntry] = []
+    for candidate_index, (line_index, line_number, match) in enumerate(candidates):
+        if match is None:
+            continue
+        next_line_index = (
+            candidates[candidate_index + 1][0]
+            if candidate_index + 1 < len(candidates)
+            else len(lines)
+        )
+        status = match.group("status").strip()
+        level = len(lines[line_index][1].lstrip().split(" ", maxsplit=1)[0])
+        entries.append(
+            _RoadmapEntry(
+                line=line_number,
+                level=level,
+                number=match.group("number"),
+                status=status,
+                body=tuple(lines[line_index + 1 : next_line_index]),
+            )
+        )
+
+    if not candidates:
+        issues.append(
+            ValidationIssue(
+                source.path,
+                1,
+                "RDM001",
+                "roadmap has no hierarchy headings",
+            )
+        )
+    return tuple(entries), tuple(sorted(issues))
+
+
+def _entry_has_field(entry: _RoadmapEntry, field: str) -> bool:
+    pattern = re.compile(rf"^[ \t]*-[ \t]+\*\*{re.escape(field)}:\*\*[ \t]+.*\S[ \t]*$")
+    return any(pattern.fullmatch(line) for _, line in entry.body)
+
+
+def _expected_parent_status(statuses: Sequence[str]) -> str:
+    for status in ("CR_B", "MK_B", "MN_B", "BLKD"):
+        if status in statuses:
+            return status
+    if all(status == "PLAN" for status in statuses):
+        return "PLAN"
+    if all(status == "DONE" for status in statuses):
+        return "DONE"
+    if all(status in {"DONE", "TSTR"} for status in statuses):
+        return "TSTR"
+
+    estimates = [
+        0
+        if status == "PLAN"
+        else 100
+        if status in {"DONE", "TSTR"}
+        else int(status.removesuffix("%"))
+        for status in statuses
+    ]
+    rounded_mean = (2 * sum(estimates) + len(estimates)) // (2 * len(estimates))
+    return f"{min(99, max(1, rounded_mean))}%"
+
+
+def _roadmap_parent_issues(
+    source: SourceFile, entries: Sequence[_RoadmapEntry]
+) -> tuple[ValidationIssue, ...]:
+    issues: list[ValidationIssue] = []
+    children: dict[int, list[int]] = {index: [] for index in range(len(entries))}
+    stack: list[int] = []
+
+    for index, entry in enumerate(entries):
+        while stack and entries[stack[-1]].level >= entry.level:
+            stack.pop()
+        if entry.level > 2:
+            if not stack or entries[stack[-1]].level != entry.level - 1:
+                issues.append(
+                    ValidationIssue(
+                        source.path,
+                        entry.line,
+                        "RDM001",
+                        "roadmap hierarchy entry has no immediate parent",
+                    )
+                )
+            else:
+                parent_index = stack[-1]
+                children[parent_index].append(index)
+                expected_prefix = f"{entries[parent_index].number}."
+                if not entry.number.startswith(expected_prefix):
+                    issues.append(
+                        ValidationIssue(
+                            source.path,
+                            entry.line,
+                            "RDM001",
+                            "roadmap hierarchy number does not match its parent",
+                        )
+                    )
+        stack.append(index)
+
+    for index, child_indexes in children.items():
+        if not child_indexes:
+            continue
+        expected = _expected_parent_status(
+            [entries[child_index].status for child_index in child_indexes]
+        )
+        parent = entries[index]
+        if parent.status != expected:
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    parent.line,
+                    "RDM004",
+                    f"parent status must be {expected} from its immediate children",
+                )
+            )
+
+    return tuple(sorted(issues))
+
+
+def validate_roadmaps(corpus: Corpus) -> tuple[ValidationIssue, ...]:
+    """Return roadmap heading, body, evidence, and parent-status issues."""
+    common_fields = (
+        "Task",
+        "Deliverable",
+        "Applicable test types",
+        "Completion criteria",
+    )
+    substep_fields = (
+        "Objective",
+        "Implementation",
+        "Affected files",
+        "Dependencies",
+        "Outputs",
+        "Tests",
+        "Validation",
+        "Completion criteria",
+    )
+    issues: list[ValidationIssue] = []
+
+    for source in corpus.markdown_files:
+        if source.path.name != "ROADMAP.md":
+            continue
+        entries, parse_issues = _roadmap_entries(source)
+        issues.extend(parse_issues)
+        for entry in entries:
+            required_fields = substep_fields if entry.level == 4 else common_fields
+            for field in required_fields:
+                if not _entry_has_field(entry, field):
+                    issues.append(
+                        ValidationIssue(
+                            source.path,
+                            entry.line,
+                            "RDM002",
+                            f"roadmap entry is missing field: {field}",
+                        )
+                    )
+            if entry.status != "PLAN" and not _entry_has_field(entry, "Evidence"):
+                issues.append(
+                    ValidationIssue(
+                        source.path,
+                        entry.line,
+                        "RDM003",
+                        "non-plan roadmap entry is missing Evidence",
+                    )
+                )
+        issues.extend(_roadmap_parent_issues(source, entries))
+
+    return tuple(sorted(issues))
+
+
+def _resolved_local_link_target(
+    source: SourceFile, link: _MarkdownLink
+) -> PurePosixPath | None:
+    try:
+        parsed = urlsplit(link.destination)
+        if parsed.scheme or parsed.netloc:
+            return None
+        decoded_path = _decode_uri_component(parsed.path)
+        if "\x00" in decoded_path or PurePosixPath(decoded_path).is_absolute():
+            return None
+        if decoded_path == "":
+            return source.path
+        return _normalize_repository_path(
+            source.path.parent / decoded_path, allow_root=True
+        )
+    except (UnicodeDecodeError, ValueError):
+        return None
+
+
+def validate_roadmap_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
+    """Return central/component roadmap reciprocity and cardinality issues."""
+    roadmaps = tuple(
+        source for source in corpus.markdown_files if source.path.name == "ROADMAP.md"
+    )
+    if not roadmaps:
+        return ()
+
+    central_path = corpus.architecture_root / "project" / "ROADMAP.md"
+    sources = {source.path: source for source in roadmaps}
+    central = sources.get(central_path)
+    component_paths = tuple(sorted(path for path in sources if path != central_path))
+    issues: list[ValidationIssue] = []
+
+    if central is None:
+        return tuple(
+            ValidationIssue(
+                path,
+                1,
+                "RDM005",
+                "component roadmap cannot link missing central roadmap: "
+                f"{central_path}",
+            )
+            for path in component_paths
+        )
+
+    central_targets = [
+        target
+        for link in _markdown_links(central)
+        if (target := _resolved_local_link_target(central, link)) is not None
+    ]
+    for path in component_paths:
+        count = central_targets.count(path)
+        if count != 1:
+            issues.append(
+                ValidationIssue(
+                    central.path,
+                    1,
+                    "RDM005",
+                    f"central roadmap must link {path} exactly once; found {count}",
+                )
+            )
+
+        component = sources[path]
+        backlink_count = sum(
+            _resolved_local_link_target(component, link) == central_path
+            for link in _markdown_links(component)
+        )
+        if backlink_count != 1:
+            issues.append(
+                ValidationIssue(
+                    component.path,
+                    1,
+                    "RDM005",
+                    "component roadmap must link the central roadmap exactly once; "
+                    f"found {backlink_count}",
+                )
+            )
+
+    return tuple(sorted(issues))
+
+
+def _nearest_heading(lines: Sequence[tuple[int, str]], before_line: int) -> str:
+    heading = ""
+    for line_number, line in lines:
+        if line_number >= before_line:
+            break
+        candidate = _heading_text(line)
+        if candidate is not None:
+            heading = candidate
+    return heading
+
+
+def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
+    """Return missing, duplicate, malformed, and selectable-stub registry issues."""
+    registry_roots = tuple(
+        corpus.architecture_root / name
+        for name in ("traffic_models", "genetic_models", "similarity_methods")
+    )
+    sources = {source.path: source for source in corpus.markdown_files}
+    issues: list[ValidationIssue] = []
+
+    for root in registry_roots:
+        components = tuple(
+            sorted(
+                directory
+                for directory in corpus.directories
+                if directory.parent == root
+            )
+        )
+        if not components:
+            continue
+        registry_path = root / "README.md"
+        registry = sources.get(registry_path)
+        if registry is None:
+            issues.append(
+                ValidationIssue(
+                    registry_path,
+                    1,
+                    "REG001",
+                    "component registry README is missing",
+                )
+            )
+            continue
+
+        visible_lines = _visible_markdown_lines(registry.text)
+        line_text = dict(visible_lines)
+        owner_links: dict[PurePosixPath, list[int]] = {
+            component / "README.md": [] for component in components
+        }
+        for link in _markdown_links(registry):
+            row = line_text.get(link.line, "").strip()
+            if not (row.startswith("|") and row.count("|") >= 2):
+                continue
+            target = _resolved_local_link_target(registry, link)
+            if target in owner_links:
+                owner_links[target].append(link.line)
+
+        for owner_path, occurrences in owner_links.items():
+            if len(occurrences) != 1:
+                issues.append(
+                    ValidationIssue(
+                        registry.path,
+                        occurrences[0] if occurrences else 1,
+                        "REG001",
+                        f"registry must link {owner_path} exactly once; "
+                        f"found {len(occurrences)}",
+                    )
+                )
+                continue
+
+            row_line = occurrences[0]
+            row = line_text[row_line]
+            heading = _nearest_heading(visible_lines, row_line)
+            unresolved = any(
+                marker in text.casefold()
+                for marker in ("unresolved", "planned")
+                for text in (heading, row)
+            )
+            if unresolved and "unselectable" not in (f"{heading}\n{row}".casefold()):
+                issues.append(
+                    ValidationIssue(
+                        registry.path,
+                        row_line,
+                        "REG001",
+                        f"unresolved registry entry must be unselectable: {owner_path}",
+                    )
+                )
+
+    return tuple(sorted(issues))
+
+
+def validate_hygiene(corpus: Corpus) -> tuple[ValidationIssue, ...]:
+    """Return trailing-whitespace and obsolete-gitkeep issues."""
+    issues = [
+        ValidationIssue(
+            source.path,
+            line_number,
+            "HYG001",
+            "architecture Markdown line has trailing whitespace",
+        )
+        for source in corpus.markdown_files
+        for line_number, line in enumerate(source.text.splitlines(), start=1)
+        if line.endswith((" ", "\t"))
+    ]
+
+    for gitkeep in sorted(
+        path for path in corpus.existing_paths if path.name == ".gitkeep"
+    ):
+        has_other_path = any(
+            path != gitkeep and path.parent == gitkeep.parent
+            for path in corpus.existing_paths
+        ) or any(directory.parent == gitkeep.parent for directory in corpus.directories)
+        if has_other_path:
+            issues.append(
+                ValidationIssue(
+                    gitkeep,
+                    1,
+                    "HYG002",
+                    ".gitkeep is obsolete because its directory is not empty",
+                )
+            )
+
+    return tuple(sorted(issues))
+
+
 def validate(corpus: Corpus) -> tuple[ValidationIssue, ...]:
-    """Run Task 2's pure acceptance rules and sort their combined issues."""
-    issues = (*validate_links(corpus), *validate_identifiers(corpus))
+    """Run the pure architecture acceptance rules and sort combined issues."""
+    issues = (
+        *validate_links(corpus),
+        *validate_identifiers(corpus),
+        *validate_naming(corpus),
+        *validate_component_documents(corpus),
+        *validate_srs_structure(corpus),
+        *validate_roadmaps(corpus),
+        *validate_roadmap_links(corpus),
+        *validate_registries(corpus),
+        *validate_hygiene(corpus),
+    )
     return tuple(sorted(issues))
 
 

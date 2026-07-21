@@ -21,7 +21,7 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
 - **Objective:** Accept exactly the field grammar and cross-field rules in `CONFIGS.md`.
 - **Task:** Implement typed parsing, bounds, closed-key validation, normalized paths, and cross-field checks as side-effect-free functions.
 - **Deliverable:** Versioned request types and pure validator with stable reason identifiers.
-- **Applicable test types:** Unit, table-driven boundary, property, unknown-key, type, and cross-field tests.
+- **Tests:** Unit, table-driven boundary, property, unknown-key, type, and cross-field tests.
 - **Implementation:** Add immutable request value types and pure parsing,
   normalization, field-bound, closed-key, and cross-field validators.
 - **Affected files:** `src/trafficlab/contracts/capture_request/` and
@@ -38,7 +38,7 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
 - **Objective:** Bind validation and hashing to one immutable bounded byte snapshot.
 - **Task:** Add no-follow open, owner/mode/link/type checks, bounded read, before/after identity comparison, canonical writer, atomic publication, and SHA-256.
 - **Deliverable:** File adapter plus canonical and mutation fixtures shared by every consumer.
-- **Applicable test types:** Integration, symlink, hard-link, replacement-race, permission, size, atomicity, mutation, and hash tests.
+- **Tests:** Integration, symlink, hard-link, replacement-race, permission, size, atomicity, mutation, and hash tests.
 - **Implementation:** Add injected filesystem operations for safe open/stat,
   bounded snapshot reads, metadata comparison, canonical writes, atomic rename,
   and streaming digest calculation.
@@ -70,7 +70,7 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
 - **Objective:** Prevent assessment of inferred or partially parsed capture settings.
 - **Task:** Validate one request, perform fakeable workspace/capability observations, and publish matching digest and bounded diagnostics.
 - **Deliverable:** Preflight request adapter and producer-consumer fixture set.
-- **Applicable test types:** Fake-observation, request mutation, workspace mismatch, secret-sentinel, and contract-compatibility tests.
+- **Tests:** Fake-observation, request mutation, workspace mismatch, secret-sentinel, and contract-compatibility tests.
 - **Implementation:** Connect the shared snapshot validator to preflight's pure
   assessment input and readiness lineage serializer without duplicating fields.
 - **Affected files:** `src/trafficlab/apps/preflight/`, the readiness contract
@@ -98,7 +98,7 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
 - **Objective:** Ensure no target starts from missing, stale, changed, or mismatched evidence.
 - **Task:** Add explicit CLI paths, shared validation, freshness checks, exclusive reservation, post-reservation workspace verification, and argument-vector handoff.
 - **Deliverable:** Deterministic launch decision and retained bounded failure diagnostics.
-- **Applicable test types:** End-to-end fake-invoker, TOCTOU, stale/future clock, mode/owner, mismatch, no-shell, and interruption tests.
+- **Tests:** End-to-end fake-invoker, TOCTOU, stale/future clock, mode/owner, mismatch, no-shell, and interruption tests.
 - **Implementation:** Add capture and orchestrator argument adapters, validate
   the pair, reserve the slot, repeat workspace checks, and pass the unchanged
   vector to an injected invoker only after success.
