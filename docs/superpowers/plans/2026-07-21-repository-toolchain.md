@@ -30,6 +30,7 @@
 - Create: `tools/quality.py`
 - Create: `tests/infrastructure/test_package.py`
 - Create: `tests/infrastructure/test_quality.py`
+- Create: `tests/infrastructure/test_toolchain.py`
 - Modify: `.gitignore`
 - Modify: `README.md`
 - Modify after verification: `architecture/infrastructure/ROADMAP.md`
@@ -158,6 +159,22 @@ def test_run_checks_returns_success_after_every_gate() -> None:
 
     assert run_checks(checks, runner=runner) == 0
     assert calls == [("first",), ("second",)]
+```
+
+Create `tests/infrastructure/test_toolchain.py`:
+
+```python
+"""Integration tests for locked development-tool dependencies."""
+
+from importlib.util import find_spec
+
+import pytest
+
+
+@pytest.mark.integration
+def test_pyright_has_locked_node_runtime() -> None:
+    """Pyright must not depend on ambient Node or a runtime download."""
+    assert find_spec("nodejs_wheel") is not None
 ```
 
 - [ ] **Step 2: Run the tests and confirm the expected missing-scaffold failure**
@@ -315,7 +332,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "build>=1.3.0",
-  "pyright>=1.1.403",
+  "pyright[nodejs]>=1.1.403",
   "pytest>=8.4.1",
   "pytest-cov>=6.2.1",
   "ruff>=0.12.4",
@@ -469,7 +486,7 @@ Expected: only the planned toolchain, tests, documentation, lock, ignore rules, 
 Then stage the exact planned files and commit:
 
 ```bash
-git add .gitignore README.md pyproject.toml uv.lock src/trafficlab/__init__.py tools/__init__.py tools/quality.py tests/infrastructure/test_package.py tests/infrastructure/test_quality.py docs/superpowers/plans/2026-07-21-repository-toolchain.md architecture/infrastructure/ROADMAP.md architecture/project/ROADMAP.md
+git add .gitignore README.md pyproject.toml uv.lock src/trafficlab/__init__.py tools/__init__.py tools/quality.py tests/infrastructure/test_package.py tests/infrastructure/test_quality.py tests/infrastructure/test_toolchain.py docs/superpowers/plans/2026-07-21-repository-toolchain.md architecture/infrastructure/ROADMAP.md architecture/project/ROADMAP.md
 git commit -m "infra(toolchain): establish repeatable local checks"
 ```
 
