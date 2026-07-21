@@ -151,6 +151,35 @@ def test_no_edge_pipe_table_link_is_validated_within_its_row() -> None:
 
 
 @pytest.mark.unit
+def test_blockquote_table_rows_do_not_fuse_link_syntax() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "> Name [open | Owner\n> --- | ---\n> close](MISSING.md) | Demo\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("indentation", ["    ", "\t"])
+def test_indented_code_shaped_like_table_is_not_parsed(indentation: str) -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                f"{indentation}Name | Owner\n"
+                f"{indentation}--- | ---\n"
+                f"{indentation}demo | [Missing](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
 def test_missing_heading_fragment_is_rejected() -> None:
     corpus = corpus_from_mapping(
         {

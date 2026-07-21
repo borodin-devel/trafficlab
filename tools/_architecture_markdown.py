@@ -259,6 +259,20 @@ def is_table_separator(cells: Sequence[str]) -> bool:
     )
 
 
+def _table_row_content(line: str) -> tuple[int, str] | None:
+    """Return blockquote depth and table-visible text, excluding code blocks."""
+    content = line
+    blockquote_depth = 0
+    blockquote_marker = re.compile(r"^[ ]{0,3}>[ \t]?")
+    while (match := blockquote_marker.match(content)) is not None:
+        blockquote_depth += 1
+        content = content[match.end() :]
+
+    if re.match(r"^(?: {4}|\t)", content) is not None:
+        return None
+    return blockquote_depth, content
+
+
 def _structural_table_row_lines(
     lines: Sequence[tuple[int, str]],
 ) -> frozenset[int]:
@@ -268,10 +282,19 @@ def _structural_table_row_lines(
     while index + 1 < len(lines):
         header_line, header_text = lines[index]
         delimiter_line, delimiter_text = lines[index + 1]
-        header = markdown_table_cells(header_text)
-        delimiter = markdown_table_cells(delimiter_text)
+        header_row = _table_row_content(header_text)
+        delimiter_row = _table_row_content(delimiter_text)
+        header = markdown_table_cells(header_row[1]) if header_row is not None else None
+        delimiter = (
+            markdown_table_cells(delimiter_row[1])
+            if delimiter_row is not None
+            else None
+        )
         if (
             delimiter_line != header_line + 1
+            or header_row is None
+            or delimiter_row is None
+            or header_row[0] != delimiter_row[0]
             or header is None
             or delimiter is None
             or len(header) != len(delimiter)
@@ -287,7 +310,12 @@ def _structural_table_row_lines(
             row_line, row_text = lines[row_index]
             if row_line != previous_line + 1:
                 break
-            if markdown_table_cells(row_text) is None:
+            row = _table_row_content(row_text)
+            if (
+                row is None
+                or row[0] != header_row[0]
+                or markdown_table_cells(row[1]) is None
+            ):
                 break
             table_rows.add(row_line)
             previous_line = row_line
@@ -331,6 +359,10 @@ def _inline_markdown_blocks(
                 previous_line = line_number
                 continue
 
+        if not block and indented_code.match(line) is not None:
+            previous_line = line_number
+            continue
+
         is_edge_pipe_row = line.lstrip().startswith("|") or line.rstrip().endswith("|")
         if line_number in table_row_lines or is_edge_pipe_row:
             if (finished := finish_block()) is not None:
@@ -349,10 +381,6 @@ def _inline_markdown_blocks(
             if (finished := finish_block()) is not None:
                 yield finished
             yield line_number, line
-            previous_line = line_number
-            continue
-
-        if not block and indented_code.match(line) is not None:
             previous_line = line_number
             continue
 
