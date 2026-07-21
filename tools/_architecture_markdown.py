@@ -443,6 +443,8 @@ def _is_container_subsequence(
     original_index = 0
     for container in candidate:
         while original_index < len(original) and original[original_index] != container:
+            if original[original_index][0] == "list":
+                return False
             original_index += 1
         if original_index == len(original):
             return False
@@ -459,6 +461,7 @@ def _container_lines(
     previous_line = 0
     previous_was_blank = False
     paragraph_open = False
+    previous_normalized: _ContainerLine | None = None
     blockquote_marker = re.compile(r"^[ ]{0,3}>[ \t]?")
 
     for line_number, raw in lines:
@@ -466,11 +469,13 @@ def _container_lines(
             active_list_indents = []
             previous_was_blank = True
             paragraph_open = False
+            previous_normalized = None
         previous_line = line_number
         if not raw.strip():
             normalized.append(_ContainerLine(line_number, raw, "", (), False))
             previous_was_blank = True
             paragraph_open = False
+            previous_normalized = None
             continue
 
         content = raw
@@ -530,21 +535,38 @@ def _container_lines(
         )
         if not preserves_lazy_list:
             active_list_indents = active_list_indents[:consumed_lists]
-        normalized.append(
-            _ContainerLine(
-                line_number,
-                raw,
-                content,
-                tuple(signature),
-                is_indented_code,
-                starts_list_item,
-                ordered_start,
-            )
+        current = _ContainerLine(
+            line_number,
+            raw,
+            content,
+            tuple(signature),
+            is_indented_code,
+            starts_list_item,
+            ordered_start,
         )
+        normalized.append(current)
         previous_was_blank = False
-        paragraph_open = bool(content.strip()) and not (
-            is_indented_code or is_block_interrupt
+        header_cells = (
+            markdown_table_cells(previous_normalized.content)
+            if previous_normalized is not None
+            else None
         )
+        delimiter_cells = markdown_table_cells(content)
+        is_table_delimiter = bool(
+            previous_normalized is not None
+            and previous_normalized.line + 1 == line_number
+            and previous_normalized.signature == current.signature
+            and not previous_normalized.is_indented_code
+            and not current.is_indented_code
+            and header_cells is not None
+            and delimiter_cells is not None
+            and len(header_cells) == len(delimiter_cells)
+            and is_table_separator(delimiter_cells)
+        )
+        paragraph_open = bool(content.strip()) and not (
+            is_indented_code or is_block_interrupt or is_table_delimiter
+        )
+        previous_normalized = current
 
     return tuple(normalized)
 

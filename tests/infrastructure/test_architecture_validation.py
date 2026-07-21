@@ -77,6 +77,8 @@ def test_soft_wrapped_inline_link_is_validated_at_its_start_line() -> None:
         "- 1. [open owner\n  2. close](MISSING.md)\n",
         "[open label\n===\nclose](MISSING.md)\n",
         "> [open label\n>\n> close](MISSING.md)\n",
+        "- > [open owner\n> close](MISSING.md)\n",
+        "- - > [open owner\n> close](MISSING.md)\n",
     ],
 )
 def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
@@ -188,6 +190,29 @@ def test_pipe_less_table_body_rows_do_not_fuse_link_syntax() -> None:
 def test_pipe_less_table_body_link_is_validated() -> None:
     corpus = corpus_from_mapping(
         {"architecture/README.md": ("Name | Owner\n--- | ---\n[Missing](MISSING.md)\n")}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_non_one_ordered_list_after_table_is_validated() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "Name | Owner\n"
+                "--- | ---\n"
+                "2. [Missing owner\n"
+                "   continuation](MISSING.md)\n"
+            )
+        }
     )
 
     assert validate_links(corpus) == (
