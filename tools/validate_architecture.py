@@ -60,6 +60,20 @@ class _RoadmapEntry:
     body: tuple[tuple[int, str], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _RegistryRow:
+    line: int
+    cells: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _RegistryTable:
+    line: int
+    section: str
+    headers: tuple[str, ...]
+    rows: tuple[_RegistryRow, ...]
+
+
 def _normalize_repository_path(
     path: str | PurePosixPath, *, allow_root: bool = False
 ) -> PurePosixPath:
@@ -970,19 +984,189 @@ def validate_roadmap_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
     return tuple(sorted(issues))
 
 
-def _nearest_heading(lines: Sequence[tuple[int, str]], before_line: int) -> str:
+_REGISTRY_IDENTITY_HEADERS = ("Selectable name", "Planned name", "Method", "Name")
+
+
+def _markdown_table_cells(line: str) -> tuple[str, ...] | None:
+    text = line.strip()
+    if "|" not in text:
+        return None
+
+    cells: list[str] = []
+    cell: list[str] = []
+    escaped = False
+    for character in text:
+        if escaped:
+            cell.append(character)
+            escaped = False
+        elif character == "\\":
+            cell.append(character)
+            escaped = True
+        elif character == "|":
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(character)
+    cells.append("".join(cell).strip())
+
+    if text.startswith("|"):
+        cells.pop(0)
+    if text.endswith("|"):
+        cells.pop()
+    return tuple(cells)
+
+
+def _is_table_separator(cells: Sequence[str]) -> bool:
+    return bool(cells) and all(
+        re.fullmatch(r":?-{3,}:?", cell) is not None for cell in cells
+    )
+
+
+def _nearest_level_two_heading(
+    lines: Sequence[tuple[int, str]], before_line: int
+) -> str:
     heading = ""
     for line_number, line in lines:
         if line_number >= before_line:
             break
         candidate = _heading_text(line)
-        if candidate is not None:
+        if re.match(r"^[ ]{0,3}##(?!#)(?:[ \t]+|$)", line) and candidate is not None:
             heading = candidate
     return heading
 
 
+def _registry_tables(
+    source: SourceFile,
+) -> tuple[tuple[_RegistryTable, ...], tuple[ValidationIssue, ...]]:
+    lines = _visible_markdown_lines(source.text)
+    tables: list[_RegistryTable] = []
+    issues: list[ValidationIssue] = []
+    index = 0
+
+    while index < len(lines):
+        line_number, line = lines[index]
+        headers = _markdown_table_cells(line)
+        if headers is None or not any(
+            header in _REGISTRY_IDENTITY_HEADERS for header in headers
+        ):
+            index += 1
+            continue
+
+        separator = (
+            _markdown_table_cells(lines[index + 1][1])
+            if index + 1 < len(lines)
+            else None
+        )
+        if separator is None or not _is_table_separator(separator):
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    line_number,
+                    "REG001",
+                    "registry table header must be followed by a separator row",
+                )
+            )
+            index += 1
+            continue
+        if len(separator) != len(headers):
+            issues.append(
+                ValidationIssue(
+                    source.path,
+                    lines[index + 1][0],
+                    "REG001",
+                    "registry table separator does not match its header",
+                )
+            )
+
+        row_index = index + 2
+        rows: list[_RegistryRow] = []
+        while row_index < len(lines):
+            row_line, row_text = lines[row_index]
+            row_cells = _markdown_table_cells(row_text)
+            if row_cells is None:
+                break
+            rows.append(_RegistryRow(row_line, row_cells))
+            row_index += 1
+
+        tables.append(
+            _RegistryTable(
+                line=line_number,
+                section=_nearest_level_two_heading(lines, line_number),
+                headers=headers,
+                rows=tuple(rows),
+            )
+        )
+        index = row_index
+
+    return tuple(tables), tuple(sorted(issues))
+
+
+def _registry_identity_index(headers: Sequence[str]) -> int:
+    return next(
+        index
+        for index, header in enumerate(headers)
+        if header in _REGISTRY_IDENTITY_HEADERS
+    )
+
+
+def _single_link_destination(cell: str, definitions: Mapping[str, str]) -> str | None:
+    stripped = cell.strip()
+    is_inline_link = re.fullmatch(r"\[[^]\n]+\]\(.+\)", stripped) is not None
+    is_reference_link = (
+        re.fullmatch(r"\[[^]\n]+\](?:\[[^]\n]*\])?", stripped) is not None
+    )
+    if not (is_inline_link or is_reference_link):
+        return None
+
+    destinations = (
+        *tuple(_inline_destinations(stripped)),
+        *tuple(_reference_destinations(stripped, definitions)),
+    )
+    return destinations[0] if len(destinations) == 1 else None
+
+
+def _owner_cell_is_valid(
+    source: SourceFile,
+    cell: str,
+    definitions: Mapping[str, str],
+    component: PurePosixPath,
+) -> bool:
+    destination = _single_link_destination(cell, definitions)
+    if destination is None:
+        return False
+    try:
+        parsed = urlsplit(destination)
+        decoded_path = _decode_uri_component(parsed.path)
+    except (UnicodeDecodeError, ValueError):
+        return False
+    expected_destination = f"{component.name}/README.md"
+    return (
+        not parsed.scheme
+        and not parsed.netloc
+        and not parsed.query
+        and not parsed.fragment
+        and decoded_path == expected_destination
+        and _resolved_local_link_target(source, _MarkdownLink(1, destination))
+        == component / "README.md"
+    )
+
+
+def _is_explicit_unselectable_section(heading: str) -> bool:
+    normalized = " ".join(heading.casefold().split())
+    return normalized == "unresolved, unselectable" or normalized.startswith(
+        "unresolved, unselectable "
+    )
+
+
+def _genetic_status_is_valid(status: str) -> bool:
+    normalized = " ".join(status.casefold().split())
+    if "planned" in normalized or "unresolved" in normalized:
+        return "unselectable" in normalized
+    return normalized == "selectable"
+
+
 def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
-    """Return missing, duplicate, malformed, and selectable-stub registry issues."""
+    """Return registry table, row, owner, and selectability issues."""
     registry_roots = tuple(
         corpus.architecture_root / name
         for name in ("traffic_models", "genetic_models", "similarity_methods")
@@ -1014,46 +1198,138 @@ def validate_registries(corpus: Corpus) -> tuple[ValidationIssue, ...]:
             continue
 
         visible_lines = _visible_markdown_lines(registry.text)
-        line_text = dict(visible_lines)
-        owner_links: dict[PurePosixPath, list[int]] = {
-            component / "README.md": [] for component in components
+        definitions, _ = _reference_definitions(visible_lines)
+        tables, table_issues = _registry_tables(registry)
+        issues.extend(table_issues)
+        components_by_name = {component.name: component for component in components}
+        rows_by_name: dict[str, list[int]] = {
+            component.name: [] for component in components
         }
-        for link in _markdown_links(registry):
-            row = line_text.get(link.line, "").strip()
-            if not (row.startswith("|") and row.count("|") >= 2):
-                continue
-            target = _resolved_local_link_target(registry, link)
-            if target in owner_links:
-                owner_links[target].append(link.line)
 
-        for owner_path, occurrences in owner_links.items():
-            if len(occurrences) != 1:
+        for table in tables:
+            identity_index = _registry_identity_index(table.headers)
+            identity_header = table.headers[identity_index]
+            owner_indexes = [
+                index for index, header in enumerate(table.headers) if header == "Owner"
+            ]
+            owner_index = owner_indexes[0] if len(owner_indexes) == 1 else None
+            if owner_index is None:
                 issues.append(
                     ValidationIssue(
                         registry.path,
-                        occurrences[0] if occurrences else 1,
+                        table.line,
                         "REG001",
-                        f"registry must link {owner_path} exactly once; "
-                        f"found {len(occurrences)}",
+                        "registry table must contain exactly one Owner column",
                     )
                 )
-                continue
 
-            row_line = occurrences[0]
-            row = line_text[row_line]
-            heading = _nearest_heading(visible_lines, row_line)
-            unresolved = any(
-                marker in text.casefold()
-                for marker in ("unresolved", "planned")
-                for text in (heading, row)
-            )
-            if unresolved and "unselectable" not in (f"{heading}\n{row}".casefold()):
+            is_genetic = root.name == "genetic_models"
+            status_indexes = [
+                index
+                for index, header in enumerate(table.headers)
+                if header == "Status"
+            ]
+            status_index = status_indexes[0] if len(status_indexes) == 1 else None
+            if is_genetic and status_index is None:
                 issues.append(
                     ValidationIssue(
                         registry.path,
-                        row_line,
+                        table.line,
                         "REG001",
-                        f"unresolved registry entry must be unselectable: {owner_path}",
+                        "genetic registry table must contain exactly one Status column",
+                    )
+                )
+
+            planned_table = identity_header == "Planned name"
+            unselectable_section = _is_explicit_unselectable_section(table.section)
+            if not is_genetic and planned_table and not unselectable_section:
+                issues.append(
+                    ValidationIssue(
+                        registry.path,
+                        table.line,
+                        "REG001",
+                        "planned registry table must be in an explicitly "
+                        "Unresolved, Unselectable section",
+                    )
+                )
+
+            for row in table.rows:
+                if len(row.cells) != len(table.headers):
+                    issues.append(
+                        ValidationIssue(
+                            registry.path,
+                            row.line,
+                            "REG001",
+                            "registry row does not match its named columns",
+                        )
+                    )
+                    continue
+
+                identity_match = re.fullmatch(r"`([^`\n]+)`", row.cells[identity_index])
+                if identity_match is None:
+                    issues.append(
+                        ValidationIssue(
+                            registry.path,
+                            row.line,
+                            "REG001",
+                            "registry component name must be one backtick-wrapped "
+                            "directory name",
+                        )
+                    )
+                    continue
+
+                name = identity_match.group(1)
+                component = components_by_name.get(name)
+                if component is None:
+                    issues.append(
+                        ValidationIssue(
+                            registry.path,
+                            row.line,
+                            "REG001",
+                            f"registry names unknown component: {name}",
+                        )
+                    )
+                    continue
+
+                rows_by_name[name].append(row.line)
+                if owner_index is None or not _owner_cell_is_valid(
+                    registry,
+                    row.cells[owner_index],
+                    definitions,
+                    component,
+                ):
+                    issues.append(
+                        ValidationIssue(
+                            registry.path,
+                            row.line,
+                            "REG001",
+                            f"Owner cell must be exactly one link to {name}/README.md",
+                        )
+                    )
+
+                if is_genetic and (
+                    status_index is None
+                    or not _genetic_status_is_valid(row.cells[status_index])
+                ):
+                    issues.append(
+                        ValidationIssue(
+                            registry.path,
+                            row.line,
+                            "REG001",
+                            "genetic registry Status must be Selectable or describe "
+                            "planned/unresolved work as unselectable",
+                        )
+                    )
+
+        for name, row_lines in rows_by_name.items():
+            if len(row_lines) != 1:
+                issues.append(
+                    ValidationIssue(
+                        registry.path,
+                        row_lines[0] if row_lines else 1,
+                        "REG001",
+                        f"registry must contain {name} exactly once; "
+                        f"found {len(row_lines)}",
                     )
                 )
 

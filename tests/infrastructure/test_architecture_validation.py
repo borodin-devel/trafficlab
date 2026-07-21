@@ -11,6 +11,7 @@ from tools.validate_architecture import (
     validate,
     validate_identifiers,
     validate_links,
+    validate_registries,
 )
 
 
@@ -467,6 +468,87 @@ def test_registry_must_cover_every_immediate_component() -> None:
     )
 
     assert "REG001" in {issue.code for issue in validate(corpus)}
+
+
+@pytest.mark.unit
+def test_registry_rejects_duplicate_component_rows_with_one_owner_link() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner |\n"
+                "| --- | --- |\n"
+                "| `demo` | [Demo](demo/README.md) |\n"
+                "| `demo` | Missing |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate_registries(corpus)}
+
+
+@pytest.mark.unit
+def test_registry_requires_owner_link_in_owner_column() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner | Alternate |\n"
+                "| --- | --- | --- |\n"
+                "| `demo` | Missing | [Demo](demo/README.md) |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate_registries(corpus)}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("status", "owner_label"),
+    [("Planned", "unselectable demo"), ("Not selectable", "Demo")],
+)
+def test_genetic_registry_rejects_invalid_status_cell(
+    status: str, owner_label: str
+) -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/genetic_models/README.md": (
+                "# Genetic Models\n\n"
+                "## Strategy Status\n\n"
+                "| Name | Status | Owner |\n"
+                "| --- | --- | --- |\n"
+                f"| `demo` | {status} | "
+                f"[{owner_label}](demo/README.md) |\n"
+            ),
+            "architecture/genetic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate_registries(corpus)}
+
+
+@pytest.mark.unit
+def test_registry_rejects_unknown_component_name() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/traffic_models/README.md": (
+                "# Traffic Models\n\n"
+                "## Models\n\n"
+                "| Selectable name | Owner |\n"
+                "| --- | --- |\n"
+                "| `demo` | [Demo](demo/README.md) |\n"
+                "| `ghost` | [Ghost](ghost/README.md) |\n"
+            ),
+            "architecture/traffic_models/demo/README.md": "# Demo\n",
+        }
+    )
+
+    assert "REG001" in {issue.code for issue in validate_registries(corpus)}
 
 
 @pytest.mark.unit
