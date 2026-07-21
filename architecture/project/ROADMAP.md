@@ -56,7 +56,7 @@ validation, completion criteria, and evidence.
   completion criteria.
 - **Completion criteria:** Every component roadmap linked by this stage is
   `[DONE]`, and SYS-AC-003 passes.
-- **Evidence:** [Infrastructure](../infrastructure/ROADMAP.md) is 50% complete
+- **Evidence:** The infrastructure roadmap is 50% complete
   because one of its two equal-weight stages is `[DONE]`; the other six linked
   component roadmaps remain `[PLAN]`. Their equal-weight mean is 7% after
   rounding (`50 / 7`).
