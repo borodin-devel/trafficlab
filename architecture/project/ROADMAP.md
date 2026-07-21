@@ -3,9 +3,9 @@
 ## Status Vocabulary
 
 The controlled markers and parent/child rules are defined by
-[architecture governance](../README.md#roadmap-status-rules). All entries in
-this roadmap are `[PLAN]`: their architecture is defined, but production
-implementation has not started.
+[architecture governance](../README.md#roadmap-status-rules). Each entry's
+current marker and local evidence record its implementation and test status;
+architecture and planning alone do not advance that status.
 
 This central roadmap owns cross-component sequencing only. Each linked
 component roadmap owns its detailed tasks, implementation notes, tests,
