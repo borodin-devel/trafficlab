@@ -259,14 +259,20 @@ def is_table_separator(cells: Sequence[str]) -> bool:
     )
 
 
-def _table_row_content(line: str) -> tuple[int, str] | None:
-    """Return blockquote depth and table-visible text, excluding code blocks."""
+def _blockquote_content(line: str) -> tuple[int, str]:
+    """Strip explicit blockquote containers and return their nesting depth."""
     content = line
     blockquote_depth = 0
     blockquote_marker = re.compile(r"^[ ]{0,3}>[ \t]?")
     while (match := blockquote_marker.match(content)) is not None:
         blockquote_depth += 1
         content = content[match.end() :]
+    return blockquote_depth, content
+
+
+def _table_row_content(line: str) -> tuple[int, str] | None:
+    """Return blockquote depth and table-visible text, excluding code blocks."""
+    blockquote_depth, content = _blockquote_content(line)
 
     if re.match(r"^(?: {4}|\t)", content) is not None:
         return None
@@ -385,11 +391,12 @@ def _inline_markdown_blocks(
             continue
 
         if blockquote.match(line) is not None:
-            quote_content = blockquote.sub("", line, count=1).lstrip()
+            quote_depth, quote_content = _blockquote_content(line)
+            quote_is_indented_code = indented_code.match(quote_content) is not None
             quote_starts_paragraph = bool(quote_content) and not (
                 atx_heading.match(quote_content) is not None
                 or thematic_break.fullmatch(quote_content) is not None
-                or indented_code.match(quote_content) is not None
+                or quote_is_indented_code
                 or list_item.match(quote_content) is not None
                 or quote_content.startswith("|")
                 or quote_content.endswith("|")
@@ -397,14 +404,16 @@ def _inline_markdown_blocks(
             if not quote_starts_paragraph:
                 if (finished := finish_block()) is not None:
                     yield finished
-                yield line_number, line
+                if not quote_is_indented_code:
+                    yield line_number, line
                 previous_line = line_number
                 continue
-            if block_kind != "blockquote_paragraph":
+            quote_block_kind = f"blockquote_paragraph:{quote_depth}"
+            if block_kind != quote_block_kind:
                 if (finished := finish_block()) is not None:
                     yield finished
                 block_start = line_number
-                block_kind = "blockquote_paragraph"
+                block_kind = quote_block_kind
             block.append(line)
             previous_line = line_number
             continue
@@ -418,7 +427,7 @@ def _inline_markdown_blocks(
             previous_line = line_number
             continue
 
-        if block_kind == "blockquote_paragraph":
+        if block_kind.startswith("blockquote_paragraph:"):
             block.append(line)
             previous_line = line_number
             continue

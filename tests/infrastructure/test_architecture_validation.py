@@ -67,6 +67,7 @@ def test_soft_wrapped_inline_link_is_validated_at_its_start_line() -> None:
         "Paragraph [open label\n| close label](MISSING.md) |\n",
         "Paragraph [open label\n***\nclose label](MISSING.md)\n",
         "    [indented code\n    is not a link](MISSING.md)\n",
+        "> [open label\n> > close label](MISSING.md)\n",
     ],
 )
 def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
@@ -151,11 +152,14 @@ def test_no_edge_pipe_table_link_is_validated_within_its_row() -> None:
 
 
 @pytest.mark.unit
-def test_blockquote_table_rows_do_not_fuse_link_syntax() -> None:
+@pytest.mark.parametrize("container", ["> ", "> > "])
+def test_blockquote_table_rows_do_not_fuse_link_syntax(container: str) -> None:
     corpus = corpus_from_mapping(
         {
             "architecture/README.md": (
-                "> Name [open | Owner\n> --- | ---\n> close](MISSING.md) | Demo\n"
+                f"{container}Name [open | Owner\n"
+                f"{container}--- | ---\n"
+                f"{container}close](MISSING.md) | Demo\n"
             )
         }
     )
@@ -164,14 +168,17 @@ def test_blockquote_table_rows_do_not_fuse_link_syntax() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("container", ["", "> ", "> > "])
 @pytest.mark.parametrize("indentation", ["    ", "\t"])
-def test_indented_code_shaped_like_table_is_not_parsed(indentation: str) -> None:
+def test_indented_code_shaped_like_table_is_not_parsed(
+    container: str, indentation: str
+) -> None:
     corpus = corpus_from_mapping(
         {
             "architecture/README.md": (
-                f"{indentation}Name | Owner\n"
-                f"{indentation}--- | ---\n"
-                f"{indentation}demo | [Missing](MISSING.md)\n"
+                f"{container}{indentation}Name | Owner\n"
+                f"{container}{indentation}--- | ---\n"
+                f"{container}{indentation}demo | [Missing](MISSING.md)\n"
             )
         }
     )
