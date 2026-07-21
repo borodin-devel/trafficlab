@@ -49,25 +49,40 @@ def visible_markdown_lines(text: str) -> tuple[tuple[int, str], ...]:
     visible: list[tuple[int, str]] = []
     fence_character: str | None = None
     fence_length = 0
+    fence_signature: tuple[tuple[str, int], ...] = ()
     opening_pattern = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
     physical_lines = tuple(enumerate(text.splitlines(), start=1))
 
     for normalized in _container_lines(physical_lines):
-        line = normalized.content
         if fence_character is not None:
-            closing_pattern = re.compile(
-                rf"^[ ]{{0,3}}{re.escape(fence_character)}{{{fence_length},}}[ \t]*$"
-            )
-            if closing_pattern.match(line):
+            fenced_content = _strip_container_signature(normalized.raw, fence_signature)
+            if not normalized.raw.strip():
+                continue
+            if fenced_content is None:
                 fence_character = None
                 fence_length = 0
-            continue
+                fence_signature = ()
+            else:
+                closing_pattern = re.compile(
+                    rf"^[ ]{{0,3}}{re.escape(fence_character)}"
+                    rf"{{{fence_length},}}[ \t]*$"
+                )
+                if closing_pattern.match(fenced_content):
+                    fence_character = None
+                    fence_length = 0
+                    fence_signature = ()
+                continue
 
-        opening = opening_pattern.match(line)
+        line = normalized.content
+        if not normalized.is_indented_code:
+            opening = opening_pattern.match(line)
+        else:
+            opening = None
         if opening is not None:
             fence = opening.group(1)
             fence_character = fence[0]
             fence_length = len(fence)
+            fence_signature = normalized.signature
             continue
         visible.append((normalized.line, normalized.raw))
 
@@ -328,6 +343,25 @@ def _strip_visual_indent(line: str, required_columns: int) -> str | None:
     return line[index:]
 
 
+def _strip_container_signature(
+    line: str, signature: Sequence[tuple[str, int]]
+) -> str | None:
+    """Strip exactly the quote/list containers required by a fenced block."""
+    content = line
+    blockquote_marker = re.compile(r"^[ ]{0,3}>[ \t]?")
+    for container, width in signature:
+        if container == "list":
+            content = _strip_visual_indent(content, width)
+            if content is None:
+                return None
+        else:
+            quote = blockquote_marker.match(content)
+            if quote is None:
+                return None
+            content = content[quote.end() :]
+    return content
+
+
 def _is_indented_code(line: str) -> bool:
     """Return whether leading whitespace reaches four visual columns."""
     return _strip_visual_indent(line, 4) is not None
@@ -340,14 +374,16 @@ def _container_lines(
     normalized: list[_ContainerLine] = []
     active_list_indents: list[int] = []
     previous_line = 0
+    previous_was_blank = False
     blockquote_marker = re.compile(r"^[ ]{0,3}>[ \t]?")
 
     for line_number, raw in lines:
         if line_number != previous_line + 1:
-            active_list_indents = []
+            previous_was_blank = True
         previous_line = line_number
         if not raw.strip():
             normalized.append(_ContainerLine(line_number, raw, "", (), False))
+            previous_was_blank = True
             continue
 
         content = raw
@@ -388,7 +424,14 @@ def _container_lines(
                 continue
             break
 
-        active_list_indents = active_list_indents[:consumed_lists]
+        preserves_lazy_list = (
+            not previous_was_blank
+            and not starts_list_item
+            and consumed_lists < len(active_list_indents)
+            and all(container == "list" for container, _ in signature)
+        )
+        if not preserves_lazy_list:
+            active_list_indents = active_list_indents[:consumed_lists]
         normalized.append(
             _ContainerLine(
                 line_number,
@@ -400,6 +443,7 @@ def _container_lines(
                 ordered_start,
             )
         )
+        previous_was_blank = False
 
     return tuple(normalized)
 
@@ -456,21 +500,24 @@ def _inline_markdown_blocks(
     block: list[str] = []
     block_start = 0
     block_signature: tuple[tuple[str, int], ...] = ()
+    ignored_container_signature: tuple[tuple[str, int], ...] | None = None
     previous_line = 0
     atx_heading = re.compile(r"^[ ]{0,3}#{1,6}(?:[ \t]+|$)")
     thematic_break = re.compile(
         r"^[ ]{0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$"
     )
+    setext_underline = re.compile(r"^[ ]{0,3}(?:=+|-+)[ \t]*$")
     normalized_lines = _container_lines(lines)
     table_row_lines = _structural_table_row_lines(lines)
 
     def finish_block() -> tuple[int, str] | None:
-        nonlocal block, block_signature
+        nonlocal block, block_signature, ignored_container_signature
         if not block:
             return None
         finished = (block_start, "\n".join(block))
         block = []
         block_signature = ()
+        ignored_container_signature = None
         return finished
 
     for normalized in normalized_lines:
@@ -486,11 +533,15 @@ def _inline_markdown_blocks(
         content = normalized.content
         is_heading = atx_heading.match(content) is not None
         is_thematic_break = thematic_break.fullmatch(content) is not None
-        list_interrupts = normalized.starts_list_item and (
-            normalized.ordered_start in {None, 1}
+        is_setext_underline = setext_underline.fullmatch(content) is not None
+        ordered_item_adds_container = (
+            normalized.starts_list_item
+            and normalized.ordered_start not in {None, 1}
+            and len(normalized.signature) > len(block_signature)
+            and normalized.signature[: len(block_signature)] == block_signature
         )
-        noninterrupting_ordered_item = normalized.starts_list_item and (
-            normalized.ordered_start not in {None, 1}
+        list_interrupts = (
+            normalized.starts_list_item and not ordered_item_adds_container
         )
         is_edge_pipe_row = content.lstrip().startswith(
             "|"
@@ -498,16 +549,24 @@ def _inline_markdown_blocks(
         starts_block = (
             is_heading
             or is_thematic_break
+            or is_setext_underline
             or list_interrupts
             or (is_edge_pipe_row and line_number not in table_row_lines)
         )
-        continues_container = normalized.signature == block_signature or (
-            len(normalized.signature) < len(block_signature)
-            and block_signature[: len(normalized.signature)] == normalized.signature
+        continues_container = (
+            normalized.signature == block_signature
+            or normalized.signature == ignored_container_signature
+            or (
+                len(normalized.signature) < len(block_signature)
+                and block_signature[: len(normalized.signature)] == normalized.signature
+            )
         )
-        if block and (
-            noninterrupting_ordered_item or (continues_container and not starts_block)
-        ):
+        if block and ordered_item_adds_container:
+            ignored_container_signature = normalized.signature
+            block.append(line)
+            previous_line = line_number
+            continue
+        if block and continues_container and not starts_block:
             block.append(line)
             previous_line = line_number
             continue
@@ -529,7 +588,7 @@ def _inline_markdown_blocks(
             previous_line = line_number
             continue
 
-        if not content.strip() or is_thematic_break:
+        if not content.strip() or is_thematic_break or is_setext_underline:
             previous_line = line_number
             continue
 
