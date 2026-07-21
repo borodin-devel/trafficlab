@@ -222,6 +222,81 @@ def reference_destinations(line: str, definitions: Mapping[str, str]) -> Iterato
         yield link.destination
 
 
+def markdown_table_cells(line: str) -> tuple[str, ...] | None:
+    """Split one pipe-table row while preserving escaped pipe characters."""
+    text = line.strip()
+    if "|" not in text:
+        return None
+
+    cells: list[str] = []
+    cell: list[str] = []
+    escaped = False
+    for character in text:
+        if escaped:
+            cell.append(character)
+            escaped = False
+        elif character == "\\":
+            cell.append(character)
+            escaped = True
+        elif character == "|":
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(character)
+    cells.append("".join(cell).strip())
+
+    if text.startswith("|"):
+        cells.pop(0)
+    if text.endswith("|"):
+        cells.pop()
+    return tuple(cells)
+
+
+def is_table_separator(cells: Sequence[str]) -> bool:
+    """Return whether every cell is one GFM delimiter-table separator."""
+    return bool(cells) and all(
+        re.fullmatch(r":?-{3,}:?", cell) is not None for cell in cells
+    )
+
+
+def _structural_table_row_lines(
+    lines: Sequence[tuple[int, str]],
+) -> frozenset[int]:
+    table_rows: set[int] = set()
+    index = 0
+
+    while index + 1 < len(lines):
+        header_line, header_text = lines[index]
+        delimiter_line, delimiter_text = lines[index + 1]
+        header = markdown_table_cells(header_text)
+        delimiter = markdown_table_cells(delimiter_text)
+        if (
+            delimiter_line != header_line + 1
+            or header is None
+            or delimiter is None
+            or len(header) != len(delimiter)
+            or not is_table_separator(delimiter)
+        ):
+            index += 1
+            continue
+
+        table_rows.update((header_line, delimiter_line))
+        previous_line = delimiter_line
+        row_index = index + 2
+        while row_index < len(lines):
+            row_line, row_text = lines[row_index]
+            if row_line != previous_line + 1:
+                break
+            if markdown_table_cells(row_text) is None:
+                break
+            table_rows.add(row_line)
+            previous_line = row_line
+            row_index += 1
+        index = row_index
+
+    return frozenset(table_rows)
+
+
 def _inline_markdown_blocks(
     lines: Sequence[tuple[int, str]],
 ) -> Iterator[tuple[int, str]]:
@@ -237,6 +312,7 @@ def _inline_markdown_blocks(
     thematic_break = re.compile(
         r"^[ ]{0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$"
     )
+    table_row_lines = _structural_table_row_lines(lines)
 
     def finish_block() -> tuple[int, str] | None:
         nonlocal block, block_kind
@@ -255,14 +331,21 @@ def _inline_markdown_blocks(
                 previous_line = line_number
                 continue
 
+        is_edge_pipe_row = line.lstrip().startswith("|") or line.rstrip().endswith("|")
+        if line_number in table_row_lines or is_edge_pipe_row:
+            if (finished := finish_block()) is not None:
+                yield finished
+            yield line_number, line
+            previous_line = line_number
+            continue
+
         if thematic_break.fullmatch(line) or blank_blockquote.fullmatch(line):
             if (finished := finish_block()) is not None:
                 yield finished
             previous_line = line_number
             continue
 
-        is_table_row = line.lstrip().startswith("|") or line.rstrip().endswith("|")
-        if atx_heading.match(line) is not None or is_table_row:
+        if atx_heading.match(line) is not None:
             if (finished := finish_block()) is not None:
                 yield finished
             yield line_number, line
@@ -274,11 +357,26 @@ def _inline_markdown_blocks(
             continue
 
         if blockquote.match(line) is not None:
-            if block_kind != "blockquote":
+            quote_content = blockquote.sub("", line, count=1).lstrip()
+            quote_starts_paragraph = bool(quote_content) and not (
+                atx_heading.match(quote_content) is not None
+                or thematic_break.fullmatch(quote_content) is not None
+                or indented_code.match(quote_content) is not None
+                or list_item.match(quote_content) is not None
+                or quote_content.startswith("|")
+                or quote_content.endswith("|")
+            )
+            if not quote_starts_paragraph:
+                if (finished := finish_block()) is not None:
+                    yield finished
+                yield line_number, line
+                previous_line = line_number
+                continue
+            if block_kind != "blockquote_paragraph":
                 if (finished := finish_block()) is not None:
                     yield finished
                 block_start = line_number
-                block_kind = "blockquote"
+                block_kind = "blockquote_paragraph"
             block.append(line)
             previous_line = line_number
             continue
@@ -292,8 +390,10 @@ def _inline_markdown_blocks(
             previous_line = line_number
             continue
 
-        if block_kind == "blockquote" and (finished := finish_block()) is not None:
-            yield finished
+        if block_kind == "blockquote_paragraph":
+            block.append(line)
+            previous_line = line_number
+            continue
         if not block:
             block_start = line_number
             block_kind = "paragraph"
@@ -366,33 +466,3 @@ def heading_anchors(text: str) -> frozenset[str]:
         duplicate_counts[base] = duplicate_number + 1
         anchors.add(anchor)
     return frozenset(anchors)
-
-
-def markdown_table_cells(line: str) -> tuple[str, ...] | None:
-    """Split one pipe-table row while preserving escaped pipe characters."""
-    text = line.strip()
-    if "|" not in text:
-        return None
-
-    cells: list[str] = []
-    cell: list[str] = []
-    escaped = False
-    for character in text:
-        if escaped:
-            cell.append(character)
-            escaped = False
-        elif character == "\\":
-            cell.append(character)
-            escaped = True
-        elif character == "|":
-            cells.append("".join(cell).strip())
-            cell = []
-        else:
-            cell.append(character)
-    cells.append("".join(cell).strip())
-
-    if text.startswith("|"):
-        cells.pop(0)
-    if text.endswith("|"):
-        cells.pop()
-    return tuple(cells)

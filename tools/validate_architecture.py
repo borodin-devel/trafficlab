@@ -864,12 +864,6 @@ _REGISTRY_SELECTED_IDENTITY_HEADERS = {
 }
 
 
-def _is_table_separator(cells: Sequence[str]) -> bool:
-    return bool(cells) and all(
-        re.fullmatch(r":?-{3,}:?", cell) is not None for cell in cells
-    )
-
-
 def _nearest_level_two_heading(
     lines: Sequence[tuple[int, str]], before_line: int
 ) -> str:
@@ -903,7 +897,7 @@ def _registry_tables(
         separator = None
         if index + 1 < len(lines) and lines[index + 1][0] == line_number + 1:
             separator = _markdown.markdown_table_cells(lines[index + 1][1])
-        if separator is None or not _is_table_separator(separator):
+        if separator is None or not _markdown.is_table_separator(separator):
             issues.append(
                 ValidationIssue(
                     source.path,

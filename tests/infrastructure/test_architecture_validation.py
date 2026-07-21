@@ -102,6 +102,55 @@ def test_inline_capable_markdown_blocks_are_parsed_separately(
 
 
 @pytest.mark.unit
+def test_lazy_blockquote_continuation_preserves_wrapped_link() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": ("> [missing owner\ncontinuation](MISSING.md)\n")}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            1,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_no_edge_pipe_table_rows_do_not_fuse_link_syntax() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "Name [open label | Owner\n--- | ---\nclose label](MISSING.md) | Demo\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_no_edge_pipe_table_link_is_validated_within_its_row() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "Name | Owner\n--- | ---\ndemo | [Missing](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
 def test_missing_heading_fragment_is_rejected() -> None:
     corpus = corpus_from_mapping(
         {
