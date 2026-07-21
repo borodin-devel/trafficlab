@@ -148,6 +148,20 @@ def test_loader_reads_only_regular_architecture_markdown_without_symlinks(
 
 
 @pytest.mark.unit
+def test_loader_records_regular_file_named_like_pruned_directory(
+    tmp_path: Path,
+) -> None:
+    architecture_root = tmp_path / "architecture"
+    architecture_root.mkdir()
+    (architecture_root / "README.md").write_text("# Architecture\n", encoding="utf-8")
+    (tmp_path / "build").write_text("regular file\n", encoding="utf-8")
+
+    corpus = load_corpus(tmp_path, architecture_root)
+
+    assert PurePosixPath("build") in corpus.existing_paths
+
+
+@pytest.mark.unit
 def test_loader_rejects_architecture_root_outside_repository(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
@@ -220,6 +234,21 @@ def test_plain_text_that_resembles_a_destination_is_not_a_link() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[closed] prose](MISSING.md)\n",
+        "\\[escaped](MISSING.md)\n",
+        "[escaped\\](MISSING.md)\n",
+    ],
+)
+def test_unmatched_or_escaped_brackets_do_not_form_inline_links(line: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": line})
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
 def test_absolute_and_escaping_link_paths_are_rejected() -> None:
     corpus = corpus_from_mapping(
         {
@@ -260,6 +289,27 @@ def test_setext_heading_anchor_resolves() -> None:
     )
 
     assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_setext_heading_requires_physically_adjacent_underline() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": "[Rules](RULES.md#separated)\n",
+            "architecture/RULES.md": (
+                "Separated\n```markdown\n# Fenced\n```\n----------------\n"
+            ),
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            1,
+            "LNK002",
+            "heading fragment does not exist: architecture/RULES.md#separated",
+        ),
+    )
 
 
 @pytest.mark.unit

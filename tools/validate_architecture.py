@@ -183,8 +183,6 @@ def load_corpus(repository_root: Path, architecture_root: Path) -> Corpus:
         directory_names[:] = kept_directories
 
         for name in sorted(file_names):
-            if _is_pruned_directory(name):
-                continue
             candidate = current_path / name
             if not stat.S_ISREG(candidate.lstat().st_mode):
                 continue
@@ -256,14 +254,31 @@ def _reference_definitions(
     return definitions, frozenset(definition_lines)
 
 
+def _matched_bracket_closings(line: str) -> frozenset[int]:
+    unmatched_openings: list[int] = []
+    matched_closings: set[int] = set()
+    escaped = False
+    for index, character in enumerate(line):
+        if escaped:
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif character == "[":
+            unmatched_openings.append(index)
+        elif character == "]" and unmatched_openings:
+            unmatched_openings.pop()
+            matched_closings.add(index)
+    return frozenset(matched_closings)
+
+
 def _inline_destinations(line: str) -> Iterator[str]:
+    matched_closings = _matched_bracket_closings(line)
     cursor = 0
     while True:
         opening = line.find("](", cursor)
         if opening < 0:
             return
-        label_opening = line.rfind("[", cursor, opening)
-        if label_opening < 0:
+        if opening not in matched_closings:
             cursor = opening + 2
             continue
         destination_start = opening + 2
@@ -367,12 +382,13 @@ def _heading_anchors(source: SourceFile) -> frozenset[str]:
     duplicate_counts: dict[str, int] = {}
     lines = _visible_markdown_lines(source.text)
     setext_underline = re.compile(r"^[ ]{0,3}(?:=+|-+)[ \t]*$")
-    for index, (_, line) in enumerate(lines):
+    for index, (line_number, line) in enumerate(lines):
         heading = _heading_text(line)
         if (
             heading is None
             and line.strip()
             and index + 1 < len(lines)
+            and lines[index + 1][0] == line_number + 1
             and setext_underline.match(lines[index + 1][1])
         ):
             heading = line.strip()
