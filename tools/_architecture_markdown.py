@@ -227,27 +227,81 @@ def _inline_markdown_blocks(
 ) -> Iterator[tuple[int, str]]:
     block: list[str] = []
     block_start = 0
+    block_kind = ""
     previous_line = 0
+    atx_heading = re.compile(r"^[ ]{0,3}#{1,6}(?:[ \t]+|$)")
+    blockquote = re.compile(r"^[ ]{0,3}>")
+    blank_blockquote = re.compile(r"^[ ]{0,3}>[ \t]*$")
+    indented_code = re.compile(r"^(?: {4}|\t)")
     list_item = re.compile(r"^[ ]{0,3}(?:[-+*]|[0-9]+[.)])[ \t]+")
+    thematic_break = re.compile(
+        r"^[ ]{0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$"
+    )
+
+    def finish_block() -> tuple[int, str] | None:
+        nonlocal block, block_kind
+        if not block:
+            return None
+        finished = (block_start, "\n".join(block))
+        block = []
+        block_kind = ""
+        return finished
 
     for line_number, line in lines:
-        starts_new_block = bool(block) and (
-            line_number != previous_line + 1 or list_item.match(line) is not None
-        )
-        if not line.strip() or starts_new_block:
-            if block:
-                yield block_start, "\n".join(block)
-                block = []
+        if line_number != previous_line + 1 or not line.strip():
+            if (finished := finish_block()) is not None:
+                yield finished
             if not line.strip():
                 previous_line = line_number
                 continue
+
+        if thematic_break.fullmatch(line) or blank_blockquote.fullmatch(line):
+            if (finished := finish_block()) is not None:
+                yield finished
+            previous_line = line_number
+            continue
+
+        is_table_row = line.lstrip().startswith("|") or line.rstrip().endswith("|")
+        if atx_heading.match(line) is not None or is_table_row:
+            if (finished := finish_block()) is not None:
+                yield finished
+            yield line_number, line
+            previous_line = line_number
+            continue
+
+        if not block and indented_code.match(line) is not None:
+            previous_line = line_number
+            continue
+
+        if blockquote.match(line) is not None:
+            if block_kind != "blockquote":
+                if (finished := finish_block()) is not None:
+                    yield finished
+                block_start = line_number
+                block_kind = "blockquote"
+            block.append(line)
+            previous_line = line_number
+            continue
+
+        if list_item.match(line) is not None:
+            if (finished := finish_block()) is not None:
+                yield finished
+            block_start = line_number
+            block_kind = "list_item"
+            block.append(line)
+            previous_line = line_number
+            continue
+
+        if block_kind == "blockquote" and (finished := finish_block()) is not None:
+            yield finished
         if not block:
             block_start = line_number
+            block_kind = "paragraph"
         block.append(line)
         previous_line = line_number
 
-    if block:
-        yield block_start, "\n".join(block)
+    if (finished := finish_block()) is not None:
+        yield finished
 
 
 def markdown_links(text: str) -> tuple[MarkdownLink, ...]:

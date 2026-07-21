@@ -59,6 +59,49 @@ def test_soft_wrapped_inline_link_is_validated_at_its_start_line() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Paragraph [open label\n# close label](MISSING.md)\n",
+        "Paragraph [open label\n> close label](MISSING.md)\n",
+        "Paragraph [open label\n| close label](MISSING.md) |\n",
+        "Paragraph [open label\n***\nclose label](MISSING.md)\n",
+        "    [indented code\n    is not a link](MISSING.md)\n",
+    ],
+)
+def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        ("# [Missing](MISSING.md)\n", 1),
+        ("> [Missing](MISSING.md)\n", 1),
+        ("| Owner | [Missing](MISSING.md) |\n", 1),
+        ("> [Missing owner\n> document](MISSING.md)\n", 1),
+        ("- [Missing owner\n  document](MISSING.md)\n", 1),
+    ],
+)
+def test_inline_capable_markdown_blocks_are_parsed_separately(
+    text: str, line: int
+) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            line,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
 def test_missing_heading_fragment_is_rejected() -> None:
     corpus = corpus_from_mapping(
         {
@@ -242,6 +285,47 @@ def test_loader_rejects_descriptor_identity_change_and_uses_no_follow(
         return real_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(architecture_validation.os, "open", swapped_open)
+
+    with pytest.raises(OSError, match="changed while being loaded"):
+        load_corpus(tmp_path, architecture_root)
+
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_descriptors[0])
+
+
+@pytest.mark.unit
+def test_loader_fifo_swap_uses_nonblocking_no_follow_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    architecture_root = tmp_path / "architecture"
+    architecture_root.mkdir()
+    source = architecture_root / "README.md"
+    source.write_text("# Architecture\n", encoding="utf-8")
+    replacement_fifo = tmp_path / "REPLACEMENT_FIFO"
+    os.mkfifo(replacement_fifo)
+    real_open = os.open
+    opened_descriptors: list[int] = []
+
+    def fifo_open(
+        path: str | bytes | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if not isinstance(path, bytes) and Path(path) == source:
+            assert flags & os.O_NOFOLLOW
+            assert flags & os.O_NONBLOCK
+            descriptor = real_open(replacement_fifo, flags, mode)
+            opened_descriptors.append(descriptor)
+            return descriptor
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(architecture_validation.os, "open", fifo_open)
 
     with pytest.raises(OSError, match="changed while being loaded"):
         load_corpus(tmp_path, architecture_root)
@@ -573,6 +657,38 @@ def test_central_roadmap_link_requires_a_brief_scope_description() -> None:
         {
             "architecture/project/ROADMAP.md": (
                 "# Central Roadmap\n\n[Demo](../apps/demo/ROADMAP.md)\n"
+            ),
+            "architecture/apps/demo/ROADMAP.md": (
+                "# Demo Roadmap\n\n"
+                "Part of the [central roadmap](../../project/ROADMAP.md).\n"
+            ),
+        }
+    )
+
+    assert validate_roadmap_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/project/ROADMAP.md"),
+            3,
+            "RDM005",
+            "central roadmap link must include a brief scope description",
+        ),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "tail",
+    [
+        " — <!-- scope description -->\n",
+        " — [Details](DETAILS.md)\n",
+        " —\n# Scope description\n",
+    ],
+)
+def test_central_roadmap_scope_rejects_nonprose_tail(tail: str) -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/project/ROADMAP.md": (
+                "# Central Roadmap\n\n[Demo](../apps/demo/ROADMAP.md)" + tail
             ),
             "architecture/apps/demo/ROADMAP.md": (
                 "# Demo Roadmap\n\n"

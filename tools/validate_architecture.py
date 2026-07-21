@@ -163,7 +163,10 @@ def _raise_walk_error(error: OSError) -> None:
 
 
 def _read_regular_utf8(path: Path, expected_status: os.stat_result) -> str:
-    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+    )
     try:
         descriptor_status = os.fstat(descriptor)
         if not stat.S_ISREG(descriptor_status.st_mode) or not os.path.samestat(
@@ -770,7 +773,14 @@ def _resolved_local_link_target(
 
 
 def _link_has_brief_scope_description(link: _markdown.MarkdownLink) -> bool:
-    return any(character.isalnum() for character in link.suffix)
+    match = re.match(
+        r"^[ \t\r\n]*—[ \t\r\n]+(?P<description>[^\r\n]*)",
+        link.suffix,
+    )
+    if match is None:
+        return False
+    description = match.group("description")
+    return bool(description) and description[0].isalnum()
 
 
 def validate_roadmap_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
