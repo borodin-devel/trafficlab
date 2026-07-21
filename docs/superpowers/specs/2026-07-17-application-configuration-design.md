@@ -1,6 +1,6 @@
 # Application Configuration Design
 
-**Date:** 2026-07-17  
+**Date:** 2026-07-17<br>
 **Status:** approved design, pending architecture documentation
 
 ## Purpose

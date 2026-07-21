@@ -90,4 +90,3 @@ The documentation change is complete when app and contract documents have clear
 ownership, their relative links resolve, the fixed layout is consistent, and
 the active corpus does not claim physical Wi-Fi capture or introduce model data
 into `20_convert`.
-

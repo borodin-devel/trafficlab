@@ -747,8 +747,8 @@ deliverable.
 
 **Interfaces:**
 
-- Consumes: the current repository `HEAD` and Git's object-format-aware empty
-  tree identifier.
+- Consumes: the complete Git index and tracked working tree plus Git's
+  object-format-aware empty-tree identifier.
 - Produces: a fixed `whitespace` quality command that fails for whitespace
   errors committed anywhere in the tracked tree.
 
@@ -762,10 +762,12 @@ validator and that documented local uv invocations are locked.
 - [ ] **Step 2: Implement the full-tree check without a shell**
 
 Compute the empty tree through `git hash-object -t tree --stdin`, then invoke
-`git diff --check <empty-tree> HEAD` with argument vectors. Propagate Git's
-exit code and diagnostics. Clean the finite baseline violations it reports
-without changing document meaning; use explicit Markdown breaks instead of
-trailing spaces where a hard break is intentional.
+`git diff --cached --check <empty-tree>` and `git diff --check <empty-tree>`
+with argument vectors. This checks both complete prospective tracked snapshots,
+including clean committed content, normal staged work, and unstaged work.
+Propagate Git's exit code and diagnostics. Clean the finite baseline violations
+it reports without changing document meaning; use explicit Markdown breaks
+instead of trailing spaces where a hard break is intentional.
 
 - [ ] **Step 3: Verify and commit**
 

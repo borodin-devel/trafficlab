@@ -79,4 +79,3 @@ The change is complete when:
   authoritative;
 - all local Markdown links resolve; and
 - only the agreed scaffold and its design record are changed.
-

@@ -2,9 +2,12 @@
 
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from tools.quality import CHECKS, Check, run_checks, select_checks
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.unit
@@ -68,12 +71,34 @@ def test_documentation_checks_use_fixed_repository_commands() -> None:
     (whitespace,) = select_checks("whitespace")
     (docs,) = select_checks("docs")
 
-    assert whitespace.argv == ("git", "diff", "--check")
+    assert whitespace.argv == (
+        sys.executable,
+        "-m",
+        "tools.validate_whitespace",
+    )
     assert docs.argv == (
         sys.executable,
         "-m",
         "tools.validate_architecture",
         "architecture",
+    )
+
+
+@pytest.mark.unit
+def test_documented_quality_commands_use_the_locked_environment() -> None:
+    """Every public local quality invocation must preserve lockfile parity."""
+    quality_commands = tuple(
+        line
+        for line in (REPOSITORY_ROOT / "README.md")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.startswith("uv run") and "python tools/quality.py" in line
+    )
+
+    assert quality_commands
+    assert all(
+        command.startswith("uv run --locked python tools/quality.py ")
+        for command in quality_commands
     )
 
 

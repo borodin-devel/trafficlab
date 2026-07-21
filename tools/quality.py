@@ -35,7 +35,10 @@ CHECKS: tuple[Check, ...] = (
             "--cov-fail-under=100",
         ),
     ),
-    Check("whitespace", ("git", "diff", "--check")),
+    Check(
+        "whitespace",
+        (sys.executable, "-m", "tools.validate_whitespace"),
+    ),
     Check(
         "docs",
         (

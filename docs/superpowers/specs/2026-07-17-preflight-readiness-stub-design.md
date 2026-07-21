@@ -46,4 +46,3 @@ The change is complete when the three Markdown documents use valid relative
 links, the root reading order lists both applications, and the preflight stub
 contains no platform, tool, report-format, or remediation commitment. The
 existing architecture scope exclusions and whitespace checks continue to pass.
-

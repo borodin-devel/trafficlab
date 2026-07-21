@@ -37,4 +37,3 @@ capture tool requirements or runtime configuration.
 The change is complete when every new link resolves, the toolchain names occur
 only in the development owner, capture explicitly excludes Windows support, and
 the architecture corpus has no trailing whitespace.
-

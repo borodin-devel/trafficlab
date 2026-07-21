@@ -150,4 +150,3 @@ git commit -m "docs(architecture): add preflight readiness stub"
 ```
 
 Expected: the commit contains only the three architecture files; `.gitignore` remains untracked.
-

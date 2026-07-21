@@ -175,4 +175,3 @@ Expected: one plan-only commit.
 Run: `git add architecture/README.md architecture/apps/00_preflight/README.md architecture/apps/10_capture/README.md architecture/scripts docs/network_workspaces && git commit -m "docs(architecture): define capture workspace"`
 
 Expected: one architecture-documentation commit, with `.gitignore` unstaged.
-

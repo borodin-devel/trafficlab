@@ -1,6 +1,6 @@
 # Traffic-Model Protocol Scope Design
 
-**Date:** 2026-07-20  
+**Date:** 2026-07-20<br>
 **Status:** approved design, pending architecture documentation
 
 ## Purpose

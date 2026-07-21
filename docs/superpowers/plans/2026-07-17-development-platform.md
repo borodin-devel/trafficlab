@@ -73,4 +73,3 @@ Expected: a plan-only commit.
 Run: `git add architecture/README.md architecture/DEVELOPMENT.md architecture/apps/00_preflight/README.md architecture/apps/10_capture/README.md architecture/scripts/README.md docs/network_workspaces/README.md && git commit -m "docs(architecture): define development platform"`
 
 Expected: an architecture-documentation commit with `.gitignore` unstaged.
-
