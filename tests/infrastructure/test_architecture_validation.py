@@ -76,6 +76,7 @@ def test_soft_wrapped_inline_link_is_validated_at_its_start_line() -> None:
         "> 1. [open owner\n> 2. close](MISSING.md)\n",
         "- 1. [open owner\n  2. close](MISSING.md)\n",
         "[open label\n===\nclose](MISSING.md)\n",
+        "> [open label\n>\n> close](MISSING.md)\n",
     ],
 )
 def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
@@ -98,6 +99,12 @@ def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
         ("> 10. [Missing owner\n>     document](MISSING.md)\n", 1),
         ("> > [Missing owner\n> document](MISSING.md)\n", 1),
         ("[Missing owner\n2. document](MISSING.md)\n", 1),
+        (
+            "[Missing owner\n2. outer\n   2. inner\n   continuation](MISSING.md)\n",
+            1,
+        ),
+        ("[Missing owner\n2. fake\n      # close](MISSING.md)\n", 1),
+        ("> - [Missing owner\n  document](MISSING.md)\n", 1),
     ],
 )
 def test_inline_capable_markdown_blocks_are_parsed_separately(
@@ -152,6 +159,35 @@ def test_no_edge_pipe_table_link_is_validated_within_its_row() -> None:
                 "Name | Owner\n--- | ---\ndemo | [Missing](MISSING.md)\n"
             )
         }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_pipe_less_table_body_rows_do_not_fuse_link_syntax() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "Name | Owner\n--- | ---\n[open label\nclose](MISSING.md) | Demo\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_pipe_less_table_body_link_is_validated() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": ("Name | Owner\n--- | ---\n[Missing](MISSING.md)\n")}
     )
 
     assert validate_links(corpus) == (
@@ -329,6 +365,28 @@ def test_list_table_indented_code_row_is_not_parsed() -> None:
             )
         }
     )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "- item\n# outside\n\n    [Missing](MISSING.md)\n",
+        "- item\n***\n\n    [Missing](MISSING.md)\n",
+        "paragraph\n2. fake\n\n    [Missing](MISSING.md)\n",
+        (
+            "- item\n"
+            "```\ncode\n```\n"
+            "    Name | Owner\n"
+            "    --- | ---\n"
+            "    demo | [Missing](MISSING.md)\n"
+        ),
+    ],
+)
+def test_closed_container_does_not_expose_indented_code(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
 
     assert validate_links(corpus) == ()
 
@@ -627,6 +685,36 @@ def test_fenced_links_are_ignored_and_reference_links_keep_use_line() -> None:
 
 
 @pytest.mark.unit
+def test_container_reference_definition_is_document_global() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": ("> [owner]: MISSING.md\n\n[Owner][owner]\n")}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[id]: MISSING.md | Owner\n--- | ---\n[Use][id] | Demo\n",
+        "paragraph\n[id]: MISSING.md\n\n[Use][id]\n",
+    ],
+)
+def test_reference_definition_is_not_parsed_inside_another_block(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "text",
     [
@@ -634,6 +722,8 @@ def test_fenced_links_are_ignored_and_reference_links_keep_use_line() -> None:
         "- ```markdown\n  [Ignored](IGNORED.md)\n  ```\n",
         "- > ```markdown\n  > [Ignored](IGNORED.md)\n  > ```\n",
         "```\n> ```\n> [Ignored](IGNORED.md)\n```\n",
+        "~~~ bad`info\n[Ignored](IGNORED.md)\n~~~\n",
+        "- outer\n  - ```\n\t[Ignored](IGNORED.md)\n\t```\n",
     ],
 )
 def test_container_fenced_links_are_ignored(text: str) -> None:
@@ -650,6 +740,7 @@ def test_container_fenced_links_are_ignored(text: str) -> None:
         "> > ```markdown\n> [Missing](MISSING.md)\n",
         "- ```markdown\n- [Missing](MISSING.md)\n",
         "-     ```markdown\n[Missing](MISSING.md)\n",
+        "``` bad`info\n[Missing](MISSING.md)\n",
     ],
 )
 def test_link_after_container_fence_ends_is_validated(text: str) -> None:
@@ -659,6 +750,28 @@ def test_link_after_container_fence_ends_is_validated(text: str) -> None:
         ValidationIssue(
             PurePosixPath("architecture/README.md"),
             2,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "> ```markdown\n\n> [Missing](MISSING.md)\n",
+        "> > ```markdown\n\n> > [Missing](MISSING.md)\n",
+        "- > ```markdown\n\n  > [Missing](MISSING.md)\n",
+    ],
+)
+def test_unmarked_blank_ends_quoted_fence(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
             "LNK001",
             "local target does not exist: architecture/MISSING.md",
         ),
