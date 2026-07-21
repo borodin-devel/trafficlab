@@ -68,6 +68,10 @@ def test_soft_wrapped_inline_link_is_validated_at_its_start_line() -> None:
         "Paragraph [open label\n***\nclose label](MISSING.md)\n",
         "    [indented code\n    is not a link](MISSING.md)\n",
         "> [open label\n> > close label](MISSING.md)\n",
+        "10. [open label\n    - close label](MISSING.md)\n",
+        "10. [open label\n    # close label](MISSING.md)\n",
+        "10. [open label\n    > close label](MISSING.md)\n",
+        "10. [open label\n    ***\n    close label](MISSING.md)\n",
     ],
 )
 def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
@@ -85,6 +89,11 @@ def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
         ("| Owner | [Missing](MISSING.md) |\n", 1),
         ("> [Missing owner\n> document](MISSING.md)\n", 1),
         ("- [Missing owner\n  document](MISSING.md)\n", 1),
+        ("10. [Missing owner\n    document](MISSING.md)\n", 1),
+        ("> - [Missing owner\n>   document](MISSING.md)\n", 1),
+        ("> 10. [Missing owner\n>     document](MISSING.md)\n", 1),
+        ("> > [Missing owner\n> document](MISSING.md)\n", 1),
+        ("[Missing owner\n2. document](MISSING.md)\n", 1),
     ],
 )
 def test_inline_capable_markdown_blocks_are_parsed_separately(
@@ -168,8 +177,41 @@ def test_blockquote_table_rows_do_not_fuse_link_syntax(container: str) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        (
+            "- outer\n"
+            "  - Name [open | Owner\n"
+            "    --- | ---\n"
+            "    close](MISSING.md) | Demo\n"
+        ),
+        ("10. Name [open | Owner\n    --- | ---\n    close](MISSING.md) | Demo\n"),
+        ("-   Name [open | Owner\n    --- | ---\n    close](MISSING.md) | Demo\n"),
+        (
+            "- outer\n"
+            "  - inner\n"
+            "    - Name [open | Owner\n"
+            "      --- | ---\n"
+            "      close](MISSING.md) | Demo\n"
+        ),
+        (
+            "- > Name | Owner\n"
+            "  > --- | ---\n"
+            "  > [open | Demo\n"
+            "  > close](MISSING.md) | Demo\n"
+        ),
+    ],
+)
+def test_list_table_rows_do_not_fuse_link_syntax(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("container", ["", "> ", "> > "])
-@pytest.mark.parametrize("indentation", ["    ", "\t"])
+@pytest.mark.parametrize("indentation", ["    ", "\t", " \t"])
 def test_indented_code_shaped_like_table_is_not_parsed(
     container: str, indentation: str
 ) -> None:
@@ -184,6 +226,126 @@ def test_indented_code_shaped_like_table_is_not_parsed(
     )
 
     assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("container", ["> ", "> > "])
+@pytest.mark.parametrize("indentation", ["    ", "\t", " \t"])
+def test_quoted_indented_edge_pipe_table_is_not_parsed(
+    container: str, indentation: str
+) -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                f"{container}{indentation}| Name | Owner |\n"
+                f"{container}{indentation}| --- | --- |\n"
+                f"{container}{indentation}| demo | [Missing](MISSING.md) |\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        (
+            "- outer\n"
+            "  - Name | Owner\n"
+            "    --- | ---\n"
+            "    demo | [Missing](MISSING.md)\n",
+            4,
+        ),
+        (
+            "10. Name | Owner\n    --- | ---\n    demo | [Missing](MISSING.md)\n",
+            3,
+        ),
+        (
+            "10. Item\n\n"
+            "    Name | Owner\n"
+            "    --- | ---\n"
+            "    demo | [Missing](MISSING.md)\n",
+            5,
+        ),
+        (
+            "- outer\n"
+            "  - inner\n"
+            "    - Name | Owner\n"
+            "      --- | ---\n"
+            "      demo | [Missing](MISSING.md)\n",
+            5,
+        ),
+        (
+            "- > Name | Owner\n  > --- | ---\n  > demo | [Missing](MISSING.md)\n",
+            3,
+        ),
+    ],
+)
+def test_list_table_links_are_validated(text: str, line: int) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            line,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("prefix", ["-     ", "1.      ", "> -     "])
+def test_list_marker_indented_code_is_not_parsed(prefix: str) -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": f"{prefix}| [Missing](MISSING.md) |\n"}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_list_table_indented_code_row_is_not_parsed() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "> 10. Name | Owner\n"
+                ">     --- | ---\n"
+                ">         code | [Missing](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "> [open label\nName | Owner\n--- | ---\nclose](MISSING.md) | Demo\n",
+        "- [open label\nName | Owner\n--- | ---\nclose](MISSING.md) | Demo\n",
+        (
+            "> [open label\n"
+            "| Name | Owner |\n"
+            "| --- | --- |\n"
+            "| close](MISSING.md) | Demo |\n"
+        ),
+    ],
+)
+def test_lazy_paragraph_takes_precedence_over_table_shape(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            1,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
 
 
 @pytest.mark.unit
@@ -444,6 +606,21 @@ def test_fenced_links_are_ignored_and_reference_links_keep_use_line() -> None:
             "local target does not exist: architecture/MISSING.md",
         ),
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "> ```markdown\n> [Ignored](IGNORED.md)\n> ```\n",
+        "- ```markdown\n  [Ignored](IGNORED.md)\n  ```\n",
+        "- > ```markdown\n  > [Ignored](IGNORED.md)\n  > ```\n",
+    ],
+)
+def test_container_fenced_links_are_ignored(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == ()
 
 
 @pytest.mark.unit
