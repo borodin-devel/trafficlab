@@ -16,6 +16,8 @@ def test_select_all_preserves_required_gate_order() -> None:
         "typecheck",
         "test",
         "coverage",
+        "whitespace",
+        "docs",
         "build",
     )
 
@@ -58,6 +60,36 @@ def test_build_uses_locked_environment() -> None:
         "--outdir",
         "dist",
     )
+
+
+@pytest.mark.unit
+def test_documentation_checks_use_fixed_repository_commands() -> None:
+    """Documentation gates use fixed, repository-owned command vectors."""
+    (whitespace,) = select_checks("whitespace")
+    (docs,) = select_checks("docs")
+
+    assert whitespace.argv == ("git", "diff", "--check")
+    assert docs.argv == (
+        sys.executable,
+        "-m",
+        "tools.validate_architecture",
+        "architecture",
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("failed_name", ["test", "build"])
+def test_mandatory_failure_stops_the_aggregate_gate(failed_name: str) -> None:
+    """Any mandatory failure prevents aggregate execution from continuing."""
+    calls: list[tuple[str, ...]] = []
+    failed = next(check for check in CHECKS if check.name == failed_name)
+
+    def fake_runner(argv: tuple[str, ...]) -> int:
+        calls.append(argv)
+        return 23 if argv == failed.argv else 0
+
+    assert run_checks(CHECKS, runner=fake_runner) == 23
+    assert calls[-1] == failed.argv
 
 
 @pytest.mark.unit

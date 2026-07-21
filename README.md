@@ -31,6 +31,8 @@ uv run python tools/quality.py lint
 uv run python tools/quality.py typecheck
 uv run python tools/quality.py test
 uv run python tools/quality.py coverage
+uv run python tools/quality.py whitespace
+uv run python tools/quality.py docs
 uv run python tools/quality.py build
 ```
 
@@ -38,4 +40,5 @@ These commands are unprivileged and do not access live capture or host
 resources. The aggregate `all` command runs the gates in documented order and
 stops at the first failure. The build gate emits an installable wheel with a
 fixed source-date epoch so identical source and lock inputs produce identical
-wheel bytes.
+wheel bytes. The docs gate enforces the
+[architecture corpus validation rules](architecture/VALIDATION.md).

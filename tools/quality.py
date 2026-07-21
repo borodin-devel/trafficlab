@@ -35,6 +35,16 @@ CHECKS: tuple[Check, ...] = (
             "--cov-fail-under=100",
         ),
     ),
+    Check("whitespace", ("git", "diff", "--check")),
+    Check(
+        "docs",
+        (
+            sys.executable,
+            "-m",
+            "tools.validate_architecture",
+            "architecture",
+        ),
+    ),
     Check(
         "build",
         (
