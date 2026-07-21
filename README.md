@@ -42,3 +42,9 @@ stops at the first failure. The build gate emits an installable wheel with a
 fixed source-date epoch so identical source and lock inputs produce identical
 wheel bytes. The docs gate enforces the
 [architecture corpus validation rules](architecture/VALIDATION.md).
+
+## Continuous integration
+
+GitHub Actions calls the same locked `all` command for pull requests and pushes
+to `main`. Repository branch protection must require the workflow's `quality`
+job before changes can merge.
