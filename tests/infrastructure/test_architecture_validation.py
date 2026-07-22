@@ -64,7 +64,6 @@ def test_soft_wrapped_inline_link_is_validated_at_its_start_line() -> None:
     [
         "Paragraph [open label\n# close label](MISSING.md)\n",
         "Paragraph [open label\n> close label](MISSING.md)\n",
-        "Paragraph [open label\n| close label](MISSING.md) |\n",
         "Paragraph [open label\n***\nclose label](MISSING.md)\n",
         "    [indented code\n    is not a link](MISSING.md)\n",
         "> [open label\n> > close label](MISSING.md)\n",
@@ -107,6 +106,7 @@ def test_inline_links_do_not_cross_markdown_block_boundaries(text: str) -> None:
         ),
         ("[Missing owner\n2. fake\n      # close](MISSING.md)\n", 1),
         ("> - [Missing owner\n  document](MISSING.md)\n", 1),
+        ("Paragraph [open label\n| close label](MISSING.md) |\n", 1),
     ],
 )
 def test_inline_capable_markdown_blocks_are_parsed_separately(
@@ -187,6 +187,44 @@ def test_pipe_less_table_body_rows_do_not_fuse_link_syntax() -> None:
 
 
 @pytest.mark.unit
+def test_setext_shaped_table_body_rows_do_not_fuse_link_syntax() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "Name | Owner\n--- | ---\n===\n[open label\nclose](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_html_block_terminates_table_body() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "Name | Owner\n"
+                "--- | ---\n"
+                "cell\n"
+                "<!-- boundary -->\n"
+                "[Missing owner\n"
+                "continuation](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            5,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
 def test_pipe_less_table_body_link_is_validated() -> None:
     corpus = corpus_from_mapping(
         {"architecture/README.md": ("Name | Owner\n--- | ---\n[Missing](MISSING.md)\n")}
@@ -203,22 +241,47 @@ def test_pipe_less_table_body_link_is_validated() -> None:
 
 
 @pytest.mark.unit
-def test_non_one_ordered_list_after_table_is_validated() -> None:
-    corpus = corpus_from_mapping(
-        {
-            "architecture/README.md": (
+@pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        (
+            (
                 "Name | Owner\n"
                 "--- | ---\n"
                 "2. [Missing owner\n"
                 "   continuation](MISSING.md)\n"
-            )
-        }
-    )
+            ),
+            3,
+        ),
+        (
+            (
+                "Name | Owner\n"
+                "--- | ---\n"
+                "cell\n"
+                "2. [Missing owner\n"
+                "   continuation](MISSING.md)\n"
+            ),
+            4,
+        ),
+        (
+            (
+                "Name | Owner\n"
+                "--- | ---\n"
+                "demo | Owner\n"
+                "2. [Missing owner\n"
+                "   continuation](MISSING.md)\n"
+            ),
+            4,
+        ),
+    ],
+)
+def test_non_one_ordered_list_after_table_is_validated(text: str, line: int) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
 
     assert validate_links(corpus) == (
         ValidationIssue(
             PurePosixPath("architecture/README.md"),
-            3,
+            line,
             "LNK001",
             "local target does not exist: architecture/MISSING.md",
         ),
@@ -275,8 +338,18 @@ def test_list_table_rows_do_not_fuse_link_syntax(text: str) -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("container", ["", "> ", "> > "])
-@pytest.mark.parametrize("indentation", ["    ", "\t", " \t"])
+@pytest.mark.parametrize(
+    ("container", "indentation"),
+    [
+        ("", "    "),
+        ("", "\t"),
+        ("", " \t"),
+        ("> ", "    "),
+        ("> > ", "    "),
+        ("> > ", "\t"),
+        ("> > ", " \t"),
+    ],
+)
 def test_indented_code_shaped_like_table_is_not_parsed(
     container: str, indentation: str
 ) -> None:
@@ -294,8 +367,15 @@ def test_indented_code_shaped_like_table_is_not_parsed(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("container", ["> ", "> > "])
-@pytest.mark.parametrize("indentation", ["    ", "\t", " \t"])
+@pytest.mark.parametrize(
+    ("container", "indentation"),
+    [
+        ("> ", "    "),
+        ("> > ", "    "),
+        ("> > ", "\t"),
+        ("> > ", " \t"),
+    ],
+)
 def test_quoted_indented_edge_pipe_table_is_not_parsed(
     container: str, indentation: str
 ) -> None:
@@ -310,6 +390,29 @@ def test_quoted_indented_edge_pipe_table_is_not_parsed(
     )
 
     assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("indentation", ["\t", " \t"])
+def test_absolute_tab_stops_allow_single_quoted_table(indentation: str) -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                f"> {indentation}Name | Owner\n"
+                f"> {indentation}--- | ---\n"
+                f"> {indentation}demo | [Missing](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
 
 
 @pytest.mark.unit
@@ -428,12 +531,7 @@ def test_closed_container_does_not_expose_indented_code(text: str) -> None:
             "| --- | --- |\n"
             "| close](MISSING.md) | Demo |\n"
         ),
-        (
-            "[Missing owner\n"
-            "2. Name | Owner\n"
-            "   --- | ---\n"
-            "   close](MISSING.md) | Demo\n"
-        ),
+        ("> [Missing owner\nName | Owner\n--- | ---\n2. continuation](MISSING.md)\n"),
     ],
 )
 def test_lazy_paragraph_takes_precedence_over_table_shape(text: str) -> None:
@@ -447,6 +545,25 @@ def test_lazy_paragraph_takes_precedence_over_table_shape(text: str) -> None:
             "local target does not exist: architecture/MISSING.md",
         ),
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        (
+            "[Missing owner\n"
+            "2. Name | Owner\n"
+            "   --- | ---\n"
+            "   close](MISSING.md) | Demo\n"
+        ),
+        "[Missing owner\nName | Owner\n--- | ---\n2. continuation](MISSING.md)\n",
+    ],
+)
+def test_table_can_interrupt_an_uncontained_paragraph(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == ()
 
 
 @pytest.mark.unit
@@ -727,6 +844,146 @@ def test_container_reference_definition_is_document_global() -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        ("paragraph\n> [id]: MISSING.md\n[Use][id]\n", 3),
+        ("> paragraph\n> > [id]: MISSING.md\n> [Use][id]\n", 3),
+    ],
+)
+def test_new_quote_container_starts_a_reference_definition(
+    text: str, line: int
+) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            line,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[id]: <[open>\nclose](MISSING.md)\n",
+        "> [id]: <[open>\n> close](MISSING.md)\n",
+        "Name | Owner\n--- | ---\n[id]: <[open>\nclose](MISSING.md)\n",
+    ],
+)
+def test_reference_definition_line_is_an_inline_block_boundary(text: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": text})
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_reference_definition_rejects_trailing_garbage() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": "[id]: MISSING.md garbage\n[Use][id]\n"}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_reference_definition_destination_may_start_on_the_next_line() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": "[id]:\n  MISSING.md\n\n[Use][id]\n"}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            4,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_reference_definition_destination_unescapes_punctuation() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": "[id]: RULES\\.md\n[Use][id]\n",
+            "architecture/RULES.md": "# Rules\n",
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "definition",
+    [
+        '[id]: MISSING.md "title"',
+        "[id]: MISSING.md 'title'",
+        "[id]: MISSING.md (title)",
+        '[id]: <MISSING.md> "title"',
+    ],
+)
+def test_reference_definition_accepts_same_line_title(definition: str) -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": f"{definition}\n[Use][id]\n"}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            2,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_reference_definition_title_lines_are_not_inline_blocks() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                '[id]: MISSING.md\n  "title [open\n  close](IGNORED.md)"\n\n[Use][id]\n'
+            )
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            5,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_multiline_reference_link_label_is_normalized() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "[multi label]: MISSING.md\n\n[Use][multi\nlabel]\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
     "text",
     [
         "[id]: MISSING.md | Owner\n--- | ---\n[Use][id] | Demo\n",
@@ -749,6 +1006,7 @@ def test_reference_definition_is_not_parsed_inside_another_block(text: str) -> N
         "```\n> ```\n> [Ignored](IGNORED.md)\n```\n",
         "~~~ bad`info\n[Ignored](IGNORED.md)\n~~~\n",
         "- outer\n  - ```\n\t[Ignored](IGNORED.md)\n\t```\n",
+        "> - ```\n>\t[Ignored](IGNORED.md)\n>\t```\n",
     ],
 )
 def test_container_fenced_links_are_ignored(text: str) -> None:
@@ -766,6 +1024,7 @@ def test_container_fenced_links_are_ignored(text: str) -> None:
         "- ```markdown\n- [Missing](MISSING.md)\n",
         "-     ```markdown\n[Missing](MISSING.md)\n",
         "``` bad`info\n[Missing](MISSING.md)\n",
+        ">  - ```\n> \t[Missing](MISSING.md)\n> \t```\n",
     ],
 )
 def test_link_after_container_fence_ends_is_validated(text: str) -> None:

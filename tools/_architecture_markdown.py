@@ -42,6 +42,7 @@ class _ContainerLine:
     is_indented_code: bool
     starts_list_item: bool = False
     ordered_start: int | None = None
+    is_lazy_continuation: bool = False
 
 
 def visible_markdown_lines(text: str) -> tuple[tuple[int, str], ...]:
@@ -102,45 +103,254 @@ def visible_markdown_lines(text: str) -> tuple[tuple[int, str], ...]:
     return tuple(visible)
 
 
+_MARKDOWN_PUNCTUATION_ESCAPE = re.compile(r"\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])")
+
+
+def _unescape_markdown_punctuation(text: str) -> str:
+    """Remove backslashes used for Markdown ASCII-punctuation escapes."""
+    return _MARKDOWN_PUNCTUATION_ESCAPE.sub(r"\1", text)
+
+
 def _reference_label(label: str) -> str:
-    return " ".join(label.split()).casefold()
+    return " ".join(_unescape_markdown_punctuation(label).split()).casefold()
+
+
+def _reference_destination(text: str) -> tuple[str, int] | None:
+    """Parse one CommonMark link-reference destination from a physical line."""
+    index = len(text) - len(text.lstrip(" \t"))
+    if index == len(text):
+        return None
+
+    if text[index] == "<":
+        destination_start = index + 1
+        index = destination_start
+        escaped = False
+        while index < len(text):
+            character = text[index]
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == ">":
+                return text[destination_start:index], index + 1
+            elif character == "<":
+                return None
+            index += 1
+        return None
+
+    destination_start = index
+    parentheses = 0
+    escaped = False
+    while index < len(text) and not text[index].isspace():
+        character = text[index]
+        if escaped:
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif character == "(":
+            parentheses += 1
+        elif character == ")":
+            if parentheses == 0:
+                return None
+            parentheses -= 1
+        index += 1
+    if index == destination_start or parentheses:
+        return None
+    return text[destination_start:index], index
+
+
+def _definition_continuation(
+    lines: Sequence[_ContainerLine],
+    index: int,
+    previous_index: int,
+    signature: tuple[tuple[str, int], ...],
+    table_rows: frozenset[int],
+) -> bool:
+    """Return whether a physical line can continue one reference definition."""
+    candidate = lines[index]
+    return bool(
+        candidate.line == lines[previous_index].line + 1
+        and candidate.signature == signature
+        and candidate.line not in table_rows
+        and not candidate.is_indented_code
+        and candidate.content.strip()
+    )
+
+
+def _reference_title_end(
+    lines: Sequence[_ContainerLine],
+    index: int,
+    start: int,
+    signature: tuple[tuple[str, int], ...],
+    table_rows: frozenset[int],
+) -> int | None:
+    """Return the final physical-line index of a complete reference title."""
+    closing = {'"': '"', "'": "'", "(": ")"}.get(lines[index].content[start])
+    if closing is None:
+        return None
+
+    current_index = index
+    current_start = start + 1
+    escaped = False
+    while True:
+        content = lines[current_index].content
+        for position in range(current_start, len(content)):
+            character = content[position]
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == closing:
+                if content[position + 1 :].strip():
+                    return None
+                return current_index
+
+        next_index = current_index + 1
+        if next_index >= len(lines) or not _definition_continuation(
+            lines, next_index, current_index, signature, table_rows
+        ):
+            return None
+        current_index = next_index
+        current_start = 0
+        escaped = False
+
+
+def _reference_definition_at(
+    lines: Sequence[_ContainerLine],
+    index: int,
+    table_rows: frozenset[int],
+) -> tuple[str, str, int] | None:
+    """Parse a complete reference definition beginning at ``index``."""
+    first = lines[index]
+    label_match = re.match(
+        r"^[ ]{0,3}\[((?:\\.|[^\[\]\n]){1,999})\]:",
+        first.content,
+    )
+    if label_match is None:
+        return None
+
+    destination_index = index
+    destination_offset = label_match.end()
+    destination_text = first.content[destination_offset:]
+    if not destination_text.strip():
+        destination_index += 1
+        if destination_index >= len(lines) or not _definition_continuation(
+            lines,
+            destination_index,
+            index,
+            first.signature,
+            table_rows,
+        ):
+            return None
+        destination_text = lines[destination_index].content
+        destination_offset = 0
+
+    parsed_destination = _reference_destination(destination_text)
+    if parsed_destination is None:
+        return None
+    destination, destination_end = parsed_destination
+    definition_end = destination_index
+    tail = destination_text[destination_end:]
+
+    if tail.strip():
+        if not tail[0].isspace():
+            return None
+        title_start = (
+            destination_offset + destination_end + len(tail) - len(tail.lstrip(" \t"))
+        )
+        title_end = _reference_title_end(
+            lines,
+            destination_index,
+            title_start,
+            first.signature,
+            table_rows,
+        )
+        if title_end is None:
+            return None
+        definition_end = title_end
+    else:
+        title_index = destination_index + 1
+        if title_index < len(lines) and _definition_continuation(
+            lines,
+            title_index,
+            destination_index,
+            first.signature,
+            table_rows,
+        ):
+            title_content = lines[title_index].content
+            title_start = len(title_content) - len(title_content.lstrip(" \t"))
+            if title_content[title_start : title_start + 1] in {'"', "'", "("}:
+                title_end = _reference_title_end(
+                    lines,
+                    title_index,
+                    title_start,
+                    first.signature,
+                    table_rows,
+                )
+                if title_end is not None:
+                    definition_end = title_end
+
+    return (
+        _reference_label(label_match.group(1)),
+        _unescape_markdown_punctuation(destination),
+        definition_end,
+    )
 
 
 def reference_definitions(
     lines: Sequence[tuple[int, str]],
 ) -> tuple[dict[str, str], frozenset[int]]:
     """Return normalized link definitions and their physical source lines."""
-    definition_pattern = re.compile(
-        r"^[ ]{0,3}\[([^]\n]+)\]:[ \t]*(?:<([^>\n]*)>|([^\s]+))"
-    )
     definitions: dict[str, str] = {}
     definition_lines: set[int] = set()
     normalized_lines = _container_lines(lines)
     table_rows = _structural_table_row_lines(lines)
     at_block_start = True
     previous_line = 0
-    for normalized in normalized_lines:
+    previous_normalized: _ContainerLine | None = None
+    index = 0
+    while index < len(normalized_lines):
+        normalized = normalized_lines[index]
         if normalized.line != previous_line + 1:
             at_block_start = True
         previous_line = normalized.line
+        if previous_normalized is not None and not _is_container_subsequence(
+            normalized.signature, previous_normalized.signature
+        ):
+            at_block_start = True
+        previous_normalized = normalized
         if not normalized.content.strip():
             at_block_start = True
+            index += 1
             continue
         if normalized.line in table_rows or normalized.is_indented_code:
             at_block_start = True
+            index += 1
             continue
         if _is_block_interrupt(normalized.content):
             at_block_start = True
+            index += 1
             continue
         if normalized.starts_list_item:
             at_block_start = True
-        match = definition_pattern.match(normalized.content) if at_block_start else None
-        if match is None:
+        parsed = (
+            _reference_definition_at(normalized_lines, index, table_rows)
+            if at_block_start
+            else None
+        )
+        if parsed is None:
             at_block_start = False
+            index += 1
             continue
-        label = _reference_label(match.group(1))
-        definitions.setdefault(label, match.group(2) or match.group(3))
-        definition_lines.add(normalized.line)
+        label, destination, definition_end = parsed
+        definitions.setdefault(label, destination)
+        definition_lines.update(
+            line.line for line in normalized_lines[index : definition_end + 1]
+        )
+        previous_normalized = normalized_lines[definition_end]
+        previous_line = previous_normalized.line
+        index = definition_end + 1
+        at_block_start = True
     return definitions, frozenset(definition_lines)
 
 
@@ -253,18 +463,14 @@ def inline_links(line: str) -> Iterator[InlineLink]:
         yield InlineLink(
             label_start,
             closing + 1,
-            re.sub(
-                r"\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])",
-                r"\1",
-                destination,
-            ),
+            _unescape_markdown_punctuation(destination),
         )
         cursor = closing + 1
 
 
 def _reference_links(line: str, definitions: Mapping[str, str]) -> Iterator[InlineLink]:
     occupied: list[tuple[int, int]] = []
-    explicit_pattern = re.compile(r"!?\[([^]\n]+)\]\[([^]\n]*)\]")
+    explicit_pattern = re.compile(r"!?\[([^]]+)\]\[([^]]*)\]")
     for match in explicit_pattern.finditer(line):
         label = match.group(2) or match.group(1)
         destination = definitions.get(_reference_label(label))
@@ -272,7 +478,7 @@ def _reference_links(line: str, definitions: Mapping[str, str]) -> Iterator[Inli
             occupied.append(match.span())
             yield InlineLink(match.start(), match.end(), destination)
 
-    shortcut_pattern = re.compile(r"!?\[([^]\n]+)\]")
+    shortcut_pattern = re.compile(r"!?\[([^]]+)\]")
     for match in shortcut_pattern.finditer(line):
         if any(start <= match.start() < end for start, end in occupied):
             continue
@@ -390,24 +596,40 @@ def _strip_container_signature(
     line: str, signature: Sequence[tuple[str, int]]
 ) -> str | None:
     """Strip exactly the quote/list containers required by a fenced block."""
-    content = line
-    blockquote_marker = re.compile(r"^[ ]{0,3}>[ \t]?")
+    # CommonMark tab stops are absolute. Expanding before stripping nested
+    # markers preserves the columns that remain after a quote marker.
+    content = line.expandtabs(4)
     for container, width in signature:
         if container == "list":
             content = _strip_visual_indent(content, width)
             if content is None:
                 return None
         else:
-            quote = blockquote_marker.match(content)
-            if quote is None:
+            content = _strip_blockquote_marker(content)
+            if content is None:
                 return None
-            content = content[quote.end() :]
     return content
 
 
 def _is_indented_code(line: str) -> bool:
     """Return whether leading whitespace reaches four visual columns."""
     return _strip_visual_indent(line, 4) is not None
+
+
+def _strip_blockquote_marker(line: str) -> str | None:
+    """Strip one blockquote marker while preserving a tab's extra columns."""
+    marker = re.match(r"^( {0,3})>", line)
+    if marker is None:
+        return None
+
+    content = line[marker.end() :]
+    if content.startswith(" "):
+        return content[1:]
+    if content.startswith("\t"):
+        marker_columns = len(marker.group(1)) + 1
+        tab_columns = 4 - (marker_columns % 4)
+        return (" " * max(tab_columns - 1, 0)) + content[1:]
+    return content
 
 
 def _fence_opening(line: str) -> re.Match[str] | None:
@@ -422,6 +644,35 @@ def _fence_opening(line: str) -> re.Match[str] | None:
     return opening
 
 
+_HTML_BLOCK_TAGS = (
+    "address|article|aside|base|basefont|blockquote|body|caption|center|col|"
+    "colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|"
+    "footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|"
+    "iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|"
+    "option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|"
+    "title|tr|track|ul"
+)
+
+
+def _starts_html_block(line: str, *, interrupting_only: bool) -> bool:
+    """Return whether content starts a CommonMark HTML block."""
+    content = line.lstrip(" ") if len(line) - len(line.lstrip(" ")) <= 3 else line
+    starts_interrupting = bool(
+        re.match(r"<(?:script|pre|style|textarea)(?:[ \t>]|$)", content, re.I)
+        or content.startswith(("<!--", "<?", "<![CDATA["))
+        or re.match(r"<![A-Z]", content)
+        or re.match(rf"</?(?:{_HTML_BLOCK_TAGS})(?:[ \t/>]|$)", content, re.I)
+    )
+    if starts_interrupting or interrupting_only:
+        return starts_interrupting
+    return bool(
+        re.fullmatch(
+            r"</?[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[^<>]*)?[ \t]*/?>[ \t]*",
+            content,
+        )
+    )
+
+
 def _is_block_interrupt(line: str) -> bool:
     """Return whether normalized content starts a paragraph-interrupting block."""
     return bool(
@@ -432,6 +683,20 @@ def _is_block_interrupt(line: str) -> bool:
         )
         or re.fullmatch(r"[ ]{0,3}(?:=+|-+)[ \t]*", line)
         or _fence_opening(line) is not None
+        or _starts_html_block(line, interrupting_only=True)
+    )
+
+
+def _starts_table_terminating_block(line: str) -> bool:
+    """Return whether content starts a block that terminates a GFM table."""
+    return bool(
+        re.match(r"^[ ]{0,3}#{1,6}(?:[ \t]+|$)", line)
+        or re.fullmatch(
+            r"[ ]{0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})",
+            line,
+        )
+        or _fence_opening(line) is not None
+        or _starts_html_block(line, interrupting_only=False)
     )
 
 
@@ -462,7 +727,7 @@ def _container_lines(
     previous_was_blank = False
     paragraph_open = False
     previous_normalized: _ContainerLine | None = None
-    blockquote_marker = re.compile(r"^[ ]{0,3}>[ \t]?")
+    active_table_signature: tuple[tuple[str, int], ...] | None = None
 
     for line_number, raw in lines:
         if line_number != previous_line + 1:
@@ -470,15 +735,20 @@ def _container_lines(
             previous_was_blank = True
             paragraph_open = False
             previous_normalized = None
+            active_table_signature = None
         previous_line = line_number
         if not raw.strip():
             normalized.append(_ContainerLine(line_number, raw, "", (), False))
             previous_was_blank = True
             paragraph_open = False
             previous_normalized = None
+            active_table_signature = None
             continue
 
-        content = raw
+        paragraph_was_open = paragraph_open
+        # Keep ``raw`` for inline parsing, but normalize tabs once at their
+        # absolute source columns before consuming quote/list containers.
+        content = raw.expandtabs(4)
         signature: list[tuple[str, int]] = []
         consumed_lists = 0
         ordered_start: int | None = None
@@ -495,9 +765,9 @@ def _container_lines(
                     consumed_lists += 1
                     continue
 
-            quote = blockquote_marker.match(content)
-            if quote is not None:
-                content = content[quote.end() :]
+            quote_content = _strip_blockquote_marker(content)
+            if quote_content is not None:
+                content = quote_content
                 signature.append(("quote", 1))
                 continue
 
@@ -535,14 +805,27 @@ def _container_lines(
         )
         if not preserves_lazy_list:
             active_list_indents = active_list_indents[:consumed_lists]
+        current_signature = tuple(signature)
+        is_lazy_continuation = bool(
+            paragraph_was_open
+            and previous_normalized is not None
+            and current_signature != previous_normalized.signature
+            and _is_container_subsequence(
+                current_signature, previous_normalized.signature
+            )
+            and not starts_list_item
+            and not is_indented_code
+            and not is_block_interrupt
+        )
         current = _ContainerLine(
             line_number,
             raw,
             content,
-            tuple(signature),
+            current_signature,
             is_indented_code,
             starts_list_item,
             ordered_start,
+            is_lazy_continuation,
         )
         normalized.append(current)
         previous_was_blank = False
@@ -555,6 +838,7 @@ def _container_lines(
         is_table_delimiter = bool(
             previous_normalized is not None
             and previous_normalized.line + 1 == line_number
+            and not previous_normalized.is_lazy_continuation
             and previous_normalized.signature == current.signature
             and not previous_normalized.is_indented_code
             and not current.is_indented_code
@@ -563,8 +847,23 @@ def _container_lines(
             and len(header_cells) == len(delimiter_cells)
             and is_table_separator(delimiter_cells)
         )
+        continues_active_table = bool(
+            active_table_signature is not None
+            and current.signature == active_table_signature
+            and bool(content.strip())
+            and not starts_list_item
+            and not is_indented_code
+            and not _starts_table_terminating_block(content)
+        )
+        if is_table_delimiter:
+            active_table_signature = current.signature
+        elif not continues_active_table:
+            active_table_signature = None
         paragraph_open = bool(content.strip()) and not (
-            is_indented_code or is_block_interrupt or is_table_delimiter
+            is_indented_code
+            or is_block_interrupt
+            or is_table_delimiter
+            or continues_active_table
         )
         previous_normalized = current
 
@@ -587,6 +886,7 @@ def _structural_table_row_lines(
             delimiter_line.line != header_line.line + 1
             or header_line.is_indented_code
             or delimiter_line.is_indented_code
+            or header_line.is_lazy_continuation
             or header_line.signature != delimiter_line.signature
             or header is None
             or delimiter is None
@@ -607,7 +907,8 @@ def _structural_table_row_lines(
                 row.is_indented_code
                 or row.signature != header_line.signature
                 or not row.content.strip()
-                or _is_block_interrupt(row.content)
+                or row.starts_list_item
+                or _starts_table_terminating_block(row.content)
             ):
                 break
             table_rows.add(row.line)
@@ -620,6 +921,7 @@ def _structural_table_row_lines(
 
 def _inline_markdown_blocks(
     lines: Sequence[tuple[int, str]],
+    definition_lines: frozenset[int],
 ) -> Iterator[tuple[int, str]]:
     block: list[str] = []
     block_start = 0
@@ -659,19 +961,25 @@ def _inline_markdown_blocks(
             previous_line = line_number
             continue
 
+        if line_number in definition_lines:
+            if (finished := finish_block()) is not None:
+                yield finished
+            previous_line = line_number
+            continue
+
+        if line_number in table_row_lines:
+            if (finished := finish_block()) is not None:
+                yield finished
+            yield line_number, line
+            previous_line = line_number
+            continue
+
         is_heading = atx_heading.match(content) is not None
         is_thematic_break = thematic_break.fullmatch(content) is not None
         is_setext_underline = setext_underline.fullmatch(content) is not None
         list_interrupts = normalized.starts_list_item
-        is_edge_pipe_row = content.lstrip().startswith(
-            "|"
-        ) or content.rstrip().endswith("|")
         starts_block = (
-            is_heading
-            or is_thematic_break
-            or is_setext_underline
-            or list_interrupts
-            or (is_edge_pipe_row and line_number not in table_row_lines)
+            is_heading or is_thematic_break or is_setext_underline or list_interrupts
         )
         continues_container = _is_container_subsequence(
             normalized.signature, block_signature
@@ -684,17 +992,7 @@ def _inline_markdown_blocks(
         if (finished := finish_block()) is not None:
             yield finished
 
-        if line_number in table_row_lines:
-            yield line_number, line
-            previous_line = line_number
-            continue
-
         if normalized.is_indented_code:
-            previous_line = line_number
-            continue
-
-        if is_edge_pipe_row:
-            yield line_number, line
             previous_line = line_number
             continue
 
@@ -722,7 +1020,7 @@ def markdown_links(text: str) -> tuple[MarkdownLink, ...]:
     definitions, definition_lines = reference_definitions(lines)
     links: list[MarkdownLink] = []
 
-    for block_start, block in _inline_markdown_blocks(lines):
+    for block_start, block in _inline_markdown_blocks(lines, definition_lines):
         for link in inline_links(block):
             link_line = block_start + block[: link.start].count("\n")
             links.append(MarkdownLink(link_line, link.destination, block[link.end :]))
