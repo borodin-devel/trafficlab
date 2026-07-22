@@ -14,6 +14,16 @@ from .errors import (
     MissingParentError,
     UnsupportedLineageVersionError,
 )
+from .hashing import (
+    DEFAULT_CHUNK_SIZE,
+    MAX_CHUNK_SIZE,
+    sha256_bytes,
+    sha256_file,
+    snapshot_external_file,
+    snapshot_local_file,
+    validate_external_file,
+    validate_local_file,
+)
 from .values import (
     ConfigurationIdentity,
     FileIdentity,
@@ -27,6 +37,8 @@ from .values import (
 )
 
 __all__ = (
+    "DEFAULT_CHUNK_SIZE",
+    "MAX_CHUNK_SIZE",
     "ConfigurationIdentity",
     "FileChangedError",
     "FileIdentity",
@@ -48,4 +60,10 @@ __all__ = (
     "UnsupportedLineageVersionError",
     "build_provenance",
     "provenance_items",
+    "sha256_bytes",
+    "sha256_file",
+    "snapshot_external_file",
+    "snapshot_local_file",
+    "validate_external_file",
+    "validate_local_file",
 )
