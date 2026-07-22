@@ -26,6 +26,7 @@ from .hashing import (
     validate_external_file,
     validate_local_file,
 )
+from .package import validate_package_members
 from .values import (
     ConfigurationIdentity,
     FileIdentity,
@@ -73,4 +74,5 @@ __all__ = (
     "validate_hash_domain",
     "validate_lineage_graph",
     "validate_local_file",
+    "validate_package_members",
 )
