@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import BinaryIO, cast
+from typing import BinaryIO, Protocol, cast
 
 import pytest
 
@@ -40,6 +40,10 @@ from trafficlab.libs.lineage import (
 
 filesystem = import_module("trafficlab.libs.artifact_io.filesystem")
 publication = import_module("trafficlab.libs.artifact_io.publication")
+
+
+class _StagedPath(Protocol):
+    path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -1240,6 +1244,288 @@ def test_file_publication_retries_private_name_collision_without_overwrite(
 
     assert status == validate_publication(fixture.plan)
     assert collision.read_bytes() == b"existing private evidence"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("outcome", ["success", "validator-failure"])
+def test_generated_staging_name_never_aliases_legal_destination_leaf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+) -> None:
+    base = _file_fixture(tmp_path)
+    plan = build_file_plan(
+        base.plan.attempt_dir,
+        base.plan.attempt_dir / ".trafficlab-staging-fixed",
+    )
+    fixture = _FileFixture(plan, base.launch)
+    payload = b"private until atomic publication"
+    tokens = iter(("fixed", "artifact-private", "status-private"))
+    observed_staging: list[Path] = []
+    cause = RuntimeError("injected validator failure")
+
+    monkeypatch.setattr(filesystem, "_publication_token", lambda: next(tokens))
+
+    def writer(handle: BinaryIO) -> None:
+        assert not plan.artifact_path.exists()
+        assert not plan.status_path.exists()
+        handle.write(payload)
+
+    def validator(staging_path: Path) -> None:
+        observed_staging.append(staging_path)
+        assert staging_path != plan.artifact_path
+        assert not plan.artifact_path.exists()
+        assert not plan.status_path.exists()
+        assert staging_path.read_bytes() == payload
+        if outcome == "validator-failure":
+            raise cause
+
+    if outcome == "success":
+        status = publish_file(plan, fixture.launch, writer, validator)
+
+        assert plan.artifact_path.read_bytes() == payload
+        assert validate_publication(plan) == status
+        assert plan.status_path.exists()
+        assert not observed_staging[0].exists()
+    else:
+        with pytest.raises(ArtifactValidationError) as caught:
+            publish_file(plan, fixture.launch, writer, validator)
+
+        assert caught.value.__cause__ is cause
+        assert caught.value.orphan_path is None
+        retained = _retained_staging(caught.value)
+        assert retained == observed_staging[0]
+        assert retained != plan.artifact_path
+        assert retained.read_bytes() == payload
+        assert not plan.artifact_path.exists()
+        assert not plan.status_path.exists()
+
+
+@pytest.mark.integration
+def test_artifact_publish_helper_rejects_displaced_parent_before_syscall(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _file_fixture(tmp_path)
+    output_parent = tmp_path / "output"
+    moved_parent = tmp_path / "moved-output"
+    output_parent.mkdir(mode=0o700)
+    output_parent.chmod(0o700)
+    plan = build_file_plan(base.plan.attempt_dir, output_parent / "artifact.bin")
+    fixture = _FileFixture(plan, base.launch)
+    payload = b"retained under displaced parent"
+    staging_name: str | None = None
+    artifact_syscall_called = False
+    original_snapshot = publication._snapshot_staging
+    original_atomic = filesystem._atomic_rename_noreplace
+
+    def displacing_snapshot(staged: object, *, chunk_size: int) -> FileIdentity:
+        nonlocal staging_name
+        identity = original_snapshot(staged, chunk_size=chunk_size)
+        staging_path = cast(_StagedPath, staged).path
+        staging_name = staging_path.name
+        output_parent.rename(moved_parent)
+        output_parent.mkdir(mode=0o700)
+        output_parent.chmod(0o700)
+        return identity
+
+    def recording_atomic(
+        source_parent_fd: int,
+        source_name: str,
+        destination_parent_fd: int,
+        destination_name: str,
+        *,
+        source_path: Path,
+        orphan_path: Path | None = None,
+    ) -> None:
+        nonlocal artifact_syscall_called
+        if destination_name == plan.artifact_path.name:
+            artifact_syscall_called = True
+        original_atomic(
+            source_parent_fd,
+            source_name,
+            destination_parent_fd,
+            destination_name,
+            source_path=source_path,
+            orphan_path=orphan_path,
+        )
+
+    monkeypatch.setattr(publication, "_snapshot_staging", displacing_snapshot)
+    monkeypatch.setattr(filesystem, "_atomic_rename_noreplace", recording_atomic)
+
+    with pytest.raises(ArtifactValidationError) as caught:
+        _publish_bytes(fixture, payload)
+
+    assert artifact_syscall_called is False
+    assert caught.value.orphan_path is None
+    assert not plan.artifact_path.exists()
+    assert not plan.status_path.exists()
+    assert staging_name is not None
+    assert (moved_parent / staging_name).read_bytes() == payload
+
+
+@pytest.mark.integration
+def test_status_publish_helper_rejects_displaced_attempt_before_syscall(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _file_fixture(tmp_path)
+    output_parent = tmp_path / "output"
+    output_parent.mkdir(mode=0o700)
+    output_parent.chmod(0o700)
+    plan = build_file_plan(base.plan.attempt_dir, output_parent / "artifact.bin")
+    fixture = _FileFixture(plan, base.launch)
+    moved_attempt = tmp_path / "moved-attempt"
+    payload = b"artifact committed before displaced status parent"
+    staging_name: str | None = None
+    status_syscall_called = False
+    original_stage_status = publication._stage_status
+    original_atomic = filesystem._atomic_rename_noreplace
+
+    def displacing_stage_status(
+        publication_plan: PublicationPlan,
+        attempt: object,
+        status: ArtifactStatus,
+        *,
+        chunk_size: int,
+    ) -> object:
+        nonlocal staging_name
+        staged = original_stage_status(
+            publication_plan,
+            attempt,
+            status,
+            chunk_size=chunk_size,
+        )
+        staging_path = cast(_StagedPath, staged).path
+        staging_name = staging_path.name
+        plan.attempt_dir.rename(moved_attempt)
+        plan.attempt_dir.mkdir(mode=0o700)
+        plan.attempt_dir.chmod(0o700)
+        return staged
+
+    def recording_atomic(
+        source_parent_fd: int,
+        source_name: str,
+        destination_parent_fd: int,
+        destination_name: str,
+        *,
+        source_path: Path,
+        orphan_path: Path | None = None,
+    ) -> None:
+        nonlocal status_syscall_called
+        if destination_name == plan.status_path.name:
+            status_syscall_called = True
+        original_atomic(
+            source_parent_fd,
+            source_name,
+            destination_parent_fd,
+            destination_name,
+            source_path=source_path,
+            orphan_path=orphan_path,
+        )
+
+    monkeypatch.setattr(publication, "_stage_status", displacing_stage_status)
+    monkeypatch.setattr(filesystem, "_atomic_rename_noreplace", recording_atomic)
+
+    with pytest.raises(ArtifactValidationError) as caught:
+        _publish_bytes(fixture, payload)
+
+    assert status_syscall_called is False
+    assert caught.value.orphan_path == plan.artifact_path
+    assert plan.artifact_path.read_bytes() == payload
+    assert not plan.status_path.exists()
+    assert staging_name is not None
+    assert (moved_attempt / staging_name).exists()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("phase", ["artifact", "status"])
+def test_publish_helpers_reject_replaced_source_binding_before_syscall(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    phase: str,
+) -> None:
+    fixture = _file_fixture(tmp_path)
+    plan = fixture.plan
+    payload = b"original staged bytes"
+    moved_source: Path | None = None
+    target_syscall_called = False
+    original_snapshot = publication._snapshot_staging
+    original_stage_status = publication._stage_status
+    original_atomic = filesystem._atomic_rename_noreplace
+
+    def replace_source(staged: object) -> None:
+        nonlocal moved_source
+        staging_path = cast(_StagedPath, staged).path
+        moved_source = staging_path.with_name(f"{staging_path.name}-original")
+        staging_path.rename(moved_source)
+        _write_private(staging_path, b"replacement bytes")
+
+    def replacing_snapshot(staged: object, *, chunk_size: int) -> FileIdentity:
+        identity = original_snapshot(staged, chunk_size=chunk_size)
+        if phase == "artifact":
+            replace_source(staged)
+        return identity
+
+    def replacing_stage_status(
+        publication_plan: PublicationPlan,
+        attempt: object,
+        status: ArtifactStatus,
+        *,
+        chunk_size: int,
+    ) -> object:
+        staged = original_stage_status(
+            publication_plan,
+            attempt,
+            status,
+            chunk_size=chunk_size,
+        )
+        if phase == "status":
+            replace_source(staged)
+        return staged
+
+    def recording_atomic(
+        source_parent_fd: int,
+        source_name: str,
+        destination_parent_fd: int,
+        destination_name: str,
+        *,
+        source_path: Path,
+        orphan_path: Path | None = None,
+    ) -> None:
+        nonlocal target_syscall_called
+        target_name = (
+            plan.artifact_path.name if phase == "artifact" else plan.status_path.name
+        )
+        if destination_name == target_name:
+            target_syscall_called = True
+        original_atomic(
+            source_parent_fd,
+            source_name,
+            destination_parent_fd,
+            destination_name,
+            source_path=source_path,
+            orphan_path=orphan_path,
+        )
+
+    monkeypatch.setattr(publication, "_snapshot_staging", replacing_snapshot)
+    monkeypatch.setattr(publication, "_stage_status", replacing_stage_status)
+    monkeypatch.setattr(filesystem, "_atomic_rename_noreplace", recording_atomic)
+
+    with pytest.raises(ArtifactValidationError) as caught:
+        _publish_bytes(fixture, payload)
+
+    assert target_syscall_called is False
+    assert moved_source is not None
+    assert moved_source.exists()
+    assert not plan.status_path.exists()
+    if phase == "artifact":
+        assert caught.value.orphan_path is None
+        assert not plan.artifact_path.exists()
+        assert moved_source.read_bytes() == payload
+    else:
+        assert caught.value.orphan_path == plan.artifact_path
+        assert plan.artifact_path.read_bytes() == payload
 
 
 @pytest.mark.integration

@@ -249,6 +249,19 @@ def _publish_artifact(
     staged: filesystem._StagedFile,  # pyright: ignore[reportPrivateUsage]
 ) -> None:
     try:
+        filesystem._revalidate_pinned_directory(  # pyright: ignore[reportPrivateUsage]
+            parent
+        )
+        filesystem._revalidate_staged_file(  # pyright: ignore[reportPrivateUsage]
+            staged
+        )
+    except BaseException as error:
+        _raise_validation(
+            "staged artifact changed immediately before atomic publication",
+            error,
+            retained_paths=(staged.path,),
+        )
+    try:
         filesystem._atomic_rename_noreplace(  # pyright: ignore[reportPrivateUsage]
             parent.fd,
             staged.name,
@@ -362,6 +375,20 @@ def _publish_status(
     attempt: filesystem._PinnedDirectory,  # pyright: ignore[reportPrivateUsage]
     staged: filesystem._StagedFile,  # pyright: ignore[reportPrivateUsage]
 ) -> None:
+    try:
+        filesystem._revalidate_pinned_directory(  # pyright: ignore[reportPrivateUsage]
+            attempt
+        )
+        filesystem._revalidate_staged_file(  # pyright: ignore[reportPrivateUsage]
+            staged
+        )
+    except BaseException as error:
+        _raise_validation(
+            "staged detached status changed immediately before atomic publication",
+            error,
+            retained_paths=(staged.path,),
+            orphan_path=plan.artifact_path,
+        )
     filesystem._atomic_rename_noreplace(  # pyright: ignore[reportPrivateUsage]
         attempt.fd,
         staged.name,

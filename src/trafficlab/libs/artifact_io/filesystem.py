@@ -496,6 +496,8 @@ def _create_staged_file(  # pyright: ignore[reportUnusedFunction]
         if _TOKEN_PATTERN.fullmatch(token) is None:
             raise OSError(errno.EINVAL, "publication token is invalid")
         name = f".trafficlab-staging-{token}"
+        if name == destination_name:
+            continue
         path = parent.path / name
         try:
             descriptor = _open_fd(
