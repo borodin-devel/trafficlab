@@ -952,3 +952,8 @@ clean Lineage worktree and fully merged local branch.
   evidence proved that a popped-entry `state == 1` branch was unreachable.
   Reviewed commit `308c119` removed only that redundant check while retaining
   parent-edge back-edge detection and deterministic cycle diagnostics.
+- **Security boundary — final whole-range review:** Test-first regressions for
+  the two review findings now ensure retained manifest verification observes at
+  most `max_bytes + 1` bytes before overflow while preserving stability and
+  cleanup, and `HashRegion` rejects every remaining Unicode line break without
+  broadening path semantics.

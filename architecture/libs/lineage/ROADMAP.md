@@ -38,13 +38,13 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
   LIN-AC-003 pass.
 - **Evidence:** `src/trafficlab/libs/lineage/` exposes typed canonical values,
   exact-byte bounded snapshots, detached domains, deterministic graph checks,
-  and manifest-first package validation. The 167 focused tests cover published
+  and manifest-first package validation. The 174 focused tests cover published
   SHA-256 vectors, permutation-invariant ordering, local/external path and
   no-follow boundaries, deterministic mutation and replacement detection,
   self-hash/domain rejection, detached manifest sequencing, package members,
-  and missing-parent/cycle graphs. The locked aggregate gate passed 410 tests,
+  and missing-parent/cycle graphs. The locked aggregate gate passed 417 tests,
   Ruff formatting and linting, strict Pyright, whitespace and all 319
-  architecture Markdown files, 100% statement and branch coverage (502
-  statements and 154 branches), and wheel construction. Two repository-owned
-  builds produced identical SHA-256
-  `adeb4693d60d7e943d9b7b1f60c9ba8982d796a649edd55df21e6f23c223bb56`.
+  architecture Markdown files, 100% statement and branch coverage (511
+  statements and 158 branches), and wheel construction. The aggregate build
+  and an independent repeated build produced identical SHA-256
+  `362da122eb23385d6047e52e2d96247ea1e4a5971fd71fc700046cdb5b3e859e`.
