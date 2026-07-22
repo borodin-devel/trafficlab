@@ -906,7 +906,7 @@ cached diff, and commit:
 git commit -m "docs(roadmap): complete lineage core"
 ```
 
-- [ ] **Step 6: Reproducibility replay and integration**
+- [x] **Step 6: Reproducibility replay and integration**
 
 Clone the committed implementation head into a fresh temporary directory with
 no environment. Run:

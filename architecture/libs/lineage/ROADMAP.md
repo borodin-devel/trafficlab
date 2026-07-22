@@ -48,3 +48,6 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
   statements and 158 branches), and wheel construction. The aggregate build
   and an independent repeated build produced identical SHA-256
   `362da122eb23385d6047e52e2d96247ea1e4a5971fd71fc700046cdb5b3e859e`.
+  A fresh clone of reviewed head `0ea1f02`, with no pre-existing environment,
+  completed locked synchronization and the same aggregate gate and wheel;
+  fast-forwarded `main` then passed the identical locked aggregate gate.
