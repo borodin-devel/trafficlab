@@ -27,7 +27,10 @@ class ValidationIssue:
 
     def render(self) -> str:
         """Render the issue in a compiler-friendly, stable form."""
-        return f"{self.path}:{self.line}: [{self.code}] {self.message}"
+        path = _escape_diagnostic_text(str(self.path))
+        code = _escape_diagnostic_text(self.code)
+        message = _escape_diagnostic_text(self.message)
+        return f"{path}:{self.line}: [{code}] {message}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +72,34 @@ class _RegistryTable:
     section: str
     headers: tuple[str, ...]
     rows: tuple[_RegistryRow, ...]
+
+
+_DIAGNOSTIC_CONTROL_ESCAPES = {
+    "\t": r"\t",
+    "\n": r"\n",
+    "\r": r"\r",
+}
+
+
+def _escape_diagnostic_text(value: str) -> str:
+    """Escape non-printable input without altering ordinary Unicode text."""
+    escaped: list[str] = []
+    for character in value:
+        if character.isprintable():
+            escaped.append(character)
+            continue
+        named_escape = _DIAGNOSTIC_CONTROL_ESCAPES.get(character)
+        if named_escape is not None:
+            escaped.append(named_escape)
+            continue
+        codepoint = ord(character)
+        if codepoint <= 0xFF:
+            escaped.append(f"\\x{codepoint:02x}")
+        elif codepoint <= 0xFFFF:
+            escaped.append(f"\\u{codepoint:04x}")
+        else:
+            escaped.append(f"\\U{codepoint:08x}")
+    return "".join(escaped)
 
 
 def _normalize_repository_path(
@@ -136,13 +167,6 @@ def corpus_from_mapping(files: Mapping[str, str]) -> Corpus:
     )
 
 
-def _resolve_directory(path: Path, description: str) -> Path:
-    resolved = path.resolve(strict=True)
-    if not resolved.is_dir():
-        raise ValueError(f"{description} is not a directory: {path}")
-    return resolved
-
-
 def _is_pruned_directory(name: str) -> bool:
     return name in {
         ".cache",
@@ -158,14 +182,118 @@ def _is_pruned_directory(name: str) -> bool:
     }
 
 
-def _raise_walk_error(error: OSError) -> None:
-    raise error
+_DIRECTORY_OPEN_FLAGS = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+_FILE_OPEN_FLAGS = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
 
 
-def _read_regular_utf8(path: Path, expected_status: os.stat_result) -> str:
+def _absolute_lexical_path(path: Path) -> Path:
+    """Return an absolute normalized path without resolving symlinks."""
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _open_directory_components(
+    base_descriptor: int,
+    components: Sequence[str],
+    *,
+    description: str,
+    display_path: Path,
+) -> int:
+    """Open directory components without following links or losing identity."""
+    descriptor = os.dup(base_descriptor)
+    try:
+        for component in components:
+            if component in {"", "."}:
+                continue
+            expected_status = os.stat(
+                component,
+                dir_fd=descriptor,
+                follow_symlinks=False,
+            )
+            if stat.S_ISLNK(expected_status.st_mode):
+                raise ValueError(
+                    f"{description} must not be a symlink or contain symlinked "
+                    f"components: {display_path}"
+                )
+            if not stat.S_ISDIR(expected_status.st_mode):
+                raise ValueError(f"{description} is not a directory: {display_path}")
+
+            child_descriptor = os.open(
+                component,
+                _DIRECTORY_OPEN_FLAGS,
+                dir_fd=descriptor,
+            )
+            try:
+                actual_status = os.fstat(child_descriptor)
+                if not stat.S_ISDIR(actual_status.st_mode) or not os.path.samestat(
+                    expected_status, actual_status
+                ):
+                    raise OSError(
+                        errno.ESTALE,
+                        f"{description} changed while being loaded: {display_path}",
+                    )
+            except BaseException:
+                os.close(child_descriptor)
+                raise
+            os.close(descriptor)
+            descriptor = child_descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def _open_directory_path(path: Path, description: str) -> int:
+    """Open one absolute directory path component by component."""
+    absolute = _absolute_lexical_path(path)
+    root_descriptor = os.open("/", _DIRECTORY_OPEN_FLAGS)
+    try:
+        return _open_directory_components(
+            root_descriptor,
+            absolute.parts[1:],
+            description=description,
+            display_path=path,
+        )
+    finally:
+        os.close(root_descriptor)
+
+
+def _open_verified_directory(
+    parent_descriptor: int,
+    name: str,
+    expected_status: os.stat_result,
+    relative: PurePosixPath,
+) -> int:
+    """Open one discovered directory and verify its listed identity."""
     descriptor = os.open(
-        path,
-        os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+        name,
+        _DIRECTORY_OPEN_FLAGS,
+        dir_fd=parent_descriptor,
+    )
+    try:
+        descriptor_status = os.fstat(descriptor)
+        if not stat.S_ISDIR(descriptor_status.st_mode) or not os.path.samestat(
+            expected_status, descriptor_status
+        ):
+            raise OSError(
+                errno.ESTALE,
+                f"repository directory changed while being loaded: {relative}",
+            )
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def _read_regular_utf8(
+    parent_descriptor: int,
+    name: str,
+    relative: PurePosixPath,
+    expected_status: os.stat_result,
+) -> str:
+    descriptor = os.open(
+        name,
+        _FILE_OPEN_FLAGS,
+        dir_fd=parent_descriptor,
     )
     try:
         descriptor_status = os.fstat(descriptor)
@@ -174,7 +302,7 @@ def _read_regular_utf8(path: Path, expected_status: os.stat_result) -> str:
         ):
             raise OSError(
                 errno.ESTALE,
-                f"architecture file changed while being loaded: {path}",
+                f"architecture file changed while being loaded: {relative}",
             )
         with os.fdopen(descriptor, "rb", closefd=False) as stream:
             content = stream.read()
@@ -183,66 +311,118 @@ def _read_regular_utf8(path: Path, expected_status: os.stat_result) -> str:
     return content.decode("utf-8")
 
 
+def _load_directory(
+    descriptor: int,
+    relative: PurePosixPath,
+    *,
+    architecture_relative: PurePosixPath,
+    architecture_status: os.stat_result,
+    existing_paths: set[PurePosixPath],
+    directories: set[PurePosixPath],
+    markdown_files: list[SourceFile],
+) -> None:
+    """Traverse one pinned repository directory in deterministic order."""
+    descriptor_status = os.fstat(descriptor)
+    if relative == architecture_relative and not os.path.samestat(
+        descriptor_status, architecture_status
+    ):
+        raise OSError(
+            errno.ESTALE,
+            f"architecture root changed while being loaded: {relative}",
+        )
+    directories.add(relative)
+
+    for name in sorted(os.listdir(descriptor)):
+        expected_status = os.stat(
+            name,
+            dir_fd=descriptor,
+            follow_symlinks=False,
+        )
+        child_relative = relative / name
+        if stat.S_ISDIR(expected_status.st_mode):
+            if _is_pruned_directory(name):
+                continue
+            child_descriptor = _open_verified_directory(
+                descriptor,
+                name,
+                expected_status,
+                child_relative,
+            )
+            try:
+                _load_directory(
+                    child_descriptor,
+                    child_relative,
+                    architecture_relative=architecture_relative,
+                    architecture_status=architecture_status,
+                    existing_paths=existing_paths,
+                    directories=directories,
+                    markdown_files=markdown_files,
+                )
+            finally:
+                os.close(child_descriptor)
+            continue
+        if not stat.S_ISREG(expected_status.st_mode):
+            continue
+
+        existing_paths.add(child_relative)
+        if child_relative.suffix == ".md" and _is_beneath(
+            child_relative, architecture_relative
+        ):
+            markdown_files.append(
+                SourceFile(
+                    child_relative,
+                    _read_regular_utf8(
+                        descriptor,
+                        name,
+                        child_relative,
+                        expected_status,
+                    ),
+                )
+            )
+
+
 def load_corpus(repository_root: Path, architecture_root: Path) -> Corpus:
     """Load a safe immutable corpus snapshot from the filesystem boundary."""
-    if architecture_root.is_symlink():
-        raise ValueError(
-            f"architecture root must not be a symlink: {architecture_root}"
-        )
-    resolved_repository = _resolve_directory(repository_root, "repository root")
-    resolved_architecture = _resolve_directory(architecture_root, "architecture root")
+    absolute_repository = _absolute_lexical_path(repository_root)
+    absolute_architecture = _absolute_lexical_path(architecture_root)
     try:
-        architecture_relative = resolved_architecture.relative_to(resolved_repository)
+        relative_path = absolute_architecture.relative_to(absolute_repository)
     except ValueError as error:
         raise ValueError(
             "architecture root must remain inside repository root: "
-            f"{resolved_architecture}"
+            f"{absolute_architecture}"
         ) from error
+    architecture_relative = PurePosixPath(relative_path.as_posix())
 
     existing_paths: set[PurePosixPath] = set()
     directories: set[PurePosixPath] = set()
     markdown_files: list[SourceFile] = []
-
-    for current, directory_names, file_names in os.walk(
-        resolved_repository,
-        topdown=True,
-        onerror=_raise_walk_error,
-        followlinks=False,
-    ):
-        current_path = Path(current)
-        current_relative = PurePosixPath(
-            current_path.relative_to(resolved_repository).as_posix()
+    repository_descriptor = _open_directory_path(absolute_repository, "repository root")
+    architecture_descriptor: int | None = None
+    try:
+        architecture_descriptor = _open_directory_components(
+            repository_descriptor,
+            relative_path.parts,
+            description="architecture root",
+            display_path=architecture_root,
         )
-        directories.add(current_relative)
-
-        kept_directories: list[str] = []
-        for name in sorted(directory_names):
-            candidate = current_path / name
-            mode = candidate.lstat().st_mode
-            if not _is_pruned_directory(name) and stat.S_ISDIR(mode):
-                kept_directories.append(name)
-        directory_names[:] = kept_directories
-
-        for name in sorted(file_names):
-            candidate = current_path / name
-            candidate_status = candidate.lstat()
-            if not stat.S_ISREG(candidate_status.st_mode):
-                continue
-            relative = PurePosixPath(
-                candidate.relative_to(resolved_repository).as_posix()
-            )
-            existing_paths.add(relative)
-            if candidate.suffix == ".md" and candidate.is_relative_to(
-                resolved_architecture
-            ):
-                markdown_files.append(
-                    SourceFile(
-                        relative, _read_regular_utf8(candidate, candidate_status)
-                    )
-                )
+        architecture_status = os.fstat(architecture_descriptor)
+        _load_directory(
+            repository_descriptor,
+            PurePosixPath("."),
+            architecture_relative=architecture_relative,
+            architecture_status=architecture_status,
+            existing_paths=existing_paths,
+            directories=directories,
+            markdown_files=markdown_files,
+        )
+    finally:
+        if architecture_descriptor is not None:
+            os.close(architecture_descriptor)
+        os.close(repository_descriptor)
 
     return Corpus(
-        architecture_root=PurePosixPath(architecture_relative.as_posix()),
+        architecture_root=architecture_relative,
         markdown_files=tuple(sorted(markdown_files, key=lambda source: source.path)),
         existing_paths=frozenset(existing_paths),
         directories=frozenset(directories),
@@ -259,6 +439,11 @@ def _heading_anchors(source: SourceFile) -> frozenset[str]:
 
 def _decode_uri_component(component: str) -> str:
     return unquote_to_bytes(component).decode("utf-8")
+
+
+def _contains_nonprintable(value: str) -> bool:
+    """Return whether decoded local-link text contains unsafe controls."""
+    return any(not character.isprintable() for character in value)
 
 
 def _unsafe_link_issue(
@@ -287,7 +472,11 @@ def validate_links(corpus: Corpus) -> tuple[ValidationIssue, ...]:
                     continue
                 decoded_path = _decode_uri_component(parsed.path)
                 decoded_fragment = _decode_uri_component(parsed.fragment)
-                if "\x00" in decoded_path or PurePosixPath(decoded_path).is_absolute():
+                if (
+                    _contains_nonprintable(decoded_path)
+                    or _contains_nonprintable(decoded_fragment)
+                    or PurePosixPath(decoded_path).is_absolute()
+                ):
                     issues.append(_unsafe_link_issue(source, link))
                     continue
                 target = (
@@ -761,7 +950,12 @@ def _resolved_local_link_target(
         if parsed.scheme or parsed.netloc:
             return None
         decoded_path = _decode_uri_component(parsed.path)
-        if "\x00" in decoded_path or PurePosixPath(decoded_path).is_absolute():
+        decoded_fragment = _decode_uri_component(parsed.fragment)
+        if (
+            _contains_nonprintable(decoded_path)
+            or _contains_nonprintable(decoded_fragment)
+            or PurePosixPath(decoded_path).is_absolute()
+        ):
             return None
         if decoded_path == "":
             return source.path

@@ -624,6 +624,24 @@ def test_issue_render_is_stable() -> None:
 
 
 @pytest.mark.unit
+def test_issue_render_escapes_controls_and_preserves_printable_unicode() -> None:
+    issue = ValidationIssue(
+        PurePosixPath("architecture/BAD\nNAME.md"),
+        7,
+        "LNK003",
+        "unsafe\rmessage\twith\x1b controls and café",
+    )
+
+    rendered = issue.render()
+
+    assert rendered == (
+        r"architecture/BAD\nNAME.md:7: [LNK003] "
+        r"unsafe\rmessage\twith\x1b controls and café"
+    )
+    assert rendered.splitlines() == [rendered]
+
+
+@pytest.mark.unit
 def test_mapping_paths_are_normalized_and_sorted() -> None:
     corpus = corpus_from_mapping(
         {
@@ -720,6 +738,63 @@ def test_loader_rejects_symlinked_architecture_root(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_loader_rejects_symlinked_repository_ancestor(tmp_path: Path) -> None:
+    real_parent = tmp_path / "real"
+    repository_root = real_parent / "repository"
+    architecture_root = repository_root / "architecture"
+    architecture_root.mkdir(parents=True)
+    (architecture_root / "README.md").write_text("# Architecture\n", encoding="utf-8")
+    alias = tmp_path / "alias"
+    alias.symlink_to(real_parent, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink"):
+        load_corpus(alias / "repository", alias / "repository" / "architecture")
+
+
+@pytest.mark.unit
+def test_loader_rejects_directory_identity_change_and_closes_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    architecture_root = tmp_path / "architecture"
+    owners = architecture_root / "owners"
+    owners.mkdir(parents=True)
+    (owners / "README.md").write_text("# Owner\n", encoding="utf-8")
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+    (replacement / "README.md").write_text("# Replacement\n", encoding="utf-8")
+    real_open = os.open
+    opened_descriptors: list[int] = []
+
+    def swapped_directory_open(
+        path: str | bytes | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if path == "owners":
+            assert dir_fd is not None
+            assert flags & os.O_DIRECTORY
+            assert flags & os.O_NOFOLLOW
+            descriptor = real_open(replacement, flags, mode)
+            opened_descriptors.append(descriptor)
+            return descriptor
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(architecture_validation.os, "open", swapped_directory_open)
+
+    with pytest.raises(OSError, match="changed while being loaded"):
+        load_corpus(tmp_path, architecture_root)
+
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_descriptors[0])
+
+
+@pytest.mark.unit
 def test_loader_rejects_descriptor_identity_change_and_uses_no_follow(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -740,7 +815,8 @@ def test_loader_rejects_descriptor_identity_change_and_uses_no_follow(
         *,
         dir_fd: int | None = None,
     ) -> int:
-        if not isinstance(path, bytes) and Path(path) == source:
+        if path == source.name:
+            assert dir_fd is not None
             assert flags & os.O_NOFOLLOW
             descriptor = real_open(replacement, flags, mode)
             opened_descriptors.append(descriptor)
@@ -780,7 +856,8 @@ def test_loader_fifo_swap_uses_nonblocking_no_follow_open(
         *,
         dir_fd: int | None = None,
     ) -> int:
-        if not isinstance(path, bytes) and Path(path) == source:
+        if path == source.name:
+            assert dir_fd is not None
             assert flags & os.O_NOFOLLOW
             assert flags & os.O_NONBLOCK
             descriptor = real_open(replacement_fifo, flags, mode)
@@ -824,6 +901,188 @@ def test_fenced_links_are_ignored_and_reference_links_keep_use_line() -> None:
             "local target does not exist: architecture/MISSING.md",
         ),
     )
+
+
+@pytest.mark.unit
+def test_inline_code_span_link_is_ignored() -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": "`[demo](MISSING.md)`\n"})
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_odd_backslash_escaped_code_span_opening_does_not_hide_link() -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": "\\`[demo](MISSING.md)`\n"})
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            1,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_escaped_first_backtick_leaves_remaining_run_as_code_span_opener() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": "\\`` [demo](MISSING.md) `\n"}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_even_backslashes_allow_code_span_opening() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": "\\\\`[demo](MISSING.md)`\n"}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_backslash_inside_code_span_does_not_escape_exact_closing_run() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "`[ignored](IGNORED.md)\\` [missing](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            1,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_unmatched_double_backticks_allow_later_single_code_span() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": ("`` unmatched ` [demo](MISSING.md) `\n")}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "source",
+    [
+        "``` unmatched `` [demo](MISSING.md) ``\n",
+        "```` unmatched ``` noise ` [demo](MISSING.md) `\n",
+    ],
+)
+def test_mismatched_code_runs_preserve_later_valid_span(source: str) -> None:
+    corpus = corpus_from_mapping({"architecture/README.md": source})
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_html_comment_block_link_is_ignored() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": "<!-- [demo](MISSING.md) -->\n"}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("tag", ["<x-demo>", "</x-demo>"])
+def test_complete_generic_type_seven_html_block_link_is_ignored(tag: str) -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": (f"{tag}\n[demo](MISSING.md)\n")}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_malformed_generic_html_tag_is_ordinary_prose() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": "<x =>\n[demo](MISSING.md)\n"}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            2,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "<x disabled>",
+        "<x data-id=value>",
+        "<x data-id = 'quoted value'>",
+        '<x :scope.name="quoted value" />',
+        "<x/>",
+        "</x >",
+    ],
+)
+def test_complete_commonmark_generic_tags_start_type_seven_blocks(tag: str) -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": f"{tag}\n[demo](MISSING.md)\n"}
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_type_seven_html_block_cannot_interrupt_paragraph() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": ("paragraph\n<x-demo>\n[demo](MISSING.md)\n")}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_type_seven_html_block_ends_at_container_boundary() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/README.md": (
+                "> <x-demo>\n> [ignored](IGNORED.md)\n[missing](MISSING.md)\n"
+            )
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK001",
+            "local target does not exist: architecture/MISSING.md",
+        ),
+    )
+
+
+@pytest.mark.unit
+def test_escaped_reference_link_use_is_ignored() -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": ("[id]: MISSING.md\n\n\\[demo][id]\n")}
+    )
+
+    assert validate_links(corpus) == ()
 
 
 @pytest.mark.unit
@@ -1118,6 +1377,31 @@ def test_absolute_and_escaping_link_paths_are_rejected() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "BAD%0ANAME.md",
+        "README.md#bad%0Afragment",
+    ],
+)
+def test_percent_decoded_link_controls_are_rejected_as_unsafe(
+    destination: str,
+) -> None:
+    corpus = corpus_from_mapping(
+        {"architecture/README.md": (f"# Architecture\n\n[Unsafe]({destination})\n")}
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/README.md"),
+            3,
+            "LNK003",
+            f"local target is unsafe: {destination}",
+        ),
+    )
+
+
+@pytest.mark.unit
 def test_percent_decoded_paths_and_duplicate_heading_anchors_resolve() -> None:
     corpus = corpus_from_mapping(
         {
@@ -1130,6 +1414,48 @@ def test_percent_decoded_paths_and_duplicate_heading_anchors_resolve() -> None:
     )
 
     assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "heading",
+    [
+        "# [Owner](README.md)",
+        "# `Owner`",
+        "> # Owner",
+        "- # Owner",
+    ],
+)
+def test_heading_anchor_uses_rendered_text_in_normalized_containers(
+    heading: str,
+) -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/INDEX.md": "[Owner](README.md#owner)\n",
+            "architecture/README.md": f"{heading}\n",
+        }
+    )
+
+    assert validate_links(corpus) == ()
+
+
+@pytest.mark.unit
+def test_heading_anchor_rejects_inline_link_source_text_slug() -> None:
+    corpus = corpus_from_mapping(
+        {
+            "architecture/INDEX.md": ("[Synthetic](README.md#ownerreadmemd)\n"),
+            "architecture/README.md": "# [Owner](README.md)\n",
+        }
+    )
+
+    assert validate_links(corpus) == (
+        ValidationIssue(
+            PurePosixPath("architecture/INDEX.md"),
+            1,
+            "LNK002",
+            "heading fragment does not exist: architecture/README.md#ownerreadmemd",
+        ),
+    )
 
 
 @pytest.mark.unit
@@ -1754,6 +2080,26 @@ def test_main_defaults_to_architecture_and_returns_zero(
 
     assert main(()) == 0
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.unit
+def test_main_keeps_control_bearing_corpus_filename_on_one_output_line(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    architecture_root = tmp_path / "architecture"
+    architecture_root.mkdir()
+    (architecture_root / "BAD\nNAME.md").write_text("# Bad\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(("architecture",)) == 1
+    output = capsys.readouterr().out
+    assert output == (
+        r"architecture/BAD\nNAME.md:1: [NAM001] architecture filename must use "
+        "uppercase snake case with a lowercase extension\n"
+    )
+    assert output.splitlines() == [output.rstrip("\n")]
 
 
 @pytest.mark.unit

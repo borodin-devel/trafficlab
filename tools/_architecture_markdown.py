@@ -46,15 +46,26 @@ class _ContainerLine:
 
 
 def visible_markdown_lines(text: str) -> tuple[tuple[int, str], ...]:
-    """Return physical source lines outside fenced code blocks."""
+    """Return physical source lines outside fenced code and HTML blocks."""
     visible: list[tuple[int, str]] = []
     fence_character: str | None = None
     fence_length = 0
     fence_signature: tuple[tuple[str, int], ...] = ()
+    html_end: tuple[str, str] | None = None
+    html_signature: tuple[tuple[str, int], ...] = ()
+    paragraph_open = False
+    paragraph_signature: tuple[tuple[str, int], ...] = ()
+    previous_line = 0
     physical_lines = tuple(enumerate(text.splitlines(), start=1))
 
     for normalized in _container_lines(physical_lines):
+        is_contiguous = normalized.line == previous_line + 1
+        previous_line = normalized.line
+        if not is_contiguous or not normalized.content.strip():
+            paragraph_open = False
+
         if fence_character is not None:
+            paragraph_open = False
             open_fence_character = fence_character
             preserves_list_container = any(
                 container == "list" for container, _ in fence_signature
@@ -86,6 +97,25 @@ def visible_markdown_lines(text: str) -> tuple[tuple[int, str], ...]:
                     visible.append((normalized.line, ""))
                 continue
 
+        if html_end is not None:
+            paragraph_open = False
+            html_content = _strip_container_signature(normalized.raw, html_signature)
+            container_ended = (
+                html_end[0] == "type7" and normalized.signature != html_signature
+            )
+            if (
+                html_content is None
+                or container_ended
+                or (html_end[0] in {"blank", "type7"} and not html_content.strip())
+            ):
+                html_end = None
+                html_signature = ()
+            else:
+                if _html_block_ends(html_end, html_content):
+                    html_end = None
+                    html_signature = ()
+                continue
+
         line = normalized.content
         opening = None if normalized.is_indented_code else _fence_opening(line)
         if opening is not None:
@@ -98,7 +128,34 @@ def visible_markdown_lines(text: str) -> tuple[tuple[int, str], ...]:
                     (normalized.line, _container_placeholder(fence_signature))
                 )
             continue
+        continues_paragraph = bool(
+            paragraph_open
+            and is_contiguous
+            and not normalized.starts_list_item
+            and not normalized.is_indented_code
+            and _is_container_subsequence(normalized.signature, paragraph_signature)
+        )
+        html_opening = (
+            None
+            if normalized.is_indented_code
+            else _html_block_opening(
+                line,
+                allow_type_seven=not continues_paragraph,
+            )
+        )
+        if html_opening is not None:
+            paragraph_open = False
+            if not _html_block_ends(html_opening, line):
+                html_end = html_opening
+                html_signature = normalized.signature
+            continue
         visible.append((normalized.line, normalized.raw))
+        if normalized.is_indented_code or _is_block_interrupt(line):
+            paragraph_open = False
+        elif line.strip():
+            if not continues_paragraph:
+                paragraph_signature = normalized.signature
+            paragraph_open = True
 
     return tuple(visible)
 
@@ -391,8 +448,59 @@ def _markdown_title_end(line: str, start: int) -> int | None:
     return None
 
 
+def _is_escaped(text: str, index: int) -> bool:
+    """Return whether the character at ``index`` has an active backslash escape."""
+    backslashes = 0
+    index -= 1
+    while index >= 0 and text[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return backslashes % 2 == 1
+
+
+def _mask_inline_code_spans(text: str) -> str:
+    """Mask complete CommonMark code spans while preserving source offsets."""
+    masked = list(text)
+    opening_start = 0
+    while opening_start < len(text):
+        opening_start = text.find("`", opening_start)
+        if opening_start < 0:
+            break
+        opening_end = opening_start + 1
+        while opening_end < len(text) and text[opening_end] == "`":
+            opening_end += 1
+        if _is_escaped(text, opening_start):
+            opening_start += 1
+            continue
+        delimiter_length = opening_end - opening_start
+
+        found_closer = False
+        closing_search = opening_end
+        while closing_search < len(text):
+            closing_start = text.find("`", closing_search)
+            if closing_start < 0:
+                break
+            closing_end = closing_start + 1
+            while closing_end < len(text) and text[closing_end] == "`":
+                closing_end += 1
+            if closing_end - closing_start == delimiter_length:
+                for index in range(opening_start, closing_end):
+                    if masked[index] not in {"\n", "\r"}:
+                        masked[index] = " "
+                opening_start = closing_end
+                found_closer = True
+                break
+            closing_search = closing_end
+        if not found_closer:
+            opening_start = opening_end
+
+    return "".join(masked)
+
+
 def inline_links(line: str) -> Iterator[InlineLink]:
     """Yield valid inline links and exact spans from one Markdown text block."""
+    source = line
+    line = _mask_inline_code_spans(line)
     matched_brackets = _matched_brackets(line)
     cursor = 0
     while True:
@@ -412,7 +520,7 @@ def inline_links(line: str) -> Iterator[InlineLink]:
             if destination_end < 0:
                 cursor = opening + 2
                 continue
-            destination = line[destination_start + 1 : destination_end]
+            destination = source[destination_start + 1 : destination_end]
             suffix_start = destination_end + 1
         else:
             index = destination_start
@@ -433,7 +541,7 @@ def inline_links(line: str) -> Iterator[InlineLink]:
                 elif character.isspace() and nested_parentheses == 0:
                     break
                 index += 1
-            destination = line[destination_start:index]
+            destination = source[destination_start:index]
             suffix_start = index
 
         suffix_index = suffix_start
@@ -469,17 +577,24 @@ def inline_links(line: str) -> Iterator[InlineLink]:
 
 
 def _reference_links(line: str, definitions: Mapping[str, str]) -> Iterator[InlineLink]:
+    line = _mask_inline_code_spans(line)
     occupied: list[tuple[int, int]] = []
     explicit_pattern = re.compile(r"!?\[([^]]+)\]\[([^]]*)\]")
     for match in explicit_pattern.finditer(line):
+        occupied.append(match.span())
+        bracket = match.start() + int(match.group(0).startswith("!"))
+        if _is_escaped(line, bracket):
+            continue
         label = match.group(2) or match.group(1)
         destination = definitions.get(_reference_label(label))
         if destination is not None:
-            occupied.append(match.span())
             yield InlineLink(match.start(), match.end(), destination)
 
     shortcut_pattern = re.compile(r"!?\[([^]]+)\]")
     for match in shortcut_pattern.finditer(line):
+        bracket = match.start() + int(match.group(0).startswith("!"))
+        if _is_escaped(line, bracket):
+            continue
         if any(start <= match.start() < end for start, end in occupied):
             continue
         following = line[match.end() : match.end() + 1]
@@ -652,6 +767,16 @@ _HTML_BLOCK_TAGS = (
     "option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|"
     "title|tr|track|ul"
 )
+_HTML_TAG_NAME = r"[A-Za-z][A-Za-z0-9-]*"
+_HTML_ATTRIBUTE_NAME = r"[A-Za-z_:][A-Za-z0-9_.:-]*"
+_HTML_UNQUOTED_ATTRIBUTE_VALUE = r"""[^ \t\r\n"'=<>`]+"""
+_HTML_ATTRIBUTE_VALUE = rf"""(?:{_HTML_UNQUOTED_ATTRIBUTE_VALUE}|'[^']*'|"[^"]*")"""
+_HTML_ATTRIBUTE = (
+    rf"[ \t]+{_HTML_ATTRIBUTE_NAME}(?:[ \t]*=[ \t]*{_HTML_ATTRIBUTE_VALUE})?"
+)
+_HTML_OPEN_TAG = rf"<{_HTML_TAG_NAME}(?:{_HTML_ATTRIBUTE})*[ \t]*/?>"
+_HTML_CLOSING_TAG = rf"</{_HTML_TAG_NAME}[ \t]*>"
+_COMPLETE_HTML_TAG = re.compile(rf"(?:{_HTML_OPEN_TAG}|{_HTML_CLOSING_TAG})[ \t]*")
 
 
 def _starts_html_block(line: str, *, interrupting_only: bool) -> bool:
@@ -665,12 +790,40 @@ def _starts_html_block(line: str, *, interrupting_only: bool) -> bool:
     )
     if starts_interrupting or interrupting_only:
         return starts_interrupting
-    return bool(
-        re.fullmatch(
-            r"</?[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[^<>]*)?[ \t]*/?>[ \t]*",
-            content,
-        )
-    )
+    return _COMPLETE_HTML_TAG.fullmatch(content) is not None
+
+
+def _html_block_opening(
+    line: str, *, allow_type_seven: bool = False
+) -> tuple[str, str] | None:
+    """Return the closing rule for one context-valid HTML block opener."""
+    content = line.lstrip(" ") if len(line) - len(line.lstrip(" ")) <= 3 else line
+    raw_tag = re.match(r"<(script|pre|style|textarea)(?:[ \t>]|$)", content, re.I)
+    if raw_tag is not None:
+        return "regex", rf"</{re.escape(raw_tag.group(1))}[ \t]*>"
+    if content.startswith("<!--"):
+        return "marker", "-->"
+    if content.startswith("<?"):
+        return "marker", "?>"
+    if content.startswith("<![CDATA["):
+        return "marker", "]]>"
+    if re.match(r"<![A-Z]", content):
+        return "marker", ">"
+    if re.match(rf"</?(?:{_HTML_BLOCK_TAGS})(?:[ \t/>]|$)", content, re.I):
+        return "blank", ""
+    if allow_type_seven and _starts_html_block(line, interrupting_only=False):
+        return "type7", ""
+    return None
+
+
+def _html_block_ends(closing: tuple[str, str], line: str) -> bool:
+    """Return whether one HTML-block line satisfies its closing rule."""
+    kind, value = closing
+    if kind in {"blank", "type7"}:
+        return not line.strip()
+    if kind == "regex":
+        return re.search(value, line, re.I) is not None
+    return value in line
 
 
 def _is_block_interrupt(line: str) -> bool:
@@ -1052,25 +1205,61 @@ def _heading_anchor(heading: str) -> str:
     return "".join(anchor)
 
 
+def _render_heading_text(heading: str, definitions: Mapping[str, str]) -> str:
+    """Return heading text after rendering Markdown link labels."""
+    links = {
+        (link.start, link.end): link
+        for link in (*inline_links(heading), *_reference_links(heading, definitions))
+    }
+    rendered = heading
+    for (start, end), _ in sorted(links.items(), reverse=True):
+        span = rendered[start:end]
+        bracket_start = span.find("[")
+        if bracket_start < 0:
+            continue
+        brackets = _matched_brackets(span)
+        bracket_end = next(
+            (
+                closing
+                for closing, opening in brackets.items()
+                if opening == bracket_start
+            ),
+            None,
+        )
+        if bracket_end is not None:
+            rendered = (
+                rendered[:start]
+                + span[bracket_start + 1 : bracket_end]
+                + rendered[end:]
+            )
+    return _unescape_markdown_punctuation(rendered)
+
+
 def heading_anchors(text: str) -> frozenset[str]:
     """Return deterministic GitHub-style anchors for visible headings."""
     anchors: set[str] = set()
     duplicate_counts: dict[str, int] = {}
     lines = visible_markdown_lines(text)
+    definitions, _ = reference_definitions(lines)
+    normalized_lines = _container_lines(lines)
     setext_underline = re.compile(r"^[ ]{0,3}(?:=+|-+)[ \t]*$")
-    for index, (line_number, line) in enumerate(lines):
-        heading = heading_text(line)
+    for index, normalized in enumerate(normalized_lines):
+        if normalized.is_indented_code:
+            continue
+        heading = heading_text(normalized.content)
         if (
             heading is None
-            and line.strip()
-            and index + 1 < len(lines)
-            and lines[index + 1][0] == line_number + 1
-            and setext_underline.match(lines[index + 1][1])
+            and normalized.content.strip()
+            and index + 1 < len(normalized_lines)
+            and normalized_lines[index + 1].line == normalized.line + 1
+            and normalized_lines[index + 1].signature == normalized.signature
+            and not normalized_lines[index + 1].is_indented_code
+            and setext_underline.fullmatch(normalized_lines[index + 1].content)
         ):
-            heading = line.strip()
+            heading = normalized.content.strip()
         if heading is None:
             continue
-        base = _heading_anchor(heading)
+        base = _heading_anchor(_render_heading_text(heading, definitions))
         duplicate_number = duplicate_counts.get(base, 0)
         anchor = base if duplicate_number == 0 else f"{base}-{duplicate_number}"
         duplicate_counts[base] = duplicate_number + 1
