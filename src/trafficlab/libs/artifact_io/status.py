@@ -1,12 +1,36 @@
-"""Canonical pure TOML codec for detached artifact status values."""
+"""Canonical status codec and detached publication validation boundary."""
 
+import errno
+import os
 import tomllib
+from pathlib import Path
 from typing import cast
 
-from trafficlab.libs.lineage import LineageError, Sha256Digest
+from trafficlab.libs.lineage import (
+    DEFAULT_CHUNK_SIZE,
+    FileIdentity,
+    LineageError,
+    PathKind,
+    Sha256Digest,
+    validate_external_file,
+    validate_local_file,
+)
 
-from .errors import InvalidArtifactStatusError
-from .values import MAX_ARTIFACT_STATUS_BYTES, ArtifactKind, ArtifactStatus
+from . import filesystem
+from .errors import (
+    ArtifactValidationError,
+    InvalidArtifactStatusError,
+    InvalidPublicationPlanError,
+    OrphanArtifactError,
+)
+from .values import (
+    LAUNCH_NAME,
+    MANIFEST_NAME,
+    MAX_ARTIFACT_STATUS_BYTES,
+    ArtifactKind,
+    ArtifactStatus,
+    PublicationPlan,
+)
 
 _KEYS = (
     "schema_version",
@@ -118,4 +142,150 @@ def parse_artifact_status(data: bytes) -> ArtifactStatus:
         raise InvalidArtifactStatusError("artifact status fields are invalid") from exc
     if render_artifact_status(status) != data:
         raise InvalidArtifactStatusError("artifact status encoding is not canonical")
+    return status
+
+
+def _require_plan(plan: PublicationPlan) -> None:
+    if not isinstance(cast(object, plan), PublicationPlan):
+        raise InvalidPublicationPlanError(
+            "publication validation requires a PublicationPlan"
+        )
+    PublicationPlan(
+        plan.attempt_dir,
+        plan.artifact_path,
+        plan.artifact_kind,
+        plan.member_paths,
+    )
+
+
+def _lstat_destination(path: Path) -> os.stat_result:
+    return os.stat(path, follow_symlinks=False)
+
+
+def _destination_exists(path: Path) -> bool:
+    try:
+        _lstat_destination(path)
+    except OSError as error:
+        if error.errno in {errno.ENOENT, errno.ENOTDIR}:
+            return False
+        raise ArtifactValidationError(
+            "cannot inspect the explicit artifact destination"
+        ) from error
+    return True
+
+
+def _raise_orphan(plan: PublicationPlan, cause: BaseException) -> None:
+    raise OrphanArtifactError(
+        "artifact destination exists without valid detached status",
+        orphan_path=plan.artifact_path,
+    ) from cause
+
+
+def _read_bound_status(plan: PublicationPlan, chunk_size: int) -> ArtifactStatus:
+    try:
+        data = filesystem._snapshot_status(  # pyright: ignore[reportPrivateUsage]
+            plan.attempt_dir,
+            chunk_size=chunk_size,
+        )
+        status = parse_artifact_status(data)
+        if (
+            status.artifact_kind is not plan.artifact_kind
+            or status.artifact_path != str(plan.artifact_path)
+            or status.launch_path != str(plan.launch_path)
+            or (
+                status.digest_path
+                != (
+                    str(plan.artifact_path / MANIFEST_NAME)
+                    if plan.artifact_kind is ArtifactKind.PACKAGE
+                    else str(plan.artifact_path)
+                )
+            )
+        ):
+            raise InvalidArtifactStatusError(
+                "detached status does not match the explicit publication plan"
+            )
+    except InvalidArtifactStatusError as error:
+        if _destination_exists(plan.artifact_path):
+            _raise_orphan(plan, error)
+        raise
+    return status
+
+
+def _validate_launch(status: ArtifactStatus, chunk_size: int) -> None:
+    expected = FileIdentity(
+        PathKind.EXTERNAL,
+        status.launch_path,
+        status.launch_sha256,
+    )
+    try:
+        validate_external_file(expected, chunk_size=chunk_size)
+    except LineageError as error:
+        raise ArtifactValidationError(
+            "startup record failed detached validation"
+        ) from error
+
+
+def _raise_artifact_validation_failure(
+    plan: PublicationPlan,
+    cause: LineageError,
+) -> None:
+    if _destination_exists(plan.artifact_path):
+        _raise_orphan(plan, cause)
+    raise ArtifactValidationError(
+        "published artifact failed detached validation"
+    ) from cause
+
+
+def _validate_file_artifact(
+    plan: PublicationPlan,
+    status: ArtifactStatus,
+    chunk_size: int,
+) -> None:
+    expected = FileIdentity(PathKind.EXTERNAL, status.artifact_path, status.sha256)
+    try:
+        validate_external_file(expected, chunk_size=chunk_size)
+    except LineageError as error:
+        _raise_artifact_validation_failure(plan, error)
+
+
+def _validate_package_artifact(
+    plan: PublicationPlan,
+    status: ArtifactStatus,
+    chunk_size: int,
+) -> None:
+    manifest = FileIdentity(PathKind.LOCAL, MANIFEST_NAME, status.sha256)
+    copied_launch = FileIdentity(
+        PathKind.LOCAL,
+        LAUNCH_NAME,
+        status.launch_sha256,
+    )
+    try:
+        validate_local_file(
+            plan.artifact_path,
+            manifest,
+            chunk_size=chunk_size,
+        )
+        validate_local_file(
+            plan.artifact_path,
+            copied_launch,
+            chunk_size=chunk_size,
+        )
+    except LineageError as error:
+        _raise_artifact_validation_failure(plan, error)
+
+
+def validate_publication(
+    plan: PublicationPlan,
+    *,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+) -> ArtifactStatus:
+    """Validate one explicit artifact through its pinned detached status."""
+
+    _require_plan(plan)
+    status = _read_bound_status(plan, chunk_size)
+    _validate_launch(status, chunk_size)
+    if plan.artifact_kind is ArtifactKind.FILE:
+        _validate_file_artifact(plan, status, chunk_size)
+    else:
+        _validate_package_artifact(plan, status, chunk_size)
     return status
