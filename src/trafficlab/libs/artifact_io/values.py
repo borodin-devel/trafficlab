@@ -196,11 +196,13 @@ def _validate_status_path(value: object, field: str) -> str:
     return value
 
 
-def _validate_detached_hash_domain(region: str, covered_path: str) -> None:
+def _validate_detached_hash_domain(
+    status_path: str, region: str, covered_path: str
+) -> None:
     try:
         validate_hash_domain(
             HashDomain(
-                carrier=HashRegion(ARTIFACT_STATUS_NAME, region),
+                carrier=HashRegion(status_path, region),
                 covered=(HashRegion(covered_path),),
             )
         )
@@ -262,8 +264,11 @@ class ArtifactStatus:
             raise InvalidArtifactStatusError(
                 "digest_path does not match the artifact kind and path"
             )
-        _validate_detached_hash_domain("sha256", digest_path)
-        _validate_detached_hash_domain("launch_sha256", launch_path)
+        status_path = posixpath.join(
+            posixpath.dirname(launch_path), ARTIFACT_STATUS_NAME
+        )
+        _validate_detached_hash_domain(status_path, "sha256", digest_path)
+        _validate_detached_hash_domain(status_path, "launch_sha256", launch_path)
 
 
 def build_file_plan(attempt_dir: Path, artifact_path: Path) -> PublicationPlan:

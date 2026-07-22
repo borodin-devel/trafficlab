@@ -50,6 +50,18 @@ class _OneShotMembers:
         yield from self.values
 
 
+class _OneShotPaths:
+    def __init__(self, values: tuple[Path, ...]) -> None:
+        self.values = values
+        self.iterations = 0
+
+    def __iter__(self) -> Iterator[Path]:
+        self.iterations += 1
+        if self.iterations > 1:
+            raise AssertionError("path iterable consumed more than once")
+        yield from self.values
+
+
 @pytest.mark.unit
 def test_public_constants_and_kind_are_fixed() -> None:
     assert CURRENT_ARTIFACT_STATUS_VERSION == 1
@@ -352,3 +364,44 @@ def test_public_error_hierarchy_and_immutable_publication_evidence() -> None:
     assert error.args == ("write failed",)
     assert error.retained_paths == (Path("/absolute/staging"),)
     assert error.orphan_path == Path("/absolute/orphan")
+
+
+@pytest.mark.unit
+def test_publication_error_evidence_is_copied_once_and_read_only() -> None:
+    retained = _OneShotPaths((Path("/absolute/staging"),))
+    error = ArtifactWriteError(
+        "write failed",
+        retained_paths=retained,
+        orphan_path=Path("/absolute/orphan"),
+    )
+
+    assert retained.iterations == 1
+    assert error.args == ("write failed",)
+    assert error.retained_paths == (Path("/absolute/staging"),)
+    assert error.orphan_path == Path("/absolute/orphan")
+    with pytest.raises(AttributeError):
+        error.retained_paths = (Path("/changed"),)  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        error.orphan_path = None  # type: ignore[misc]
+    assert error.retained_paths == (Path("/absolute/staging"),)
+    assert error.orphan_path == Path("/absolute/orphan")
+
+
+@pytest.mark.unit
+def test_publication_error_rejects_wrong_runtime_evidence_paths() -> None:
+    with pytest.raises(
+        TypeError,
+        match=r"^retained_paths must contain only Path values$",
+    ):
+        ArtifactWriteError(
+            "write failed",
+            retained_paths=("not-a-path",),  # type: ignore[arg-type]
+        )
+    with pytest.raises(
+        TypeError,
+        match=r"^orphan_path must be a Path or None$",
+    ):
+        ArtifactWriteError(
+            "write failed",
+            orphan_path="not-a-path",  # type: ignore[arg-type]
+        )

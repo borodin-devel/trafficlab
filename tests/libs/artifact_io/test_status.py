@@ -44,7 +44,9 @@ def _package_status() -> ArtifactStatus:
 
 
 def _file_status(
-    *, artifact_path: str = "/absolute/output/capture.pcapng"
+    *,
+    artifact_path: str = "/absolute/output/capture.pcapng",
+    launch_path: str = "/absolute/attempt/launch.toml",
 ) -> ArtifactStatus:
     return ArtifactStatus(
         schema_version=CURRENT_ARTIFACT_STATUS_VERSION,
@@ -53,7 +55,7 @@ def _file_status(
         artifact_path=artifact_path,
         digest_path=artifact_path,
         sha256=Sha256Digest(ZERO),
-        launch_path="/absolute/attempt/launch.toml",
+        launch_path=launch_path,
         launch_sha256=Sha256Digest(ONE),
     )
 
@@ -217,6 +219,43 @@ def test_file_digest_path_must_equal_artifact_path() -> None:
             "/absolute/launch.toml",
             Sha256Digest(ONE),
         )
+
+
+@pytest.mark.unit
+def test_file_digest_cannot_claim_the_actual_detached_status_path() -> None:
+    status_path = "/absolute/attempt/artifact-status.toml"
+
+    with pytest.raises(InvalidArtifactStatusError):
+        _file_status(artifact_path=status_path)
+
+    canonical_file = render_artifact_status(_file_status())
+    self_claiming = canonical_file.replace(
+        b"/absolute/output/capture.pcapng", status_path.encode()
+    )
+    with pytest.raises(InvalidArtifactStatusError):
+        parse_artifact_status(self_claiming)
+
+
+@pytest.mark.unit
+def test_launch_digest_cannot_claim_the_actual_detached_status_path() -> None:
+    status_path = "/absolute/attempt/artifact-status.toml"
+
+    with pytest.raises(InvalidArtifactStatusError):
+        _file_status(launch_path=status_path)
+
+    canonical_file = render_artifact_status(_file_status())
+    self_claiming = canonical_file.replace(
+        b"/absolute/attempt/launch.toml", status_path.encode()
+    )
+    with pytest.raises(InvalidArtifactStatusError):
+        parse_artifact_status(self_claiming)
+
+
+@pytest.mark.unit
+def test_status_basename_outside_the_launch_attempt_is_not_a_self_domain() -> None:
+    status = _file_status(artifact_path="/absolute/other/artifact-status.toml")
+
+    assert parse_artifact_status(render_artifact_status(status)) == status
 
 
 @pytest.mark.unit
