@@ -1,5 +1,6 @@
 """Public interface for deterministic hashing and provenance lineage."""
 
+from .domains import HashDomain, HashRegion, validate_hash_domain
 from .errors import (
     FileChangedError,
     FileSnapshotError,
@@ -14,6 +15,7 @@ from .errors import (
     MissingParentError,
     UnsupportedLineageVersionError,
 )
+from .graph import LineageNode, validate_lineage_graph
 from .hashing import (
     DEFAULT_CHUNK_SIZE,
     MAX_CHUNK_SIZE,
@@ -43,13 +45,16 @@ __all__ = (
     "FileChangedError",
     "FileIdentity",
     "FileSnapshotError",
+    "HashDomain",
     "HashMismatchError",
+    "HashRegion",
     "InvalidDigestError",
     "InvalidHashDomainError",
     "InvalidLineagePathError",
     "InvalidProvenanceError",
     "LineageCycleError",
     "LineageError",
+    "LineageNode",
     "ManifestValidationError",
     "MissingParentError",
     "NamedIdentity",
@@ -65,5 +70,7 @@ __all__ = (
     "snapshot_external_file",
     "snapshot_local_file",
     "validate_external_file",
+    "validate_hash_domain",
+    "validate_lineage_graph",
     "validate_local_file",
 )
