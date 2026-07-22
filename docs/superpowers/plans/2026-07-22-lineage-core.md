@@ -61,7 +61,7 @@ verification.
 - Later tasks import path validators privately from `values.py` and all public
   types from the Lineage facade.
 
-- [ ] **Step 1: Write failing value and provenance tests**
+- [x] **Step 1: Write failing value and provenance tests**
 
 Create `tests/libs/lineage/test_values.py` with focused tests equivalent to the
 following complete behavior matrix:
@@ -183,7 +183,7 @@ Add separate parametrized cases for empty/control-bearing names, versions,
 configuration identities, and paths; duplicate local paths with different
 digests; duplicate parent hashes; and immutability of returned tuples.
 
-- [ ] **Step 2: Run the test and observe RED**
+- [x] **Step 2: Run the test and observe RED**
 
 Run:
 
@@ -195,7 +195,7 @@ Expected: collection fails because `trafficlab.libs.lineage` does not exist.
 This is the correct missing-feature failure; no production Lineage package may
 exist before this run.
 
-- [ ] **Step 3: Implement typed errors and canonical values**
+- [x] **Step 3: Implement typed errors and canonical values**
 
 Create `errors.py` with `LineageError(Exception)` and these direct subclasses:
 
@@ -328,7 +328,7 @@ from the test, with nested tuple-of-pairs values such as:
 Export only public names from `lineage/__init__.py`. Keep `libs/__init__.py`
 limited to a package docstring.
 
-- [ ] **Step 4: Verify GREEN and static correctness**
+- [x] **Step 4: Verify GREEN and static correctness**
 
 Run:
 
@@ -341,7 +341,7 @@ uv run --locked pyright src/trafficlab/libs tests/libs/lineage
 
 Expected: all value tests pass; Ruff and Pyright report no findings.
 
-- [ ] **Step 5: Review and commit Task 1**
+- [x] **Step 5: Review and commit Task 1**
 
 Run the complete existing suite, inspect `git diff --check`, request an
 independent spec-compliance and quality review, stage only the five Task 1
@@ -369,7 +369,7 @@ git commit -m "feature(lineage): add canonical provenance values"
 - Produces privately for Task 4:
   `_read_verified_local_bytes(root, expected, max_bytes, chunk_size) -> bytes`.
 
-- [ ] **Step 1: Write failing hashing and path-boundary tests**
+- [x] **Step 1: Write failing hashing and path-boundary tests**
 
 Create `test_hashing.py` with these public behaviors:
 
@@ -436,7 +436,7 @@ For deterministic in-read mutation, monkeypatch private `_read_chunk`. On its
 first call, read one chunk, replace or rewrite the target, then return that
 chunk. Assert `FileChangedError`, not a mixed digest.
 
-- [ ] **Step 2: Run the hashing tests and observe RED**
+- [x] **Step 2: Run the hashing tests and observe RED**
 
 Run:
 
@@ -446,7 +446,7 @@ uv run --locked python -m pytest -q tests/libs/lineage/test_hashing.py
 
 Expected: collection fails because the hashing exports do not exist.
 
-- [ ] **Step 3: Implement stable descriptor snapshots**
+- [x] **Step 3: Implement stable descriptor snapshots**
 
 In `hashing.py`, define:
 
@@ -500,7 +500,7 @@ raises `HashMismatchError` when the kind/path is valid but the digest differs.
 `ManifestValidationError` when `max_bytes <= 0` or the bound is exceeded, and
 compares the digest before returning bytes.
 
-- [ ] **Step 4: Verify focused RED/GREEN guarantees**
+- [x] **Step 4: Verify focused RED/GREEN guarantees**
 
 Run:
 
@@ -515,7 +515,7 @@ Expected: all focused tests and static checks pass. Repeat mutation tests at
 least 20 times to prove they are injection-deterministic rather than timing
 dependent.
 
-- [ ] **Step 5: Review and commit Task 2**
+- [x] **Step 5: Review and commit Task 2**
 
 Run the full suite, review descriptor cleanup and race handling independently,
 stage only Task 2 files, inspect the cached diff, then commit:
@@ -541,7 +541,7 @@ git commit -m "feature(lineage): add stable file snapshots"
   and `validate_lineage_graph`.
 - Task 4 uses hash-domain validation for every manifest-declared member.
 
-- [ ] **Step 1: Write failing detached-domain tests**
+- [x] **Step 1: Write failing detached-domain tests**
 
 Cover these exact cases:
 
@@ -581,7 +581,7 @@ def test_distinct_delimited_payload_may_share_resource() -> None:
 Add empty/control identifiers, empty/duplicate covered regions, exact-region
 self-reference, permutation ordering, and manifest-member domain cases.
 
-- [ ] **Step 2: Write failing deterministic graph tests**
+- [x] **Step 2: Write failing deterministic graph tests**
 
 Use short helpers that construct real 64-character digests. Cover one root,
 one external root, unordered acyclic nodes, duplicate nodes, duplicate parents,
@@ -589,7 +589,7 @@ an external root that duplicates a local node, missing parents, self-cycles,
 and multi-node cycles. Assert permutations return the same sorted tuple or the
 same exception type/message.
 
-- [ ] **Step 3: Run both new files and observe RED**
+- [x] **Step 3: Run both new files and observe RED**
 
 Run:
 
@@ -599,7 +599,7 @@ uv run --locked python -m pytest -q tests/libs/lineage/test_domains.py tests/lib
 
 Expected: imports fail because domain and graph exports are absent.
 
-- [ ] **Step 4: Implement the pure domain core**
+- [x] **Step 4: Implement the pure domain core**
 
 Use these declarations:
 
@@ -622,7 +622,7 @@ Both identifier fields use Task 1's printable single-line validator.
 carrier and covered resource match and either side denotes the whole resource
 or the named regions match. Return a canonical `HashDomain`.
 
-- [ ] **Step 5: Implement deterministic graph validation**
+- [x] **Step 5: Implement deterministic graph validation**
 
 Use:
 
@@ -694,7 +694,7 @@ the first unknown parent. A color-map depth-first traversal visits nodes and
 parents in digest order, skips external roots, and raises `LineageCycleError`
 at the first back edge. Never use set iteration to select an error.
 
-- [ ] **Step 6: Verify, review, and commit Task 3**
+- [x] **Step 6: Verify, review, and commit Task 3**
 
 Run all Lineage tests plus Ruff and Pyright, then the complete test suite.
 Request an independent review of domain overlap and deterministic graph error
@@ -719,7 +719,7 @@ git commit -m "feature(lineage): validate domains and graphs"
 - Produces: public `validate_package_members` with the exact callback signature
   in the design.
 
-- [ ] **Step 1: Write failing manifest-sequencing tests**
+- [x] **Step 1: Write failing manifest-sequencing tests**
 
 Create fixtures that write `manifest.json` and two members under `tmp_path`.
 The parser should accept the exact verified manifest bytes and return local
@@ -755,7 +755,7 @@ self-listed manifest, missing member, changed member, and canonical validation
 order. Use monkeypatch around `validate_local_file` only for observing order;
 all correctness cases use real files.
 
-- [ ] **Step 2: Run the package tests and observe RED**
+- [x] **Step 2: Run the package tests and observe RED**
 
 Run:
 
@@ -765,7 +765,7 @@ uv run --locked python -m pytest -q tests/libs/lineage/test_package.py
 
 Expected: import fails because `validate_package_members` is absent.
 
-- [ ] **Step 3: Implement manifest-first validation**
+- [x] **Step 3: Implement manifest-first validation**
 
 Implement this exact flow in `package.py`:
 
@@ -806,7 +806,7 @@ hashing any member. Reject duplicate paths independently of digest. Preserve
 the underlying exception as `__cause__` without placing parser text or bytes in
 the stable public message.
 
-- [ ] **Step 4: Verify all Lineage acceptance criteria**
+- [x] **Step 4: Verify all Lineage acceptance criteria**
 
 Run:
 
@@ -821,7 +821,7 @@ uv run --locked pyright
 Expected: all tests and static checks pass. Confirm tests explicitly trace
 `LIN-AC-001`, `LIN-AC-002`, and `LIN-AC-003` in names or docstrings.
 
-- [ ] **Step 5: Review and commit Task 4**
+- [x] **Step 5: Review and commit Task 4**
 
 Request an independent security/spec review focused on detached-manifest
 sequencing, callback boundaries, member validation order, and exception
@@ -848,14 +848,14 @@ git commit -m "feature(lineage): verify package member lineage"
   progress of `[ 29%]` because two of seven equal-weight foundations are done.
 - Changes no immutable architecture prose.
 
-- [ ] **Step 1: Add public usage documentation**
+- [x] **Step 1: Add public usage documentation**
 
 Add a concise `Lineage library` section to `README.md` showing imports and one
 local snapshot/provenance example. State that paths are explicit and no-follow,
 contract owners retain serialization, and package callers validate detached
 status before passing the expected manifest identity.
 
-- [ ] **Step 2: Run the focused and aggregate gates for evidence**
+- [x] **Step 2: Run the focused and aggregate gates for evidence**
 
 Run:
 
@@ -867,7 +867,7 @@ uv run --locked python tools/quality.py all
 Record the exact focused/full test counts and current wheel SHA-256. Repeat the
 wheel build and require the same hash before claiming deterministic packaging.
 
-- [ ] **Step 3: Update mutable roadmaps**
+- [x] **Step 3: Update mutable roadmaps**
 
 In `architecture/libs/lineage/ROADMAP.md`, set Stage, Step, and Substep to
 `[DONE]` and add evidence covering API files, known vectors, permutation/path/
@@ -883,7 +883,7 @@ Update this plan's decision log with any major implementation issue and its
 test-backed resolution. Do not change root `ROADMAP.md`; it is already a link
 to the authoritative central roadmap.
 
-- [ ] **Step 4: Re-run validation after documentation changes**
+- [x] **Step 4: Re-run validation after documentation changes**
 
 Run:
 
@@ -895,7 +895,7 @@ git status --short
 
 Expected: all aggregate gates pass and only the four Task 5 files are modified.
 
-- [ ] **Step 5: Review and commit Task 5**
+- [x] **Step 5: Review and commit Task 5**
 
 Request an independent whole-stage review from the pre-Lineage base through
 the current tree. Correct every actionable finding test-first, rerun the locked
@@ -934,3 +934,21 @@ clean Lineage worktree and fully merged local branch.
   only with bytes from a stable manifest snapshot whose digest already matches
   the detached expected identity. This makes LIN-FR-005 an enforced call order,
   not caller documentation.
+- **Major — pytest module namespace:** The required Lineage
+  `tests/libs/lineage/test_package.py` basename collided with Infrastructure's
+  existing `test_package.py` under pytest prepend mode. A local
+  `tests/libs/lineage/__init__.py` package marker isolates the mandated module
+  name without a global pytest configuration change or an existing-file rename.
+- **Security boundary — stable snapshots:** Boundary tests exposed filesystem
+  encoding and Unicode line-separator diagnostics plus mutation, flag, and
+  cleanup edge cases. The snapshot shell now wraps exact causes, emits
+  deterministic single-line errors, preserves no-follow/nonblocking flags, and
+  closes pinned descriptors under every tested failure.
+- **Major — aggregate coverage closure:** The first aggregate gate exposed
+  untested public and boundary paths. Meaningful vector, validation, and error
+  tests now cover them with 100% statement and branch coverage, without an
+  exclusion or threshold change.
+- **Major — graph traversal invariant:** Exhaustive and stack/color invariant
+  evidence proved that a popped-entry `state == 1` branch was unreachable.
+  Reviewed commit `308c119` removed only that redundant check while retaining
+  parent-edge back-edge detection and deterministic cycle diagnostics.

@@ -2,21 +2,27 @@
 
 Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
 
-## [PLAN] STAGE 1 — Hash and Provenance Core
+## [DONE] STAGE 1 — Hash and Provenance Core
 
 - **Task:** Complete the stage named by this heading through its ordered steps.
 - **Deliverable:** A usable, testable increment comprising the outputs declared by those steps.
 - **Applicable test types:** The test types declared by this stage's substeps.
 - **Completion criteria:** Every step and substep in this stage meets its completion criteria.
+- **Evidence:** Step 1.1 and Substep 1.1.1 are `[DONE]`; the public facade and
+  focused, aggregate, static, documentation, coverage, and reproducible-build
+  evidence below satisfy the stage criteria.
 
-### [PLAN] STEP 1.1 — Implement canonical lineage
+### [DONE] STEP 1.1 — Implement canonical lineage
 
 - **Task:** Perform the implementation work named by this heading.
 - **Deliverable:** All outputs declared by this step's substeps.
 - **Applicable test types:** The test types declared by this step's substeps.
 - **Completion criteria:** Every substep in this step meets its completion criteria.
+- **Evidence:** Substep 1.1.1 implements the versioned typed API, stable file
+  snapshot shell, detached hash-domain and graph validators, and manifest-first
+  package validation required by LIN-AC-001 through LIN-AC-003.
 
-#### [PLAN] SUBSTEP 1.1.1 — Hash, serialize, and validate provenance
+#### [DONE] SUBSTEP 1.1.1 — Hash, serialize, and validate provenance
 
 - **Objective:** Satisfy LIN-AC-001 through LIN-AC-003.
 - **Implementation:** Add streaming hash, canonical builders, detached hash
@@ -30,3 +36,15 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
   changed external source, and broken-parent rejection.
 - **Completion criteria:** All lineage requirements and LIN-AC-001 through
   LIN-AC-003 pass.
+- **Evidence:** `src/trafficlab/libs/lineage/` exposes typed canonical values,
+  exact-byte bounded snapshots, detached domains, deterministic graph checks,
+  and manifest-first package validation. The 167 focused tests cover published
+  SHA-256 vectors, permutation-invariant ordering, local/external path and
+  no-follow boundaries, deterministic mutation and replacement detection,
+  self-hash/domain rejection, detached manifest sequencing, package members,
+  and missing-parent/cycle graphs. The locked aggregate gate passed 410 tests,
+  Ruff formatting and linting, strict Pyright, whitespace and all 319
+  architecture Markdown files, 100% statement and branch coverage (502
+  statements and 154 branches), and wheel construction. Two repository-owned
+  builds produced identical SHA-256
+  `adeb4693d60d7e943d9b7b1f60c9ba8982d796a649edd55df21e6f23c223bb56`.

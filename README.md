@@ -44,6 +44,35 @@ The build gate emits an installable wheel with a fixed source-date epoch
 so identical source and lock inputs produce identical wheel bytes. The docs
 gate enforces the [architecture corpus validation rules](architecture/VALIDATION.md).
 
+## Lineage library
+
+The public Lineage API snapshots explicitly named local files and builds
+immutable, canonically ordered provenance values:
+
+```python
+from pathlib import Path
+
+from trafficlab.libs.lineage import (
+    NamedIdentity,
+    build_provenance,
+    provenance_items,
+    snapshot_local_file,
+)
+
+artifact_root = Path("/absolute/path/to/artifact")
+source = snapshot_local_file(artifact_root, "inputs/reference.pcapng")
+provenance = build_provenance(
+    paths=(source,),
+    implementations=(NamedIdentity("trafficlab", "0.1.0"),),
+)
+canonical_items = provenance_items(provenance)
+```
+
+Roots and paths are explicit, and snapshot traversal does not follow symlink
+components. Each file-contract owner still defines its required fields and
+JSON or TOML serialization. Package consumers first validate detached status,
+then pass its expected manifest identity to `validate_package_members`.
+
 ## Continuous integration
 
 GitHub Actions calls the same locked `all` command for pull requests and pushes
