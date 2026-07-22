@@ -867,7 +867,14 @@ safe local fast-forward completion path described in Task 6.
   retains the standard-library constraint and the public validator facade;
   178 focused parser fixtures and two independent oracle matrices cover the
   resulting boundary behavior.
-- **Task 9 reproducibility replay:** Committed head `77a3d989` was cloned into
+- **Major — final boundary hardening:** Whole-range review found non-link
+  Markdown false positives, source-text heading anchors, ancestor-symlink and
+  diagnostic-injection risks, and Git-attribute-controlled whitespace policy.
+  Test-first corrections added rendered/container-aware Markdown parsing,
+  component-wise no-follow descriptor traversal, one-line escaped diagnostics,
+  and raw index/worktree validation with fixed Git-default rules. Repeated
+  independent review approved the corrected five-file patch.
+- **Task 9 reproducibility replay:** Committed head `77db5fe5` was cloned into
   a new temporary directory with no environment, synchronized with
   `uv sync --locked --all-groups`, and passed the exact locked aggregate gate.
   Its wheel matched repeated local builds at SHA-256
@@ -886,9 +893,10 @@ safe local fast-forward completion path described in Task 6.
   the core.
 - Scope: no runtime application, capture, deployment, or architecture-prose
   change is included.
-- Final evidence: the focused defect/policy selection passes 201 tests, the
-  aggregate gate passes 203 tests with 100% package coverage, all 319
+- Final evidence: the focused defect/policy selection passes 241 tests, the
+  aggregate gate passes 243 tests with 100% package coverage, all 319
   architecture Markdown files validate silently, and the complete-tree
-  whitespace gate covers both index and tracked-worktree snapshots. Central
-  foundation arithmetic remains 14% because Infrastructure is still one of
-  seven equally weighted component roadmaps and the other six remain planned.
+  whitespace gate covers raw index and tracked-worktree snapshots independently
+  of ambient Git attributes and configuration. Central foundation arithmetic
+  remains 14% because Infrastructure is still one of seven equally weighted
+  component roadmaps and the other six remain planned.

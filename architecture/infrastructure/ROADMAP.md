@@ -74,22 +74,26 @@ Part of the [central Trafficlab roadmap](../project/ROADMAP.md).
   validator, with stable fixtures for broken links and fragments, duplicate
   requirement identifiers, roadmap and registry rules, every regular-file
   name, AC-only SRS documents, bare central-roadmap links, untrusted-file
-  replacement, and CommonMark/GFM block state across wrapped inline and
-  reference links, lists, quotes, fences, indented code, and structural tables.
-  It validates all 319 architecture Markdown files. The complete-tree
-  whitespace gate compares both the prospective index and tracked working tree
-  with Git's empty tree, so committed content is checked in a clean checkout.
+  replacement, no-follow directory races, control-safe diagnostics, rendered
+  heading anchors, and CommonMark/GFM block state across wrapped inline and
+  reference links, lists, quotes, HTML and code spans, fences, indented code,
+  and structural tables. It validates all 319 architecture Markdown files.
+  The complete-tree whitespace gate reads raw stage-zero index blobs and
+  tracked working-tree bytes through pinned no-follow descriptors. It applies
+  fixed Git-default whitespace and conflict-marker rules independently of Git
+  attributes and configuration, so committed content is checked in a clean
+  checkout without allowing local policy overrides.
   The GitHub Actions workflow pins checkout to
   `3d3c42e5aac5ba805825da76410c181273ba90b1` and setup-uv to
   `11f9893b081a58869d3b5fccaea48c9e9e46f990`, grants only read access to
   repository contents, disables persisted credentials, selects uv 0.11.25,
   performs locked synchronization, and runs the same
   `uv run --locked python tools/quality.py all` command used locally. The
-  focused defect and policy suite passed 201 tests; the full aggregate gate
-  passed 203 tests with 100% package coverage, clean Ruff and Pyright checks,
+  focused defect and policy suite passed 241 tests; the full aggregate gate
+  passed 243 tests with 100% package coverage, clean Ruff and Pyright checks,
   and silent corpus, complete-tree whitespace, and diff-hygiene validation.
   Repeated local and clean-clone wheel builds produced identical SHA-256
   `76659dfe5d626a361d94ade34e1f6c232d48f51820760a71f16ed15c98e165f2`.
-  A fresh local clone of committed implementation head `77a3d989`, with no
+  A fresh local clone of committed implementation head `77db5fe5`, with no
   pre-existing environment, completed locked synchronization and passed the
   full aggregate gate.
