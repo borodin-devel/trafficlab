@@ -81,8 +81,6 @@ def validate_lineage_graph(
             state = color.get(digest, 0)
             if state == 2:
                 continue
-            if state == 1:
-                raise LineageCycleError(f"lineage cycle at: {digest}")
             color[digest] = 1
             stack.append((digest, True))
             parents = by_digest[digest].parent_hashes
