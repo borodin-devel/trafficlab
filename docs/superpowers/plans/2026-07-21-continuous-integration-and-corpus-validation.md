@@ -860,6 +860,19 @@ safe local fast-forward completion path described in Task 6.
   validator families missed wrapped links, physical table adjacency, non-Markdown
   names, AC-only SRS documents, and bare central roadmap links. Tasks 7-9 make
   those boundaries explicit before Stage 2 is integrated.
+- **Major — Markdown block-state completeness:** Bounded review extended the
+  original wrapped-link correction across CommonMark/GFM lists, blockquotes,
+  fences, indented code, structural tables, HTML boundaries, complete
+  reference definitions, and absolute tab columns. A cohesive private parser
+  retains the standard-library constraint and the public validator facade;
+  178 focused parser fixtures and two independent oracle matrices cover the
+  resulting boundary behavior.
+- **Task 9 reproducibility replay:** Committed head `77a3d989` was cloned into
+  a new temporary directory with no environment, synchronized with
+  `uv sync --locked --all-groups`, and passed the exact locked aggregate gate.
+  Its wheel matched repeated local builds at SHA-256
+  `76659dfe5d626a361d94ade34e1f6c232d48f51820760a71f16ed15c98e165f2`;
+  only that disposable clone was removed afterward.
 
 ## Plan Self-Review
 
@@ -873,3 +886,9 @@ safe local fast-forward completion path described in Task 6.
   the core.
 - Scope: no runtime application, capture, deployment, or architecture-prose
   change is included.
+- Final evidence: the focused defect/policy selection passes 201 tests, the
+  aggregate gate passes 203 tests with 100% package coverage, all 319
+  architecture Markdown files validate silently, and the complete-tree
+  whitespace gate covers both index and tracked-worktree snapshots. Central
+  foundation arithmetic remains 14% because Infrastructure is still one of
+  seven equally weighted component roadmaps and the other six remain planned.

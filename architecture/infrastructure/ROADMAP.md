@@ -72,20 +72,24 @@ Part of the [central Trafficlab roadmap](../project/ROADMAP.md).
 - **Completion criteria:** INF-AC-002 passes and all normal gates succeed.
 - **Evidence:** `tools/validate_architecture.py` provides the standard-library
   validator, with stable fixtures for broken links and fragments, duplicate
-  requirement identifiers, roadmap and registry rules, whitespace and
-  documentation failures, injected test and build failures, and CI policy. It
-  validates all 319 architecture Markdown files. The GitHub Actions workflow
-  pins checkout to `3d3c42e5aac5ba805825da76410c181273ba90b1` and setup-uv to
+  requirement identifiers, roadmap and registry rules, every regular-file
+  name, AC-only SRS documents, bare central-roadmap links, untrusted-file
+  replacement, and CommonMark/GFM block state across wrapped inline and
+  reference links, lists, quotes, fences, indented code, and structural tables.
+  It validates all 319 architecture Markdown files. The complete-tree
+  whitespace gate compares both the prospective index and tracked working tree
+  with Git's empty tree, so committed content is checked in a clean checkout.
+  The GitHub Actions workflow pins checkout to
+  `3d3c42e5aac5ba805825da76410c181273ba90b1` and setup-uv to
   `11f9893b081a58869d3b5fccaea48c9e9e46f990`, grants only read access to
   repository contents, disables persisted credentials, selects uv 0.11.25,
   performs locked synchronization, and runs the same
   `uv run --locked python tools/quality.py all` command used locally. The
-  focused defect and policy suite passed 68 tests;
-  the full aggregate gate passed 70 tests with 100% package coverage, clean
-  Ruff and Pyright checks, and silent corpus and `git diff --check`
-  validation. Two local wheel builds and the clean-clone build produced
-  identical SHA-256
-  `e0f24e73c6e87f9ab8022f3f618cee66bf3d00de8443d04d2707bd203f901497`.
-  A fresh local clone of committed implementation head `ebb2afd`, with no
+  focused defect and policy suite passed 201 tests; the full aggregate gate
+  passed 203 tests with 100% package coverage, clean Ruff and Pyright checks,
+  and silent corpus, complete-tree whitespace, and diff-hygiene validation.
+  Repeated local and clean-clone wheel builds produced identical SHA-256
+  `76659dfe5d626a361d94ade34e1f6c232d48f51820760a71f16ed15c98e165f2`.
+  A fresh local clone of committed implementation head `77a3d989`, with no
   pre-existing environment, completed locked synchronization and passed the
   full aggregate gate.
