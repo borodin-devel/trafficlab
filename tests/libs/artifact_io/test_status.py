@@ -871,6 +871,81 @@ def test_status_snapshot_uses_exact_descriptor_relative_no_follow_flags(
 
 
 @pytest.mark.unit
+def test_status_snapshot_rejects_initial_descriptor_entry_content_race_before_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt = _empty_attempt(tmp_path)
+    status_path = attempt / "artifact-status.toml"
+    _write_private(status_path, b"AAAA")
+    real_stat = filesystem._stat_entry
+    status_stat_calls = 0
+    read_called = False
+
+    def racing_stat(
+        path: str,
+        *,
+        dir_fd: int | None = None,
+    ) -> os.stat_result:
+        nonlocal status_stat_calls
+        if path == status_path.name:
+            status_stat_calls += 1
+            if status_stat_calls == 1:
+                status_path.write_bytes(b"BBBBB")
+        return real_stat(path, dir_fd=dir_fd)
+
+    def unexpected_read(descriptor: int, count: int) -> bytes:
+        del descriptor, count
+        nonlocal read_called
+        read_called = True
+        raise AssertionError("initial entry race reached content read")
+
+    monkeypatch.setattr(filesystem, "_stat_entry", racing_stat)
+    monkeypatch.setattr(filesystem, "_read_fd", unexpected_read)
+
+    with pytest.raises(ArtifactStatusSecurityError) as caught:
+        filesystem._snapshot_status(attempt)
+
+    assert status_stat_calls == 1
+    assert read_called is False
+    assert status_path.read_bytes() == b"BBBBB"
+    assert isinstance(caught.value.__cause__, OSError)
+
+
+@pytest.mark.unit
+def test_status_snapshot_rejects_final_descriptor_entry_content_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt = _empty_attempt(tmp_path)
+    status_path = attempt / "artifact-status.toml"
+    _write_private(status_path, b"AAAA")
+    real_stat = filesystem._stat_entry
+    status_stat_calls = 0
+
+    def racing_stat(
+        path: str,
+        *,
+        dir_fd: int | None = None,
+    ) -> os.stat_result:
+        nonlocal status_stat_calls
+        if path == status_path.name:
+            status_stat_calls += 1
+            if status_stat_calls == 2:
+                status_path.write_bytes(b"BBBBB")
+        return real_stat(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(filesystem, "_stat_entry", racing_stat)
+
+    with pytest.raises(ArtifactStatusSecurityError) as caught:
+        filesystem._snapshot_status(attempt)
+
+    assert status_stat_calls == 2
+    assert status_path.read_bytes() == b"BBBBB"
+    assert isinstance(caught.value.__cause__, OSError)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("size", "expected_requests", "expected_observed", "should_overflow"),
     (
@@ -1332,13 +1407,13 @@ def test_validation_reads_and_parses_exactly_one_pinned_status_snapshot(
     assert calls == [(publication.plan.attempt_dir, 13)]
 
 
-@pytest.mark.integration
-@pytest.mark.parametrize("target_state", ("missing", "directory", "hash-mismatch"))
-def test_live_launch_target_failures_are_typed_and_preserve_lineage_cause(
-    tmp_path: Path,
+PublicationFactory = Callable[[Path], _PublicationFixture]
+
+
+def _invalidate_live_launch(
+    publication: _PublicationFixture,
     target_state: str,
 ) -> None:
-    publication = _file_publication(tmp_path)
     launch = publication.plan.launch_path
     if target_state == "missing":
         launch.unlink()
@@ -1348,15 +1423,69 @@ def test_live_launch_target_failures_are_typed_and_preserve_lineage_cause(
     else:
         launch.write_bytes(b"mutated launch record\n")
 
-    with pytest.raises(ArtifactValidationError) as caught:
+
+def _remove_destination(publication: _PublicationFixture) -> None:
+    destination = publication.plan.artifact_path
+    if publication.plan.artifact_kind is ArtifactKind.FILE:
+        destination.unlink()
+        return
+    for member in destination.iterdir():
+        member.unlink()
+    destination.rmdir()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "publication_factory",
+    (_file_publication, _package_publication),
+    ids=("file", "package"),
+)
+@pytest.mark.parametrize("target_state", ("missing", "directory", "hash-mismatch"))
+def test_invalid_live_launch_with_existing_destination_is_orphan(
+    tmp_path: Path,
+    publication_factory: PublicationFactory,
+    target_state: str,
+) -> None:
+    publication = publication_factory(tmp_path)
+    _invalidate_live_launch(publication, target_state)
+
+    with pytest.raises(OrphanArtifactError) as caught:
         validate_publication(publication.plan)
 
+    assert caught.value.orphan_path == publication.plan.artifact_path
     assert isinstance(caught.value.__cause__, LineageError)
     if target_state == "hash-mismatch":
         assert isinstance(caught.value.__cause__, HashMismatchError)
     else:
         assert isinstance(caught.value.__cause__, FileSnapshotError)
+    _assert_safe_diagnostic(caught.value)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "publication_factory",
+    (_file_publication, _package_publication),
+    ids=("file", "package"),
+)
+@pytest.mark.parametrize("target_state", ("missing", "directory", "hash-mismatch"))
+def test_invalid_live_launch_with_absent_destination_is_validation_error(
+    tmp_path: Path,
+    publication_factory: PublicationFactory,
+    target_state: str,
+) -> None:
+    publication = publication_factory(tmp_path)
+    _remove_destination(publication)
+    _invalidate_live_launch(publication, target_state)
+
+    with pytest.raises(ArtifactValidationError) as caught:
+        validate_publication(publication.plan)
+
     assert caught.value.orphan_path is None
+    assert isinstance(caught.value.__cause__, LineageError)
+    if target_state == "hash-mismatch":
+        assert isinstance(caught.value.__cause__, HashMismatchError)
+    else:
+        assert isinstance(caught.value.__cause__, FileSnapshotError)
     _assert_safe_diagnostic(caught.value)
 
 

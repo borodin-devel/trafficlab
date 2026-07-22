@@ -211,7 +211,11 @@ def _read_bound_status(plan: PublicationPlan, chunk_size: int) -> ArtifactStatus
     return status
 
 
-def _validate_launch(status: ArtifactStatus, chunk_size: int) -> None:
+def _validate_launch(
+    plan: PublicationPlan,
+    status: ArtifactStatus,
+    chunk_size: int,
+) -> None:
     expected = FileIdentity(
         PathKind.EXTERNAL,
         status.launch_path,
@@ -220,20 +224,22 @@ def _validate_launch(status: ArtifactStatus, chunk_size: int) -> None:
     try:
         validate_external_file(expected, chunk_size=chunk_size)
     except LineageError as error:
-        raise ArtifactValidationError(
-            "startup record failed detached validation"
-        ) from error
+        _raise_target_validation_failure(
+            plan,
+            error,
+            message="startup record failed detached validation",
+        )
 
 
-def _raise_artifact_validation_failure(
+def _raise_target_validation_failure(
     plan: PublicationPlan,
     cause: LineageError,
+    *,
+    message: str,
 ) -> None:
     if _destination_exists(plan.artifact_path):
         _raise_orphan(plan, cause)
-    raise ArtifactValidationError(
-        "published artifact failed detached validation"
-    ) from cause
+    raise ArtifactValidationError(message) from cause
 
 
 def _validate_file_artifact(
@@ -245,7 +251,11 @@ def _validate_file_artifact(
     try:
         validate_external_file(expected, chunk_size=chunk_size)
     except LineageError as error:
-        _raise_artifact_validation_failure(plan, error)
+        _raise_target_validation_failure(
+            plan,
+            error,
+            message="published artifact failed detached validation",
+        )
 
 
 def _validate_package_artifact(
@@ -271,7 +281,11 @@ def _validate_package_artifact(
             chunk_size=chunk_size,
         )
     except LineageError as error:
-        _raise_artifact_validation_failure(plan, error)
+        _raise_target_validation_failure(
+            plan,
+            error,
+            message="published artifact failed detached validation",
+        )
 
 
 def validate_publication(
@@ -283,7 +297,7 @@ def validate_publication(
 
     _require_plan(plan)
     status = _read_bound_status(plan, chunk_size)
-    _validate_launch(status, chunk_size)
+    _validate_launch(plan, status, chunk_size)
     if plan.artifact_kind is ArtifactKind.FILE:
         _validate_file_artifact(plan, status, chunk_size)
     else:

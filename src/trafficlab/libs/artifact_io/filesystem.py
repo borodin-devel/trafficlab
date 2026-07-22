@@ -165,9 +165,15 @@ def _assert_entry_unchanged(
         if compare_content
         else _identity_fingerprint(entry.initial)
     )
-    if descriptor_fingerprint != initial_fingerprint or _identity_fingerprint(
-        entry_status
-    ) != _identity_fingerprint(entry.initial):
+    entry_fingerprint = (
+        _content_fingerprint(entry_status)
+        if compare_content
+        else _identity_fingerprint(entry_status)
+    )
+    if (
+        descriptor_fingerprint != initial_fingerprint
+        or entry_fingerprint != initial_fingerprint
+    ):
         _raise_security(
             "detached status changed during snapshot",
             OSError(errno.ESTALE, "pinned entry identity changed"),
@@ -220,7 +226,7 @@ def _open_status(
     metadata = _fstat_fd(descriptor)
     entry = _PinnedEntry(attempt_fd, ARTIFACT_STATUS_NAME, descriptor, metadata)
     entry_status = _stat_entry(ARTIFACT_STATUS_NAME, dir_fd=attempt_fd)
-    if _identity_fingerprint(entry_status) != _identity_fingerprint(metadata):
+    if _content_fingerprint(entry_status) != _content_fingerprint(metadata):
         _raise_security(
             "detached status changed during snapshot",
             OSError(errno.ESTALE, "status entry binding changed"),
