@@ -2,21 +2,59 @@
 
 from __future__ import annotations
 
+import ctypes
 import errno
+import io
 import os
 import posixpath
+import re
+import secrets
 import stat
+from collections.abc import Buffer
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Never
+from typing import BinaryIO, Never, cast
 
 from trafficlab.libs.lineage import DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE
 
-from .errors import ArtifactStatusSecurityError, MissingArtifactStatusError
+from .errors import (
+    ArtifactStatusSecurityError,
+    ArtifactWriteError,
+    AtomicPublicationError,
+    MissingArtifactStatusError,
+    PublicationConflictError,
+    UnsupportedAtomicPublicationError,
+)
 from .values import ARTIFACT_STATUS_NAME, MAX_ARTIFACT_STATUS_BYTES
 
 _DIRECTORY_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _STATUS_OPEN_FLAGS = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
+_STAGING_OPEN_FLAGS = (
+    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+)
+_RENAME_NOREPLACE = 1
+_UNSUPPORTED_RENAME_ERRNOS = frozenset(
+    {errno.EXDEV, errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP}
+)
+
+_LIBC = ctypes.CDLL(None, use_errno=True)
+try:
+    _renameat2_symbol = _LIBC.renameat2
+except AttributeError:
+    _renameat2_symbol = None
+else:
+    _renameat2_symbol.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    _renameat2_symbol.restype = ctypes.c_int
+
+_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+_MAX_STAGING_COLLISIONS = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,10 +65,75 @@ class _PinnedEntry:
     initial: os.stat_result
 
 
-def _open_fd(path: str, flags: int, *, dir_fd: int | None = None) -> int:
+@dataclass(frozen=True, slots=True)
+class _PinnedDirectory:
+    path: Path
+    entries: tuple[_PinnedEntry, ...]
+
+    @property
+    def fd(self) -> int:
+        return self.entries[-1].fd
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedFile:
+    parent: _PinnedDirectory
+    name: str
+    path: Path
+    initial: os.stat_result
+
+
+class _UnbufferedWriter(io.RawIOBase):
+    """One unbuffered descriptor whose lifetime remains library-owned."""
+
+    __slots__ = ("_descriptor",)
+
+    def __init__(self, descriptor: int) -> None:
+        super().__init__()
+        self._descriptor: int | None = descriptor
+
+    def writable(self) -> bool:
+        return True
+
+    def fileno(self) -> int:
+        descriptor = self._descriptor
+        if self.closed or descriptor is None:
+            raise ValueError("I/O operation on closed publication file")
+        return descriptor
+
+    def write(self, data: Buffer) -> int:
+        return _write_fd(self.fileno(), data)
+
+    def flush(self) -> None:
+        if self.closed:
+            raise ValueError("I/O operation on closed publication file")
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        descriptor = self._descriptor
+        self._descriptor = None
+        close_error: OSError | None = None
+        if descriptor is not None:
+            try:
+                _close_fd(descriptor)
+            except OSError as error:
+                close_error = error
+        super().close()
+        if close_error is not None:
+            raise close_error
+
+
+def _open_fd(
+    path: str,
+    flags: int,
+    *,
+    dir_fd: int | None = None,
+    mode: int = 0o777,
+) -> int:
     if dir_fd is None:
-        return os.open(path, flags)
-    return os.open(path, flags, dir_fd=dir_fd)
+        return os.open(path, flags, mode)
+    return os.open(path, flags, mode, dir_fd=dir_fd)
 
 
 def _fstat_fd(descriptor: int) -> os.stat_result:
@@ -47,12 +150,100 @@ def _read_fd(descriptor: int, count: int) -> bytes:
     return os.read(descriptor, count)
 
 
+def _write_fd(
+    descriptor: int,
+    data: Buffer,
+) -> int:
+    return os.write(descriptor, data)
+
+
 def _close_fd(descriptor: int) -> None:
     os.close(descriptor)
 
 
 def _effective_uid() -> int:
     return os.geteuid()
+
+
+def _publication_token() -> str:
+    return secrets.token_hex(16)
+
+
+def _flush_writer(  # pyright: ignore[reportUnusedFunction]
+    handle: BinaryIO,
+) -> None:
+    handle.flush()
+
+
+def _close_writer(  # pyright: ignore[reportUnusedFunction]
+    handle: BinaryIO,
+) -> None:
+    handle.close()
+
+
+def _renameat2_call(
+    source_parent_fd: int,
+    source_name: bytes,
+    destination_parent_fd: int,
+    destination_name: bytes,
+    flags: int,
+) -> None:
+    """Invoke the bound Linux renameat2 syscall without an unsafe fallback."""
+
+    if _renameat2_symbol is None:
+        raise OSError(errno.ENOSYS, "renameat2 is unavailable")
+    ctypes.set_errno(0)
+    result = _renameat2_symbol(
+        source_parent_fd,
+        source_name,
+        destination_parent_fd,
+        destination_name,
+        flags,
+    )
+    if result != 0:
+        error_number = ctypes.get_errno() or errno.EIO
+        raise OSError(error_number, os.strerror(error_number))
+
+
+def _atomic_rename_noreplace(  # pyright: ignore[reportUnusedFunction]
+    source_parent_fd: int,
+    source_name: str,
+    destination_parent_fd: int,
+    destination_name: str,
+    *,
+    source_path: Path,
+    orphan_path: Path | None = None,
+) -> None:
+    """Atomically publish one pinned entry while retaining failures in place."""
+
+    try:
+        encoded_source = os.fsencode(source_name)
+        encoded_destination = os.fsencode(destination_name)
+        _renameat2_call(
+            source_parent_fd,
+            encoded_source,
+            destination_parent_fd,
+            encoded_destination,
+            _RENAME_NOREPLACE,
+        )
+    except OSError as error:
+        if error.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise PublicationConflictError(
+                "atomic publication destination already exists",
+                retained_paths=(source_path,),
+                orphan_path=orphan_path,
+            ) from error
+        if error.errno in _UNSUPPORTED_RENAME_ERRNOS:
+            raise UnsupportedAtomicPublicationError(
+                "atomic no-replace publication is unsupported",
+                retained_paths=(source_path,),
+                orphan_path=orphan_path,
+            ) from error
+        raise AtomicPublicationError(
+            "atomic no-replace publication failed",
+            retained_paths=(source_path,),
+            orphan_path=orphan_path,
+        ) from error
 
 
 def _raise_security(message: str, cause: BaseException) -> Never:
@@ -204,6 +395,212 @@ def _open_attempt_chain(
         entries.append(_PinnedEntry(parent_fd, component, descriptor, metadata))
     _require_private_attempt(entries[-1].initial)
     return entries
+
+
+def _close_pinned_directory(  # pyright: ignore[reportUnusedFunction]
+    directory: _PinnedDirectory,
+) -> OSError | None:
+    return _close_all([entry.fd for entry in directory.entries])
+
+
+def _pin_attempt_directory(  # pyright: ignore[reportUnusedFunction]
+    attempt_dir: Path,
+) -> _PinnedDirectory:
+    attempt_text = _validate_attempt_path(attempt_dir)
+    opened: list[int] = []
+    try:
+        entries = _open_attempt_chain(attempt_text, opened)
+    except BaseException:
+        _close_all(opened)
+        raise
+    return _PinnedDirectory(attempt_dir, tuple(entries))
+
+
+def _pin_owned_directory(  # pyright: ignore[reportUnusedFunction]
+    path: Path,
+) -> _PinnedDirectory:
+    opened: list[int] = []
+    try:
+        root_fd = _open_fd("/", _DIRECTORY_OPEN_FLAGS)
+        opened.append(root_fd)
+        root_status = _fstat_fd(root_fd)
+        _require_directory(root_status)
+        entries = [_PinnedEntry(None, "/", root_fd, root_status)]
+        for component in path.as_posix().split("/")[1:]:
+            if not component:
+                continue
+            parent_fd = entries[-1].fd
+            descriptor = _open_fd(
+                component,
+                _DIRECTORY_OPEN_FLAGS,
+                dir_fd=parent_fd,
+            )
+            opened.append(descriptor)
+            metadata = _fstat_fd(descriptor)
+            _require_directory(metadata)
+            entries.append(_PinnedEntry(parent_fd, component, descriptor, metadata))
+        final = entries[-1].initial
+        if final.st_uid != _effective_uid():
+            raise OSError(errno.EPERM, "publication parent owner is unsafe")
+    except BaseException:
+        _close_all(opened)
+        raise
+    return _PinnedDirectory(path, tuple(entries))
+
+
+def _revalidate_pinned_directory(directory: _PinnedDirectory) -> None:
+    for entry in reversed(directory.entries):
+        descriptor_status = _fstat_fd(entry.fd)
+        entry_status = _stat_entry(entry.name, dir_fd=entry.parent_fd)
+        if _identity_fingerprint(descriptor_status) != _identity_fingerprint(
+            entry.initial
+        ) or _identity_fingerprint(entry_status) != _identity_fingerprint(
+            entry.initial
+        ):
+            raise OSError(errno.ESTALE, "pinned publication directory changed")
+
+
+def _entry_exists(  # pyright: ignore[reportUnusedFunction]
+    directory: _PinnedDirectory,
+    name: str,
+) -> bool:
+    try:
+        _stat_entry(name, dir_fd=directory.fd)
+    except OSError as error:
+        if error.errno == errno.ENOENT:
+            return False
+        raise
+    return True
+
+
+def _require_private_staged_file(metadata: os.stat_result) -> None:
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != _effective_uid()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_nlink != 1
+    ):
+        raise OSError(
+            errno.EPERM,
+            "staged publication file owner, mode, type, or links are unsafe",
+        )
+
+
+def _create_staged_file(  # pyright: ignore[reportUnusedFunction]
+    parent: _PinnedDirectory,
+    destination_name: str,
+) -> tuple[_StagedFile, BinaryIO]:
+    _revalidate_pinned_directory(parent)
+    for _ in range(_MAX_STAGING_COLLISIONS):
+        token = _publication_token()
+        if _TOKEN_PATTERN.fullmatch(token) is None:
+            raise OSError(errno.EINVAL, "publication token is invalid")
+        name = f".trafficlab-staging-{token}"
+        path = parent.path / name
+        try:
+            descriptor = _open_fd(
+                name,
+                _STAGING_OPEN_FLAGS,
+                dir_fd=parent.fd,
+                mode=0o600,
+            )
+        except OSError as error:
+            if error.errno == errno.EEXIST:
+                continue
+            raise
+        try:
+            metadata = _fstat_fd(descriptor)
+            entry_metadata = _stat_entry(name, dir_fd=parent.fd)
+            _require_private_staged_file(metadata)
+            if _content_fingerprint(entry_metadata) != _content_fingerprint(metadata):
+                raise OSError(errno.ESTALE, "staged publication binding changed")
+            writer = cast(BinaryIO, _UnbufferedWriter(descriptor))
+        except BaseException as error:
+            with suppress(OSError):
+                _close_fd(descriptor)
+            raise ArtifactWriteError(
+                "cannot establish private publication staging",
+                retained_paths=(path,),
+            ) from error
+        return _StagedFile(parent, name, path, metadata), writer
+    raise OSError(errno.EEXIST, "private publication staging names collided")
+
+
+def _revalidate_staged_file(staged: _StagedFile) -> os.stat_result:
+    _revalidate_pinned_directory(staged.parent)
+    metadata = _stat_entry(staged.name, dir_fd=staged.parent.fd)
+    _require_private_staged_file(metadata)
+    if (
+        metadata.st_dev != staged.initial.st_dev
+        or metadata.st_ino != staged.initial.st_ino
+    ):
+        raise OSError(errno.ESTALE, "staged publication binding changed")
+    return metadata
+
+
+def _revalidate_published_file(  # pyright: ignore[reportUnusedFunction]
+    parent: _PinnedDirectory,
+    destination_name: str,
+    staged: _StagedFile,
+) -> os.stat_result:
+    _revalidate_pinned_directory(parent)
+    metadata = _stat_entry(destination_name, dir_fd=parent.fd)
+    _require_private_staged_file(metadata)
+    if (
+        metadata.st_dev != staged.initial.st_dev
+        or metadata.st_ino != staged.initial.st_ino
+    ):
+        raise OSError(errno.ESTALE, "published artifact binding changed")
+    return metadata
+
+
+def _snapshot_staged_status(  # pyright: ignore[reportUnusedFunction]
+    staged: _StagedFile,
+    *,
+    max_bytes: int,
+    chunk_size: int,
+) -> bytes:
+    _revalidate_staged_file(staged)
+    descriptor = _open_fd(
+        staged.name,
+        _STATUS_OPEN_FLAGS,
+        dir_fd=staged.parent.fd,
+    )
+    completed = False
+    try:
+        initial = _fstat_fd(descriptor)
+        _require_private_staged_file(initial)
+        if (
+            initial.st_dev != staged.initial.st_dev
+            or initial.st_ino != staged.initial.st_ino
+        ):
+            raise OSError(errno.ESTALE, "staged status binding changed")
+        retained = bytearray()
+        while True:
+            request_size = min(chunk_size, max_bytes + 1 - len(retained))
+            chunk = _read_fd(descriptor, request_size)
+            if len(chunk) > request_size:
+                raise OSError(errno.EIO, "staged status read returned invalid bytes")
+            if not chunk:
+                break
+            retained.extend(chunk)
+            if len(retained) > max_bytes:
+                raise OSError(errno.EFBIG, "staged status exceeds maximum byte size")
+        descriptor_status = _fstat_fd(descriptor)
+        entry_status = _stat_entry(staged.name, dir_fd=staged.parent.fd)
+        if _content_fingerprint(descriptor_status) != _content_fingerprint(
+            initial
+        ) or _content_fingerprint(entry_status) != _content_fingerprint(initial):
+            raise OSError(errno.ESTALE, "staged status changed during validation")
+        _revalidate_pinned_directory(staged.parent)
+        completed = True
+        return bytes(retained)
+    finally:
+        try:
+            _close_fd(descriptor)
+        except OSError:
+            if completed:
+                raise
 
 
 def _open_status(
