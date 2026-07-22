@@ -47,12 +47,46 @@ def test_lineage_node_canonicalizes_parent_permutations() -> None:
 
 
 @pytest.mark.unit
+def test_lineage_node_requires_digest_runtime_value() -> None:
+    with pytest.raises(
+        InvalidProvenanceError,
+        match=r"^lineage node digest must be a Sha256Digest$",
+    ):
+        LineageNode("0" * 64)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_lineage_node_requires_immutable_parent_tuple() -> None:
+    with pytest.raises(
+        InvalidProvenanceError,
+        match=(r"^lineage parents must be an immutable tuple of Sha256Digest values$"),
+    ):
+        LineageNode(_digest(2), [_digest(1)])  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_lineage_node_rejects_wrong_parent_runtime_value() -> None:
+    with pytest.raises(
+        InvalidProvenanceError,
+        match=(r"^lineage parents must be an immutable tuple of Sha256Digest values$"),
+    ):
+        LineageNode(_digest(2), ("1" * 64,))  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
 def test_unordered_acyclic_nodes_return_the_same_sorted_tuple() -> None:
     nodes = (_node(3, 2), _node(0), _node(2, 1, 0), _node(1))
     expected = tuple(sorted(nodes, key=lambda node: node.digest.value))
 
     for node_order in permutations(nodes):
         assert validate_lineage_graph(node_order) == expected
+
+
+@pytest.mark.unit
+def test_transitive_dag_skips_already_completed_queued_parent() -> None:
+    nodes = (_node(0, 1, 2), _node(1, 2), _node(2))
+
+    assert validate_lineage_graph(nodes) == nodes
 
 
 @pytest.mark.unit

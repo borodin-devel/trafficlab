@@ -28,6 +28,8 @@ hashing = import_module("trafficlab.libs.lineage.hashing")
 
 LINE_SEPARATOR = chr(0x2028)
 UNPAIRED_SURROGATE = chr(0xD800)
+NON_PRINTABLE_BYTE = chr(0x80)
+NON_PRINTABLE_SUPPLEMENTARY = chr(0xE0001)
 
 
 def _assert_control_safe_path_message(
@@ -129,6 +131,21 @@ def test_external_snapshot_records_normalized_absolute_path(tmp_path: Path) -> N
     identity = snapshot_external_file(source)
     assert identity == FileIdentity(
         PathKind.EXTERNAL, str(source), sha256_bytes(b"source")
+    )
+
+
+@pytest.mark.unit
+def test_local_snapshot_joins_filesystem_root_without_double_separator(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"source")
+    relative_path = source.relative_to(Path("/")).as_posix()
+
+    assert snapshot_local_file(Path("/"), relative_path) == FileIdentity(
+        PathKind.LOCAL,
+        relative_path,
+        sha256_bytes(b"source"),
     )
 
 
@@ -257,6 +274,142 @@ def test_snapshot_error_renders_line_separator_on_one_line(tmp_path: Path) -> No
         unsafe_character=LINE_SEPARATOR,
         escaped_character=r"\u2028",
     )
+
+
+@pytest.mark.unit
+def test_diagnostic_renderer_uses_named_control_escapes() -> None:
+    rendered = hashing._render_path("tab\tline\nreturn\r")
+
+    assert rendered == r"tab\tline\nreturn\r"
+    assert rendered.splitlines() == [rendered]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("unsafe_character", "escaped_character"),
+    (
+        pytest.param(NON_PRINTABLE_BYTE, r"\x80", id="byte-range"),
+        pytest.param(
+            NON_PRINTABLE_SUPPLEMENTARY,
+            r"\U000e0001",
+            id="supplementary-plane",
+        ),
+    ),
+)
+def test_snapshot_error_escapes_other_non_printable_path_characters(
+    tmp_path: Path,
+    unsafe_character: str,
+    escaped_character: str,
+) -> None:
+    component = f"printable-雪-{unsafe_character}-missing"
+
+    with pytest.raises(FileSnapshotError) as caught:
+        snapshot_external_file(tmp_path / component)
+
+    _assert_control_safe_path_message(
+        caught.value,
+        unsafe_character=unsafe_character,
+        escaped_character=escaped_character,
+    )
+    assert isinstance(caught.value.__cause__, OSError)
+
+
+@pytest.mark.unit
+def test_sha256_file_rejects_filesystem_root_as_directory() -> None:
+    with pytest.raises(
+        FileSnapshotError,
+        match=r"^cannot snapshot regular file: /$",
+    ) as caught:
+        sha256_file(Path("/"))
+
+    assert isinstance(caught.value.__cause__, OSError)
+    assert caught.value.__cause__.errno == errno.EISDIR
+
+
+@pytest.mark.unit
+def test_snapshot_wraps_root_open_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"source")
+    injected = OSError(errno.EACCES, "injected root open failure")
+
+    def failing_open(
+        path: str | bytes | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        assert path == "/"
+        assert dir_fd is None
+        raise injected
+
+    monkeypatch.setattr(os, "open", failing_open)
+
+    with pytest.raises(FileSnapshotError) as caught:
+        snapshot_external_file(source)
+
+    assert caught.value.__cause__ is injected
+    assert str(caught.value).splitlines() == [str(caught.value)]
+
+
+@pytest.mark.unit
+def test_snapshot_closes_root_after_initial_fstat_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"source")
+    real_fstat = os.fstat
+    injected = OSError(errno.EIO, "injected root fstat failure")
+    failed_descriptor: int | None = None
+
+    def failing_fstat(descriptor: int) -> os.stat_result:
+        nonlocal failed_descriptor
+        if failed_descriptor is None:
+            failed_descriptor = descriptor
+            raise injected
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(os, "fstat", failing_fstat)
+
+    with pytest.raises(FileSnapshotError) as caught:
+        snapshot_external_file(source)
+
+    assert caught.value.__cause__ is injected
+    assert failed_descriptor is not None
+    with pytest.raises(OSError):
+        real_fstat(failed_descriptor)
+
+
+@pytest.mark.unit
+def test_snapshot_closes_component_after_initial_fstat_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"source")
+    real_fstat = os.fstat
+    injected = OSError(errno.EIO, "injected component fstat failure")
+    call_count = 0
+    failed_descriptor: int | None = None
+
+    def failing_second_fstat(descriptor: int) -> os.stat_result:
+        nonlocal call_count, failed_descriptor
+        call_count += 1
+        if call_count == 2:
+            failed_descriptor = descriptor
+            raise injected
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(os, "fstat", failing_second_fstat)
+
+    with pytest.raises(FileSnapshotError) as caught:
+        snapshot_external_file(source)
+
+    assert caught.value.__cause__ is injected
+    assert failed_descriptor is not None
+    with pytest.raises(OSError):
+        real_fstat(failed_descriptor)
 
 
 @pytest.mark.unit
@@ -549,7 +702,50 @@ def test_snapshot_closes_every_pinned_descriptor_after_change(
 
 
 @pytest.mark.unit
-def test_snapshot_closes_in_reverse_and_continues_after_close_error(
+def test_snapshot_wraps_read_error_and_closes_every_pinned_descriptor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "nested" / "source.bin"
+    source.parent.mkdir()
+    source.write_bytes(b"source")
+    real_open = os.open
+    real_fstat = os.fstat
+    opened_descriptors: list[int] = []
+    injected = OSError(errno.EIO, "injected read failure")
+
+    def recording_open(
+        path: str | bytes | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if dir_fd is None:
+            descriptor = real_open(path, flags, mode)
+        else:
+            descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        opened_descriptors.append(descriptor)
+        return descriptor
+
+    def failing_read(_fd: int, _size: int) -> bytes:
+        raise injected
+
+    monkeypatch.setattr(os, "open", recording_open)
+    monkeypatch.setattr(hashing, "_read_chunk", failing_read)
+
+    with pytest.raises(FileChangedError) as caught:
+        snapshot_external_file(source)
+
+    assert caught.value.__cause__ is injected
+    assert str(caught.value).splitlines() == [str(caught.value)]
+    assert opened_descriptors
+    for descriptor in opened_descriptors:
+        with pytest.raises(OSError):
+            real_fstat(descriptor)
+
+
+@pytest.mark.unit
+def test_snapshot_closes_in_reverse_and_keeps_first_of_multiple_close_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = tmp_path / "nested" / "source.bin"
@@ -577,8 +773,10 @@ def test_snapshot_closes_in_reverse_and_continues_after_close_error(
     def failing_close(descriptor: int) -> None:
         close_order.append(descriptor)
         real_close(descriptor)
-        if descriptor == opened_descriptors[-1]:
-            raise OSError(errno.EIO, "injected close failure")
+        if len(close_order) == 1:
+            raise OSError(errno.EIO, "first injected close failure")
+        if len(close_order) == 2:
+            raise OSError(errno.EBADF, "second injected close failure")
 
     monkeypatch.setattr(os, "open", recording_open)
     monkeypatch.setattr(os, "close", failing_close)
@@ -588,6 +786,7 @@ def test_snapshot_closes_in_reverse_and_continues_after_close_error(
 
     assert isinstance(caught.value.__cause__, OSError)
     assert caught.value.__cause__.errno == errno.EIO
+    assert str(caught.value.__cause__) == "[Errno 5] first injected close failure"
     assert close_order == list(reversed(opened_descriptors))
     for descriptor in opened_descriptors:
         with pytest.raises(OSError):

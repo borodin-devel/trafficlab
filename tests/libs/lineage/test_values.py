@@ -12,6 +12,7 @@ from trafficlab.libs.lineage import (
     InvalidProvenanceError,
     NamedIdentity,
     PathKind,
+    ProvenanceRecord,
     SeedIdentity,
     Sha256Digest,
     UnsupportedLineageVersionError,
@@ -82,6 +83,14 @@ def test_file_identity_rejects_noncanonical_and_control_paths(
 def test_file_identity_rejects_unknown_runtime_kind() -> None:
     with pytest.raises(InvalidLineagePathError):
         FileIdentity("local", "member", Sha256Digest(ZERO))  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_file_identity_rejects_non_digest_runtime_value() -> None:
+    with pytest.raises(
+        InvalidProvenanceError, match=r"^file sha256 must be a Sha256Digest$"
+    ):
+        FileIdentity(PathKind.LOCAL, "member", ZERO)  # type: ignore[arg-type]
 
 
 def _named_with_name(name: str) -> object:
@@ -316,3 +325,56 @@ def test_provenance_materializes_immutable_tuples() -> None:
     )
     with pytest.raises(FrozenInstanceError):
         record.__setattr__("paths", ())
+
+
+@pytest.mark.unit
+def test_direct_provenance_requires_immutable_category_tuples() -> None:
+    with pytest.raises(
+        InvalidProvenanceError, match=r"^paths must be an immutable tuple$"
+    ):
+        ProvenanceRecord(
+            schema_version=1,
+            paths=[],  # type: ignore[arg-type]
+            implementations=(),
+            dependencies=(),
+            seeds=(),
+            configurations=(),
+            parent_hashes=(),
+        )
+
+
+@pytest.mark.unit
+def test_direct_provenance_rejects_wrong_category_member_type() -> None:
+    with pytest.raises(
+        InvalidProvenanceError,
+        match=r"^paths must contain only FileIdentity values$",
+    ):
+        ProvenanceRecord(
+            schema_version=1,
+            paths=("member",),  # type: ignore[arg-type]
+            implementations=(),
+            dependencies=(),
+            seeds=(),
+            configurations=(),
+            parent_hashes=(),
+        )
+
+
+@pytest.mark.unit
+def test_direct_provenance_requires_canonical_category_order() -> None:
+    later = FileIdentity(PathKind.LOCAL, "z.bin", Sha256Digest(ONE))
+    earlier = FileIdentity(PathKind.LOCAL, "a.bin", Sha256Digest(ZERO))
+
+    with pytest.raises(
+        InvalidProvenanceError,
+        match=r"^provenance categories must be in canonical order$",
+    ):
+        ProvenanceRecord(
+            schema_version=1,
+            paths=(later, earlier),
+            implementations=(),
+            dependencies=(),
+            seeds=(),
+            configurations=(),
+            parent_hashes=(),
+        )

@@ -189,3 +189,43 @@ def test_manifest_member_hash_domains_are_valid() -> None:
             carrier=HashRegion("manifest.json", f"member:{member}:sha256"),
             covered=(HashRegion(member),),
         )
+
+
+@pytest.mark.unit
+def test_hash_domain_requires_hash_region_carrier() -> None:
+    with pytest.raises(
+        InvalidHashDomainError,
+        match=r"^hash domain carrier must be a HashRegion$",
+    ):
+        HashDomain(
+            carrier="artifact-status.toml",  # type: ignore[arg-type]
+            covered=(HashRegion("manifest.json"),),
+        )
+
+
+@pytest.mark.unit
+def test_hash_domain_requires_immutable_covered_tuple() -> None:
+    with pytest.raises(
+        InvalidHashDomainError,
+        match=(
+            r"^covered hash regions must be an immutable tuple of HashRegion values$"
+        ),
+    ):
+        HashDomain(
+            carrier=HashRegion("artifact-status.toml", "sha256"),
+            covered=[HashRegion("manifest.json")],  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.unit
+def test_hash_domain_rejects_wrong_covered_member_type() -> None:
+    with pytest.raises(
+        InvalidHashDomainError,
+        match=(
+            r"^covered hash regions must be an immutable tuple of HashRegion values$"
+        ),
+    ):
+        HashDomain(
+            carrier=HashRegion("artifact-status.toml", "sha256"),
+            covered=("manifest.json",),  # type: ignore[arg-type]
+        )
