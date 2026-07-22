@@ -177,13 +177,19 @@ Chunk size is positive and capped at 1 MiB so every caller retains a bounded
 read guarantee.
 
 The Linux shell opens `/`, then every directory component, then the final file
-through descriptor-relative calls with close-on-exec and no-follow flags. It
-requires directories for ancestors and a regular file for the leaf. The shell
-pins each descriptor, records stable identity metadata, hashes with
+through descriptor-relative calls with close-on-exec and no-follow flags. The
+leaf is also opened nonblocking so a FIFO or device cannot stall the type
+check. It requires directories for ancestors and a regular file for the leaf.
+The shell pins each descriptor, records stable identity metadata, hashes with
 descriptor-based reads, compares file metadata before and after the read, and
 rechecks every directory entry against its pinned descriptor before closing.
 Replacement, symlinks, mutation, disappearance, or type changes therefore fail
 instead of being silently followed.
+
+Directory rechecks compare identity, type, ownership, mode, and link count but
+not timestamps or size, so an unrelated entry change in a pinned directory
+does not invalidate a stable file snapshot. The leaf additionally compares
+size, modification time, and change time to detect content mutation.
 
 The serialized `FileIdentity` intentionally excludes device, inode, owner,
 mode, and timestamps because those values are used only to prove a stable read;
@@ -223,6 +229,7 @@ responsible for mapping its fields to these generic regions.
 digest after proving:
 
 - node digests are unique;
+- external roots are unique and do not duplicate a supplied local node;
 - every parent is another supplied node or an explicitly trusted external root;
 - a node is not its own parent;
 - the directed parent graph is acyclic.
