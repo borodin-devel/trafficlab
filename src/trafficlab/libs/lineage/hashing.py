@@ -31,6 +31,11 @@ MAX_CHUNK_SIZE = 1_048_576
 
 _DIRECTORY_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _LEAF_OPEN_FLAGS = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
+_DIAGNOSTIC_CONTROL_ESCAPES = {
+    "\t": r"\t",
+    "\n": r"\n",
+    "\r": r"\r",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,8 +57,42 @@ def _validate_chunk_size(chunk_size: int) -> None:
         )
 
 
+def _render_path(path: str) -> str:
+    """Render an untrusted path on one line while preserving printable Unicode."""
+
+    rendered: list[str] = []
+    for character in path:
+        if character.isprintable():
+            rendered.append(character)
+            continue
+        named_escape = _DIAGNOSTIC_CONTROL_ESCAPES.get(character)
+        if named_escape is not None:
+            rendered.append(named_escape)
+            continue
+        codepoint = ord(character)
+        if codepoint <= 0xFF:
+            rendered.append(f"\\x{codepoint:02x}")
+        elif codepoint <= 0xFFFF:
+            rendered.append(f"\\u{codepoint:04x}")
+        else:
+            rendered.append(f"\\U{codepoint:08x}")
+    return "".join(rendered)
+
+
+def _preflight_filesystem_path(path: str) -> None:
+    try:
+        os.fsencode(path)
+    except UnicodeEncodeError as error:
+        raise OSError(
+            errno.EILSEQ,
+            "lineage path cannot be represented by the filesystem encoding",
+        ) from error
+
+
 def _raise_snapshot_failure(path: str, error: OSError) -> Never:
-    raise FileSnapshotError(f"cannot snapshot regular file: {path}") from error
+    raise FileSnapshotError(
+        f"cannot snapshot regular file: {_render_path(path)}"
+    ) from error
 
 
 def _open_component(
@@ -83,7 +122,10 @@ def _open_component(
         with suppress(OSError):
             os.close(descriptor)
         description = "directory" if directory else "regular file"
-        error = OSError(errno.EINVAL, f"path component is not a {description}: {path}")
+        error = OSError(
+            errno.EINVAL,
+            f"path component is not a {description}: {_render_path(path)}",
+        )
         _raise_snapshot_failure(path, error)
 
     return _PinnedEntry(parent_fd, name, descriptor, initial)
@@ -126,7 +168,9 @@ def _assert_entry_unchanged(
                 follow_symlinks=False,
             )
     except OSError as error:
-        raise FileChangedError(f"file changed during snapshot: {path}") from error
+        raise FileChangedError(
+            f"file changed during snapshot: {_render_path(path)}"
+        ) from error
 
     descriptor_unchanged = (
         _content_fingerprint(descriptor_status) == _content_fingerprint(entry.initial)
@@ -138,7 +182,7 @@ def _assert_entry_unchanged(
         entry.initial
     )
     if not descriptor_unchanged or not entry_unchanged:
-        raise FileChangedError(f"file changed during snapshot: {path}")
+        raise FileChangedError(f"file changed during snapshot: {_render_path(path)}")
 
 
 def _read_stable_absolute(
@@ -148,11 +192,18 @@ def _read_stable_absolute(
     max_bytes: int | None = None,
 ) -> tuple[Sha256Digest, bytes | None, bool]:
     _validate_external_path(path)
+    try:
+        _preflight_filesystem_path(path)
+    except OSError as error:
+        _raise_snapshot_failure(path, error)
     _validate_chunk_size(chunk_size)
 
     components = path.split("/")[1:]
     if not components or components == [""]:
-        error = OSError(errno.EISDIR, f"path is not a regular file: {path}")
+        error = OSError(
+            errno.EISDIR,
+            f"path is not a regular file: {_render_path(path)}",
+        )
         _raise_snapshot_failure(path, error)
 
     pinned: list[_PinnedEntry] = []
@@ -195,7 +246,7 @@ def _read_stable_absolute(
                 chunk = _read_chunk(leaf.fd, chunk_size)
             except OSError as error:
                 raise FileChangedError(
-                    f"file changed during snapshot: {path}"
+                    f"file changed during snapshot: {_render_path(path)}"
                 ) from error
             if not chunk:
                 break
@@ -250,7 +301,9 @@ def _require_kind(expected: FileIdentity, kind: PathKind) -> None:
 
 
 def _raise_hash_mismatch(identity: FileIdentity) -> None:
-    raise HashMismatchError(f"sha256 mismatch for lineage path: {identity.path}")
+    raise HashMismatchError(
+        f"sha256 mismatch for lineage path: {_render_path(identity.path)}"
+    )
 
 
 def sha256_bytes(data: bytes) -> Sha256Digest:
@@ -338,7 +391,7 @@ def _read_verified_local_bytes(  # pyright: ignore[reportUnusedFunction]
     )
     if exceeded:
         raise ManifestValidationError(
-            f"manifest exceeds maximum byte size: {expected.path}"
+            f"manifest exceeds maximum byte size: {_render_path(expected.path)}"
         )
     if digest != expected.sha256:
         _raise_hash_mismatch(expected)

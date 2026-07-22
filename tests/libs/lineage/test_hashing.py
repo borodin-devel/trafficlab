@@ -1,3 +1,4 @@
+import errno
 import os
 from importlib import import_module
 from pathlib import Path
@@ -24,6 +25,22 @@ from trafficlab.libs.lineage import (
 )
 
 hashing = import_module("trafficlab.libs.lineage.hashing")
+
+LINE_SEPARATOR = chr(0x2028)
+UNPAIRED_SURROGATE = chr(0xD800)
+
+
+def _assert_control_safe_path_message(
+    error: BaseException,
+    *,
+    unsafe_character: str,
+    escaped_character: str,
+) -> None:
+    message = str(error)
+    assert message.splitlines() == [message]
+    assert unsafe_character not in message
+    assert escaped_character in message
+    assert "雪" in message
 
 
 @pytest.mark.unit
@@ -208,6 +225,41 @@ def test_snapshot_wraps_missing_file_errors(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("path_kind", ["local", "external"])
+def test_snapshot_wraps_unencodable_path_as_typed_control_safe_error(
+    tmp_path: Path, path_kind: str
+) -> None:
+    component = f"printable-雪-{UNPAIRED_SURROGATE}-member"
+
+    with pytest.raises(FileSnapshotError) as caught:
+        if path_kind == "local":
+            snapshot_local_file(tmp_path, component)
+        else:
+            snapshot_external_file(tmp_path / component)
+
+    _assert_control_safe_path_message(
+        caught.value,
+        unsafe_character=UNPAIRED_SURROGATE,
+        escaped_character=r"\ud800",
+    )
+    assert isinstance(caught.value.__cause__, OSError)
+
+
+@pytest.mark.unit
+def test_snapshot_error_renders_line_separator_on_one_line(tmp_path: Path) -> None:
+    component = f"printable-雪-{LINE_SEPARATOR}-missing"
+
+    with pytest.raises(FileSnapshotError) as caught:
+        snapshot_external_file(tmp_path / component)
+
+    _assert_control_safe_path_message(
+        caught.value,
+        unsafe_character=LINE_SEPARATOR,
+        escaped_character=r"\u2028",
+    )
+
+
+@pytest.mark.unit
 def test_snapshot_rejects_directory_leaf(tmp_path: Path) -> None:
     directory = tmp_path / "directory"
     directory.mkdir()
@@ -237,8 +289,7 @@ def test_snapshot_opens_fifo_leaf_nonblocking_and_no_follow(
         nonlocal checked_leaf
         if path == fifo.name:
             checked_leaf = True
-            assert flags & os.O_NONBLOCK
-            assert flags & os.O_NOFOLLOW
+            assert flags == (os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
         if dir_fd is None:
             return real_open(path, flags, mode)
         return real_open(path, flags, mode, dir_fd=dir_fd)
@@ -250,6 +301,44 @@ def test_snapshot_opens_fifo_leaf_nonblocking_and_no_follow(
 
     assert checked_leaf
     assert isinstance(caught.value.__cause__, OSError)
+
+
+@pytest.mark.unit
+def test_snapshot_uses_exact_directory_and_leaf_open_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "nested" / "source.bin"
+    source.parent.mkdir()
+    source.write_bytes(b"source")
+    real_open = os.open
+    opened: list[tuple[str | bytes | os.PathLike[str], int, int | None]] = []
+
+    def recording_open(
+        path: str | bytes | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        opened.append((path, flags, dir_fd))
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", recording_open)
+
+    assert snapshot_external_file(source).sha256 == sha256_bytes(b"source")
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    leaf_flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
+    *directory_opens, leaf_open = opened
+    assert directory_opens
+    assert directory_opens[0] == ("/", directory_flags, None)
+    assert all(flags == directory_flags for _, flags, _ in directory_opens)
+    assert all(dir_fd is not None for _, _, dir_fd in directory_opens[1:])
+    assert leaf_open[0] == source.name
+    assert leaf_open[1] == leaf_flags
+    assert leaf_open[2] is not None
 
 
 @pytest.mark.unit
@@ -294,25 +383,50 @@ def test_external_validation_detects_file_changed_after_snapshot(
 
 
 @pytest.mark.unit
+def test_hash_mismatch_renders_line_separator_on_one_line(tmp_path: Path) -> None:
+    component = f"printable-雪-{LINE_SEPARATOR}-member"
+    (tmp_path / component).write_bytes(b"actual")
+    expected = FileIdentity(
+        PathKind.LOCAL,
+        component,
+        Sha256Digest("0" * 64),
+    )
+
+    with pytest.raises(HashMismatchError) as caught:
+        validate_local_file(tmp_path, expected)
+
+    _assert_control_safe_path_message(
+        caught.value,
+        unsafe_character=LINE_SEPARATOR,
+        escaped_character=r"\u2028",
+    )
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("mutation", ["rewrite", "replace", "unlink", "link"])
 def test_snapshot_detects_deterministic_in_read_mutation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     mutation: str,
 ) -> None:
-    source = tmp_path / "source.bin"
-    source.write_bytes(b"a" * 256)
+    source = tmp_path / f"source-雪-{LINE_SEPARATOR}.bin"
+    original = b"a" * 256
+    source.write_bytes(original)
+    initial = source.stat()
     replacement = tmp_path / "replacement.bin"
     replacement.write_bytes(b"b" * 256)
-    calls = 0
+    chunks: list[bytes] = []
 
     def mutating_read(fd: int, size: int) -> bytes:
-        nonlocal calls
         chunk = os.read(fd, size)
-        calls += 1
-        if calls == 1:
+        chunks.append(chunk)
+        if len(chunks) == 1:
             if mutation == "rewrite":
-                source.write_bytes(b"changed-size")
+                source.write_bytes(b"c" * len(original))
+                os.utime(
+                    source,
+                    ns=(initial.st_atime_ns, initial.st_mtime_ns + 1_000_000_000),
+                )
             elif mutation == "replace":
                 os.replace(replacement, source)
             elif mutation == "unlink":
@@ -322,6 +436,41 @@ def test_snapshot_detects_deterministic_in_read_mutation(
         return chunk
 
     monkeypatch.setattr(hashing, "_read_chunk", mutating_read)
+
+    with pytest.raises(FileChangedError) as caught:
+        snapshot_external_file(source, chunk_size=16)
+
+    assert chunks
+    if mutation == "rewrite":
+        assert chunks[0] == b"a" * 16
+        assert b"c" in b"".join(chunks[1:])
+    _assert_control_safe_path_message(
+        caught.value,
+        unsafe_character=LINE_SEPARATOR,
+        escaped_character=r"\u2028",
+    )
+
+
+@pytest.mark.unit
+def test_snapshot_detects_post_open_ancestor_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ancestor = tmp_path / "ancestor"
+    ancestor.mkdir()
+    source = ancestor / "source.bin"
+    source.write_bytes(b"stable" * 64)
+    moved = tmp_path / "moved"
+    calls = 0
+
+    def renaming_read(fd: int, size: int) -> bytes:
+        nonlocal calls
+        chunk = os.read(fd, size)
+        calls += 1
+        if calls == 1:
+            ancestor.rename(moved)
+        return chunk
+
+    monkeypatch.setattr(hashing, "_read_chunk", renaming_read)
 
     with pytest.raises(FileChangedError):
         snapshot_external_file(source, chunk_size=16)
@@ -400,6 +549,52 @@ def test_snapshot_closes_every_pinned_descriptor_after_change(
 
 
 @pytest.mark.unit
+def test_snapshot_closes_in_reverse_and_continues_after_close_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "nested" / "source.bin"
+    source.parent.mkdir()
+    source.write_bytes(b"source")
+    real_open = os.open
+    real_close = os.close
+    opened_descriptors: list[int] = []
+    close_order: list[int] = []
+
+    def recording_open(
+        path: str | bytes | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if dir_fd is None:
+            descriptor = real_open(path, flags, mode)
+        else:
+            descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        opened_descriptors.append(descriptor)
+        return descriptor
+
+    def failing_close(descriptor: int) -> None:
+        close_order.append(descriptor)
+        real_close(descriptor)
+        if descriptor == opened_descriptors[-1]:
+            raise OSError(errno.EIO, "injected close failure")
+
+    monkeypatch.setattr(os, "open", recording_open)
+    monkeypatch.setattr(os, "close", failing_close)
+
+    with pytest.raises(FileSnapshotError) as caught:
+        snapshot_external_file(source)
+
+    assert isinstance(caught.value.__cause__, OSError)
+    assert caught.value.__cause__.errno == errno.EIO
+    assert close_order == list(reversed(opened_descriptors))
+    for descriptor in opened_descriptors:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
+@pytest.mark.unit
 def test_read_verified_local_bytes_returns_exact_bounded_snapshot(
     tmp_path: Path,
 ) -> None:
@@ -438,6 +633,25 @@ def test_read_verified_local_bytes_rejects_oversized_content_without_bytes_in_er
         hashing._read_verified_local_bytes(tmp_path, expected, len(payload) - 1, 4)
 
     assert payload.decode() not in str(caught.value)
+
+
+@pytest.mark.unit
+def test_manifest_bound_error_renders_line_separator_on_one_line(
+    tmp_path: Path,
+) -> None:
+    component = f"printable-雪-{LINE_SEPARATOR}-manifest"
+    source = tmp_path / component
+    source.write_bytes(b"manifest")
+    expected = snapshot_local_file(tmp_path, component)
+
+    with pytest.raises(ManifestValidationError) as caught:
+        hashing._read_verified_local_bytes(tmp_path, expected, 7, 4)
+
+    _assert_control_safe_path_message(
+        caught.value,
+        unsafe_character=LINE_SEPARATOR,
+        escaped_character=r"\u2028",
+    )
 
 
 @pytest.mark.unit
