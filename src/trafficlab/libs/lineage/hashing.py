@@ -242,8 +242,11 @@ def _read_stable_absolute(
         retained = bytearray()
         exceeded = False
         while True:
+            read_size = chunk_size
+            if max_bytes is not None:
+                read_size = min(chunk_size, max_bytes + 1 - len(retained))
             try:
-                chunk = _read_chunk(leaf.fd, chunk_size)
+                chunk = _read_chunk(leaf.fd, read_size)
             except OSError as error:
                 raise FileChangedError(
                     f"file changed during snapshot: {_render_path(path)}"
@@ -259,6 +262,7 @@ def _read_stable_absolute(
                     if remaining > 0:
                         retained.extend(chunk[:remaining])
                     exceeded = True
+                    break
 
         for entry in reversed(pinned):
             _assert_entry_unchanged(

@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from importlib import import_module
 from pathlib import Path
@@ -20,6 +21,7 @@ from trafficlab.libs.lineage import (
 )
 
 package_module = import_module("trafficlab.libs.lineage.package")
+hashing_module = import_module("trafficlab.libs.lineage.hashing")
 
 ZERO = Sha256Digest("0" * 64)
 ONE = Sha256Digest("1" * 64)
@@ -133,6 +135,50 @@ def test_manifest_over_size_bound_prevents_parser_call(
             max_manifest_bytes=len(manifest_bytes) - 1,
         )
     assert called is False
+
+
+@pytest.mark.unit
+def test_oversized_manifest_stops_after_first_overflow_byte(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_bytes = b"0123456789"
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_bytes(manifest_bytes)
+    manifest = snapshot_local_file(tmp_path, manifest_path.name)
+    requested_sizes: list[int] = []
+    observed_sizes: list[int] = []
+    parser_called = False
+
+    def recording_read(fd: int, size: int) -> bytes:
+        requested_sizes.append(size)
+        chunk = os.read(fd, size)
+        observed_sizes.append(len(chunk))
+        return chunk
+
+    def parser(_: bytes) -> tuple[FileIdentity, ...]:
+        nonlocal parser_called
+        parser_called = True
+        return ()
+
+    monkeypatch.setattr(hashing_module, "_read_chunk", recording_read)
+
+    with pytest.raises(
+        ManifestValidationError,
+        match=r"^manifest exceeds maximum byte size: manifest\.json$",
+    ):
+        validate_package_members(
+            tmp_path,
+            manifest,
+            parser,
+            max_manifest_bytes=5,
+            chunk_size=4,
+        )
+
+    assert requested_sizes == [4, 2]
+    assert observed_sizes == [4, 2]
+    assert sum(observed_sizes) == 6
+    assert parser_called is False
 
 
 @pytest.mark.unit

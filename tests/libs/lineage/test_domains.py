@@ -84,6 +84,40 @@ def test_hash_region_rejects_empty_or_control_bearing_named_region(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "field",
+    (
+        pytest.param("resource", id="resource"),
+        pytest.param("region", id="region"),
+    ),
+)
+@pytest.mark.parametrize(
+    "separator",
+    (
+        pytest.param("\u0085", id="nel"),
+        pytest.param("\u2028", id="line-separator"),
+        pytest.param("\u2029", id="paragraph-separator"),
+    ),
+)
+def test_hash_region_rejects_unicode_line_breaks_with_single_line_diagnostic(
+    field: str,
+    separator: str,
+) -> None:
+    value = f"before{separator}after"
+
+    with pytest.raises(InvalidProvenanceError) as caught:
+        if field == "resource":
+            HashRegion(value)
+        else:
+            HashRegion("record.json", value)
+
+    message = str(caught.value)
+    assert message == f"hash {field} must be a single-line string"
+    assert message.splitlines() == [message]
+    assert separator not in message
+
+
+@pytest.mark.unit
 def test_hash_domain_rejects_empty_covered_regions() -> None:
     with pytest.raises(InvalidHashDomainError):
         validate_hash_domain(

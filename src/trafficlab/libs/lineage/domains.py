@@ -3,10 +3,18 @@
 from dataclasses import dataclass
 from typing import cast
 
-from .errors import InvalidHashDomainError
+from .errors import InvalidHashDomainError, InvalidProvenanceError
 from .values import (
     _validate_text,  # pyright: ignore[reportPrivateUsage]
 )
+
+_HASH_IDENTIFIER_LINE_BREAKS = frozenset({"\x85", "\u2028", "\u2029"})
+
+
+def _validate_hash_identifier(value: str, field: str) -> None:
+    _validate_text(value, field)
+    if not _HASH_IDENTIFIER_LINE_BREAKS.isdisjoint(value):
+        raise InvalidProvenanceError(f"{field} must be a single-line string")
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,9 +25,9 @@ class HashRegion:
     region: str | None = None
 
     def __post_init__(self) -> None:
-        _validate_text(self.resource, "hash resource")
+        _validate_hash_identifier(self.resource, "hash resource")
         if self.region is not None:
-            _validate_text(self.region, "hash region")
+            _validate_hash_identifier(self.region, "hash region")
 
 
 @dataclass(frozen=True, slots=True)
