@@ -17,6 +17,7 @@ from trafficlab.libs.artifact_io import (
     ArtifactStatusSecurityError,
     ArtifactValidationError,
     InvalidArtifactStatusError,
+    InvalidPublicationPlanError,
     MissingArtifactStatusError,
     OrphanArtifactError,
     PublicationPlan,
@@ -200,6 +201,17 @@ def test_status_toml_escaping_is_deterministic_and_tomllib_compatible() -> None:
     assert b"\\u96EA" in rendered
     assert b"\\U0001F600" in rendered
     assert render_artifact_status(parse_artifact_status(rendered)) == rendered
+
+
+@pytest.mark.unit
+def test_status_encoder_escapes_control_characters() -> None:
+    assert status_module._toml_basic_string("\x01") == '"\\u0001"'
+
+
+@pytest.mark.unit
+def test_status_validation_requires_publication_plan() -> None:
+    with pytest.raises(InvalidPublicationPlanError):
+        status_module._require_plan(object())  # type: ignore[arg-type]
 
 
 @pytest.mark.unit

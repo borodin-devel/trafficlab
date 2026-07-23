@@ -1,3 +1,5 @@
+# pyright: reportPossiblyUnboundVariable=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false
+
 import errno
 import json
 import os
@@ -13,9 +15,11 @@ import pytest
 from trafficlab.libs.artifact_io import (
     ArtifactKind,
     ArtifactStatus,
+    ArtifactStatusSecurityError,
     ArtifactValidationError,
     ArtifactWriteError,
     AtomicPublicationError,
+    InvalidArtifactStatusError,
     InvalidPublicationPlanError,
     OrphanArtifactError,
     PackageMember,
@@ -1264,6 +1268,21 @@ def test_package_publication_root_mkdir_failure_has_no_false_retained_path(
         pytest.param(
             "final-validation", ArtifactValidationError, False, id="final-validation"
         ),
+        pytest.param(
+            "destination-close", ArtifactValidationError, False, id="destination-close"
+        ),
+        pytest.param(
+            "attempt-close", ArtifactValidationError, False, id="attempt-close"
+        ),
+        pytest.param(
+            "attempt-repin", ArtifactValidationError, False, id="attempt-repin"
+        ),
+        pytest.param(
+            "final-attempt-close",
+            ArtifactValidationError,
+            False,
+            id="final-attempt-close",
+        ),
     ],
 )
 def test_package_publication_reports_every_artifact_to_status_crash_window(
@@ -1430,6 +1449,38 @@ def test_package_publication_reports_every_artifact_to_status_crash_window(
         monkeypatch.setattr(
             publication, "_validate_publication", failing_final_validation
         )
+    elif boundary in {"destination-close", "attempt-close", "final-attempt-close"}:
+        cause = OSError(errno.EIO, f"injected {boundary} failure")
+        original_close = filesystem._close_pinned_directory
+        expected_call = {
+            "destination-close": 1,
+            "attempt-close": 2,
+            "final-attempt-close": 3,
+        }[boundary]
+        calls = 0
+
+        def failing_selected_close(directory: object) -> OSError | None:
+            nonlocal calls
+            calls += 1
+            result = original_close(directory)
+            return cause if calls == expected_call else result
+
+        monkeypatch.setattr(
+            filesystem, "_close_pinned_directory", failing_selected_close
+        )
+    elif boundary == "attempt-repin":
+        cause = OSError(errno.EIO, "injected package attempt repin failure")
+        original_pin = filesystem._pin_attempt_directory
+        calls = 0
+
+        def failing_second_pin(path: Path) -> object:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise cause
+            return original_pin(path)
+
+        monkeypatch.setattr(filesystem, "_pin_attempt_directory", failing_second_pin)
 
     with pytest.raises(expected_error) as caught:
         _publish_fixture(fixture)
@@ -1441,12 +1492,906 @@ def test_package_publication_reports_every_artifact_to_status_crash_window(
         assert error.retained_paths == ()
         assert plan.artifact_path.is_dir()
         assert plan.status_path.is_file()
+    elif boundary == "final-attempt-close":
+        assert error.orphan_path is None
+        assert error.retained_paths == ()
+        assert plan.artifact_path.is_dir()
+        assert plan.status_path.is_file()
     else:
         _assert_orphan_package(
             error,
             plan,
             expect_status_staging=expect_status_staging,
         )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("conflict", ("artifact", "status"))
+def test_package_publication_rejects_existing_commit_state(
+    tmp_path: Path,
+    conflict: str,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    if conflict == "artifact":
+        fixture.plan.artifact_path.mkdir(mode=0o700)
+    else:
+        _write_private(fixture.plan.status_path, b"unexpected status\n")
+
+    with pytest.raises(PublicationConflictError) as caught:
+        _publish_fixture(fixture)
+
+    assert caught.value.orphan_path == (
+        fixture.plan.artifact_path if conflict == "artifact" else None
+    )
+    assert caught.value.retained_paths == ()
+
+
+@pytest.mark.unit
+def test_filesystem_private_guards_cover_invalid_tokens_and_missing_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = filesystem._pin_owned_directory(tmp_path)
+    try:
+        monkeypatch.setattr(filesystem, "_publication_token", lambda: "invalid token")
+        with pytest.raises(OSError, match="publication token is invalid"):
+            filesystem._create_staged_directory(parent, "artifact")
+        with pytest.raises(OSError, match="publication token is invalid"):
+            filesystem._create_staged_file(parent, "artifact")
+
+        def denied_stat(*args: object, **kwargs: object) -> os.stat_result:
+            del args, kwargs
+            raise OSError(errno.EACCES, "injected entry access failure")
+
+        monkeypatch.setattr(filesystem, "_stat_entry", denied_stat)
+        with pytest.raises(OSError) as caught:
+            filesystem._entry_exists(parent, "artifact")
+        assert caught.value.errno == errno.EACCES
+    finally:
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.integration
+def test_filesystem_rejects_replaced_published_file_and_package_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = filesystem._pin_owned_directory(tmp_path)
+    file_staging, handle = filesystem._create_staged_file(parent, "artifact.bin")
+    handle.close()
+    package_staging = filesystem._create_staged_directory(parent, "artifact")
+    try:
+        os.rename(file_staging.path, tmp_path / "artifact.bin")
+        replacement_file = tmp_path / "replacement.bin"
+        _write_private(replacement_file, b"replacement")
+        os.replace(replacement_file, tmp_path / "artifact.bin")
+        monkeypatch.setattr(
+            filesystem,
+            "_revalidate_pinned_directory",
+            lambda directory: None,
+        )
+        with pytest.raises(OSError, match="published artifact binding changed"):
+            filesystem._revalidate_published_file(
+                parent,
+                "artifact.bin",
+                file_staging,
+            )
+
+        os.rename(package_staging.path, tmp_path / "artifact")
+        (tmp_path / "artifact").rmdir()
+        (tmp_path / "artifact").mkdir(mode=0o700)
+        with pytest.raises(OSError, match="published package root changed"):
+            filesystem._revalidate_published_directory(
+                parent,
+                "artifact",
+                package_staging,
+            )
+    finally:
+        close_error = filesystem._close_staged_directory(package_staging)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_filesystem_rejects_unsafe_private_staging_envelopes(tmp_path: Path) -> None:
+    unsafe_file = tmp_path / "unsafe-file"
+    unsafe_file.write_bytes(b"unsafe")
+    unsafe_file.chmod(0o644)
+    with pytest.raises(OSError, match="staged publication file"):
+        filesystem._require_private_staged_file(unsafe_file.stat())
+    with pytest.raises(OSError, match="staged package directory"):
+        filesystem._require_private_staged_directory(unsafe_file.stat())
+
+
+@pytest.mark.unit
+def test_unbuffered_writer_rejects_closed_descriptor_and_surfaces_close_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "writer.bin"
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    writer = filesystem._UnbufferedWriter(descriptor)
+    writer.close()
+    with pytest.raises(ValueError, match="closed publication file"):
+        writer.fileno()
+
+    failing_descriptor = os.open(
+        tmp_path / "failing-writer.bin",
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    failing_writer = filesystem._UnbufferedWriter(failing_descriptor)
+    original_close = filesystem._close_fd
+
+    def close_then_fail(value: int) -> None:
+        original_close(value)
+        raise OSError(errno.EIO, "injected descriptor close failure")
+
+    monkeypatch.setattr(filesystem, "_close_fd", close_then_fail)
+    with pytest.raises(OSError, match="injected descriptor close failure"):
+        failing_writer.close()
+
+
+@pytest.mark.unit
+def test_publication_internal_identity_mismatch_guards(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    plan = fixture.plan
+    parent = filesystem._pin_owned_directory(plan.artifact_path.parent)
+    staged_file, handle = filesystem._create_staged_file(parent, "file.bin")
+    handle.close()
+    staged_directory = filesystem._create_staged_directory(parent, "artifact")
+    try:
+        changed_launch = FileIdentity(
+            PathKind.EXTERNAL,
+            str(plan.launch_path),
+            Sha256Digest("0" * 64),
+        )
+        monkeypatch.setattr(
+            publication,
+            "_validate_external_file",
+            lambda identity, *, chunk_size: changed_launch,
+        )
+        with pytest.raises(ArtifactValidationError, match="startup record failed"):
+            publication._validate_launch_identity(
+                fixture.launch,
+                chunk_size=7,
+                orphan_path=None,
+            )
+
+        invalid_staged_identity = FileIdentity(
+            PathKind.LOCAL,
+            "file.bin",
+            Sha256Digest("0" * 64),
+        )
+        monkeypatch.setattr(
+            publication,
+            "_snapshot_external_file",
+            lambda path, *, chunk_size: invalid_staged_identity,
+        )
+        with pytest.raises(ArtifactValidationError, match="staged artifact failed"):
+            publication._snapshot_staging(staged_file, chunk_size=7)
+
+        invalid_member_identity = FileIdentity(
+            PathKind.EXTERNAL,
+            str(staged_directory.path / "alpha.bin"),
+            Sha256Digest("0" * 64),
+        )
+        monkeypatch.setattr(
+            publication,
+            "_snapshot_local_file",
+            lambda root, path, *, chunk_size: invalid_member_identity,
+        )
+        with pytest.raises(ArtifactValidationError, match="package members failed"):
+            publication._snapshot_package_members(
+                staged_directory,
+                ("alpha.bin",),
+                chunk_size=7,
+            )
+    finally:
+        close_error = filesystem._close_staged_directory(staged_directory)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_status_snapshot_rejects_invalid_reads_sizes_and_close_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged, handle = filesystem._create_staged_file(parent, "artifact-status.toml")
+    assert handle.write(b"status") == len(b"status")
+    handle.close()
+    try:
+        original_read = filesystem._read_fd
+        monkeypatch.setattr(
+            filesystem,
+            "_read_fd",
+            lambda descriptor, count: b"x" * (count + 1),
+        )
+        with pytest.raises(OSError, match="invalid bytes"):
+            filesystem._snapshot_staged_status(
+                staged,
+                max_bytes=16,
+                chunk_size=3,
+            )
+        monkeypatch.setattr(filesystem, "_read_fd", original_read)
+        with pytest.raises(OSError, match="exceeds maximum"):
+            filesystem._snapshot_staged_status(
+                staged,
+                max_bytes=2,
+                chunk_size=3,
+            )
+
+        original_close = filesystem._close_fd
+
+        def close_after_success(descriptor: int) -> None:
+            original_close(descriptor)
+            raise OSError(errno.EIO, "injected status close failure")
+
+        monkeypatch.setattr(filesystem, "_close_fd", close_after_success)
+        with pytest.raises(OSError, match="injected status close failure"):
+            filesystem._snapshot_staged_status(
+                staged,
+                max_bytes=16,
+                chunk_size=3,
+            )
+    finally:
+        monkeypatch.setattr(filesystem, "_close_fd", original_close)
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_publication_preflight_and_writer_close_guards(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    monkeypatch.setattr(
+        publication,
+        "render_artifact_status",
+        lambda status: (_ for _ in ()).throw(InvalidArtifactStatusError("bad status")),
+    )
+    with pytest.raises(InvalidPublicationPlanError, match="canonical detached status"):
+        _publish_fixture(fixture)
+
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged, handle = filesystem._create_staged_file(parent, "writer.bin")
+    try:
+        monkeypatch.setattr(filesystem, "_flush_writer", lambda writer: None)
+        monkeypatch.setattr(filesystem, "_close_writer", lambda writer: None)
+        with pytest.raises(ArtifactWriteError) as caught:
+            publication._run_owned_writer(
+                staged,
+                handle,
+                lambda writer: None,
+                orphan_path=None,
+            )
+        assert (
+            str(caught.value.__cause__) == "[Errno 5] publication writer did not close"
+        )
+    finally:
+        handle.close()
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_publication_preserves_orphan_and_mismatch_failure_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    plan = fixture.plan
+
+    def orphan_validation(
+        publication_plan: PublicationPlan,
+        *,
+        chunk_size: int,
+    ) -> ArtifactStatus:
+        del publication_plan, chunk_size
+        raise OrphanArtifactError("orphan")
+
+    monkeypatch.setattr(publication, "_validate_publication", orphan_validation)
+    with pytest.raises(OrphanArtifactError, match="orphan"):
+        publication._final_validation(plan, chunk_size=7)
+
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged = filesystem._create_staged_directory(parent, "artifact")
+    try:
+        monkeypatch.setattr(
+            filesystem,
+            "_revalidate_pinned_directory_binding",
+            lambda directory: (_ for _ in ()).throw(OSError(errno.ESTALE, "changed")),
+        )
+        with pytest.raises(ArtifactValidationError, match="immediately before"):
+            publication._publish_package_artifact(plan, parent, staged)
+    finally:
+        close_error = filesystem._close_staged_directory(staged)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_filesystem_rejects_invalid_paths_directories_and_missing_renameat2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ArtifactStatusSecurityError):
+        filesystem._validate_attempt_path(object())
+    regular = tmp_path / "regular"
+    regular.write_bytes(b"regular")
+    with pytest.raises(ArtifactStatusSecurityError):
+        filesystem._require_directory(regular.stat())
+    monkeypatch.setattr(filesystem, "_renameat2_symbol", None)
+    with pytest.raises(OSError) as caught:
+        filesystem._renameat2_call(1, b"source", 1, b"destination", 1)
+    assert caught.value.errno == errno.ENOSYS
+
+
+@pytest.mark.integration
+def test_filesystem_staging_collisions_and_replacements_are_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staging_name = "collision"
+    (tmp_path / f".trafficlab-staging-{staging_name}").mkdir(mode=0o700)
+    parent = filesystem._pin_owned_directory(tmp_path)
+    try:
+        monkeypatch.setattr(filesystem, "_publication_token", lambda: staging_name)
+        monkeypatch.setattr(filesystem, "_MAX_STAGING_COLLISIONS", 1)
+        with pytest.raises(OSError, match="names collided"):
+            filesystem._create_staged_file(parent, "artifact.bin")
+        with pytest.raises(OSError, match="names collided"):
+            filesystem._create_staged_directory(parent, "artifact")
+    finally:
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.integration
+def test_filesystem_revalidates_replaced_package_directories_and_members(
+    tmp_path: Path,
+) -> None:
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged = filesystem._create_staged_directory(parent, "artifact")
+    try:
+        filesystem._create_package_directories(staged, ("nested/member.bin",))
+        package_file, handle = filesystem._create_package_file(
+            staged, "nested/member.bin"
+        )
+        handle.close()
+
+        replacement = staged.path / "nested" / "replacement.bin"
+        _write_private(replacement, b"replacement")
+        os.replace(replacement, package_file.path)
+        with pytest.raises(OSError, match="package member binding changed"):
+            filesystem._revalidate_package_file(package_file)
+
+        os.rename(staged.path, tmp_path / "moved-staging")
+        staged.path.mkdir(mode=0o700)
+        with pytest.raises(OSError, match="staged package root changed"):
+            filesystem._revalidate_staged_directory(staged)
+    finally:
+        close_error = filesystem._close_staged_directory(staged)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.integration
+def test_filesystem_package_tree_and_pinned_source_guards(
+    tmp_path: Path,
+) -> None:
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged = filesystem._create_staged_directory(parent, "artifact")
+    attempt = tmp_path / "attempt"
+    attempt.mkdir(mode=0o700)
+    attempt.chmod(0o700)
+    attempt_pin = filesystem._pin_attempt_directory(attempt)
+    (attempt / "directory-source").mkdir(mode=0o700)
+    try:
+        _write_private(staged.path / "untracked.bin", b"untracked")
+        with pytest.raises(OSError, match="planned-file membership"):
+            filesystem._validate_package_tree(staged, ("untracked.bin",))
+        with pytest.raises(OSError, match="not a regular file"):
+            filesystem._open_pinned_file(
+                attempt_pin,
+                "directory-source",
+                attempt / "directory-source",
+            )
+    finally:
+        close_error = filesystem._close_staged_directory(staged)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(attempt_pin)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_filesystem_status_snapshot_and_cleanup_failure_guards(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged, handle = filesystem._create_staged_file(parent, "status.bin")
+    assert handle.write(b"status") == len(b"status")
+    handle.close()
+    try:
+        original_revalidate = filesystem._revalidate_staged_file
+        monkeypatch.setattr(filesystem, "_revalidate_staged_file", lambda value: None)
+        replacement = tmp_path / "replacement-status.bin"
+        _write_private(replacement, b"replacement")
+        os.replace(replacement, staged.path)
+        with pytest.raises(OSError, match="staged status binding changed"):
+            filesystem._snapshot_staged_status(staged, max_bytes=16, chunk_size=3)
+        monkeypatch.setattr(filesystem, "_revalidate_staged_file", original_revalidate)
+
+        descriptor = os.open(staged.path, os.O_RDONLY)
+        entry = filesystem._PinnedEntry(
+            None, "status.bin", descriptor, os.fstat(descriptor)
+        )
+        try:
+            monkeypatch.setattr(
+                filesystem,
+                "_read_fd",
+                lambda value, count: b"x" * (count + 1),
+            )
+            with pytest.raises(ArtifactStatusSecurityError) as caught:
+                filesystem._read_bounded_status(entry, 3)
+            assert caught.value.__cause__ is not None
+            assert "invalid result" in str(caught.value.__cause__)
+        finally:
+            os.close(descriptor)
+
+        first = OSError(errno.EIO, "first close failure")
+        second = OSError(errno.EIO, "second close failure")
+        failures = iter((first, second))
+        monkeypatch.setattr(
+            filesystem,
+            "_close_fd",
+            lambda descriptor: (_ for _ in ()).throw(next(failures)),
+        )
+        assert filesystem._close_all([1, 2]) is first
+    finally:
+        monkeypatch.setattr(filesystem, "_close_fd", os.close)
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_copy_launch_and_manifest_revalidation_failure_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    attempt = filesystem._pin_attempt_directory(fixture.plan.attempt_dir)
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged = filesystem._create_staged_directory(parent, "artifact")
+    try:
+        monkeypatch.setattr(
+            publication,
+            "_create_package_member",
+            lambda root, path: (_ for _ in ()).throw(RuntimeError("member failure")),
+        )
+        with pytest.raises(RuntimeError, match="member failure"):
+            publication._copy_package_launch(
+                staged,
+                attempt,
+                fixture.launch,
+                chunk_size=7,
+            )
+        monkeypatch.undo()
+
+        monkeypatch.setattr(
+            filesystem,
+            "_revalidate_package_file",
+            lambda package_file: (_ for _ in ()).throw(
+                OSError(errno.ESTALE, "changed")
+            ),
+        )
+        with pytest.raises(ArtifactValidationError, match="manifest failed lineage"):
+            publication._stage_package_manifest(
+                staged,
+                (),
+                lambda members: b"{}",
+                max_manifest_bytes=16,
+                chunk_size=7,
+            )
+    finally:
+        close_error = filesystem._close_staged_directory(staged)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(attempt)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_staged_status_must_parse_to_its_exact_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    attempt = filesystem._pin_attempt_directory(fixture.plan.attempt_dir)
+    status = ArtifactStatus(
+        1,
+        "published",
+        ArtifactKind.PACKAGE,
+        str(fixture.plan.artifact_path),
+        str(fixture.plan.artifact_path / "manifest.json"),
+        Sha256Digest("0" * 64),
+        str(fixture.plan.launch_path),
+        fixture.launch.sha256,
+    )
+    different = ArtifactStatus(
+        1,
+        "published",
+        ArtifactKind.PACKAGE,
+        str(fixture.plan.artifact_path),
+        str(fixture.plan.artifact_path / "manifest.json"),
+        Sha256Digest("1" * 64),
+        str(fixture.plan.launch_path),
+        fixture.launch.sha256,
+    )
+    try:
+        monkeypatch.setattr(
+            publication, "_parse_artifact_status", lambda data: different
+        )
+        with pytest.raises(ArtifactValidationError, match="staged detached status"):
+            publication._stage_status(fixture.plan, attempt, status, chunk_size=7)
+    finally:
+        close_error = filesystem._close_pinned_directory(attempt)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_filesystem_handles_empty_path_components_and_descriptorless_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[int] = []
+    try:
+        with pytest.raises(ArtifactStatusSecurityError):
+            filesystem._open_attempt_chain("//", opened)
+    finally:
+        filesystem._close_all(opened)
+    with pytest.raises(OSError, match="publication parent owner"):
+        filesystem._pin_owned_directory(Path("//"))
+
+    writer = filesystem._UnbufferedWriter.__new__(filesystem._UnbufferedWriter)
+    writer._descriptor = None
+    writer.close()
+    assert writer.closed
+
+
+@pytest.mark.integration
+def test_filesystem_detects_private_staging_binding_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replacement = tmp_path / "replacement.bin"
+    _write_private(replacement, b"replacement")
+    parent = filesystem._pin_owned_directory(tmp_path)
+    original_stat = filesystem._stat_entry
+    try:
+
+        def substituted_stat(name: str, *, dir_fd: int | None = None) -> os.stat_result:
+            if name.startswith(".trafficlab-staging-"):
+                return replacement.stat()
+            return original_stat(name, dir_fd=dir_fd)
+
+        monkeypatch.setattr(filesystem, "_stat_entry", substituted_stat)
+        monkeypatch.setattr(filesystem, "_publication_token", lambda: "substitute")
+        with pytest.raises(ArtifactWriteError, match="private publication staging"):
+            filesystem._create_staged_file(parent, "artifact.bin")
+    finally:
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.integration
+def test_filesystem_detects_pinned_and_nested_directory_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = tmp_path / "child"
+    child.mkdir(mode=0o700)
+    pinned = filesystem._pin_owned_directory(child)
+    try:
+        os.rename(child, tmp_path / "moved-child")
+        child.mkdir(mode=0o700)
+        with pytest.raises(OSError, match="pinned package directory changed"):
+            filesystem._revalidate_pinned_directory_binding(pinned)
+    finally:
+        close_error = filesystem._close_pinned_directory(pinned)
+        assert close_error is None
+
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged = filesystem._create_staged_directory(parent, "artifact")
+    other = tmp_path / "other"
+    other.mkdir(mode=0o700)
+    original_stat = filesystem._stat_entry
+    try:
+
+        def substituted_nested_stat(
+            name: str,
+            *,
+            dir_fd: int | None = None,
+        ) -> os.stat_result:
+            if name == "nested":
+                return other.stat()
+            return original_stat(name, dir_fd=dir_fd)
+
+        monkeypatch.setattr(filesystem, "_stat_entry", substituted_nested_stat)
+        with pytest.raises(OSError, match="nested package binding changed"):
+            filesystem._create_package_directories(staged, ("nested/member.bin",))
+    finally:
+        close_error = filesystem._close_staged_directory(staged)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.integration
+def test_filesystem_rejects_root_and_member_binding_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_replacement = tmp_path / "root-replacement"
+    root_replacement.mkdir(mode=0o700)
+    file_replacement = tmp_path / "file-replacement"
+    _write_private(file_replacement, b"replacement")
+    parent = filesystem._pin_owned_directory(tmp_path)
+    try:
+        monkeypatch.setattr(filesystem, "_publication_token", lambda: "same")
+        monkeypatch.setattr(filesystem, "_MAX_STAGING_COLLISIONS", 1)
+        with pytest.raises(OSError, match="names collided"):
+            filesystem._create_staged_directory(parent, ".trafficlab-staging-same")
+
+        original_stat = filesystem._stat_entry
+
+        def substituted_root_stat(
+            name: str, *, dir_fd: int | None = None
+        ) -> os.stat_result:
+            if name == ".trafficlab-staging-same":
+                return root_replacement.stat()
+            return original_stat(name, dir_fd=dir_fd)
+
+        monkeypatch.setattr(filesystem, "_stat_entry", substituted_root_stat)
+        with pytest.raises(ArtifactWriteError, match="private package staging"):
+            filesystem._create_staged_directory(parent, "artifact")
+        monkeypatch.undo()
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+        parent = filesystem._pin_owned_directory(tmp_path)
+
+        staged = filesystem._create_staged_directory(parent, "artifact")
+        try:
+            original_stat = filesystem._stat_entry
+
+            def substituted_member_stat(
+                name: str,
+                *,
+                dir_fd: int | None = None,
+            ) -> os.stat_result:
+                if name == "member.bin":
+                    return file_replacement.stat()
+                return original_stat(name, dir_fd=dir_fd)
+
+            monkeypatch.setattr(filesystem, "_stat_entry", substituted_member_stat)
+            with pytest.raises(ArtifactWriteError, match="private package member"):
+                filesystem._create_package_file(staged, "member.bin")
+        finally:
+            monkeypatch.undo()
+            close_error = filesystem._close_staged_directory(staged)
+            assert close_error is None
+    finally:
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.integration
+def test_filesystem_rejects_replaced_tree_member_source_and_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged = filesystem._create_staged_directory(parent, "artifact")
+    attempt = tmp_path / "attempt"
+    attempt.mkdir(mode=0o700)
+    attempt.chmod(0o700)
+    source = attempt / "source.bin"
+    _write_private(source, b"source")
+    alternate = attempt / "alternate.bin"
+    _write_private(alternate, b"alternate")
+    attempt_pin = filesystem._pin_attempt_directory(attempt)
+    try:
+        package_file, handle = filesystem._create_package_file(staged, "member.bin")
+        handle.close()
+        replacement = staged.path / "replacement.bin"
+        _write_private(replacement, b"replacement")
+        os.replace(replacement, package_file.path)
+        with pytest.raises(OSError, match="package member binding changed"):
+            filesystem._validate_package_tree(staged, ("member.bin",))
+
+        original_stat = filesystem._stat_entry
+
+        def substituted_source_stat(
+            name: str,
+            *,
+            dir_fd: int | None = None,
+        ) -> os.stat_result:
+            if name == "source.bin":
+                return alternate.stat()
+            return original_stat(name, dir_fd=dir_fd)
+
+        monkeypatch.setattr(filesystem, "_stat_entry", substituted_source_stat)
+        with pytest.raises(OSError, match="package copy source binding changed"):
+            filesystem._open_pinned_file(attempt_pin, "source.bin", source)
+        monkeypatch.undo()
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+        parent = filesystem._pin_owned_directory(tmp_path)
+
+        status, handle = filesystem._create_staged_file(parent, "status.bin")
+        assert handle.write(b"status") == len(b"status")
+        handle.close()
+        original_read = filesystem._read_fd
+        changed = False
+
+        def mutate_status_during_read(descriptor: int, count: int) -> bytes:
+            nonlocal changed
+            chunk = original_read(descriptor, count)
+            if not changed:
+                changed = True
+                status.path.write_bytes(b"changed")
+            return chunk
+
+        monkeypatch.setattr(filesystem, "_read_fd", mutate_status_during_read)
+        with pytest.raises(OSError, match="staged status changed during validation"):
+            filesystem._snapshot_staged_status(status, max_bytes=16, chunk_size=3)
+    finally:
+        monkeypatch.undo()
+        close_error = filesystem._close_staged_directory(staged)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(attempt_pin)
+        assert close_error is None
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.integration
+def test_package_revalidation_rejects_member_and_manifest_identity_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    changed = FileIdentity(PathKind.LOCAL, "alpha.bin", Sha256Digest("0" * 64))
+    original_validate = publication._validate_local_file
+
+    def changed_member_identity(
+        root: Path,
+        identity: FileIdentity,
+        *,
+        chunk_size: int,
+    ) -> FileIdentity:
+        if identity.path == "alpha.bin":
+            return changed
+        return original_validate(root, identity, chunk_size=chunk_size)
+
+    monkeypatch.setattr(publication, "_validate_local_file", changed_member_identity)
+    with pytest.raises(ArtifactValidationError, match="member digest changed"):
+        _publish_fixture(fixture)
+    monkeypatch.undo()
+
+    manifest_tmp_path = tmp_path / "manifest"
+    manifest_tmp_path.mkdir()
+    fixture = _package_fixture(manifest_tmp_path)
+    original_validate = publication._validate_local_file
+
+    def changed_manifest_identity(
+        root: Path,
+        identity: FileIdentity,
+        *,
+        chunk_size: int,
+    ) -> FileIdentity:
+        if identity.path == "manifest.json":
+            return FileIdentity(PathKind.LOCAL, "manifest.json", Sha256Digest("0" * 64))
+        return original_validate(root, identity, chunk_size=chunk_size)
+
+    monkeypatch.setattr(publication, "_validate_local_file", changed_manifest_identity)
+    with pytest.raises(ArtifactValidationError, match="published package manifest"):
+        _publish_fixture(fixture)
+
+
+@pytest.mark.unit
+def test_package_publication_rejects_unsafe_initial_filesystem_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _package_fixture(tmp_path)
+    monkeypatch.setattr(
+        filesystem,
+        "_pin_attempt_directory",
+        lambda path: (_ for _ in ()).throw(OSError(errno.EACCES, "denied")),
+    )
+    with pytest.raises(ArtifactValidationError, match="filesystem boundary"):
+        _publish_fixture(fixture)
+
+
+@pytest.mark.integration
+def test_file_publication_validation_rejects_changed_published_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt = tmp_path / "attempt"
+    attempt.mkdir(mode=0o700)
+    attempt.chmod(0o700)
+    plan = build_file_plan(attempt, tmp_path / "artifact.bin")
+    parent = filesystem._pin_owned_directory(tmp_path)
+    staged, handle = filesystem._create_staged_file(parent, plan.artifact_path.name)
+    assert handle.write(b"artifact") == len(b"artifact")
+    handle.close()
+    try:
+        os.rename(staged.path, plan.artifact_path)
+        staged_identity = FileIdentity(
+            PathKind.EXTERNAL,
+            str(staged.path),
+            Sha256Digest("1" * 64),
+        )
+        changed = FileIdentity(
+            PathKind.EXTERNAL,
+            str(plan.artifact_path),
+            Sha256Digest("0" * 64),
+        )
+        monkeypatch.setattr(
+            filesystem, "_revalidate_pinned_directory", lambda root: None
+        )
+        monkeypatch.setattr(
+            publication,
+            "_validate_external_file",
+            lambda identity, *, chunk_size: changed,
+        )
+        with pytest.raises(ArtifactValidationError, match="published artifact failed"):
+            publication._validate_published_artifact(
+                plan,
+                parent,
+                staged,
+                staged_identity,
+                chunk_size=7,
+            )
+    finally:
+        close_error = filesystem._close_pinned_directory(parent)
+        assert close_error is None
+
+
+@pytest.mark.unit
+def test_filesystem_loads_without_renameat2_symbol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    original_cdll = filesystem.ctypes.CDLL
+
+    class _NoRenameAt2:
+        pass
+
+    monkeypatch.setattr(
+        filesystem.ctypes, "CDLL", lambda *args, **kwargs: _NoRenameAt2()
+    )
+    importlib.reload(filesystem)
+    assert filesystem._renameat2_symbol is None
+    monkeypatch.setattr(filesystem.ctypes, "CDLL", original_cdll)
+    importlib.reload(filesystem)
 
 
 @pytest.mark.integration

@@ -103,6 +103,16 @@ def test_package_builder_materializes_once_and_sorts_members() -> None:
 
 
 @pytest.mark.unit
+def test_package_builder_rejects_non_iterable_members() -> None:
+    with pytest.raises(InvalidPublicationPlanError):
+        build_package_plan(
+            Path("/absolute/attempt"),
+            Path("/absolute/package"),
+            members=object(),  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.unit
 def test_empty_package_component_membership_is_canonical() -> None:
     plan = build_package_plan(
         Path("/absolute/attempt"), Path("/absolute/output/package"), members=()
