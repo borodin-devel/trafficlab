@@ -30,6 +30,7 @@ from .values import ARTIFACT_STATUS_NAME, MAX_ARTIFACT_STATUS_BYTES
 
 _DIRECTORY_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _STATUS_OPEN_FLAGS = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
+_PACKAGE_SOURCE_OPEN_FLAGS = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
 _STAGING_OPEN_FLAGS = (
     os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
 )
@@ -81,6 +82,49 @@ class _StagedFile:
     name: str
     path: Path
     initial: os.stat_result
+
+
+@dataclass(frozen=True, slots=True)
+class _PackageDirectoryEntry:
+    relative_path: str
+    parent_fd: int
+    name: str
+    fd: int
+    initial: os.stat_result
+
+
+@dataclass(slots=True)
+class _StagedDirectory:
+    parent: _PinnedDirectory
+    name: str
+    path: Path
+    fd: int
+    initial: os.stat_result
+    directories: list[_PackageDirectoryEntry]
+    files: list[_StagedPackageFile]
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedPackageFile:
+    root: _StagedDirectory
+    relative_path: str
+    parent_fd: int
+    name: str
+    path: Path
+    initial: os.stat_result
+
+
+@dataclass(frozen=True, slots=True)
+class _PinnedFile:
+    parent: _PinnedDirectory
+    name: str
+    path: Path
+    fd: int
+    initial: os.stat_result
+
+
+class _PinnedFileReadError(Exception):
+    """Internal marker separating source-read failures from destination writes."""
 
 
 class _UnbufferedWriter(io.RawIOBase):
@@ -144,6 +188,15 @@ def _stat_entry(path: str, *, dir_fd: int | None = None) -> os.stat_result:
     if dir_fd is None:
         return os.stat(path, follow_symlinks=False)
     return os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
+
+
+def _mkdir_entry(name: str, *, dir_fd: int, mode: int) -> None:
+    os.mkdir(name, mode=mode, dir_fd=dir_fd)
+
+
+def _list_directory(descriptor: int) -> tuple[str, ...]:
+    with os.scandir(descriptor) as entries:
+        return tuple(entry.name for entry in entries)
 
 
 def _read_fd(descriptor: int, count: int) -> bytes:
@@ -554,6 +607,382 @@ def _revalidate_published_file(  # pyright: ignore[reportUnusedFunction]
     ):
         raise OSError(errno.ESTALE, "published artifact binding changed")
     return metadata
+
+
+def _directory_binding_fingerprint(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+    )
+
+
+def _revalidate_pinned_directory_binding(directory: _PinnedDirectory) -> None:
+    """Revalidate a chain while allowing owned child-directory link changes."""
+
+    for entry in reversed(directory.entries):
+        descriptor_status = _fstat_fd(entry.fd)
+        entry_status = _stat_entry(entry.name, dir_fd=entry.parent_fd)
+        expected = _directory_binding_fingerprint(entry.initial)
+        if (
+            _directory_binding_fingerprint(descriptor_status) != expected
+            or _directory_binding_fingerprint(entry_status) != expected
+        ):
+            raise OSError(errno.ESTALE, "pinned package directory changed")
+
+
+def _require_private_staged_directory(metadata: os.stat_result) -> None:
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != _effective_uid()
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+    ):
+        raise OSError(
+            errno.EPERM,
+            "staged package directory owner, mode, or type is unsafe",
+        )
+
+
+def _create_staged_directory(  # pyright: ignore[reportUnusedFunction]
+    parent: _PinnedDirectory,
+    destination_name: str,
+) -> _StagedDirectory:
+    _revalidate_pinned_directory(parent)
+    for _ in range(_MAX_STAGING_COLLISIONS):
+        token = _publication_token()
+        if _TOKEN_PATTERN.fullmatch(token) is None:
+            raise OSError(errno.EINVAL, "publication token is invalid")
+        name = f".trafficlab-staging-{token}"
+        if name == destination_name:
+            continue
+        path = parent.path / name
+        try:
+            _mkdir_entry(name, dir_fd=parent.fd, mode=0o700)
+        except OSError as error:
+            if error.errno == errno.EEXIST:
+                continue
+            raise
+
+        descriptor: int | None = None
+        try:
+            descriptor = _open_fd(
+                name,
+                _DIRECTORY_OPEN_FLAGS,
+                dir_fd=parent.fd,
+            )
+            metadata = _fstat_fd(descriptor)
+            entry_metadata = _stat_entry(name, dir_fd=parent.fd)
+            _require_private_staged_directory(metadata)
+            if _directory_binding_fingerprint(
+                entry_metadata
+            ) != _directory_binding_fingerprint(metadata):
+                raise OSError(errno.ESTALE, "staged package binding changed")
+        except BaseException as error:
+            if descriptor is not None:
+                with suppress(OSError):
+                    _close_fd(descriptor)
+            raise ArtifactWriteError(
+                "cannot establish private package staging",
+                retained_paths=(path,),
+            ) from error
+        return _StagedDirectory(
+            parent=parent,
+            name=name,
+            path=path,
+            fd=descriptor,
+            initial=metadata,
+            directories=[],
+            files=[],
+        )
+    raise OSError(errno.EEXIST, "private package staging names collided")
+
+
+def _package_directory_map(staged: _StagedDirectory) -> dict[str, int]:
+    return {
+        "": staged.fd,
+        **{entry.relative_path: entry.fd for entry in staged.directories},
+    }
+
+
+def _implied_directories(member_paths: tuple[str, ...]) -> tuple[str, ...]:
+    implied: set[str] = set()
+    for member_path in member_paths:
+        components = member_path.split("/")[:-1]
+        for count in range(1, len(components) + 1):
+            implied.add("/".join(components[:count]))
+    return tuple(sorted(implied))
+
+
+def _create_package_directories(  # pyright: ignore[reportUnusedFunction]
+    staged: _StagedDirectory,
+    member_paths: tuple[str, ...],
+) -> None:
+    _revalidate_pinned_directory_binding(staged.parent)
+    for relative_path in _implied_directories(member_paths):
+        directories = _package_directory_map(staged)
+        parent_path, _, name = relative_path.rpartition("/")
+        parent_fd = directories[parent_path]
+        _mkdir_entry(name, dir_fd=parent_fd, mode=0o700)
+        descriptor: int | None = None
+        try:
+            descriptor = _open_fd(
+                name,
+                _DIRECTORY_OPEN_FLAGS,
+                dir_fd=parent_fd,
+            )
+            metadata = _fstat_fd(descriptor)
+            entry_metadata = _stat_entry(name, dir_fd=parent_fd)
+            _require_private_staged_directory(metadata)
+            if _directory_binding_fingerprint(
+                entry_metadata
+            ) != _directory_binding_fingerprint(metadata):
+                raise OSError(errno.ESTALE, "nested package binding changed")
+        except BaseException:
+            if descriptor is not None:
+                with suppress(OSError):
+                    _close_fd(descriptor)
+            raise
+        staged.directories.append(
+            _PackageDirectoryEntry(
+                relative_path,
+                parent_fd,
+                name,
+                descriptor,
+                metadata,
+            )
+        )
+    _revalidate_staged_directory(staged)
+
+
+def _revalidate_package_directories(staged: _StagedDirectory) -> None:
+    for entry in staged.directories:
+        descriptor_status = _fstat_fd(entry.fd)
+        entry_status = _stat_entry(entry.name, dir_fd=entry.parent_fd)
+        _require_private_staged_directory(descriptor_status)
+        expected = _directory_binding_fingerprint(entry.initial)
+        if (
+            _directory_binding_fingerprint(descriptor_status) != expected
+            or _directory_binding_fingerprint(entry_status) != expected
+        ):
+            raise OSError(errno.ESTALE, "nested package directory changed")
+
+
+def _revalidate_staged_directory(  # pyright: ignore[reportUnusedFunction]
+    staged: _StagedDirectory,
+) -> None:
+    _revalidate_pinned_directory_binding(staged.parent)
+    descriptor_status = _fstat_fd(staged.fd)
+    entry_status = _stat_entry(staged.name, dir_fd=staged.parent.fd)
+    _require_private_staged_directory(descriptor_status)
+    expected = _directory_binding_fingerprint(staged.initial)
+    if (
+        _directory_binding_fingerprint(descriptor_status) != expected
+        or _directory_binding_fingerprint(entry_status) != expected
+    ):
+        raise OSError(errno.ESTALE, "staged package root changed")
+    _revalidate_package_directories(staged)
+
+
+def _revalidate_published_directory(  # pyright: ignore[reportUnusedFunction]
+    parent: _PinnedDirectory,
+    destination_name: str,
+    staged: _StagedDirectory,
+) -> None:
+    _revalidate_pinned_directory_binding(parent)
+    descriptor_status = _fstat_fd(staged.fd)
+    entry_status = _stat_entry(destination_name, dir_fd=parent.fd)
+    _require_private_staged_directory(descriptor_status)
+    expected = _directory_binding_fingerprint(staged.initial)
+    if (
+        _directory_binding_fingerprint(descriptor_status) != expected
+        or _directory_binding_fingerprint(entry_status) != expected
+    ):
+        raise OSError(errno.ESTALE, "published package root changed")
+    _revalidate_package_directories(staged)
+
+
+def _create_package_file(  # pyright: ignore[reportUnusedFunction]
+    staged: _StagedDirectory,
+    relative_path: str,
+) -> tuple[_StagedPackageFile, BinaryIO]:
+    _revalidate_staged_directory(staged)
+    parent_path, _, name = relative_path.rpartition("/")
+    parent_fd = _package_directory_map(staged)[parent_path]
+    path = staged.path / relative_path
+    descriptor = _open_fd(
+        name,
+        _STAGING_OPEN_FLAGS,
+        dir_fd=parent_fd,
+        mode=0o600,
+    )
+    try:
+        metadata = _fstat_fd(descriptor)
+        entry_metadata = _stat_entry(name, dir_fd=parent_fd)
+        _require_private_staged_file(metadata)
+        if _content_fingerprint(entry_metadata) != _content_fingerprint(metadata):
+            raise OSError(errno.ESTALE, "package member binding changed")
+        package_file = _StagedPackageFile(
+            staged,
+            relative_path,
+            parent_fd,
+            name,
+            path,
+            metadata,
+        )
+        writer = cast(BinaryIO, _UnbufferedWriter(descriptor))
+    except BaseException as error:
+        with suppress(OSError):
+            _close_fd(descriptor)
+        raise ArtifactWriteError(
+            "cannot establish private package member",
+            retained_paths=(staged.path,),
+        ) from error
+    staged.files.append(package_file)
+    return package_file, writer
+
+
+def _revalidate_package_file(  # pyright: ignore[reportUnusedFunction]
+    package_file: _StagedPackageFile,
+) -> os.stat_result:
+    _revalidate_staged_directory(package_file.root)
+    metadata = _stat_entry(package_file.name, dir_fd=package_file.parent_fd)
+    _require_private_staged_file(metadata)
+    if (
+        metadata.st_dev != package_file.initial.st_dev
+        or metadata.st_ino != package_file.initial.st_ino
+    ):
+        raise OSError(errno.ESTALE, "package member binding changed")
+    return metadata
+
+
+def _validate_package_tree(  # pyright: ignore[reportUnusedFunction]
+    staged: _StagedDirectory,
+    expected_files: tuple[str, ...],
+    *,
+    published_name: str | None = None,
+) -> None:
+    if published_name is None:
+        _revalidate_staged_directory(staged)
+    else:
+        _revalidate_published_directory(staged.parent, published_name, staged)
+
+    expected_file_set = set(expected_files)
+    expected_directory_set = set(_implied_directories(expected_files))
+    actual_files: set[str] = set()
+    actual_directories: set[str] = set()
+    directories = (
+        ("", staged.fd),
+        *((entry.relative_path, entry.fd) for entry in staged.directories),
+    )
+    for relative_parent, descriptor in sorted(directories):
+        for name in sorted(_list_directory(descriptor)):
+            relative_path = f"{relative_parent}/{name}" if relative_parent else name
+            metadata = _stat_entry(name, dir_fd=descriptor)
+            if stat.S_ISDIR(metadata.st_mode):
+                _require_private_staged_directory(metadata)
+                actual_directories.add(relative_path)
+            elif stat.S_ISREG(metadata.st_mode):
+                _require_private_staged_file(metadata)
+                actual_files.add(relative_path)
+            else:
+                raise OSError(errno.EPERM, "package contains an unsafe entry type")
+
+    if actual_directories != expected_directory_set:
+        raise OSError(errno.EINVAL, "package directory membership is not exact")
+    if actual_files != expected_file_set:
+        raise OSError(errno.EINVAL, "package file membership is not exact")
+    recorded = {
+        package_file.relative_path: package_file for package_file in staged.files
+    }
+    if set(recorded) != expected_file_set:
+        raise OSError(errno.EINVAL, "package planned-file membership is not exact")
+    for relative_path in sorted(expected_file_set):
+        package_file = recorded[relative_path]
+        metadata = _stat_entry(package_file.name, dir_fd=package_file.parent_fd)
+        _require_private_staged_file(metadata)
+        if (
+            metadata.st_dev != package_file.initial.st_dev
+            or metadata.st_ino != package_file.initial.st_ino
+        ):
+            raise OSError(errno.ESTALE, "package member binding changed")
+
+
+def _open_pinned_file(  # pyright: ignore[reportUnusedFunction]
+    parent: _PinnedDirectory,
+    name: str,
+    path: Path,
+) -> _PinnedFile:
+    _revalidate_pinned_directory_binding(parent)
+    descriptor = _open_fd(
+        name,
+        _PACKAGE_SOURCE_OPEN_FLAGS,
+        dir_fd=parent.fd,
+    )
+    try:
+        metadata = _fstat_fd(descriptor)
+        entry_metadata = _stat_entry(name, dir_fd=parent.fd)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise OSError(errno.EINVAL, "package copy source is not a regular file")
+        if _content_fingerprint(entry_metadata) != _content_fingerprint(metadata):
+            raise OSError(errno.ESTALE, "package copy source binding changed")
+    except BaseException:
+        with suppress(OSError):
+            _close_fd(descriptor)
+        raise
+    return _PinnedFile(parent, name, path, descriptor, metadata)
+
+
+def _copy_pinned_file(  # pyright: ignore[reportUnusedFunction]
+    source: _PinnedFile,
+    destination: BinaryIO,
+    *,
+    chunk_size: int,
+) -> None:
+    while True:
+        try:
+            chunk = _read_fd(source.fd, chunk_size)
+            if type(chunk) is not bytes or len(chunk) > chunk_size:
+                raise OSError(errno.EIO, "package copy read returned invalid bytes")
+        except BaseException as error:
+            raise _PinnedFileReadError("package copy source read failed") from error
+        if not chunk:
+            return
+        offset = 0
+        while offset < len(chunk):
+            written = destination.write(chunk[offset:])
+            if type(written) is not int or not 1 <= written <= len(chunk) - offset:
+                raise OSError(errno.EIO, "package copy write returned invalid count")
+            offset += written
+
+
+def _revalidate_pinned_file(  # pyright: ignore[reportUnusedFunction]
+    source: _PinnedFile,
+) -> None:
+    descriptor_status = _fstat_fd(source.fd)
+    entry_status = _stat_entry(source.name, dir_fd=source.parent.fd)
+    if _content_fingerprint(descriptor_status) != _content_fingerprint(
+        source.initial
+    ) or _content_fingerprint(entry_status) != _content_fingerprint(source.initial):
+        raise OSError(errno.ESTALE, "package copy source changed")
+    _revalidate_pinned_directory_binding(source.parent)
+
+
+def _close_pinned_file(  # pyright: ignore[reportUnusedFunction]
+    source: _PinnedFile,
+) -> OSError | None:
+    try:
+        _close_fd(source.fd)
+    except OSError as error:
+        return error
+    return None
+
+
+def _close_staged_directory(  # pyright: ignore[reportUnusedFunction]
+    staged: _StagedDirectory,
+) -> OSError | None:
+    return _close_all([staged.fd, *(entry.fd for entry in staged.directories)])
 
 
 def _snapshot_staged_status(  # pyright: ignore[reportUnusedFunction]

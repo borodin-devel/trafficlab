@@ -13,7 +13,7 @@ from .errors import (
     PublicationConflictError,
     UnsupportedAtomicPublicationError,
 )
-from .publication import publish_file
+from .publication import publish_file, publish_package
 from .status import parse_artifact_status, render_artifact_status, validate_publication
 from .values import (
     ARTIFACT_STATUS_NAME,
@@ -54,6 +54,7 @@ __all__ = (
     "build_package_plan",
     "parse_artifact_status",
     "publish_file",
+    "publish_package",
     "render_artifact_status",
     "validate_publication",
 )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import errno
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import BinaryIO, Never, cast
 
@@ -14,7 +14,10 @@ from trafficlab.libs.lineage import (
     PathKind,
     Sha256Digest,
     snapshot_external_file,
+    snapshot_local_file,
     validate_external_file,
+    validate_local_file,
+    validate_package_members,
 )
 
 from . import filesystem
@@ -34,15 +37,21 @@ from .status import (
 )
 from .values import (
     CURRENT_ARTIFACT_STATUS_VERSION,
+    LAUNCH_NAME,
+    MANIFEST_NAME,
     MAX_ARTIFACT_STATUS_BYTES,
     ArtifactKind,
     ArtifactStatus,
+    PackageMember,
     PublicationPlan,
 )
 
 # Narrow aliases keep every Lineage and status boundary independently injectable.
 _snapshot_external_file = snapshot_external_file
+_snapshot_local_file = snapshot_local_file
 _validate_external_file = validate_external_file
+_validate_local_file = validate_local_file
+_validate_package_members = validate_package_members
 _render_artifact_status = render_artifact_status
 _parse_artifact_status = parse_artifact_status
 _validate_publication = validate_publication
@@ -134,8 +143,91 @@ def _validate_inputs(
         ) from error
 
 
+def _validate_package_inputs(
+    plan: PublicationPlan,
+    launch: FileIdentity,
+    members: Iterable[PackageMember],
+    build_manifest: Callable[[tuple[FileIdentity, ...]], bytes],
+    parse_manifest: Callable[[bytes], Iterable[FileIdentity]],
+    validate_package: Callable[[Path], None],
+    max_manifest_bytes: int,
+    chunk_size: int,
+) -> tuple[PackageMember, ...]:
+    if not isinstance(cast(object, plan), PublicationPlan):
+        raise InvalidPublicationPlanError(
+            "package publication requires a PublicationPlan"
+        )
+    PublicationPlan(
+        plan.attempt_dir,
+        plan.artifact_path,
+        plan.artifact_kind,
+        plan.member_paths,
+    )
+    if plan.artifact_kind is not ArtifactKind.PACKAGE or not plan.artifact_path.name:
+        raise InvalidPublicationPlanError("package publication requires a package plan")
+    if not isinstance(cast(object, launch), FileIdentity):
+        raise InvalidPublicationPlanError(
+            "package publication requires an external launch identity"
+        )
+    if launch.kind is not PathKind.EXTERNAL or launch.path != str(plan.launch_path):
+        raise InvalidPublicationPlanError(
+            "launch identity must name the exact external startup record"
+        )
+    try:
+        materialized = tuple(members)
+    except Exception as error:
+        raise InvalidPublicationPlanError(
+            "package member specifications must be iterable"
+        ) from error
+    if not all(
+        isinstance(cast(object, member), PackageMember) for member in materialized
+    ):
+        raise InvalidPublicationPlanError(
+            "package members must be PackageMember values"
+        )
+    for member in materialized:
+        PackageMember(member.path, member.write, member.validate)
+    paths = tuple(member.path for member in materialized)
+    if len(set(paths)) != len(paths) or tuple(sorted(paths)) != plan.member_paths:
+        raise InvalidPublicationPlanError(
+            "package member specifications must exactly match the plan"
+        )
+    if not callable(build_manifest):
+        raise InvalidPublicationPlanError("package manifest builder must be callable")
+    if not callable(parse_manifest):
+        raise InvalidPublicationPlanError("package manifest parser must be callable")
+    if not callable(validate_package):
+        raise InvalidPublicationPlanError("package validator must be callable")
+    if type(max_manifest_bytes) is not int or max_manifest_bytes <= 0:
+        raise ValueError("max_manifest_bytes must be a positive integer")
+    if type(chunk_size) is not int or not 1 <= chunk_size <= MAX_CHUNK_SIZE:
+        raise ValueError(
+            f"chunk_size must be an integer from 1 through {MAX_CHUNK_SIZE}"
+        )
+    try:
+        prospective_status = ArtifactStatus(
+            schema_version=CURRENT_ARTIFACT_STATUS_VERSION,
+            state="published",
+            artifact_kind=ArtifactKind.PACKAGE,
+            artifact_path=str(plan.artifact_path),
+            digest_path=str(plan.artifact_path / MANIFEST_NAME),
+            sha256=_PREFLIGHT_DIGEST,
+            launch_path=str(plan.launch_path),
+            launch_sha256=launch.sha256,
+        )
+        render_artifact_status(prospective_status)
+    except InvalidArtifactStatusError as error:
+        raise InvalidPublicationPlanError(
+            "publication plan cannot produce canonical detached status"
+        ) from error
+    return tuple(sorted(materialized, key=lambda member: member.path))
+
+
 def _run_owned_writer(
-    staged: filesystem._StagedFile,  # pyright: ignore[reportPrivateUsage]
+    staged: (
+        filesystem._StagedFile  # pyright: ignore[reportPrivateUsage]
+        | filesystem._StagedPackageFile  # pyright: ignore[reportPrivateUsage]
+    ),
     handle: BinaryIO,
     write: Callable[[BinaryIO], None],
     *,
@@ -243,6 +335,376 @@ def _snapshot_staging(
     return identity
 
 
+def _create_package_staging(
+    parent: filesystem._PinnedDirectory,  # pyright: ignore[reportPrivateUsage]
+    destination_name: str,
+) -> filesystem._StagedDirectory:  # pyright: ignore[reportPrivateUsage]
+    try:
+        return filesystem._create_staged_directory(  # pyright: ignore[reportPrivateUsage]
+            parent,
+            destination_name,
+        )
+    except BaseException as error:
+        retained = error.retained_paths if isinstance(error, ArtifactWriteError) else ()
+        _raise_write(
+            "cannot create private package staging",
+            error,
+            retained_paths=retained,
+        )
+
+
+def _establish_package_structure(
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    plan: PublicationPlan,
+) -> None:
+    try:
+        filesystem._create_package_directories(  # pyright: ignore[reportPrivateUsage]
+            staged,
+            plan.member_paths,
+        )
+    except BaseException as error:
+        _raise_write(
+            "cannot create private package structure",
+            error,
+            retained_paths=(staged.path,),
+        )
+
+
+def _create_package_member(
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    relative_path: str,
+) -> tuple[
+    filesystem._StagedPackageFile,  # pyright: ignore[reportPrivateUsage]
+    BinaryIO,
+]:
+    try:
+        return filesystem._create_package_file(  # pyright: ignore[reportPrivateUsage]
+            staged,
+            relative_path,
+        )
+    except BaseException as error:
+        _raise_write(
+            "cannot create private package member",
+            error,
+            retained_paths=(staged.path,),
+        )
+
+
+def _write_package_members(
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    members: tuple[PackageMember, ...],
+) -> None:
+    for member in members:
+        package_file, handle = _create_package_member(staged, member.path)
+        try:
+            _run_owned_writer(
+                package_file,
+                handle,
+                member.write,
+                orphan_path=None,
+            )
+        except ArtifactWriteError as error:
+            _raise_write(
+                "cannot write and close private package member",
+                error,
+                retained_paths=(staged.path,),
+            )
+        try:
+            member.validate(package_file.path)
+        except BaseException as error:
+            _raise_validation(
+                "component validator rejected staged package member",
+                error,
+                retained_paths=(staged.path,),
+            )
+        try:
+            filesystem._revalidate_package_file(  # pyright: ignore[reportPrivateUsage]
+                package_file
+            )
+        except BaseException as error:
+            _raise_validation(
+                "staged package member changed after validation",
+                error,
+                retained_paths=(staged.path,),
+            )
+
+
+def _copy_package_launch(
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    attempt: filesystem._PinnedDirectory,  # pyright: ignore[reportPrivateUsage]
+    launch: FileIdentity,
+    *,
+    chunk_size: int,
+) -> FileIdentity:
+    try:
+        source = filesystem._open_pinned_file(  # pyright: ignore[reportPrivateUsage]
+            attempt,
+            LAUNCH_NAME,
+            Path(launch.path),
+        )
+    except BaseException as error:
+        _raise_validation(
+            "cannot open immutable startup record for package copy",
+            error,
+            retained_paths=(staged.path,),
+        )
+
+    try:
+        package_file, handle = _create_package_member(staged, LAUNCH_NAME)
+    except BaseException:
+        filesystem._close_pinned_file(source)  # pyright: ignore[reportPrivateUsage]
+        raise
+
+    try:
+        _run_owned_writer(
+            package_file,
+            handle,
+            lambda destination: filesystem._copy_pinned_file(  # pyright: ignore[reportPrivateUsage]
+                source,
+                destination,
+                chunk_size=chunk_size,
+            ),
+            orphan_path=None,
+        )
+    except ArtifactWriteError as error:
+        close_error = filesystem._close_pinned_file(  # pyright: ignore[reportPrivateUsage]
+            source
+        )
+        del close_error
+        marker = error.__cause__
+        if isinstance(
+            marker,
+            filesystem._PinnedFileReadError,  # pyright: ignore[reportPrivateUsage]
+        ):
+            _raise_validation(
+                "startup record failed during bounded package copy",
+                marker.__cause__ or marker,
+                retained_paths=(staged.path,),
+            )
+        _raise_write(
+            "cannot write and close copied startup record",
+            error,
+            retained_paths=(staged.path,),
+        )
+
+    source_closed = False
+    try:
+        filesystem._revalidate_pinned_file(  # pyright: ignore[reportPrivateUsage]
+            source
+        )
+        close_error = filesystem._close_pinned_file(  # pyright: ignore[reportPrivateUsage]
+            source
+        )
+        source_closed = True
+        if close_error is not None:
+            raise close_error
+        filesystem._revalidate_package_file(  # pyright: ignore[reportPrivateUsage]
+            package_file
+        )
+        copied = _snapshot_local_file(
+            staged.path,
+            LAUNCH_NAME,
+            chunk_size=chunk_size,
+        )
+        expected = FileIdentity(PathKind.LOCAL, LAUNCH_NAME, launch.sha256)
+        if copied != expected:
+            raise OSError(errno.ESTALE, "copied startup record digest changed")
+    except BaseException as error:
+        if not source_closed:
+            filesystem._close_pinned_file(  # pyright: ignore[reportPrivateUsage]
+                source
+            )
+        _raise_validation(
+            "copied startup record failed publication validation",
+            error,
+            retained_paths=(staged.path,),
+        )
+    return copied
+
+
+def _validate_package_tree(
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    expected_files: tuple[str, ...],
+    *,
+    published_name: str | None = None,
+    orphan_path: Path | None = None,
+) -> None:
+    try:
+        filesystem._validate_package_tree(  # pyright: ignore[reportPrivateUsage]
+            staged,
+            expected_files,
+            published_name=published_name,
+        )
+    except BaseException as error:
+        _raise_validation(
+            "package filesystem membership failed publication validation",
+            error,
+            retained_paths=() if orphan_path is not None else (staged.path,),
+            orphan_path=orphan_path,
+        )
+
+
+def _snapshot_package_members(
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    member_paths: tuple[str, ...],
+    *,
+    chunk_size: int,
+) -> tuple[FileIdentity, ...]:
+    try:
+        identities = tuple(
+            _snapshot_local_file(
+                staged.path,
+                relative_path,
+                chunk_size=chunk_size,
+            )
+            for relative_path in sorted(member_paths)
+        )
+        if tuple(identity.path for identity in identities) != tuple(
+            sorted(member_paths)
+        ) or any(identity.kind is not PathKind.LOCAL for identity in identities):
+            raise OSError(errno.ESTALE, "package member snapshot is invalid")
+    except BaseException as error:
+        _raise_validation(
+            "package members failed lineage snapshot",
+            error,
+            retained_paths=(staged.path,),
+        )
+    return identities
+
+
+def _stage_package_manifest(
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    identities: tuple[FileIdentity, ...],
+    build_manifest: Callable[[tuple[FileIdentity, ...]], bytes],
+    *,
+    max_manifest_bytes: int,
+    chunk_size: int,
+) -> FileIdentity:
+    try:
+        data = build_manifest(identities)
+        if type(data) is not bytes:
+            raise TypeError("package manifest builder must return bytes")
+        if len(data) > max_manifest_bytes:
+            raise OSError(errno.EFBIG, "package manifest exceeds maximum byte size")
+    except BaseException as error:
+        _raise_validation(
+            "package manifest builder failed publication validation",
+            error,
+            retained_paths=(staged.path,),
+        )
+
+    package_file, handle = _create_package_member(staged, MANIFEST_NAME)
+    try:
+        _run_owned_writer(
+            package_file,
+            handle,
+            lambda writer: _write_all(writer, data),
+            orphan_path=None,
+        )
+    except ArtifactWriteError as error:
+        _raise_write(
+            "cannot write and close private package manifest",
+            error,
+            retained_paths=(staged.path,),
+        )
+    try:
+        filesystem._revalidate_package_file(  # pyright: ignore[reportPrivateUsage]
+            package_file
+        )
+        identity = _snapshot_local_file(
+            staged.path,
+            MANIFEST_NAME,
+            chunk_size=chunk_size,
+        )
+    except BaseException as error:
+        _raise_validation(
+            "package manifest failed lineage snapshot",
+            error,
+            retained_paths=(staged.path,),
+        )
+    return identity
+
+
+def _validate_manifest_members(
+    root: Path,
+    manifest: FileIdentity,
+    expected: tuple[FileIdentity, ...],
+    parse_manifest: Callable[[bytes], Iterable[FileIdentity]],
+    *,
+    max_manifest_bytes: int,
+    chunk_size: int,
+    retained_paths: tuple[Path, ...],
+    orphan_path: Path | None = None,
+) -> tuple[FileIdentity, ...]:
+    try:
+        actual = _validate_package_members(
+            root,
+            manifest,
+            parse_manifest,
+            max_manifest_bytes=max_manifest_bytes,
+            chunk_size=chunk_size,
+        )
+        if actual != expected:
+            raise OSError(errno.EINVAL, "manifest membership is not exact")
+    except BaseException as error:
+        _raise_validation(
+            "package manifest failed generic membership validation",
+            error,
+            retained_paths=retained_paths,
+            orphan_path=orphan_path,
+        )
+    return actual
+
+
+def _revalidate_staged_package(
+    plan: PublicationPlan,
+    launch: FileIdentity,
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    members: tuple[FileIdentity, ...],
+    manifest: FileIdentity,
+    parse_manifest: Callable[[bytes], Iterable[FileIdentity]],
+    *,
+    max_manifest_bytes: int,
+    chunk_size: int,
+) -> None:
+    expected_files = tuple(sorted((*plan.member_paths, LAUNCH_NAME, MANIFEST_NAME)))
+    _validate_package_tree(staged, expected_files)
+    try:
+        for member in members:
+            if (
+                _validate_local_file(
+                    staged.path,
+                    member,
+                    chunk_size=chunk_size,
+                )
+                != member
+            ):
+                raise OSError(errno.ESTALE, "package member identity changed")
+    except BaseException as error:
+        _raise_validation(
+            "package member digest changed after component validation",
+            error,
+            retained_paths=(staged.path,),
+        )
+    _validate_manifest_members(
+        staged.path,
+        manifest,
+        members,
+        parse_manifest,
+        max_manifest_bytes=max_manifest_bytes,
+        chunk_size=chunk_size,
+        retained_paths=(staged.path,),
+    )
+    try:
+        _validate_launch_identity(launch, chunk_size=chunk_size, orphan_path=None)
+    except ArtifactValidationError as error:
+        _raise_validation(
+            "live startup record changed during package validation",
+            error,
+            retained_paths=(staged.path,),
+        )
+
+
 def _publish_artifact(
     plan: PublicationPlan,
     parent: filesystem._PinnedDirectory,  # pyright: ignore[reportPrivateUsage]
@@ -308,6 +770,84 @@ def _validate_published_artifact(
     return actual
 
 
+def _publish_package_artifact(
+    plan: PublicationPlan,
+    parent: filesystem._PinnedDirectory,  # pyright: ignore[reportPrivateUsage]
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    try:
+        filesystem._revalidate_pinned_directory_binding(  # pyright: ignore[reportPrivateUsage]
+            parent
+        )
+        filesystem._revalidate_staged_directory(  # pyright: ignore[reportPrivateUsage]
+            staged
+        )
+    except BaseException as error:
+        _raise_validation(
+            "staged package changed immediately before atomic publication",
+            error,
+            retained_paths=(staged.path,),
+        )
+    try:
+        filesystem._atomic_rename_noreplace(  # pyright: ignore[reportPrivateUsage]
+            parent.fd,
+            staged.name,
+            parent.fd,
+            plan.artifact_path.name,
+            source_path=staged.path,
+        )
+    except PublicationConflictError as error:
+        raise PublicationConflictError(
+            str(error),
+            retained_paths=error.retained_paths,
+            orphan_path=plan.artifact_path,
+        ) from _first_cause(error)
+
+
+def _validate_published_package(
+    plan: PublicationPlan,
+    staged: filesystem._StagedDirectory,  # pyright: ignore[reportPrivateUsage]
+    members: tuple[FileIdentity, ...],
+    manifest: FileIdentity,
+    parse_manifest: Callable[[bytes], Iterable[FileIdentity]],
+    *,
+    max_manifest_bytes: int,
+    chunk_size: int,
+) -> FileIdentity:
+    expected_files = tuple(sorted((*plan.member_paths, LAUNCH_NAME, MANIFEST_NAME)))
+    _validate_package_tree(
+        staged,
+        expected_files,
+        published_name=plan.artifact_path.name,
+        orphan_path=plan.artifact_path,
+    )
+    _validate_manifest_members(
+        plan.artifact_path,
+        manifest,
+        members,
+        parse_manifest,
+        max_manifest_bytes=max_manifest_bytes,
+        chunk_size=chunk_size,
+        retained_paths=(),
+        orphan_path=plan.artifact_path,
+    )
+    try:
+        actual = _validate_local_file(
+            plan.artifact_path,
+            manifest,
+            chunk_size=chunk_size,
+        )
+        if actual != manifest:
+            raise OSError(errno.ESTALE, "published manifest identity changed")
+    except BaseException as error:
+        _raise_validation(
+            "published package manifest failed publication validation",
+            error,
+            orphan_path=plan.artifact_path,
+        )
+    return actual
+
+
 def _build_file_status(
     plan: PublicationPlan,
     artifact: FileIdentity,
@@ -320,6 +860,23 @@ def _build_file_status(
         artifact_path=str(plan.artifact_path),
         digest_path=str(plan.artifact_path),
         sha256=artifact.sha256,
+        launch_path=str(plan.launch_path),
+        launch_sha256=launch.sha256,
+    )
+
+
+def _build_package_status(
+    plan: PublicationPlan,
+    manifest: FileIdentity,
+    launch: FileIdentity,
+) -> ArtifactStatus:
+    return ArtifactStatus(
+        schema_version=CURRENT_ARTIFACT_STATUS_VERSION,
+        state="published",
+        artifact_kind=ArtifactKind.PACKAGE,
+        artifact_path=str(plan.artifact_path),
+        digest_path=str(plan.artifact_path / MANIFEST_NAME),
+        sha256=manifest.sha256,
         launch_path=str(plan.launch_path),
         launch_sha256=launch.sha256,
     )
@@ -529,4 +1086,193 @@ def publish_file(
             )
         return _final_validation(plan, chunk_size=chunk_size)
     finally:
+        _close_pins(destination, attempt)
+
+
+def publish_package(
+    plan: PublicationPlan,
+    launch: FileIdentity,
+    members: Iterable[PackageMember],
+    build_manifest: Callable[[tuple[FileIdentity, ...]], bytes],
+    parse_manifest: Callable[[bytes], Iterable[FileIdentity]],
+    validate_package: Callable[[Path], None],
+    *,
+    max_manifest_bytes: int,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+) -> ArtifactStatus:
+    """Publish one exact validated package and then its detached marker."""
+
+    canonical_members = _validate_package_inputs(
+        plan,
+        launch,
+        members,
+        build_manifest,
+        parse_manifest,
+        validate_package,
+        max_manifest_bytes,
+        chunk_size,
+    )
+    attempt: filesystem._PinnedDirectory | None = None  # pyright: ignore[reportPrivateUsage]
+    destination: filesystem._PinnedDirectory | None = None  # pyright: ignore[reportPrivateUsage]
+    staged: filesystem._StagedDirectory | None = None  # pyright: ignore[reportPrivateUsage]
+    try:
+        try:
+            attempt = filesystem._pin_attempt_directory(  # pyright: ignore[reportPrivateUsage]
+                plan.attempt_dir
+            )
+            destination = filesystem._pin_owned_directory(  # pyright: ignore[reportPrivateUsage]
+                plan.artifact_path.parent
+            )
+            artifact_exists = filesystem._entry_exists(  # pyright: ignore[reportPrivateUsage]
+                destination,
+                plan.artifact_path.name,
+            )
+            status_exists = filesystem._entry_exists(  # pyright: ignore[reportPrivateUsage]
+                attempt,
+                plan.status_path.name,
+            )
+        except BaseException as error:
+            _raise_validation(
+                "package publication filesystem boundary is unsafe", error
+            )
+
+        if artifact_exists or status_exists:
+            raise PublicationConflictError(
+                "publication destination or detached status already exists",
+                orphan_path=plan.artifact_path if artifact_exists else None,
+            )
+
+        _validate_launch_identity(launch, chunk_size=chunk_size, orphan_path=None)
+        staged = _create_package_staging(destination, plan.artifact_path.name)
+        _establish_package_structure(staged, plan)
+        _write_package_members(staged, canonical_members)
+        _copy_package_launch(
+            staged,
+            attempt,
+            launch,
+            chunk_size=chunk_size,
+        )
+        non_manifest_paths = tuple(sorted((*plan.member_paths, LAUNCH_NAME)))
+        _validate_package_tree(staged, non_manifest_paths)
+        member_identities = _snapshot_package_members(
+            staged,
+            non_manifest_paths,
+            chunk_size=chunk_size,
+        )
+        manifest_identity = _stage_package_manifest(
+            staged,
+            member_identities,
+            build_manifest,
+            max_manifest_bytes=max_manifest_bytes,
+            chunk_size=chunk_size,
+        )
+        all_paths = tuple(sorted((*non_manifest_paths, MANIFEST_NAME)))
+        _validate_package_tree(staged, all_paths)
+        _validate_manifest_members(
+            staged.path,
+            manifest_identity,
+            member_identities,
+            parse_manifest,
+            max_manifest_bytes=max_manifest_bytes,
+            chunk_size=chunk_size,
+            retained_paths=(staged.path,),
+        )
+        try:
+            validate_package(staged.path)
+        except BaseException as error:
+            _raise_validation(
+                "component validator rejected staged package",
+                error,
+                retained_paths=(staged.path,),
+            )
+        _revalidate_staged_package(
+            plan,
+            launch,
+            staged,
+            member_identities,
+            manifest_identity,
+            parse_manifest,
+            max_manifest_bytes=max_manifest_bytes,
+            chunk_size=chunk_size,
+        )
+        _publish_package_artifact(plan, destination, staged)
+        published_manifest = _validate_published_package(
+            plan,
+            staged,
+            member_identities,
+            manifest_identity,
+            parse_manifest,
+            max_manifest_bytes=max_manifest_bytes,
+            chunk_size=chunk_size,
+        )
+        fresh_launch = _validate_launch_identity(
+            launch,
+            chunk_size=chunk_size,
+            orphan_path=plan.artifact_path,
+        )
+
+        tree_close_error = filesystem._close_staged_directory(  # pyright: ignore[reportPrivateUsage]
+            staged
+        )
+        staged = None
+        if tree_close_error is not None:
+            _raise_validation(
+                "cannot close published package descriptors before status commit",
+                tree_close_error,
+                orphan_path=plan.artifact_path,
+            )
+        destination_close_error = filesystem._close_pinned_directory(  # pyright: ignore[reportPrivateUsage]
+            destination
+        )
+        destination = None
+        if destination_close_error is not None:
+            _raise_validation(
+                "cannot close package destination descriptors before status commit",
+                destination_close_error,
+                orphan_path=plan.artifact_path,
+            )
+        attempt_close_error = filesystem._close_pinned_directory(  # pyright: ignore[reportPrivateUsage]
+            attempt
+        )
+        attempt = None
+        if attempt_close_error is not None:
+            _raise_validation(
+                "cannot close package attempt descriptors before status commit",
+                attempt_close_error,
+                orphan_path=plan.artifact_path,
+            )
+        try:
+            attempt = filesystem._pin_attempt_directory(  # pyright: ignore[reportPrivateUsage]
+                plan.attempt_dir
+            )
+        except BaseException as error:
+            _raise_validation(
+                "cannot repin package attempt before status commit",
+                error,
+                orphan_path=plan.artifact_path,
+            )
+
+        status = _build_package_status(plan, published_manifest, fresh_launch)
+        staged_status = _stage_status(
+            plan,
+            attempt,
+            status,
+            chunk_size=chunk_size,
+        )
+        _publish_status(plan, attempt, staged_status)
+        final_attempt_close_error = filesystem._close_pinned_directory(  # pyright: ignore[reportPrivateUsage]
+            attempt
+        )
+        attempt = None
+        if final_attempt_close_error is not None:
+            _raise_validation(
+                "cannot close package descriptors after status commit",
+                final_attempt_close_error,
+            )
+        return _final_validation(plan, chunk_size=chunk_size)
+    finally:
+        if staged is not None:
+            filesystem._close_staged_directory(  # pyright: ignore[reportPrivateUsage]
+                staged
+            )
         _close_pins(destination, attempt)

@@ -11,7 +11,7 @@ This central roadmap owns cross-component sequencing only. Each linked
 component roadmap owns its detailed tasks, implementation notes, tests,
 validation, completion criteria, and evidence.
 
-## [ 29%] STAGE 1 — Contract Foundation
+## [TSTR] STAGE 1 — Contract Foundation
 
 - **Task:** Complete the stage named by this heading through its ordered steps.
 - **Deliverable:** A usable, testable increment comprising the outputs declared by those steps.
@@ -30,19 +30,19 @@ validation, completion criteria, and evidence.
     deterministic admission and accounting.
 - **Applicable test types:** The test types declared by this stage's substeps.
 - **Completion criteria:** Every step and substep in this stage meets its completion criteria.
-- **Evidence:** Immediate child Step 1.1 is `[ 29%]` based on its linked
-  component-roadmap evidence.
+- **Evidence:** Immediate child Step 1.1 is `[TSTR]`: Artifact I/O requires
+  coverage completion.
 
-### [ 29%] STEP 1.1 — Configuration, artifacts, lineage, and PCAPNG
+### [TSTR] STEP 1.1 — Configuration, artifacts, lineage, and PCAPNG
 
 - **Task:** Perform the implementation work named by this heading.
 - **Deliverable:** All outputs declared by this step's substeps.
 - **Applicable test types:** The test types declared by this step's substeps.
 - **Completion criteria:** Every substep in this step meets its completion criteria.
-- **Evidence:** Immediate child Substep 1.1.1 is `[ 29%]` based on its linked
-  component-roadmap evidence.
+- **Evidence:** Immediate child Substep 1.1.1 is `[TSTR]`: Artifact I/O
+  requires coverage completion.
 
-#### [ 29%] SUBSTEP 1.1.1 — Coordinate shared foundations
+#### [TSTR] SUBSTEP 1.1.1 — Coordinate shared foundations
 
 - **Objective:** Deliver the shared foundation represented by this stage's
   linked component roadmaps.
@@ -56,9 +56,9 @@ validation, completion criteria, and evidence.
   completion criteria.
 - **Completion criteria:** Every component roadmap linked by this stage is
   `[DONE]`, and SYS-AC-003 passes.
-- **Evidence:** Infrastructure and Lineage are `[DONE]`; Configuration,
-  Artifact I/O, Observability, PCAPNG I/O, and Resource management remain
-  `[PLAN]`. Their equal-weight mean rounds to 29% (`200 / 7 = 29%`).
+- **Evidence:** Artifact I/O is `[TSTR]` because its 100% coverage gate is not
+  met. Infrastructure and Lineage are `[DONE]`; Configuration, Observability,
+  PCAPNG I/O, and Resource management remain `[PLAN]`.
 
 ## [PLAN] STAGE 2 — Capture and Reference Preparation
 
