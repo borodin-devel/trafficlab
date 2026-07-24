@@ -11,7 +11,7 @@ This central roadmap owns cross-component sequencing only. Each linked
 component roadmap owns its detailed tasks, implementation notes, tests,
 validation, completion criteria, and evidence.
 
-## [ 71%] STAGE 1 — Contract Foundation
+## [ 86%] STAGE 1 — Contract Foundation
 
 - **Task:** Complete the stage named by this heading through its ordered steps.
 - **Deliverable:** A usable, testable increment comprising the outputs declared by those steps.
@@ -30,19 +30,19 @@ validation, completion criteria, and evidence.
     deterministic admission and accounting.
 - **Applicable test types:** The test types declared by this stage's substeps.
 - **Completion criteria:** Every step and substep in this stage meets its completion criteria.
-- **Evidence:** Immediate child Step 1.1 is `[ 71%]` based on its linked
+- **Evidence:** Immediate child Step 1.1 is `[ 86%]` based on its linked
   component-roadmap evidence.
 
-### [ 71%] STEP 1.1 — Configuration, artifacts, lineage, and PCAPNG
+### [ 86%] STEP 1.1 — Configuration, artifacts, lineage, and PCAPNG
 
 - **Task:** Perform the implementation work named by this heading.
 - **Deliverable:** All outputs declared by this step's substeps.
 - **Applicable test types:** The test types declared by this step's substeps.
 - **Completion criteria:** Every substep in this step meets its completion criteria.
-- **Evidence:** Immediate child Substep 1.1.1 is `[ 71%]` based on its linked
+- **Evidence:** Immediate child Substep 1.1.1 is `[ 86%]` based on its linked
   component-roadmap evidence.
 
-#### [ 71%] SUBSTEP 1.1.1 — Coordinate shared foundations
+#### [ 86%] SUBSTEP 1.1.1 — Coordinate shared foundations
 
 - **Objective:** Deliver the shared foundation represented by this stage's
   linked component roadmaps.
@@ -56,9 +56,9 @@ validation, completion criteria, and evidence.
   completion criteria.
 - **Completion criteria:** Every component roadmap linked by this stage is
   `[DONE]`, and SYS-AC-003 passes.
-- **Evidence:** Infrastructure, Configuration, Artifact I/O, Lineage, and
-  PCAPNG I/O are `[DONE]`; Observability and Resource management remain
-  `[PLAN]`. Their equal-weight mean rounds to 71% (`500 / 7 = 71%`).
+- **Evidence:** Infrastructure, Configuration, Artifact I/O, Lineage,
+  Observability, and PCAPNG I/O are `[DONE]`; Resource management remains
+  `[PLAN]`. Their equal-weight mean rounds to 86% (`600 / 7 = 86%`).
 
 ## [PLAN] STAGE 2 — Capture and Reference Preparation
 
