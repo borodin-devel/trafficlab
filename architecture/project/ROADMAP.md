@@ -57,7 +57,8 @@ validation, completion criteria, and evidence.
 - **Completion criteria:** Every component roadmap linked by this stage is
   `[DONE]`, and SYS-AC-003 passes.
 - **Evidence:** Infrastructure, Configuration, Artifact I/O, Lineage,
-  Observability, PCAPNG I/O, and Resource management are `[DONE]`.
+  Observability, PCAPNG I/O, and Resource management are `[DONE]`; Resource
+  Management records immutable decision snapshots for lineage and diagnosis.
 
 ## [PLAN] STAGE 2 — Capture and Reference Preparation
 

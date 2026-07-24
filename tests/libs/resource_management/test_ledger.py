@@ -32,12 +32,20 @@ def _job(job_id: str = "job-1", *, storage: int = 4) -> JobReservation:
 
 @pytest.mark.unit
 def test_admit_and_release_preserve_all_four_dimensions_atomically() -> None:
-    state, decision = admit(_state(), _job(), _observation())
+    before = _state()
+    state, decision = admit(before, _job(), _observation())
 
     assert decision.accepted
+    assert decision.state_before == before
+    assert decision.state_after == state
+    assert decision.state_before.budget == before.budget
+    assert decision.state_before.active == ()
+    assert decision.state_after.active == (_job(),)
     assert remaining(state) == ResourceCapacity(3, 6, 12, 1)
     released, release_decision = release(state, "job-1", _observation())
     assert release_decision.accepted
+    assert release_decision.state_before == state
+    assert release_decision.state_after == released
     assert remaining(released) == ResourceCapacity(4, 8, 16, 2)
 
 
@@ -52,8 +60,11 @@ def test_admission_records_deterministic_rejections_without_partial_reservation(
 
     assert accepted.reason == "accepted"
     assert duplicate.reason == "duplicate_job" and duplicate_state == state
+    assert duplicate.state_before == duplicate.state_after == state
     assert rejected.reason == "storage_exhausted" and rejected_state == state
+    assert rejected.state_before == rejected.state_after == state
     assert failed.reason == "probe_failed" and failed_state == state
+    assert failed.state_before == failed.state_after == state
 
 
 @pytest.mark.unit
@@ -63,6 +74,7 @@ def test_unknown_release_keeps_ledger_unchanged() -> None:
     assert state == _state()
     assert not decision.accepted
     assert decision.reason == "unknown_job"
+    assert decision.state_before == decision.state_after == state
 
 
 @pytest.mark.unit
@@ -94,16 +106,31 @@ def test_admission_reports_first_exhausted_dimension(
 
 
 @pytest.mark.unit
-def test_seeded_admit_release_trace_preserves_resource_bounds() -> None:
-    budget = ResourceBudget(6, 60, 600, 3)
+@pytest.mark.parametrize(
+    ("seed", "budget"),
+    (
+        pytest.param(20260724, ResourceBudget(6, 60, 600, 3), id="medium"),
+        pytest.param(20260725, ResourceBudget(3, 30, 300, 2), id="small"),
+        pytest.param(20260726, ResourceBudget(9, 90, 900, 4), id="large"),
+    ),
+)
+def test_seeded_admit_release_trace_preserves_resource_bounds(
+    seed: int, budget: ResourceBudget
+) -> None:
     state = LedgerState(budget)
-    random = Random(20260724)  # noqa: S311 - fixed deterministic test trace
-    observation = ResourceObservation(6, 60, 600, Path("/storage"))
+    random = Random(seed)  # noqa: S311 - fixed deterministic test trace
+    observation = ResourceObservation(
+        budget.cpu_units,
+        budget.memory_bytes,
+        budget.storage_bytes,
+        Path("/storage"),
+    )
 
     for index in range(200):
+        previous = state
         if state.active and random.random() < 0.4:
             job_id = state.active[random.randrange(len(state.active))].job_id
-            state, _ = release(state, job_id, observation)
+            state, decision = release(state, job_id, observation)
         else:
             reservation = JobReservation(
                 f"job-{index}",
@@ -113,8 +140,12 @@ def test_seeded_admit_release_trace_preserves_resource_bounds() -> None:
                 random.randint(1, 300),
                 1,
             )
-            state, _ = admit(state, reservation, observation)
+            state, decision = admit(state, reservation, observation)
 
+        assert decision.state_before == previous
+        assert decision.state_after == state
+        assert decision.before == remaining(previous)
+        assert decision.after == remaining(state)
         available = remaining(state)
         assert tuple(job.job_id for job in state.active) == tuple(
             sorted(job.job_id for job in state.active)

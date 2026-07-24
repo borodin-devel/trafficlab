@@ -29,5 +29,6 @@ Part of the [central Trafficlab roadmap](../../project/ROADMAP.md).
 - **Tests:** State-machine, property, overflow, probe-failure, deterministic-order tests.
 - **Validation:** Run randomized traces and assert all invariants after every transition.
 - **Completion criteria:** RES-AC-001 and RES-AC-002 pass.
-- **Evidence:** Tests cover four-dimension atomic admission/release, deterministic
-  rejection, probe failure, malformed observations, and capacity invariants.
+- **Evidence:** Tests cover four-dimension atomic admission/release, retained
+  budget/reservation decision snapshots, deterministic rejection, probe
+  failure, malformed observations, and multi-seed capacity invariants.

@@ -158,6 +158,26 @@ class LedgerState:
         object.__setattr__(self, "active", ordered)
 
 
+def _remaining_capacity(state: LedgerState) -> ResourceCapacity:
+    values = [
+        state.budget.cpu_units,
+        state.budget.memory_bytes,
+        state.budget.storage_bytes,
+        state.budget.worker_slots,
+    ]
+    for reservation in state.active:
+        for index, amount in enumerate(
+            (
+                reservation.cpu_units,
+                reservation.memory_bytes,
+                reservation.storage_bytes,
+                reservation.worker_slots,
+            )
+        ):
+            values[index] -= amount
+    return ResourceCapacity(*values)
+
+
 @dataclass(frozen=True, slots=True)
 class AdmissionDecision:
     job_id: str
@@ -166,6 +186,8 @@ class AdmissionDecision:
     observation: ResourceObservation | ProbeFailure
     before: ResourceCapacity
     after: ResourceCapacity
+    state_before: LedgerState
+    state_after: LedgerState
 
     def __post_init__(self) -> None:
         _identity(cast(object, self.job_id), "decision job identifier")
@@ -183,4 +205,16 @@ class AdmissionDecision:
         ) or not isinstance(cast(object, self.after), ResourceCapacity):
             raise InvalidResourceValueError(
                 "decision capacities must be resource capacities"
+            )
+        if not isinstance(
+            cast(object, self.state_before), LedgerState
+        ) or not isinstance(cast(object, self.state_after), LedgerState):
+            raise InvalidResourceValueError("decision states must be ledger states")
+        if self.state_before.budget != self.state_after.budget:
+            raise InvalidResourceValueError("decision state budgets must match")
+        if self.before != _remaining_capacity(
+            self.state_before
+        ) or self.after != _remaining_capacity(self.state_after):
+            raise InvalidResourceValueError(
+                "decision capacities must match decision states"
             )

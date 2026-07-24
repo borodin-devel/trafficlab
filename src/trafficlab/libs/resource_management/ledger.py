@@ -43,11 +43,11 @@ def admit(
     before = remaining(state)
     if any(value.job_id == reservation.job_id for value in state.active):
         return state, _decision(
-            reservation.job_id, False, "duplicate_job", observation, before, before
+            reservation.job_id, False, "duplicate_job", observation, state, state
         )
     if isinstance(observation, ProbeFailure):
         return state, _decision(
-            reservation.job_id, False, "probe_failed", observation, before, before
+            reservation.job_id, False, "probe_failed", observation, state, state
         )
     if (
         observation.cpu_units < state.budget.cpu_units
@@ -59,8 +59,8 @@ def admit(
             False,
             "observation_insufficient",
             observation,
-            before,
-            before,
+            state,
+            state,
         )
     requested = (
         reservation.cpu_units,
@@ -83,26 +83,24 @@ def admit(
     for amount, capacity, reason in zip(requested, available, reasons, strict=True):
         if amount > capacity:
             return state, _decision(
-                reservation.job_id, False, reason, observation, before, before
+                reservation.job_id, False, reason, observation, state, state
             )
     next_state = LedgerState(state.budget, (*state.active, reservation))
     return next_state, _decision(
-        reservation.job_id, True, "accepted", observation, before, remaining(next_state)
+        reservation.job_id, True, "accepted", observation, state, next_state
     )
 
 
 def release(
     state: LedgerState, job_id: str, observation: ResourceObservation | ProbeFailure
 ) -> tuple[LedgerState, AdmissionDecision]:
-    before = remaining(state)
+    _ = remaining(state)
     retained = tuple(value for value in state.active if value.job_id != job_id)
     if len(retained) == len(state.active):
-        return state, _decision(
-            job_id, False, "unknown_job", observation, before, before
-        )
+        return state, _decision(job_id, False, "unknown_job", observation, state, state)
     next_state = LedgerState(state.budget, retained)
     return next_state, _decision(
-        job_id, True, "accepted", observation, before, remaining(next_state)
+        job_id, True, "accepted", observation, state, next_state
     )
 
 
@@ -111,7 +109,16 @@ def _decision(
     accepted: bool,
     reason: str,
     observation: ResourceObservation | ProbeFailure,
-    before: ResourceCapacity,
-    after: ResourceCapacity,
+    state_before: LedgerState,
+    state_after: LedgerState,
 ) -> AdmissionDecision:
-    return AdmissionDecision(job_id, accepted, reason, observation, before, after)
+    return AdmissionDecision(
+        job_id,
+        accepted,
+        reason,
+        observation,
+        remaining(state_before),
+        remaining(state_after),
+        state_before,
+        state_after,
+    )

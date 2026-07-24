@@ -126,3 +126,43 @@
   ```text
   feature(resource-management): add admission ledger
   ```
+
+### Task 5: Correct decision-record architecture review findings
+
+**Files:**
+- Modify: `src/trafficlab/libs/resource_management/values.py`
+- Modify: `src/trafficlab/libs/resource_management/ledger.py`
+- Modify: `tests/libs/resource_management/test_ledger.py`
+- Modify: `architecture/amendments/0002_RESOURCE_STORAGE_RESERVATION.md`
+- Modify: `docs/superpowers/specs/2026-07-24-resource-management-core-design.md`
+
+- [x] **Step 1: Write RED decision-snapshot test**
+
+  Assert an admitted decision retains the exact immutable ledger states before
+  and after transition, including configured budget and canonical reservations.
+
+- [x] **Step 2: Run RED test**
+
+  Run: `PYTHONPATH=. uv run --locked pytest tests/libs/resource_management/test_ledger.py -q`
+
+  Expected: `AdmissionDecision` lacks state snapshots.
+
+- [x] **Step 3: Store validated snapshots and broaden trace matrix**
+
+  Add `state_before` and `state_after` to `AdmissionDecision`; require matching
+  snapshot budgets and snapshot-derived capacities; pass both from every pure
+  ledger transition. Parameterize deterministic generated traces by several
+  fixed seeds and budgets. Amend 0002 to name and supersede the README
+  unresolved-interface statement.
+
+- [x] **Step 4: Run GREEN tests and full verification**
+
+  Run: `PYTHONPATH=. UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python tools/quality.py all`
+
+  Expected: format, lint, Pyright, tests, 100% coverage, corpus/docs,
+  whitespace, and wheel build pass.
+
+- [x] **Step 5: Commit corrective STEP evidence**
+
+  Stage only Resource Management implementation/tests, amendment, plan/spec,
+  and roadmap evidence. Commit with a corrective conventional message.

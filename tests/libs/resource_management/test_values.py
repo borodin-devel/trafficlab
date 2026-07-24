@@ -2,6 +2,7 @@
 
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -69,21 +70,79 @@ def test_resource_observation_rejects_unnormalized_storage_path() -> None:
 def test_ledger_state_and_decision_reject_invalid_public_values() -> None:
     observation = ResourceObservation(1, 1, 1, Path("/storage"))
     capacity = ResourceCapacity(1, 1, 1, 1)
+    state = LedgerState(ResourceBudget(1, 1, 1, 1))
     with pytest.raises(InvalidResourceValueError):
         LedgerState(object())  # type: ignore[arg-type]
     with pytest.raises(InvalidResourceValueError):
-        AdmissionDecision("", True, "accepted", observation, capacity, capacity)
+        AdmissionDecision(
+            "", True, "accepted", observation, capacity, capacity, state, state
+        )
     with pytest.raises(InvalidResourceValueError):
-        AdmissionDecision("job", True, "unrecognized", observation, capacity, capacity)
+        AdmissionDecision(
+            "job", True, "unrecognized", observation, capacity, capacity, state, state
+        )
     with pytest.raises(InvalidResourceValueError):
         LedgerState(
             ResourceBudget(1, 1, 1, 1),
             (object(),),  # type: ignore[arg-type]
         )
     with pytest.raises(InvalidResourceValueError):
-        AdmissionDecision("job", "yes", "accepted", observation, capacity, capacity)  # type: ignore[arg-type]
+        AdmissionDecision(
+            "job",
+            cast(bool, "yes"),
+            "accepted",
+            observation,
+            capacity,
+            capacity,
+            state,
+            state,
+        )
+
+
+@pytest.mark.unit
+def test_admission_decision_rejects_inconsistent_state_snapshots() -> None:
+    before = LedgerState(ResourceBudget(2, 2, 2, 2))
+    after = LedgerState(
+        before.budget,
+        (JobReservation("job", "fit", 1, 1, 1, 1),),
+    )
+    observation = ResourceObservation(1, 1, 1, Path("/storage"))
+    capacity = ResourceCapacity(1, 1, 1, 1)
+    state = LedgerState(ResourceBudget(1, 1, 1, 1))
+
     with pytest.raises(InvalidResourceValueError):
-        AdmissionDecision("job", True, "accepted", object(), capacity, capacity)  # type: ignore[arg-type]
+        AdmissionDecision(
+            "job",
+            True,
+            "accepted",
+            ResourceObservation(2, 2, 2, Path("/storage")),
+            ResourceCapacity(2, 2, 2, 2),
+            ResourceCapacity(2, 2, 2, 2),
+            before,
+            after,
+        )
+    with pytest.raises(InvalidResourceValueError):
+        AdmissionDecision(
+            "job",
+            True,
+            "accepted",
+            ResourceObservation(2, 2, 2, Path("/storage")),
+            ResourceCapacity(2, 2, 2, 2),
+            ResourceCapacity(1, 1, 1, 1),
+            before,
+            LedgerState(ResourceBudget(3, 3, 3, 3)),
+        )
+    with pytest.raises(InvalidResourceValueError):
+        AdmissionDecision(
+            "job",
+            True,
+            "accepted",
+            cast(ResourceObservation | ProbeFailure, object()),
+            capacity,
+            capacity,
+            state,
+            state,
+        )
     with pytest.raises(InvalidResourceValueError):
         AdmissionDecision(
             "job",
@@ -92,4 +151,17 @@ def test_ledger_state_and_decision_reject_invalid_public_values() -> None:
             observation,
             ResourceBudget(1, 1, 1, 1),  # type: ignore[arg-type]
             capacity,
+            state,
+            state,
+        )
+    with pytest.raises(InvalidResourceValueError):
+        AdmissionDecision(
+            "job",
+            True,
+            "accepted",
+            observation,
+            capacity,
+            capacity,
+            cast(LedgerState, object()),
+            state,
         )

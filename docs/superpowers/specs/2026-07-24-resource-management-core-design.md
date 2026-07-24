@@ -41,6 +41,14 @@ after. Reasons are exactly `accepted`, `duplicate_job`,
 `memory_exhausted`, `storage_exhausted`, `worker_exhausted`, or
 `unknown_job`.
 
+Every decision also retains immutable `LedgerState` snapshots before and after
+the operation. Each snapshot contains the configured budget and canonical
+active reservations, so a retained decision independently records the
+configuration and current reservations required for diagnosis and lineage.
+Decision validation requires both snapshots to use the same budget and requires
+each recorded capacity to equal the capacity derived from its corresponding
+snapshot.
+
 ## Core Transitions
 
 `admit(state, reservation, observation) -> (LedgerState, AdmissionDecision)`
@@ -96,14 +104,15 @@ tests/libs/resource_management/
 
 ## Testing
 
-Tests use fixed-seed generated reservation/release traces without a new test
-dependency. After each transition they assert active reservations are unique,
-every dimension is nonnegative, and each total never exceeds budget. Fixtures
-cover each exhaustion reason, atomic multi-dimension rejection, duplicate
-identity, exact release, unknown release, zero capacity, probe failures,
-overflow, malformed meminfo, deterministic ordering, and injected Linux probe
-values. Full repository formatting, lint, Pyright, 100% coverage, corpus,
-whitespace, docs, and wheel checks must pass before completion.
+Tests use a deterministic matrix of generated reservation/release traces
+without a new test dependency. After each transition they assert active
+reservations are unique, every dimension is nonnegative, and each total never
+exceeds budget. Fixtures cover each exhaustion reason, atomic multi-dimension
+rejection, duplicate identity, exact release, unknown release, zero capacity,
+probe failures, overflow, malformed meminfo, deterministic ordering, decision
+snapshots, and injected Linux probe values. Full repository formatting, lint,
+Pyright, 100% coverage, corpus, whitespace, docs, and wheel checks must pass
+before completion.
 
 ## Compatibility and Limits
 

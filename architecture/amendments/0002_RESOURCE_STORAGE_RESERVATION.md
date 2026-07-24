@@ -11,6 +11,11 @@ probe shell for logical CPUs, memory, and storage, and a pure ledger that
 reserves every requested dimension atomically. Its SRS requires admission only
 when every requested dimension fits unreserved capacity.
 
+The [Resource Management README](../libs/resource_management/README.md) says
+exact Python signatures and operating-system probes remain unresolved. That
+statement conflicts with a versioned first admission interface and supported
+Linux probe required to complete the library roadmap.
+
 The system [Resource Management](../project/RESOURCE_MANAGEMENT.md) defines
 positive CPU and memory reservations plus maximum workers, but leaves exact
 storage reservation policy unresolved. It nevertheless requires unavailable
@@ -40,6 +45,10 @@ availability from `os.statvfs` available bytes for an explicit absolute
 normalized storage path. Any missing, malformed, zero, overflowed, or failed
 observation produces a failed observation record and prevents new admission.
 It never terminates work already admitted.
+
+This decision supersedes the README's unresolved-interface and unresolved-probe
+statement for Resource Management version 1 only. The original README remains
+unchanged; a future incompatible API or probe policy requires a new amendment.
 
 ## Rationale
 
