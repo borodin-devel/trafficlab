@@ -493,10 +493,16 @@ Each outcome cell lists, in order: exact `kind`; owning `stage`;
       a new run directory; no <code>best_model.json</code></td>
     </tr>
     <tr>
-      <td>Old model or checkpoint semantics</td>
-      <td><code>scientific_semantics_incompatible</code>; reuse stage; artifact
-      <code>preserved</code>; primary; no status; refit under the current schema;
-      no resume, generation, or reuse</td>
+      <td>Old checkpoint semantics during fit resume</td>
+      <td><code>scientific_semantics_incompatible</code>; fit;
+      <code>checkpoint.json/preserved</code>; primary; no status; refit under the
+      current schema in a new run directory; no <code>best_model.json</code></td>
+    </tr>
+    <tr>
+      <td>Old fitted-model semantics during generation</td>
+      <td><code>scientific_semantics_incompatible</code>; generate;
+      <code>best_model.json/preserved</code>; primary; no status; refit under the
+      current schema; no <code>generated.pcapng</code></td>
     </tr>
     <tr>
       <td>Metric, sample, or numeric infeasibility</td>
@@ -511,16 +517,16 @@ Each outcome cell lists, in order: exact `kind`; owning `stage`;
       status; correct limit or model; no <code>generated.pcapng</code></td>
     </tr>
     <tr>
-      <td>Publication collision</td>
-      <td><code>publication_collision</code>; publishing stage; existing
-      destination <code>preserved</code>; primary; no status; choose a new run
-      directory; no replacement publication</td>
+      <td>Best-model collision during fit publication</td>
+      <td><code>publication_collision</code>; fit;
+      <code>best_model.json/preserved</code>; primary; no status; choose a new run
+      directory; no replacement <code>best_model.json</code></td>
     </tr>
     <tr>
-      <td>Publication durability failure</td>
-      <td><code>publication_failed</code>; publishing stage; destination
-      <code>not_published</code>; primary; no status; correct storage and retry;
-      no destination publication</td>
+      <td>Similarity durability failure during compare publication</td>
+      <td><code>publication_failed</code>; compare;
+      <code>similarity.json/not_published</code>; primary; no status; correct
+      storage and rerun compare; no <code>similarity.json</code></td>
     </tr>
     <tr>
       <td>Cleanup failure after success</td>
