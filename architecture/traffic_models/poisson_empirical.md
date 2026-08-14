@@ -21,6 +21,13 @@ rate estimate is
 \hat\lambda=\frac{N}{W}.
 \]
 
+This estimate is conditioned on the active span from the first through the last
+observed packet. Silence before the first packet and after the last packet is
+excluded, so \(\hat\lambda=(n-1)/W\) must not be interpreted as an unconditional
+rate over a separately observed workload window. The packet at `t=0` is a
+normalized observed arrival, not evidence that the underlying process began at
+that instant.
+
 A homogeneous Poisson process has independent exponential inter-arrival times
 
 \[
@@ -57,8 +64,9 @@ completion, return incomplete generation. The same fitted model, seed, window,
 and guards produce exactly the same trace.
 
 Zero sampled delays are permitted by floating-point generation only if the RNG
-returns them; timestamps remain nondecreasing. A result too small for an enabled
-similarity method is a valid generation but an invalid fitness candidate.
+returns them; timestamps remain nondecreasing. A result too small for a
+mandatory similarity method is a valid generation but an invalid fitness
+candidate.
 
 ## Trafficlab-specific choices
 
@@ -91,6 +99,14 @@ Generating \(m\) packets takes \(O(m)\) time and \(O(m)\) output space.
 - A reliability guard reached while the next event is within `W` returns
   incomplete generation.
 - A one-packet or zero-window reference trace is rejected.
+
+## Direct scientific validation
+
+Bounded tests with predeclared seeds, sample sizes, and tolerances must directly
+cover exponential IAT behavior, mean generated rate over the active-span
+interpretation, complete-window generation, and the frequencies of joint
+empirical direction/length marks. Round-trip and same-seed tests alone do not
+establish those properties.
 
 ## References
 

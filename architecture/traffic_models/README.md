@@ -32,6 +32,30 @@ parameter bounds, seed policy, and enough empirical values to generate without
 reopening the reference capture. Numbers must be finite. Loading repeats
 structural and bound validation.
 
+Fitted models and checkpoints carry the current global scientific artifact
+schema version. That version identifies their scientific semantics, not only
+their JSON shape. The version with corrected MMPP arrival-epoch initialization
+must reject artifacts carrying the older MMPP semantics as incompatible before
+generation, resume, or stage reuse. It does not migrate them or add per-family
+schema or plug-in mechanisms; models must be refitted under the current global
+version.
+
+## Direct scientific evidence
+
+Each family requires bounded direct scientific tests with seeds, sample sizes,
+tolerances, and failure messages predeclared before results are inspected. The
+oracles must be analytical calculations or small independent test-only
+implementations rather than the production generator or similarity functions
+being validated.
+
+Serialization round trips, fixed-seed reproducibility, and generation by the
+same implementation are necessary engineering checks, but they are not
+sufficient scientific evidence. Family documents therefore state the direct
+distributional and completion behavior that the bounded validation matrix must
+cover. These tests support descriptive inference under their declared finite
+protocol; they do not identify a causal traffic mechanism or establish
+generalization to unseen programs.
+
 ## Fair competition
 
 Every candidate is evaluated against the same reference features, same `W`,
@@ -43,11 +67,44 @@ for every enabled family as well as the overall winner.
 
 ## MVP families
 
-| Model | Dependence represented | Chromosome | Strength | Main limitation | Cost |
-|---|---|---|---|---|---|
-| [Poisson empirical](poisson_empirical.md) | Independent arrivals and empirical direction/size marks | Rate multiplier | Transparent baseline | No temporal dependence | Linear |
-| [Markov Renewal](markov_renewal.md) | Observable state transitions and transition-conditioned timing | Bins, smoothing, support, time scale | Captures sequence structure directly | State sparsity | Linear fit plus state matrix |
-| [Two-state MMPP](mmpp.md) | Latent low/high-rate regimes | Two transition and two arrival rates | Captures burst/idle timing compactly | Marks ignore latent regime | Linear mark fit; event simulation |
+<table>
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th>Dependence represented</th>
+      <th>Chromosome</th>
+      <th>Strength</th>
+      <th>Main limitation</th>
+      <th>Cost</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="poisson_empirical.md">Poisson empirical</a></td>
+      <td>Independent arrivals and empirical direction/size marks</td>
+      <td>Rate multiplier</td>
+      <td>Transparent baseline</td>
+      <td>No temporal dependence</td>
+      <td>Linear</td>
+    </tr>
+    <tr>
+      <td><a href="markov_renewal.md">Markov Renewal</a></td>
+      <td>Observable state transitions and transition-conditioned timing</td>
+      <td>Bins, smoothing, support, time scale</td>
+      <td>Captures sequence structure directly</td>
+      <td>State sparsity</td>
+      <td>Linear fit plus state matrix</td>
+    </tr>
+    <tr>
+      <td><a href="mmpp.md">Two-state MMPP</a></td>
+      <td>Latent low/high-rate regimes</td>
+      <td>Two transition and two arrival rates</td>
+      <td>Captures burst/idle timing compactly</td>
+      <td>Marks ignore latent regime</td>
+      <td>Linear mark fit; event simulation</td>
+    </tr>
+  </tbody>
+</table>
 
 Only these implemented families belong in the runtime registry. A future family
 must arrive with implementation, focused tests, one mathematical document, and a

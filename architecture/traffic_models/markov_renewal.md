@@ -51,6 +51,13 @@ zero smoothing. Every row is finite, nonnegative, and sums to one. The uniform
 unobserved row is a Trafficlab boundary choice, not evidence that the reference
 exhibited uniform transitions.
 
+The explicit empty-row fallback applies when an active source state has
+\(N_j=0\) and \(\alpha=0\). With positive smoothing, the ordinary estimator also
+produces a uniform row, so no separate rule is needed. Use of either uniform
+unobserved-row case must be retained in fitted-model and evaluation diagnostics;
+it weakens state-conditional interpretation but remains a declared finite-sample
+rule.
+
 Fitting constructs this row without an RNG draw and stores it as an ordinary
 transition row. Loading applies the same finite, nonnegative, and row-sum
 validation as for every other row. `K = 0` and malformed stored rows remain
@@ -128,6 +135,13 @@ To sample a `j -> k` holding time:
    empty;
 3. otherwise use the global empirical IAT sample.
 
+Thus the global-IAT fallback applies only when the selected transition has
+fewer than \(r\) observations and the source state has no leaving-IAT sample.
+Model and evaluation diagnostics must retain which timing tier was used and how
+often. Falling back from a transition-conditioned sample weakens the
+state-conditional holding-time interpretation; it supplies defined
+finite-sample behavior rather than evidence for that conditional law.
+
 Multiply the sampled value by \(c_t\). Nonfinite, negative, or absent global
 IATs invalidate fitting and loading. Zero IATs remain valid observations.
 
@@ -190,6 +204,14 @@ output space.
 - Named clamping after sorting must preserve strict quantile order.
 - Duplicate numerical quantile thresholds invalidate the candidate.
 - Distinct numerical thresholds produce exactly three size bins per direction.
+
+## Direct scientific validation
+
+Bounded tests with predeclared seeds, sample sizes, and tolerances must directly
+cover transition probabilities, generated state occupancy, conditional holding
+times, every fallback tier and its diagnostics, complete-window generation, and
+joint direction/length marks. Serialization and fixed-seed reproduction are
+necessary but not substitutes for this evidence.
 
 ## References
 
