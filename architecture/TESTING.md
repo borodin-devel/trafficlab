@@ -215,7 +215,7 @@ regeneration, production similarity functions, and round trips cannot validate
 themselves. A failure starts with `scientific-validation:<case>` and reports the
 seed, sample size, expected value, observed value, and tolerance.
 
-The common mark distribution is the two-point joint distribution
+The Poisson and MMPP mark distribution is the two-point joint distribution
 `(outbound, 60): 1/4` and `(inbound, 120): 3/4`. A frequency assertion below
 means absolute error at most `0.03` for both joint cells. Completion cases also
 require finite nondecreasing events in `[0, W]`, emission at a scripted event
@@ -234,18 +234,22 @@ and an incomplete result when each reliability guard fires first.
       marks from each seed</td>
       <td>Mean IAT <code>1/4</code> within 5%; empirical CDF at <code>1/4</code>
       within <code>0.04</code> of <code>1 - exp(-1)</code>; each run's mean rate
-      within 8%; common mark frequencies and completion contract</td>
+      within 8%; Poisson/MMPP mark frequencies and completion contract</td>
     </tr>
     <tr>
       <td>Markov Renewal</td>
       <td>Kernel <code>[[0.8, 0.2], [0.3, 0.7]]</code>, seeds
-      <code>5101, 5209, 5303, 5413</code>, 20,000 transitions per seed; each
-      conditional IAT table is respectively <code>(1, 3)</code>,
-      <code>(2, 4)</code>, <code>(3, 5)</code>, and <code>(4, 6)</code></td>
+      <code>5101, 5209, 5303, 5413</code>, 20,000 transitions per seed;
+      A is <code>(outbound,60)</code>, B is <code>(inbound,120)</code>;
+      <code>r = 2</code>, <code>c_t = 1</code>; row-major A-to-A, A-to-B, B-to-A,
+      B-to-B IAT tables <code>(1, 3)</code>, <code>(2, 4)</code>,
+      <code>(3, 5)</code>, <code>(4, 6)</code></td>
       <td>Each transition cell within <code>0.025</code>; state occupancy within
       <code>0.03</code> of <code>(0.6, 0.4)</code>; each conditional mean within
       5%; exact scripted transition/source/global fallback choice and counter;
-      common mark frequencies and completion contract</td>
+      joint marks <code>(outbound,60): 0.6</code> and
+      <code>(inbound,120): 0.4</code> within <code>0.03</code>; completion
+      contract</td>
     </tr>
     <tr>
       <td>Two-state MMPP</td>
@@ -258,7 +262,7 @@ and an incomplete result when each reliability guard fires first.
       <code>(1/4, 3/4)</code>; time occupancy within <code>0.03</code> of
       <code>(3/4, 1/4)</code>; rate within 6% of <code>3</code>; adjacent-IAT
       covariance within <code>0.015</code> of the analytical
-      <code>4/147</code>; common mark frequencies and completion contract</td>
+      <code>4/147</code>; Poisson/MMPP mark frequencies and completion contract</td>
     </tr>
     <tr>
       <td>Genetic neutrality and fairness</td>
@@ -387,6 +391,10 @@ named reusable output. The injected detail names the failing field or resource;
 compatibility rows name the first mismatch. Slash-separated artifact variants
 are separate cases, not one sampled alternative.
 
+Each outcome cell lists, in order: exact `kind`; owning `stage`;
+`affected_evidence/evidence_state`; `authority`; exact `status` or `no status`;
+`corrective_action`; and the reusable output that remains unpublished.
+
 <table>
   <thead>
     <tr><th>Injected boundary</th><th>Canonical outcome</th></tr>
@@ -395,90 +403,167 @@ are separate cases, not one sampled alternative.
     <tr>
       <td>Invalid configuration or path</td>
       <td><code>configuration_invalid</code>; preflight; run evidence
-      <code>not_published</code>; primary; correct the named field or path</td>
+      <code>not_published</code>; primary; no status; correct the named field or
+      path; no run artifacts</td>
     </tr>
     <tr>
       <td>Docker, image, mount, or prerequisite unavailable</td>
       <td><code>docker_preflight_failed</code>; preflight; capture evidence
-      <code>not_published</code>; primary; restore the named prerequisite</td>
+      <code>not_published</code>; primary; no status; restore the named
+      prerequisite; no capture pair</td>
     </tr>
     <tr>
       <td>Target exits <code>23</code></td>
       <td><code>target_failed</code>; capture; capture pair
       <code>diagnostic_only</code>; primary; exact status <code>23</code>;
-      inspect target status and log</td>
+      inspect target status and log; no reusable capture pair</td>
     </tr>
     <tr>
       <td>Capture exits <code>42</code> while target is active</td>
       <td><code>capture_failed</code>; capture; capture pair
       <code>not_published</code>; primary; exact status <code>42</code>;
-      inspect capture status and log</td>
+      inspect capture status and log; no <code>reference.pcapng</code></td>
+    </tr>
+    <tr>
+      <td>Capture is already stopped after natural target success</td>
+      <td><code>capture_failed</code>; capture; capture pair
+      <code>not_published</code>; primary; exact capture status <code>42</code>;
+      inspect capture status without SIGINT or flush wait; no
+      <code>reference.pcapng</code></td>
     </tr>
     <tr>
       <td>Workload timeout</td>
       <td><code>stage_timeout</code>; capture; capture pair
-      <code>diagnostic_only</code>; primary; correct timeout or workload</td>
+      <code>diagnostic_only</code>; primary; no status; correct timeout or
+      workload; no reusable capture pair</td>
+    </tr>
+    <tr>
+      <td>Flush timeout after natural target success</td>
+      <td><code>stage_timeout</code>; capture; capture pair
+      <code>not_published</code>; primary; no status; correct capture flush or
+      budget; no <code>reference.pcapng</code></td>
+    </tr>
+    <tr>
+      <td>Total-run timeout while validating after natural target success</td>
+      <td><code>stage_timeout</code>; capture; capture pair
+      <code>not_published</code>; primary; no status; increase total budget or
+      reduce validation input; no <code>reference.pcapng</code></td>
     </tr>
     <tr>
       <td>User interruption</td>
       <td><code>interrupted</code>; capture; capture pair
       <code>diagnostic_only</code>; primary; exact status <code>130</code>;
-      retry when ready</td>
+      retry when ready; no reusable capture pair</td>
     </tr>
     <tr>
       <td>Malformed capture</td>
       <td><code>capture_malformed</code>; capture; capture pair
-      <code>diagnostic_only</code>; primary; correct the capture producer</td>
+      <code>diagnostic_only</code>; primary; no status; correct the capture
+      producer; no reusable capture pair</td>
     </tr>
     <tr>
-      <td>Artifact missing, changed, foreign, stale, or corrupt</td>
-      <td>Matching <code>artifact_*</code> kind; reuse stage; named artifact
-      <code>preserved</code>; primary; recreate the owning stage</td>
+      <td>Missing fitted model</td>
+      <td><code>artifact_missing</code>; generate;
+      <code>best_model.json/not_published</code>; primary; no status; rerun fit;
+      no <code>generated.pcapng</code></td>
+    </tr>
+    <tr>
+      <td>Changed reference during fit resume</td>
+      <td><code>artifact_changed</code>; fit;
+      <code>reference.pcapng/preserved</code>; primary; no status; recreate the
+      capture pair in a new matching run; no checkpoint or
+      <code>best_model.json</code> publication</td>
+    </tr>
+    <tr>
+      <td>Foreign generated trace</td>
+      <td><code>artifact_foreign</code>; compare;
+      <code>generated.pcapng/preserved</code>; primary; no status; regenerate
+      from the current fitted model; no <code>similarity.json</code></td>
+    </tr>
+    <tr>
+      <td>Stale valid capture pair with another identity</td>
+      <td><code>artifact_stale</code>; capture;
+      <code>capture pair/preserved</code>; primary; no status; select its
+      matching run or a new run directory; no capture replacement</td>
+    </tr>
+    <tr>
+      <td>Corrupt checkpoint during fit resume</td>
+      <td><code>artifact_corrupt</code>; fit;
+      <code>checkpoint.json/preserved</code>; primary; no status; recreate fit in
+      a new run directory; no <code>best_model.json</code></td>
     </tr>
     <tr>
       <td>Old model or checkpoint semantics</td>
       <td><code>scientific_semantics_incompatible</code>; reuse stage; artifact
-      <code>preserved</code>; primary; refit under the current schema</td>
+      <code>preserved</code>; primary; no status; refit under the current schema;
+      no resume, generation, or reuse</td>
     </tr>
     <tr>
       <td>Metric, sample, or numeric infeasibility</td>
       <td><code>metric_infeasible</code>; compare; <code>similarity.json</code>
-      <code>not_published</code>; primary; correct samples or settings</td>
+      <code>not_published</code>; primary; no status; correct samples or
+      settings; no <code>similarity.json</code></td>
     </tr>
     <tr>
       <td>Generation guard or deadline</td>
       <td><code>generation_incomplete</code>; generate;
-      <code>generated.pcapng</code> <code>not_published</code>; primary; correct
-      limit or model</td>
+      <code>generated.pcapng</code> <code>not_published</code>; primary; no
+      status; correct limit or model; no <code>generated.pcapng</code></td>
     </tr>
     <tr>
       <td>Publication collision</td>
       <td><code>publication_collision</code>; publishing stage; existing
-      destination <code>preserved</code>; primary; choose a new run directory</td>
+      destination <code>preserved</code>; primary; no status; choose a new run
+      directory; no replacement publication</td>
     </tr>
     <tr>
       <td>Publication durability failure</td>
       <td><code>publication_failed</code>; publishing stage; destination
-      <code>not_published</code>; primary; correct storage and retry</td>
+      <code>not_published</code>; primary; no status; correct storage and retry;
+      no destination publication</td>
     </tr>
     <tr>
       <td>Cleanup failure after success</td>
       <td><code>cleanup_failed</code>; capture; inventory
-      <code>possibly_remaining</code>; primary; remove the named project</td>
+      <code>possibly_remaining</code>; primary; no status; remove the named
+      project; no successful completion record</td>
     </tr>
     <tr>
       <td>Target status <code>23</code> plus cleanup failure</td>
-      <td>Primary <code>target_failed</code> and secondary
-      <code>cleanup_failed</code>; no reusable capture pair</td>
+      <td><code>target_failed</code>; capture; capture pair
+      <code>diagnostic_only</code>; primary status <code>23</code>, secondary
+      <code>cleanup_failed</code> with inventory <code>possibly_remaining</code>
+      and no status; inspect target then remove project; no reusable capture</td>
+    </tr>
+    <tr>
+      <td>Workload timeout plus induced target status <code>137</code></td>
+      <td><code>stage_timeout</code>; capture; capture pair
+      <code>diagnostic_only</code>; primary with no status, secondary
+      <code>target_failed</code> status <code>137</code>; correct workload or
+      timeout; no reusable capture</td>
+    </tr>
+    <tr>
+      <td>Simultaneous flush and total-run timeout after target success</td>
+      <td><code>stage_timeout</code>; capture; capture pair
+      <code>not_published</code>; primary flush timeout with no status, secondary
+      total-run timeout with no status; correct flush then total budget; no
+      reusable capture</td>
+    </tr>
+    <tr>
+      <td>Simultaneous target <code>23</code>, capture <code>42</code>, and total timeout</td>
+      <td><code>target_failed</code>; capture; capture pair
+      <code>not_published</code>; primary status <code>23</code>, secondary
+      <code>capture_failed</code> status <code>42</code> and
+      <code>stage_timeout</code> with no status; inspect target first, then
+      capture and budget; no reusable capture</td>
     </tr>
   </tbody>
 </table>
 
 Equivalent candidate-invalid records retain the scientific fields in checkpoint
 and history diagnostics and score zero; infrastructure failures still abort.
-The table includes the capture authority and precedence cases from
-[Capture reliability](CAPTURE.md#reliability-behavior), including already-stopped
-capture, flush timeout, total-run timeout, and primary/secondary combinations.
+The capture rows implement the authority and precedence rules from
+[Capture reliability](CAPTURE.md#reliability-behavior).
 
 A small checked-in immutable fixture at
 `tests/fixtures/diagnostics/failure-outcomes.jsonl` contains one credential-free
