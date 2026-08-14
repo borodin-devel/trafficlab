@@ -431,7 +431,7 @@ nine-file run tree:
 experiment.toml
 capture.json
 reference.pcapng
-ga_checkpoint.json
+checkpoint.json
 ga_history.csv
 best_model.json
 generated.pcapng
