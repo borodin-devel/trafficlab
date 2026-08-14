@@ -24,27 +24,42 @@ Multiscale rate represents silence directly with empty time-bin cells.
 
 ## Aggregate fitness
 
-For enabled methods \(m\), nonnegative weights \(w_m\) must sum to one. The
-aggregate used by genetic search and final comparison is
+For the four mandatory similarity methods \(m\), nonnegative weights \(w_m\)
+must sum to one. The aggregate used by genetic search and final comparison is
 
 \[
 S(R,G)=\sum_m w_m s_m(R,G).
 \]
 
-The result always retains every \(s_m\) and its diagnostics. An empty sample,
-invalid lag, excessive bin count, or nonfinite value is an evaluation error. An
-invalid mathematical candidate may receive worst fitness at the genetic layer;
-the metric itself does not fabricate `0`.
+All four methods always execute and retain every \(s_m\) and its diagnostics.
+All method-specific preconditions and settings always apply. A zero weight
+contributes exactly zero to the aggregate and does nothing else: it does not
+disable execution, validation, or diagnostics. A zero-weight method failure
+still fails a direct comparison or invalidates a genetic candidate. An empty
+sample, invalid lag, excessive bin count, or nonfinite value is therefore an
+evaluation error at any weight. An invalid mathematical candidate may receive
+worst fitness at the genetic layer; the metric itself does not fabricate `0`.
+The similarity result and checkpoint retain their fixed four-method shapes for
+every valid weight vector.
+
+The existing method hand calculations, together with one-hot, mixed-weight,
+and zero-weight aggregate and failure tests, are sufficient evidence for this
+weight-semantics change. No duplicate metric implementation is required.
 
 ## MVP methods
 
-| Method | Behavior measured | Configuration | Minimum input | Cost | Limitation |
+| Method | Behavior | Settings | Minimum | Cost | Limitation |
 |---|---|---|---|---|---|
-| [Frame-size KS](frame_size_ks.md) | Marginal frame-length distribution | None | One packet per trace | Sort dominated | Ignores order and timing |
-| [IAT KS](iat_ks.md) | Marginal inter-arrival distribution | Diagnostic quantile | Two packets per trace | Sort dominated | Ignores serial dependence |
-| [Autocorrelation](autocorrelation.md) | IAT and size serial dependence | Lags and weights | More values than maximum lag | Linear per lag | Only selected linear lags |
-| [Multiscale rate](multiscale_rate.md) | Direction-separated packet and byte volumes over time scales | Widths, weights, cell cap | Nonempty trace | Linear in events and cells | Sensitive to time alignment |
+| [Frame-size KS][frame-size] | Frame lengths | None | One packet/trace | Sorting | Ignores order/timing |
+| [IAT KS][iat] | Inter-arrival times | Quantile | Two packets/trace | Sorting | Ignores dependence |
+| [Autocorrelation][acf] | IAT/size dependence | Lags, weights | More than max lag | Linear/lag | Selected lags |
+| [Multiscale rate][rate] | Directional volume by scale | Widths, weights, cap | Nonempty | Linear | Time alignment |
 
 Only these implemented methods belong in the registry. New methods need a
 distinct behavior to measure, a bounded interpretable definition, hand-checked
 tests, and an implementation before receiving an architecture file.
+
+[acf]: autocorrelation.md
+[frame-size]: frame_size_ks.md
+[iat]: iat_ks.md
+[rate]: multiscale_rate.md

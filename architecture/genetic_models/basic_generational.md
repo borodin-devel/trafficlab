@@ -5,13 +5,14 @@
 The basic strategy lets different traffic-model families compete under one
 similarity fitness while preserving family-specific chromosomes. It is bounded,
 deterministic for a master seed, and checkpointed after every generation.
-GA order is the lexical order of enabled family names, including quotas, family
-history rows, and tie-adjacent operations.
+One seeded family priority, defined below, prevents configuration or registry
+input order and lexical family names from privileging a family during search.
+Lexical output order is presentation-only for history and reports.
 
 ## Fitness
 
-For enabled similarity scores \(s_m\in[0,1]\) and configured weights
-\(w_m\ge0\) with \(\sum_mw_m=1\), candidate fitness is
+For the four mandatory similarity method scores \(s_m\in[0,1]\) and configured
+weights \(w_m\ge0\) with \(\sum_mw_m=1\), candidate fitness is
 
 \[
 S=\sum_m w_m s_m.
@@ -20,20 +21,23 @@ S=\sum_m w_m s_m.
 Each candidate is fitted to the same normalized reference and evaluated over the
 same complete `W`, list of trial seeds, and reliability guards. Its fitness is
 the arithmetic mean of its per-seed aggregate scores. Component scores and
-invalid-candidate diagnostics remain in history.
+invalid-candidate diagnostics remain in history. All four methods execute and
+validate at every weight; a zero weight contributes exactly zero to the
+aggregate but a failure of that method still invalidates the candidate.
 
 ## Population contract
 
 An individual contains a stable candidate ID, model-family name, family-specific
 genes, fitness state, and component diagnostics. Population size \(P\) is fixed.
 The initial population allocates an equal base quota to every enabled family;
-any remainder is assigned in stable family-name order. Family initializers draw
-within configured bounds using the master RNG and the coordinate rules below.
-Initial candidate slots contain each family quota contiguously in stable
-family-name order. A stable candidate ID is the integer pair
-`(birth_generation, birth_index)`, compared lexicographically and serialized as
-two integers. Initial candidates and later children receive `birth_index` in
-creation order; copied elites and champions retain their original IDs.
+any remainder is assigned in `family_priority` order. Family initializers draw
+within configured bounds using the search RNG and the coordinate rules below.
+Initial candidate slots contain each family quota contiguously in
+`family_priority` order. A stable candidate ID is the integer pair
+`(birth_generation, birth_index)`, serialized as two integers. Within one family,
+IDs compare lexicographically for the tie rule; they never resolve a cross-family
+tie. Initial candidates and later children receive `birth_index` in creation
+order; copied elites and champions retain their original IDs.
 
 The population must satisfy
 
@@ -46,9 +50,9 @@ enabled families. This reserves room for global elites and one champion from
 each family. If a family champion is already a global elite, it occupies one
 slot rather than being duplicated.
 
-Each next population is ordered as global elites by descending fitness and
-stable-ID tie order, missing family champions in stable family-name order, then
-children in creation order. All selection indexes refer to this order.
+Each next population is ordered as global elites by the competition tie rule,
+missing family champions in `family_priority` order, then children in creation
+order. All selection indexes refer to this order.
 
 ## Gene coordinates and initialization
 
@@ -78,8 +82,21 @@ each continuous linear or logarithmic gene. It draws each integer gene uniformly
 from the inclusive set `{L, ..., U}`. It then applies the same deterministic
 family repair and validation used for offspring.
 
-All genetic randomness comes from one dedicated `random.Random(master_seed)`
-under the project's pinned CPython version. Its checkpoint engine identifier is
+Before any search draw, Trafficlab derives one neutral priority from the sorted
+enabled family names exactly as follows:
+
+```python
+priority_rng = random.Random(master_seed)
+family_priority = tuple(priority_rng.sample(sorted_family_names, len(sorted_family_names)))
+```
+
+`sorted_family_names` makes the result invariant to configuration and registry
+input order. The temporary `priority_rng` is then discarded. The dedicated
+search RNG is initialized separately as `rng = random.Random(master_seed)`, so
+priority sampling consumes none of the existing search draw stream.
+
+All genetic search randomness comes from that dedicated search RNG under the
+project's pinned CPython version. Its checkpoint engine identifier is
 `python.random.Random/MT19937`. Trafficlab implements its sampling primitives
 exactly as follows:
 
@@ -127,21 +144,26 @@ repeat for reproduced/evaluated generations 1 through G:
     assign a stable ID and apply bounded duplicate handling
     evaluate all new candidates on the common trial seeds
     atomically checkpoint population, RNG state, generation, and history
-reevaluate the global winner with exactly run.final_seed
+reevaluate the global winner with run.final_seed as a fresh simulation seed
 publish the winning fitted model and complete history
 ```
 
 A generation count `G` therefore means evaluated generation zero followed by at
 most `G` reproduced/evaluated generations. Selection uses exactly the configured
 trial seeds and `generation.trial` limits. Final validation uses exactly the
-distinct `run.final_seed` and the same trial limits; it is validation evidence
-only and never reselects a candidate.
+distinct `run.final_seed` as a fresh simulation seed on the training reference
+and the same trial limits; it is not held-out evidence and never reselects a
+candidate.
 
 Tournament selection samples `k` individuals uniformly with replacement and
-chooses the highest fitness. Ties everywhere are resolved by lexicographically
-smallest stable candidate ID. Tournament size is an integer in `[2, P]`. For
-each open child slot in ascending order, two parent tournaments run in parent A,
-then parent B order; each sample uses `rng.randrange(P)`.
+chooses the highest fitness. An exact tie between candidates from different
+families uses the earlier family in `family_priority`; a tie within one family
+uses the lexicographically smaller stable candidate ID. This competition rule
+also ranks global elites, chooses fitter parents and the overall winner, and
+handles symmetric invalid candidates with fitness `0`. Tournament size is an
+integer in `[2, P]`. For each open child slot in ascending order, two parent
+tournaments run in parent A, then parent B order; each sample uses
+`rng.randrange(P)`.
 
 ## Reproduction
 
@@ -152,8 +174,8 @@ Genes are always visited in the family's published chromosome order.
 For parents from the same family, draw `C ~ Bernoulli(p_c)`. When `C = 1`, use
 uniform gene-wise crossover: for every gene `j`, draw
 `B_j ~ Bernoulli(1/2)` and copy parent A's gene when `B_j = 0`, otherwise parent
-B's gene. When `C = 0`, clone the fitter parent; a fitness tie chooses the parent
-with the lexicographically smaller stable candidate ID.
+B's gene. When `C = 0`, clone the fitter parent; an exact fitness tie uses the
+competition tie rule.
 
 After crossover or cloning, draw `M_j ~ Bernoulli(p_m)` for every gene in
 chromosome order. For each selected gene, also in chromosome order, encode its
@@ -167,7 +189,7 @@ A same-family child may select zero genes for mutation. Elites and family
 champions are copied unchanged and consume no crossover or mutation draw.
 
 Parents from different families never cross genes. Clone the fitter parent by
-the same stable-ID tie rule, then use the cloned family's `p_m`, `sigma`, bounds,
+the competition tie rule, then use the cloned family's `p_m`, `sigma`, bounds,
 and coordinate kinds. Draw all `M_j` normally. If zero genes are selected, draw
 one gene index uniformly and mutate that gene, making mutation mandatory.
 
@@ -235,28 +257,34 @@ mathematical candidate is poor.
 
 ## Checkpoint and resume
 
-`checkpoint.json` contains the effective experiment hash, generation number,
-complete population and diagnostics, common trial seeds, family registry names,
+`checkpoint.json` contains the bumped global scientific artifact schema version,
+effective experiment hash, generation number, complete population and
+diagnostics, common trial seeds, family registry names, `family_priority`,
 resolved family operator values, gene bounds, coordinate kinds, chromosome
 order, remaining genetic settings, and history through that generation. It also
-stores the exact Python version, RNG engine name, and a lossless JSON encoding of
-the complete `rng.getstate()` tuple, including its state version and Gaussian
-cache field. Because `rng.gauss()` is forbidden, the encoded `gauss_next` cache
-must be null. The file is written atomically only after the entire generation is
+stores the exact Python version, search RNG engine name, and a lossless JSON
+encoding of the complete search `rng.getstate()` tuple, including its state
+version and Gaussian cache field. Because `rng.gauss()` is forbidden, the
+encoded `gauss_next` cache must be null. The discarded priority RNG has no saved
+state. The file is written atomically only after the entire generation is
 evaluated. Checkpoint publication completes before derived `ga_history.csv`
-repair or publication; family rows are lexical, followed by one overall row.
+repair or publication; family rows are lexical for presentation, followed by
+one overall row.
 
 With `resume = true`, an absent checkpoint starts a fresh search and a present
 checkpoint must be compatible before resuming. With `resume = false`, a present
 checkpoint is rejected rather than overwritten.
 
-Resume requires exact agreement on experiment hash, enabled families, bounds,
-coordinate kinds, chromosome order, operator values, Python version, RNG engine,
-fitness methods and weights, population size, and trial seeds. It restores the
-losslessly decoded tuple with `rng.setstate()` before reproduction. An
-uninterrupted run and a resumed run must produce the same next generation and
-winner. This guarantee applies to the same locked Trafficlab and Python runtime,
-not to arbitrary RNG implementations.
+Resume requires exact agreement on the bumped scientific artifact schema version,
+experiment hash, enabled families, derived and stored
+`family_priority`, bounds, coordinate kinds, chromosome order, operator values,
+Python version, search RNG engine, fitness methods and weights, population size,
+and trial seeds. Trafficlab checks every compatibility field before another
+random draw or child, then restores the losslessly decoded tuple with
+`rng.setstate()` before reproduction. An uninterrupted run and a resumed run
+must produce the same priority, children, history, winner, and search RNG state.
+This guarantee applies to the same locked Trafficlab and Python runtime, not to
+arbitrary RNG implementations.
 
 ## Termination and final evaluation
 
@@ -267,20 +295,28 @@ and resets only on an improvement `> early_stopping_tolerance`; setting
 Candidate evaluation also has packet-count, output-size, and wall-time
 reliability guards. They do not shorten `W`.
 
-The overall winner is regenerated and scored with exactly `run.final_seed`,
-which was not used for selection, and the same `W` as selection. This score is
-validation evidence and does not reopen selection. An incomplete final generation
-is a stage error, not a candidate score, and does not publish final output.
+The overall winner is regenerated and scored with exactly `run.final_seed` as a
+fresh simulation seed on the same training reference. It was not used for
+selection and uses the same `W` as selection. This score is validation evidence,
+not held-out evidence, and does not reopen selection. An incomplete final
+generation is a stage error, not a candidate score, and does not publish final
+output.
+
+The result depends on the finite population, generation count, gene bounds,
+operators, and configured seeds. Similarity scores are not likelihoods and do
+not identify a causal traffic mechanism, establish universal model-family
+superiority, or demonstrate generalization to unseen programs. A fresh
+simulation seed does not remove these inference limits.
 
 ## Trafficlab-specific choices
 
-Family quotas, one champion per family, per-family operator values, uniform
-gene-wise crossover, transformed Gaussian mutation, normalized reflection,
-fixed draw order, different-family parent handling, mandatory mutation after
-such handling, exact duplicate identity and retry limits, common trial seeds,
-stable-ID ties, invalid-candidate score, and checkpoint format are Trafficlab
-engineering definitions. Tournament selection itself is established GA
-practice.
+Seeded family priority, family quotas, one champion per family, per-family
+operator values, uniform gene-wise crossover, transformed Gaussian mutation,
+normalized reflection, fixed draw order, different-family parent handling,
+mandatory mutation after such handling, exact duplicate identity and retry
+limits, common trial seeds, within-family stable-ID ties, invalid-candidate
+score, and checkpoint format are Trafficlab engineering definitions. Tournament
+selection itself is established GA practice.
 
 ## Computational cost
 
@@ -292,7 +328,11 @@ For chromosome length \(d\), reproduction is \(O(d)\) per child, or
 
 ## Deterministic test examples
 
-- A fixed master seed produces identical initial quotas and genes.
+- Reordering configuration or registry family inputs leaves `family_priority`,
+  quotas, initial slots, children, and results unchanged.
+- A predeclared seed set places every family in every priority position across
+  its cases; a fixed master seed reproduces its priority, initial quotas, and
+  genes.
 - One champion from Poisson empirical, Markov Renewal, and MMPP survives a
   generation even when none is a global elite.
 - `p_c = 0` clones the fitter same-family parent; `p_c = 1` runs one uniform
@@ -302,9 +342,13 @@ For chromosome length \(d\), reproduction is \(O(d)\) per child, or
 - Different-family parents never cross genes and force a mutation when ordinary
   selection chooses none.
 - Duplicate attempts stop at their configured bound and retain population size.
-- Stable IDs resolve equal-fitness tournaments deterministically.
-- Resume from generation `g` produces exactly the same offspring and RNG state
-  for generation `g+1` as an uninterrupted run.
+- Equal-fitness cross-family candidates and symmetric invalid candidates use
+  `family_priority`; equal-fitness candidates within one family use stable IDs.
+- Every family receives equal trial seeds, windows, and reliability budgets,
+  and a controlled candidate with a known higher score wins regardless of
+  configuration or registry input order.
+- Resume from generation `g` produces exactly the same `family_priority`,
+  children, history, winner, and search RNG state as an uninterrupted run.
 - A mathematical candidate error scores zero; a checkpoint write error aborts.
 
 ## References
