@@ -16,7 +16,7 @@ retained real-study, and primary-literature evidence remain separately labeled.
 The report assigns independent grades only; it has no aggregate score.
 
 **Tech Stack:** Git, uv, CPython 3.12.3, pytest, pytest-cov, Ruff, Pyright,
-Docker Engine/Compose v2, the existing Phase 7 audit API, Markdown, and primary
+Docker Engine/Compose v2, the existing Validation Study audit API, Markdown, and primary
 scientific sources.
 
 ## Global Constraints
@@ -52,7 +52,7 @@ scientific sources.
   citations.
 - Read: `src/trafficlab/**/*.py` and `scripts/*.py` — assessed implementation.
 - Read: `tests/**/*.py` — direct behavioral evidence.
-- Read: `examples/phase7/**` and retained ignored Phase 7 evidence — historical
+- Read: `examples/validation_study/**` and retained ignored Validation Study evidence — historical
   real-study evidence.
 - Create: `docs/RESEARCH_FITNESS_ASSESSMENT.md` — sole assessment result.
 
@@ -242,11 +242,11 @@ validation and identify what prevents the next anchor.
 ### Task 3: Audit retained evidence and run available external verification
 
 **Files:**
-- Read: `examples/phase7/{prerequisites.json,results.json,REPORT.md}`
-- Read: `examples/phase7/configs/*.toml`
-- Read: `examples/phase7/.study-work/evidence/**`
-- Read: `runs/phase7/**`
-- Read: `scripts/run_phase7_study.py`
+- Read: `examples/validation_study/{prerequisites.json,results.json,REPORT.md}`
+- Read: `examples/validation_study/configs/*.toml`
+- Read: `examples/validation_study/.study-work/evidence/**`
+- Read: `runs/validation_study/**`
+- Read: `scripts/run_validation_study.py`
 - Read: `tests/{docker,internet}/*.py`
 - Modify: none
 
@@ -266,13 +266,13 @@ scripts/run_bounded.sh \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked python -c \
   'from pathlib import Path; '\
-'from scripts.run_phase7_study import audit_published_study; '\
+'from scripts.run_validation_study import audit_published_study; '\
 'root=Path.cwd(); '\
 'audit_published_study(repository_root=root, '\
-'prerequisite_path=root/"examples/phase7/prerequisites.json", '\
-'result_path=root/"examples/phase7/results.json", '\
-'report_path=root/"examples/phase7/REPORT.md"); '\
-  'print("phase7 audit passed")'
+'prerequisite_path=root/"examples/validation_study/prerequisites.json", '\
+'result_path=root/"examples/validation_study/results.json", '\
+'report_path=root/"examples/validation_study/REPORT.md"); '\
+  'print("validation_study audit passed")'
 ```
 
 Expected: schemas, retained evidence, configs, report identifiers, lineage,

@@ -1,4 +1,4 @@
-# Phase 7 MVP Validation Study Implementation Plan
+# MVP Validation Study Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
@@ -20,8 +20,8 @@ Docker Engine and Compose v2, pytest/pytest-xdist/pytest-cov, Ruff, strict Pyrig
 
 ## Global Constraints
 
-- Implement only the approved Phase 7 design at
-  `docs/superpowers/specs/2026-08-13-phase-7-validation-design.md`: the original protocol reviewed at commit
+- Implement only the approved Validation Study design at
+  `docs/superpowers/specs/2026-08-13-validation-study-design.md`: the original protocol reviewed at commit
   `76b44b7` plus the independently reviewed Task 7 MMPP-bound amendment recorded by this plan and Git history.
 - Do not change `src/trafficlab`, add a package or dependency, add a production CLI command, or add a model,
   metric, plot framework, protocol parser, database, manifest, workflow engine, security subsystem, traffic replay,
@@ -72,16 +72,16 @@ Docker Engine and Compose v2, pytest/pytest-xdist/pytest-cov, Ruff, strict Pyrig
 - Focused tests use `2G/3G/512M`, a five-minute wall limit, and ten-second kill grace. Docker uses twenty minutes;
   Internet smoke uses ten minutes. Do not launch a new command until an interrupted or timed-out guard is proven
   inactive with no descendant.
-- Keep lines at most 120 characters. Run strict Pyright over the script and both Phase 7 test files explicitly,
+- Keep lines at most 120 characters. Run strict Pyright over the script and both Validation Study test files explicitly,
   because `scripts/` is outside the ordinary include.
-- Maintain the ignored SDD workspace `.superpowers/sdd/2026-08-13-phase-7-validation/`. Update `progress.md` with
+- Maintain the ignored SDD workspace `.superpowers/sdd/2026-08-13-validation-study/`. Update `progress.md` with
   the first incomplete step, commit range, exact RED/GREEN commands, gate output, external state, and concerns.
   After each task, write `task-N-report.md`, save its diff, and commit a coherent verified increment. Consolidate
   independent architecture/code-quality review at Tasks 3 (Tasks 1–3), 5 (Tasks 4–5), 6, 7, and 8; fix every
   Critical or Important finding before crossing each review checkpoint.
-- Phase 7 external evidence may begin only from a clean reviewed commit. Do not commit between `prerequisites` and
+- Validation Study external evidence may begin only from a clean reviewed commit. Do not commit between `prerequisites` and
   `study`, because prerequisite evidence binds the clean commit and the study permits only its expected generated
-  Phase 7 paths to differ.
+  Validation Study paths to differ.
 - If `TRAFFICLAB_INTERNET_URL` is absent after every safe local Task 1–6 action, classify Task 7 as the documented
   Class 5 blocker. Do not invent an endpoint, generate real-study configs, fabricate results/report values, or check
   dependent Roadmap boxes.
@@ -90,33 +90,33 @@ Docker Engine and Compose v2, pytest/pytest-xdist/pytest-cov, Ruff, strict Pyrig
 
 ## File Map
 
-- Create `scripts/run_phase7_study.py`: the only study-support implementation; strict values/codecs, fixed protocol,
+- Create `scripts/run_validation_study.py`: the only study-support implementation; strict values/codecs, fixed protocol,
   scratch/header evidence, prerequisite subprocesses, artifact extraction, statistics, primary orchestration, and
   fresh CLI reproduction plus one read-only local publication-audit function.
-- Create `tests/unit/test_phase7_study.py`: Docker- and Internet-free tests for every value, schema, command, config,
+- Create `tests/unit/test_validation_study.py`: Docker- and Internet-free tests for every value, schema, command, config,
   profile, header, extraction, statistical, orchestration, cleanup, and failure contract.
-- Create `tests/integration/test_phase7_study_pipeline.py`: one in-process non-Docker extraction test through real
+- Create `tests/integration/test_validation_study_pipeline.py`: one in-process non-Docker extraction test through real
   Trafficlab
   configuration, fit, checkpoint, generation, comparison, and artifact codecs.
-- Modify `.gitignore`: ignore exactly `examples/phase7/.study-work/`; retain all checked Phase 7 files.
-- Create `examples/phase7/README.md`: endpoint contract, exact preparation/study/validation/reproduction commands,
+- Modify `.gitignore`: ignore exactly `examples/validation_study/.study-work/`; retain all checked Validation Study files.
+- Create `examples/validation_study/README.md`: endpoint contract, exact preparation/study/validation/reproduction commands,
   raw-evidence locations, failure restart rule, and audit-retention policy.
-- Create during successful external Task 7 `examples/phase7/configs/short.toml`, `streaming.toml`, and
+- Create during successful external Task 7 `examples/validation_study/configs/short.toml`, `streaming.toml`, and
   `bursty.toml`: complete portable source configs rendered only after capability, Docker, and Internet prerequisites
   pass; each strictly loads to the exhaustive effective oracle.
-- Create during successful external Task 7 `examples/phase7/prerequisites.json`: canonical prerequisite identity,
+- Create during successful external Task 7 `examples/validation_study/prerequisites.json`: canonical prerequisite identity,
   capability, image, tool, config-hash, Docker-matrix, and Internet-smoke evidence.
-- Create during successful external Task 7 `examples/phase7/results.json`: canonical nine-primary plus one fresh
+- Create during successful external Task 7 `examples/validation_study/results.json`: canonical nine-primary plus one fresh
   reproduction evidence and recomputed descriptions.
-- Create during successful external Task 7 `examples/phase7/REPORT.md`: observed protocol, natural variation,
+- Create during successful external Task 7 `examples/validation_study/REPORT.md`: observed protocol, natural variation,
   champions, held-out/published scores, runtime, trace disagreements, reproduction, limitations, and one supported
   next-work decision.
 - Modify after Task 6 Docker evidence `architecture/ROADMAP.md`: mark only the seven Phase 3 Docker-backed test boxes
   mapped in Task 6 and update their evidence note; leave Internet, Done-when, and `Current` unchanged.
-- Modify after successful external Task 7 evidence `architecture/ROADMAP.md`: mark the Internet and Phase 7 items
+- Modify after successful external Task 7 evidence `architecture/ROADMAP.md`: mark the Internet and Validation Study items
   exactly to the extent proved, then close Phase 3 Done-when only if the real workload and cleanup evidence supports
   it.
-- Create/update ignored `.superpowers/sdd/2026-08-13-phase-7-validation/{progress.md,task-*-report.md,review-*}`:
+- Create/update ignored `.superpowers/sdd/2026-08-13-validation-study/{progress.md,task-*-report.md,review-*}`:
   durable execution ledger and independent-review material; never stage these ignored files.
 
 No production Python file, `pyproject.toml`, lockfile, Dockerfile, test image, or architecture algorithm document is
@@ -473,7 +473,7 @@ main(
 `main()` follows the production CLI boundary: no arguments prints usage and returns `2`; parser `SystemExit` becomes
 its integer status. Command entry validation converts its direct validator `ValueError` to `TrafficlabError`, while
 filesystem and subprocess owners raise `TrafficlabError` themselves. `main()` prints one actionable line prefixed
-by `phase7:` with two clauses separated by `;` and returns the error status. It does not catch `KeyboardInterrupt`
+by `validation-study:` with two clauses separated by `;` and returns the error status. It does not catch `KeyboardInterrupt`
 as success, start background work, or delete retained evidence.
 
 Every subprocess call has a literal owner and timeout:
@@ -598,19 +598,19 @@ operators `0.9/0.25/0.1`, `q01 [0.01,10.0]`, `q10 [0.01,10.0]`, `lambda0 [10.0,1
 
 The three checked base configs use the first primary directory for that workload:
 
-- short: `runs/phase7/STUDY_ID/01-short-r1`;
-- streaming: `runs/phase7/STUDY_ID/02-streaming-r1`;
-- bursty: `runs/phase7/STUDY_ID/03-bursty-r1`.
+- short: `runs/validation_study/STUDY_ID/01-short-r1`;
+- streaming: `runs/validation_study/STUDY_ID/02-streaming-r1`;
+- bursty: `runs/validation_study/STUDY_ID/03-bursty-r1`.
 
 This gives every checked config a genuine absent primary destination rather than a sentinel. The checked TOML uses
-portable relative source operands from `examples/phase7/configs/`; immediately reload it with `load_experiment()`
+portable relative source operands from `examples/validation_study/configs/`; immediately reload it with `load_experiment()`
 and require equality to the exhaustive absolute oracle. Ignored realized configs are rendered with absolute paths
-under `runs/phase7/STUDY_ID/realized-configs/` and reload to their exact effective objects.
+under `runs/validation_study/STUDY_ID/realized-configs/` and reload to their exact effective objects.
 
 The portable TOML literals are exact: `run.directory` is
-`../../../runs/phase7/STUDY_ID/FIRST-RUN-ID` and `target.mounts[0].source` is
-`../.study-work/mount/STUDY_ID`. `load_experiment()` resolves them respectively beneath repository `runs/phase7`
-and `examples/phase7/.study-work/mount`; no other relative path is permitted.
+`../../../runs/validation_study/STUDY_ID/FIRST-RUN-ID` and `target.mounts[0].source` is
+`../.study-work/mount/STUDY_ID`. `load_experiment()` resolves them respectively beneath repository `runs/validation_study`
+and `examples/validation_study/.study-work/mount`; no other relative path is permitted.
 
 ## Locked JSON Schema
 
@@ -856,10 +856,10 @@ Enforce these cross-record invariants during construction and parsing:
 
 **Files:**
 
-- Create: `scripts/run_phase7_study.py`
-- Create: `tests/unit/test_phase7_study.py`
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/progress.md`
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-1-report.md`
+- Create: `scripts/run_validation_study.py`
+- Create: `tests/unit/test_validation_study.py`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/progress.md`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-1-report.md`
 
 **Interfaces:**
 
@@ -875,14 +875,14 @@ commit, first RED node, empty concerns, and an evidence table with columns `task
 `review`, `external_state`. Confirm it remains ignored:
 
 ```bash
-git check-ignore -v .superpowers/sdd/2026-08-13-phase-7-validation/progress.md
+git check-ignore -v .superpowers/sdd/2026-08-13-validation-study/progress.md
 git status --short
 ```
 
 - [ ] **Step 2: Write failing scalar, path, time, and statistic tests**
 
 Add the exact node
-`tests/unit/test_phase7_study.py::test_study_id_url_repository_path_and_utc_validators_are_exact`. It accepts
+`tests/unit/test_validation_study.py::test_study_id_url_repository_path_and_utc_validators_are_exact`. It accepts
 `study-1`, a credential-free HTTPS URL, `evidence/study-1/file`, and `2026-08-13T12:00:00Z`; it rejects every invalid
 value named after this code block. Add this exact statistics test body:
 
@@ -908,13 +908,13 @@ keys, non-UTC timestamps, absolute/backslash/dot/dot-dot paths, and a resolved p
 - [ ] **Step 3: Run the guarded scalar/statistic RED**
 
 ```bash
-phase7_extraction_node="tests/integration/test_phase7_study_pipeline.py::"
-phase7_extraction_node+="test_phase7_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage"
+validation_study_extraction_node="tests/integration/test_validation_study_pipeline.py::"
+validation_study_extraction_node+="test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage"
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_study_id_url_repository_path_and_utc_validators_are_exact \
-  tests/unit/test_phase7_study.py::test_median_quantile_and_descriptive_statistics_use_published_formulas
+  tests/unit/test_validation_study.py::test_study_id_url_repository_path_and_utc_validators_are_exact \
+  tests/unit/test_validation_study.py::test_median_quantile_and_descriptive_statistics_use_published_formulas
 ```
 
 Expected: collection/import failure because the study module and functions do not exist.
@@ -961,8 +961,8 @@ Use exact type tests (`type(value) is int/float/bool`), `math.isfinite`, `PurePo
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_study_id_url_repository_path_and_utc_validators_are_exact \
-  tests/unit/test_phase7_study.py::test_median_quantile_and_descriptive_statistics_use_published_formulas
+  tests/unit/test_validation_study.py::test_study_id_url_repository_path_and_utc_validators_are_exact \
+  tests/unit/test_validation_study.py::test_median_quantile_and_descriptive_statistics_use_published_formulas
 ```
 
 Expected: both nodes pass.
@@ -997,8 +997,8 @@ before the final newline, and failure if a serialized derived field changes.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_prerequisite_codec_round_trips_exact_canonical_schema \
-  tests/unit/test_phase7_study.py::test_prerequisite_codec_rejects_each_contract_violation
+  tests/unit/test_validation_study.py::test_prerequisite_codec_round_trips_exact_canonical_schema \
+  tests/unit/test_validation_study.py::test_prerequisite_codec_rejects_each_contract_violation
 ```
 
 Expected: failure because prerequisite render/parse is absent.
@@ -1030,8 +1030,8 @@ The parser uses `object_pairs_hook` to reject duplicates and `parse_constant` to
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_prerequisite_codec_round_trips_exact_canonical_schema \
-  tests/unit/test_phase7_study.py::test_prerequisite_codec_rejects_each_contract_violation
+  tests/unit/test_validation_study.py::test_prerequisite_codec_round_trips_exact_canonical_schema \
+  tests/unit/test_validation_study.py::test_prerequisite_codec_rejects_each_contract_violation
 ```
 
 Expected: all parameter cases pass.
@@ -1069,8 +1069,8 @@ the false reuse map, exact nine hashes, primary/reproduction paths, and a byte-s
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_result_codec_round_trips_nine_runs_reproduction_and_recomputed_summaries \
-  tests/unit/test_phase7_study.py::test_result_codec_rejects_nested_schema_and_cross_record_inconsistency
+  tests/unit/test_validation_study.py::test_result_codec_round_trips_nine_runs_reproduction_and_recomputed_summaries \
+  tests/unit/test_validation_study.py::test_result_codec_rejects_nested_schema_and_cross_record_inconsistency
 ```
 
 Expected: failure because result construction, recomputation, and render/parse are absent.
@@ -1087,18 +1087,18 @@ Do not accept a derived value merely because it has the right scalar range.
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -vv -x -n 0 tests/unit/test_phase7_study.py
-uv run --locked ruff format --check scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-uv run --locked ruff check scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-uv run --locked pyright scripts/run_phase7_study.py tests/unit/test_phase7_study.py
+  uv run --locked pytest -vv -x -n 0 tests/unit/test_validation_study.py
+uv run --locked ruff format --check scripts/run_validation_study.py tests/unit/test_validation_study.py
+uv run --locked ruff check scripts/run_validation_study.py tests/unit/test_validation_study.py
+uv run --locked pyright scripts/run_validation_study.py tests/unit/test_validation_study.py
 git diff --check
 ```
 
 - [ ] **Step 14: Commit, report, and queue Task 1 for the Task 3 review checkpoint**
 
 ```bash
-git add scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-git commit -m "feat: add Phase 7 study schema"
+git add scripts/run_validation_study.py tests/unit/test_validation_study.py
+git commit -m "feat: add validation study schema"
 ```
 
 Write `task-1-report.md` with RED/GREEN output, schema coverage, type/static results, commit hash, and concerns. Save
@@ -1110,9 +1110,9 @@ the exact Task 1 diff in the ignored SDD directory for the consolidated independ
 
 **Files:**
 
-- Modify: `scripts/run_phase7_study.py`
-- Modify: `tests/unit/test_phase7_study.py`
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-2-report.md`
+- Modify: `scripts/run_validation_study.py`
+- Modify: `tests/unit/test_validation_study.py`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-2-report.md`
 
 **Interfaces:**
 
@@ -1145,8 +1145,8 @@ finite deadlines, exact rate limits, maximum sizes, no shell token, and no final
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_endpoint_contract_rejects_noncredential_free_https_object_urls \
-  tests/unit/test_phase7_study.py::test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv
+  tests/unit/test_validation_study.py::test_endpoint_contract_rejects_noncredential_free_https_object_urls \
+  tests/unit/test_validation_study.py::test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv
 ```
 
 Expected: failure because URL/profile construction is absent.
@@ -1163,8 +1163,8 @@ maximum-size, and URL tokens before returning immutable values.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_endpoint_contract_rejects_noncredential_free_https_object_urls \
-  tests/unit/test_phase7_study.py::test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv
+  tests/unit/test_validation_study.py::test_endpoint_contract_rejects_noncredential_free_https_object_urls \
+  tests/unit/test_validation_study.py::test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv
 ```
 
 Expected: pass.
@@ -1197,9 +1197,9 @@ profile argv, profile capture timeouts, profile multiscale widths, and the once-
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_base_config_contains_every_locked_value_and_only_profile_differences \
-  tests/unit/test_phase7_study.py::test_checked_and_realized_configs_reload_to_exact_absolute_oracles \
-  tests/unit/test_phase7_study.py::test_config_validation_rejects_every_protocol_change
+  tests/unit/test_validation_study.py::test_base_config_contains_every_locked_value_and_only_profile_differences \
+  tests/unit/test_validation_study.py::test_checked_and_realized_configs_reload_to_exact_absolute_oracles \
+  tests/unit/test_validation_study.py::test_config_validation_rejects_every_protocol_change
 ```
 
 Expected: failure because config construction/render/validation is absent.
@@ -1217,9 +1217,9 @@ from `examples/configs/minimal.toml` or depend on defaults. Render checked relat
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_base_config_contains_every_locked_value_and_only_profile_differences \
-  tests/unit/test_phase7_study.py::test_checked_and_realized_configs_reload_to_exact_absolute_oracles \
-  tests/unit/test_phase7_study.py::test_config_validation_rejects_every_protocol_change
+  tests/unit/test_validation_study.py::test_base_config_contains_every_locked_value_and_only_profile_differences \
+  tests/unit/test_validation_study.py::test_checked_and_realized_configs_reload_to_exact_absolute_oracles \
+  tests/unit/test_validation_study.py::test_config_validation_rejects_every_protocol_change
 ```
 
 Expected: pass.
@@ -1247,7 +1247,7 @@ Use real temporary modes/inodes and multi-block header bytes in exact nodes
 ]
 ```
 
-Assert archive path is `examples/phase7/.study-work/evidence/STUDY_ID/RUN_ID/FILENAME`, not beneath the production
+Assert archive path is `examples/validation_study/.study-work/evidence/STUDY_ID/RUN_ID/FILENAME`, not beneath the production
 run; header hash matches exact bytes; scratch is removed only after verified archive hash; and failure best-effort
 archives ordinary bytes but preserves scratch/original error.
 
@@ -1257,9 +1257,9 @@ archives ordinary bytes but preserves scratch/original error.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_scratch_files_are_exclusive_regular_0666_and_archives_are_sibling_0600 \
-  tests/unit/test_phase7_study.py::test_range_header_parser_validates_redirect_chain_final_status_range_and_length \
-  tests/unit/test_phase7_study.py::test_transfer_evidence_rejects_unsafe_or_inexact_headers
+  tests/unit/test_validation_study.py::test_scratch_files_are_exclusive_regular_0666_and_archives_are_sibling_0600 \
+  tests/unit/test_validation_study.py::test_range_header_parser_validates_redirect_chain_final_status_range_and_length \
+  tests/unit/test_validation_study.py::test_transfer_evidence_rejects_unsafe_or_inexact_headers
 ```
 
 Expected: failure because scratch/archive/header functions are absent.
@@ -1276,18 +1276,18 @@ scratch file. Do not generalize these checks into a filesystem or security layer
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -vv -x -n 0 tests/unit/test_phase7_study.py
-uv run --locked ruff format --check scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-uv run --locked ruff check scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-uv run --locked pyright scripts/run_phase7_study.py tests/unit/test_phase7_study.py
+  uv run --locked pytest -vv -x -n 0 tests/unit/test_validation_study.py
+uv run --locked ruff format --check scripts/run_validation_study.py tests/unit/test_validation_study.py
+uv run --locked ruff check scripts/run_validation_study.py tests/unit/test_validation_study.py
+uv run --locked pyright scripts/run_validation_study.py tests/unit/test_validation_study.py
 git diff --check
 ```
 
 - [ ] **Step 13: Commit, report, and queue Task 2 for the Task 3 review checkpoint**
 
 ```bash
-git add scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-git commit -m "feat: realize Phase 7 workloads"
+git add scripts/run_validation_study.py tests/unit/test_validation_study.py
+git commit -m "feat: realize Validation Study workloads"
 ```
 
 Record exact profile/config/header evidence in `task-2-report.md` and save the Task 2 diff. Queue portability, exact
@@ -1300,10 +1300,10 @@ consolidated independent Tasks 1–3 review after Task 3.
 
 **Files:**
 
-- Modify: `scripts/run_phase7_study.py`
-- Modify: `tests/unit/test_phase7_study.py`
-- Create: `tests/integration/test_phase7_study_pipeline.py`
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-3-report.md`
+- Modify: `scripts/run_validation_study.py`
+- Modify: `tests/unit/test_validation_study.py`
+- Create: `tests/integration/test_validation_study_pipeline.py`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-3-report.md`
 
 **Interfaces:**
 
@@ -1329,8 +1329,8 @@ family/genes; held-out is seed 97 from its named authority; published is a separ
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_family_champions_use_terminal_valid_candidates_stable_ids_and_selection_means \
-  tests/unit/test_phase7_study.py::test_winner_held_out_and_published_records_remain_distinct
+  tests/unit/test_validation_study.py::test_family_champions_use_terminal_valid_candidates_stable_ids_and_selection_means \
+  tests/unit/test_validation_study.py::test_winner_held_out_and_published_records_remain_distinct
 ```
 
 Expected: failure because extraction helpers are absent.
@@ -1357,8 +1357,8 @@ missing/invalid family, wrong seeds, noncanonical genes, or mismatch between mea
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_family_champions_use_terminal_valid_candidates_stable_ids_and_selection_means \
-  tests/unit/test_phase7_study.py::test_winner_held_out_and_published_records_remain_distinct
+  tests/unit/test_validation_study.py::test_family_champions_use_terminal_valid_candidates_stable_ids_and_selection_means \
+  tests/unit/test_validation_study.py::test_winner_held_out_and_published_records_remain_distinct
 ```
 
 Expected: pass.
@@ -1390,14 +1390,14 @@ Add odd/even/tied-IAT trace fixtures and strict persisted artifact maps in exact
 For trace summaries, assert packet/direction/byte totals, frame sample, IAT zero count, W, and each configured scale
 against the role-specific `reference_totals` or `generated_totals` in strict multiscale diagnostics.
 
-In `tests/integration/test_phase7_study_pipeline.py`, create a temporary exhaustive Phase 7-like config and run
+In `tests/integration/test_validation_study_pipeline.py`, create a temporary exhaustive Validation Study-like config and run
 tree from the
 checked capture fixture. Inject only the capture boundary so no Docker starts; use real preflight preparation,
 `fit_experiment`, `generate_experiment`, `compare_experiment`, and the still-absent strict extractor:
 
 ```python
 @pytest.mark.integration
-def test_phase7_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
+def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
     result = run_experiment(experiment_path, dependencies=offline_dependencies)
     record = study.extract_primary_record(
         repository_root,
@@ -1436,10 +1436,10 @@ do not add a fake extractor or defer integration until after the implementation.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -n 0 \
-  tests/unit/test_phase7_study.py::test_trace_summary_uses_canonical_events_and_multiscale_direction_totals \
-  tests/unit/test_phase7_study.py::test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_lineage \
-  tests/unit/test_phase7_study.py::test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidence \
-  "$phase7_extraction_node"
+  tests/unit/test_validation_study.py::test_trace_summary_uses_canonical_events_and_multiscale_direction_totals \
+  tests/unit/test_validation_study.py::test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_lineage \
+  tests/unit/test_validation_study.py::test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidence \
+  "$validation_study_extraction_node"
 ```
 
 Expected: the named unit and real in-process integration cases fail because strict artifact extraction is absent.
@@ -1463,15 +1463,15 @@ reparsed published comparison to exact capture/reference/generated/settings hash
 - [ ] **Step 8: Run trace/extraction GREEN**
 
 ```bash
-phase7_extraction_node="tests/integration/test_phase7_study_pipeline.py::"
-phase7_extraction_node+="test_phase7_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage"
+validation_study_extraction_node="tests/integration/test_validation_study_pipeline.py::"
+validation_study_extraction_node+="test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage"
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -n 0 \
-  tests/unit/test_phase7_study.py::test_trace_summary_uses_canonical_events_and_multiscale_direction_totals \
-  tests/unit/test_phase7_study.py::test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_lineage \
-  tests/unit/test_phase7_study.py::test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidence \
-  "$phase7_extraction_node"
+  tests/unit/test_validation_study.py::test_trace_summary_uses_canonical_events_and_multiscale_direction_totals \
+  tests/unit/test_validation_study.py::test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_lineage \
+  tests/unit/test_validation_study.py::test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidence \
+  "$validation_study_extraction_node"
 ```
 
 Expected: every named unit and integration node passes without Docker or Internet after this one implementation.
@@ -1494,9 +1494,9 @@ within-workload observations; no cross-workload summary is created.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_natural_variation_compares_each_pair_in_both_directions_and_averages_scores \
-  tests/unit/test_phase7_study.py::test_workload_summaries_recompute_runtime_family_score_variance_and_winner_counts \
-  tests/unit/test_phase7_study.py::test_natural_variation_propagates_metric_precondition_failure
+  tests/unit/test_validation_study.py::test_natural_variation_compares_each_pair_in_both_directions_and_averages_scores \
+  tests/unit/test_validation_study.py::test_workload_summaries_recompute_runtime_family_score_variance_and_winner_counts \
+  tests/unit/test_validation_study.py::test_natural_variation_propagates_metric_precondition_failure
 ```
 
 Expected: failure because natural-variation/summary functions are absent.
@@ -1514,9 +1514,9 @@ held-out/published scores, reference descriptors, and exact family counts.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_natural_variation_compares_each_pair_in_both_directions_and_averages_scores \
-  tests/unit/test_phase7_study.py::test_workload_summaries_recompute_runtime_family_score_variance_and_winner_counts \
-  tests/unit/test_phase7_study.py::test_natural_variation_propagates_metric_precondition_failure
+  tests/unit/test_validation_study.py::test_natural_variation_compares_each_pair_in_both_directions_and_averages_scores \
+  tests/unit/test_validation_study.py::test_workload_summaries_recompute_runtime_family_score_variance_and_winner_counts \
+  tests/unit/test_validation_study.py::test_natural_variation_propagates_metric_precondition_failure
 ```
 
 Expected: pass.
@@ -1527,21 +1527,21 @@ Expected: pass.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-uv run --locked ruff format --check scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-uv run --locked ruff check scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-uv run --locked pyright scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+uv run --locked ruff format --check scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+uv run --locked ruff check scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+uv run --locked pyright scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 git diff --check
 ```
 
 - [ ] **Step 14: Commit, report, and obtain independent Task 3 review**
 
 ```bash
-git add scripts/run_phase7_study.py tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-git commit -m "feat: extract Phase 7 evidence"
+git add scripts/run_validation_study.py tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+git commit -m "feat: extract Validation Study evidence"
 ```
 
 Report exact production boundaries and equality proofs in `task-3-report.md`. Give a fresh reviewer the Tasks 1–3
@@ -1555,9 +1555,9 @@ Fix every Critical/Important finding with guarded TDD, rerun affected gates, and
 
 **Files:**
 
-- Modify: `scripts/run_phase7_study.py`
-- Modify: `tests/unit/test_phase7_study.py`
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-4-report.md`
+- Modify: `scripts/run_validation_study.py`
+- Modify: `tests/unit/test_validation_study.py`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-4-report.md`
 
 **Interfaces:**
 
@@ -1590,8 +1590,8 @@ the JUnit path repository-relative; live argv resolves only that operand.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_prerequisite_commands_are_exact_guarded_serial_argv_with_relative_projection \
-  tests/unit/test_phase7_study.py::test_junit_parser_requires_positive_all_passed_selection
+  tests/unit/test_validation_study.py::test_prerequisite_commands_are_exact_guarded_serial_argv_with_relative_projection \
+  tests/unit/test_validation_study.py::test_junit_parser_requires_positive_all_passed_selection
 ```
 
 Expected: failure because command construction/JUnit parsing is absent.
@@ -1600,7 +1600,7 @@ Expected: failure because command construction/JUnit parsing is absent.
 
 Implement `_docker_matrix_argv`, `_internet_smoke_argv`, `_project_command_argv`, `_live_argv`, and
 `_parse_junit_counts`. Store exact stdout/stderr/JUnit bytes under
-`examples/phase7/.study-work/evidence/STUDY_ID/00-prerequisites/`, mode `0600`, and hash them. Call the injected
+`examples/validation_study/.study-work/evidence/STUDY_ID/00-prerequisites/`, mode `0600`, and hash them. Call the injected
 runner with `shell=False`, `check=False`, byte capture, repository cwd, and an outer timeout longer than each
 guard's wall time plus kill grace: `1230.0` seconds for Docker and `630.0` seconds for Internet. A nonzero status or
 nonpassing JUnit record fails immediately.
@@ -1615,8 +1615,8 @@ Use exact retained names `docker.stdout`, `docker.stderr`, `docker.xml`, `intern
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_prerequisite_commands_are_exact_guarded_serial_argv_with_relative_projection \
-  tests/unit/test_phase7_study.py::test_junit_parser_requires_positive_all_passed_selection
+  tests/unit/test_validation_study.py::test_prerequisite_commands_are_exact_guarded_serial_argv_with_relative_projection \
+  tests/unit/test_validation_study.py::test_junit_parser_requires_positive_all_passed_selection
 ```
 
 Expected: pass.
@@ -1638,7 +1638,7 @@ hashes, redirect count, object total, config hashes, command records, and no `--
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_capability_records_digest_ids_default_user_range_canary_modes_and_cleanup
+  tests/unit/test_validation_study.py::test_capability_records_digest_ids_default_user_range_canary_modes_and_cleanup
 ```
 
 Expected: failure because image/capability/prerequisite orchestration is absent.
@@ -1668,9 +1668,9 @@ capability_argv = (
     "run",
     "--rm",
     "--name",
-    f"trafficlab-phase7-capability-{study_id}",
+    f"trafficlab-validation-study-capability-{study_id}",
     "--label",
-    f"org.trafficlab.phase7.study={study_id}",
+    f"org.trafficlab.validation-study.study={study_id}",
     "--cidfile",
     str(capability_cid),
     "--network",
@@ -1709,7 +1709,7 @@ capability_argv = (
 ```
 
 The checked capability `argv` changes only `src=MOUNT_ABS` inside the Docker mount token to
-`src=examples/phase7/.study-work/mount/STUDY_ID` and stores the CID/evidence operand repository-relative. The live
+`src=examples/validation_study/.study-work/mount/STUDY_ID` and stores the CID/evidence operand repository-relative. The live
 builder resolves only those named path operands and rejects any other token difference.
 
 After normal exit require both CID and name absent. On timeout/abnormal exit, read the exclusively created CID,
@@ -1722,7 +1722,7 @@ retain the original failure. If ownership cannot be proved, do not remove it and
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_capability_records_digest_ids_default_user_range_canary_modes_and_cleanup
+  tests/unit/test_validation_study.py::test_capability_records_digest_ids_default_user_range_canary_modes_and_cleanup
 ```
 
 Expected: pass.
@@ -1762,8 +1762,8 @@ pass, preserved evidence, owned-only cleanup, and actionable stderr/exit status.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py::test_prerequisites_stop_at_first_failure_preserve_primary_and_publish_no_valid_json \
-  tests/unit/test_phase7_study.py::test_prerequisite_cli_requires_exact_subcommand_arguments_and_reports_errors
+  tests/unit/test_validation_study.py::test_prerequisites_stop_at_first_failure_preserve_primary_and_publish_no_valid_json \
+  tests/unit/test_validation_study.py::test_prerequisite_cli_requires_exact_subcommand_arguments_and_reports_errors
 ```
 
 Expected: failure because failure translation and CLI dispatch are incomplete.
@@ -1773,7 +1773,7 @@ Expected: failure because failure translation and CLI dispatch are incomplete.
 Discover the root from the script by default; tests inject a temporary root. Validate the exact clean 40-character
 commit before external mutation. Record Python `3.12.3`, Trafficlab version, platform, Docker Engine, and Compose
 versions. After capability, run Docker matrix then Internet smoke, validate their JUnit, render all three configs,
-reopen/validate them, compute hashes, then atomically publish `examples/phase7/prerequisites.json`. Never publish a
+reopen/validate them, compute hashes, then atomically publish `examples/validation_study/prerequisites.json`. Never publish a
 success object early.
 
 - [ ] **Step 12: Run Task 4 GREEN and static checks**
@@ -1781,18 +1781,18 @@ success object early.
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -vv -x -n 0 tests/unit/test_phase7_study.py
-uv run --locked ruff format --check scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-uv run --locked ruff check scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-uv run --locked pyright scripts/run_phase7_study.py tests/unit/test_phase7_study.py
+  uv run --locked pytest -vv -x -n 0 tests/unit/test_validation_study.py
+uv run --locked ruff format --check scripts/run_validation_study.py tests/unit/test_validation_study.py
+uv run --locked ruff check scripts/run_validation_study.py tests/unit/test_validation_study.py
+uv run --locked pyright scripts/run_validation_study.py tests/unit/test_validation_study.py
 git diff --check
 ```
 
 - [ ] **Step 13: Commit, report, and queue Task 4 for the Task 5 review checkpoint**
 
 ```bash
-git add scripts/run_phase7_study.py tests/unit/test_phase7_study.py
-git commit -m "feat: validate Phase 7 prerequisites"
+git add scripts/run_validation_study.py tests/unit/test_validation_study.py
+git commit -m "feat: validate Validation Study prerequisites"
 ```
 
 Report all exact argv, timeouts, ownership proofs, image identities, and publication ordering; save the Task 4 diff.
@@ -1805,11 +1805,11 @@ order, and framework scope for the consolidated independent Tasks 4–5 review a
 
 **Files:**
 
-- Modify: `scripts/run_phase7_study.py`
-- Modify: `tests/unit/test_phase7_study.py`
-- Modify: `tests/integration/test_phase7_study_pipeline.py` only if an orchestration boundary needs integration
+- Modify: `scripts/run_validation_study.py`
+- Modify: `tests/unit/test_validation_study.py`
+- Modify: `tests/integration/test_validation_study_pipeline.py` only if an orchestration boundary needs integration
   assertion
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-5-report.md`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-5-report.md`
 
 **Interfaces:**
 
@@ -1842,11 +1842,11 @@ Repeat with an invalid summary result and the same zero-reproduction-call assert
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  "tests/unit/test_phase7_study.py::"\
+  "tests/unit/test_validation_study.py::"\
 "test_study_runs_nine_absent_primaries_serially_in_balanced_order_and_times_only_run_call" \
-  tests/unit/test_phase7_study.py::test_primary_failure_stops_preserves_evidence_and_publishes_no_results \
-  tests/unit/test_phase7_study.py::test_study_rejects_incompatible_prerequisites_existing_targets_and_any_reuse \
-  "tests/unit/test_phase7_study.py::"\
+  tests/unit/test_validation_study.py::test_primary_failure_stops_preserves_evidence_and_publishes_no_results \
+  tests/unit/test_validation_study.py::test_study_rejects_incompatible_prerequisites_existing_targets_and_any_reuse \
+  "tests/unit/test_validation_study.py::"\
 "test_study_validates_variation_and_summaries_before_any_reproduction_runner_call"
 ```
 
@@ -1855,7 +1855,7 @@ Expected: failure because study validation/spec derivation/serial loop is absent
 - [ ] **Step 3: Implement prerequisite/live validation and the primary loop**
 
 Require exact study ID/URL/commit/tool/image/capability/config hashes and commands against live state. Permit only
-the expected generated Phase 7 checked paths plus ignored raw evidence to differ from the prerequisite clean commit.
+the expected generated Validation Study checked paths plus ignored raw evidence to differ from the prerequisite clean commit.
 Do not repeat capability. Precompute all nine `StudyRunSpec` values and require every run/config/evidence target
 absent before starting.
 
@@ -1876,11 +1876,11 @@ calls no reproduction subprocess, and publishes no result.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  "tests/unit/test_phase7_study.py::"\
+  "tests/unit/test_validation_study.py::"\
 "test_study_runs_nine_absent_primaries_serially_in_balanced_order_and_times_only_run_call" \
-  tests/unit/test_phase7_study.py::test_primary_failure_stops_preserves_evidence_and_publishes_no_results \
-  tests/unit/test_phase7_study.py::test_study_rejects_incompatible_prerequisites_existing_targets_and_any_reuse \
-  "tests/unit/test_phase7_study.py::"\
+  tests/unit/test_validation_study.py::test_primary_failure_stops_preserves_evidence_and_publishes_no_results \
+  tests/unit/test_validation_study.py::test_study_rejects_incompatible_prerequisites_existing_targets_and_any_reuse \
+  "tests/unit/test_validation_study.py::"\
 "test_study_validates_variation_and_summaries_before_any_reproduction_runner_call"
 ```
 
@@ -1939,10 +1939,10 @@ guard = (
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  "tests/unit/test_phase7_study.py::"\
+  "tests/unit/test_validation_study.py::"\
 "test_reproduction_changes_only_run_directory_seeds_nothing_and_invokes_exact_nonnested_guard" \
-  tests/unit/test_phase7_study.py::test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_deltas \
-  tests/unit/test_phase7_study.py::test_reproduction_rejects_nonfresh_or_inconsistent_evidence
+  tests/unit/test_validation_study.py::test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_deltas \
+  tests/unit/test_validation_study.py::test_reproduction_rejects_nonfresh_or_inconsistent_evidence
 ```
 
 Expected: failure because reproduction derivation/runner/reconstruction is absent.
@@ -1995,10 +1995,10 @@ Require the reproduction `run.log` to contain fresh `capture_published` with `re
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  "tests/unit/test_phase7_study.py::"\
+  "tests/unit/test_validation_study.py::"\
 "test_reproduction_changes_only_run_directory_seeds_nothing_and_invokes_exact_nonnested_guard" \
-  tests/unit/test_phase7_study.py::test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_deltas \
-  tests/unit/test_phase7_study.py::test_reproduction_rejects_nonfresh_or_inconsistent_evidence
+  tests/unit/test_validation_study.py::test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_deltas \
+  tests/unit/test_validation_study.py::test_reproduction_rejects_nonfresh_or_inconsistent_evidence
 ```
 
 Expected: pass.
@@ -2023,10 +2023,10 @@ subprocess and network entry points to fail so the audit proves it is local and 
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  "tests/unit/test_phase7_study.py::"\
+  "tests/unit/test_validation_study.py::"\
 "test_study_builds_variation_summaries_reproduction_and_publishes_one_canonical_result" \
-  tests/unit/test_phase7_study.py::test_study_cli_requires_exact_url_id_and_prerequisite_path_and_never_wraps_itself \
-  "tests/unit/test_phase7_study.py::"\
+  tests/unit/test_validation_study.py::test_study_cli_requires_exact_url_id_and_prerequisite_path_and_never_wraps_itself \
+  "tests/unit/test_validation_study.py::"\
 "test_local_audit_revalidates_report_checkpoint_artifacts_and_lineage_without_external_calls"
 ```
 
@@ -2049,21 +2049,21 @@ and the exact guarded prerequisite tests; no nested systemd scope occurs.
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-uv run --locked ruff format --check scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-uv run --locked ruff check scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-uv run --locked pyright scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+uv run --locked ruff format --check scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+uv run --locked ruff check scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+uv run --locked pyright scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 git diff --check
 ```
 
 - [ ] **Step 13: Commit, report, and obtain independent Task 5 review**
 
 ```bash
-git add scripts/run_phase7_study.py tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-git commit -m "feat: orchestrate Phase 7 study"
+git add scripts/run_validation_study.py tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+git commit -m "feat: orchestrate validation study"
 ```
 
 Report exact primary/reproduction call ordering, timing boundaries, failure retention, and lineage reconstruction.
@@ -2078,12 +2078,12 @@ audit behavior, result publication, and honest deltas. Fix every Critical/Import
 **Files:**
 
 - Modify: `.gitignore`
-- Create: `examples/phase7/README.md`
+- Create: `examples/validation_study/README.md`
 - Modify after the dedicated Docker matrix passes: `architecture/ROADMAP.md`
-- Modify for reviewed local fixes only: `scripts/run_phase7_study.py`
-- Modify for reviewed local fixes only: `tests/unit/test_phase7_study.py`
-- Modify for reviewed local fixes only: `tests/integration/test_phase7_study_pipeline.py`
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-6-report.md`
+- Modify for reviewed local fixes only: `scripts/run_validation_study.py`
+- Modify for reviewed local fixes only: `tests/unit/test_validation_study.py`
+- Modify for reviewed local fixes only: `tests/integration/test_validation_study_pipeline.py`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-6-report.md`
 
 **Interfaces:**
 
@@ -2098,19 +2098,19 @@ audit behavior, result publication, and honest deltas. Fix every Critical/Import
 Add only:
 
 ```gitignore
-examples/phase7/.study-work/
+examples/validation_study/.study-work/
 ```
 
 `README.md` must state the 4–16 MiB credential-free HTTPS range-object contract, target digest, direct commands,
-`STUDY_ID=phase7-20260813` example, failure/new-ID rule, checked versus ignored paths, absence of raw checked PCAPs,
+`STUDY_ID=validation-study-20260813` example, failure/new-ID rule, checked versus ignored paths, absence of raw checked PCAPs,
 and manual removal only of these exact audit trees after acceptance:
 
 ```bash
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   prerequisites --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID"
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   study --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID" \
-  --prerequisites examples/phase7/prerequisites.json
+  --prerequisites examples/validation_study/prerequisites.json
 ```
 
 Also document the exact guarded Docker, Internet, focused, fast, coverage, and explicit Pyright commands from this
@@ -2119,10 +2119,10 @@ plan. Explain that saved-run reproduction is automatically the fresh tenth run, 
 - [ ] **Step 2: Verify ignore scope and docs statically**
 
 ```bash
-git check-ignore -v examples/phase7/.study-work/probe
-test -z "$(git check-ignore examples/phase7/README.md)"
-test -z "$(git check-ignore examples/phase7/prerequisites.json)"
-test -z "$(git check-ignore examples/phase7/results.json)"
+git check-ignore -v examples/validation_study/.study-work/probe
+test -z "$(git check-ignore examples/validation_study/README.md)"
+test -z "$(git check-ignore examples/validation_study/prerequisites.json)"
+test -z "$(git check-ignore examples/validation_study/results.json)"
 git diff --check
 ```
 
@@ -2145,18 +2145,18 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   uv run --locked pytest -q -n 0 tests/integration/test_process_guard.py
 ```
 
-- [ ] **Step 4: Run focused Phase 7 and explicit static/type gates**
+- [ ] **Step 4: Run focused Validation Study and explicit static/type gates**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 uv run --locked ruff format --check .
 uv run --locked ruff check .
 uv run --locked pyright
-uv run --locked pyright scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+uv run --locked pyright scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 git diff --check
 ```
 
@@ -2191,7 +2191,7 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 ```
 
 Require actual selected tests, zero skips/failures, and no labelled Docker residue. Diagnose and fix Classes 1–4
-without asking for routine confirmation. Do not claim the Internet smoke or Phase 7 study from this command.
+without asking for routine confirmation. Do not claim the Internet smoke or Validation Study from this command.
 
 - [ ] **Step 8: Map the passing Docker matrix to exactly seven Phase 3 test boxes**
 
@@ -2233,12 +2233,12 @@ with this evidence mapping:
 Replace the Phase 3 evidence-pending paragraph with a dated note recording the exact Docker matrix command, selected
 pass count, zero skips/failures, and clean tracker inspection. State explicitly that the opt-in Internet smoke has
 not run, the Internet test box and Done-when remain unchecked, and Phase 3 remains `Current`. Do not change the phase
-heading or mark any Phase 7 box.
+heading or mark any Validation Study box.
 
 - [ ] **Step 9: Commit documentation/Docker evidence, report, and obtain independent Task 6 review**
 
 ```bash
-git add .gitignore examples/phase7/README.md architecture/ROADMAP.md
+git add .gitignore examples/validation_study/README.md architecture/ROADMAP.md
 git diff --cached --name-only
 git commit -m "docs: record Phase 3 Docker evidence"
 git status --short
@@ -2266,8 +2266,8 @@ that Internet/Done-when remain unsatisfied, and Phase 3 still marked `Current`.
 - [ ] **Step 10: Apply the Class 5 boundary exactly**
 
 If `TRAFFICLAB_INTERNET_URL` is empty or unset, record the precise endpoint contract and remaining Task 7/8 steps in
-the ledger and report the Class 5 blocker. All safe local implementation is complete; leave Phase 7 configs,
-`prerequisites.json`, `results.json`, `REPORT.md`, the Phase 3 Internet/Done-when boxes, and all Phase 7 Roadmap boxes
+the ledger and report the Class 5 blocker. All safe local implementation is complete; leave Validation Study configs,
+`prerequisites.json`, `results.json`, `REPORT.md`, the Phase 3 Internet/Done-when boxes, and all Validation Study Roadmap boxes
 absent/unchecked. Keep the seven proved Docker-backed Phase 3 boxes checked. Once the operator supplies a valid URL,
 resume at Task 7 without repeating completed work except the narrow verification required by the persistence
 instructions.
@@ -2278,14 +2278,14 @@ instructions.
 
 **Files:**
 
-- Create from successful prerequisite output: `examples/phase7/configs/short.toml`
-- Create from successful prerequisite output: `examples/phase7/configs/streaming.toml`
-- Create from successful prerequisite output: `examples/phase7/configs/bursty.toml`
-- Create from successful prerequisite output: `examples/phase7/prerequisites.json`
-- Create from successful study output: `examples/phase7/results.json`
-- Create with evidence-backed `apply_patch`: `examples/phase7/REPORT.md`
+- Create from successful prerequisite output: `examples/validation_study/configs/short.toml`
+- Create from successful prerequisite output: `examples/validation_study/configs/streaming.toml`
+- Create from successful prerequisite output: `examples/validation_study/configs/bursty.toml`
+- Create from successful prerequisite output: `examples/validation_study/prerequisites.json`
+- Create from successful study output: `examples/validation_study/results.json`
+- Create with evidence-backed `apply_patch`: `examples/validation_study/REPORT.md`
 - Modify after exact evidence: `architecture/ROADMAP.md`
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-7-report.md`
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-7-report.md`
 
 **Interfaces:**
 
@@ -2299,7 +2299,7 @@ instructions.
 
 ```bash
 test -n "${TRAFFICLAB_INTERNET_URL:-}"
-STUDY_ID=phase7-20260813
+STUDY_ID=validation-study-20260813
 TASK6_BASE="$(git rev-parse HEAD)"
 git status --short
 git diff --exit-code "$TASK6_BASE" -- architecture/ROADMAP.md
@@ -2314,7 +2314,7 @@ the next valid new ID before running anything; never reuse a failed protocol's d
 - [ ] **Step 2: Run the support prerequisite command directly**
 
 ```bash
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   prerequisites --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID"
 ```
 
@@ -2326,13 +2326,13 @@ scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked pytest -vv -n 0 -m docker \
-  --junitxml "examples/phase7/.study-work/evidence/$STUDY_ID/00-prerequisites/docker.xml"
+  --junitxml "examples/validation_study/.study-work/evidence/$STUDY_ID/00-prerequisites/docker.xml"
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 10m --kill-after 10s -- \
   uv run --locked pytest -vv -n 0 -m internet \
   --internet-url "$TRAFFICLAB_INTERNET_URL" \
-  --junitxml "examples/phase7/.study-work/evidence/$STUDY_ID/00-prerequisites/internet.xml"
+  --junitxml "examples/validation_study/.study-work/evidence/$STUDY_ID/00-prerequisites/internet.xml"
 ```
 
 Do not manually substitute collection, a skip, an unavailable-environment result, or Task 6 Docker output for this
@@ -2351,8 +2351,8 @@ directories. Do not commit here; the study must see the prerequisite-bound commi
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python -c \
-  'from pathlib import Path; import scripts.run_phase7_study as study; root=Path.cwd(); '\
-'path=Path("examples/phase7/prerequisites.json"); content=path.read_bytes(); '\
+  'from pathlib import Path; import scripts.run_validation_study as study; root=Path.cwd(); '\
+'path=Path("examples/validation_study/prerequisites.json"); content=path.read_bytes(); '\
 'value=study.parse_prerequisite_results(content, repository_root=root); '\
 'assert study.render_prerequisite_results(value)==content; study.validate_base_configs(root, value)'
 ```
@@ -2363,9 +2363,9 @@ checks recorded by the parser value. This command does not contact Docker or the
 - [ ] **Step 4: Run the nine-primary plus tenth-reproduction study directly**
 
 ```bash
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   study --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID" \
-  --prerequisites examples/phase7/prerequisites.json
+  --prerequisites examples/validation_study/prerequisites.json
 ```
 
 Require nine serial successful primary records in exact balanced order, false reuse, sibling header evidence,
@@ -2388,10 +2388,10 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python -c \
   'from hashlib import sha256; from pathlib import Path; import sys; '\
-'import scripts.run_phase7_study as study; study_id=study.validate_study_id(sys.argv[1]); '\
-'roots=(Path("runs/phase7")/study_id, '\
-'Path("examples/phase7/.study-work/evidence")/study_id, '\
-'Path("examples/phase7/.study-work/mount")/study_id); '\
+'import scripts.run_validation_study as study; study_id=study.validate_study_id(sys.argv[1]); '\
+'roots=(Path("runs/validation_study")/study_id, '\
+'Path("examples/validation_study/.study-work/evidence")/study_id, '\
+'Path("examples/validation_study/.study-work/mount")/study_id); '\
 'paths=sorted(p for root in roots if root.exists() for p in root.rglob("*") '\
 'if p.is_file() and not p.is_symlink()); '\
 '[print(f"{sha256(p.read_bytes()).hexdigest()}  {p.as_posix()}") for p in paths]' \
@@ -2403,9 +2403,9 @@ any other non-regular candidate independently of Git tracking, then print the ex
 
 ```bash
 for candidate in \
-  examples/phase7/prerequisites.json examples/phase7/results.json examples/phase7/REPORT.md \
-  examples/phase7/configs/short.toml examples/phase7/configs/streaming.toml \
-  examples/phase7/configs/bursty.toml
+  examples/validation_study/prerequisites.json examples/validation_study/results.json examples/validation_study/REPORT.md \
+  examples/validation_study/configs/short.toml examples/validation_study/configs/streaming.toml \
+  examples/validation_study/configs/bursty.toml
 do
   if [ -e "$candidate" ] || [ -L "$candidate" ]; then
     if [ -L "$candidate" ]; then
@@ -2419,15 +2419,15 @@ do
   fi
 done
 git ls-files -- \
-  examples/phase7/prerequisites.json examples/phase7/results.json examples/phase7/REPORT.md \
-  examples/phase7/configs/short.toml examples/phase7/configs/streaming.toml \
-  examples/phase7/configs/bursty.toml
+  examples/validation_study/prerequisites.json examples/validation_study/results.json examples/validation_study/REPORT.md \
+  examples/validation_study/configs/short.toml examples/validation_study/configs/streaming.toml \
+  examples/validation_study/configs/bursty.toml
 ```
 
 Empty `git ls-files` output selects the uncommitted branch. Any printed candidate selects only the corrective-commit
 branch below. For the uncommitted branch, first require that `HEAD` is still the recorded reviewed Task 6 commit.
 Inspect the Roadmap diff and stop if it includes anything outside Task 7's Phase 3 status/Internet/evidence edits or
-Phase 7 status/checkbox/evidence edits:
+Validation Study status/checkbox/evidence edits:
 
 ```bash
 test "$(git rev-parse HEAD)" = "$TASK6_BASE"
@@ -2441,8 +2441,8 @@ The allowed Roadmap diff is exact:
 3. Restore the Phase 3 Internet-smoke box to unchecked.
 4. Replace any Task 7 Phase 3 completion/evidence text with the exact reviewed Task 6 evidence note, including its
    measured Docker pass count and its statements that Internet/Done-when remain unsatisfied.
-5. Restore the exact Task 6 Phase 7 heading; leave all five deliverables and all three tests unchecked.
-6. Remove every Task 7 Phase 7 verification/evidence paragraph and leave the existing Done-when prose unclaimed.
+5. Restore the exact Task 6 Validation Study heading; leave all five deliverables and all three tests unchecked.
+6. Remove every Task 7 Validation Study verification/evidence paragraph and leave the existing Done-when prose unclaimed.
 
 Print the authoritative before-bytes, then use `apply_patch` to make only those six Roadmap reversions. Copy the
 replacement lines byte-for-byte from these two reviewed spans; do not use `git checkout`, `git restore`, shell
@@ -2452,11 +2452,11 @@ redirection, or a generated whole-file rewrite:
 git show "$TASK6_BASE:architecture/ROADMAP.md" | \
   sed -n '/^## Phase 3 /,/^## Phase 4 /p'
 git show "$TASK6_BASE:architecture/ROADMAP.md" | \
-  sed -n '/^## Phase 7 /,/^## Later,/p'
+  sed -n '/^## Validation Study /,/^## Later,/p'
 ```
 
 After the `apply_patch`, exact byte equality is mandatory. This check both protects Task 6's seven proved boxes and
-catches a missed Task 7 status, Done-when evidence claim, or Phase 7 evidence line:
+catches a missed Task 7 status, Done-when evidence claim, or Validation Study evidence line:
 
 ```bash
 git diff --exit-code -- architecture/ROADMAP.md
@@ -2469,7 +2469,7 @@ symlink therefore cannot pass an absence check. Never use `rm`, a glob, a recurs
 root:
 
 ```bash
-ARCHIVE_WORK="examples/phase7/.study-work"
+ARCHIVE_WORK="examples/validation_study/.study-work"
 ARCHIVE_PARENT="$ARCHIVE_WORK/failed-publication"
 FAILED_PUBLICATION="$ARCHIVE_PARENT/$FAILED_ID"
 if [ -e "$ARCHIVE_WORK" ] || [ -L "$ARCHIVE_WORK" ]; then
@@ -2548,17 +2548,17 @@ archive_candidate() {
   fi
 }
 archive_candidate \
-  examples/phase7/prerequisites.json "$FAILED_PUBLICATION/prerequisites.json"
+  examples/validation_study/prerequisites.json "$FAILED_PUBLICATION/prerequisites.json"
 archive_candidate \
-  examples/phase7/results.json "$FAILED_PUBLICATION/results.json"
+  examples/validation_study/results.json "$FAILED_PUBLICATION/results.json"
 archive_candidate \
-  examples/phase7/REPORT.md "$FAILED_PUBLICATION/REPORT.md"
+  examples/validation_study/REPORT.md "$FAILED_PUBLICATION/REPORT.md"
 archive_candidate \
-  examples/phase7/configs/short.toml "$FAILED_PUBLICATION/configs/short.toml"
+  examples/validation_study/configs/short.toml "$FAILED_PUBLICATION/configs/short.toml"
 archive_candidate \
-  examples/phase7/configs/streaming.toml "$FAILED_PUBLICATION/configs/streaming.toml"
+  examples/validation_study/configs/streaming.toml "$FAILED_PUBLICATION/configs/streaming.toml"
 archive_candidate \
-  examples/phase7/configs/bursty.toml "$FAILED_PUBLICATION/configs/bursty.toml"
+  examples/validation_study/configs/bursty.toml "$FAILED_PUBLICATION/configs/bursty.toml"
 for retained in \
   "$FAILED_PUBLICATION/prerequisites.json" "$FAILED_PUBLICATION/results.json" \
   "$FAILED_PUBLICATION/REPORT.md" "$FAILED_PUBLICATION/configs/short.toml" \
@@ -2573,9 +2573,9 @@ do
   fi
 done
 for candidate in \
-  examples/phase7/prerequisites.json examples/phase7/results.json examples/phase7/REPORT.md \
-  examples/phase7/configs/short.toml examples/phase7/configs/streaming.toml \
-  examples/phase7/configs/bursty.toml
+  examples/validation_study/prerequisites.json examples/validation_study/results.json examples/validation_study/REPORT.md \
+  examples/validation_study/configs/short.toml examples/validation_study/configs/streaming.toml \
+  examples/validation_study/configs/bursty.toml
 do
   if [ -e "$candidate" ] || [ -L "$candidate" ]; then
     printf 'publication candidate remains after archive: %s\n' "$candidate" >&2
@@ -2595,16 +2595,16 @@ archive branch. Read the two authoritative Task 6 Roadmap spans with the `git sh
 `apply_patch` to delete exactly `prerequisites.json`, `results.json`, `REPORT.md`, and the three profile TOMLs. In the
 same change, use `apply_patch` to restore the six exact Roadmap conditions listed above: preserve the seven Task 6
 Docker boxes/note, restore Phase 3 `Current`, uncheck Internet, remove Phase 3 Internet/Done-when evidence claims,
-uncheck all Phase 7 boxes, and remove Phase 7 evidence claims. Verify the Roadmap matches the reviewed Task 6 blob:
+uncheck all Validation Study boxes, and remove Validation Study evidence claims. Verify the Roadmap matches the reviewed Task 6 blob:
 
 ```bash
 git diff --exit-code "$TASK6_BASE" -- architecture/ROADMAP.md
 git add architecture/ROADMAP.md \
-  examples/phase7/prerequisites.json examples/phase7/results.json examples/phase7/REPORT.md \
-  examples/phase7/configs/short.toml examples/phase7/configs/streaming.toml \
-  examples/phase7/configs/bursty.toml
+  examples/validation_study/prerequisites.json examples/validation_study/results.json examples/validation_study/REPORT.md \
+  examples/validation_study/configs/short.toml examples/validation_study/configs/streaming.toml \
+  examples/validation_study/configs/bursty.toml
 git diff --cached --name-status
-git commit -m "docs: withdraw invalid Phase 7 study"
+git commit -m "docs: withdraw invalid validation study"
 git diff --exit-code -- architecture/ROADMAP.md
 git status --short
 ```
@@ -2634,10 +2634,10 @@ RETRY_BASE="$(git rev-parse HEAD)"
 git diff --exit-code -- architecture/ROADMAP.md
 git status --short
 for fresh_root in \
-  "runs/phase7/$STUDY_ID" \
-  "examples/phase7/.study-work/evidence/$STUDY_ID" \
-  "examples/phase7/.study-work/mount/$STUDY_ID" \
-  "examples/phase7/.study-work/failed-publication/$STUDY_ID"
+  "runs/validation_study/$STUDY_ID" \
+  "examples/validation_study/.study-work/evidence/$STUDY_ID" \
+  "examples/validation_study/.study-work/mount/$STUDY_ID" \
+  "examples/validation_study/.study-work/failed-publication/$STUDY_ID"
 do
   if [ -e "$fresh_root" ] || [ -L "$fresh_root" ]; then
     printf 'new study root exists or is a symlink: %s\n' "$fresh_root" >&2
@@ -2671,9 +2671,9 @@ these actual values from `results.json`:
 Include the exact study ID, evidence commit, target/capture image IDs, and all nine primary run IDs plus
 `10-streaming-r2-reproduction` so the local audit binds the prose to the checked and retained evidence.
 
-Sections 1 and 7 must disclose the invalidated pilot attempt `phase7-20260814-ovh`, its observed
-`W = 0.7874600887298584`, the all-invalid MMPP-family root cause, and the Phase-7-only `lambda0` lower-bound
-amendment from `0.01` to `10.0`. State that no failed-pilot score or winner was accepted, analyzed, or used to
+Sections 1 and 7 must disclose the invalidated pilot attempt `validation-study-20260814-ovh`, its observed
+`W = 0.7874600887298584`, the all-invalid MMPP-family root cause, and the `lambda0` lower-bound amendment used only
+by the Validation Study from `0.01` to `10.0`. State that no failed-pilot score or winner was accepted, analyzed, or used to
 choose the bound; the failed attempt was excluded and retained locally; and all nine primary runs plus the
 reproduction were rerun under one fresh study ID. Do not present failed-pilot scores.
 
@@ -2693,23 +2693,23 @@ or final guards.
 
 Map exact Internet JUnit counts, ten run IDs, config/result/report paths, seeds, families, component scores, runtime
 summaries, trace disagreements, reproduction guard, cleanup records, image identities, and raw evidence hashes to
-the remaining Phase 3 Internet/Done-when boxes and every Phase 7 checkbox. Preserve Task 6's Docker mappings. Check a
-box only when its exact evidence exists. Phase 7 Done-when requires the report's specific fidelity/gap decision, not
+the remaining Phase 3 Internet/Done-when boxes and every Validation Study checkbox. Preserve Task 6's Docker mappings. Check a
+box only when its exact evidence exists. Validation Study Done-when requires the report's specific fidelity/gap decision, not
 merely successful execution.
 
 - [ ] **Step 9: Update Roadmap truthfully and run local publication checks**
 
 Leave Task 6's seven Docker-backed Phase 3 boxes unchanged. Mark the opt-in Internet smoke, Phase 3 Done-when, all
-Phase 7 deliverables/tests, and Phase 7 Done-when only when the ledger proves them. Add a dated concise verification
+Validation Study deliverables/tests, and Validation Study Done-when only when the ledger proves them. Add a dated concise verification
 note naming the study ID, ten fresh runs, report/results, and retained ignored audit locations.
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
-uv run --locked pyright scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
+uv run --locked pyright scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 uv run --locked ruff format --check .
 uv run --locked ruff check .
 git diff --check
@@ -2723,11 +2723,11 @@ reproduction deltas without Docker, the public Internet, or subprocess children:
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python -c \
-  'from pathlib import Path; import scripts.run_phase7_study as study; '\
+  'from pathlib import Path; import scripts.run_validation_study as study; '\
 'study.audit_published_study(repository_root=Path.cwd(), '\
-'prerequisite_path=Path("examples/phase7/prerequisites.json"), '\
-'result_path=Path("examples/phase7/results.json"), '\
-'report_path=Path("examples/phase7/REPORT.md"))'
+'prerequisite_path=Path("examples/validation_study/prerequisites.json"), '\
+'result_path=Path("examples/validation_study/results.json"), '\
+'report_path=Path("examples/validation_study/REPORT.md"))'
 ```
 
 - [ ] **Step 10: Obtain independent evidence/report review before publication commit**
@@ -2737,16 +2737,16 @@ output/JUnit/header evidence, exact ten run trees, and Task 7 ledger. Require se
 code-quality verdicts. Fix every Critical/Important finding. A code or protocol fix invalidates the current study and
 requires a new ID plus all ten reruns; a report-only correction must remain faithful to unchanged JSON.
 
-- [ ] **Step 11: Commit only checked Phase 7 publication files**
+- [ ] **Step 11: Commit only checked Validation Study publication files**
 
 ```bash
 git add architecture/ROADMAP.md \
-  examples/phase7/README.md examples/phase7/REPORT.md \
-  examples/phase7/prerequisites.json examples/phase7/results.json \
-  examples/phase7/configs/short.toml examples/phase7/configs/streaming.toml \
-  examples/phase7/configs/bursty.toml
+  examples/validation_study/README.md examples/validation_study/REPORT.md \
+  examples/validation_study/prerequisites.json examples/validation_study/results.json \
+  examples/validation_study/configs/short.toml examples/validation_study/configs/streaming.toml \
+  examples/validation_study/configs/bursty.toml
 git diff --cached --name-only
-git commit -m "docs: publish Phase 7 validation study"
+git commit -m "docs: publish Validation Study"
 ```
 
 Require the staged list to contain no `.study-work`, `runs/`, PCAPNG, checkpoint, header, JUnit, or command-output
@@ -2759,13 +2759,13 @@ review verdict, and retained audit paths.
 
 **Files:**
 
-- Modify only for verified Critical/Important fixes: the owning Phase 7 script/test/doc/report/Roadmap files.
-- Create ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/task-8-report.md`
-- Update ignored: `.superpowers/sdd/2026-08-13-phase-7-validation/progress.md`
+- Modify only for verified Critical/Important fixes: the owning Validation Study script/test/doc/report/Roadmap files.
+- Create ignored: `.superpowers/sdd/2026-08-13-validation-study/task-8-report.md`
+- Update ignored: `.superpowers/sdd/2026-08-13-validation-study/progress.md`
 
 **Interfaces:**
 
-- Consumes: committed Phase 7 publication, retained raw audit evidence, all architecture completion requirements,
+- Consumes: committed Validation Study publication, retained raw audit evidence, all architecture completion requirements,
   process guard, and the operator URL.
 - Produces: fresh nonoverlapping final gate evidence, Critical/Important-free independent review, accurate complete
   Roadmap, and a clean local Git history.
@@ -2782,11 +2782,11 @@ Run the same exact local, read-only publication audit used before the publicatio
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python -c \
-  'from pathlib import Path; import scripts.run_phase7_study as study; '\
+  'from pathlib import Path; import scripts.run_validation_study as study; '\
 'study.audit_published_study(repository_root=Path.cwd(), '\
-'prerequisite_path=Path("examples/phase7/prerequisites.json"), '\
-'result_path=Path("examples/phase7/results.json"), '\
-'report_path=Path("examples/phase7/REPORT.md"))'
+'prerequisite_path=Path("examples/validation_study/prerequisites.json"), '\
+'result_path=Path("examples/validation_study/results.json"), '\
+'report_path=Path("examples/validation_study/REPORT.md"))'
 ```
 
 Require exit zero and no changed path before continuing.
@@ -2810,14 +2810,14 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   uv run --locked pytest -q -n 0 tests/integration/test_process_guard.py
 ```
 
-- [ ] **Step 3: Run formatting, linting, ordinary strict types, and explicit Phase 7 types**
+- [ ] **Step 3: Run formatting, linting, ordinary strict types, and explicit Validation Study types**
 
 ```bash
 uv run --locked ruff format --check .
 uv run --locked ruff check .
 uv run --locked pyright
-uv run --locked pyright scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+uv run --locked pyright scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 git diff --check
 ```
 
@@ -2836,7 +2836,7 @@ scripts/run_bounded.sh --memory-high 6G --memory-max 8G --swap-max 1G \
 ```
 
 Require at least 90% branch-aware package coverage and direct named coverage for every mathematical, configuration,
-arbitration, artifact, and Phase 7 behavior. Do not overlap or reuse pre-fix results.
+arbitration, artifact, and Validation Study behavior. Do not overlap or reuse pre-fix results.
 
 - [ ] **Step 5: Run available Docker and Internet gates serially**
 
@@ -2851,12 +2851,12 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 ```
 
 Require actual selected passes and clean labelled Docker state. The already completed nine-plus-one study is the
-external Phase 7 evidence; do not rerun it merely as a generic test gate.
+external Validation Study evidence; do not rerun it merely as a generic test gate.
 
 - [ ] **Step 6: Obtain independent whole-project final review**
 
-Give a fresh reviewer the full implementation range from the Phase 1 base through Phase 7 publication, all
-architecture, current Roadmap, local/Docker/Internet gate outputs, Phase 7 checked and retained evidence, SDD task
+Give a fresh reviewer the full implementation range from the Phase 1 base through Validation Study publication, all
+architecture, current Roadmap, local/Docker/Internet gate outputs, Validation Study checked and retained evidence, SDD task
 reports, and commit log. Require explicit architecture-compliance and code-quality verdicts with severity. Fix every
 Critical/Important finding and re-run affected gates.
 
@@ -2882,7 +2882,7 @@ implementation commits, and no Critical/Important final finding.
 
 ## Plan Self-Review
 
-- Every Phase 7 design section maps to one owning task: schema/statistics (Task 1), profiles/config/header evidence
+- Every Validation Study design section maps to one owning task: schema/statistics (Task 1), profiles/config/header evidence
   (Task 2), production artifact extraction/natural variation (Task 3), prerequisite subprocesses/images (Task 4),
   serial primary/reproduction execution (Task 5), docs/local/Docker readiness (Task 6), real evidence/report/Roadmap
   (Task 7), and final gates/review (Task 8).
@@ -2903,7 +2903,7 @@ implementation commits, and no Critical/Important final finding.
   from exactly three within-workload records. Study orchestration validates both derived tuples immediately after
   primary nine and proves a precondition/summary failure makes zero reproduction calls.
 - No task checks in raw PCAP/run/evidence data. The report contains observed values only after successful external
-  execution, and absence of the URL leaves Phase 3 Internet/Done-when and all Phase 7 artifacts/boxes untouched while
+  execution, and absence of the URL leaves Phase 3 Internet/Done-when and all Validation Study artifacts/boxes untouched while
   retaining Task 6's seven evidence-mapped Docker boxes.
 - Reproduction requires an absent directory, uses a confined repository-relative config token under repository cwd,
   and the identical guarded local audit in Tasks 7/8 rechecks report/checkpoint/artifact/lineage evidence offline.

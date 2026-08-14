@@ -775,7 +775,7 @@ incomplete.
 
 Check local implementation, offline integration, reuse/corruption, seed/limit, directory, summary, and test-command
 boxes only when their evidence is green. Check complete Docker-run/cleanup boxes and Phase 6 `Done when` only after
-real Docker execution. Never change the older Phase 3 or future Phase 7 boxes without their own evidence.
+real Docker execution. Never change the older Phase 3 or future Validation Study boxes without their own evidence.
 
 - [ ] **Step 9: Commit evidence and require a clean worktree**
 
@@ -788,7 +788,7 @@ git status --short
 ```
 
 If all Phase 6 boxes are genuinely complete, use `docs: record phase 6 completion`; otherwise keep Phase 6 current
-and continue to safe Phase 7 work without claiming external completion.
+and continue to safe Validation Study work without claiming external completion.
 
 ## Plan Self-Review
 

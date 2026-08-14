@@ -63,7 +63,7 @@ Use four explicitly distinguished evidence classes.
 
 ### Audited retained evidence
 
-- Strictly parse the checked Phase 7 prerequisite, configuration, result, and
+- Strictly parse the checked Validation Study prerequisite, configuration, result, and
   report artifacts.
 - Recompute retained hashes and verify schema, artifact counts, run ordering,
   family and winner lineage, reproduction claims, and report arithmetic.

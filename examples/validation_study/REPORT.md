@@ -1,4 +1,4 @@
-# Phase 7 validation study
+# Validation Study
 
 ## Question, scope, environment, and protocol
 
@@ -6,7 +6,7 @@ This study asks whether Trafficlab's complete capture, fit, generate, and compar
 interpretable results for three different real HTTPS traffic shapes. It is a small validation study, not a
 benchmark or a claim about all network programs.
 
-The accepted study is `phase7-20260814-ovh-r3`, run from evidence commit
+The accepted study is `validation-study-20260814-ovh-r3`, run from evidence commit
 `976dcd6ba8bfb4df4894e79263fb8b75dc426ad0` on CPython 3.12.3, Trafficlab 0.1.0, Docker Engine 29.7.2, and Docker
 Compose 5.4.0 under WSL2 Linux 6.6.87.2. The target image was
 `sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b`; the capture image was
@@ -14,9 +14,9 @@ Compose 5.4.0 under WSL2 Linux 6.6.87.2. The target image was
 
 The credential-free endpoint was `https://sbg.proof.ovh.net/files/10Mb.dat`, an OVHcloud network-test object.
 Prerequisites proved HTTP 206, `Content-Range: bytes 0-0/10485760`, a one-byte body, no redirect, Docker 18/18,
-Internet 1/1, and clean container removal. The prerequisite SHA-256 was
-`5b8100f85aff99cba5de05e2c12d7b82ff71cc75824c4165acb7d6f44b50829f`; the result SHA-256 was
-`5803a6c4c674182caaa0b450211ad4e19d8957d64d25904981a00790bb8ec655`.
+Internet 1/1, and clean container removal. The prerequisite SHA-256 is
+`d057afc1ca1f4a842f3a1214bfe08210cef4fa62993c2cb3bb2c0e6f9eed056d`; the result SHA-256 is
+`8c485765b20e018c007bd3e33d60052f431c904162e71b51390b483d64232603`.
 
 The balanced order was short, streaming, bursty; streaming, bursty, short; bursty, short, streaming. The streaming
 transfer was rate-limited to `256K`; it was not exactly paced. Every run used population 6, generation 2, master
@@ -27,12 +27,13 @@ seed 73, selection seeds 17 and 29, and fresh held-out seed 97. The ten fresh ru
 - `07-bursty-r3`, `08-short-r3`, `09-streaming-r3`;
 - `10-streaming-r2-reproduction`.
 
-The invalidated pilot `phase7-20260814-ovh` observed `W = 0.7874600887298584` and stopped because both locked MMPP
-candidates were invalid before family comparison. The Phase-7-only `lambda0` lower bound was amended from `0.01`
-to `10.0`, preserving a decade of low-regime rates while making the family evaluable. No pilot score or winner was
+The invalidated pilot `validation-study-20260814-ovh` observed `W = 0.7874600887298584` and stopped because both
+locked MMPP candidates were invalid before family comparison. The `lambda0` lower bound used only by the
+Validation Study was amended from `0.01` to `10.0`, preserving a decade of low-regime rates while making the family
+evaluable. No pilot score or winner was
 accepted, analyzed, or used to choose that bound; only the family-wide precondition failure and observed window
 were used. The pilot was excluded and retained locally. A later complete restart,
-`phase7-20260814-ovh-r2`, was also excluded after a transient curl status 28 at primary 7. The accepted study reran
+`validation-study-20260814-ovh-r2`, was also excluded after a transient curl status 28 at primary 7. The accepted study reran
 all nine primaries and the reproduction under one fresh ID.
 
 ## Natural variation
@@ -152,13 +153,13 @@ scores.
 
 This pilot has only three repeats per workload, one public endpoint, one host, small genetic settings, and one
 held-out seed. Public-network behavior is visibly variable: the CacheFly prerequisite attempt
-`phase7-20260814` was rejected after inconsistent capability behavior, and corrected attempt
-`phase7-20260814-ovh-r2` was rejected after one of eight parallel ranges timed out. Both remain ignored and retained;
+`validation-study-20260814` was rejected after inconsistent capability behavior, and corrected attempt
+`validation-study-20260814-ovh-r2` was rejected after one of eight parallel ranges timed out. Both remain ignored and retained;
 neither contributed a score or selected run to this report.
 
-The invalidated MMPP pilot `phase7-20260814-ovh`, its `W = 0.7874600887298584`, all-invalid family diagnosis, and
+The invalidated MMPP pilot `validation-study-20260814-ovh`, its `W = 0.7874600887298584`, all-invalid family diagnosis, and
 the `lambda0` bound change from `0.01` to `10.0` are part of the audit trail. No failed-pilot score or winner was
-used to choose the amendment. The accepted `phase7-20260814-ovh-r3` protocol started from fresh prerequisites and
+used to choose the amendment. The accepted `validation-study-20260814-ovh-r3` protocol started from fresh prerequisites and
 reran all nine primaries plus the reproduction.
 
 The results demonstrate useful frame-size, autocorrelation, and—especially for streaming—IAT fidelity, but a

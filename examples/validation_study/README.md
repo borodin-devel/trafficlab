@@ -1,6 +1,6 @@
-# Phase 7 validation study
+# Validation Study
 
-Phase 7 compares Trafficlab's three classical traffic models on three real curl
+Validation Study compares Trafficlab's three classical traffic models on three real curl
 traffic shapes. Run the entire protocol serially from a clean checkout with the
 locked environment. Do not overlap Docker, Internet, primary-run,
 reproduction, or broad verification commands.
@@ -23,7 +23,7 @@ Study IDs must match `[a-z0-9][a-z0-9-]{0,31}`. For example:
 
 ```bash
 export TRAFFICLAB_INTERNET_URL="https://operator-selected.example/object"
-STUDY_ID=phase7-20260813
+STUDY_ID=validation-study-20260813
 ```
 
 The example URL above describes the required shape only; replace it with the
@@ -43,7 +43,7 @@ First validate the endpoint, images, Docker matrix, Internet smoke, and render
 the three configurations plus canonical prerequisite record:
 
 ```bash
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   prerequisites --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID"
 ```
 
@@ -54,8 +54,8 @@ PREREQUISITE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python -c \
-  'from pathlib import Path; import scripts.run_phase7_study as study; root=Path.cwd(); '\
-'path=Path("examples/phase7/prerequisites.json"); content=path.read_bytes(); '\
+  'from pathlib import Path; import scripts.run_validation_study as study; root=Path.cwd(); '\
+'path=Path("examples/validation_study/prerequisites.json"); content=path.read_bytes(); '\
 'value=study.parse_prerequisite_results(content, repository_root=root); '\
 'assert study.render_prerequisite_results(value)==content; study.validate_base_configs(root, value)'
 test "$(git status --porcelain=v1 --untracked-files=all)" = "$PREREQUISITE_STATUS"
@@ -67,9 +67,9 @@ prerequisites and study. Run the nine balanced primary experiments and the
 preselected reproduction from the same `TASK6_BASE`:
 
 ```bash
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   study --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID" \
-  --prerequisites examples/phase7/prerequisites.json
+  --prerequisites examples/validation_study/prerequisites.json
 ```
 
 The saved-run reproduction is automatically execution 10,
@@ -95,10 +95,10 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python -c \
   'from hashlib import sha256; from pathlib import Path; import sys; '\
-'import scripts.run_phase7_study as study; study_id=study.validate_study_id(sys.argv[1]); '\
-'roots=(Path("runs/phase7")/study_id, '\
-'Path("examples/phase7/.study-work/evidence")/study_id, '\
-'Path("examples/phase7/.study-work/mount")/study_id); '\
+'import scripts.run_validation_study as study; study_id=study.validate_study_id(sys.argv[1]); '\
+'roots=(Path("runs/validation_study")/study_id, '\
+'Path("examples/validation_study/.study-work/evidence")/study_id, '\
+'Path("examples/validation_study/.study-work/mount")/study_id); '\
 'paths=sorted(p for root in roots if root.exists() for p in root.rglob("*") '\
 'if p.is_file() and not p.is_symlink()); '\
 '[print(f"{sha256(p.read_bytes()).hexdigest()}  {p.as_posix()}") for p in paths]' \
@@ -106,22 +106,22 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 ```
 
 Then execute Task 7 Step 5 in
-`docs/superpowers/plans/2026-08-13-phase-7-validation.md` exactly. Its
+`docs/superpowers/plans/2026-08-13-validation-study.md` exactly. Its
 copyable recovery blocks are authoritative; do not abbreviate their
 symlink/type/occupancy checks:
 
 - Classify only these six publication candidates:
-  `examples/phase7/prerequisites.json`,
-  `examples/phase7/results.json`, `examples/phase7/REPORT.md`,
-  `examples/phase7/configs/short.toml`,
-  `examples/phase7/configs/streaming.toml`, and
-  `examples/phase7/configs/bursty.toml`. Reject regular or dangling source
+  `examples/validation_study/prerequisites.json`,
+  `examples/validation_study/results.json`, `examples/validation_study/REPORT.md`,
+  `examples/validation_study/configs/short.toml`,
+  `examples/validation_study/configs/streaming.toml`, and
+  `examples/validation_study/configs/bursty.toml`. Reject regular or dangling source
   symlinks and every non-regular candidate before moving anything.
 - If none is tracked, require `HEAD == TASK6_BASE`. Inspect the Roadmap diff,
   use `apply_patch` to restore only authorized Task 7 claims byte-for-byte to
   the Task 6 Roadmap blob, and require exact equality. Move only existing
   regular candidates, one by one, into the fresh ignored
-  `examples/phase7/.study-work/failed-publication/$FAILED_ID/` leaf using the
+  `examples/validation_study/.study-work/failed-publication/$FAILED_ID/` leaf using the
   plan's exact archive block. Never delete, glob, recursively move, overwrite,
   or move a run/evidence/mount root.
 - If any candidate is tracked or committed, do not archive or overwrite it.
@@ -139,17 +139,17 @@ existing study.
 
 The checked publication paths are:
 
-- `examples/phase7/README.md`
-- `examples/phase7/configs/short.toml`
-- `examples/phase7/configs/streaming.toml`
-- `examples/phase7/configs/bursty.toml`
-- `examples/phase7/prerequisites.json`
-- `examples/phase7/results.json`
-- `examples/phase7/REPORT.md`
+- `examples/validation_study/README.md`
+- `examples/validation_study/configs/short.toml`
+- `examples/validation_study/configs/streaming.toml`
+- `examples/validation_study/configs/bursty.toml`
+- `examples/validation_study/prerequisites.json`
+- `examples/validation_study/results.json`
+- `examples/validation_study/REPORT.md`
 
 Raw run directories, transfer headers, JUnit XML, command output, and mount
-scratch remain ignored under `runs/phase7/$STUDY_ID/` and
-`examples/phase7/.study-work/`. No raw Internet or generated PCAPNG is checked
+scratch remain ignored under `runs/validation_study/$STUDY_ID/` and
+`examples/validation_study/.study-work/`. No raw Internet or generated PCAPNG is checked
 in. The checked JSON retains hashes that bind the publication to the ignored
 audit evidence.
 
@@ -158,8 +158,8 @@ deciding that local audit evidence is no longer needed may the operator
 manually remove these two exact study-ID audit trees:
 
 ```text
-runs/phase7/$STUDY_ID/
-examples/phase7/.study-work/evidence/$STUDY_ID/
+runs/validation_study/$STUDY_ID/
+examples/validation_study/.study-work/evidence/$STUDY_ID/
 ```
 
 The support script never performs that retention deletion. Do not use broad
@@ -170,20 +170,20 @@ cleanup commands.
 Run each command separately. Every pytest invocation must stay inside the
 five-limit process-tree guard shown here.
 
-Focused Phase 7 tests:
+Focused Validation Study tests:
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 ```
 
-Explicit Phase 7 type check:
+Explicit Validation Study type check:
 
 ```bash
-uv run --locked pyright scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py tests/integration/test_phase7_study_pipeline.py
+uv run --locked pyright scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 ```
 
 Fast non-external tests:

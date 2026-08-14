@@ -1,5 +1,5 @@
 [run]
-directory = "../../../runs/phase7/phase7-20260814-ovh-r3/02-streaming-r1"
+directory = "../../../runs/validation_study/validation-study-20260814-ovh-r3/01-short-r1"
 minimum_free_bytes = 1048576
 master_seed = 73
 final_seed = 97
@@ -21,15 +21,15 @@ argv = [
     "--connect-timeout",
     "15",
     "--max-time",
-    "40",
+    "30",
     "--limit-rate",
-    "256K",
+    "4M",
     "--range",
-    "0-4194303",
+    "0-262143",
     "--max-filesize",
-    "4194304",
+    "262144",
     "--dump-header",
-    "/trafficlab-study/streaming.headers",
+    "/trafficlab-study/short.headers",
     "--output",
     "/dev/null",
     "--url",
@@ -40,7 +40,7 @@ working_directory = "/"
 [target.environment]
 
 [[target.mounts]]
-source = "../.study-work/mount/phase7-20260814-ovh-r3"
+source = "../.study-work/mount/validation-study-20260814-ovh-r3"
 target = "/trafficlab-study"
 read_only = false
 
@@ -48,9 +48,9 @@ read_only = false
 image = "sha256:db3e68a72c69697af92030da5713b3d5843dc0934835ec0c157a2d3456c309b4"
 network_probe_url = "https://sbg.proof.ovh.net/files/10Mb.dat"
 readiness_timeout_seconds = 10.0
-workload_timeout_seconds = 50.0
+workload_timeout_seconds = 35.0
 flush_timeout_seconds = 5.0
-total_timeout_seconds = 120.0
+total_timeout_seconds = 90.0
 
 [generation.trial]
 max_packets = 25000
@@ -149,8 +149,8 @@ acf_lag_weights = [
 acf_iat_weight = 0.5
 acf_size_weight = 0.5
 multiscale_widths_seconds = [
-    0.25,
-    1.0,
+    0.001,
+    0.01,
 ]
 multiscale_scale_weights = [
     0.5,

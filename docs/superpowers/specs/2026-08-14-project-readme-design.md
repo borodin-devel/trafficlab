@@ -34,7 +34,7 @@ The root README will contain:
 8. Output artifact and resumability guidance.
 9. Direct links to every implemented traffic model, similarity method, and
    genetic model document.
-10. Testing, deterministic fixtures, Phase 7 evidence, limitations, and the
+10. Testing, deterministic fixtures, Validation Study evidence, limitations, and the
     remaining architecture index.
 
 ## Command policy

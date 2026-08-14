@@ -109,7 +109,7 @@ evidence. Two different integration scopes are named accurately:
 There is no “full pipeline without Docker” claim because full `run` necessarily
 includes capture.
 
-### Phase 7 — Validation on real programs
+### Validation Study — Validation on real programs
 
 The real-workload study remains unchanged and starts only after the complete
 workflow is reliable.

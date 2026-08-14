@@ -1,5 +1,5 @@
 [run]
-directory = "../../../runs/phase7/phase7-20260814-ovh-r3/03-bursty-r1"
+directory = "../../../runs/validation_study/validation-study-20260814-ovh-r3/03-bursty-r1"
 minimum_free_bytes = 1048576
 master_seed = 73
 final_seed = 97
@@ -224,7 +224,7 @@ working_directory = "/"
 [target.environment]
 
 [[target.mounts]]
-source = "../.study-work/mount/phase7-20260814-ovh-r3"
+source = "../.study-work/mount/validation-study-20260814-ovh-r3"
 target = "/trafficlab-study"
 read_only = false
 

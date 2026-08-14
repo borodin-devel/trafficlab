@@ -418,15 +418,15 @@ The complete marker policy, named behavioral evidence, coverage rules, Docker
 tracking, and Internet-test contract are in
 [Testing Strategy](architecture/TESTING.md).
 
-## Validation study
+## Validation Study
 
-Phase 7 ran a balanced real-Internet validation study: three workload shapes,
-three fresh primary repeats each, and one fresh saved-run reproduction. The
-checked publication contains canonical prerequisite/config/result records but
-does not track raw Internet PCAPNG files.
+The Validation Study used three real-Internet workload shapes, three fresh
+primary repeats each, and one fresh saved-run reproduction. The checked
+publication contains canonical prerequisite/config/result records but does not
+track raw Internet PCAPNG files.
 
-- [Study instructions and retained-evidence policy](examples/phase7/README.md)
-- [Study results and interpretation](examples/phase7/REPORT.md)
+- [Study instructions and retained-evidence policy](examples/validation_study/README.md)
+- [Study results and interpretation](examples/validation_study/REPORT.md)
 
 The study found Markov Renewal strongest across the measured workloads while
 also identifying repeatable local directional-volume limitations. The report
@@ -449,7 +449,7 @@ does not provide:
 
 Docker daemon access and target-image trust are installation and experiment
 concerns, not a Trafficlab-owned privilege or security framework. Raw captures
-may contain sensitive traffic; the Phase 7 publication intentionally keeps them
+may contain sensitive traffic; the Validation Study publication intentionally keeps them
 out of Git.
 
 For the authoritative scope boundary, see
@@ -467,7 +467,7 @@ For the authoritative scope boundary, see
 - [Traffic-model index](architecture/traffic_models/README.md)
 - [Similarity-method index](architecture/similarity_methods/README.md)
 - [Genetic-model index](architecture/genetic_models/README.md)
-- [Phase 7 validation report](examples/phase7/REPORT.md)
+- [Validation Study report](examples/validation_study/REPORT.md)
 
 The files under `docs/superpowers/` preserve implementation designs and plans.
 They are development history; current behavior is owned by `architecture/`, the

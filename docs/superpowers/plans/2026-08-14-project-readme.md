@@ -132,7 +132,7 @@ Create `README.md` with:
 - direct links to every required model/method document;
 - bounded focused, fast, coverage, Docker, and opt-in Internet test commands, while directing exact policy to
   `architecture/TESTING.md`;
-- links to Phase 7 `REPORT.md`, architecture overview, system, capture, development, testing, and Roadmap;
+- links to Validation Study `REPORT.md`, architecture overview, system, capture, development, testing, and Roadmap;
 - explicit research-prototype limitations: no replay, payload/application modelling, distributed execution,
   multi-user service, neural/diffusion model, or security subsystem.
 

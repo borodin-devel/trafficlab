@@ -1,18 +1,18 @@
-# Phase 7 MVP Validation Study Design
+# MVP Validation Study Design
 
 **Date:** 2026-08-13
 
 ## Status and authority
 
-This design defines the approved Phase 7 validation study. The architecture in
-`architecture/` remains authoritative. Phase 7 evaluates the completed MVP; it
+This design defines the approved Validation Study. The architecture in
+`architecture/` remains authoritative. Validation Study evaluates the completed MVP; it
 does not add another production command, model, metric, or orchestration path.
 
 The study can be implemented and tested locally through the Class 1--4 autonomy
 policy. At design approval, real Internet evidence was blocked until the
 operator supplied the explicit credential-free HTTPS object URL required below.
 That dependency was satisfied on 2026-08-14; the accepted study and canonical
-evidence are recorded under `examples/phase7/` and in the Roadmap.
+evidence are recorded under `examples/validation_study/` and in the Roadmap.
 
 ## Decision
 
@@ -59,7 +59,7 @@ smallest operational and interpretive surface.
 Using curl, wget, and Python urllib would broaden program coverage, but it would
 confound traffic shape with TLS stacks, defaults, image contents, and connection
 reuse. It also adds image and certificate-management work without answering the
-Phase 7 question more clearly.
+Validation Study question more clearly.
 
 ### Controlled local endpoint only -- rejected as study evidence
 
@@ -69,7 +69,7 @@ variation or replace the opt-in Internet smoke required by the Roadmap.
 
 ## Scope and non-goals
 
-Phase 7 will:
+Validation Study will:
 
 - run the existing five-stage `trafficlab run` pipeline on three real workloads;
 - repeat each workload three times to describe natural capture variation;
@@ -80,7 +80,7 @@ Phase 7 will:
 - publish concise configurations, results, commands, limitations, and a report;
 - reproduce one saved completed run from its effective configuration and seeds.
 
-Phase 7 will not add a production CLI command, configuration section, model,
+Validation Study will not add a production CLI command, configuration section, model,
 metric, plotting framework, protocol parser, database, manifest, workflow
 engine, traffic replay, payload model, parallel evaluator, or security
 subsystem. It will not treat ten Internet captures as deterministic fixtures or
@@ -102,7 +102,7 @@ Before the study, `prerequisites` creates these ignored host paths for the
 validated study ID:
 
 ```text
-examples/phase7/.study-work/
+examples/validation_study/.study-work/
   mount/STUDY_ID/
   evidence/STUDY_ID/00-prerequisites/
 ```
@@ -115,8 +115,8 @@ this direct-argv capability command from the repository root:
 
 ```text
 docker run --rm
---name trafficlab-phase7-capability-STUDY_ID
---label org.trafficlab.phase7.study=STUDY_ID
+--name trafficlab-validation-study-capability-STUDY_ID
+--label org.trafficlab.validation-study.study=STUDY_ID
 --cidfile EVIDENCE_ABS/capability.cid
 --network bridge
 --mount type=bind,src=MOUNT_ABS,dst=/trafficlab-study
@@ -171,14 +171,14 @@ scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked pytest -vv -n 0 -m docker \
-  --junitxml "examples/phase7/.study-work/evidence/$STUDY_ID/00-prerequisites/docker.xml"
+  --junitxml "examples/validation_study/.study-work/evidence/$STUDY_ID/00-prerequisites/docker.xml"
 
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 10m --kill-after 10s -- \
   uv run --locked pytest -vv -n 0 -m internet \
   --internet-url "$TRAFFICLAB_INTERNET_URL" \
-  --junitxml "examples/phase7/.study-work/evidence/$STUDY_ID/00-prerequisites/internet.xml"
+  --junitxml "examples/validation_study/.study-work/evidence/$STUDY_ID/00-prerequisites/internet.xml"
 ```
 
 Both selections must actually execute and pass. Collection, a skip, or an
@@ -190,7 +190,7 @@ or local Docker image ID is recorded in prerequisite evidence.
 command framework. It passes argument arrays directly with `shell=False`, runs
 the capability command and then the two exact guarded test commands above,
 parses the JUnit counts, records command argv, start/completion UTC times and
-status, and writes canonical `examples/phase7/prerequisites.json`. It also:
+status, and writes canonical `examples/validation_study/prerequisites.json`. It also:
 
 - pulls and inspects the exact curl digest;
 - builds `docker/capture/` with `docker build --pull=false --iidfile FILE`;
@@ -227,7 +227,7 @@ permits at most three redirects, and has finite connection and transfer
 deadlines.
 
 Every realized target has one read-write bind from the absolute form of
-`examples/phase7/.study-work/mount/STUDY_ID/` to `/trafficlab-study`. Before
+`examples/validation_study/.study-work/mount/STUDY_ID/` to `/trafficlab-study`. Before
 each serial run, the host removes only that profile's exact scratch names,
 exclusively creates each as an empty regular file, and sets mode `0666` beneath
 the host-owned mode-`0755` parent. Curl opens those existing files and writes
@@ -242,10 +242,10 @@ evidence fails the run. `--max-filesize` independently prevents a
 range-ignoring endpoint from silently downloading the whole object.
 
 After validation, the host copies the exact bytes with mode `0600` to
-`examples/phase7/.study-work/evidence/STUDY_ID/RUN_ID/`, verifies the archive
+`examples/validation_study/.study-work/evidence/STUDY_ID/RUN_ID/`, verifies the archive
 hash, and removes the exact scratch files. This evidence directory is a sibling
 of, never a child of, the production run at
-`runs/phase7/STUDY_ID/RUN_ID/`. Consequently every successful run directory
+`runs/validation_study/STUDY_ID/RUN_ID/`. Consequently every successful run directory
 retains the production contract's exact nine entries.
 
 The prerequisite-generated checked configurations expand these exact profile
@@ -427,29 +427,29 @@ scores from different multiscale configurations as one homogeneous sample.
 
 ## Study-support boundary
 
-Add one typed script, `scripts/run_phase7_study.py`, and no supporting package
+Add one typed script, `scripts/run_validation_study.py`, and no supporting package
 or framework. It has two narrow subcommands:
 
 ```text
 prerequisites --url URL --study-id ID
 study --url URL --study-id ID
-      --prerequisites examples/phase7/prerequisites.json
+      --prerequisites examples/validation_study/prerequisites.json
 ```
 
 `prerequisites` owns only the exact preparation, config rendering, and evidence
 operations defined above. `study` accepts the three resulting checked config
-paths through fixed locations under `examples/phase7/configs/`. Tests inject a
+paths through fixed locations under `examples/validation_study/configs/`. Tests inject a
 temporary repository root through the Python boundary rather than add public
 path flags. Both subcommands require a study ID matching
 `[a-z0-9][a-z0-9-]{0,31}`. Their operator commands are:
 
 ```bash
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   prerequisites --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID"
 
-uv run --locked python scripts/run_phase7_study.py \
+uv run --locked python scripts/run_validation_study.py \
   study --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID" \
-  --prerequisites examples/phase7/prerequisites.json
+  --prerequisites examples/validation_study/prerequisites.json
 ```
 
 These support-script commands are intentionally unwrapped; only the exact child
@@ -474,7 +474,7 @@ commands identified in this design use `run_bounded.sh`. `study` performs:
 8. reconstruct and directly evaluate the tenth held-out result through the
    production evaluation boundary without modifying its run;
 9. atomically render canonical, sorted, finite JSON to
-   `examples/phase7/results.json`.
+   `examples/validation_study/results.json`.
 
 The script imports existing configuration, trace, checkpoint, model, and
 similarity functions. It does not duplicate those codecs. It may use small
@@ -639,7 +639,7 @@ absolute after `load_experiment()` resolves them.
 
 ### Prerequisite evidence schema
 
-`examples/phase7/prerequisites.json` has these exact root fields:
+`examples/validation_study/prerequisites.json` has these exact root fields:
 
 | Key | Type | Invariant |
 |---|---|---|
@@ -696,7 +696,7 @@ three fields equal zero. The command array order is `docker_matrix`, then
 `internet_smoke`; duplicate kinds are invalid.
 
 `CAPABILITY_HEADER_PATH` is exactly
-`examples/phase7/.study-work/evidence/STUDY_ID/00-prerequisites/capability.headers`.
+`examples/validation_study/.study-work/evidence/STUDY_ID/00-prerequisites/capability.headers`.
 `CapabilityRecord` has exactly:
 
 | Key | Type | Invariant |
@@ -712,7 +712,7 @@ three fields equal zero. The command array order is `docker_matrix`, then
 | `body_bytes_downloaded` | integer | exactly `1` |
 | `content_range` | string | exactly `bytes 0-0/TOTAL` |
 | `final_url` | string | exact validated write-out URL |
-| `mount_source` | string | `examples/phase7/.study-work/mount/STUDY_ID` |
+| `mount_source` | string | `examples/validation_study/.study-work/mount/STUDY_ID` |
 | `canary_archive_path` | string | exactly `CAPABILITY_HEADER_PATH` |
 | `canary_sha256` | string | hash of nonempty final header bytes |
 | `container_id` | string | exact retained CID and inspected target ID |
@@ -857,9 +857,9 @@ stores only aggregate and component scores.
 | `execution_order` | integer | unique `1..9` |
 | `run_id` | string | exact run ID from the balanced-order table |
 | `key` | `RunKey` | exact balanced-order entry |
-| `config_path` | string | exactly `runs/phase7/STUDY_ID/realized-configs/RUN_ID.toml` |
-| `run_directory` | string | exactly `runs/phase7/STUDY_ID/RUN_ID` |
-| `transfer_evidence_directory` | string | exactly `examples/phase7/.study-work/evidence/STUDY_ID/RUN_ID` |
+| `config_path` | string | exactly `runs/validation_study/STUDY_ID/realized-configs/RUN_ID.toml` |
+| `run_directory` | string | exactly `runs/validation_study/STUDY_ID/RUN_ID` |
+| `transfer_evidence_directory` | string | exactly `examples/validation_study/.study-work/evidence/STUDY_ID/RUN_ID` |
 | `elapsed_seconds` | float | finite and positive |
 | `reuse` | `ReuseRecord` | all false |
 | `cleanup_verified` | boolean | exactly `true` |
@@ -912,7 +912,7 @@ exact method-name map of `DescriptiveRecord` values.
 
 ### Study result root and protocol records
 
-`examples/phase7/results.json` has these exact root fields:
+`examples/validation_study/results.json` has these exact root fields:
 
 | Key | Type | Invariant |
 |---|---|---|
@@ -930,7 +930,7 @@ exact method-name map of `DescriptiveRecord` values.
 `study_date_utc`. The date is a UTC RFC 3339 timestamp. The commit, versions,
 and image IDs must equal prerequisite evidence and the live environment.
 Prerequisite evidence proves the tree was clean before evidence generation;
-`study` then permits only the expected checked Phase 7 config, prerequisite,
+`study` then permits only the expected checked Validation Study config, prerequisite,
 result, and report paths plus ignored raw evidence to differ.
 
 The result `CapabilityRecord` is byte-for-byte the prerequisite capability
@@ -955,7 +955,7 @@ Definitions are ordered short, streaming, bursty.
 | `prerequisites_sha256` | string | exact canonical prerequisite file hash |
 | `target_reference` | string | exact approved curl digest |
 | `capture_image_id` | string | exact prerequisite image ID |
-| `transfer_evidence_mount_source` | string | `examples/phase7/.study-work/mount/STUDY_ID` |
+| `transfer_evidence_mount_source` | string | `examples/validation_study/.study-work/mount/STUDY_ID` |
 | `base_config_sha256` | `ProfileHashMap` | exactly equals prerequisite config hashes |
 | `primary_order` | array of `RunKey` | exact nine-entry balanced order |
 | `seeds` | `SeedRecord` | locked seeds |
@@ -988,9 +988,9 @@ captures. No equality outcome is required.
 | `source_key` | `RunKey` | streaming repeat 2 |
 | `execution_order` | integer | exactly `10` |
 | `run_id` | string | exactly `10-streaming-r2-reproduction` |
-| `config_path` | string | exact `runs/phase7/STUDY_ID/realized-configs/reproduction.toml` |
-| `run_directory` | string | exactly `runs/phase7/STUDY_ID/10-streaming-r2-reproduction` |
-| `transfer_evidence_directory` | string | exact `examples/phase7/.study-work/evidence/STUDY_ID/RUN_ID` |
+| `config_path` | string | exact `runs/validation_study/STUDY_ID/realized-configs/reproduction.toml` |
+| `run_directory` | string | exactly `runs/validation_study/STUDY_ID/10-streaming-r2-reproduction` |
+| `transfer_evidence_directory` | string | exact `examples/validation_study/.study-work/evidence/STUDY_ID/RUN_ID` |
 | `command` | array of string | exactly `uv`, `run`, `--locked`, `trafficlab`, `run`, config path |
 | `guard_command` | array of string | exact bounded wrapper plus `command` |
 | `guard_exit_status` | integer | exactly `0` |
@@ -1028,10 +1028,10 @@ element equals that record's `config_path`. `guard_command` is exactly:
 
 ## Checked-in and ignored artifacts
 
-Phase 7 adds this checked tree:
+Validation Study adds this checked tree:
 
 ```text
-examples/phase7/
+examples/validation_study/
   README.md
   REPORT.md
   prerequisites.json
@@ -1061,15 +1061,15 @@ effective configuration hashes.
 6. saved-run reproduction evidence;
 7. limitations and one evidence-backed next-work decision.
 
-Raw run directories live under ignored `runs/phase7/STUDY_ID/`. Do not check in
+Raw run directories live under ignored `runs/validation_study/STUDY_ID/`. Do not check in
 any Internet PCAPNG, checkpoint, full run log, generated PCAPNG, response
 header, JUnit XML, command output, or failed-attempt directory. The existing
 `runs/` rule covers the run root; implementation adds the exact
-`examples/phase7/.study-work/` ignore and does not ignore the checked Phase 7
+`examples/validation_study/.study-work/` ignore and does not ignore the checked Validation Study
 JSON, configs, README, or report.
 
 Header, JUnit, and command evidence lives only under
-`examples/phase7/.study-work/evidence/STUDY_ID/`, outside every production run
+`examples/validation_study/.study-work/evidence/STUDY_ID/`, outside every production run
 directory. Relevant hashes remain in the checked JSON files and both ignored
 study-ID trees remain available for audit by default. After accepting the
 report, the operator may manually remove those two exact study-ID trees when
@@ -1083,10 +1083,10 @@ study-publication rule, not a new security subsystem.
 The protocol preselects `streaming` repeat 2 before any score is observed. After
 all nine primary runs, copy its saved effective `experiment.toml`, change only
 `run.directory` to the new absent
-`runs/phase7/STUDY_ID/10-streaming-r2-reproduction/` directory, render and
+`runs/validation_study/STUDY_ID/10-streaming-r2-reproduction/` directory, render and
 reload it, and require structural equality for every other exhaustive config
 field. Write the caller config outside that absent run directory at
-`runs/phase7/STUDY_ID/realized-configs/reproduction.toml`. Do not copy or seed
+`runs/validation_study/STUDY_ID/realized-configs/reproduction.toml`. Do not copy or seed
 `capture.json`, a PCAPNG, checkpoint, history, model, similarity, run log, or any
 other stage artifact into the new directory.
 
@@ -1098,7 +1098,7 @@ scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked trafficlab run \
-  runs/phase7/STUDY_ID/realized-configs/reproduction.toml
+  runs/validation_study/STUDY_ID/realized-configs/reproduction.toml
 ```
 
 The support script invokes that exact top-level argv with `shell=False`; the
@@ -1219,7 +1219,7 @@ disagreement is evidence to explain, not an infrastructure failure.
 
 ## Testing
 
-Unit tests for `scripts/run_phase7_study.py` use temporary files and injected
+Unit tests for `scripts/run_validation_study.py` use temporary files and injected
 boundaries. They cover:
 
 - HTTPS URL, redirect, credential, range response, object-size, and payload
@@ -1264,13 +1264,13 @@ saved-configuration reproduction. The ordinary fast and branch-coverage gates
 remain Docker- and Internet-free.
 
 Because `scripts/` is outside the current project-wide Pyright include, the
-Phase 7 gate type-checks the script explicitly without broadening unrelated
+Validation Study gate type-checks the script explicitly without broadening unrelated
 scope:
 
 ```bash
-uv run --locked pyright scripts/run_phase7_study.py \
-  tests/unit/test_phase7_study.py \
-  tests/integration/test_phase7_study.py
+uv run --locked pyright scripts/run_validation_study.py \
+  tests/unit/test_validation_study.py \
+  tests/integration/test_validation_study_pipeline.py
 ```
 
 ## Metric-disagreement interpretation
@@ -1289,7 +1289,7 @@ rank alone. Important patterns include:
   equality; final guards or same-seed randomness are not valid explanations.
 
 The report names concrete diagnostic fields and visible trace summaries for
-every claimed disagreement. Phase 7 may recommend a later Roadmap idea only
+every claimed disagreement. Validation Study may recommend a later Roadmap idea only
 when the behavior is repeatable and the current models or metrics demonstrably
 miss it.
 

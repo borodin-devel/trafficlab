@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run and validate the fixed Phase 7 MVP study protocol."""
+"""Run and validate the fixed MVP Validation Study protocol."""
 
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ CURL_COMMON = (
     "15",
 )
 _LOCKED_CURL_COMMON = CURL_COMMON
-_ORACLE_URL = "https://phase7.example/object"
+_ORACLE_URL = "https://validation-study.example/object"
 
 PREREQUISITE_ROOT_KEYS = (
     "schema_version",
@@ -557,12 +557,12 @@ def build_base_config(
     url = validate_endpoint_url(url)
     _image_id(capture_image_id, name="capture image ID")
     exact_workloads = workload_specs(url)
-    _require(workload in exact_workloads, "workload must equal one exact Phase 7 profile")
+    _require(workload in exact_workloads, "workload must equal one exact Validation Study profile")
     root = repository_root.resolve()
-    run_directory = (root / "runs" / "phase7" / study_id / _base_run_id(workload.name)).resolve()
+    run_directory = (root / "runs" / "validation_study" / study_id / _base_run_id(workload.name)).resolve()
     if require_absent_run_directory:
         _require(not _path_entry_exists(run_directory), f"run directory already exists: {run_directory}")
-    mount_source = (root / "examples" / "phase7" / ".study-work" / "mount" / study_id).resolve()
+    mount_source = (root / "examples" / "validation_study" / ".study-work" / "mount" / study_id).resolve()
     return ExperimentConfig.model_validate(
         {
             "run": {
@@ -674,7 +674,7 @@ def _workload_for_config(config: ExperimentConfig) -> WorkloadSpec:
     matches = tuple(
         workload for workload in workload_specs(config.capture.network_probe_url) if workload.argv == config.target.argv
     )
-    _require(len(matches) == 1, "config target argv must equal one exact Phase 7 workload profile")
+    _require(len(matches) == 1, "config target argv must equal one exact Validation Study workload profile")
     return matches[0]
 
 
@@ -694,8 +694,8 @@ def _portable_base_config(
         capture_image_id=config.capture.image,
         require_absent_run_directory=require_absent_run_directory,
     )
-    _require(config == expected, "base config must equal every locked Phase 7 value")
-    relative_run = Path("../../../runs/phase7") / study_id / _base_run_id(workload.name)
+    _require(config == expected, "base config must equal every locked Validation Study value")
+    relative_run = Path("../../../runs/validation_study") / study_id / _base_run_id(workload.name)
     run = config.run.model_copy(update={"directory": relative_run})
     relative_mount = Path("../.study-work/mount") / study_id
     mount = config.target.mounts[0].model_copy(update={"source": relative_mount})
@@ -716,7 +716,7 @@ def _write_new_config(destination: Path, content: bytes) -> None:
 def render_checked_base_config(config: ExperimentConfig, destination: Path, repository_root: Path) -> bytes:
     root = repository_root.resolve()
     workload = _workload_for_config(config)
-    expected_destination = root / "examples" / "phase7" / "configs" / f"{workload.name}.toml"
+    expected_destination = root / "examples" / "validation_study" / "configs" / f"{workload.name}.toml"
     _require(destination.resolve() == expected_destination, "checked config must use its exact profile path")
     portable = _portable_base_config(config, repository_root=root, workload=workload)
     content = render_effective_config(portable)
@@ -758,7 +758,7 @@ def validate_base_configs(
     hashes = validated_prerequisites.config_sha256
     result: dict[WorkloadName, ExperimentConfig] = {}
     for workload in workload_specs(validated_prerequisites.url):
-        path = root / "examples" / "phase7" / "configs" / f"{workload.name}.toml"
+        path = root / "examples" / "validation_study" / "configs" / f"{workload.name}.toml"
         try:
             content = path.read_bytes()
         except OSError as error:
@@ -776,7 +776,7 @@ def validate_base_configs(
             capture_image_id=capture_image_id,
             require_absent_run_directory=require_absent_run_directories,
         )
-        _require(config == expected, f"checked {workload.name} config must equal every locked Phase 7 value")
+        _require(config == expected, f"checked {workload.name} config must equal every locked Validation Study value")
         expected_content = render_effective_config(
             _portable_base_config(
                 expected,
@@ -802,7 +802,7 @@ def _workload_url(workload: WorkloadSpec) -> str:
     urls = tuple(workload.argv[index + 1] for index, token in enumerate(workload.argv[:-1]) if token == "--url")
     _require(bool(urls) and len(set(urls)) == 1, "workload must contain one exact URL for every transfer")
     url = validate_endpoint_url(urls[0])
-    _require(workload in workload_specs(url), "workload must equal one exact Phase 7 profile")
+    _require(workload in workload_specs(url), "workload must equal one exact Validation Study profile")
     return url
 
 
@@ -818,7 +818,7 @@ def prepare_transfer_scratch(
         "run ID must be a simple lowercase identifier",
     )
     root = repository_root.resolve()
-    mount_directory = root / "examples" / "phase7" / ".study-work" / "mount" / validate_study_id(study_id)
+    mount_directory = root / "examples" / "validation_study" / ".study-work" / "mount" / validate_study_id(study_id)
     if _path_entry_exists(mount_directory):
         mode = mount_directory.lstat().st_mode
         _require(stat.S_ISDIR(mode) and not stat.S_ISLNK(mode), "study mount must be a regular directory")
@@ -845,7 +845,7 @@ def prepare_transfer_scratch(
         )
         prepared[filename] = (path, metadata.st_ino)
 
-    evidence_parent = root / "examples" / "phase7" / ".study-work" / "evidence" / study_id
+    evidence_parent = root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id
     evidence_parent.mkdir(parents=True, exist_ok=True)
     evidence_directory = evidence_parent / run_id
     try:
@@ -956,7 +956,7 @@ def archive_transfer_evidence(
     _require(tuple(prepared) == expected_names, "prepared scratch must contain the exact workload header names")
     root = repository_root.resolve()
     evidence_directory = (
-        root / "examples" / "phase7" / ".study-work" / "evidence" / validate_study_id(study_id) / run_id
+        root / "examples" / "validation_study" / ".study-work" / "evidence" / validate_study_id(study_id) / run_id
     )
     evidence_mode = evidence_directory.lstat().st_mode
     _require(
@@ -967,7 +967,7 @@ def archive_transfer_evidence(
     try:
         for index, (start, end, filename) in enumerate(workload.transfers):
             scratch, inode = prepared[filename]
-            expected_scratch = root / "examples" / "phase7" / ".study-work" / "mount" / study_id / filename
+            expected_scratch = root / "examples" / "validation_study" / ".study-work" / "mount" / study_id / filename
             _require(scratch == expected_scratch, f"scratch {filename} must use the exact study mount path")
             metadata = scratch.lstat()
             _require(
@@ -1546,7 +1546,7 @@ def _read_exact_artifact_set(run_directory: Path) -> dict[str, bytes]:
         return {name: (run_directory / name).read_bytes() for name in ARTIFACT_NAMES}
     except OSError as error:
         raise TrafficlabError(
-            f"could not read complete Phase 7 run evidence {run_directory}: {error}",
+            f"could not read complete Validation Study run evidence {run_directory}: {error}",
             corrective_action="preserve the run and inspect its exact nine artifact files",
         ) from error
 
@@ -1556,11 +1556,11 @@ def _artifact_identities(run_directory: Path) -> dict[str, FileIdentity]:
     for name in ARTIFACT_NAMES:
         identity = _file_identity(
             run_directory / name,
-            kind="Phase 7 evidence artifact",
+            kind="Validation Study evidence artifact",
             corrective_action="preserve the run and inspect its exact nine artifact files",
         )
         if identity is None:
-            raise ValueError(f"Phase 7 evidence artifact is missing: {name}")
+            raise ValueError(f"Validation Study evidence artifact is missing: {name}")
         identities[name] = identity
     return identities
 
@@ -2274,7 +2274,7 @@ def _command_study_id(argv: Sequence[str]) -> str:
     parts = junit_path.parts
     _require(
         len(parts) == 7
-        and parts[:4] == ("examples", "phase7", ".study-work", "evidence")
+        and parts[:4] == ("examples", "validation_study", ".study-work", "evidence")
         and parts[5] == "00-prerequisites",
         "prerequisite command must use its exact repository-relative JUnit path",
     )
@@ -2620,7 +2620,7 @@ def _remove_owned_capability_if_present(
         _require(
             document.get("Id") == container_id
             and document.get("Name") == f"/{capability_name}"
-            and cast(dict[str, object], labels).get("org.trafficlab.phase7.study") == study_id,
+            and cast(dict[str, object], labels).get("org.trafficlab.validation-study.study") == study_id,
             f"ownership could not be proved; container {container_id} may remain",
         )
         removed = runner(
@@ -2684,7 +2684,7 @@ def _prepare_capability(
     runner: CommandRunner,
     utc_now: Callable[[], datetime],
 ) -> JsonObject:
-    capability_name = f"trafficlab-phase7-capability-{study_id}"
+    capability_name = f"trafficlab-validation-study-capability-{study_id}"
     capability_cid = evidence_directory / "capability.cid"
     canary = mount_directory / ".capability.headers"
     _require(not _path_entry_exists(capability_cid), "capability CID path must be absent before launch")
@@ -2800,8 +2800,10 @@ def _prepare_capability(
         "body_bytes_downloaded": downloaded,
         "content_range": content_range,
         "final_url": header_final_url,
-        "mount_source": f"examples/phase7/.study-work/mount/{study_id}",
-        "canary_archive_path": (f"examples/phase7/.study-work/evidence/{study_id}/00-prerequisites/capability.headers"),
+        "mount_source": f"examples/validation_study/.study-work/mount/{study_id}",
+        "canary_archive_path": (
+            f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites/capability.headers"
+        ),
         "canary_sha256": hashlib.sha256(header_bytes).hexdigest(),
         "container_id": container_id,
         "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
@@ -2815,7 +2817,7 @@ def _prepare_capability(
 
 
 def _expected_prerequisite_command(kind: PrerequisiteCommandKind, *, study_id: str, url: str) -> tuple[str, ...]:
-    evidence = f"examples/phase7/.study-work/evidence/{study_id}/00-prerequisites"
+    evidence = f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites"
     pytest_prefix = ("uv", "run", "--locked", "pytest", "-vv", "-n", "0", "-m")
     if kind == "docker_matrix":
         return (*_guard_prefix("20m"), *pytest_prefix, "docker", "--junitxml", f"{evidence}/docker.xml")
@@ -2866,16 +2868,16 @@ def _validate_command(value: object, *, expected_kind: PrerequisiteCommandKind, 
 
 
 def _expected_capability_argv(study_id: str, url: str) -> tuple[str, ...]:
-    evidence = f"examples/phase7/.study-work/evidence/{study_id}/00-prerequisites"
-    mount_source = f"examples/phase7/.study-work/mount/{study_id}"
+    evidence = f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites"
+    mount_source = f"examples/validation_study/.study-work/mount/{study_id}"
     return (
         "docker",
         "run",
         "--rm",
         "--name",
-        f"trafficlab-phase7-capability-{study_id}",
+        f"trafficlab-validation-study-capability-{study_id}",
         "--label",
-        f"org.trafficlab.phase7.study={study_id}",
+        f"org.trafficlab.validation-study.study={study_id}",
         "--cidfile",
         f"{evidence}/capability.cid",
         "--network",
@@ -2953,7 +2955,7 @@ def _validate_capability(
     mount_source = _repository_relative_path(
         document["mount_source"], repository_root=repository_root, name="capability mount source"
     )
-    expected_mount = f"examples/phase7/.study-work/mount/{study_id}"
+    expected_mount = f"examples/validation_study/.study-work/mount/{study_id}"
     _require(
         mount_source == expected_mount,
         "capability mount source must equal the study repository-relative mount path",
@@ -2961,7 +2963,7 @@ def _validate_capability(
     archive_path = _repository_relative_path(
         document["canary_archive_path"], repository_root=repository_root, name="capability canary archive path"
     )
-    expected_archive = f"examples/phase7/.study-work/evidence/{study_id}/00-prerequisites/capability.headers"
+    expected_archive = f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites/capability.headers"
     _require(
         archive_path == expected_archive,
         "capability canary archive path must equal the study evidence path",
@@ -3064,7 +3066,7 @@ def _publish_support_json(
 ) -> None:
     if _path_entry_exists(path):
         raise TrafficlabError(
-            f"official Phase 7 publication target already exists: {path}",
+            f"official Validation Study publication target already exists: {path}",
             corrective_action="preserve the existing official file and restart with a new study ID",
         )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -3078,13 +3080,13 @@ def _publish_support_json(
             stream.flush()
             os.fsync(stream.fileno())
         persisted = temporary.read_bytes()
-        _require(persisted == content, "temporary official Phase 7 JSON bytes changed before publication")
+        _require(persisted == content, "temporary official Validation Study JSON bytes changed before publication")
         validate(persisted)
         try:
             os.link(temporary, path)
         except FileExistsError as error:
             raise TrafficlabError(
-                f"official Phase 7 publication target already exists: {path}",
+                f"official Validation Study publication target already exists: {path}",
                 corrective_action="preserve the existing official file and restart with a new study ID",
             ) from error
         directory_descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
@@ -3093,7 +3095,7 @@ def _publish_support_json(
         finally:
             os.close(directory_descriptor)
         published = path.read_bytes()
-        _require(published == content, "published official Phase 7 JSON bytes changed")
+        _require(published == content, "published official Validation Study JSON bytes changed")
         validate(published)
     finally:
         if descriptor_open:
@@ -3107,7 +3109,13 @@ def _validate_prerequisite_evidence(
 ) -> None:
     root = repository_root.resolve()
     evidence_directory = (
-        root / "examples" / "phase7" / ".study-work" / "evidence" / prerequisites.study_id / "00-prerequisites"
+        root
+        / "examples"
+        / "validation_study"
+        / ".study-work"
+        / "evidence"
+        / prerequisites.study_id
+        / "00-prerequisites"
     )
     expected_names = {
         "capability.headers",
@@ -3258,9 +3266,10 @@ def run_prerequisites(
         _require(root.is_dir(), f"repository root must be an existing directory: {root}")
         url = validate_endpoint_url(url)
         study_id = validate_study_id(study_id)
-        prerequisite_path = root / "examples" / "phase7" / "prerequisites.json"
+        prerequisite_path = root / "examples" / "validation_study" / "prerequisites.json"
         config_paths = {
-            name: root / "examples" / "phase7" / "configs" / f"{name}.toml" for name in ("short", "streaming", "bursty")
+            name: root / "examples" / "validation_study" / "configs" / f"{name}.toml"
+            for name in ("short", "streaming", "bursty")
         }
         _require(not _path_entry_exists(prerequisite_path), f"prerequisite target already exists: {prerequisite_path}")
         for name, path in config_paths.items():
@@ -3325,10 +3334,12 @@ def run_prerequisites(
             _stdout_text(compose_version, operation="Docker Compose version"), name="Docker Compose version"
         )
 
-        evidence_directory = root / "examples" / "phase7" / ".study-work" / "evidence" / study_id / "00-prerequisites"
+        evidence_directory = (
+            root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / "00-prerequisites"
+        )
         evidence_directory.parent.mkdir(parents=True, exist_ok=True)
         evidence_directory.mkdir()
-        mount_directory = root / "examples" / "phase7" / ".study-work" / "mount" / study_id
+        mount_directory = root / "examples" / "validation_study" / ".study-work" / "mount" / study_id
         mount_directory.mkdir(parents=True)
         mount_directory.chmod(0o755)
         _require(
@@ -3460,11 +3471,11 @@ def run_prerequisites(
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
         if type(study_id) is str and _STUDY_ID_PATTERN.fullmatch(study_id) is not None:
             _best_effort_preserve_capability_canary(
-                root / "examples" / "phase7" / ".study-work" / "evidence" / study_id / "00-prerequisites",
-                root / "examples" / "phase7" / ".study-work" / "mount" / study_id / ".capability.headers",
+                root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / "00-prerequisites",
+                root / "examples" / "validation_study" / ".study-work" / "mount" / study_id / ".capability.headers",
             )
         raise TrafficlabError(
-            f"Phase 7 prerequisite validation failed: {error}",
+            f"Validation Study prerequisite validation failed: {error}",
             corrective_action="preserve the ignored evidence, correct the prerequisite, and restart with a new study ID",
         ) from error
 
@@ -3906,15 +3917,15 @@ def _validate_run_document(
         name="transfer evidence directory",
     )
     _require(
-        config_path == f"runs/phase7/{study_id}/realized-configs/{run_id}.toml",
+        config_path == f"runs/validation_study/{study_id}/realized-configs/{run_id}.toml",
         "primary config path must equal its exact realized config path",
     )
     _require(
-        run_directory == f"runs/phase7/{study_id}/{run_id}",
+        run_directory == f"runs/validation_study/{study_id}/{run_id}",
         "primary run directory must equal its exact run path",
     )
     _require(
-        evidence_directory == f"examples/phase7/.study-work/evidence/{study_id}/{run_id}",
+        evidence_directory == f"examples/validation_study/.study-work/evidence/{study_id}/{run_id}",
         "primary transfer evidence directory must equal its exact sibling evidence path",
     )
     _validate_run_evidence(
@@ -4001,7 +4012,7 @@ def _validate_protocol(value: object, *, repository_root: Path) -> JsonObject:
         name="protocol transfer evidence mount source",
     )
     _require(
-        mount_source == f"examples/phase7/.study-work/mount/{study_id}",
+        mount_source == f"examples/validation_study/.study-work/mount/{study_id}",
         "protocol mount source must equal the exact study mount",
     )
     primary_items = _strict_list(document["primary_order"], name="protocol primary order")
@@ -4261,9 +4272,9 @@ def _validate_reproduction(
         repository_root=repository_root,
         name="reproduction transfer evidence directory",
     )
-    expected_config = f"runs/phase7/{study_id}/realized-configs/reproduction.toml"
-    expected_run = f"runs/phase7/{study_id}/{run_id}"
-    expected_evidence = f"examples/phase7/.study-work/evidence/{study_id}/{run_id}"
+    expected_config = f"runs/validation_study/{study_id}/realized-configs/reproduction.toml"
+    expected_run = f"runs/validation_study/{study_id}/{run_id}"
+    expected_evidence = f"examples/validation_study/.study-work/evidence/{study_id}/{run_id}"
     _require(
         (config_path, run_directory, evidence_directory) == (expected_config, expected_run, expected_evidence),
         "reproduction paths must equal the exact fresh tenth-run paths",
@@ -4471,10 +4482,10 @@ def _study_git_status_is_permitted(content: bytes) -> bool:
     except UnicodeDecodeError:
         return False
     permitted = {
-        "examples/phase7/prerequisites.json",
-        "examples/phase7/configs/short.toml",
-        "examples/phase7/configs/streaming.toml",
-        "examples/phase7/configs/bursty.toml",
+        "examples/validation_study/prerequisites.json",
+        "examples/validation_study/configs/short.toml",
+        "examples/validation_study/configs/streaming.toml",
+        "examples/validation_study/configs/bursty.toml",
     }
     return all(line.startswith("?? ") and line[3:] in permitted for line in lines)
 
@@ -4508,7 +4519,7 @@ def _study_identity(
     status_stdout, _status_stderr = _completed_output(status_result, operation="Git tree inspection")
     _require(
         _study_git_status_is_permitted(status_stdout),
-        "study checkout may differ only by the generated Phase 7 prerequisite and checked base configs",
+        "study checkout may differ only by the generated Validation Study prerequisite and checked base configs",
     )
     return {
         "git_commit": _git_commit(_stdout_text(commit_result, operation="Git commit inspection")),
@@ -4568,12 +4579,12 @@ def _validated_study_inputs(
     runner: CommandRunner,
 ) -> tuple[PrerequisiteResults, dict[WorkloadName, ExperimentConfig], JsonObject, bytes]:
     root = repository_root.resolve()
-    expected_path = root / "examples" / "phase7" / "prerequisites.json"
+    expected_path = root / "examples" / "validation_study" / "prerequisites.json"
     _require(prerequisite_path.resolve() == expected_path, "study prerequisite path must use its exact checked path")
     try:
         prerequisite_content = prerequisite_path.read_bytes()
     except OSError as error:
-        raise ValueError(f"could not read Phase 7 prerequisites: {error}") from error
+        raise ValueError(f"could not read Validation Study prerequisites: {error}") from error
     prerequisites = parse_prerequisite_results(prerequisite_content, repository_root=root)
     _validate_prerequisite_evidence(root, prerequisites)
     _require(
@@ -4619,9 +4630,9 @@ def _primary_run_specs(
     specs: list[StudyRunSpec] = []
     for order, run_id, workload_value, repeat in PRIMARY_ORDER:
         workload = cast(WorkloadName, workload_value)
-        run_directory = root / "runs" / "phase7" / study_id / run_id
-        config_path = root / "runs" / "phase7" / study_id / "realized-configs" / f"{run_id}.toml"
-        evidence_directory = root / "examples" / "phase7" / ".study-work" / "evidence" / study_id / run_id
+        run_directory = root / "runs" / "validation_study" / study_id / run_id
+        config_path = root / "runs" / "validation_study" / study_id / "realized-configs" / f"{run_id}.toml"
+        evidence_directory = root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / run_id
         for path, name in (
             (run_directory, "primary run directory"),
             (config_path, "primary realized config"),
@@ -4694,7 +4705,7 @@ def _protocol_record(
             "prerequisites_sha256": sha256_bytes(prerequisite_content),
             "target_reference": TARGET_REFERENCE,
             "capture_image_id": cast(str, prerequisites.images["capture_image_id"]),
-            "transfer_evidence_mount_source": (f"examples/phase7/.study-work/mount/{prerequisites.study_id}"),
+            "transfer_evidence_mount_source": (f"examples/validation_study/.study-work/mount/{prerequisites.study_id}"),
             "base_config_sha256": _thaw_json(prerequisites.config_sha256),
             "primary_order": [
                 {"workload": workload, "repeat": repeat} for _order, _run_id, workload, repeat in PRIMARY_ORDER
@@ -4730,9 +4741,9 @@ def _run_cli_reproduction(
 ) -> ReproductionRecord:
     root = repository_root.resolve()
     run_id = "10-streaming-r2-reproduction"
-    run_directory = root / "runs" / "phase7" / study_id / run_id
-    config_path = root / "runs" / "phase7" / study_id / "realized-configs" / "reproduction.toml"
-    evidence_directory = root / "examples" / "phase7" / ".study-work" / "evidence" / study_id / run_id
+    run_directory = root / "runs" / "validation_study" / study_id / run_id
+    config_path = root / "runs" / "validation_study" / study_id / "realized-configs" / "reproduction.toml"
+    evidence_directory = root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / run_id
     prepared: Mapping[str, tuple[Path, int]] = {}
     try:
         _require(
@@ -4810,7 +4821,7 @@ def _run_cli_reproduction(
         archive_diagnostic = _best_effort_archive(evidence_directory, prepared)
         secondary = f"; secondary evidence archive failure: {archive_diagnostic}" if archive_diagnostic else ""
         raise TrafficlabError(
-            f"Phase 7 reproduction failed for workload streaming, repeat 2, position 10, raw run path "
+            f"Validation Study reproduction failed for workload streaming, repeat 2, position 10, raw run path "
             f"{_repository_path_record(run_directory, repository_root=root, name='failed reproduction path')}: "
             f"{error}{secondary}",
             corrective_action="preserve the failed evidence and restart the balanced protocol with a new study ID",
@@ -4989,7 +5000,7 @@ def run_study(
     try:
         url = validate_endpoint_url(url)
         study_id = validate_study_id(study_id)
-        results_path = root / "examples" / "phase7" / "results.json"
+        results_path = root / "examples" / "validation_study" / "results.json"
         _require(not _path_entry_exists(results_path), f"study result target already exists: {results_path}")
         prerequisites, configs, identity, prerequisite_content = _validated_study_inputs(
             url,
@@ -5038,7 +5049,7 @@ def run_study(
                 archive_diagnostic = _best_effort_archive(spec.transfer_evidence_directory, prepared)
                 secondary = f"; secondary evidence archive failure: {archive_diagnostic}" if archive_diagnostic else ""
                 raise TrafficlabError(
-                    f"Phase 7 primary failed for workload {spec.workload}, repeat {spec.repeat}, "
+                    f"Validation Study primary failed for workload {spec.workload}, repeat {spec.repeat}, "
                     f"position {spec.execution_order}, raw run path "
                     f"{_repository_path_record(spec.run_directory, repository_root=root, name='failed run path')}; "
                     f"restart with a new study ID: {error}{secondary}",
@@ -5078,7 +5089,7 @@ def run_study(
         raise
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
         raise TrafficlabError(
-            f"Phase 7 study validation failed: {error}",
+            f"Validation Study failed validation: {error}",
             corrective_action="preserve the ignored evidence, correct the failure, and restart with a new study ID",
         ) from error
 
@@ -5219,9 +5230,9 @@ def audit_published_study(
     root = repository_root.resolve()
     try:
         expected_paths = (
-            (prerequisite_path, root / "examples" / "phase7" / "prerequisites.json", "prerequisite"),
-            (result_path, root / "examples" / "phase7" / "results.json", "result"),
-            (report_path, root / "examples" / "phase7" / "REPORT.md", "report"),
+            (prerequisite_path, root / "examples" / "validation_study" / "prerequisites.json", "prerequisite"),
+            (result_path, root / "examples" / "validation_study" / "results.json", "result"),
+            (report_path, root / "examples" / "validation_study" / "REPORT.md", "report"),
         )
         for path, expected, name in expected_paths:
             _require(path.resolve() == expected, f"audit {name} path must use its exact checked location")
@@ -5279,7 +5290,7 @@ def audit_published_study(
         raise
     except (OSError, TypeError, UnicodeDecodeError, ValueError) as error:
         raise TrafficlabError(
-            f"Phase 7 local report audit failed: {error}",
+            f"Validation Study local report audit failed: {error}",
             corrective_action="preserve retained evidence and correct the checked report or result files",
         ) from error
 
@@ -5289,7 +5300,7 @@ def _utc_now() -> datetime:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="run_phase7_study.py", description=__doc__)
+    parser = argparse.ArgumentParser(prog="run_validation_study.py", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     prerequisites = commands.add_parser("prerequisites")
     prerequisites.add_argument("--url", required=True)
@@ -5325,7 +5336,7 @@ def main(
             study_id = validate_study_id(parsed.study_id)
         except ValueError as error:
             raise TrafficlabError(
-                f"invalid Phase 7 command arguments: {error}",
+                f"invalid Validation Study command arguments: {error}",
                 corrective_action="supply the exact credential-free HTTPS URL and lowercase study ID",
             ) from error
         if parsed.command == "prerequisites":
@@ -5336,8 +5347,8 @@ def main(
                 runner=runner,
                 utc_now=utc_now,
             )
-            output_path = repository_root.resolve() / "examples" / "phase7" / "prerequisites.json"
-            print(f"phase7: prerequisites validated for {result.study_id} at {output_path}")
+            output_path = repository_root.resolve() / "examples" / "validation_study" / "prerequisites.json"
+            print(f"validation-study: prerequisites validated for {result.study_id} at {output_path}")
             return 0
         try:
             prerequisite_record = _repository_relative_path(
@@ -5347,7 +5358,7 @@ def main(
             )
         except ValueError as error:
             raise TrafficlabError(
-                f"invalid Phase 7 command arguments: {error}",
+                f"invalid Validation Study command arguments: {error}",
                 corrective_action="supply the exact repository-relative checked prerequisite path",
             ) from error
         prerequisite_path = repository_root.resolve() / Path(*prerequisite_record.split("/"))
@@ -5361,11 +5372,11 @@ def main(
             perf_counter=perf_counter,
             utc_now=utc_now,
         )
-        output_path = repository_root.resolve() / "examples" / "phase7" / "results.json"
-        print(f"phase7: study completed with {len(result.runs)} primary runs at {output_path}")
+        output_path = repository_root.resolve() / "examples" / "validation_study" / "results.json"
+        print(f"validation-study: study completed with {len(result.runs)} primary runs at {output_path}")
         return 0
     except TrafficlabError as error:
-        print(f"phase7: {error}; {error.corrective_action}", file=sys.stderr)
+        print(f"validation-study: {error}; {error.corrective_action}", file=sys.stderr)
         return error.exit_code
 
 

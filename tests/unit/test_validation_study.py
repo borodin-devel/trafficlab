@@ -19,7 +19,7 @@ from typing import Any, Literal, cast
 import pytest
 import tomli_w
 
-from scripts import run_phase7_study as study
+from scripts import run_validation_study as study
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
@@ -59,11 +59,17 @@ class _ScriptedPrerequisiteRunner:
         self.target_id = f"sha256:{'b' * 64}"
         self.capture_id = f"sha256:{'d' * 64}"
         self.container_id = "e" * 64
-        self.capability_name = f"trafficlab-phase7-capability-{self.study_id}"
+        self.capability_name = f"trafficlab-validation-study-capability-{self.study_id}"
         self.evidence = (
-            self.root / "examples" / "phase7" / ".study-work" / "evidence" / self.study_id / "00-prerequisites"
+            self.root
+            / "examples"
+            / "validation_study"
+            / ".study-work"
+            / "evidence"
+            / self.study_id
+            / "00-prerequisites"
         )
-        self.mount = self.root / "examples" / "phase7" / ".study-work" / "mount" / self.study_id
+        self.mount = self.root / "examples" / "validation_study" / ".study-work" / "mount" / self.study_id
         self.calls: list[tuple[tuple[str, ...], float]] = []
         self.container_running = False
         self.capability_finished = False
@@ -171,7 +177,7 @@ class _ScriptedPrerequisiteRunner:
                 {
                     "Id": self.container_id,
                     "Name": f"/{self.capability_name}",
-                    "Config": {"Labels": {"org.trafficlab.phase7.study": label}},
+                    "Config": {"Labels": {"org.trafficlab.validation-study.study": label}},
                 }
             ]
             return subprocess.CompletedProcess(command, 0, stdout=json.dumps(inspected).encode(), stderr=b"")
@@ -301,9 +307,9 @@ def _valid_prerequisite() -> study.PrerequisiteResults:
     url = "https://downloads.example.test/object.bin"
     started = "2026-08-13T12:00:00Z"
     completed = "2026-08-13T12:01:00Z"
-    mount_source = f"examples/phase7/.study-work/mount/{study_id}"
-    archive_path = f"examples/phase7/.study-work/evidence/{study_id}/00-prerequisites/capability.headers"
-    evidence_root = f"examples/phase7/.study-work/evidence/{study_id}/00-prerequisites"
+    mount_source = f"examples/validation_study/.study-work/mount/{study_id}"
+    archive_path = f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites/capability.headers"
+    evidence_root = f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites"
     guard = [
         "scripts/run_bounded.sh",
         "--memory-high",
@@ -369,9 +375,9 @@ def _valid_prerequisite() -> study.PrerequisiteResults:
         "run",
         "--rm",
         "--name",
-        f"trafficlab-phase7-capability-{study_id}",
+        f"trafficlab-validation-study-capability-{study_id}",
         "--label",
-        f"org.trafficlab.phase7.study={study_id}",
+        f"org.trafficlab.validation-study.study={study_id}",
         "--cidfile",
         f"{evidence_root}/capability.cid",
         "--network",
@@ -485,7 +491,7 @@ def _expected_base_config(
     }[workload]
     return {
         "run": {
-            "directory": (repository_root / "runs" / "phase7" / study_id / first_run).resolve(),
+            "directory": (repository_root / "runs" / "validation_study" / study_id / first_run).resolve(),
             "minimum_free_bytes": 1_048_576,
             "master_seed": 73,
             "final_seed": 97,
@@ -497,7 +503,9 @@ def _expected_base_config(
             "working_directory": "/",
             "mounts": (
                 {
-                    "source": (repository_root / "examples" / "phase7" / ".study-work" / "mount" / study_id).resolve(),
+                    "source": (
+                        repository_root / "examples" / "validation_study" / ".study-work" / "mount" / study_id
+                    ).resolve(),
                     "target": "/trafficlab-study",
                     "read_only": False,
                 },
@@ -604,7 +612,7 @@ def _write_checked_configs(
             url=url,
             capture_image_id=capture_image_id,
         )
-        destination = repository_root / "examples" / "phase7" / "configs" / f"{spec.name}.toml"
+        destination = repository_root / "examples" / "validation_study" / "configs" / f"{spec.name}.toml"
         contents[spec.name] = study.render_checked_base_config(config, destination, repository_root)
     prerequisite = replace(
         _valid_prerequisite(),
@@ -627,7 +635,7 @@ def _write_retained_prerequisite_evidence(
     evidence = (
         repository_root
         / "examples"
-        / "phase7"
+        / "validation_study"
         / ".study-work"
         / "evidence"
         / prerequisite.study_id
@@ -810,7 +818,7 @@ def _transfer_responses(study_id: str, run_id: str, workload: str) -> list[dict[
             "status": 206,
             "content_length": end - start + 1,
             "content_range": f"bytes {start}-{end}/4194304",
-            "header_archive_path": (f"examples/phase7/.study-work/evidence/{study_id}/{run_id}/{filename}"),
+            "header_archive_path": (f"examples/validation_study/.study-work/evidence/{study_id}/{run_id}/{filename}"),
             "header_sha256": _HASH,
             "scratch_precreate_mode": 438,
             "archive_mode": 384,
@@ -836,9 +844,9 @@ def _run_document(
         "execution_order": execution_order,
         "run_id": run_id,
         "key": {"workload": workload, "repeat": repeat},
-        "config_path": f"runs/phase7/{study_id}/realized-configs/{run_id}.toml",
-        "run_directory": f"runs/phase7/{study_id}/{run_id}",
-        "transfer_evidence_directory": f"examples/phase7/.study-work/evidence/{study_id}/{run_id}",
+        "config_path": f"runs/validation_study/{study_id}/realized-configs/{run_id}.toml",
+        "run_directory": f"runs/validation_study/{study_id}/{run_id}",
+        "transfer_evidence_directory": f"examples/validation_study/.study-work/evidence/{study_id}/{run_id}",
         "elapsed_seconds": float(repeat),
         "reuse": {"capture": False, "best_model": False, "generated": False, "similarity": False},
         "cleanup_verified": True,
@@ -971,7 +979,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
     source_winner = cast(dict[str, object], source["winner"])
     source_held_score = cast(dict[str, object], cast(dict[str, object], source["held_out"])["score"])
     source_published_score = cast(dict[str, object], cast(dict[str, object], source["published"])["score"])
-    config_path = f"runs/phase7/{study_id}/realized-configs/reproduction.toml"
+    config_path = f"runs/validation_study/{study_id}/realized-configs/reproduction.toml"
     command = ["uv", "run", "--locked", "trafficlab", "run", config_path]
     guard_command = [
         "scripts/run_bounded.sh",
@@ -993,8 +1001,10 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
         "execution_order": 10,
         "run_id": reproduction_run_id,
         "config_path": config_path,
-        "run_directory": f"runs/phase7/{study_id}/{reproduction_run_id}",
-        "transfer_evidence_directory": (f"examples/phase7/.study-work/evidence/{study_id}/{reproduction_run_id}"),
+        "run_directory": f"runs/validation_study/{study_id}/{reproduction_run_id}",
+        "transfer_evidence_directory": (
+            f"examples/validation_study/.study-work/evidence/{study_id}/{reproduction_run_id}"
+        ),
         "command": command,
         "guard_command": guard_command,
         "guard_exit_status": 0,
@@ -1077,7 +1087,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
             "prerequisites_sha256": _HASH,
             "target_reference": study.TARGET_REFERENCE,
             "capture_image_id": f"sha256:{'d' * 64}",
-            "transfer_evidence_mount_source": f"examples/phase7/.study-work/mount/{study_id}",
+            "transfer_evidence_mount_source": f"examples/validation_study/.study-work/mount/{study_id}",
             "base_config_sha256": {"short": _HASH, "streaming": _HASH, "bursty": _HASH},
             "primary_order": [
                 {"workload": workload, "repeat": repeat} for _order, _run_id, workload, repeat in study.PRIMARY_ORDER
@@ -1299,7 +1309,7 @@ def _offline_capture(_path: Path, prepared: PreparedExperiment) -> CaptureResult
             "event": "capture_published",
             "packet_count": inspection.packet_count,
             "path": str(reference_path),
-            "project_name": "trafficlab-phase7-unit",
+            "project_name": "trafficlab-validation-study-unit",
             "reused": False,
             "stage": "capture",
         },
@@ -1307,7 +1317,7 @@ def _offline_capture(_path: Path, prepared: PreparedExperiment) -> CaptureResult
     return CaptureResult(prepared.run_directory, reference_path, inspection.packet_count, 0, reused=False)
 
 
-def _offline_phase7_primary(
+def _offline_validation_study_primary(
     repository_root: Path,
     *,
     execution_order: int = 1,
@@ -1320,7 +1330,7 @@ def _offline_phase7_primary(
     url = "https://downloads.example.test/object.bin"
     study_id = "study-1"
     workload = {value.name: value for value in study.workload_specs(url)}[workload_name]
-    mount = repository_root / "examples" / "phase7" / ".study-work" / "mount" / study_id
+    mount = repository_root / "examples" / "validation_study" / ".study-work" / "mount" / study_id
     mount.mkdir(parents=True, exist_ok=True)
     config = base_config or study.build_base_config(
         workload,
@@ -1332,9 +1342,9 @@ def _offline_phase7_primary(
     if config.run.directory.name != run_id:
         config = study._config_with_run_directory(  # pyright: ignore[reportPrivateUsage]
             config,
-            repository_root / "runs" / "phase7" / study_id / run_id,
+            repository_root / "runs" / "validation_study" / study_id / run_id,
         )
-    config_path = repository_root / "runs" / "phase7" / study_id / "realized-configs" / f"{run_id}.toml"
+    config_path = repository_root / "runs" / "validation_study" / study_id / "realized-configs" / f"{run_id}.toml"
     study._render_realized_config(config, config_path)  # pyright: ignore[reportPrivateUsage]
 
     result = run_experiment(
@@ -1347,7 +1357,9 @@ def _offline_phase7_primary(
             compare_experiment,
         ),
     )
-    evidence_directory = repository_root / "examples" / "phase7" / ".study-work" / "evidence" / study_id / run_id
+    evidence_directory = (
+        repository_root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / run_id
+    )
     evidence_directory.mkdir(parents=True)
     transfer_responses_list: list[study.JsonObject] = []
     for index, (start, end, filename) in enumerate(workload.transfers):
@@ -1462,7 +1474,7 @@ def test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_line
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    result, spec, workload, transfer_responses = _offline_phase7_primary(tmp_path / "repository")
+    result, spec, workload, transfer_responses = _offline_validation_study_primary(tmp_path / "repository")
     authoritative_trial = result.fit.outcome.final_trials[0]
     observed_trials: list[TrialResult] = []
     real_reconstruct = study._reconstruct_science  # pyright: ignore[reportPrivateUsage]
@@ -1563,7 +1575,7 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repository_root = tmp_path / "repository"
-    result, spec, workload, transfer_responses = _offline_phase7_primary(repository_root)
+    result, spec, workload, transfer_responses = _offline_validation_study_primary(repository_root)
 
     if mutation == "missing-artifact":
         (spec.run_directory / "run.log").unlink()
@@ -1995,7 +2007,7 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
         study.workload_specs(url)
 
 
-def test_phase7_mmpp_bounds_retain_a_valid_candidate_for_a_short_observation_window(tmp_path: Path) -> None:
+def test_validation_study_mmpp_bounds_retain_a_valid_candidate_for_a_short_observation_window(tmp_path: Path) -> None:
     url = "https://downloads.example.test/object.bin"
     config = study.build_base_config(
         study.workload_specs(url)[0],
@@ -2090,16 +2102,16 @@ def test_checked_and_realized_configs_reload_to_exact_absolute_oracles(tmp_path:
         assert config.model_dump(mode="python") == _expected_base_config(repository_root, name)
         assert hashlib.sha256(contents[name]).hexdigest() == prerequisite.config_sha256[name]
     portable = tomllib.loads(contents["short"].decode())
-    assert cast(dict[str, object], portable["run"])["directory"] == "../../../runs/phase7/study-1/01-short-r1"
+    assert cast(dict[str, object], portable["run"])["directory"] == "../../../runs/validation_study/study-1/01-short-r1"
     target = cast(dict[str, object], portable["target"])
     mount = cast(list[dict[str, object]], target["mounts"])[0]
     assert mount["source"] == "../.study-work/mount/study-1"
 
-    realized_directory = (repository_root / "runs" / "phase7" / "study-1" / "10-streaming-r2").resolve()
+    realized_directory = (repository_root / "runs" / "validation_study" / "study-1" / "10-streaming-r2").resolve()
     realized = study._config_with_run_directory(  # pyright: ignore[reportPrivateUsage]
         validated["streaming"], realized_directory
     )
-    realized_path = repository_root / "runs" / "phase7" / "study-1" / "realized-configs" / "streaming.toml"
+    realized_path = repository_root / "runs" / "validation_study" / "study-1" / "realized-configs" / "streaming.toml"
     rendered = study._render_realized_config(realized, realized_path)  # pyright: ignore[reportPrivateUsage]
     assert realized_path.read_bytes() == rendered
     assert study.load_experiment(realized_path) == realized
@@ -2108,7 +2120,7 @@ def test_checked_and_realized_configs_reload_to_exact_absolute_oracles(tmp_path:
     with pytest.raises(ValueError, match="already exists"):
         study.render_checked_base_config(
             validated["short"],
-            repository_root / "examples" / "phase7" / "configs" / "short.toml",
+            repository_root / "examples" / "validation_study" / "configs" / "short.toml",
             repository_root,
         )
     with pytest.raises(ValueError, match="already exists"):
@@ -2151,7 +2163,7 @@ def test_retained_prerequisite_evidence_reopens_hashes_and_crosschecks_every_aut
     evidence = (
         repository_root
         / "examples"
-        / "phase7"
+        / "validation_study"
         / ".study-work"
         / "evidence"
         / prerequisite.study_id
@@ -2233,7 +2245,7 @@ def test_config_validation_rejects_every_protocol_change(mutation: str, tmp_path
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
     prerequisite, contents = _write_checked_configs(repository_root)
-    short_path = repository_root / "examples" / "phase7" / "configs" / "short.toml"
+    short_path = repository_root / "examples" / "validation_study" / "configs" / "short.toml"
     short_config = study.build_base_config(
         study.workload_specs(prerequisite.url)[0],
         repository_root=repository_root,
@@ -2281,11 +2293,11 @@ def test_scratch_files_are_exclusive_regular_0666_and_archives_are_sibling_0600(
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
     workload = study.workload_specs("https://downloads.example.test/object.bin")[0]
-    mount_directory = repository_root / "examples" / "phase7" / ".study-work" / "mount" / "study-1"
+    mount_directory = repository_root / "examples" / "validation_study" / ".study-work" / "mount" / "study-1"
     mount_directory.mkdir(parents=True)
     scratch = mount_directory / "short.headers"
     scratch.write_bytes(b"stale")
-    run_directory = repository_root / "runs" / "phase7" / "study-1" / "01-short-r1"
+    run_directory = repository_root / "runs" / "validation_study" / "study-1" / "01-short-r1"
     run_directory.mkdir(parents=True)
     for name in study.ARTIFACT_NAMES:
         (run_directory / name).write_bytes(b"artifact")
@@ -2314,7 +2326,7 @@ def test_scratch_files_are_exclusive_regular_0666_and_archives_are_sibling_0600(
     archive = (
         repository_root
         / "examples"
-        / "phase7"
+        / "validation_study"
         / ".study-work"
         / "evidence"
         / "study-1"
@@ -2329,7 +2341,7 @@ def test_scratch_files_are_exclusive_regular_0666_and_archives_are_sibling_0600(
             "status": 206,
             "content_length": 262144,
             "content_range": "bytes 0-262143/4194304",
-            "header_archive_path": "examples/phase7/.study-work/evidence/study-1/01-short-r1/short.headers",
+            "header_archive_path": "examples/validation_study/.study-work/evidence/study-1/01-short-r1/short.headers",
             "header_sha256": hashlib.sha256(header_bytes).hexdigest(),
             "scratch_precreate_mode": 438,
             "archive_mode": 384,
@@ -2392,7 +2404,7 @@ def test_transfer_evidence_rejects_unsafe_or_inexact_headers(mutation: str, tmp_
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
     workload = study.workload_specs("https://downloads.example.test/object.bin")[0]
-    mount_directory = repository_root / "examples" / "phase7" / ".study-work" / "mount" / "study-1"
+    mount_directory = repository_root / "examples" / "validation_study" / ".study-work" / "mount" / "study-1"
     scratch = mount_directory / "short.headers"
     if mutation == "symlink":
         mount_directory.mkdir(parents=True)
@@ -2434,7 +2446,7 @@ def test_transfer_evidence_rejects_unsafe_or_inexact_headers(mutation: str, tmp_
         archive = (
             repository_root
             / "examples"
-            / "phase7"
+            / "validation_study"
             / ".study-work"
             / "evidence"
             / "study-1"
@@ -2459,7 +2471,7 @@ def test_transfer_evidence_rejects_unsafe_or_inexact_headers(mutation: str, tmp_
     archive = (
         repository_root
         / "examples"
-        / "phase7"
+        / "validation_study"
         / ".study-work"
         / "evidence"
         / "study-1"
@@ -2533,7 +2545,7 @@ def test_prerequisite_codec_round_trips_exact_canonical_schema(tmp_path: Path) -
     with pytest.raises(TypeError):
         cast(dict[str, object], parsed.capability)["status"] = 200
 
-    destination = repository_root / "examples" / "phase7" / "prerequisites.json"
+    destination = repository_root / "examples" / "validation_study" / "prerequisites.json"
     destination.parent.mkdir(parents=True)
     study._publish_prerequisites(  # pyright: ignore[reportPrivateUsage]
         destination, value, repository_root=repository_root
@@ -2634,7 +2646,7 @@ def test_official_publication_collision_preserves_winner_and_cleans_private_temp
 ) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
-    destination = repository_root / "examples" / "phase7" / f"{kind}.json"
+    destination = repository_root / "examples" / "validation_study" / f"{kind}.json"
     destination.parent.mkdir(parents=True)
     winner = b"concurrent publisher\n"
     linked_sources: list[Path] = []
@@ -2717,7 +2729,7 @@ def test_prerequisite_commands_are_exact_guarded_serial_argv_with_relative_proje
     repository_root.mkdir()
     study_id = "study-1"
     url = "https://downloads.example.test/object.bin"
-    evidence = f"examples/phase7/.study-work/evidence/{study_id}/00-prerequisites"
+    evidence = f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites"
     docker = (
         "scripts/run_bounded.sh",
         "--memory-high",
@@ -2953,10 +2965,10 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         assert command["junit_sha256"] == hashlib.sha256(junit).hexdigest()
         for suffix in ("stdout", "stderr", "xml"):
             assert stat.S_IMODE((runner.evidence / f"{prefix}.{suffix}").stat().st_mode) == 0o600
-    prerequisite_path = repository_root / "examples" / "phase7" / "prerequisites.json"
+    prerequisite_path = repository_root / "examples" / "validation_study" / "prerequisites.json"
     assert study.parse_prerequisite_results(prerequisite_path.read_bytes(), repository_root=repository_root) == result
     for name, content_hash in result.config_sha256.items():
-        config_path = repository_root / "examples" / "phase7" / "configs" / f"{name}.toml"
+        config_path = repository_root / "examples" / "validation_study" / "configs" / f"{name}.toml"
         assert hashlib.sha256(config_path.read_bytes()).hexdigest() == content_hash
         assert study.load_experiment(config_path).capture.image == runner.capture_id
 
@@ -3008,9 +3020,9 @@ def test_prerequisites_stop_at_first_failure_preserve_primary_and_publish_no_val
         )
 
     assert "restart with a new study ID" in captured.value.corrective_action
-    prerequisite_path = repository_root / "examples" / "phase7" / "prerequisites.json"
+    prerequisite_path = repository_root / "examples" / "validation_study" / "prerequisites.json"
     assert not prerequisite_path.exists()
-    config_directory = repository_root / "examples" / "phase7" / "configs"
+    config_directory = repository_root / "examples" / "validation_study" / "configs"
     if mutation != "config-publication-failed":
         assert not config_directory.exists() or not tuple(config_directory.glob("*.toml"))
     commands = [command for command, _timeout in runner.calls]
@@ -3215,7 +3227,7 @@ def test_capability_cleanup_fails_closed_for_each_listing_and_an_unrelated_name_
     assert (runner.evidence / "capability.stdout").is_file()
     assert (runner.evidence / "capability.stderr").is_file()
     assert (runner.evidence / "capability.headers").is_file()
-    assert not (repository_root / "examples" / "phase7" / "prerequisites.json").exists()
+    assert not (repository_root / "examples" / "validation_study" / "prerequisites.json").exists()
 
 
 def test_capability_absence_helpers_reject_invalid_daemon_evidence_and_report_absence(tmp_path: Path) -> None:
@@ -3258,7 +3270,7 @@ def test_capability_absence_helpers_reject_invalid_daemon_evidence_and_report_ab
         study._remove_owned_capability_if_present(  # pyright: ignore[reportPrivateUsage]
             repository_root=tmp_path,
             study_id="study-1",
-            capability_name="trafficlab-phase7-capability-study-1",
+            capability_name="trafficlab-validation-study-capability-study-1",
             container_id=container_id,
             runner=invalid_inspect,
         )
@@ -3282,7 +3294,7 @@ def test_capability_absence_helpers_reject_invalid_daemon_evidence_and_report_ab
     diagnostic = study._cleanup_failed_capability(  # pyright: ignore[reportPrivateUsage]
         repository_root=tmp_path,
         study_id="study-1",
-        capability_name="trafficlab-phase7-capability-study-1",
+        capability_name="trafficlab-validation-study-capability-study-1",
         capability_cid=cid,
         runner=absent,
     )
@@ -3292,7 +3304,7 @@ def test_capability_absence_helpers_reject_invalid_daemon_evidence_and_report_ab
     unreadable = study._cleanup_failed_capability(  # pyright: ignore[reportPrivateUsage]
         repository_root=tmp_path,
         study_id="study-1",
-        capability_name="trafficlab-phase7-capability-study-1",
+        capability_name="trafficlab-validation-study-capability-study-1",
         capability_cid=cid,
         runner=absent,
     )
@@ -3388,7 +3400,7 @@ def test_prerequisite_cli_requires_exact_subcommand_arguments_and_reports_errors
         == 2
     )
     error = capsys.readouterr().err.strip()
-    assert error.startswith("phase7: Phase 7 prerequisite validation failed:")
+    assert error.startswith("validation-study: Validation Study prerequisite validation failed:")
     assert "; preserve the ignored evidence" in error
 
 
@@ -3438,7 +3450,7 @@ def test_result_codec_round_trips_nine_runs_reproduction_and_recomputed_summarie
     assert rendered.endswith(b"\n")
     assert b": " not in rendered
     assert not _contains_none(json.loads(rendered))
-    destination = repository_root / "examples" / "phase7" / "results.json"
+    destination = repository_root / "examples" / "validation_study" / "results.json"
     destination.parent.mkdir(parents=True)
     study._publish_results(destination, value, repository_root=repository_root)  # pyright: ignore[reportPrivateUsage]
     assert destination.read_bytes() == rendered
@@ -3607,7 +3619,7 @@ def _write_study_inputs(repository_root: Path) -> tuple[Path, study.StudyResults
     repository_root.mkdir()
     prerequisite, _contents = _write_checked_configs(repository_root)
     prerequisite = _write_retained_prerequisite_evidence(repository_root, prerequisite)
-    prerequisite_path = repository_root / "examples" / "phase7" / "prerequisites.json"
+    prerequisite_path = repository_root / "examples" / "validation_study" / "prerequisites.json"
     prerequisite_path.write_bytes(study.render_prerequisite_results(prerequisite))
     document = _valid_result_document(repository_root)
     return prerequisite_path, _result_value(document)
@@ -3747,8 +3759,8 @@ def test_study_runs_nine_absent_primaries_serially_in_balanced_order_and_times_o
     for order, run_id, workload, repeat in study.PRIMARY_ORDER:
         record = result.runs[order - 1]
         assert record.key == {"workload": workload, "repeat": repeat}
-        assert record.config_path == f"runs/phase7/study-1/realized-configs/{run_id}.toml"
-        assert record.run_directory == f"runs/phase7/study-1/{run_id}"
+        assert record.config_path == f"runs/validation_study/study-1/realized-configs/{run_id}.toml"
+        assert record.run_directory == f"runs/validation_study/study-1/{run_id}"
         assert record.transfer_evidence_directory.endswith(f"/study-1/{run_id}")
 
 
@@ -3791,10 +3803,10 @@ def test_primary_failure_stops_preserves_evidence_and_publishes_no_results(
     _order, run_id, workload, repeat = study.PRIMARY_ORDER[failed_position - 1]
     assert workload in str(captured.value)
     assert f"repeat {repeat}" in str(captured.value)
-    assert f"runs/phase7/study-1/{run_id}" in str(captured.value)
+    assert f"runs/validation_study/study-1/{run_id}" in str(captured.value)
     assert "secondary evidence archive failure: short.headers: disk full" in str(captured.value)
     assert captured.value.__cause__ is failure
-    assert not (repository_root / "examples" / "phase7" / "results.json").exists()
+    assert not (repository_root / "examples" / "validation_study" / "results.json").exists()
     assert "reproduction" not in events
     assert len([event for event in events if event.startswith("run:")]) == failed_position
 
@@ -3830,9 +3842,9 @@ def test_primary_archive_failure_preserves_the_archive_cause_and_secondary_diagn
             utc_now=lambda: datetime(2026, 8, 13, 13, 0, tzinfo=UTC),
         )
 
-    assert "runs/phase7/study-1/01-short-r1" in str(captured.value)
+    assert "runs/validation_study/study-1/01-short-r1" in str(captured.value)
     assert captured.value.__cause__ is failure
-    assert not (repository_root / "examples" / "phase7" / "results.json").exists()
+    assert not (repository_root / "examples" / "validation_study" / "results.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -3856,11 +3868,11 @@ def test_study_rejects_incompatible_prerequisites_existing_targets_and_any_reuse
     events: list[str] = []
     _install_primary_orchestration_doubles(monkeypatch, expected, events)
     if mutation == "existing-run":
-        (repository_root / "runs" / "phase7" / "study-1" / "01-short-r1").mkdir(parents=True)
+        (repository_root / "runs" / "validation_study" / "study-1" / "01-short-r1").mkdir(parents=True)
     elif mutation == "existing-evidence":
-        (repository_root / "examples" / "phase7" / ".study-work" / "evidence" / "study-1" / "01-short-r1").mkdir(
-            parents=True
-        )
+        (
+            repository_root / "examples" / "validation_study" / ".study-work" / "evidence" / "study-1" / "01-short-r1"
+        ).mkdir(parents=True)
     elif mutation == "reused-record":
         original_extract = study.extract_primary_record
 
@@ -3897,7 +3909,7 @@ def test_study_rejects_incompatible_prerequisites_existing_targets_and_any_reuse
             utc_now=lambda: datetime(2026, 8, 13, 13, 0, tzinfo=UTC),
         )
     assert "reproduction" not in events
-    assert not (repository_root / "examples" / "phase7" / "results.json").exists()
+    assert not (repository_root / "examples" / "validation_study" / "results.json").exists()
 
 
 @pytest.mark.parametrize("invalid_derived", ["variation", "summary"])
@@ -3944,17 +3956,19 @@ def test_study_validates_variation_and_summaries_before_any_reproduction_runner_
             utc_now=lambda: datetime(2026, 8, 13, 13, 0, tzinfo=UTC),
         )
     assert "reproduction" not in events
-    assert not (repository_root / "runs" / "phase7" / "study-1" / "realized-configs" / "reproduction.toml").exists()
+    assert not (
+        repository_root / "runs" / "validation_study" / "study-1" / "realized-configs" / "reproduction.toml"
+    ).exists()
     assert not (
         repository_root
         / "examples"
-        / "phase7"
+        / "validation_study"
         / ".study-work"
         / "evidence"
         / "study-1"
         / "10-streaming-r2-reproduction"
     ).exists()
-    assert not (repository_root / "examples" / "phase7" / "results.json").exists()
+    assert not (repository_root / "examples" / "validation_study" / "results.json").exists()
 
 
 def _source_record_and_config(
@@ -4005,8 +4019,16 @@ def test_reproduction_changes_only_run_directory_seeds_nothing_and_invokes_exact
         assert check is False and capture_output is True and shell is False
         assert timeout == 1230.0
         assert command.count("scripts/run_bounded.sh") == 1
-        assert not (repository_root / "runs" / "phase7" / "study-1" / "10-streaming-r2-reproduction").exists()
-        scratch = repository_root / "examples" / "phase7" / ".study-work" / "mount" / "study-1" / "streaming.headers"
+        assert not (repository_root / "runs" / "validation_study" / "study-1" / "10-streaming-r2-reproduction").exists()
+        scratch = (
+            repository_root
+            / "examples"
+            / "validation_study"
+            / ".study-work"
+            / "mount"
+            / "study-1"
+            / "streaming.headers"
+        )
         scratch.write_bytes(_response_headers(0, 4_194_303))
         return subprocess.CompletedProcess(command, 0, stdout=b"installed cli output\n", stderr=b"")
 
@@ -4043,7 +4065,7 @@ def test_reproduction_changes_only_run_directory_seeds_nothing_and_invokes_exact
     )
 
     assert result == expected
-    config_path = repository_root / "runs" / "phase7" / "study-1" / "realized-configs" / "reproduction.toml"
+    config_path = repository_root / "runs" / "validation_study" / "study-1" / "realized-configs" / "reproduction.toml"
     source_config = study.load_experiment(repository_root / source.run_directory / "experiment.toml")
     reproduction_config = study.load_experiment(config_path)
     assert _changed_config_paths(
@@ -4056,7 +4078,7 @@ def test_reproduction_changes_only_run_directory_seeds_nothing_and_invokes_exact
     evidence = (
         repository_root
         / "examples"
-        / "phase7"
+        / "validation_study"
         / ".study-work"
         / "evidence"
         / "study-1"
@@ -4096,7 +4118,7 @@ def test_reproduction_failure_preserves_primary_cause_and_appends_archive_diagno
             perf_counter=lambda: 1.0,
         )
 
-    assert "runs/phase7/study-1/10-streaming-r2-reproduction" in str(captured.value)
+    assert "runs/validation_study/study-1/10-streaming-r2-reproduction" in str(captured.value)
     assert "streaming.headers: read failed" in str(captured.value)
     assert captured.value.__cause__ is failure
 
@@ -4136,7 +4158,7 @@ def test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_
         return real_evaluate_final(*args, **kwargs)
 
     monkeypatch.setattr(study, "evaluate_final", count_evaluate)
-    source_result, source_spec, workload, source_responses = _offline_phase7_primary(
+    source_result, source_spec, workload, source_responses = _offline_validation_study_primary(
         repository_root,
         execution_order=4,
         run_id="04-streaming-r2",
@@ -4186,7 +4208,7 @@ def test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_
                     "event": "capture_published",
                     "packet_count": inspection.packet_count,
                     "path": str(reference_path),
-                    "project_name": "trafficlab-phase7-reproduction",
+                    "project_name": "trafficlab-validation-study-reproduction",
                     "reused": False,
                     "stage": "capture",
                 },
@@ -4203,7 +4225,15 @@ def test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_
                 compare_experiment,
             ),
         )
-        scratch = repository_root / "examples" / "phase7" / ".study-work" / "mount" / "study-1" / "streaming.headers"
+        scratch = (
+            repository_root
+            / "examples"
+            / "validation_study"
+            / ".study-work"
+            / "mount"
+            / "study-1"
+            / "streaming.headers"
+        )
         scratch.write_bytes(_response_headers(0, 4_194_303))
         return subprocess.CompletedProcess(command, 0, stdout=b"reproduced\n", stderr=b"")
 
@@ -4352,7 +4382,7 @@ def test_study_builds_variation_summaries_reproduction_and_publishes_one_canonic
         utc_now=lambda: datetime(2026, 8, 13, 13, 0, tzinfo=UTC),
     )
 
-    result_path = repository_root / "examples" / "phase7" / "results.json"
+    result_path = repository_root / "examples" / "validation_study" / "results.json"
     assert len(published) == 1
     assert result_path.read_bytes() == published[0]
     assert study.parse_study_results(published[0], repository_root=repository_root) == result
@@ -4360,7 +4390,7 @@ def test_study_builds_variation_summaries_reproduction_and_publishes_one_canonic
     assert len(result.runs) == 9
     assert len(result.natural_variation) == len(result.workload_summaries) == 3
     assert result.reproduction == expected.reproduction
-    assert not (repository_root / "examples" / "phase7" / "REPORT.md").exists()
+    assert not (repository_root / "examples" / "validation_study" / "REPORT.md").exists()
 
 
 def test_study_cli_requires_exact_url_id_and_prerequisite_path_and_never_wraps_itself(
@@ -4378,7 +4408,7 @@ def test_study_cli_requires_exact_url_id_and_prerequisite_path_and_never_wraps_i
         return expected
 
     monkeypatch.setattr(study, "run_study", run_study_double)
-    prerequisite_record = "examples/phase7/prerequisites.json"
+    prerequisite_record = "examples/validation_study/prerequisites.json"
     assert (
         study.main(
             [
@@ -4456,7 +4486,7 @@ def _offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:
     settings: dict[study.WorkloadName, SimilarityConfig] = {}
     for order, run_id, workload_value, repeat in study.PRIMARY_ORDER:
         workload_name = cast(study.WorkloadName, workload_value)
-        run_result, spec, workload, responses = _offline_phase7_primary(
+        run_result, spec, workload, responses = _offline_validation_study_primary(
             repository_root,
             execution_order=order,
             run_id=run_id,
@@ -4502,7 +4532,15 @@ def _offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:
                 compare_experiment,
             ),
         )
-        scratch = repository_root / "examples" / "phase7" / ".study-work" / "mount" / "study-1" / "streaming.headers"
+        scratch = (
+            repository_root
+            / "examples"
+            / "validation_study"
+            / ".study-work"
+            / "mount"
+            / "study-1"
+            / "streaming.headers"
+        )
         scratch.write_bytes(_response_headers(0, 4_194_303))
         return subprocess.CompletedProcess(command, 0, stdout=b"offline reproduction\n", stderr=b"")
 
@@ -4546,9 +4584,9 @@ def _offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:
         ),
         reproduction=reproduction,
     )
-    result_path = repository_root / "examples" / "phase7" / "results.json"
+    result_path = repository_root / "examples" / "validation_study" / "results.json"
     study._publish_results(result_path, result, repository_root=repository_root)  # pyright: ignore[reportPrivateUsage]
-    report_path = repository_root / "examples" / "phase7" / "REPORT.md"
+    report_path = repository_root / "examples" / "validation_study" / "REPORT.md"
     identifiers = [
         prerequisites.study_id,
         prerequisites.git_commit,

@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from scripts import run_phase7_study as study
+from scripts import run_validation_study as study
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
@@ -25,14 +25,14 @@ _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
 
 
-def test_phase7_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
+def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
     study_id = "study-1"
     run_id = "01-short-r1"
     url = "https://downloads.example.test/object.bin"
     workload = study.workload_specs(url)[0]
-    (repository_root / "examples" / "phase7" / ".study-work" / "mount" / study_id).mkdir(parents=True)
+    (repository_root / "examples" / "validation_study" / ".study-work" / "mount" / study_id).mkdir(parents=True)
     config = study.build_base_config(
         workload,
         repository_root=repository_root,
@@ -40,7 +40,7 @@ def test_phase7_extraction_uses_real_three_family_artifacts_fresh_seed_and_linea
         url=url,
         capture_image_id=f"sha256:{'d' * 64}",
     )
-    experiment_path = repository_root / "runs" / "phase7" / study_id / "realized-configs" / f"{run_id}.toml"
+    experiment_path = repository_root / "runs" / "validation_study" / study_id / "realized-configs" / f"{run_id}.toml"
     study._render_realized_config(config, experiment_path)  # pyright: ignore[reportPrivateUsage]
 
     def capture(_path: Path, prepared: PreparedExperiment) -> CaptureResult:
@@ -55,7 +55,7 @@ def test_phase7_extraction_uses_real_three_family_artifacts_fresh_seed_and_linea
                 "event": "capture_published",
                 "packet_count": inspection.packet_count,
                 "path": str(reference_path),
-                "project_name": "trafficlab-phase7-integration",
+                "project_name": "trafficlab-validation-study-integration",
                 "reused": False,
                 "stage": "capture",
             },
@@ -72,7 +72,9 @@ def test_phase7_extraction_uses_real_three_family_artifacts_fresh_seed_and_linea
             compare_experiment,
         ),
     )
-    evidence_directory = repository_root / "examples" / "phase7" / ".study-work" / "evidence" / study_id / run_id
+    evidence_directory = (
+        repository_root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / run_id
+    )
     evidence_directory.mkdir(parents=True)
     header_bytes = b"HTTP/1.1 206 Response\r\nContent-Range: bytes 0-262143/4194304\r\nContent-Length: 262144\r\n\r\n"
     header_path = evidence_directory / "short.headers"

@@ -4,8 +4,8 @@
 
 Implement every checked requirement in `architecture/ROADMAP.md`, including
 source code, unit tests, in-process integration tests, Docker integration tests,
-example configurations, checked-in deterministic fixtures, and the Phase 7
-experiment report. Continue until every roadmap phase satisfies its `Done when`
+example configurations, checked-in deterministic fixtures, and the real-program
+validation report. Continue until every roadmap phase satisfies its `Done when`
 condition and the final verification gate passes.
 
 The approved architecture in `architecture/` is authoritative. Keep the project

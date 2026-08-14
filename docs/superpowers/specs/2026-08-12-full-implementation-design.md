@@ -98,7 +98,7 @@ Each phase adds tests before implementation:
 
 Checked-in examples include minimal experiment TOML files, small Ethernet
 PCAPNG/reference metadata pairs, fitted-model JSON, generated PCAPNG, similarity
-JSON, and a concise Phase 7 report. Generated run directories remain ignored.
+JSON, and a concise Validation Study report. Generated run directories remain ignored.
 
 The ordinary non-Docker suite must reach at least 90% branch-aware coverage.
 Coverage percentage complements rather than replaces the exact behavioral cases
@@ -113,5 +113,5 @@ the next phase.
 
 Completion requires every Roadmap checkbox and `Done when` condition, all
 documented quality commands, available Docker tests, reproducible example data,
-the Phase 7 evidence report, coverage at or above the threshold, and a clean
+the Validation Study evidence report, coverage at or above the threshold, and a clean
 final review with no Critical or Important findings.

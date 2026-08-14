@@ -143,6 +143,8 @@ perl -pi -e '
     $prose = $ENV{"LEGACY_PROSE"};
     $prose_hyphen = $ENV{"LEGACY_PROSE_HYPHEN"};
   }
+  s/run_\Q$compact\E_study/run_validation_study/g;
+  s/test_\Q$compact\E_study/test_validation_study/g;
   s/\Q$prose\E validation study/Validation Study/g;
   s/\Q$prose_hyphen\E/validation-study/g;
   s/\Q$prose\E/Validation Study/g;
@@ -242,7 +244,7 @@ Collect the affected text files after the path moves:
 ```bash
 mapfile -t namespace_files < <(
   git grep -Il -i -E "phase[[:space:]_-]*${legacy_number}" -- \
-    ':(exclude)architecture/**'
+    ':(exclude)architecture/**' ':(exclude).superpowers/**'
 )
 printf '%s\n' "${namespace_files[@]}"
 test "${#namespace_files[@]}" -gt 0
@@ -262,6 +264,8 @@ perl -pi -e '
     $prose = $ENV{"LEGACY_PROSE"};
     $prose_hyphen = $ENV{"LEGACY_PROSE_HYPHEN"};
   }
+  s/run_\Q$compact\E_study/run_validation_study/g;
+  s/test_\Q$compact\E_study/test_validation_study/g;
   s/\Q$prose\E validation study/Validation Study/g;
   s/\Q$prose_hyphen\E/validation-study/g;
   s/\Q$prose\E/Validation Study/g;
@@ -408,7 +412,7 @@ Run:
 test -z "$(git ls-files | rg -i "phase([ _-]?${legacy_number})" || true)"
 test -z "$(
   git grep -n -I -i -E "phase[[:space:]_-]*${legacy_number}" -- \
-    ':(exclude)architecture/**' || true
+    ':(exclude)architecture/**' ':(exclude).superpowers/**' || true
 )"
 git grep -n -I -i -E "phase[[:space:]_-]*${legacy_number}" -- architecture
 ```

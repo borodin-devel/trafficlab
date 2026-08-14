@@ -47,13 +47,13 @@ and exit status were not retained. An empty pytest failure cache is not a substi
 
 ### Retained evidence
 
-The committed [prerequisite manifest](../examples/phase7/prerequisites.json),
-[result manifest](../examples/phase7/results.json), [study report](../examples/phase7/REPORT.md), and three
-[base configurations](../examples/phase7/configs/short.toml) are internally consistent. An independent standard-
+The committed [prerequisite manifest](../examples/validation_study/prerequisites.json),
+[result manifest](../examples/validation_study/results.json), [study report](../examples/validation_study/REPORT.md), and three
+[base configurations](../examples/validation_study/configs/short.toml) are internally consistent. An independent standard-
 library audit confirmed their schemas, study identifier, config hashes, balanced run order, seeds, family champions,
 winner records, component arithmetic, workload summaries, natural-variation arithmetic, and reproduction deltas.
 
-That audit cannot validate the scientific values from raw evidence. `runs/phase7/` is absent. The nine primary records
+That audit cannot validate the scientific values from raw evidence. `runs/validation_study/` is absent. The nine primary records
 and one reproduction record name absent realized configurations and absent run directories. All 90 named artifact
 targets are absent. Thirty-two locally present ignored HTTP header records match the committed hashes, but they are
 not committed, are not retrievable from the assessed revision, and cannot reconstruct captures or run artifacts.
@@ -95,7 +95,7 @@ alignment, weighting, heterogeneous reproduction, or final-seed conventions.
 
 - The fresh Docker matrix has no retained terminal result and is indeterminate.
 - The fresh external evidence is one Internet smoke execution, not a representative rate or platform matrix.
-- The retained Phase 7 study has no committed realized configurations, captures, fitted models, checkpoints,
+- The retained Validation Study has no committed realized configurations, captures, fitted models, checkpoints,
   histories, generated traces, logs, or comparison artifacts.
 - Model evidence lacks large known-parameter recovery studies, independent simulators, and distributional tests.
 - Metric evidence lacks independent numerical implementations and broad sensitivity or calibration studies.
@@ -244,7 +244,7 @@ convention, plus direct distributional evidence that generated events follow eac
 **Rationale:** Strictly parsed, aligned traces feed all four methods under one window, and exact component diagnostics
 and normalized weights reconstruct the reported aggregate. Malformed and changed artifacts are rejected.
 
-**Limitation:** Independent comparison code, retained raw Phase 7 traces, and a broader boundary-mutation matrix are
+**Limitation:** Independent comparison code, retained raw Validation Study traces, and a broader boundary-mutation matrix are
 absent, so excellent input-to-value reconstruction is not demonstrated.
 
 ### 1.7 End-to-end result consistency
@@ -257,7 +257,7 @@ absent, so excellent input-to-value reconstruction is not demonstrated.
   indeterminate.
 - Source: [run tests](../tests/unit/test_run.py) reload the exact final tree and reject replacement, missing, foreign,
   corrupt, or lineage-inconsistent stage results.
-- Retained: the production Phase 7 audit failed because all ten run directories, realized configs, and 90 named
+- Retained: the production Validation Study audit failed because all ten run directories, realized configs, and 90 named
   artifacts are absent.
 
 **Rationale:** The implemented normal path has strong final-tree and stage-lineage controls. The committed study,
@@ -332,7 +332,7 @@ excellent anchor for every field and important interaction.
 - Source: canonical snapshot and stage-lineage tests reject changed effective configurations and incompatible resume.
 - Source: [run-pipeline tests](../tests/integration/test_run_pipeline.py) exercise fresh, reused, repaired presentation,
   and incompatible stage artifacts under one authoritative snapshot.
-- Retained: all ten Phase 7 realized configurations named by the result manifest are absent.
+- Retained: all ten Validation Study realized configurations named by the result manifest are absent.
 
 **Rationale:** Normal implementation paths retain and enforce a mostly complete normalized snapshot. The published
 real study cannot prove that every stage consumed its claimed realization because those exact realized files were not
@@ -366,7 +366,7 @@ reconstructed downstream values is absent, preventing excellent evidence.
 
 - Source: paths resolve relative to the config, image references and mounts are explicit, and canonical snapshots
   retain resolved values.
-- Retained: Phase 7 base configs use immutable image identities and the prerequisite manifest records platform and
+- Retained: Validation Study base configs use immutable image identities and the prerequisite manifest records platform and
   tools.
 - Retained: the environment-specific realized configuration for every published run is absent.
 
@@ -766,7 +766,7 @@ canonical-byte checks are absent, preventing excellent serialization evidence.
 - Fresh: model, fit, and trace fixtures regenerated byte-identically.
 - Source: the checkpoint strategy test proves resumed and uninterrupted population, history, winner, model state,
   child IDs, and RNG state are identical at the tested interruption boundary.
-- Retained: the Phase 7 reproduction summary is arithmetically consistent, but its source and reproduced artifacts are
+- Retained: the Validation Study reproduction summary is arithmetically consistent, but its source and reproduced artifacts are
   absent and are not credited as independent rerun proof.
 
 **Rationale:** Fresh deterministic outputs and one fit-checkpoint resume boundary are exact, but complete fresh,
@@ -818,7 +818,7 @@ independent validation of stochastic meaning. MMPP arrival alignment is material
 and heterogeneous GA ordering creates family-name preferences. Model recovery, distributional generation, metric
 sensitivity, and controlled winner evidence remain too limited for stronger scientific claims.
 
-The main empirical limitation is evidence retention. The committed Phase 7 summaries are internally consistent but
+The main empirical limitation is evidence retention. The committed Validation Study summaries are internally consistent but
 cannot be audited back to packet bytes or reconstructed because every realized run artifact is missing. The passing
 fresh Internet smoke establishes current basic real use only. It neither recreates the study nor turns the
 indeterminate fresh Docker matrix into passing evidence.

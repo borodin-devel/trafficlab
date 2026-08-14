@@ -362,10 +362,10 @@ real containerized workloads before adding more algorithms or infrastructure.
 **Done when:** the experiment report demonstrates useful fidelity or identifies
 specific model/metric gaps with evidence strong enough to choose the next work.
 
-**Verified (2026-08-14):** study `phase7-20260814-ovh-r3` completed nine fresh
+**Verified (2026-08-14):** study `validation-study-20260814-ovh-r3` completed nine fresh
 balanced primary runs plus `10-streaming-r2-reproduction` after Docker 18/18
 and Internet 1/1 prerequisite gates. Canonical configs, prerequisites, results,
-and `examples/phase7/REPORT.md` bind the evidence to commit `976dcd6`; ignored
+and `examples/validation_study/REPORT.md` bind the evidence to commit `976dcd6`; ignored
 run and `.study-work/evidence` trees retain the ten raw audits. All families
 were evaluated on selection seeds 17/29 and winners on fresh seed 97. The report
 finds useful frame-size, ACF, and streaming-IAT fidelity and identifies local

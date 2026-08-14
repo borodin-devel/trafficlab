@@ -119,7 +119,7 @@ After the roadmap introduction, add this table:
 | 6 | `run` |
 ```
 
-State that Phase 7 validates the complete MVP rather than adding a command.
+State that Validation Study validates the complete MVP rather than adding a command.
 
 - [ ] **Step 2: Correct Phase 1**
 
@@ -191,9 +191,9 @@ done condition requires `run` to create all documented artifacts from a fresh
 Docker-backed experiment and individual stage commands to reproduce their own
 stages.
 
-- [ ] **Step 7: Preserve Phase 7 and later evidence backlog**
+- [ ] **Step 7: Preserve Validation Study and later evidence backlog**
 
-Keep Phase 7's real-program study and the “Later, only if evidence requires it”
+Keep the Validation Study's real-program evidence and the “Later, only if evidence requires it”
 list unchanged except for line-number movement. Confirm there are still exactly
 seven numbered phases.
 
