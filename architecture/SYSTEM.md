@@ -101,29 +101,38 @@ flushes capture only while it remains alive, validates `capture.json` and
 ### `fit`
 
 Parse and normalize the reference once, derive `W`, and give every candidate the
-same W. GA family order is the lexical order of enabled family names. Build
-candidates from every enabled model family and evolve them under common
-selection trial seeds and `generation.trial` limits. A generation count `G`
-means evaluated generation zero followed by reproductions and evaluations
-numbered `1` through `G`. Atomically publish `checkpoint.json` after each whole
-evaluated generation, then repair or publish the derived `ga_history.csv` in
-lexical family order and one overall row.
+same W. Family display order remains lexical. Search priority is one master-seed
+permutation of sorted enabled families, derived by one temporary
+`random.Random(master_seed).sample(sorted_family_names, len(sorted_family_names))`
+call that does not consume the search RNG stream. The priority controls quota
+remainders, initial family order, and exact cross-family ties; checkpoint state
+retains it. Build candidates from every enabled model family and evolve them
+under common selection trial seeds and `generation.trial` limits. A generation
+count `G` means evaluated generation zero followed by reproductions and
+evaluations numbered `1` through `G`. Atomically publish `checkpoint.json` after
+each whole evaluated generation, then repair or publish the derived
+`ga_history.csv` in lexical family order and one overall row.
 
 `genetic.resume = true` starts a new search when `checkpoint.json` is absent and
 resumes only from a compatible checkpoint when it is present. With
 `genetic.resume = false`, an existing checkpoint is an error. Final validation
-uses exactly `run.final_seed`, which must not be a selection trial seed, and the
-same `generation.trial` limits; it never reopens selection. A best-fitness
-improvement `<= early_stopping_tolerance` stagnates, one `>` that tolerance
-resets the count, and `early_stopping_generations = 0` disables early stopping.
+uses exactly `run.final_seed` as a fresh simulation seed on the same training
+reference; it is not held-out data. It must not be a selection trial seed and
+uses the same `generation.trial` limits without reopening selection. A
+best-fitness improvement `<= early_stopping_tolerance` stagnates, one `>` that
+tolerance resets the count, and `early_stopping_generations = 0` disables early
+stopping.
 
 ### `generate`
 
 Load `observation_window_seconds` from the winning fitted model and use a
 distinct final seed and final reliability limits to simulate the complete
-`[0, W]` interval and create `generated.pcapng`. Trial generations use different
-seeds and may use different reliability budgets, but never a shorter observation
-window and never serve as final artifacts.
+`[0, W]` interval and create `generated.pcapng`. Fitted models and checkpoints
+carry the current global scientific artifact schema version for corrected model
+semantics, including arrival-epoch initialization. Legacy MMPP semantics fail as
+incompatible scientific semantics before reuse, resume, or generation. Trial
+generations use different seeds and may use different reliability budgets, but
+never a shorter observation window and never serve as final artifacts.
 
 The model completes simulation against the stored floating-point `W` before the
 final trace is rendered. PCAPNG normally uses nearest-nanosecond timestamps; if
@@ -136,9 +145,13 @@ bytes and explicitly requires every rendered timestamp to remain in `[0, W]`.
 ### `compare`
 
 Normalize and crop the reference and final generated traces at the shared
-boundary, then compare them over the same W with every enabled similarity method.
-Write `observation_window_seconds`, all component scores, diagnostics, weights,
-and the weighted aggregate to `similarity.json` and print a short summary.
+boundary, then compare them over the same W with all four mandatory similarity
+methods. Every mandatory similarity method runs, validates its inputs, and
+retains diagnostics. A zero weight changes only aggregate contribution; it never
+disables execution, validation, diagnostic retention, or failure behavior. Write
+the fixed four-method result shape: `observation_window_seconds`, all component
+scores, diagnostics, weights, and the weighted aggregate to `similarity.json`,
+then print a short summary.
 
 ### `run`
 
@@ -231,6 +244,23 @@ with `L < U`, so the inclusive range contains at least two values. Local
 preflight and the Python API must resolve and validate the same effective values,
 and `experiment.toml` records those resolved values rather than omitted defaults.
 
+### Portable and realized configuration
+
+A portable configuration retains config-relative run and bind-mount source
+paths, contains every explicit scientific and workload value, and is suitable
+for transfer to another compatible clean environment.
+
+A realized configuration applies defaults and resolves only `run.directory` and
+declared bind-mount host sources to absolute paths. It retains every image, argv,
+environment, URL, seed, bound, limit, operator, and similarity value without
+substitution. Preflight rejects an unavailable or incompatible realization
+before scientific artifact publication. Every accepted study run retains the
+portable configuration, realized configuration, and their identities.
+
+All four mandatory similarity method settings are required. Their weights are
+finite in `[0, 1]`, normalized under the existing numeric rule, and never
+enable or disable method execution.
+
 ## Run directory
 
 ```text
@@ -245,8 +275,8 @@ similarity.json
 run.log
 ```
 
-`experiment.toml` is the exact effective configuration snapshot. `capture.json`
-contains exactly:
+`experiment.toml` is the realized configuration snapshot. Ordinary run
+directories still have exactly these nine names. `capture.json` contains exactly:
 
 ```json
 {
@@ -264,8 +294,8 @@ The interface value is the literal `eth0`. The target MAC is a normalized,
 nonzero unicast six-octet address. Missing or unknown fields and invalid values
 are errors. Model and similarity JSON contain the SHA-256 identities of inputs
 they directly depend on, including `capture.json` wherever packet direction is
-parsed or rendered. This is enough to reproduce a prototype run; there is no
-separate lineage graph, launch record, manifest, or detached status file.
+parsed or rendered. Ordinary runs need no production manifest, lineage graph,
+launch record, or detached status file.
 
 `best_model.json` and `similarity.json` contain the same finite positive
 `observation_window_seconds` derived from the identified reference input. The
@@ -286,6 +316,25 @@ directory rather than mixing experiments.
 `checkpoint.json` stores every enabled family's resolved operator values. Resume
 compares them with the effective configuration and rejects a mismatch before
 creating another child.
+
+`best_model.json` and `checkpoint.json` use the bumped global scientific
+artifact schema version for corrected model semantics. A well-formed older
+version is incompatible, not corrupt. Compatibility is checked before
+generation, resume, or stage reuse.
+
+### Published study evidence
+
+An accepted evidence bundle is checked at
+`examples/validation_study/evidence/<study-id>/`. It retains every report-cited
+primary and reproduction strict nine-file run tree, portable configurations,
+held-out inputs and results, prerequisite evidence, an environment record, and a
+canonical path/size/SHA-256 inventory. Publication occurs only after a bounded
+offline audit. Hashes without retained bytes do not qualify.
+
+Accepted reports require this retained evidence bundle in addition to the nine
+ordinary run artifacts. Scores and winners are descriptive; they do not establish
+likelihood, causal mechanism, universal superiority, or unseen-program
+generalization.
 
 ## Research interfaces
 
@@ -308,6 +357,55 @@ algorithm supplies the same W, trial seeds, reliability limits, and fitness
 weights to every candidate so model families compete on behavior rather than
 privileged evaluation conditions.
 
+Fitted-model and checkpoint interfaces carry the current global scientific
+artifact schema version. A well-formed older version is incompatible rather than
+corrupt, and compatibility is checked before generation, resume, or stage reuse.
+
+### Stage compatibility
+
+<table>
+  <thead>
+    <tr><th>Context</th><th>Required equality</th><th>Permitted difference</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>portable transfer</td>
+      <td>Every non-path scientific/workload value, image content identity,
+      container mount target/mode, and mounted-input content identity</td>
+      <td>Checkout, run-directory, and host mount-source absolute paths</td>
+    </tr>
+    <tr>
+      <td>capture reuse</td>
+      <td>Exact realized snapshot bytes plus capture identity and both capture files</td>
+      <td>None</td>
+    </tr>
+    <tr>
+      <td>fit resume</td>
+      <td>Exact reference/capture identities, scientific artifact schema, CPython patch,
+      families, genes/bounds/operators, seeds, trial limits, similarity settings</td>
+      <td>None</td>
+    </tr>
+    <tr>
+      <td>generate reuse</td>
+      <td>Exact best-model/schema identity, final seed/limits, capture identity</td>
+      <td>None</td>
+    </tr>
+    <tr>
+      <td>compare reuse</td>
+      <td>Exact capture/reference/generated/settings identities</td>
+      <td>None</td>
+    </tr>
+    <tr>
+      <td>offline reconstruction</td>
+      <td>Exact retained source tree, <code>uv.lock</code>, CPython, scientific artifact schema,
+      and artifact identities; Docker/Compose/kernel are recorded but not invoked</td>
+      <td>None</td>
+    </tr>
+  </tbody>
+</table>
+
+Each mismatch names the first incompatible field and fails before reuse.
+
 Initialization uses the candidate family's bounds and coordinate mapping.
 Reproduction and duplicate retry use that family's effective operator values as
 applicable. Different family values are an explicit, reproducible search policy;
@@ -322,6 +420,26 @@ and preserved completed stages; secondary cleanup and diagnostic details remain
 in the same log. A failure prints a structured stage error and no success
 summary. Preflight failures print their direct structured error without a
 guaranteed coordinator record.
+
+Every expected stage failure has one canonical failure outcome with these fields:
+
+```text
+kind
+stage
+detail
+affected_evidence
+evidence_state = not_published | diagnostic_only | preserved | possibly_remaining
+corrective_action
+authority = primary | secondary
+status (optional exact external/process status)
+```
+
+Its boundary classes are configuration/path; Docker/preflight; external
+exit/timeout/interruption/malformed output; missing/changed/foreign or corrupt
+artifact; incompatible scientific semantics; metric/sample/numeric infeasibility;
+generation guard/deadline; publication; cleanup; and combined failures.
+Candidate-invalid diagnostics expose equivalent scientific fields. This outcome
+extends existing exceptions and event arbitration without replacing either.
 
 Expected research failures use direct messages: local preflight validation
 failure, Docker full-preflight failure, target failure, timeout, malformed
