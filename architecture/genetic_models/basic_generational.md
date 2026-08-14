@@ -255,6 +255,10 @@ component scores are invalid. Docker, filesystem, PCAP parser, checkpoint, or
 evaluator infrastructure errors abort the search; they are not evidence that a
 mathematical candidate is poor.
 
+An invalid chromosome demonstrates only infeasibility under its declared genes,
+settings, and reliability limits. It is not evidence of poor fit by a valid
+chromosome or inferiority of the model family.
+
 ## Checkpoint and resume
 
 `checkpoint.json` contains the bumped global scientific artifact schema version,

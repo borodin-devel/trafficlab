@@ -508,7 +508,8 @@ infrastructure.
   runtime, and run-to-run variance.
 - [ ] Inspect reference/generated traces, explain major metric disagreements,
   and state the finite-sample, model, metric, and generalization limitations
-  beside the interpreted results.
+  beside the interpreted results. Require the controlled one-factor weight and
+  invalid-chromosome interpretations defined by the accepted-study contract.
 - [ ] Publish a concise report with portable and realized configurations,
   reproducible commands, separated training, natural-variation, fresh simulation
   seed, and held-out reference claims, and exact artifact lineage.
@@ -518,8 +519,8 @@ infrastructure.
 - [ ] Check the complete
   [accepted evidence bundle](SYSTEM.md#published-study-evidence), including every cited
   strict nine-file run tree, held-out input and result, configuration pair,
-  prerequisite record, environment record, report input, and canonical
-  path/size/SHA-256 manifest.
+  protocol-used transfer header and external observation, prerequisite record,
+  environment record, report input, and canonical path/size/SHA-256 manifest.
 
 **Tests:**
 
@@ -539,10 +540,14 @@ infrastructure.
 - [ ] Reject representative missing, corrupt, foreign, and substituted accepted
   evidence with the canonical first-mismatch diagnostic and no acceptance
   publication.
+- [ ] After a candidate passes its bounded offline audit, reject an occupied
+  study-ID publication, preserve the existing different accepted bundle
+  byte-for-byte, and publish no candidate evidence.
 
 **Done when:** a retained replacement study under corrected semantics reports
 training, natural variation, fresh simulation seed behavior, and genuine held-out reference
-evidence separately; every cited byte is checked; and the clean-clone offline
+evidence separately; every protocol-used transfer header, external observation,
+and cited byte is checked; publication is exclusive; and the clean-clone offline
 audit reconstructs the complete report and lineage without Docker or Internet.
 
 **Historical evidence (2026-08-14):** study

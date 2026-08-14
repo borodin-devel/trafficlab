@@ -407,10 +407,76 @@ Each outcome cell lists, in order: exact `kind`; owning `stage`;
       path; no run artifacts</td>
     </tr>
     <tr>
-      <td>Docker, image, mount, or prerequisite unavailable</td>
+      <td>Docker unavailable</td>
       <td><code>docker_preflight_failed</code>; preflight; capture evidence
-      <code>not_published</code>; primary; no status; restore the named
-      prerequisite; no capture pair</td>
+      <code>not_published</code>; primary; no status; restore Docker Engine and
+      Compose availability; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Docker incompatible</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; provide the named required
+      Docker and Compose features; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Image unavailable</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; make the named image
+      reference available; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Image incompatible</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; restore the declared image
+      content identity and architecture; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Capture tool unavailable</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; install the declared
+      capture tool in the capture image; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Capture tool incompatible</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; restore the declared
+      capture-tool version; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Mount unavailable</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; make the named host source
+      available to Docker; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Mount incompatible</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; correct the declared
+      container target and mode; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Mounted input unavailable</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; restore the named mounted
+      input bytes; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Mounted input incompatible</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; restore the declared
+      mounted-input content identity; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Prerequisite unavailable</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; make the named prerequisite
+      available; no capture pair</td>
+    </tr>
+    <tr>
+      <td>Prerequisite incompatible</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; no status; satisfy the named
+      prerequisite compatibility contract; no capture pair</td>
     </tr>
     <tr>
       <td>Target exits <code>23</code></td>
@@ -523,6 +589,12 @@ Each outcome cell lists, in order: exact `kind`; owning `stage`;
       directory; no replacement <code>best_model.json</code></td>
     </tr>
     <tr>
+      <td>Accepted-bundle collision after a successful offline audit</td>
+      <td><code>publication_collision</code>; publication; candidate accepted
+      evidence bundle <code>not_published</code>; primary; no status; choose a new
+      study ID; existing different accepted bundle preserved unchanged</td>
+    </tr>
+    <tr>
       <td>Similarity durability failure during compare publication</td>
       <td><code>publication_failed</code>; compare;
       <code>similarity.json/not_published</code>; primary; no status; correct
@@ -573,10 +645,11 @@ The capture rows implement the authority and precedence rules from
 
 A small checked-in immutable fixture at
 `tests/fixtures/diagnostics/failure-outcomes.jsonl` contains one credential-free
-canonical record for each matrix row. Strict offline parsing reproduces the
-table expectations without Docker, network access, an observability service, or
-a security subsystem. Secrets, credentials, host usernames, and absolute local
-paths are forbidden in the fixture.
+canonical record for each matrix row, including each unavailable and incompatible
+Docker, image, capture-tool, mount, mounted-input, and prerequisite case. Strict
+offline parsing reproduces the table expectations without Docker, network
+access, an observability service, or a security subsystem. Secrets, credentials,
+host usernames, and absolute local paths are forbidden in the fixture.
 
 ### Full-pipeline resume and reuse equivalence
 
@@ -721,18 +794,23 @@ comparison, configuration identities, and lineage are retained.
 
 The report states training fit/selection, repeated-capture natural variation,
 fresh-simulation behavior, and held-out results as four separate claims. It does
-not relabel any training reference or fresh-seed generation as held-out.
+not relabel any training reference or fresh-seed generation as held-out. For a
+controlled one-factor method-weight change, it states that only aggregate
+contribution and possibly ranking change while component scores, diagnostics,
+and mandatory execution remain fixed. It treats an invalid chromosome only as
+infeasible under its declared genes, settings, and limits, not as evidence of
+poor fit or model-family inferiority.
 
 The accepted evidence bundle is a checked tree at
 `examples/validation_study/evidence/<study-id>/`. It contains the complete run
 trees, portable/realized pairs, held-out inputs and outputs, prerequisite
-records, environment record, report inputs, and canonical manifest. The
-manifest orders normalized relative paths by UTF-8 byte order and records each
-retained regular file's logical owner, byte size, SHA-256, and lineage edges.
-The manifest itself is the checked inventory root and is not recursively hashed
-inside itself; its Git blob identity anchors its bytes. Symlinks, unlisted files,
-listed missing files, duplicate normalized paths, and paths outside the bundle
-are rejected.
+records, protocol-used transfer headers and external observations, environment
+record, report inputs, and canonical manifest. The manifest orders normalized
+relative paths by UTF-8 byte order and records each retained regular file's
+logical owner, byte size, SHA-256, and lineage edges. The manifest itself is the
+checked inventory root and is not recursively hashed inside itself; its Git blob
+identity anchors its bytes. Symlinks, unlisted files, listed missing files,
+duplicate normalized paths, and paths outside the bundle are rejected.
 
 Its environment record contains the source commit/tree, `uv.lock`, CPython
 patch, target and capture references/content IDs, capture-tool version, Docker
@@ -781,10 +859,13 @@ Docker subprocesses and network calls, and require successful reconstruction.
 Separate copies remove one listed file, corrupt one byte, import a valid artifact
 from a foreign run, and substitute a valid same-format artifact with changed
 lineage; each must fail with its canonical first-mismatch diagnostic and publish
-no acceptance result. Existing strict per-format tests retain the exhaustive
-corruption matrices, so the audit adds no duplicate codec, similarity
-implementation, generic experiment framework, recovery system, security system,
-or publication service.
+no acceptance result. A bounded collision case first passes the candidate audit,
+then attempts exclusive publication at an occupied study ID and requires the
+canonical `publication_collision` outcome, no candidate publication, and the
+existing different accepted bundle byte-for-byte unchanged. Existing strict
+per-format tests retain the exhaustive corruption matrices, so the audit adds no
+duplicate codec, similarity implementation, generic experiment framework,
+recovery system, security system, or publication service.
 
 ## Continuous integration
 

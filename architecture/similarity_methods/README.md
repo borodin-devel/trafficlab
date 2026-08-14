@@ -46,6 +46,12 @@ The existing method hand calculations, together with one-hot, mixed-weight,
 and zero-weight aggregate and failure tests, are sufficient evidence for this
 weight-semantics change. No duplicate metric implementation is required.
 
+In a controlled one-factor sensitivity comparison, changing one method weight
+alters only aggregate contribution and may alter candidate or family ranking.
+For fixed traces and method settings, every component score and diagnostic stays
+fixed, and all four mandatory methods still execute. This separates sensitivity
+to declared aggregation policy from a change in measured trace behavior.
+
 ## MVP methods
 
 | Method | Behavior | Settings | Minimum | Cost | Limitation |

@@ -327,9 +327,11 @@ generation, resume, or stage reuse.
 An accepted evidence bundle is checked at
 `examples/validation_study/evidence/<study-id>/`. It retains every report-cited
 primary and reproduction strict nine-file run tree, portable configurations,
-held-out inputs and results, prerequisite evidence, an environment record, and a
-canonical path/size/SHA-256 inventory. Publication occurs only after a bounded
-offline audit. Hashes without retained bytes do not qualify.
+held-out inputs and results, protocol-used transfer headers and external
+observations, prerequisite evidence, an environment record, and a canonical
+path/size/SHA-256 inventory. Publication is exclusive and occurs only after the
+candidate bundle passes the bounded offline audit. An existing different
+accepted bundle is preserved. Hashes without retained bytes do not qualify.
 
 Accepted reports require this retained evidence bundle in addition to the nine
 ordinary run artifacts. Scores and winners are descriptive; they do not establish
@@ -435,9 +437,9 @@ status (optional exact external/process status)
 ```
 
 Its boundary classes are configuration/path; Docker/preflight; external
-exit/timeout/interruption/malformed output; missing/changed/foreign or corrupt
-artifact; incompatible scientific semantics; metric/sample/numeric infeasibility;
-generation guard/deadline; publication; cleanup; and combined failures.
+exit/timeout/interruption/malformed output; missing/changed/foreign/stale or
+corrupt artifact; incompatible scientific semantics; metric/sample/numeric
+infeasibility; generation guard/deadline; publication; cleanup; and combined failures.
 Candidate-invalid diagnostics expose equivalent scientific fields. This outcome
 extends existing exceptions and event arbitration without replacing either.
 
