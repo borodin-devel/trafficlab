@@ -26,6 +26,41 @@ checkpoint.
 resolution, environments, locking, and project commands. Commit `.python-version`,
 `pyproject.toml`, and `uv.lock`; never hand-edit `uv.lock`.
 
+## Reproducibility review and accepted evidence
+
+Reproducibility review includes the capture Dockerfile's Debian base digest,
+dated snapshot archive state, and exact direct-package inputs, as recorded in
+`docker/capture/image-lock.json`. The record is checked before use; it is not
+silently updated by a newly resolved image.
+
+An accepted-study environment record includes the source commit and tree,
+`uv.lock`, Python version, target and capture identities, capture-tool version,
+Docker Engine, Compose, kernel, and host architecture. Compatibility uses only
+the following categories and no other host field:
+
+```text
+must match for deterministic offline regeneration:
+  source commit/tree, uv.lock, CPython patch, scientific schema, artifact bytes
+
+must match for a fresh compatible capture environment:
+  host architecture, target content ID, capture image-lock expected/resolved ID,
+  capture-tool version, container argv/environment/workdir/mount target+mode,
+  mounted-input content hashes
+
+recorded external variation permitted after successful feature preflight:
+  Docker Engine/Compose patch versions, kernel release, checkout/run/mount-source
+  absolute paths
+```
+
+Capture reuse remains stricter: it requires the exact realized snapshot and
+capture identities. Permitted fresh-environment variation is never reusable
+capture equivalence.
+
+Ordinary `runs/` and scratch study work remain ignored. The narrow checked
+exception is `examples/validation_study/evidence/<study-id>/`, which holds an
+accepted evidence bundle. Do not commit an accepted bundle until its offline
+audit succeeds.
+
 ## Dependencies
 
 Use uv to change dependencies:

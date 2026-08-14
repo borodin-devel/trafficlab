@@ -61,6 +61,27 @@ Before capture, Trafficlab checks:
 Preflight creates no persistent Trafficlab environment. Probe resources use a
 unique temporary Compose project and are removed before the check returns.
 
+## Reproducible capture environment
+
+The capture Dockerfile uses the approved Debian tag plus an exact sha256 digest
+in `FROM`. Its `apt` sources read one dated
+[Debian Snapshot](https://snapshot.debian.org/) archive state, and every
+directly installed Dockerfile package has an exact Debian version.
+
+`docker/capture/image-lock.json` is the small checked canonical record of the
+base digest, snapshot timestamp, direct package versions, capture-tool version,
+and expected resolved capture-image content ID. A successful build must equal
+that checked expected content ID; merely recording a newly resolved ID is
+insufficient. This follows Docker's
+[digest-pinning guidance](https://docs.docker.com/build/building/best-practices/)
+when image identity must be reproducible.
+
+Preflight records target and capture references with their resolved content
+IDs. Capture reuse rejects any mismatch in the exact capture-reuse fields
+defined by the shared [stage-compatibility table](SYSTEM.md#stage-compatibility).
+Unavailable snapshot, package, or image inputs fail rather than silently
+updating.
+
 ## Capture lifecycle
 
 For one capture, Trafficlab performs these steps in order. The configured
@@ -130,6 +151,15 @@ all events visible in that observation, and applies this fixed priority:
 
 The selected event is processed before another wait or orchestration action.
 Once a primary failure exists, no later failure replaces it.
+
+Each listed outcome records the canonical failure fields from
+[Failure policy](SYSTEM.md#failure-policy), including `affected_evidence` and
+`evidence_state`. Readiness, target, capture, flush, and timeout failures record
+the capture pair state. Metadata and malformed-output failures record the
+diagnostic pair or `not_published`. Cleanup failures record the
+`possibly_remaining` project inventory. A successful validated capture records
+the preserved reusable pair. These records describe the existing outcomes; they
+introduce no event, timeout, or lifecycle branch.
 
 - **Readiness timeout:** target never starts; remove the project and report
   capture logs.
