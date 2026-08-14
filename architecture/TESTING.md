@@ -182,8 +182,9 @@ example. Important fixed expectations include:
   exhaustion, and population-size preservation are explicit. A stub case keeps
   a source-equal repaired cross-family child whose source did not survive when
   the retry count is zero, and requires the exhaustion diagnostic.
-- Genetic stage policy: enabled families, family history rows, and all
-  tie-adjacent ordering are lexical; `G = 0` evaluates only generation zero;
+- Genetic stage policy: enabled-family display and family history rows are
+  lexical, while quota remainders, initial slots, and cross-family ties use the
+  seeded `family_priority`; `G = 0` evaluates only generation zero;
   selection uses trial seeds and `generation.trial` limits while final validation
   uses exactly the distinct final seed and the same trial limits; checkpoint
   publication precedes derived history repair/publication; `<= tolerance`
@@ -202,6 +203,100 @@ Fixed-seed tests compare complete event sequences, not merely summary
 statistics. Every generator must emit finite nondecreasing timestamps, valid
 directions and frame lengths, retain any event exactly at `W`, exclude later
 events, and distinguish natural full-window completion from a reliability guard.
+
+### Bounded scientific-validation matrix
+
+The direct scientific matrix below runs without Docker or the Internet. Its
+seeds, sizes, tolerances, and failure labels are constants in the tests and must
+not be changed after looking at an implementation's output. Each stochastic
+assertion uses an analytical calculation or a small independent test-only
+calculation as its oracle. Production generators, serializers, fixture
+regeneration, production similarity functions, and round trips cannot validate
+themselves. A failure starts with `scientific-validation:<case>` and reports the
+seed, sample size, expected value, observed value, and tolerance.
+
+The common mark distribution is the two-point joint distribution
+`(outbound, 60): 1/4` and `(inbound, 120): 3/4`. A frequency assertion below
+means absolute error at most `0.03` for both joint cells. Completion cases also
+require finite nondecreasing events in `[0, W]`, emission at a scripted event
+exactly at `W`, natural completion only after a scripted next event above `W`,
+and an incomplete result when each reliability guard fires first.
+
+<table>
+  <thead>
+    <tr><th>Case</th><th>Fixed protocol</th><th>Independent expectation and tolerance</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Poisson empirical</td>
+      <td>Rate <code>4</code>, seeds <code>1103, 2207, 3301, 4409</code>;
+      four complete <code>W = 4096</code> runs; first 12,000 generated IATs and
+      marks from each seed</td>
+      <td>Mean IAT <code>1/4</code> within 5%; empirical CDF at <code>1/4</code>
+      within <code>0.04</code> of <code>1 - exp(-1)</code>; each run's mean rate
+      within 8%; common mark frequencies and completion contract</td>
+    </tr>
+    <tr>
+      <td>Markov Renewal</td>
+      <td>Kernel <code>[[0.8, 0.2], [0.3, 0.7]]</code>, seeds
+      <code>5101, 5209, 5303, 5413</code>, 20,000 transitions per seed; each
+      conditional IAT table is respectively <code>(1, 3)</code>,
+      <code>(2, 4)</code>, <code>(3, 5)</code>, and <code>(4, 6)</code></td>
+      <td>Each transition cell within <code>0.025</code>; state occupancy within
+      <code>0.03</code> of <code>(0.6, 0.4)</code>; each conditional mean within
+      5%; exact scripted transition/source/global fallback choice and counter;
+      common mark frequencies and completion contract</td>
+    </tr>
+    <tr>
+      <td>Two-state MMPP</td>
+      <td><code>q01 = 1</code>, <code>q10 = 3</code>,
+      <code>lambda0 = 1</code>, <code>lambda1 = 9</code>; seeds
+      <code>7103, 7207, 7309, 7411</code>; four complete
+      <code>W = 4096</code> runs; first 10,000 arrival epochs and IATs from each
+      seed</td>
+      <td>Arrival-epoch mix within <code>0.03</code> of
+      <code>(1/4, 3/4)</code>; time occupancy within <code>0.03</code> of
+      <code>(3/4, 1/4)</code>; rate within 6% of <code>3</code>; adjacent-IAT
+      covariance within <code>0.015</code> of the analytical
+      <code>4/147</code>; common mark frequencies and completion contract</td>
+    </tr>
+    <tr>
+      <td>Genetic neutrality and fairness</td>
+      <td>Families sorted as Markov Renewal, MMPP, Poisson empirical; master
+      seeds <code>4, 0, 6</code>; population <code>6</code>, two trial seeds
+      <code>17, 29</code>, <code>W = 10</code>; per candidate/trial: 50,000
+      packets, 64 MiB, and 30 fake-clock seconds</td>
+      <td>Every family occupies every priority position once; registry and
+      configuration permutations preserve priority, quotas, children, and
+      winner; all-<code>0.5</code> and symmetric-invalid cases follow priority;
+      under mixed weights, controlled Markov/MMPP/Poisson component scores
+      <code>(0.4,...)</code>, <code>(0.8,0.7,0.9,0.8)</code>, and
+      <code>(0.6,...)</code> make MMPP the unique winner in every input order</td>
+    </tr>
+    <tr>
+      <td>Similarity weights</td>
+      <td>Method order frame-size KS, IAT KS, ACF, multiscale rate; component
+      scores <code>(0.2, 0.4, 0.6, 0.8)</code>; four one-hot vectors and mixed
+      weights <code>(0.1, 0.2, 0.3, 0.4)</code></td>
+      <td>Each one-hot aggregate equals its selected component exactly; mixed
+      aggregate equals <code>0.6</code>; every zero-weight method still executes,
+      retains diagnostics, and propagates its injected failure</td>
+    </tr>
+  </tbody>
+</table>
+
+Markov Renewal occupancy is calculated independently from the two-state balance
+equations, and conditional means come directly from the declared finite tables.
+The MMPP oracle uses the two-state generator and diagonal arrival-rate matrices
+to calculate time occupancy, arrival-epoch initialization, rate, and the
+adjacent-IAT moment; it is not a second simulator. Exact RNG-order, threshold,
+fallback, boundary, and guard tests remain separate from the statistical rows.
+The matrix is a bounded test suite, not a benchmark or general statistical
+testing framework.
+
+The priority expectations are the CPython 3.12.3 results of the exact temporary
+`random.Random(master_seed).sample(...)` contract; the test also calculates
+them directly rather than storing implementation output as an oracle.
 
 ## In-process integration tests
 
@@ -222,10 +317,10 @@ These tests join real modules without Docker:
 4. Use a direction-asymmetric fixture, keep timestamps and lengths fixed, reverse
    every packet direction, and require multiscale similarity below `1` while
    frame-size KS, IAT KS, and ACF remain unchanged.
-5. Run a small heterogeneous population with all three families and nondefault operator
-   values for every family. Require every family to remain represented and prove
-   that crossover occurs only within one family, each child uses its own family
-   settings, and cross-family reproduction forces mutation.
+5. Run a small heterogeneous population with all three families and nondefault
+   operator values for every family. Require every family to remain represented
+   and prove that crossover occurs only within one family, each child uses its
+   own family settings, and cross-family reproduction forces mutation.
 6. Interrupt after a completed generation, load `checkpoint.json`, resume, and
    require the next repaired gene tuples, child IDs, RNG state, history, and
    winner to equal an uninterrupted run. Independently alter one stored
@@ -248,9 +343,172 @@ These tests join real modules without Docker:
     reports the last-known inventory as possibly remaining. A hanging cleanup
     kills its local CLI at the deadline, makes no later Docker query, and reports
     the same inventory as possibly remaining.
+11. Round-trip portable and realized configurations with method weights
+    `(1, 0, 0, 0)` and `(0.1, 0.2, 0.3, 0.4)`. Require all four mandatory method
+    settings and diagnostics in both cases; realization may change only the run
+    directory and declared bind-mount host-source paths.
+12. In a relocated fresh clean clone with its own locked dependency environment,
+    realize one portable configuration after feature preflight. Require every
+    scientific/workload value, source commit/tree, `uv.lock`, CPython patch,
+    scientific schema, image content identity, container mount target/mode, and
+    mounted-input identity to match. Only Docker Engine and Compose patch
+    versions, kernel release, checkout path, run-directory path, and host
+    mount-source absolute paths may differ.
+13. Independently change host architecture, target content ID, expected capture
+    image ID, resolved capture image ID, capture-tool version, mounted-input
+    hash, one scientific configuration value, and the scientific artifact
+    schema. Reject every case before publication and name the first mismatching
+    field. Also reject an old otherwise well-formed schema before fit resume,
+    generation, or any stage reuse.
+14. Exercise the complete [stage-compatibility matrix](SYSTEM.md#stage-compatibility).
+    Capture reuse requires exact realized snapshot bytes, capture identity, and
+    both capture files. Fit, generate, compare, and offline reconstruction
+    require all equality fields in that table. Image and runtime compatibility
+    are checked before reuse; permitted fresh-capture variation is never treated
+    as capture-reuse equivalence.
 
 These tests use temporary run directories and leave them available only when a
 failure-report option requests preservation.
+
+Items 12 and 13 are one portable-to-realized transfer proof and its incompatible
+cases, not the multi-platform matrix reserved for a stronger evidence level.
+The test compares only the compatibility fields owned by
+[System](SYSTEM.md#stage-compatibility),
+[Capture](CAPTURE.md#reproducible-capture-environment), and
+[Development](DEVELOPMENT.md#reproducibility-review-and-accepted-evidence); no
+unrelated host metadata participates.
+
+### Canonical adverse-condition diagnostics
+
+Table-driven injected tests cover the finite failure boundary. Every row asserts
+the exact `kind`, `stage`, `detail`, `affected_evidence`, `evidence_state`,
+`corrective_action`, `authority`, optional exact `status`, and absence of the
+named reusable output. The injected detail names the failing field or resource;
+compatibility rows name the first mismatch. Slash-separated artifact variants
+are separate cases, not one sampled alternative.
+
+<table>
+  <thead>
+    <tr><th>Injected boundary</th><th>Canonical outcome</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Invalid configuration or path</td>
+      <td><code>configuration_invalid</code>; preflight; run evidence
+      <code>not_published</code>; primary; correct the named field or path</td>
+    </tr>
+    <tr>
+      <td>Docker, image, mount, or prerequisite unavailable</td>
+      <td><code>docker_preflight_failed</code>; preflight; capture evidence
+      <code>not_published</code>; primary; restore the named prerequisite</td>
+    </tr>
+    <tr>
+      <td>Target exits <code>23</code></td>
+      <td><code>target_failed</code>; capture; capture pair
+      <code>diagnostic_only</code>; primary; exact status <code>23</code>;
+      inspect target status and log</td>
+    </tr>
+    <tr>
+      <td>Capture exits <code>42</code> while target is active</td>
+      <td><code>capture_failed</code>; capture; capture pair
+      <code>not_published</code>; primary; exact status <code>42</code>;
+      inspect capture status and log</td>
+    </tr>
+    <tr>
+      <td>Workload timeout</td>
+      <td><code>stage_timeout</code>; capture; capture pair
+      <code>diagnostic_only</code>; primary; correct timeout or workload</td>
+    </tr>
+    <tr>
+      <td>User interruption</td>
+      <td><code>interrupted</code>; capture; capture pair
+      <code>diagnostic_only</code>; primary; exact status <code>130</code>;
+      retry when ready</td>
+    </tr>
+    <tr>
+      <td>Malformed capture</td>
+      <td><code>capture_malformed</code>; capture; capture pair
+      <code>diagnostic_only</code>; primary; correct the capture producer</td>
+    </tr>
+    <tr>
+      <td>Artifact missing, changed, foreign, stale, or corrupt</td>
+      <td>Matching <code>artifact_*</code> kind; reuse stage; named artifact
+      <code>preserved</code>; primary; recreate the owning stage</td>
+    </tr>
+    <tr>
+      <td>Old model or checkpoint semantics</td>
+      <td><code>scientific_semantics_incompatible</code>; reuse stage; artifact
+      <code>preserved</code>; primary; refit under the current schema</td>
+    </tr>
+    <tr>
+      <td>Metric, sample, or numeric infeasibility</td>
+      <td><code>metric_infeasible</code>; compare; <code>similarity.json</code>
+      <code>not_published</code>; primary; correct samples or settings</td>
+    </tr>
+    <tr>
+      <td>Generation guard or deadline</td>
+      <td><code>generation_incomplete</code>; generate;
+      <code>generated.pcapng</code> <code>not_published</code>; primary; correct
+      limit or model</td>
+    </tr>
+    <tr>
+      <td>Publication collision</td>
+      <td><code>publication_collision</code>; publishing stage; existing
+      destination <code>preserved</code>; primary; choose a new run directory</td>
+    </tr>
+    <tr>
+      <td>Publication durability failure</td>
+      <td><code>publication_failed</code>; publishing stage; destination
+      <code>not_published</code>; primary; correct storage and retry</td>
+    </tr>
+    <tr>
+      <td>Cleanup failure after success</td>
+      <td><code>cleanup_failed</code>; capture; inventory
+      <code>possibly_remaining</code>; primary; remove the named project</td>
+    </tr>
+    <tr>
+      <td>Target status <code>23</code> plus cleanup failure</td>
+      <td>Primary <code>target_failed</code> and secondary
+      <code>cleanup_failed</code>; no reusable capture pair</td>
+    </tr>
+  </tbody>
+</table>
+
+Equivalent candidate-invalid records retain the scientific fields in checkpoint
+and history diagnostics and score zero; infrastructure failures still abort.
+The table includes the capture authority and precedence cases from
+[Capture reliability](CAPTURE.md#reliability-behavior), including already-stopped
+capture, flush timeout, total-run timeout, and primary/secondary combinations.
+
+A small checked-in immutable fixture at
+`tests/fixtures/diagnostics/failure-outcomes.jsonl` contains one credential-free
+canonical record for each matrix row. Strict offline parsing reproduces the
+table expectations without Docker, network access, an observability service, or
+a security subsystem. Secrets, credentials, host usernames, and absolute local
+paths are forbidden in the fixture.
+
+### Full-pipeline resume and reuse equivalence
+
+One offline integration test runs `fit -> generate -> compare -> final
+publication` both uninterrupted and with interruption immediately after a whole
+evaluated-generation checkpoint. The resumed path must have identical
+`family_priority`, repaired genes, candidate IDs, search RNG state, history,
+winner, fresh simulation seed result, generated canonical events, component
+diagnostics, aggregate, and final publication inventory. It also requires
+byte-identical canonical JSON, CSV, and PCAPNG scientific artifacts, their
+SHA-256 identities, and every cross-artifact lineage identity.
+
+Only wall-clock timestamps/durations, process and temporary project identities,
+absolute checkout/run/mount-source paths permitted by portable realization, and
+additional interruption/resume records in `run.log` may differ. No other value,
+byte, identity, or lineage edge may differ. A legacy scientific artifact fails
+compatibility before entering this comparison.
+
+A companion matrix validates and reuses capture, fit, generate, and compare
+outputs one stage at a time. Each reused result must validate before reuse and
+produce the same authoritative source identities and downstream lineage as a
+fresh execution. Filename existence, a hash without checked bytes, or permitted
+fresh-environment variation does not establish reuse equivalence.
 
 ## Docker capture integration tests
 
@@ -342,6 +600,101 @@ The URL is supplied by the operator or CI environment. This test is never part
 of the default or deterministic integration gate because public connectivity and
 external services are outside Trafficlab's control.
 
+## Accepted Validation Study evidence
+
+A replacement study is accepted only when its Docker and Internet prerequisite
+commands both ran successfully against the same source revision, tree,
+`uv.lock`, CPython patch, and scientific artifact schema as the study. Their
+bounded command lines, stdout, stderr, and JUnit records are retained. A
+collection-only result, skipped test, older revision, or expected unavailable-
+Docker diagnostic is not prerequisite evidence.
+
+Every training run admitted to the protocol, including each primary, repeat, and
+reproduction run, retains its complete strict nine-file run tree plus the
+portable configuration, realized configuration, and both identities. All
+training references used for fitting, bounds, candidate selection, or family
+selection remain in the bundle whether or not the report discusses them
+individually. The report identifies selection seeds separately from the fresh
+simulation seed; the latter evaluates the winner on its training reference and
+is not held-out evidence.
+
+The protocol predeclares and then captures one genuine independent held-out
+reference per workload after training rules are frozen and before results are
+interpreted. A held-out reference is never used for fitting, bounds, candidate
+selection, family selection, seed choice, or protocol amendment. For each
+workload, the training-only rule selects one retained fitted model; that fixed
+model is loaded without refitting or reselection, simulated over the held-out
+`W` with the predeclared fresh simulation seed, and compared with the held-out
+reference. Held-out capture metadata and PCAPNG, fixed-model generated PCAPNG,
+comparison, configuration identities, and lineage are retained.
+
+The report states training fit/selection, repeated-capture natural variation,
+fresh-simulation behavior, and held-out results as four separate claims. It does
+not relabel any training reference or fresh-seed generation as held-out.
+
+The accepted evidence bundle is a checked tree at
+`examples/validation_study/evidence/<study-id>/`. It contains the complete run
+trees, portable/realized pairs, held-out inputs and outputs, prerequisite
+records, environment record, report inputs, and canonical manifest. The
+manifest orders normalized relative paths by UTF-8 byte order and records each
+retained regular file's logical owner, byte size, SHA-256, and lineage edges.
+The manifest itself is the checked inventory root and is not recursively hashed
+inside itself; its Git blob identity anchors its bytes. Symlinks, unlisted files,
+listed missing files, duplicate normalized paths, and paths outside the bundle
+are rejected.
+
+Its environment record contains the source commit/tree, `uv.lock`, CPython
+patch, target and capture references/content IDs, capture-tool version, Docker
+Engine and Compose versions, kernel release, host architecture, and the declared
+compatibility decision. It contains no unrelated host inventory.
+
+Acceptance requires every report-cited byte to be checked in the bundle. It may
+not depend on ignored `runs/`, scratch directories, an original absolute path,
+a local cache, a remote archive, or hashes whose bytes are unavailable. Ordinary
+and failed runs remain ignored; this narrow checked bundle is not an archive
+service.
+
+### Bounded offline audit
+
+From a clean clone with the locked CPython environment already available, the
+acceptance command is:
+
+```bash
+scripts/run_bounded.sh \
+  --memory-high 6G --memory-max 8G --swap-max 1G \
+  --wall-time 20m --kill-after 10s -- \
+  uv run --locked --offline python scripts/audit_validation_study.py \
+  examples/validation_study/evidence/<study-id>/
+```
+
+The command does not invoke Docker, open a network connection, call
+`trafficlab run`, or fetch a missing byte. It fails if the locked environment is
+not locally available rather than accessing the network. It validates the
+manifest's exact inventory, regular-file types, sizes, and hashes; then parses
+every retained TOML, canonical JSON/JSONL, CSV, and PCAPNG with strict production
+codecs wherever they own the public format.
+
+The offline audit independently reconstructs normalized references and each
+`W`; checks portable/realized identities and the exact offline-reconstruction
+compatibility row; validates checkpoint, history, family priority, winner,
+model, and fresh simulation seed consistency; regenerates every deterministic
+generated trace from the retained model, seed, window, and limits; and
+recomputes all four mandatory component scores, weighted aggregates, natural-
+variation values, training summaries, held-out summaries, and report arithmetic.
+It validates every capture, configuration, model, generated trace, comparison,
+summary, report, and manifest lineage relationship instead of trusting a
+precomputed report value.
+
+Tests copy the accepted bundle into a temporary relocated clean root, prohibit
+Docker subprocesses and network calls, and require successful reconstruction.
+Separate copies remove one listed file, corrupt one byte, import a valid artifact
+from a foreign run, and substitute a valid same-format artifact with changed
+lineage; each must fail with its canonical first-mismatch diagnostic and publish
+no acceptance result. Existing strict per-format tests retain the exhaustive
+corruption matrices, so the audit adds no duplicate codec, similarity
+implementation, generic experiment framework, recovery system, security system,
+or publication service.
+
 ## Continuous integration
 
 All CI jobs run the four-worker, coverage-enabled unit and in-process
@@ -357,10 +710,10 @@ cases, and expensive failure boundaries. The completed non-Docker Python package
 must maintain at least 90% branch-aware coverage; this threshold does not replace
 any named behavioral or integration case. When a failed unit test identifies a
 defect in a function or method, the fix requires behavioral regression tests
-that cover 100% of that function's executable lines and branches. Verify the source range with targeted
-`pytest-cov` missing-line output; do not build a custom per-function coverage
-framework. A missing meaningful integration path still matters more than
-uninformative aggregate coverage.
+that cover 100% of that function's executable lines and branches. Verify the
+source range with targeted `pytest-cov` missing-line output; do not build a
+custom per-function coverage framework. A missing meaningful integration path
+still matters more than uninformative aggregate coverage.
 
 ## References
 
