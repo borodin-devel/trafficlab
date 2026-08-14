@@ -122,6 +122,13 @@ identities:
 No absent raw run artifact is invented or regenerated. The existing
 research-fitness assessment continues to state that those artifacts are absent.
 
+The ignored `examples/validation_study/.study-work/` evidence moves with the
+example directory. Rename its namespace-bearing directory entries so retained
+paths still resolve, but do not rewrite any evidence-file byte. Verify the file
+count and multiset of SHA-256 content identities before and after the move.
+Historical command output may therefore retain its original wording inside
+hashed bytes; it is evidence content, not an active project namespace.
+
 ## Implementation sequence
 
 1. Change and rename the owning tests first. Run a bounded focused test and
