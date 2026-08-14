@@ -49,6 +49,9 @@ repeating a real capture.
 - [Capture](CAPTURE.md) defines the Docker topology and reliable lifecycle.
 - [Testing](TESTING.md) defines unit and integration evidence.
 - [Roadmap](ROADMAP.md) gives the ordered MVP implementation path.
+- [Research fitness criteria](RESEARCH_FITNESS_CRITERIA.md) defines a five-level
+  rubric for scientific correctness, configurability, robustness, and
+  reproducibility without grading the current implementation.
 - [Genetic models](genetic_models/README.md) describes model-family competition
   and the enabled evolutionary strategy.
 - [Traffic models](traffic_models/README.md) owns the common model interface and

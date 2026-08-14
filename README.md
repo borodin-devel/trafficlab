@@ -463,6 +463,7 @@ For the authoritative scope boundary, see
 - [Development workflow](architecture/DEVELOPMENT.md)
 - [Testing strategy](architecture/TESTING.md)
 - [MVP Roadmap and completion evidence](architecture/ROADMAP.md)
+- [Research prototype fitness criteria](architecture/RESEARCH_FITNESS_CRITERIA.md)
 - [Traffic-model index](architecture/traffic_models/README.md)
 - [Similarity-method index](architecture/similarity_methods/README.md)
 - [Genetic-model index](architecture/genetic_models/README.md)
