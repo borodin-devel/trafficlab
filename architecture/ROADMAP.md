@@ -38,7 +38,7 @@ Only the 17 criteria currently below Acceptable are reopened:
 | 5.7 | Protocol reproducibility | Partial | Phases 7 and 8 |
 | 5.8 | Independent reconstruction | Dreadful | Phases 7 and 8 |
 
-| Phase | CLI behavior completed |
+| Phase | Primary outcome |
 |---|---|
 | 1 | `preflight --config-only` |
 | 2 | `compare` |
