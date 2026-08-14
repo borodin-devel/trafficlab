@@ -1,0 +1,683 @@
+"""Local preflight checks and initial experiment-artifact publication."""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+import shutil
+import tempfile
+import time
+import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, cast
+
+from trafficlab.artifacts import append_run_log, create_run_directory
+from trafficlab.compose import ComposePaths, render_production_compose, write_production_compose
+from trafficlab.config import ExperimentConfig
+from trafficlab.config_io import load_experiment, render_effective_config
+from trafficlab.errors import TrafficlabError
+from trafficlab.pcapng import parse_pcapng
+from trafficlab.trace import load_capture_metadata
+
+if TYPE_CHECKING:
+    from trafficlab.cleanup import CleanupResult
+    from trafficlab.docker_cli import ProcessHandle, ProjectInventory, ServiceState
+
+
+class SupportsFree(Protocol):
+    """A disk-usage result exposing available bytes."""
+
+    @property
+    def free(self) -> int: ...
+
+
+class DiskUsage(Protocol):
+    """Callable boundary for checking available disk space."""
+
+    def __call__(self, path: Path) -> SupportsFree: ...
+
+
+class Writable(Protocol):
+    """Callable boundary for checking directory writability."""
+
+    def __call__(self, path: Path) -> bool: ...
+
+
+class DockerResult(Protocol):
+    @property
+    def returncode(self) -> int: ...
+
+    @property
+    def stdout(self) -> str: ...
+
+    @property
+    def stderr(self) -> str: ...
+
+
+class DockerPreflight(Protocol):
+    """Docker operations needed by full preflight without importing the concrete adapter."""
+
+    def info(self, *, deadline: float) -> DockerResult: ...
+
+    def compose_version(self, *, deadline: float) -> DockerResult: ...
+
+    def image_inspect(self, image: str, *, deadline: float) -> DockerResult: ...
+
+    def image_pull(self, image: str, *, deadline: float) -> DockerResult: ...
+
+    def config(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+    def create_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+    def start_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+    def start_target(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+    def service_state(
+        self, compose_path: Path, project_name: str, service: str, *, deadline: float
+    ) -> ServiceState | None: ...
+
+    def signal_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+    def start_down(self, compose_path: Path, project_name: str, *, deadline: float) -> ProcessHandle: ...
+
+    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory: ...
+
+
+def default_writable(path: Path) -> bool:
+    """Return whether the current process can write to *path*."""
+    return os.access(path, os.W_OK)
+
+
+@dataclass(frozen=True, slots=True)
+class PreflightFinding:
+    """Result of one local preflight check."""
+
+    name: str
+    ok: bool
+    detail: str
+    corrective_action: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreflightReport:
+    """All local preflight findings for one validated configuration."""
+
+    config: ExperimentConfig
+    findings: tuple[PreflightFinding, ...]
+
+    def require_success(self) -> None:
+        """Raise a direct stage error when any local check failed."""
+        failures = [finding for finding in self.findings if not finding.ok]
+        if failures:
+            detail = "; ".join(f"{item.name}: {item.detail}" for item in failures)
+            raise TrafficlabError(
+                detail,
+                corrective_action=failures[0].corrective_action or "correct the reported preflight failures",
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedExperiment:
+    """A locally validated experiment with its initial artifacts published."""
+
+    source: Path
+    config: ExperimentConfig
+    report: PreflightReport
+    run_directory: Path
+
+
+def _nearest_existing_parent(path: Path) -> Path:
+    parent = path.parent
+    while not parent.exists():
+        parent = parent.parent
+    return parent
+
+
+def _check_mounts(config: ExperimentConfig) -> PreflightFinding:
+    missing = [mount.source for mount in config.target.mounts if not mount.source.exists()]
+    if missing:
+        detail = "missing mount source(s): " + ", ".join(str(path) for path in missing)
+        return PreflightFinding("mounts", False, detail)
+    return PreflightFinding("mounts", True, "all mount sources exist")
+
+
+def _check_run_directory(config: ExperimentConfig, writable: Writable) -> PreflightFinding:
+    run_directory = config.run.directory
+    if run_directory.exists():
+        return PreflightFinding("run_directory", False, f"run directory already exists: {run_directory}")
+
+    parent = _nearest_existing_parent(run_directory)
+    if not parent.is_dir():
+        return PreflightFinding("run_directory", False, f"nearest existing parent is not a directory: {parent}")
+    if not writable(parent):
+        return PreflightFinding("run_directory", False, f"nearest existing parent is not writable: {parent}")
+    return PreflightFinding("run_directory", True, "run directory is absent and its parent is writable")
+
+
+def _check_free_space(config: ExperimentConfig, disk_usage: DiskUsage) -> PreflightFinding:
+    parent = _nearest_existing_parent(config.run.directory)
+    try:
+        available = disk_usage(parent).free
+    except OSError as error:
+        return PreflightFinding("free_space", False, f"could not inspect free space at {parent}: {error}")
+    minimum = config.run.minimum_free_bytes
+    if available < minimum:
+        return PreflightFinding(
+            "free_space",
+            False,
+            f"available free space at {parent} is {available} bytes; requires at least {minimum} bytes",
+        )
+    return PreflightFinding("free_space", True, "available free space is sufficient")
+
+
+def check_local(
+    config: ExperimentConfig,
+    *,
+    disk_usage: DiskUsage = shutil.disk_usage,
+    writable: Writable = default_writable,
+) -> PreflightReport:
+    """Evaluate all independent local checks for a validated configuration."""
+    findings = (
+        _check_mounts(config),
+        _check_run_directory(config, writable),
+        _check_free_space(config, disk_usage),
+    )
+    return PreflightReport(config=config, findings=findings)
+
+
+def _deadline_error() -> TrafficlabError:
+    return TrafficlabError(
+        "Docker preflight exceeded the total-run deadline",
+        corrective_action="increase capture.total_timeout_seconds and retry full preflight",
+    )
+
+
+def _require_deadline(deadline: float, clock: Callable[[], float]) -> float:
+    try:
+        now = clock()
+        remaining = deadline - now
+    except ArithmeticError as error:
+        raise TrafficlabError(
+            "could not calculate the Docker preflight deadline",
+            corrective_action="use a finite monotonic clock and retry",
+        ) from error
+    if not math.isfinite(deadline) or not math.isfinite(now) or not math.isfinite(remaining) or remaining <= 0.0:
+        raise _deadline_error()
+    return remaining
+
+
+def _failure(name: str, error: TrafficlabError) -> PreflightFinding:
+    return PreflightFinding(name, False, str(error), error.corrective_action)
+
+
+def _cleanup_detail(cleanup: CleanupResult) -> str:
+    if not cleanup.secondary_details:
+        return cleanup.detail
+    return f"{cleanup.detail}; secondary: {'; '.join(cleanup.secondary_details)}"
+
+
+def _image_ready(compose: DockerPreflight, image: str, *, deadline: float) -> None:
+    try:
+        compose.image_inspect(image, deadline=deadline)
+        return
+    except TrafficlabError:
+        compose.image_pull(image, deadline=deadline)
+    compose.image_inspect(image, deadline=deadline)
+
+
+def _probe_document(config: ExperimentConfig, paths: ComposePaths) -> bytes:
+    document = cast(dict[str, object], json.loads(render_production_compose(config, paths)))
+    services = cast(dict[str, object], document["services"])
+    target = cast(dict[str, object], services["target"])
+    target.clear()
+    target.update(
+        {
+            "command": [],
+            "entrypoint": [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                "--connect-timeout",
+                f"{config.capture.total_timeout_seconds:g}",
+                "--max-time",
+                f"{config.capture.total_timeout_seconds:g}",
+                config.capture.network_probe_url,
+            ],
+            "image": config.capture.image,
+            "init": True,
+            "network_mode": "service:capture",
+        }
+    )
+    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _write_bytes(path: Path, content: bytes) -> None:
+    try:
+        path.write_bytes(content)
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not write preflight Compose file {path}: {error}",
+            corrective_action="verify the run parent is writable and retry",
+        ) from error
+
+
+def _capture_ready(output: Path) -> bool:
+    metadata_path = output / "capture.json"
+    capture_path = output / "reference.pcapng.tmp"
+    if not metadata_path.exists() or not capture_path.exists():
+        return False
+    load_capture_metadata(metadata_path)
+    try:
+        header = capture_path.read_bytes()[:28]
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not inspect preflight capture header: {error}",
+            corrective_action="verify the capture image can write its output bind mount",
+        ) from error
+    if len(header) < 28 or header[:4] != b"\x0a\x0d\x0d\x0a":
+        raise TrafficlabError(
+            "capture probe did not create a valid nonempty PCAPNG header",
+            corrective_action="verify the capture image contains a working dumpcap executable",
+        )
+    return True
+
+
+def _wait_capture_ready(
+    compose: DockerPreflight,
+    compose_path: Path,
+    project_name: str,
+    output: Path,
+    *,
+    deadline: float,
+    clock: Callable[[], float],
+    observed: dict[str, ServiceState],
+) -> None:
+    while True:
+        _require_deadline(deadline, clock)
+        state = compose.service_state(compose_path, project_name, "capture", deadline=deadline)
+        if state is not None:
+            observed[state.service] = state
+        if state is None or state.state != "running":
+            raise TrafficlabError(
+                "capture probe stopped before dumpcap became ready",
+                corrective_action="verify the capture image can read eth0 and start dumpcap",
+            )
+        if _capture_ready(output):
+            return
+
+
+def _wait_target(
+    compose: DockerPreflight,
+    compose_path: Path,
+    project_name: str,
+    *,
+    deadline: float,
+    clock: Callable[[], float],
+    observed: dict[str, ServiceState],
+) -> None:
+    while True:
+        _require_deadline(deadline, clock)
+        state = compose.service_state(compose_path, project_name, "target", deadline=deadline)
+        if state is not None:
+            observed[state.service] = state
+        if state is None or state.state == "running":
+            continue
+        if state.state != "exited":
+            raise TrafficlabError(
+                f"network probe target entered unexpected state {state.state!r}",
+                corrective_action="inspect the capture image and Docker Compose probe project",
+            )
+        if state.exit_code != 0:
+            raise TrafficlabError(
+                f"network probe target exited with status {state.exit_code}",
+                corrective_action="verify DNS and the configured probe endpoint are reachable from Docker",
+            )
+        return
+
+
+def _finish_capture_probe(
+    compose: DockerPreflight,
+    compose_path: Path,
+    project_name: str,
+    output: Path,
+    *,
+    deadline: float,
+    clock: Callable[[], float],
+    observed: dict[str, ServiceState],
+) -> None:
+    _require_deadline(deadline, clock)
+    state = compose.service_state(compose_path, project_name, "capture", deadline=deadline)
+    if state is not None:
+        observed[state.service] = state
+    if state is None or state.state != "running":
+        raise TrafficlabError(
+            "capture probe stopped unexpectedly during the network request",
+            corrective_action="verify the capture image can keep dumpcap running on eth0",
+        )
+    compose.signal_capture(compose_path, project_name, deadline=deadline)
+    while True:
+        _require_deadline(deadline, clock)
+        state = compose.service_state(compose_path, project_name, "capture", deadline=deadline)
+        if state is not None:
+            observed[state.service] = state
+        if state is not None and state.state == "running":
+            continue
+        if state is None or state.state != "exited" or state.exit_code != 0:
+            raise TrafficlabError(
+                "capture probe did not flush successfully",
+                corrective_action="verify dumpcap handles SIGINT and writes a complete PCAPNG",
+            )
+        break
+    metadata = load_capture_metadata(output / "capture.json")
+    events = parse_pcapng(output / "reference.pcapng.tmp", metadata, deadline=deadline, clock=clock)
+    if not events:
+        raise TrafficlabError(
+            "network probe completed without captured Ethernet traffic",
+            corrective_action="verify the probe endpoint is reached through capture service eth0",
+        )
+
+
+def _run_probe(
+    config: ExperimentConfig,
+    compose: DockerPreflight,
+    compose_path: Path,
+    project_name: str,
+    output: Path,
+    *,
+    deadline: float,
+    clock: Callable[[], float],
+    observed: dict[str, ServiceState],
+) -> None:
+    compose.start_capture(compose_path, project_name, deadline=deadline)
+    _wait_capture_ready(
+        compose,
+        compose_path,
+        project_name,
+        output,
+        deadline=deadline,
+        clock=clock,
+        observed=observed,
+    )
+    compose.start_target(compose_path, project_name, deadline=deadline)
+    _wait_target(compose, compose_path, project_name, deadline=deadline, clock=clock, observed=observed)
+    _finish_capture_probe(
+        compose,
+        compose_path,
+        project_name,
+        output,
+        deadline=deadline,
+        clock=clock,
+        observed=observed,
+    )
+
+
+def check_docker(
+    config: ExperimentConfig,
+    compose: DockerPreflight,
+    *,
+    deadline: float,
+    clock: Callable[[], float],
+) -> PreflightReport:
+    """Run sequential Docker checks and one disposable capture/network probe within one deadline."""
+    from trafficlab.cleanup import cleanup_project
+    from trafficlab.docker_cli import ProjectInventory
+
+    findings: list[PreflightFinding] = []
+
+    for name, success_detail, action in (
+        ("docker_daemon", "Docker daemon is reachable", lambda: compose.info(deadline=deadline)),
+        ("docker_compose", "Docker Compose v2 is available", lambda: compose.compose_version(deadline=deadline)),
+        (
+            "target_image",
+            "target image is locally available",
+            lambda: _image_ready(compose, config.target.image, deadline=deadline),
+        ),
+        (
+            "capture_image",
+            "capture image is locally available",
+            lambda: _image_ready(compose, config.capture.image, deadline=deadline),
+        ),
+    ):
+        try:
+            _require_deadline(deadline, clock)
+            action()
+        except TrafficlabError as error:
+            findings.append(_failure(name, error))
+            return PreflightReport(config=config, findings=tuple(findings))
+        findings.append(PreflightFinding(name, True, success_detail))
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="trafficlab-preflight-", dir=config.run.directory.parent) as temporary:
+            root = Path(temporary).resolve()
+            production_output = root / "production-output"
+            production_output.mkdir()
+            production_name = f"trafficlab-config-{uuid.uuid4().hex}"
+            production_path = root / "production.json"
+            write_production_compose(
+                production_path,
+                config,
+                ComposePaths(project_name=production_name, output_directory=production_output),
+            )
+            _require_deadline(deadline, clock)
+            compose.config(production_path, production_name, deadline=deadline)
+            findings.append(PreflightFinding("compose_config", True, "production Compose configuration is valid"))
+
+            probe_name = f"trafficlab-preflight-{uuid.uuid4().hex}"
+            probe_output = root / "probe-output"
+            probe_output.mkdir()
+            probe_path = root / "probe.json"
+            _write_bytes(probe_path, _probe_document(config, ComposePaths(probe_name, probe_output)))
+            observed: dict[str, ServiceState] = {}
+            probe_created = False
+
+            try:
+                _require_deadline(deadline, clock)
+                compose.config(probe_path, probe_name, deadline=deadline)
+                _require_deadline(deadline, clock)
+                probe_created = True
+                compose.create_capture(probe_path, probe_name, deadline=deadline)
+                _run_probe(
+                    config,
+                    compose,
+                    probe_path,
+                    probe_name,
+                    probe_output,
+                    deadline=deadline,
+                    clock=clock,
+                    observed=observed,
+                )
+            except TrafficlabError as error:
+                findings.append(_failure("network_probe", error))
+            else:
+                findings.append(
+                    PreflightFinding("network_probe", True, "capture image, eth0, dumpcap, DNS, and HTTP are ready")
+                )
+
+            finally:
+                cleanup = cleanup_project(
+                    compose,
+                    probe_path,
+                    probe_name,
+                    ProjectInventory(
+                        containers=tuple(
+                            sorted(
+                                observed.values(),
+                                key=lambda item: (item.service, item.name, item.identifier),
+                            )
+                        ),
+                        networks=(f"{probe_name}_default",) if probe_created else (),
+                    ),
+                    deadline=deadline,
+                    clock=clock,
+                )
+                if not cleanup.success:
+                    findings.append(
+                        PreflightFinding(
+                            "probe_cleanup",
+                            False,
+                            _cleanup_detail(cleanup),
+                            "remove the uniquely named preflight Compose project and retry",
+                        )
+                    )
+                else:
+                    findings.append(PreflightFinding("probe_cleanup", True, "disposable probe project was removed"))
+    except TrafficlabError as error:
+        name = "compose_config" if not any(item.name == "compose_config" for item in findings) else "network_probe"
+        findings.append(_failure(name, error))
+    except OSError as error:
+        translated = TrafficlabError(
+            f"could not create disposable preflight files: {error}",
+            corrective_action="verify the run parent is writable and retry",
+        )
+        findings.append(_failure("compose_config", translated))
+    return PreflightReport(config=config, findings=tuple(findings))
+
+
+def prepare_experiment(path: Path, *, writable: Writable = default_writable) -> PreparedExperiment:
+    """Load, locally validate, and publish a new experiment run directory."""
+    config = load_experiment(path)
+    report = check_local(config, writable=writable)
+    report.require_success()
+    run_directory = create_run_directory(config)
+    return PreparedExperiment(source=path, config=config, report=report, run_directory=run_directory)
+
+
+def _initial_run_records(run_directory: Path) -> tuple[dict[str, object], dict[str, object]]:
+    return (
+        {
+            "event": "effective_config_published",
+            "path": str(run_directory / "experiment.toml"),
+            "stage": "preflight",
+        },
+        {"event": "run_prepared", "path": str(run_directory), "stage": "preflight"},
+    )
+
+
+def _validate_existing_run(config: ExperimentConfig) -> None:
+    run_directory = config.run.directory
+    snapshot_path = run_directory / "experiment.toml"
+    log_path = run_directory / "run.log"
+    try:
+        expected_snapshot = render_effective_config(config)
+        actual_snapshot = snapshot_path.read_bytes()
+        if actual_snapshot != expected_snapshot:
+            raise ValueError("experiment.toml bytes do not match the current effective configuration")
+        if load_experiment(snapshot_path) != config:
+            raise ValueError("experiment.toml does not parse as the current effective configuration")
+
+        log_bytes = log_path.read_bytes()
+        log_text = log_bytes.decode("utf-8", errors="strict")
+        if not log_text.endswith("\n"):
+            raise ValueError("run.log is not newline terminated")
+        records: list[object] = [json.loads(line) for line in log_text.splitlines()]
+        if len(records) < 2 or tuple(records[:2]) != _initial_run_records(run_directory):
+            raise ValueError("run.log does not contain the required initial records")
+        if any(not isinstance(record, dict) for record in records):
+            raise ValueError("run.log contains a record that is not an object")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TrafficlabError, ValueError) as error:
+        raise TrafficlabError(
+            f"existing run is not reusable: {error}",
+            corrective_action="use the original matching experiment or choose a new run.directory",
+        ) from error
+
+
+def open_or_prepare_experiment(path: Path, *, writable: Writable = default_writable) -> PreparedExperiment:
+    """Prepare an absent run or reopen an exact, authoritative prepared run without mutation."""
+    config = load_experiment(path)
+    if not config.run.directory.exists():
+        return prepare_experiment(path, writable=writable)
+    if not config.run.directory.is_dir():
+        raise TrafficlabError(
+            f"existing run is not reusable: run path is not a directory: {config.run.directory}",
+            corrective_action="choose a new run.directory",
+        )
+
+    _validate_existing_run(config)
+    if writable(config.run.directory):
+        run_directory_finding = PreflightFinding(
+            "run_directory",
+            True,
+            "existing prepared run matches the effective configuration and is writable",
+        )
+    else:
+        run_directory_finding = PreflightFinding(
+            "run_directory",
+            False,
+            f"existing run directory is not writable: {config.run.directory}",
+            "make the existing run directory writable or choose a new run.directory",
+        )
+    report = PreflightReport(
+        config=config,
+        findings=(
+            _check_mounts(config),
+            run_directory_finding,
+            _check_free_space(config, shutil.disk_usage),
+        ),
+    )
+    report.require_success()
+    return PreparedExperiment(source=path, config=config, report=report, run_directory=config.run.directory)
+
+
+def run_preflight(
+    path: Path,
+    *,
+    config_only: bool,
+    docker: DockerPreflight | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    writable: Writable = default_writable,
+) -> PreparedExperiment:
+    """Run local preparation and, unless disabled, the injected Docker preflight."""
+    prepared = open_or_prepare_experiment(path, writable=writable)
+    if config_only:
+        return prepared
+
+    if docker is None:
+        from trafficlab.docker_cli import DockerCompose
+
+        docker = cast(DockerPreflight, DockerCompose(clock=clock))
+    try:
+        started = clock()
+        deadline = started + prepared.config.capture.total_timeout_seconds
+    except ArithmeticError as error:
+        raise TrafficlabError(
+            "could not calculate the Docker preflight deadline",
+            corrective_action="use a finite monotonic clock and retry",
+        ) from error
+    if not math.isfinite(started) or not math.isfinite(deadline) or deadline <= started:
+        raise TrafficlabError(
+            "could not calculate a finite future Docker preflight deadline",
+            corrective_action="use a finite monotonic clock and positive total timeout",
+        )
+
+    docker_report = check_docker(prepared.config, docker, deadline=deadline, clock=clock)
+    findings = list(prepared.report.findings) + list(docker_report.findings)
+    for finding in docker_report.findings:
+        try:
+            append_run_log(
+                prepared.run_directory,
+                {
+                    "detail": finding.detail,
+                    "event": "preflight_check",
+                    "name": finding.name,
+                    "ok": finding.ok,
+                    "stage": "preflight",
+                },
+            )
+        except TrafficlabError as error:
+            findings.append(_failure("run_log", error))
+            break
+
+    report = PreflightReport(config=prepared.config, findings=tuple(findings))
+    report.require_success()
+    return PreparedExperiment(
+        source=prepared.source,
+        config=prepared.config,
+        report=report,
+        run_directory=prepared.run_directory,
+    )

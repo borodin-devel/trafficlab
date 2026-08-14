@@ -1,0 +1,239 @@
+from __future__ import annotations
+
+import importlib.util
+import subprocess
+from pathlib import Path
+from types import ModuleType
+from typing import Protocol, Self, cast
+
+import pytest
+
+from tests import conftest
+from tests.docker import support
+from trafficlab.artifacts import append_run_log
+
+
+def _load_client() -> ModuleType:
+    path = conftest.DOCKER_FIXTURE_ROOT / "images" / "client" / "client.py"
+    spec = importlib.util.spec_from_file_location("trafficlab_test_client", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _ClientTraffic(Protocol):
+    def __call__(
+        self,
+        host: str,
+        tcp_count: int,
+        udp_count: int,
+        inter_request_seconds: float = 0.0,
+    ) -> None: ...
+
+
+def _client_traffic(client: ModuleType) -> _ClientTraffic:
+    return cast(_ClientTraffic, client._traffic)
+
+
+class _TcpConnection:
+    payload = b""
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def sendall(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def recv(self, maximum: int) -> bytes:
+        assert maximum == 4096
+        return b"ACK:" + self.payload
+
+
+class _UdpSocket:
+    def __init__(self, responses: list[bytes]) -> None:
+        self.responses = iter(responses)
+        self.sent: list[tuple[bytes, tuple[str, int]]] = []
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def settimeout(self, timeout: float) -> None:
+        assert timeout == 5.0
+
+    def sendto(self, payload: bytes, address: tuple[str, int]) -> None:
+        self.sent.append((payload, address))
+
+    def recv(self, maximum: int) -> bytes:
+        assert maximum == 4096
+        try:
+            return next(self.responses)
+        except StopIteration as error:
+            raise TimeoutError from error
+
+
+def _stub_client_network(
+    client: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    udp_count: int,
+) -> None:
+    client_socket = cast(ModuleType, client.socket)
+    responses = [
+        *(f"ACK:trafficlab-udp-{index}".encode() for index in range(udp_count)),
+        b"TRAFFICLAB-INBOUND-BROADCAST",
+    ]
+    udp = _UdpSocket(responses)
+
+    def connection_factory(address: tuple[str, int], *, timeout: float) -> _TcpConnection:
+        assert address == ("172.31.254.2", 18080)
+        assert timeout == 5.0
+        return _TcpConnection()
+
+    def socket_factory(*args: object, **kwargs: object) -> _UdpSocket:
+        del args, kwargs
+        return udp
+
+    monkeypatch.setattr(client_socket, "create_connection", connection_factory)
+    monkeypatch.setattr(client_socket, "socket", socket_factory)
+
+
+def test_client_default_traffic_performs_no_scheduling_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default capture fixtures must retain their original unslept request schedule."""
+    client = _load_client()
+    _stub_client_network(client, monkeypatch, udp_count=3)
+    sleeps: list[float] = []
+    monkeypatch.setattr(cast(ModuleType, client.time), "sleep", sleeps.append)
+
+    _client_traffic(client)("172.31.254.2", 2, 3)
+
+    assert sleeps == []
+
+
+def test_client_positive_delay_spaces_every_request_after_the_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The complete-run fixture spaces one later TCP and all three UDP requests by exactly 2 ms."""
+    client = _load_client()
+    _stub_client_network(client, monkeypatch, udp_count=3)
+    sleeps: list[float] = []
+    monkeypatch.setattr(cast(ModuleType, client.time), "sleep", sleeps.append)
+
+    _client_traffic(client)("172.31.254.2", 2, 3, 0.002)
+
+    assert sleeps == [0.002, 0.002, 0.002, 0.002]
+
+
+def test_udp_client_accepts_broadcast_between_expected_acknowledgements(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A queued broadcast must not be mistaken for the next request's acknowledgement."""
+    client = _load_client()
+    udp = _UdpSocket(
+        [
+            b"ACK:trafficlab-udp-0",
+            b"TRAFFICLAB-INBOUND-BROADCAST",
+            b"ACK:trafficlab-udp-1",
+            b"ACK:trafficlab-udp-2",
+        ]
+    )
+    client_socket = cast(ModuleType, client.socket)
+
+    def socket_factory(*args: object, **kwargs: object) -> _UdpSocket:
+        del args, kwargs
+        return udp
+
+    monkeypatch.setattr(client_socket, "socket", socket_factory)
+
+    _client_traffic(client)("172.31.254.2", 0, 3)
+
+    assert udp.sent == [
+        (b"trafficlab-udp-0", ("172.31.254.2", 18081)),
+        (b"trafficlab-udp-1", ("172.31.254.2", 18081)),
+        (b"trafficlab-udp-2", ("172.31.254.2", 18081)),
+    ]
+
+
+def test_udp_client_requires_the_inbound_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _load_client()
+    udp = _UdpSocket([b"ACK:trafficlab-udp-0"])
+    client_socket = cast(ModuleType, client.socket)
+
+    def socket_factory(*args: object, **kwargs: object) -> _UdpSocket:
+        del args, kwargs
+        return udp
+
+    monkeypatch.setattr(client_socket, "socket", socket_factory)
+
+    with pytest.raises(RuntimeError, match="broadcast"):
+        _client_traffic(client)("172.31.254.2", 0, 1)
+
+
+def test_capture_lifecycle_positions_use_published_run_log_schema(tmp_path: Path) -> None:
+    """Looking for an invented completion event would make every successful Docker capture test fail."""
+    append_run_log(tmp_path, {"event": "capture_ready", "stage": "capture"})
+    append_run_log(tmp_path, {"event": "capture_published", "stage": "capture"})
+
+    assert support.capture_lifecycle_positions(tmp_path) == (0, 1)
+
+
+def test_tracker_aggregates_inventory_and_removal_errors_while_continuing_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One inventory/removal failure must not prevent other known resources from being removed."""
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        calls.append(argv)
+        if argv[1:3] == ("ps", "--all"):
+            raise pytest.UsageError("container inventory failed")
+        if argv[1:3] == ("network", "ls"):
+            return subprocess.CompletedProcess(argv, 0, "project_default\n", "")
+        if argv[1:3] == ("volume", "ls"):
+            return subprocess.CompletedProcess(argv, 0, "project_data\n", "")
+        if argv[1:3] == ("network", "rm"):
+            raise pytest.UsageError("network removal failed")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+    tracker = conftest.DockerProjectTracker(projects={"project"})
+
+    with pytest.raises(pytest.fail.Exception) as caught:
+        tracker.assert_clean()
+
+    message = str(caught.value)
+    assert "container inventory failed" in message
+    assert "networks=[project_default]" in message
+    assert "volumes=[project_data]" in message
+    assert "network removal failed" in message
+    assert ("docker", "network", "rm", "project_default") in calls
+    assert ("docker", "volume", "rm", "--force", "project_data") in calls
+
+
+def test_tracker_preserves_body_and_cleanup_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A teardown failure must augment rather than replace the test's original exception."""
+    tracker = conftest.DockerProjectTracker()
+
+    def cleanup_failure() -> None:
+        pytest.fail("cleanup failed", pytrace=False)
+
+    def fail_cleanup(tracker: conftest.DockerProjectTracker) -> None:
+        del tracker
+        cleanup_failure()
+
+    monkeypatch.setattr(conftest.DockerProjectTracker, "assert_clean", fail_cleanup)
+
+    with pytest.raises(BaseExceptionGroup) as caught:
+        tracker.finish(RuntimeError("body failed"))
+
+    messages = [str(error) for error in caught.value.exceptions]
+    assert messages == ["body failed", "cleanup failed"]

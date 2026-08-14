@@ -1,0 +1,56 @@
+[project]
+name = "trafficlab"
+version = "0.1.0"
+description = "Research prototype for fitting and comparing network traffic models"
+readme = "architecture/README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pydantic>=2.11,<3",
+    "tomli-w>=1.2,<2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pyright",
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "ruff",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: joins multiple Trafficlab modules without external services",
+    "docker: requires Docker Engine and Docker Compose",
+    "internet: uses a configurable public Internet endpoint",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["trafficlab"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
+
+[project.scripts]
+trafficlab = "trafficlab.cli:entrypoint"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+
+[tool.pyright]
+include = ["src/trafficlab", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"

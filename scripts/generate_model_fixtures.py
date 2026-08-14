@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Generate or verify the deterministic Phase 4 final-capture fixture."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+from pathlib import Path
+
+from trafficlab.artifacts import quantize_generated_events
+from trafficlab.config_io import load_experiment
+from trafficlab.errors import TrafficlabError
+from trafficlab.models.registry import POISSON_FAMILY, get_family, load_best_model, make_best_model, render_best_model
+from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.trace import normalize_reference, parse_capture_metadata
+
+_REPOSITORY = Path(__file__).resolve().parents[1]
+_EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"
+_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_MODEL_PATH = _EXAMPLE_DATA / "models" / "best_model.json"
+_GENERATED_PATH = _EXAMPLE_DATA / "models" / "generated.pcapng"
+
+
+def _build_fixture() -> tuple[bytes, bytes]:
+    config = load_experiment(_EXAMPLE_CONFIG)
+    bounds = config.models.poisson_empirical
+    if bounds is None:
+        raise TrafficlabError(
+            f"Poisson bounds are absent from {_EXAMPLE_CONFIG}",
+            corrective_action="restore models.poisson_empirical in the minimal example configuration",
+        )
+
+    capture_path = _EXAMPLE_DATA / "capture.json"
+    reference_path = _EXAMPLE_DATA / "reference.pcapng"
+    try:
+        capture_content = capture_path.read_bytes()
+        reference_content = reference_path.read_bytes()
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not read parent Phase 2 model input: {error}",
+            corrective_action="restore the checked-in Phase 2 capture and reference fixtures",
+        ) from error
+
+    metadata = parse_capture_metadata(capture_content, source=capture_path)
+    parsed = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
+    reference, window = normalize_reference(parsed)
+    artifact = make_best_model(
+        POISSON_FAMILY,
+        reference,
+        (1.0,),
+        reference_sha256=hashlib.sha256(reference_content).hexdigest(),
+        capture_sha256=hashlib.sha256(capture_content).hexdigest(),
+        W=window,
+        bounds=bounds,
+    )
+    model_content = render_best_model(artifact)
+    loaded = load_best_model(model_content, source=_MODEL_PATH)
+    generated = (
+        get_family(loaded.family)
+        .generate(
+            loaded.fitted,
+            config.run.final_seed,
+            loaded.observation_window_seconds,
+            config.generation.final,
+        )
+        .require_complete()
+    )
+    rendered_events = quantize_generated_events(generated, loaded.observation_window_seconds)
+    generated_content = encode_pcapng(rendered_events, metadata)
+    parsed_generated = parse_pcapng_bytes(generated_content, metadata, source=_GENERATED_PATH)
+    if any(event.timestamp < 0.0 or event.timestamp > loaded.observation_window_seconds for event in parsed_generated):
+        raise TrafficlabError(
+            "deterministic Phase 4 generated capture exceeds its stored observation window",
+            corrective_action="report the production PCAPNG generation defect",
+        )
+    if parsed_generated != rendered_events:
+        raise TrafficlabError(
+            "deterministic Phase 4 generated capture did not round-trip",
+            corrective_action="report the production PCAPNG generation defect",
+        )
+    return model_content, generated_content
+
+
+def _check_fixture(path: Path, expected: bytes) -> None:
+    try:
+        actual = path.read_bytes()
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not read checked-in Phase 4 fixture {path}: {error}",
+            corrective_action="run the model fixture generator without --check",
+        ) from error
+    if actual != expected:
+        raise TrafficlabError(
+            f"checked-in Phase 4 fixture differs from deterministic production output: {path}",
+            corrective_action="run the model fixture generator without --check and commit the result",
+        )
+
+
+def _write_fixture(path: Path, content: bytes) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not write Phase 4 fixture {path}: {error}",
+            corrective_action="verify the model fixture directory is writable",
+        ) from error
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="byte-compare both checked-in Phase 4 artifacts")
+    return parser
+
+
+def main() -> int:
+    arguments = build_parser().parse_args()
+    model_content, generated_content = _build_fixture()
+    artifacts = ((_MODEL_PATH, model_content), (_GENERATED_PATH, generated_content))
+    if arguments.check:
+        for path, content in artifacts:
+            _check_fixture(path, content)
+        print("phase 4 model fixtures: checked-in bytes match deterministic production output")
+    else:
+        for path, content in artifacts:
+            _write_fixture(path, content)
+        print(f"phase 4 model fixtures: wrote {_MODEL_PATH}, {_GENERATED_PATH}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except TrafficlabError as error:
+        print(f"phase 4 model fixture: {error}; {error.corrective_action}")
+        raise SystemExit(error.exit_code) from None
