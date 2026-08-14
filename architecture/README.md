@@ -26,6 +26,20 @@ The complete `trafficlab run` command performs this sequence. Each stage is also
 available separately so a researcher can iterate on a model or metric without
 repeating a real capture.
 
+## Current research fitness work
+
+Phase 1 is Current because it is the earliest phase reopened by the
+[research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md). The
+[approved remediation design](../docs/superpowers/specs/2026-08-14-research-fitness-remediation-design.md)
+and [Roadmap](ROADMAP.md) target the minimum work needed to bring every deficient
+[research fitness criterion](RESEARCH_FITNESS_CRITERIA.md) to Acceptable or
+better.
+
+The work tightens scientific correctness, configurability, robustness, and
+reproducibility while preserving the same one-process MVP workflow. It adds no
+new model, metric, service, security subsystem, enterprise infrastructure, or
+multi-user scope.
+
 ## Principles
 
 - One Python program owns the pipeline; stages call one another in process.
@@ -52,6 +66,10 @@ repeating a real capture.
 - [Research fitness criteria](RESEARCH_FITNESS_CRITERIA.md) defines a five-level
   rubric for scientific correctness, configurability, robustness, and
   reproducibility without grading the current implementation.
+- [Research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) records
+  the unchanged evidence grades that reopened the current work.
+- [Remediation design](../docs/superpowers/specs/2026-08-14-research-fitness-remediation-design.md)
+  defines the minimum Acceptable target and targeted phase reopenings.
 - [Genetic models](genetic_models/README.md) describes model-family competition
   and the enabled evolutionary strategy.
 - [Traffic models](traffic_models/README.md) owns the common model interface and
