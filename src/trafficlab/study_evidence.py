@@ -13,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-from trafficlab.errors import TrafficlabError, attach_failure_outcome
+from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
 
 type BundleAudit = Callable[[Path], None]
 
@@ -52,15 +52,18 @@ def _publication_error(detail: str) -> TrafficlabError:
 
 
 def _collision(destination: Path) -> TrafficlabError:
-    return attach_failure_outcome(
-        TrafficlabError(
-            f"publication_collision: accepted evidence bundle already exists at {destination}",
-            corrective_action="choose a new study ID; accepted evidence bundles are immutable",
+    return TrafficlabError(
+        f"publication_collision: accepted evidence bundle already exists at {destination}",
+        corrective_action="choose a new study ID; accepted evidence bundles are immutable",
+        failure_outcome=FailureOutcome(
+            kind="publication_collision",
+            stage="publication",
+            detail="accepted bundle already exists",
+            affected_evidence="candidate accepted evidence bundle",
+            evidence_state="not_published",
+            corrective_action="choose a new study ID",
+            authority="primary",
         ),
-        kind="publication_collision",
-        stage="publication",
-        affected_evidence="candidate accepted evidence bundle",
-        evidence_state="not_published",
     )
 
 

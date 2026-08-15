@@ -15,6 +15,7 @@ from trafficlab.errors import TrafficlabError, attach_failure_outcome
 from trafficlab.genetic.checkpoint import (
     RNG_ENGINE,
     CheckpointCompatibility,
+    CheckpointCorruptionError,
     CheckpointState,
     FamilyCheckpointSpec,
     GeneticCheckpointSettings,
@@ -195,7 +196,7 @@ def initialize_or_resume(context: StrategyContext) -> CheckpointState | None:
                 error,
                 kind=(
                     "artifact_corrupt"
-                    if str(error).startswith("invalid checkpoint")
+                    if isinstance(error, CheckpointCorruptionError)
                     else "scientific_semantics_incompatible"
                 ),
                 stage="fit",

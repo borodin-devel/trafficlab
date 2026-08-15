@@ -201,8 +201,10 @@ def test_occupied_study_id_is_never_replaced_or_merged(tmp_path: Path, occupied_
         outcome.authority,
         outcome.status,
     ) == ("publication_collision", "publication", "candidate accepted evidence bundle", "not_published", "primary", None)
-    assert outcome.detail == str(error.value)
-    assert outcome.corrective_action == error.value.corrective_action
+    assert outcome.detail == "accepted bundle already exists"
+    assert outcome.corrective_action == "choose a new study ID"
+    assert str(error.value).startswith("publication_collision: accepted evidence bundle already exists at ")
+    assert error.value.corrective_action == "choose a new study ID; accepted evidence bundles are immutable"
     assert error.value.corrective_action == "choose a new study ID; accepted evidence bundles are immutable"
     assert audit_calls == [candidate]
     assert destination.stat().st_ino == before_inode

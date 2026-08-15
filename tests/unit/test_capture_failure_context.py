@@ -56,9 +56,9 @@ def _after_total_timeout(outcome: CaptureOutcome) -> CaptureOutcome:
 
 
 _LATER_CAPTURE_FAILURES: tuple[tuple[CaptureFailure, str, str], ...] = (
-    (_after_capture_stopped, "diagnostic_only", "inspect target status and log"),
-    (_after_flush_timeout, "diagnostic_only", "inspect target status and log"),
-    (_after_total_timeout, "diagnostic_only", "inspect target status and log"),
+    (_after_capture_stopped, "not_published", "inspect target status and log"),
+    (_after_flush_timeout, "not_published", "inspect target status and log"),
+    (_after_total_timeout, "not_published", "inspect target status and log"),
 )
 
 
@@ -66,7 +66,7 @@ _LATER_CAPTURE_FAILURES: tuple[tuple[CaptureFailure, str, str], ...] = (
     ("failure", "expected_state", "expected_action"),
     _LATER_CAPTURE_FAILURES,
 )
-def test_target_primary_remains_diagnostic_for_one_later_capture_failure(
+def test_target_primary_is_not_published_with_one_later_nonreusable_capture_failure(
     failure: CaptureFailure, expected_state: str, expected_action: str
 ) -> None:
     outcome = record_natural_target_status(CaptureOutcome(), 23)
@@ -77,7 +77,10 @@ def test_target_primary_remains_diagnostic_for_one_later_capture_failure(
     assert primary.kind == "target_failed"
     assert primary.evidence_state == expected_state
     assert primary.corrective_action == expected_action
-    assert all(item.authority == "secondary" for item in secondary)
+    assert primary.status == 23
+    assert primary.authority == "primary"
+    assert [item.evidence_state for item in secondary] == [expected_state]
+    assert [item.authority for item in secondary] == ["secondary"]
 
 
 def test_target_primary_becomes_not_published_only_for_capture_stop_and_total_timeout() -> None:
@@ -101,6 +104,23 @@ def test_target_primary_keeps_cleanup_as_diagnostic_secondary() -> None:
     assert primary.evidence_state == "diagnostic_only"
     assert primary.corrective_action == "inspect target then remove project"
     assert secondary[0].kind == "cleanup_failed"
+
+
+def test_nonreusable_capture_pair_does_not_reclassify_cleanup_inventory() -> None:
+    outcome = record_natural_target_status(CaptureOutcome(), 23)
+    outcome = record_capture_stopped(outcome, "capture stopped")
+    outcome = record_cleanup_failure(outcome, "cleanup timed out")
+
+    primary, secondary = _capture_failure_outcomes(outcome)
+
+    assert primary.evidence_state == "not_published"
+    assert primary.corrective_action == "inspect target then remove project"
+    assert primary.status == 23
+    assert primary.authority == "primary"
+    assert [(item.kind, item.evidence_state, item.authority) for item in secondary] == [
+        ("capture_failed", "not_published", "secondary"),
+        ("cleanup_failed", "possibly_remaining", "secondary"),
+    ]
 
 
 def test_capture_failure_outcomes_require_a_primary_failure() -> None:

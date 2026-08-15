@@ -9,7 +9,7 @@ import time
 import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -541,6 +541,21 @@ def _capture_failure_outcome(
     )
 
 
+def _normalize_capture_pair_evidence_states(
+    outcomes: tuple[FailureOutcome, ...],
+) -> tuple[FailureOutcome, ...]:
+    """Keep all records for one non-reusable capture pair in the same evidence state."""
+    pair_is_not_reusable = any(
+        item.affected_evidence == "capture pair" and item.evidence_state == "not_published" for item in outcomes
+    )
+    if not pair_is_not_reusable:
+        return outcomes
+    return tuple(
+        replace(item, evidence_state="not_published") if item.affected_evidence == "capture pair" else item
+        for item in outcomes
+    )
+
+
 def _capture_failure_outcomes(
     outcome: CaptureOutcome, *, capture_status: int | None = None
 ) -> tuple[FailureOutcome, tuple[FailureOutcome, ...]]:
@@ -581,7 +596,8 @@ def _capture_failure_outcomes(
         )
         for kind, detail, status, origin in rendered_details[1:]
     )
-    return primary, secondary
+    normalized = _normalize_capture_pair_evidence_states((primary, *secondary))
+    return normalized[0], normalized[1:]
 
 
 def _capture_failure_logs(

@@ -212,8 +212,12 @@ class CheckpointState:
     terminal_reason: TerminalReason
 
 
-def _invalid(detail: str) -> TrafficlabError:
-    return TrafficlabError(
+class CheckpointCorruptionError(TrafficlabError):
+    """A malformed or internally inconsistent checkpoint whose bytes must be preserved."""
+
+
+def _invalid(detail: str) -> CheckpointCorruptionError:
+    return CheckpointCorruptionError(
         f"invalid checkpoint: {detail}",
         corrective_action="preserve the checkpoint and resume from a compatible complete generation",
     )
