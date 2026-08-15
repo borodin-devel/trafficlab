@@ -13,7 +13,7 @@ import pytest
 from trafficlab.config import ExperimentConfig
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.genetic import strategy
-from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint
+from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint, render_checkpoint
 from trafficlab.genetic.evaluation import ValidatedEvaluationContext
 from trafficlab.genetic.strategy import (
     StrategyContext,
@@ -23,7 +23,14 @@ from trafficlab.genetic.strategy import (
     run_strategy,
     should_stop_early,
 )
-from trafficlab.genetic.types import METHOD_ORDER, Candidate, MethodTrialResult, TrialResult
+from trafficlab.genetic.types import (
+    METHOD_ORDER,
+    Candidate,
+    CandidateFailure,
+    CandidateId,
+    MethodTrialResult,
+    TrialResult,
+)
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
 from trafficlab.trace import Direction, TraceEvent
 
@@ -31,6 +38,11 @@ REFERENCE = (
     TraceEvent(0.0, Direction.OUTBOUND, 64),
     TraceEvent(1.0, Direction.INBOUND, 128),
     TraceEvent(2.0, Direction.OUTBOUND, 256),
+)
+MATRIX_REFERENCE = (
+    TraceEvent(0.0, Direction.OUTBOUND, 64),
+    TraceEvent(5.0, Direction.INBOUND, 128),
+    TraceEvent(10.0, Direction.OUTBOUND, 256),
 )
 
 
@@ -95,6 +107,56 @@ def _context(
     )
 
 
+def _matrix_context(
+    valid_config_data: dict[str, object],
+    run_directory: Path,
+    *,
+    master_seed: int,
+    generation_count: int,
+    population_size: int = 6,
+    enabled: tuple[str, ...] = ("markov_renewal", "mmpp", "poisson_empirical"),
+) -> StrategyContext:
+    """Build the documented in-process fairness configuration without using a stage fake."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory.mkdir(parents=True, exist_ok=True)
+    run = cast(dict[str, object], data["run"])
+    run.update(directory=str(run_directory), master_seed=master_seed, final_seed=97)
+    genetic = cast(dict[str, object], data["genetic"])
+    genetic.update(
+        population_size=population_size,
+        generation_count=generation_count,
+        tournament_size=2,
+        elite_count=1,
+        trial_seeds=[17, 29],
+        duplicate_mutation_attempts=1,
+        early_stopping_generations=0,
+        early_stopping_tolerance=0.0,
+        resume=False,
+    )
+    generation = cast(dict[str, object], data["generation"])
+    generation["trial"] = {
+        "max_packets": 50_000,
+        "max_output_bytes": 64 * 1024 * 1024,
+        "max_wall_seconds": 30.0,
+    }
+    generation["final"] = dict(cast(dict[str, object], generation["trial"]))
+    models = cast(dict[str, object], data["models"])
+    models["enabled"] = list(enabled)
+    for family in ("markov_renewal", "mmpp", "poisson_empirical"):
+        if family not in enabled:
+            models[family] = None
+    config = ExperimentConfig.model_validate(data)
+    return make_strategy_context(
+        config,
+        MATRIX_REFERENCE,
+        10.0,
+        run_directory,
+        experiment_sha256="a" * 64,
+        reference_sha256="b" * 64,
+        capture_sha256="c" * 64,
+    )
+
+
 def _trial(seed: int, score: float, *, family: str = "poisson_empirical") -> TrialResult:
     methods = tuple(MethodTrialResult(name, score, {"literal": score}) for name in METHOD_ORDER)
     diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
@@ -131,6 +193,46 @@ def _install_scoring(
 
     monkeypatch.setattr(strategy, "evaluate_candidate", evaluate)
     monkeypatch.setattr(strategy, "evaluate_final", final)
+
+
+def _install_family_scoring(
+    monkeypatch: pytest.MonkeyPatch,
+    scores: dict[int, dict[str, float]],
+    *,
+    invalid: bool = False,
+) -> None:
+    """Control evaluated trial inputs while retaining public strategy/checkpoint ownership."""
+
+    def evaluate(candidate: Candidate, context: ValidatedEvaluationContext) -> Candidate:
+        if candidate.status != "pending":
+            return candidate
+        if invalid:
+            return replace(
+                candidate,
+                status="invalid",
+                fitness=0.0,
+                trials=(),
+                invalid=CandidateFailure(
+                    "fit",
+                    None,
+                    "controlled symmetric fit failure",
+                    stage="fit",
+                    affected_evidence="candidate model",
+                    evidence_state="diagnostic_only",
+                    corrective_action="repair the candidate model",
+                    authority="primary",
+                ),
+            )
+        score = scores[candidate.identifier.birth_generation][candidate.family]
+        return replace(
+            candidate,
+            status="valid",
+            fitness=score,
+            trials=tuple(_trial(seed, score, family=candidate.family) for seed in context.trial_seeds),
+            invalid=None,
+        )
+
+    monkeypatch.setattr(strategy, "evaluate_candidate", evaluate)
 
 
 def test_generation_zero_is_evaluated_and_checkpointed_before_first_reproduction(
@@ -463,6 +565,130 @@ def test_context_persists_each_documented_priority_seed_without_advancing_search
     run_strategy(context)
 
     assert search_states == [Random(master_seed).getstate()]
+
+
+class _StopAfterPublishedGeneration(RuntimeError):
+    pass
+
+
+def test_higher_priority_equal_catch_up_replaces_lower_priority_incumbent_and_round_trips_checkpoint(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A scientific tie catch-up must replace, but not reset stagnation from, a lower-priority incumbent."""
+    context = _matrix_context(
+        valid_config_data,
+        tmp_path / "run",
+        master_seed=6,
+        generation_count=1,
+        population_size=3,
+        enabled=("poisson_empirical", "mmpp"),
+    )
+    assert context.compatibility.family_priority == ("mmpp", "poisson_empirical")
+    _install_family_scoring(
+        monkeypatch,
+        {
+            0: {"mmpp": 0.5, "poisson_empirical": 0.6},
+            1: {"mmpp": 0.6, "poisson_empirical": 0.5},
+        },
+    )
+    published: list[CheckpointState] = []
+    real_publish = strategy.publish_generation
+
+    def publish_then_stop(destination: Path, state: CheckpointState) -> None:
+        real_publish(destination, state)
+        published.append(state)
+        if state.generation == 1:
+            raise _StopAfterPublishedGeneration
+
+    monkeypatch.setattr(strategy, "publish_generation", publish_then_stop)
+    with pytest.raises(_StopAfterPublishedGeneration):
+        run_strategy(context)
+
+    state = load_checkpoint(context.run_directory / "checkpoint.json", context.compatibility)
+    generation_zero, generation_one = published
+    incumbent = next(
+        candidate for candidate in generation_zero.population if candidate.identifier == generation_zero.best_identifier
+    )
+    winner = next(candidate for candidate in state.population if candidate.identifier == state.best_identifier)
+
+    assert incumbent.family == "poisson_empirical"
+    assert incumbent.fitness == 0.6
+    assert generation_zero.history[-1].best_identifier == incumbent.identifier
+    assert winner.family == "mmpp"
+    assert winner.fitness == state.best_fitness == 0.6
+    assert state.history[-1].best_identifier == winner.identifier
+    assert state.consecutive_stagnation == 1
+    assert state == generation_one
+    assert render_checkpoint(state) == (context.run_directory / "checkpoint.json").read_bytes()
+
+
+@pytest.mark.parametrize(
+    ("master_seed", "expected_priority"),
+    (
+        (4, ("markov_renewal", "mmpp", "poisson_empirical")),
+        (0, ("mmpp", "poisson_empirical", "markov_renewal")),
+        (6, ("poisson_empirical", "markov_renewal", "mmpp")),
+    ),
+)
+@pytest.mark.parametrize("invalid", (False, True), ids=("all-equal", "symmetric-invalid"))
+def test_public_strategy_fairness_matrix_directs_equal_and_invalid_results_by_priority(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    master_seed: int,
+    expected_priority: tuple[str, ...],
+    invalid: bool,
+) -> None:
+    """The documented seeds must direct public strategy ties, slots, and history at W=10."""
+    context = _matrix_context(
+        valid_config_data,
+        tmp_path / f"{master_seed}-{invalid}",
+        master_seed=master_seed,
+        generation_count=0,
+    )
+    assert context.compatibility.family_priority == expected_priority
+    _install_family_scoring(
+        monkeypatch,
+        {0: {family: 0.5 for family in expected_priority}},
+        invalid=invalid,
+    )
+    initial: list[tuple[Candidate, ...]] = []
+    real_initial_population = strategy.initial_population
+    real_publish = strategy.publish_generation
+
+    def trace_initial_population(*args: object, **kwargs: object) -> tuple[Candidate, ...]:
+        population = real_initial_population(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+        initial.append(population)
+        return population
+
+    def publish_then_stop(destination: Path, state: CheckpointState) -> None:
+        real_publish(destination, state)
+        raise _StopAfterPublishedGeneration
+
+    monkeypatch.setattr(strategy, "initial_population", trace_initial_population)
+    monkeypatch.setattr(strategy, "publish_generation", publish_then_stop)
+    with pytest.raises(_StopAfterPublishedGeneration):
+        run_strategy(context)
+
+    state = load_checkpoint(context.run_directory / "checkpoint.json", context.compatibility)
+    winner = next(candidate for candidate in state.population if candidate.identifier == state.best_identifier)
+    expected_slots = tuple(family for family in expected_priority for _ in range(2))
+
+    assert tuple(candidate.family for candidate in initial[0]) == expected_slots
+    assert tuple(candidate.identifier for candidate in initial[0]) == tuple(CandidateId(0, index) for index in range(6))
+    assert context.evaluation.trial_seeds == (17, 29)
+    assert context.compatibility.observation_window_seconds == 10.0
+    assert winner.family == expected_priority[0]
+    assert state.history[-1].best_identifier == winner.identifier
+    assert state.history[-1].valid_count == (0 if invalid else 6)
+    assert all(candidate.status == ("invalid" if invalid else "valid") for candidate in state.population)
+    assert all(
+        tuple(trial.seed for trial in candidate.trials) == (17, 29)
+        for candidate in state.population
+        if candidate.status == "valid"
+    )
 
 
 class _InterruptedAfterGenerationOne(RuntimeError):

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import subprocess
 import tomllib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from random import Random
 from typing import cast
@@ -18,7 +19,7 @@ import trafficlab.genetic.operators as genetic_operators
 import trafficlab.genetic.strategy as genetic_strategy
 from trafficlab.artifacts import create_run_directory
 from trafficlab.comparison import compare_experiment, load_comparison_result, sha256_bytes
-from trafficlab.config import ExperimentConfig, FamilyName, GenerationLimits
+from trafficlab.config import ExperimentConfig, FamilyName, GenerationLimits, MethodWeights
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
 from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
@@ -28,8 +29,8 @@ from trafficlab.genetic.evaluation import ValidatedEvaluationContext
 from trafficlab.genetic.operators import ReproductionContext
 from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context, run_strategy
-from trafficlab.genetic.types import Candidate, CandidateId
-from trafficlab.models.common import FittedModel, GenerationResult, Genes
+from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult, Genes
 from trafficlab.models.registry import load_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
@@ -48,6 +49,32 @@ _OPERATOR_VALUES = {
     "markov_renewal": (1.0, 0.0, 0.06),
     "mmpp": (0.45, 0.0, 0.08),
     "poisson_empirical": (0.35, 0.0, 0.07),
+}
+_MIXED_METHOD_WEIGHTS = {
+    "frame_size_ks": 0.1,
+    "iat_ks": 0.2,
+    "autocorrelation": 0.3,
+    "multiscale_rate": 0.4,
+}
+_MIXED_COMPONENT_SCORES = {
+    "markov_renewal": {
+        "frame_size_ks": 0.4,
+        "iat_ks": 0.4,
+        "autocorrelation": 0.4,
+        "multiscale_rate": 0.4,
+    },
+    "mmpp": {
+        "frame_size_ks": 0.8,
+        "iat_ks": 0.7,
+        "autocorrelation": 0.9,
+        "multiscale_rate": 0.8,
+    },
+    "poisson_empirical": {
+        "frame_size_ks": 0.6,
+        "iat_ks": 0.6,
+        "autocorrelation": 0.6,
+        "multiscale_rate": 0.6,
+    },
 }
 
 
@@ -97,6 +124,78 @@ def _portable_dependencies(run_directory: Path) -> FitDependencies:
         run_directory=run_directory,
     )
     return FitDependencies(lambda _path: prepared, read_fit_input, run_strategy)
+
+
+def _configure_fairness_matrix(
+    config: ExperimentConfig,
+    caller_path: Path,
+    run_directory: Path,
+    *,
+    master_seed: int,
+    enabled: tuple[FamilyName, ...],
+) -> ExperimentConfig:
+    """Materialize the documented P=6, W=10, two-seed in-process fairness configuration."""
+    limits = GenerationLimits(max_packets=50_000, max_output_bytes=64 * 1024 * 1024, max_wall_seconds=30.0)
+    configured = config.model_copy(
+        update={
+            "run": config.run.model_copy(update={"master_seed": master_seed, "final_seed": 97}),
+            "generation": config.generation.model_copy(update={"trial": limits, "final": limits}),
+            "genetic": config.genetic.model_copy(
+                update={
+                    "population_size": 6,
+                    "generation_count": 1,
+                    "tournament_size": 2,
+                    "elite_count": 1,
+                    "trial_seeds": (17, 29),
+                    "duplicate_mutation_attempts": 1,
+                    "early_stopping_generations": 0,
+                    "early_stopping_tolerance": 0.0,
+                    "resume": False,
+                }
+            ),
+            "models": config.models.model_copy(update={"enabled": enabled}),
+            "similarity": config.similarity.model_copy(
+                update={"method_weights": MethodWeights(**_MIXED_METHOD_WEIGHTS)}
+            ),
+        }
+    )
+    rendered = render_effective_config(configured)
+    caller_path.write_bytes(rendered)
+    (run_directory / "experiment.toml").write_bytes(rendered)
+    return configured
+
+
+def _mixed_trial(family: FamilyName, seed: int) -> TrialResult:
+    """Build deterministic component inputs while retaining the production strategy/fit owners."""
+    components = _MIXED_COMPONENT_SCORES[family]
+    methods = cast(
+        tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
+        tuple(MethodTrialResult(name, components[name], {"matrix_family": family}) for name in METHOD_ORDER),
+    )
+    return TrialResult(
+        seed,
+        math.fsum(_MIXED_METHOD_WEIGHTS[name] * components[name] for name in METHOD_ORDER),
+        methods,
+        {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {},
+    )
+
+
+def _install_mixed_matrix_scoring(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Inject only evaluated trial measurements; strategy, reproduction, checkpointing, and fit stay real."""
+
+    def evaluate(candidate: Candidate, context: ValidatedEvaluationContext) -> Candidate:
+        if candidate.status != "pending":
+            return candidate
+        trials = tuple(_mixed_trial(candidate.family, seed) for seed in context.trial_seeds)
+        return replace(
+            candidate,
+            status="valid",
+            fitness=math.fsum(trial.aggregate_score for trial in trials) / len(trials),
+            trials=trials,
+            invalid=None,
+        )
+
+    monkeypatch.setattr(genetic_strategy, "evaluate_candidate", evaluate)
 
 
 def _interrupt_after_generation_zero(run_directory: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -447,6 +546,128 @@ def test_configuration_and_registry_permutations_keep_priority_population_childr
     assert first_state.population == second_state.population
     assert first_state.history == second_state.history
     assert first.outcome.winner == second.outcome.winner
+
+
+@pytest.mark.parametrize(
+    ("master_seed", "expected_priority"),
+    (
+        (4, ("markov_renewal", "mmpp", "poisson_empirical")),
+        (0, ("mmpp", "poisson_empirical", "markov_renewal")),
+        (6, ("poisson_empirical", "markov_renewal", "mmpp")),
+    ),
+)
+def test_in_process_fairness_matrix_preserves_slots_children_and_mixed_mmpp_winner_across_orders(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    master_seed: int,
+    expected_priority: tuple[FamilyName, ...],
+) -> None:
+    """The public fit owner must retain the complete documented fairness evidence across input orders."""
+    import trafficlab.models.registry as model_registry
+
+    _install_mixed_matrix_scoring(monkeypatch)
+    initial_populations: list[tuple[Candidate, ...]] = []
+    published: dict[Path, list[CheckpointState]] = {}
+    real_initial_population = genetic_strategy.initial_population
+    real_publish = genetic_strategy.publish_generation
+
+    def trace_initial_population(*args: object, **kwargs: object) -> tuple[Candidate, ...]:
+        population = real_initial_population(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+        initial_populations.append(population)
+        return population
+
+    def trace_publish(destination: Path, state: CheckpointState) -> None:
+        published.setdefault(destination, []).append(state)
+        real_publish(destination, state)
+
+    monkeypatch.setattr(genetic_strategy, "initial_population", trace_initial_population)
+    monkeypatch.setattr(genetic_strategy, "publish_generation", trace_publish)
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    first_path, first_directory, first_config = _copy_fixture_experiment(first_root)
+    second_path, second_directory, second_config = _copy_fixture_experiment(second_root)
+    first_config = _configure_fairness_matrix(
+        first_config,
+        first_path,
+        first_directory,
+        master_seed=master_seed,
+        enabled=tuple(_FAMILY_ORDER),
+    )
+    second_config = _configure_fairness_matrix(
+        second_config,
+        second_path,
+        second_directory,
+        master_seed=master_seed,
+        enabled=tuple(reversed(_FAMILY_ORDER)),
+    )
+
+    first = fit_experiment(first_path)
+    original_registry = model_registry.REGISTRY
+    monkeypatch.setattr(
+        model_registry,
+        "REGISTRY",
+        {name: original_registry[name] for name in reversed(tuple(original_registry))},
+    )
+    second = fit_experiment(second_path)
+    first_context = _strategy_context(first_config, first_directory)
+    second_context = _strategy_context(second_config, second_directory)
+    first_state = load_checkpoint(first_directory / "checkpoint.json", first_context.compatibility)
+    second_state = load_checkpoint(second_directory / "checkpoint.json", second_context.compatibility)
+    expected_slots = tuple(family for family in expected_priority for _ in range(2))
+    expected_children = tuple(CandidateId(1, index) for index in range(3))
+    expected_mmpp_score = math.fsum(
+        _MIXED_METHOD_WEIGHTS[name] * _MIXED_COMPONENT_SCORES["mmpp"][name] for name in METHOD_ORDER
+    )
+
+    assert (
+        first_context.compatibility.observation_window_seconds
+        == second_context.compatibility.observation_window_seconds
+        == 10.0
+    )
+    assert first_context.compatibility.trial_seeds == second_context.compatibility.trial_seeds == (17, 29)
+    assert first_state.family_priority == second_state.family_priority == expected_priority
+    assert len(initial_populations) == 2
+    assert all(
+        tuple(candidate.family for candidate in population) == expected_slots for population in initial_populations
+    )
+    assert all(
+        tuple(candidate.identifier for candidate in population) == tuple(CandidateId(0, index) for index in range(6))
+        for population in initial_populations
+    )
+    assert all(
+        {family: sum(candidate.family == family for candidate in population) for family in expected_priority}
+        == {family: 2 for family in expected_priority}
+        for population in initial_populations
+    )
+    assert tuple(state.generation for state in published[first_directory]) == (0, 1)
+    assert tuple(state.generation for state in published[second_directory]) == (0, 1)
+    assert first_state.population == second_state.population
+    assert first_state.history == second_state.history
+    assert first_state.best_identifier == second_state.best_identifier
+    assert first.outcome.winner == second.outcome.winner
+    assert first.outcome.family_priority == second.outcome.family_priority == expected_priority
+    assert (
+        tuple(
+            candidate.identifier for candidate in first_state.population if candidate.identifier.birth_generation == 1
+        )
+        == expected_children
+    )
+    assert (
+        tuple(
+            candidate.identifier for candidate in second_state.population if candidate.identifier.birth_generation == 1
+        )
+        == expected_children
+    )
+    assert all(candidate.status == "valid" for candidate in first_state.population)
+    assert all(tuple(trial.seed for trial in candidate.trials) == (17, 29) for candidate in first_state.population)
+    winner = next(
+        candidate for candidate in first_state.population if candidate.identifier == first_state.best_identifier
+    )
+    assert winner.family == first.outcome.winner.family == "mmpp"
+    assert winner.fitness == first_state.best_fitness == expected_mmpp_score
+    assert first_state.history[-1].best_identifier == winner.identifier
 
 
 def test_offline_fit_generate_compare_preserves_one_window_without_docker(
