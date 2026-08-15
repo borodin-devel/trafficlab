@@ -135,15 +135,31 @@ def test_prepare_experiment_failure_before_publication_leaves_no_run_directory(
     assert not run_directory.exists()
 
 
+@pytest.mark.parametrize(
+    "method_weights",
+    [
+        {"frame_size_ks": 0.0, "iat_ks": 1.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
+        {"frame_size_ks": 0.1, "iat_ks": 0.2, "autocorrelation": 0.3, "multiscale_rate": 0.4},
+    ],
+    ids=("zero-weight", "mixed-weights"),
+)
 def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker_import(
     valid_config_data: dict[str, object],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    method_weights: dict[str, float],
 ) -> None:
     """Routing config-only through an external command would violate the one-process API contract."""
-    experiment_path = tmp_path / "experiment.toml"
-    _write_config(experiment_path, valid_config_data)
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = "runs/config-only-weights"
+    cast(dict[str, object], data["target"])["mounts"] = [
+        {"source": "fixture-data", "target": "/work/data", "read_only": True}
+    ]
+    cast(dict[str, object], data["similarity"])["method_weights"] = method_weights
+    experiment_path = tmp_path / "config" / "experiment.toml"
+    (experiment_path.parent / "fixture-data").mkdir(parents=True)
+    _write_config(experiment_path, data)
     from trafficlab.config_io import load_configuration_pair
 
     prepared_results: list[PreparedExperiment] = []
@@ -184,10 +200,20 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
     assert reloaded_cli.main(["preflight", str(experiment_path), "--config-only"], prepare=prepare) == 0
 
     captured = capsys.readouterr()
-    assert str(_configured_run_directory(valid_config_data)) in captured.out
+    pair = load_configuration_pair(experiment_path)
+    assert str(pair.realized.run.directory) in captured.out
     assert captured.err == ""
-    assert prepared_results[0].portable_config == load_configuration_pair(experiment_path).portable
-    assert load_experiment(_configured_run_directory(valid_config_data) / "experiment.toml") == prepared_results[0].config
+    assert prepared_results[0].portable_config == pair.portable
+    published = load_experiment(pair.realized.run.directory / "experiment.toml")
+    assert published == prepared_results[0].config
+    assert published.similarity == pair.realized.similarity
+    assert published.similarity.method_weights.model_dump() == method_weights
+    assert tuple(published.similarity.method_weights.model_dump()) == (
+        "frame_size_ks",
+        "iat_ks",
+        "autocorrelation",
+        "multiscale_rate",
+    )
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
     assert not hasattr(trafficlab, "docker_cli")
     assert "trafficlab.run" not in sys.modules

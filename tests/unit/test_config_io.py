@@ -131,6 +131,46 @@ def test_configuration_realization_preserves_every_non_path_section(
 
 
 @pytest.mark.parametrize(
+    "method_weights",
+    [
+        {"frame_size_ks": 1.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
+        {"frame_size_ks": 0.0, "iat_ks": 1.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
+        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 1.0, "multiscale_rate": 0.0},
+        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 1.0},
+        {"frame_size_ks": 0.1, "iat_ks": 0.2, "autocorrelation": 0.3, "multiscale_rate": 0.4},
+    ],
+)
+def test_similarity_method_weights_round_trip_through_portable_effective_toml(
+    valid_config_data: dict[str, object], tmp_path: Path, method_weights: dict[str, float]
+) -> None:
+    """Rendering a portable config must retain every mandatory method even when its aggregation weight is zero."""
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = "runs/weight-round-trip"
+    cast(dict[str, object], data["target"])["mounts"] = [
+        {"source": "fixture-data", "target": "/work/data", "read_only": True}
+    ]
+    cast(dict[str, object], data["similarity"])["method_weights"] = method_weights
+    source = tmp_path / "config" / "source.toml"
+    snapshot = tmp_path / "config" / "effective.toml"
+    _write_config(source, data)
+
+    loaded = config_io.load_configuration_pair(source)
+    snapshot.write_bytes(render_effective_config(loaded.portable))
+    reloaded = config_io.load_configuration_pair(snapshot)
+
+    assert reloaded.portable.similarity == loaded.portable.similarity
+    assert reloaded.realized.similarity == loaded.realized.similarity
+    assert reloaded.portable.similarity.method_weights.model_dump() == method_weights
+    assert tuple(reloaded.portable.similarity.method_weights.model_dump()) == (
+        "frame_size_ks",
+        "iat_ks",
+        "autocorrelation",
+        "multiscale_rate",
+    )
+    assert _non_path_dump(reloaded.portable) == _non_path_dump(loaded.portable)
+
+
+@pytest.mark.parametrize(
     "resolution_error",
     [OSError("injected resolution failure"), RuntimeError("injected resolution failure")],
     ids=["os-error", "runtime-error"],
