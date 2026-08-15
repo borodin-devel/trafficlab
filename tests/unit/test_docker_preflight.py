@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 import trafficlab.cleanup as cleanup_module
+import trafficlab.preflight as preflight_module
 from trafficlab.cleanup import CleanupResult
 from trafficlab.config import ExperimentConfig
 from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
@@ -181,6 +182,7 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     assert all(finding.ok for finding in report.findings)
     assert [finding.name for finding in report.findings] == [
         "capture_image_lock",
+        "capture_platform",
         "docker_daemon",
         "docker_compose",
         "target_image",
@@ -195,6 +197,7 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     assert report.environment_identity.capture_reference == config.capture.image
     assert report.environment_identity.capture_content_id == _CAPTURE_IMAGE_ID
     assert report.environment_identity.capture_tool_version == "4.0.17"
+    assert report.environment_identity.host_architecture == "linux/amd64"
     assert _names(docker) == [
         "info",
         "compose_version",
@@ -271,6 +274,53 @@ def test_target_reference_mismatch_stops_before_capture_probe(
     assert report.findings[-1].ok is False
     assert "does not match requested reference" in report.findings[-1].detail
     assert _names(docker).count("image_inspect") == 1
+
+
+@pytest.mark.parametrize("host_architecture", ["aarch64", "arm64", "", "unknown"])
+def test_unsupported_capture_platform_stops_before_docker(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    host_architecture: str,
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker()
+    monkeypatch.setattr(preflight_module.platform, "machine", lambda: host_architecture)
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert [finding.name for finding in report.findings] == [
+        "capture_image_lock",
+        "capture_platform",
+    ]
+    assert report.findings[0].ok is True
+    assert report.findings[1].ok is False
+    assert "linux/amd64" in report.findings[1].detail
+    assert report.findings[1].corrective_action is not None
+    assert "linux/amd64" in report.findings[1].corrective_action
+    assert docker.calls == []
+
+
+def test_invalid_checked_capture_inputs_stop_before_docker(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker()
+    monkeypatch.setattr(
+        preflight_module,
+        "_CAPTURE_IMAGE_LOCK_PATH",
+        tmp_path / "missing-image-lock.json",
+    )
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert len(report.findings) == 1
+    assert report.findings[0].name == "capture_image_lock"
+    assert report.findings[0].ok is False
+    assert "cannot read" in report.findings[0].detail
+    assert docker.calls == []
 
 
 def test_probe_project_name_is_unique_across_full_preflight_runs(

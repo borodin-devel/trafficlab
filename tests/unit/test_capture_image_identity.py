@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -65,6 +65,18 @@ _INVALID_DOCKERFILE_MUTATIONS: list[tuple[Callable[[str], str], str]] = [
         lambda text: text.replace("20260803T203533Z", "20260802T000000Z", 1),
         "snapshot",
     ),
+    (
+        lambda text: (
+            text
+            + "\nRUN echo 'deb http://snapshot.debian.org/archive/debian/"
+            + "20260802T000000Z/ bookworm main' >> /etc/apt/sources.list\n"
+        ),
+        "exactly match",
+    ),
+    (
+        lambda text: text + "\nRUN apt-get install -y --no-install-recommends " + "curl=7.88.1-10+deb12u15\n",
+        "exactly match",
+    ),
 ]
 
 
@@ -80,10 +92,14 @@ RUN printf '%s\\n' \\
  && rm -f /etc/apt/sources.list.d/debian.sources \\
  && apt-get -o Acquire::Check-Valid-Until=false update \\
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
-    ca-certificates={packages["ca-certificates"]} \\
-    curl={packages["curl"]} \\
-    wireshark-common={packages["wireshark-common"]} \\
+   ca-certificates={packages["ca-certificates"]} \\
+   curl={packages["curl"]} \\
+   wireshark-common={packages["wireshark-common"]} \\
  && rm -rf /var/lib/apt/lists/*
+
+COPY --chmod=0755 capture.sh /usr/local/bin/trafficlab-capture
+
+ENTRYPOINT ["/usr/local/bin/trafficlab-capture"]
 """
 
 
@@ -123,6 +139,75 @@ def test_capture_image_lock_rejects_noncanonical_json(tmp_path: Path) -> None:
     lock_path.write_text(json.dumps(_lock_payload(), indent=2) + "\n")
 
     with pytest.raises(CaptureImageLockError, match="canonical"):
+        load_capture_image_lock(lock_path)
+
+
+def test_capture_image_lock_reports_read_failure(tmp_path: Path) -> None:
+    lock_path = tmp_path / "missing-image-lock.json"
+
+    with pytest.raises(CaptureImageLockError, match="cannot read"):
+        load_capture_image_lock(lock_path)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"\xff",
+        b"{",
+        b'{"base_digest":"first","base_digest":"second"}\n',
+    ],
+)
+def test_capture_image_lock_rejects_invalid_json(tmp_path: Path, raw: bytes) -> None:
+    lock_path = tmp_path / "image-lock.json"
+    lock_path.write_bytes(raw)
+
+    with pytest.raises(CaptureImageLockError, match="invalid capture image lock JSON"):
+        load_capture_image_lock(lock_path)
+
+
+def test_capture_image_lock_rejects_non_object_document(tmp_path: Path) -> None:
+    lock_path = tmp_path / "image-lock.json"
+    lock_path.write_bytes(b"[]\n")
+
+    with pytest.raises(CaptureImageLockError, match="JSON object"):
+        load_capture_image_lock(lock_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("base_reference", "debian", "explicit tag"),
+        ("direct_packages", [], "JSON object"),
+        ("capture_tool_version", "4.0", "three-component"),
+    ],
+)
+def test_capture_image_lock_rejects_invalid_structured_values(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    payload = _lock_payload()
+    payload[field] = value
+    lock_path = tmp_path / "image-lock.json"
+    _write_lock(lock_path, payload)
+
+    with pytest.raises(CaptureImageLockError, match=message):
+        load_capture_image_lock(lock_path)
+
+
+@pytest.mark.parametrize("version", ["*", "1.2.*", "1.2?", "1.[0-9]"])
+def test_capture_image_lock_rejects_apt_version_patterns(
+    tmp_path: Path,
+    version: str,
+) -> None:
+    payload = _lock_payload()
+    packages = cast(dict[str, object], payload["direct_packages"])
+    packages["curl"] = version
+    lock_path = tmp_path / "image-lock.json"
+    _write_lock(lock_path, payload)
+
+    with pytest.raises(CaptureImageLockError, match="exact Debian version"):
         load_capture_image_lock(lock_path)
 
 
@@ -207,7 +292,7 @@ def test_capture_environment_identity_records_both_resolved_images(
         host_architecture="amd64",
     )
 
-    assert identity.host_architecture == "amd64"
+    assert identity.host_architecture == "linux/amd64"
     assert identity.target_reference == "trafficlab-target:test"
     assert identity.target_content_id == target_id
     assert identity.capture_reference == "trafficlab-capture:test"
@@ -232,3 +317,21 @@ def test_capture_environment_identity_rejects_mismatch_without_refreshing_lock(
         )
 
     assert lock_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("host_architecture", ["aarch64", "arm64", "", "unknown"])
+def test_capture_environment_identity_rejects_unsupported_platform(
+    tmp_path: Path,
+    host_architecture: str,
+) -> None:
+    lock_path = tmp_path / "image-lock.json"
+    _write_lock(lock_path)
+    lock = load_capture_image_lock(lock_path)
+
+    with pytest.raises(CaptureImageLockError, match="linux/amd64"):
+        capture_environment_identity(
+            target=ImageIdentity("trafficlab-target:test", "sha256:" + ("c" * 64)),
+            capture=ImageIdentity("trafficlab-capture:test", _IMAGE_ID),
+            lock=lock,
+            host_architecture=host_architecture,
+        )

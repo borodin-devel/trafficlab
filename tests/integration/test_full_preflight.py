@@ -181,7 +181,7 @@ def test_run_preflight_propagates_resolved_environment_identity(
     experiment_path = tmp_path / "experiment.toml"
     _write_config(experiment_path, valid_config_data)
     identity = CaptureEnvironmentIdentity(
-        host_architecture="x86_64",
+        host_architecture="linux/amd64",
         target_reference="curlimages/curl:8.10.1",
         target_content_id="sha256:" + ("c" * 64),
         capture_reference="trafficlab-capture:phase3-test",

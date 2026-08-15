@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from trafficlab.cleanup import CleanupResult
     from trafficlab.docker_cli import (
         CaptureImageLock,
+        CapturePlatform,
         ImageIdentity,
         ProcessHandle,
         ProjectInventory,
@@ -118,7 +119,7 @@ class PreflightFinding:
 class CaptureEnvironmentIdentity:
     """Resolved image and capture-tool identity required by a fresh capture."""
 
-    host_architecture: str
+    host_architecture: CapturePlatform
     target_reference: str
     target_content_id: str
     capture_reference: str
@@ -134,7 +135,11 @@ def capture_environment_identity(
     host_architecture: str | None = None,
 ) -> CaptureEnvironmentIdentity:
     """Bind resolved images to the checked lock, rejecting any capture mismatch."""
-    from trafficlab.docker_cli import CaptureImageLockError
+    from trafficlab.docker_cli import CaptureImageLockError, normalize_capture_platform
+
+    capture_platform = normalize_capture_platform(
+        platform.machine() if host_architecture is None else host_architecture
+    )
 
     if capture.content_id != lock.expected_capture_image_id:
         raise CaptureImageLockError(
@@ -143,7 +148,7 @@ def capture_environment_identity(
             f"resolved {capture.content_id}"
         )
     return CaptureEnvironmentIdentity(
-        host_architecture=host_architecture or platform.machine(),
+        host_architecture=capture_platform,
         target_reference=target.reference,
         target_content_id=target.content_id,
         capture_reference=capture.reference,
@@ -497,9 +502,9 @@ def check_docker(
     from trafficlab.cleanup import cleanup_project
     from trafficlab.docker_cli import (
         CaptureImageLockError,
-        ImageIdentity,
         ProjectInventory,
         load_capture_image_lock,
+        normalize_capture_platform,
         validate_capture_dockerfile,
     )
 
@@ -523,6 +528,23 @@ def check_docker(
             "capture_image_lock",
             True,
             "capture base, Debian snapshot, packages, tool, and expected image ID are locked",
+        )
+    )
+
+    try:
+        capture_platform = normalize_capture_platform(platform.machine())
+    except CaptureImageLockError as error:
+        translated = TrafficlabError(
+            str(error),
+            corrective_action="run capture preflight on a linux/amd64 host and rebuild the checked capture image there",
+        )
+        findings.append(_failure("capture_platform", translated))
+        return PreflightReport(config=config, findings=tuple(findings))
+    findings.append(
+        PreflightFinding(
+            "capture_platform",
+            True,
+            f"host architecture resolves to supported capture platform {capture_platform}",
         )
     )
 
@@ -550,22 +572,17 @@ def check_docker(
             findings.append(_failure(name, error))
             return PreflightReport(config=config, findings=tuple(findings))
         if name == "target_image":
-            if not isinstance(result, ImageIdentity):
-                raise AssertionError("target image check did not resolve an identity")
-            target_identity = result
+            target_identity = cast("ImageIdentity", result)
         elif name == "capture_image":
-            if not isinstance(result, ImageIdentity):
-                raise AssertionError("capture image check did not resolve an identity")
-            capture_identity = result
+            capture_identity = cast("ImageIdentity", result)
         findings.append(PreflightFinding(name, True, success_detail))
 
-    if target_identity is None or capture_identity is None:
-        raise AssertionError("successful image checks must resolve both image identities")
     try:
         environment_identity = capture_environment_identity(
-            target=target_identity,
-            capture=capture_identity,
+            target=cast("ImageIdentity", target_identity),
+            capture=cast("ImageIdentity", capture_identity),
             lock=lock,
+            host_architecture=capture_platform,
         )
     except CaptureImageLockError as error:
         translated = TrafficlabError(

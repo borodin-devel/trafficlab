@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import Final, Literal, Protocol, cast
 
 from trafficlab.errors import TrafficlabError
 
@@ -31,6 +31,10 @@ class CommandResult:
 _SHA256_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _SNAPSHOT_PATTERN = re.compile(r"[0-9]{8}T[0-9]{6}Z\Z")
 _CAPTURE_TOOL_VERSION_PATTERN = re.compile(r"[0-9]+(?:\.[0-9]+){2}\Z")
+_DEBIAN_VERSION_PATTERN = re.compile(
+    r"(?:[0-9]+:)?(?:[0-9][A-Za-z0-9.+:~]*|"
+    r"[0-9][A-Za-z0-9.+:~-]*-[A-Za-z0-9.+~]+)\Z"
+)
 _CAPTURE_IMAGE_LOCK_FIELDS = frozenset(
     {
         "base_digest",
@@ -46,6 +50,21 @@ _CAPTURE_DIRECT_PACKAGES = frozenset({"ca-certificates", "curl", "wireshark-comm
 
 class CaptureImageLockError(ValueError):
     """The checked capture-image contract is malformed or incompatible."""
+
+
+CapturePlatform = Literal["linux/amd64"]
+CAPTURE_PLATFORM: Final[CapturePlatform] = "linux/amd64"
+_CAPTURE_HOST_ARCHITECTURES = frozenset({"amd64", "x86_64", CAPTURE_PLATFORM})
+
+
+def normalize_capture_platform(host_architecture: str) -> CapturePlatform:
+    """Map supported host architecture names to the one capture platform."""
+
+    if host_architecture.casefold() in _CAPTURE_HOST_ARCHITECTURES:
+        return CAPTURE_PLATFORM
+    raise CaptureImageLockError(
+        f"unsupported capture host architecture {host_architecture!r}; required platform is {CAPTURE_PLATFORM}"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,13 +148,8 @@ def load_capture_image_lock(path: Path) -> CaptureImageLock:
     package_versions: dict[str, str] = {}
     for package_name in sorted(packages):
         version = packages[package_name]
-        if (
-            not isinstance(version, str)
-            or not version
-            or "=" in version
-            or any(character.isspace() for character in version)
-        ):
-            raise CaptureImageLockError(f"direct package {package_name!r} must have one exact version")
+        if not isinstance(version, str) or _DEBIAN_VERSION_PATTERN.fullmatch(version) is None:
+            raise CaptureImageLockError(f"direct package {package_name!r} must have one exact Debian version")
         package_versions[package_name] = version
 
     capture_tool_version = _lock_string(payload, "capture_tool_version")
@@ -157,34 +171,29 @@ def validate_capture_dockerfile(
 ) -> None:
     """Require the capture Dockerfile to consume only inputs named by the lock."""
 
-    first_line = next((line.strip() for line in dockerfile.splitlines() if line.strip()), "")
-    expected_from = f"FROM {lock.base_reference}@{lock.base_digest}"
-    if first_line != expected_from:
-        raise CaptureImageLockError("capture Dockerfile base must use the locked tag and digest")
-    if "deb.debian.org" in dockerfile or "security.debian.org" in dockerfile:
-        raise CaptureImageLockError("capture Dockerfile must use the locked snapshot, not a live apt source")
-    for archive, suite in (
-        ("debian", "bookworm"),
-        ("debian-security", "bookworm-security"),
-    ):
-        source = f"http://snapshot.debian.org/archive/{archive}/{lock.debian_snapshot}/ {suite} main"
-        if source not in dockerfile:
-            raise CaptureImageLockError(f"capture Dockerfile must use locked snapshot source for {archive}")
-    if "Acquire::Check-Valid-Until=false" not in dockerfile:
-        raise CaptureImageLockError("capture Dockerfile must disable Valid-Until for the frozen snapshot")
+    expected = f"""FROM {lock.base_reference}@{lock.base_digest}
 
-    install_match = re.search(
-        r"apt-get\s+install\s+-y\s+--no-install-recommends\s+(.*?)\s+&&",
-        dockerfile,
-        flags=re.DOTALL,
-    )
-    if install_match is None:
-        raise CaptureImageLockError("capture Dockerfile has no canonical apt install")
-    installed = install_match.group(1).replace("\\", " ").split()
-    expected_packages = [f"{name}={version}" for name, version in lock.direct_packages.items()]
-    if installed != expected_packages:
-        expected_names = ", ".join(lock.direct_packages)
-        raise CaptureImageLockError(f"capture Dockerfile packages must exactly pin {expected_names}")
+RUN printf '%s\\n' \\
+    'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/{lock.debian_snapshot}/ bookworm main' \\
+    'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/{lock.debian_snapshot}/ bookworm-security main' \\
+    > /etc/apt/sources.list \\
+ && rm -f /etc/apt/sources.list.d/debian.sources \\
+ && apt-get -o Acquire::Check-Valid-Until=false update \\
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
+   ca-certificates={lock.direct_packages["ca-certificates"]} \\
+   curl={lock.direct_packages["curl"]} \\
+   wireshark-common={lock.direct_packages["wireshark-common"]} \\
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --chmod=0755 capture.sh /usr/local/bin/trafficlab-capture
+
+ENTRYPOINT ["/usr/local/bin/trafficlab-capture"]
+"""
+    if dockerfile != expected:
+        raise CaptureImageLockError(
+            "capture Dockerfile must exactly match the locked base digest, snapshot "
+            "APT sources, apt operations, and package versions including curl"
+        )
 
 
 def parse_image_inspect(reference: str, stdout: str) -> ImageIdentity:
