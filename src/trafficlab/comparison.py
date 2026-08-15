@@ -25,6 +25,7 @@ from trafficlab.errors import (
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.models.registry import load_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.similarity.autocorrelation import autocorrelation_similarity
 from trafficlab.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
 from trafficlab.similarity.ks import frame_size_ks, iat_ks
@@ -1057,11 +1058,86 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 affected_evidence="reference.pcapng",
                 evidence_state="preserved",
             ) from error
+        model_path = run_directory / "best_model.json"
+        model_content = _read_comparison_input(
+            model_path,
+            kind="best model",
+            corrective_action="verify best_model.json is readable",
+        )
+        model_identity = identify_bytes(model_content)
+        try:
+            best = load_best_model(model_content, source=model_path)
+        except ScientificArtifactSchemaError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="scientific_semantics_incompatible",
+                stage="compare",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="compare",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
+        try:
+            require_compatible(
+                {
+                    "reference identity": best.reference_identity,
+                    "capture identity": best.capture_identity,
+                    "final seed": best.final_seed,
+                    "final generation limits": best.final_limits,
+                },
+                {
+                    "reference identity": identify_bytes(reference_content),
+                    "capture identity": identify_bytes(metadata_content),
+                    "final seed": snapshot_config.run.final_seed,
+                    "final generation limits": snapshot_config.generation.final,
+                },
+            )
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                TrafficlabError(
+                    f"best_model.json is incompatible with current comparison inputs: {error}",
+                    corrective_action="restore the exact fitted model and matching reference, capture, final seed, and limits",
+                ),
+                kind="artifact_foreign",
+                stage="compare",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
+        try:
+            _, _, expected_generated_content = reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="generation_incomplete",
+                stage="compare",
+                affected_evidence="generated.pcapng",
+                evidence_state="not_published",
+            ) from error
         generated_content = _read_comparison_input(
             generated_path,
             kind="PCAPNG",
             corrective_action="verify the PCAPNG exists and is readable",
         )
+        if generated_content != expected_generated_content:
+            raise TrafficlabError(
+                "generated.pcapng is foreign",
+                corrective_action="regenerate from the current fitted model",
+                failure_outcome=FailureOutcome(
+                    kind="artifact_foreign",
+                    stage="compare",
+                    detail="generated.pcapng is foreign",
+                    affected_evidence="generated.pcapng",
+                    evidence_state="preserved",
+                    corrective_action="regenerate from the current fitted model",
+                    authority="primary",
+                ),
+            )
         try:
             generated_events = parse_pcapng_bytes(generated_content, metadata, source=generated_path)
         except TrafficlabError as error:
@@ -1072,40 +1148,6 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 affected_evidence="generated.pcapng",
                 evidence_state="preserved",
             ) from error
-        model_path = run_directory / "best_model.json"
-        model_identity: ContentIdentity | None = None
-        if model_path.exists():
-            model_content = _read_comparison_input(
-                model_path,
-                kind="best model",
-                corrective_action="verify best_model.json is readable",
-            )
-            model_identity = identify_bytes(model_content)
-            try:
-                best = load_best_model(model_content, source=model_path)
-                _, _, expected_generated_content = reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
-            except TrafficlabError as error:
-                raise attach_failure_outcome(
-                    error,
-                    kind="scientific_semantics_incompatible",
-                    stage="compare",
-                    affected_evidence="best_model.json",
-                    evidence_state="preserved",
-                ) from error
-            if generated_content != expected_generated_content:
-                raise TrafficlabError(
-                    "generated.pcapng is foreign",
-                    corrective_action="regenerate from the current fitted model",
-                    failure_outcome=FailureOutcome(
-                        kind="artifact_foreign",
-                        stage="compare",
-                        detail="generated.pcapng is foreign",
-                        affected_evidence="generated.pcapng",
-                        evidence_state="preserved",
-                        corrective_action="regenerate from the current fitted model",
-                        authority="primary",
-                    ),
-                )
         try:
             reference, window = normalize_reference(reference_events)
             generated = align_generated(generated_events, window)
@@ -1135,8 +1177,7 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
             ("reference.pcapng", reference_path, identify_bytes(reference_content)),
             ("generated.pcapng", generated_path, identify_bytes(generated_content)),
         ]
-        if model_identity is not None:
-            authoritative_inputs.append(("best_model.json", model_path, model_identity))
+        authoritative_inputs.append(("best_model.json", model_path, model_identity))
         for evidence, source_path, expected_identity in authoritative_inputs:
             try:
                 require_compatible({evidence: expected_identity}, {evidence: identify_file(source_path)})

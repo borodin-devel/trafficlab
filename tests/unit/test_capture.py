@@ -12,10 +12,16 @@ import trafficlab.capture as capture_module
 from trafficlab.capture import CaptureResult, capture_experiment, capture_prepared_experiment
 from trafficlab.capture_policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
 from trafficlab.compatibility import identify_file
+from trafficlab.config import MountConfig
 from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
 from trafficlab.pcapng import encode_pcapng
-from trafficlab.preflight import CaptureEnvironmentIdentity, PreparedExperiment, open_or_prepare_experiment
+from trafficlab.preflight import (
+    CaptureEnvironmentIdentity,
+    MountedInputIdentity,
+    PreparedExperiment,
+    open_or_prepare_experiment,
+)
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 
@@ -206,13 +212,16 @@ def _prepared(
         prepared,
         report=replace(
             prepared.report,
-            environment_identity=CaptureEnvironmentIdentity(
-                host_architecture="linux/amd64",
-                target_reference=prepared.config.target.image,
-                target_content_id="sha256:" + ("c" * 64),
-                capture_reference=prepared.config.capture.image,
-                capture_content_id=("sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"),
-                capture_tool_version="4.0.17",
+            environment_identity=replace(
+                CaptureEnvironmentIdentity(
+                    host_architecture="linux/amd64",
+                    target_reference=prepared.config.target.image,
+                    target_content_id="sha256:" + ("c" * 64),
+                    capture_reference=prepared.config.capture.image,
+                    capture_content_id=("sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"),
+                    capture_tool_version="4.0.17",
+                ),
+                mounted_inputs=cast(Any, capture_module)._identify_mounted_inputs(prepared.config),
             ),
         ),
     )
@@ -237,6 +246,7 @@ def _seed_capture_lineage(prepared: PreparedExperiment) -> None:
                 "capture_reference": environment.capture_reference,
                 "capture_content_id": environment.capture_content_id,
                 "capture_tool_version": environment.capture_tool_version,
+                "mounted_inputs": [item.as_dict() for item in environment.mounted_inputs],
             },
             "capture_identity": identify_file(prepared.run_directory / "capture.json").as_dict(),
             "event": "capture_published",
@@ -1151,6 +1161,165 @@ def test_pre_workload_reuse_preserves_the_preexisting_reference_pair_without_cle
     assert (prepared.run_directory / "reference.pcapng").read_bytes() == pcapng_bytes
 
 
+def test_public_capture_reuses_a_locally_validated_pair_without_docker(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """The public capture boundary must not run full Docker preflight for exact reuse."""
+    experiment_path = tmp_path / "experiment.toml"
+    experiment_path.write_text(tomli_w.dumps(valid_config_data), encoding="utf-8")
+    prepared = open_or_prepare_experiment(experiment_path)
+    prepared = replace(
+        prepared,
+        report=replace(
+            prepared.report,
+            environment_identity=CaptureEnvironmentIdentity(
+                host_architecture="linux/amd64",
+                target_reference=prepared.config.target.image,
+                target_content_id="sha256:" + ("c" * 64),
+                capture_reference=prepared.config.capture.image,
+                capture_content_id=("sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"),
+                capture_tool_version="4.0.17",
+            ),
+        ),
+    )
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    (prepared.run_directory / "capture.json").write_bytes(render_capture_metadata(metadata))
+    (prepared.run_directory / "reference.pcapng").write_bytes(
+        encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
+    )
+    _seed_capture_lineage(prepared)
+
+    class NoDocker:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"exact public reuse touched Docker operation {name}")
+
+    result = capture_experiment(experiment_path, docker=cast(Any, NoDocker()), clock=lambda: 100.0)
+
+    assert result.reused is True
+    assert result.packet_count == 1
+
+
+def test_capture_lineage_persists_ordered_flat_regular_file_mount_identities(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "request.txt"
+    second = tmp_path / "settings.json"
+    directory = tmp_path / "directory-input"
+    first.write_bytes(b"request-v1")
+    second.write_bytes(b'{"value":1}\n')
+    directory.mkdir()
+    target = cast(dict[str, object], valid_config_data["target"])
+    target["mounts"] = [
+        {"source": str(first), "target": "/work/request.txt", "read_only": True},
+        {"source": str(directory), "target": "/work/directory-input", "read_only": True},
+        {"source": str(second), "target": "/work/settings.json", "read_only": False},
+    ]
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    docker = _Docker("normal")
+
+    capture_experiment(experiment_path, docker=docker, clock=_Clock(docker), interruption=lambda: False)
+
+    records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
+    publication = next(record for record in records if record["event"] == "capture_published")
+    environment = cast(dict[str, object], publication["capture_environment_identity"])
+    assert environment["mounted_inputs"] == [
+        {
+            "read_only": True,
+            "sha256": identify_file(first).sha256,
+            "size": len(b"request-v1"),
+            "target": "/work/request.txt",
+        },
+        {
+            "read_only": False,
+            "sha256": identify_file(second).sha256,
+            "size": len(b'{"value":1}\n'),
+            "target": "/work/settings.json",
+        },
+    ]
+
+
+def test_public_capture_reuse_reidentifies_mounted_file_bytes_before_docker(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mounted = tmp_path / "request.txt"
+    mounted.write_bytes(b"request-v1")
+    target = cast(dict[str, object], valid_config_data["target"])
+    target["mounts"] = [
+        {"source": str(mounted), "target": "/work/request.txt", "read_only": True},
+    ]
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    (prepared.run_directory / "capture.json").write_bytes(render_capture_metadata(metadata))
+    (prepared.run_directory / "reference.pcapng").write_bytes(
+        encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
+    )
+    _seed_capture_lineage(prepared)
+    mounted.write_bytes(b"request-v2")
+
+    class NoDocker:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"stale public reuse touched Docker operation {name}")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture_experiment(experiment_path, docker=cast(Any, NoDocker()), clock=lambda: 100.0)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "affected_evidence": "capture pair",
+        "authority": "primary",
+        "corrective_action": "select its matching run or a new run directory",
+        "detail": "capture pair has another identity",
+        "evidence_state": "preserved",
+        "kind": "artifact_stale",
+        "stage": "capture",
+    }
+
+
+def test_prepared_capture_reuse_reidentifies_an_unavailable_mounted_file(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mounted = tmp_path / "request.txt"
+    mounted.write_bytes(b"request-v1")
+    target = cast(dict[str, object], valid_config_data["target"])
+    target["mounts"] = [
+        {"source": str(mounted), "target": "/work/request.txt", "read_only": True},
+    ]
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    (prepared.run_directory / "capture.json").write_bytes(render_capture_metadata(metadata))
+    (prepared.run_directory / "reference.pcapng").write_bytes(
+        encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
+    )
+    _seed_capture_lineage(prepared)
+    mounted.unlink()
+
+    class NoDocker:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"unavailable reuse touched Docker operation {name}")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture_prepared_experiment(
+            experiment_path,
+            prepared,
+            docker=cast(Any, NoDocker()),
+            clock=lambda: 100.0,
+        )
+
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.as_dict() == {
+        "affected_evidence": "capture pair",
+        "authority": "primary",
+        "corrective_action": "select its matching run or a new run directory",
+        "detail": "capture pair has another identity",
+        "evidence_state": "preserved",
+        "kind": "artifact_stale",
+        "stage": "capture",
+    }
+    assert (prepared.run_directory / "capture.json").exists()
+    assert (prepared.run_directory / "reference.pcapng").exists()
+
+
 def test_capture_reuse_rejects_a_valid_pair_bound_to_another_environment(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1221,7 +1390,15 @@ def test_capture_reuse_rejects_a_valid_pair_bound_to_another_environment(
         "content-mismatch",
         "environment-not-object",
         "environment-fields",
-        "environment-unavailable",
+        "environment-string",
+        "environment-empty-string",
+        "environment-platform",
+        "environment-content-id",
+        "environment-capture-content-id",
+        "target-reference",
+        "capture-reference",
+        "mounted-inputs-not-array",
+        "mounted-input-fields",
         "log-record-not-object",
     ],
 )
@@ -1244,7 +1421,6 @@ def test_capture_reuse_rejects_missing_or_invalid_lineage_before_boundaries(
     log_path = prepared.run_directory / "run.log"
     records = [json.loads(line) for line in log_path.read_text().splitlines()]
     publication = next(record for record in records if record["event"] == "capture_published")
-    candidate = prepared
     if corruption == "missing":
         records.remove(publication)
     elif corruption == "malformed":
@@ -1256,8 +1432,33 @@ def test_capture_reuse_rejects_missing_or_invalid_lineage_before_boundaries(
     elif corruption == "environment-fields":
         environment = cast(dict[str, object], publication["capture_environment_identity"])
         del environment["capture_tool_version"]
-    elif corruption == "environment-unavailable":
-        candidate = replace(prepared, report=replace(prepared.report, environment_identity=None))
+    elif corruption == "environment-string":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["target_reference"] = 1
+    elif corruption == "environment-empty-string":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["capture_tool_version"] = " "
+    elif corruption == "environment-platform":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["host_architecture"] = "linux/arm64"
+    elif corruption == "environment-content-id":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["target_content_id"] = "mutable-tag"
+    elif corruption == "environment-capture-content-id":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["capture_content_id"] = "mutable-tag"
+    elif corruption == "target-reference":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["target_reference"] = "example.invalid/other:tag"
+    elif corruption == "capture-reference":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["capture_reference"] = "example.invalid/other:tag"
+    elif corruption == "mounted-inputs-not-array":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["mounted_inputs"] = {}
+    elif corruption == "mounted-input-fields":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        environment["mounted_inputs"] = [{"target": "/work/request.txt"}]
     else:
         records.append([])
     log_path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
@@ -1272,7 +1473,7 @@ def test_capture_reuse_rejects_missing_or_invalid_lineage_before_boundaries(
     with pytest.raises(TrafficlabError) as caught:
         capture_prepared_experiment(
             experiment_path,
-            candidate,
+            prepared,
             docker=cast(Any, NoDocker()),
             clock=reject_clock,
         )
@@ -1301,6 +1502,103 @@ def test_capture_reuse_rejects_missing_or_invalid_lineage_before_boundaries(
     assert {
         name: (prepared.run_directory / name).read_bytes() for name in ("capture.json", "reference.pcapng")
     } == pair_before
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        ([], "object"),
+        ({"target": "/work/request.txt"}, "fields"),
+        ({"target": 1, "read_only": True, "size": 1, "sha256": "0" * 64}, "target"),
+        ({"target": " ", "read_only": True, "size": 1, "sha256": "0" * 64}, "target"),
+        ({"target": "request.txt", "read_only": True, "size": 1, "sha256": "0" * 64}, "target"),
+        ({"target": "/work/request.txt", "read_only": 1, "size": 1, "sha256": "0" * 64}, "read_only"),
+    ],
+)
+def test_mounted_input_identity_strictly_rejects_noncanonical_records(value: object, error: str) -> None:
+    with pytest.raises((TypeError, ValueError), match=error):
+        MountedInputIdentity.from_dict(value)
+
+
+@pytest.mark.parametrize("mounted_inputs", [[], (object(),)])
+def test_capture_environment_identity_rejects_untyped_mounted_inputs(mounted_inputs: object) -> None:
+    with pytest.raises(TypeError, match="mounted_inputs"):
+        CaptureEnvironmentIdentity(
+            host_architecture="linux/amd64",
+            target_reference="example.invalid/target:tag",
+            target_content_id="sha256:" + ("1" * 64),
+            capture_reference="example.invalid/capture:tag",
+            capture_content_id="sha256:" + ("2" * 64),
+            capture_tool_version="4.0.17",
+            mounted_inputs=cast(Any, mounted_inputs),
+        )
+
+
+@pytest.mark.parametrize("replacement", ["missing", "directory"])
+def test_mounted_input_identification_classifies_a_race_at_the_stable_file_boundary(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: str,
+) -> None:
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    del experiment_path
+    mounted = tmp_path / "racy-request.txt"
+    mounted.write_bytes(b"request-v1")
+    mount = MountConfig(source=mounted, target="/work/request.txt", read_only=True)
+    config = prepared.config.model_copy(
+        update={"target": prepared.config.target.model_copy(update={"mounts": (mount,)})}
+    )
+    real_identify = capture_module.identify_file
+
+    def replace_before_identification(path: Path) -> object:
+        path.unlink()
+        if replacement == "directory":
+            path.mkdir()
+        return real_identify(path)
+
+    monkeypatch.setattr(capture_module, "identify_file", replace_before_identification)
+
+    expected = "unavailable" if replacement == "missing" else "incompatible"
+    with pytest.raises(TrafficlabError, match=expected):
+        cast(Any, capture_module)._identify_mounted_inputs(config)
+
+
+def test_mounted_input_comparison_names_a_new_regular_file_at_the_same_declared_target(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    del experiment_path
+    mounted = tmp_path / "directory-to-file"
+    mounted.mkdir()
+    mount = MountConfig(source=mounted, target="/work/request.txt", read_only=True)
+    config = prepared.config.model_copy(
+        update={"target": prepared.config.target.model_copy(update={"mounts": (mount,)})}
+    )
+    expected = cast(Any, capture_module)._identify_mounted_inputs(config)
+    mounted.rmdir()
+    mounted.write_bytes(b"now-a-file")
+
+    with pytest.raises(TrafficlabError, match="mounted input request.txt is incompatible"):
+        cast(Any, capture_module)._require_matching_mounted_inputs(config, expected)
+
+
+def test_mounted_input_identification_rejects_a_nonregular_mount_source(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    del experiment_path
+    target_file = tmp_path / "target-file"
+    target_file.write_bytes(b"bytes")
+    mounted = tmp_path / "request.txt"
+    mounted.symlink_to(target_file)
+    mount = MountConfig(source=mounted, target="/work/request.txt", read_only=True)
+    config = prepared.config.model_copy(
+        update={"target": prepared.config.target.model_copy(update={"mounts": (mount,)})}
+    )
+
+    with pytest.raises(TrafficlabError, match="mounted input request.txt is incompatible"):
+        cast(Any, capture_module)._identify_mounted_inputs(config)
 
 
 def test_cleanup_rollback_preserves_a_concurrent_replacement_pair(
@@ -1405,6 +1703,43 @@ def test_capture_result_rejects_a_non_boolean_reuse_flag() -> None:
     """Truthiness coercion would make capture ownership ambiguous to the coordinator."""
     with pytest.raises(TypeError, match="reused"):
         CaptureResult(Path("/run"), Path("/run/reference.pcapng"), 1, 0, cast(Any, 1))
+
+
+def test_capture_failure_translation_requires_an_arbitrated_primary() -> None:
+    with pytest.raises(ValueError, match="existing primary failure"):
+        cast(Any, capture_module)._capture_failure_outcomes(CaptureOutcome())
+
+
+@pytest.mark.parametrize(
+    ("later_kinds", "evidence_state", "corrective_action"),
+    [
+        (
+            (FailureKind.CAPTURE_STOPPED, FailureKind.TOTAL_TIMEOUT),
+            "not_published",
+            "inspect target first, then capture and budget",
+        ),
+        (
+            (FailureKind.CLEANUP_FAILED,),
+            "diagnostic_only",
+            "inspect target then remove project",
+        ),
+    ],
+)
+def test_target_failure_translation_accounts_for_later_capture_and_cleanup_failures(
+    later_kinds: tuple[FailureKind, ...], evidence_state: str, corrective_action: str
+) -> None:
+    translated = cast(Any, capture_module)._capture_failure_outcome(
+        FailureKind.TARGET_NONZERO_EXIT,
+        "target exited naturally with status 23",
+        status=23,
+        origin=capture_module.CaptureFailureOrigin.WORKLOAD,
+        authority="primary",
+        all_kinds=(FailureKind.TARGET_NONZERO_EXIT, *later_kinds),
+        natural_target_succeeded=False,
+    )
+
+    assert translated.evidence_state == evidence_state
+    assert translated.corrective_action == corrective_action
 
 
 def test_prepared_capture_reuses_a_stable_pair_before_any_workload_setup(
@@ -1585,33 +1920,113 @@ def test_prepared_capture_rejects_mismatched_authoritative_inputs_before_docker(
         capture_prepared_experiment(experiment_path, cast(Any, candidate), docker=cast(Any, object()))
 
 
-def test_fresh_capture_rejects_snapshot_mutation_before_pair_publication(
+def test_public_capture_preserves_typed_snapshot_mutation_before_pair_publication(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Capture cannot publish a pair under snapshot bytes changed during the workload."""
     experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
-    docker = _Docker("normal")
     snapshot_path = prepared.run_directory / "experiment.toml"
-    real_flush = capture_module._flush_capture  # pyright: ignore[reportPrivateUsage]
 
-    def flush_and_mutate(*args: Any, **kwargs: Any) -> object:
-        result = real_flush(*args, **kwargs)
-        snapshot_path.write_bytes(snapshot_path.read_bytes() + b"\n")
-        return result
+    class SnapshotMutatingDocker(_Docker):
+        def signal_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+            result = super().signal_capture(compose_path, project_name, deadline=deadline)
+            snapshot_path.write_bytes(snapshot_path.read_bytes() + b"\n")
+            return result
 
-    monkeypatch.setattr(capture_module, "_flush_capture", flush_and_mutate)
+    docker = SnapshotMutatingDocker("normal")
 
-    with pytest.raises(TrafficlabError, match="experiment.toml changed during capture"):
-        capture_prepared_experiment(
-            experiment_path,
-            prepared,
-            docker=docker,
-            clock=_Clock(docker),
-            interruption=lambda: False,
-        )
+    with pytest.raises(TrafficlabError, match="experiment.toml changed during capture") as caught:
+        capture_experiment(experiment_path, docker=docker, clock=_Clock(docker), interruption=lambda: False)
+
+    expected = {
+        "affected_evidence": "experiment.toml",
+        "authority": "primary",
+        "corrective_action": "restore the prepared experiment snapshot and rerun capture",
+        "detail": "experiment.toml changed during capture",
+        "evidence_state": "preserved",
+        "kind": "artifact_changed",
+        "stage": "capture",
+    }
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.as_dict() == expected
+    records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
+    assert records[-1]["failure_outcome"] == expected
+    assert records[-1]["secondary_details"] == []
+    assert records[-1]["secondary_failures"] == []
+    assert records[-1]["secondary_outcomes"] == []
 
     assert not (prepared.run_directory / "capture.json").exists()
     assert not (prepared.run_directory / "reference.pcapng").exists()
+    assert not (prepared.run_directory / "diagnostic-capture.json").exists()
+    assert not (prepared.run_directory / "diagnostic-reference.pcapng").exists()
+    assert not tuple(prepared.run_directory.glob(".trafficlab-capture-*"))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "detail", "corrective_action"),
+    [
+        ("remove", "mounted input request.txt is unavailable", "restore the named mounted input bytes"),
+        (
+            "change",
+            "mounted input request.txt is incompatible",
+            "restore the declared mounted-input content identity",
+        ),
+    ],
+)
+def test_public_capture_reidentifies_mounted_input_before_publication(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    detail: str,
+    corrective_action: str,
+) -> None:
+    mounted = tmp_path / "request.txt"
+    mounted.write_bytes(b"request-v1")
+    target = cast(dict[str, object], valid_config_data["target"])
+    target["mounts"] = [
+        {"source": str(mounted), "target": "/work/request.txt", "read_only": True},
+    ]
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+
+    class MountedInputMutatingDocker(_Docker):
+        def signal_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+            result = super().signal_capture(compose_path, project_name, deadline=deadline)
+            if mutation == "remove":
+                mounted.unlink()
+            else:
+                mounted.write_bytes(b"request-v2")
+            return result
+
+    docker = MountedInputMutatingDocker("normal")
+
+    with pytest.raises(TrafficlabError, match=detail) as caught:
+        capture_experiment(experiment_path, docker=docker, clock=_Clock(docker), interruption=lambda: False)
+
+    expected = {
+        "affected_evidence": "capture evidence",
+        "authority": "primary",
+        "corrective_action": corrective_action,
+        "detail": detail,
+        "evidence_state": "not_published",
+        "kind": "docker_preflight_failed",
+        "stage": "preflight",
+    }
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.as_dict() == expected
+    records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
+    assert records[-1]["failure_outcome"] == expected
+    assert records[-1]["secondary_details"] == []
+    assert records[-1]["secondary_failures"] == []
+    assert records[-1]["secondary_outcomes"] == []
+    for name in (
+        "capture.json",
+        "reference.pcapng",
+        "diagnostic-capture.json",
+        "diagnostic-reference.pcapng",
+    ):
+        assert not (prepared.run_directory / name).exists()
+    assert not tuple(prepared.run_directory.glob(".trafficlab-capture-*"))
 
 
 def test_readiness_and_workload_state_errors_are_classified_at_the_observation_boundary(

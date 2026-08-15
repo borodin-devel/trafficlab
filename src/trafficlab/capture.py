@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import math
+import re
+import stat
 import tempfile
 import time
 import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
 
 from trafficlab.artifacts import (
@@ -32,7 +34,10 @@ from trafficlab.capture_policy import (
     record_flush_failure,
     record_induced_target_status,
     record_interruption,
+    record_mounted_input_incompatible,
+    record_mounted_input_unavailable,
     record_natural_target_observation,
+    record_snapshot_changed,
     record_stage_timeout,
     record_total_timeout,
     record_validation_failure,
@@ -40,8 +45,9 @@ from trafficlab.capture_policy import (
 from trafficlab.cleanup import CleanupCompose, cleanup_project
 from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
 from trafficlab.compose import ComposePaths, write_production_compose
+from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.docker_cli import CommandResult, DockerCompose, ProjectInventory, ServiceState
+from trafficlab.docker_cli import CapturePlatform, CommandResult, DockerCompose, ProjectInventory, ServiceState
 from trafficlab.errors import (
     DeadlineExceededError,
     FailureAuthority,
@@ -50,7 +56,13 @@ from trafficlab.errors import (
     append_failure_outcome,
     failure_outcome_from_error,
 )
-from trafficlab.preflight import CaptureEnvironmentIdentity, DockerPreflight, PreparedExperiment, run_preflight
+from trafficlab.preflight import (
+    CaptureEnvironmentIdentity,
+    DockerPreflight,
+    MountedInputIdentity,
+    PreparedExperiment,
+    run_preflight,
+)
 from trafficlab.trace import load_capture_metadata
 
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
@@ -61,7 +73,21 @@ _CAPTURE_ENVIRONMENT_FIELDS = (
     "capture_reference",
     "capture_content_id",
     "capture_tool_version",
+    "mounted_inputs",
 )
+_CONTENT_ID_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+class _SnapshotChangedError(TrafficlabError):
+    """The realized snapshot changed after capture preparation."""
+
+
+class _MountedInputUnavailableError(TrafficlabError):
+    """A regular-file mounted input disappeared before validation."""
+
+
+class _MountedInputIncompatibleError(TrafficlabError):
+    """A regular-file mounted input no longer has its recorded identity."""
 
 
 class CaptureDocker(DockerPreflight, CleanupCompose, Protocol):
@@ -106,7 +132,88 @@ def _append_event(run_directory: Path, event: str, **detail: object) -> None:
 
 
 def _capture_environment_document(identity: CaptureEnvironmentIdentity) -> dict[str, object]:
-    return {name: getattr(identity, name) for name in _CAPTURE_ENVIRONMENT_FIELDS}
+    return {
+        "host_architecture": identity.host_architecture,
+        "target_reference": identity.target_reference,
+        "target_content_id": identity.target_content_id,
+        "capture_reference": identity.capture_reference,
+        "capture_content_id": identity.capture_content_id,
+        "capture_tool_version": identity.capture_tool_version,
+        "mounted_inputs": [item.as_dict() for item in identity.mounted_inputs],
+    }
+
+
+def _mounted_input_name(target: str) -> str:
+    return PurePosixPath(target).name or target
+
+
+def _mounted_input_error(target: str, *, unavailable: bool) -> TrafficlabError:
+    name = _mounted_input_name(target)
+    if unavailable:
+        error = _MountedInputUnavailableError(
+            f"mounted input {name} is unavailable",
+            corrective_action="restore the named mounted input bytes",
+        )
+    else:
+        error = _MountedInputIncompatibleError(
+            f"mounted input {name} is incompatible",
+            corrective_action="restore the declared mounted-input content identity",
+        )
+    outcome = failure_outcome_from_error(
+        error,
+        kind="docker_preflight_failed",
+        stage="preflight",
+        affected_evidence="capture evidence",
+        evidence_state="not_published",
+    )
+    error.failure_outcomes = (outcome,)
+    error.failure_outcome = outcome
+    return error
+
+
+def _identify_mounted_inputs(config: ExperimentConfig) -> tuple[MountedInputIdentity, ...]:
+    identities: list[MountedInputIdentity] = []
+    for mount in config.target.mounts:
+        try:
+            status = mount.source.stat(follow_symlinks=False)
+        except OSError as error:
+            raise _mounted_input_error(mount.target, unavailable=True) from error
+        if stat.S_ISDIR(status.st_mode):
+            continue
+        if not stat.S_ISREG(status.st_mode):
+            raise _mounted_input_error(mount.target, unavailable=False)
+        try:
+            identity = identify_file(mount.source)
+        except TrafficlabError as error:
+            unavailable = not mount.source.exists()
+            raise _mounted_input_error(mount.target, unavailable=unavailable) from error
+        identities.append(
+            MountedInputIdentity(
+                target=mount.target,
+                read_only=mount.read_only,
+                size=identity.size,
+                sha256=identity.sha256,
+            )
+        )
+    return tuple(identities)
+
+
+def _require_matching_mounted_inputs(
+    config: ExperimentConfig,
+    expected: tuple[MountedInputIdentity, ...],
+) -> tuple[MountedInputIdentity, ...]:
+    current = _identify_mounted_inputs(config)
+    if current == expected:
+        return current
+    mismatch_index = next(
+        (index for index, pair in enumerate(zip(expected, current, strict=False)) if pair[0] != pair[1]),
+        min(len(expected), len(current)),
+    )
+    if mismatch_index < len(expected):
+        target = expected[mismatch_index].target
+    else:
+        target = current[mismatch_index].target
+    raise _mounted_input_error(target, unavailable=False)
 
 
 def _capture_lineage(
@@ -132,10 +239,30 @@ def _require_unchanged_capture_snapshot(run_directory: Path, expected: ContentId
             {"experiment.toml": identify_file(run_directory / "experiment.toml")},
         )
     except TrafficlabError as error:
-        raise TrafficlabError(
+        changed = _SnapshotChangedError(
             "experiment.toml changed during capture",
             corrective_action="restore the prepared experiment snapshot and rerun capture",
-        ) from error
+        )
+        outcome = failure_outcome_from_error(
+            changed,
+            kind="artifact_changed",
+            stage="capture",
+            affected_evidence="experiment.toml",
+            evidence_state="preserved",
+        )
+        changed.failure_outcomes = (outcome,)
+        changed.failure_outcome = outcome
+        raise changed from error
+
+
+def _require_unchanged_capture_inputs(
+    run_directory: Path,
+    experiment_identity: ContentIdentity,
+    config: ExperimentConfig,
+    mounted_inputs: tuple[MountedInputIdentity, ...],
+) -> None:
+    _require_unchanged_capture_snapshot(run_directory, experiment_identity)
+    _require_matching_mounted_inputs(config, mounted_inputs)
 
 
 def _capture_pair_stale_error() -> TrafficlabError:
@@ -157,30 +284,57 @@ def _capture_pair_stale_error() -> TrafficlabError:
     return error
 
 
-def _parse_capture_lineage(record: dict[str, object]) -> dict[str, object]:
-    environment = record.get("capture_environment_identity")
-    if type(environment) is not dict:
+def _parse_capture_environment(value: object) -> CaptureEnvironmentIdentity:
+    if type(value) is not dict:
         raise TypeError("capture environment identity must be an object")
-    environment_document = cast(dict[str, object], environment)
-    if set(environment_document) != set(_CAPTURE_ENVIRONMENT_FIELDS):
+    document = cast(dict[str, object], value)
+    if set(document) != set(_CAPTURE_ENVIRONMENT_FIELDS):
         raise ValueError("capture environment identity fields are not canonical")
-    return {
+    mounted_value = document["mounted_inputs"]
+    if type(mounted_value) is not list:
+        raise TypeError("mounted_inputs must be an array")
+    mounted_inputs = tuple(MountedInputIdentity.from_dict(item) for item in cast(list[object], mounted_value))
+    string_fields = _CAPTURE_ENVIRONMENT_FIELDS[:-1]
+    if any(type(document[name]) is not str or not cast(str, document[name]).strip() for name in string_fields):
+        raise ValueError("capture environment identity strings must be nonempty")
+    if document["host_architecture"] != "linux/amd64":
+        raise ValueError("capture environment architecture is not canonical")
+    for name in ("target_content_id", "capture_content_id"):
+        if _CONTENT_ID_PATTERN.fullmatch(cast(str, document[name])) is None:
+            raise ValueError(f"{name} is not a canonical content ID")
+    return CaptureEnvironmentIdentity(
+        host_architecture=cast(CapturePlatform, document["host_architecture"]),
+        target_reference=cast(str, document["target_reference"]),
+        target_content_id=cast(str, document["target_content_id"]),
+        capture_reference=cast(str, document["capture_reference"]),
+        capture_content_id=cast(str, document["capture_content_id"]),
+        capture_tool_version=cast(str, document["capture_tool_version"]),
+        mounted_inputs=mounted_inputs,
+    )
+
+
+def _parse_capture_lineage(
+    record: dict[str, object],
+) -> tuple[dict[str, object], CaptureEnvironmentIdentity]:
+    environment = record.get("capture_environment_identity")
+    parsed_environment = _parse_capture_environment(environment)
+    parsed: dict[str, object] = {
         "experiment_identity": ContentIdentity.from_dict(
             record.get("experiment_identity"), name="experiment"
         ).as_dict(),
         "capture_identity": ContentIdentity.from_dict(record.get("capture_identity"), name="capture").as_dict(),
         "reference_identity": ContentIdentity.from_dict(record.get("reference_identity"), name="reference").as_dict(),
-        "capture_environment_identity": environment_document,
+        "capture_environment_identity": _capture_environment_document(parsed_environment),
     }
+    return parsed, parsed_environment
 
 
 def _require_matching_capture_lineage(
     run_directory: Path,
+    config: ExperimentConfig,
     environment_identity: CaptureEnvironmentIdentity | None,
 ) -> None:
     try:
-        if environment_identity is None:
-            raise ValueError("capture environment identity is unavailable")
         log_text = (run_directory / "run.log").read_bytes().decode("utf-8", errors="strict")
         records = [json.loads(line) for line in log_text.splitlines()]
         publications: list[dict[str, object]] = []
@@ -192,11 +346,29 @@ def _require_matching_capture_lineage(
                 publications.append(document)
         if len(publications) != 1:
             raise ValueError("capture publication lineage must occur exactly once")
-        actual = _parse_capture_lineage(publications[0])
-        expected = _capture_lineage(run_directory, environment_identity)
+        actual, recorded_environment = _parse_capture_lineage(publications[0])
+        if recorded_environment.target_reference != config.target.image:
+            raise ValueError("capture target reference differs from the realized configuration")
+        if recorded_environment.capture_reference != config.capture.image:
+            raise ValueError("capture image reference differs from the realized configuration")
+        current_mounted_inputs = _require_matching_mounted_inputs(config, recorded_environment.mounted_inputs)
+        expected_environment = recorded_environment
+        if environment_identity is not None:
+            expected_environment = replace(environment_identity, mounted_inputs=current_mounted_inputs)
+        expected = _capture_lineage(run_directory, expected_environment)
         require_compatible(expected, actual)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, TrafficlabError, TypeError, ValueError) as error:
         raise _capture_pair_stale_error() from error
+
+
+def _record_capture_input_failure(outcome: CaptureOutcome, error: TrafficlabError) -> CaptureOutcome:
+    if isinstance(error, _SnapshotChangedError):
+        return record_snapshot_changed(outcome, str(error))
+    if isinstance(error, _MountedInputUnavailableError):
+        return record_mounted_input_unavailable(outcome, str(error))
+    if isinstance(error, _MountedInputIncompatibleError):
+        return record_mounted_input_incompatible(outcome, str(error))
+    return record_validation_failure(outcome, str(error))
 
 
 @contextmanager
@@ -580,6 +752,7 @@ def _capture_failure_outcome(
     has_cleanup = FailureKind.CLEANUP_FAILED in all_kinds
     has_capture_and_total = FailureKind.CAPTURE_STOPPED in all_kinds and FailureKind.TOTAL_TIMEOUT in all_kinds
     is_flush_timeout = kind is FailureKind.FLUSH_FAILED or origin is CaptureFailureOrigin.FLUSH
+    stage = "capture"
     if kind in (FailureKind.TARGET_NONZERO_EXIT, FailureKind.NATURAL_TARGET_STATUS, FailureKind.INDUCED_TARGET_STATUS):
         outcome_kind, evidence, state = "target_failed", "capture pair", "diagnostic_only"
         if authority == "primary" and has_capture_and_total:
@@ -597,6 +770,20 @@ def _capture_failure_outcome(
         outcome_kind, evidence, state = "cleanup_failed", "inventory", "possibly_remaining"
         status = None
         corrective_action = "remove the named project"
+    elif kind is FailureKind.SNAPSHOT_CHANGED:
+        outcome_kind, evidence, state = "artifact_changed", "experiment.toml", "preserved"
+        status = None
+        corrective_action = "restore the prepared experiment snapshot and rerun capture"
+    elif kind is FailureKind.MOUNTED_INPUT_UNAVAILABLE:
+        outcome_kind, evidence, state = "docker_preflight_failed", "capture evidence", "not_published"
+        stage = "preflight"
+        status = None
+        corrective_action = "restore the named mounted input bytes"
+    elif kind is FailureKind.MOUNTED_INPUT_INCOMPATIBLE:
+        outcome_kind, evidence, state = "docker_preflight_failed", "capture evidence", "not_published"
+        stage = "preflight"
+        status = None
+        corrective_action = "restore the declared mounted-input content identity"
     elif kind is FailureKind.CAPTURE_STOPPED:
         outcome_kind, evidence, state = "capture_failed", "capture pair", "not_published"
         corrective_action = (
@@ -636,7 +823,7 @@ def _capture_failure_outcome(
         corrective_action = "correct the capture producer"
     return FailureOutcome(
         kind=outcome_kind,
-        stage="capture",
+        stage=stage,
         detail=detail,
         affected_evidence=evidence,
         evidence_state=state,
@@ -821,6 +1008,40 @@ def _validate_prepared_capture(path: Path, prepared: PreparedExperiment) -> Path
     return run_directory
 
 
+def _try_reuse_prepared_capture(
+    path: Path,
+    prepared: PreparedExperiment,
+    *,
+    clock: Callable[[], float],
+) -> tuple[CaptureResult | None, Path, ContentIdentity]:
+    run_directory = _validate_prepared_capture(path, prepared)
+    experiment_identity = identify_bytes(render_effective_config(prepared.config))
+    existing = load_or_recover_capture_pair(run_directory, deadline=None, clock=clock)
+    if existing is None:
+        return None, run_directory, experiment_identity
+    _require_matching_capture_lineage(
+        run_directory,
+        prepared.config,
+        prepared.report.environment_identity,
+    )
+    remove_stable_capture_diagnostics(run_directory)
+    result = CaptureResult(
+        run_directory=run_directory,
+        reference_path=run_directory / "reference.pcapng",
+        packet_count=existing.packet_count,
+        target_status=0,
+        reused=True,
+    )
+    _append_event(
+        run_directory,
+        "capture_reused",
+        packet_count=result.packet_count,
+        path=str(result.reference_path),
+        reused=True,
+    )
+    return result, run_directory, experiment_identity
+
+
 def capture_prepared_experiment(
     path: Path,
     prepared: PreparedExperiment,
@@ -830,27 +1051,9 @@ def capture_prepared_experiment(
     interruption: Callable[[], bool] = lambda: False,
 ) -> CaptureResult:
     """Capture an already-preflighted experiment or reuse its stable valid pair."""
-    run_directory = _validate_prepared_capture(path, prepared)
-    experiment_identity = identify_bytes(render_effective_config(prepared.config))
-    existing = load_or_recover_capture_pair(run_directory, deadline=None, clock=clock)
-    if existing is not None:
-        _require_matching_capture_lineage(run_directory, prepared.report.environment_identity)
-        remove_stable_capture_diagnostics(run_directory)
-        result = CaptureResult(
-            run_directory=run_directory,
-            reference_path=run_directory / "reference.pcapng",
-            packet_count=existing.packet_count,
-            target_status=0,
-            reused=True,
-        )
-        _append_event(
-            run_directory,
-            "capture_reused",
-            packet_count=result.packet_count,
-            path=str(result.reference_path),
-            reused=True,
-        )
-        return result
+    reused, run_directory, experiment_identity = _try_reuse_prepared_capture(path, prepared, clock=clock)
+    if reused is not None:
+        return reused
 
     environment_identity = prepared.report.environment_identity
     if environment_identity is None:
@@ -862,6 +1065,10 @@ def capture_prepared_experiment(
     if docker is None:
         docker = cast(CaptureDocker, DockerCompose(clock=clock))
     config = prepared.config
+    environment_identity = replace(
+        environment_identity,
+        mounted_inputs=_identify_mounted_inputs(config),
+    )
     project_name = f"trafficlab-capture-{uuid.uuid4().hex}"
     states: dict[str, ServiceState] = {}
     outcome = CaptureOutcome()
@@ -935,7 +1142,12 @@ def capture_prepared_experiment(
                         and closed_capture.exit_code == 0
                     ):
                         try:
-                            _require_unchanged_capture_snapshot(run_directory, experiment_identity)
+                            _require_unchanged_capture_inputs(
+                                run_directory,
+                                experiment_identity,
+                                config,
+                                environment_identity.mounted_inputs,
+                            )
                             publication = publish_capture_pair(
                                 metadata_path,
                                 pcapng_path,
@@ -951,7 +1163,7 @@ def capture_prepared_experiment(
                                 origin=CaptureFailureOrigin.VALIDATION,
                             )
                         except TrafficlabError as error:
-                            outcome = record_validation_failure(outcome, str(error))
+                            outcome = _record_capture_input_failure(outcome, error)
                         else:
                             for warning in publication.warnings:
                                 outcome = record_validation_failure(
@@ -1039,7 +1251,12 @@ def capture_prepared_experiment(
                 if capture_closed_cleanly:
                     operation = "validate and publish capture output"
                     try:
-                        _require_unchanged_capture_snapshot(run_directory, experiment_identity)
+                        _require_unchanged_capture_inputs(
+                            run_directory,
+                            experiment_identity,
+                            config,
+                            environment_identity.mounted_inputs,
+                        )
                         publication = publish_capture_pair(
                             metadata_path,
                             pcapng_path,
@@ -1055,7 +1272,7 @@ def capture_prepared_experiment(
                             origin=CaptureFailureOrigin.VALIDATION,
                         )
                     except TrafficlabError as error:
-                        outcome = record_validation_failure(outcome, str(error))
+                        outcome = _record_capture_input_failure(outcome, error)
                     else:
                         for warning in publication.warnings:
                             outcome = record_validation_failure(
@@ -1085,7 +1302,12 @@ def capture_prepared_experiment(
             closed_capture = states.get("capture")
             if closed_capture is not None and closed_capture.state == "exited" and closed_capture.exit_code == 0:
                 try:
-                    _require_unchanged_capture_snapshot(run_directory, experiment_identity)
+                    _require_unchanged_capture_inputs(
+                        run_directory,
+                        experiment_identity,
+                        config,
+                        environment_identity.mounted_inputs,
+                    )
                     publication = publish_capture_pair(
                         metadata_path,
                         pcapng_path,
@@ -1101,7 +1323,7 @@ def capture_prepared_experiment(
                         origin=CaptureFailureOrigin.VALIDATION,
                     )
                 except TrafficlabError as error:
-                    outcome = record_validation_failure(outcome, str(error))
+                    outcome = _record_capture_input_failure(outcome, error)
                 else:
                     for warning in publication.warnings:
                         outcome = record_validation_failure(
@@ -1198,7 +1420,11 @@ def capture_experiment(
     clock: Callable[[], float] = time.monotonic,
     interruption: Callable[[], bool] = lambda: False,
 ) -> CaptureResult:
-    """Run full preflight once, then execute the prepared capture core."""
+    """Reuse after local preparation, otherwise run full preflight and capture."""
+    locally_prepared = run_preflight(path, config_only=True, docker=docker, clock=clock)
+    reused, _, _ = _try_reuse_prepared_capture(path, locally_prepared, clock=clock)
+    if reused is not None:
+        return reused
     prepared = run_preflight(path, config_only=False, docker=docker, clock=clock)
     return capture_prepared_experiment(
         path,

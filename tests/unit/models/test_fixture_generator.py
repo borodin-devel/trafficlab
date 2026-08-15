@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from scripts import generate_model_fixtures as fixture_generator
+from scripts import generate_phase2_fixtures as phase2_fixture_generator
 from trafficlab.config import ExperimentConfig
 from trafficlab.errors import TrafficlabError
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent
@@ -13,6 +14,14 @@ from trafficlab.trace import CaptureMetadata, Direction, TraceEvent
 _ROOT = Path(__file__).parents[3]
 _MODEL_BYTES = (_ROOT / "examples" / "data" / "models" / "best_model.json").read_bytes()
 _GENERATED_BYTES = (_ROOT / "examples" / "data" / "models" / "generated.pcapng").read_bytes()
+
+
+def test_phase2_builder_publishes_the_model_that_owns_generated_bytes(tmp_path: Path) -> None:
+    run_directory = phase2_fixture_generator._build_temporary_run(tmp_path)  # pyright: ignore[reportPrivateUsage]
+
+    assert (run_directory / "best_model.json").is_file()
+    assert (run_directory / "generated.pcapng").is_file()
+    assert (run_directory / "similarity.json").is_file()
 
 
 def test_normal_mode_writes_both_phase4_artifacts(

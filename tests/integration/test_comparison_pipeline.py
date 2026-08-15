@@ -13,10 +13,18 @@ from trafficlab.artifacts import create_run_directory
 from trafficlab.comparison import compare_experiment, load_comparison_result
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.pcapng import write_pcapng
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 pytestmark = pytest.mark.integration
+
+_REPOSITORY = Path(__file__).parents[2]
+_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_EXPECTED_AGGREGATE_SCORE = 0.5956427487361957
+_EXPECTED_METHOD_SCORES = {
+    "autocorrelation": 0.8100292509744677,
+    "frame_size_ks": 0.8,
+    "iat_ks": 0.6,
+    "multiscale_rate": 0.1725417439703154,
+}
 
 
 def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_durable_publication(
@@ -30,22 +38,14 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     caller_path = tmp_path / "caller.toml"
     caller_path.write_bytes(render_effective_config(config))
     create_run_directory(config)
-    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
-    capture_bytes = render_capture_metadata(metadata)
-    (run_directory / "capture.json").write_bytes(capture_bytes)
-    reference = (
-        TraceEvent(10.0, Direction.OUTBOUND, 60),
-        TraceEvent(11.0, Direction.INBOUND, 80),
-        TraceEvent(13.0, Direction.OUTBOUND, 100),
-    )
-    generated = (
-        TraceEvent(100.0, Direction.OUTBOUND, 60),
-        TraceEvent(101.0, Direction.INBOUND, 80),
-        TraceEvent(103.0, Direction.OUTBOUND, 100),
-        TraceEvent(104.0, Direction.INBOUND, 120),
-    )
-    write_pcapng(run_directory / "reference.pcapng", reference, metadata)
-    write_pcapng(run_directory / "generated.pcapng", generated, metadata)
+    for artifact_name in (
+        "capture.json",
+        "reference.pcapng",
+        "best_model.json",
+        "generated.pcapng",
+    ):
+        (run_directory / artifact_name).write_bytes((_EXAMPLE_DATA / artifact_name).read_bytes())
+    capture_bytes = (run_directory / "capture.json").read_bytes()
     real_fsync = os.fsync
     real_link = os.link
     fsync_calls: list[int] = []
@@ -77,11 +77,11 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     published = load_comparison_result(run_directory / "similarity.json")
     assert load_experiment(caller_path) == load_experiment(run_directory / "experiment.toml") == config
     assert published == result
-    assert result.aggregate_score == 1.0
-    assert result.observation_window_seconds == 3.0
+    assert result.aggregate_score == _EXPECTED_AGGREGATE_SCORE
+    assert result.observation_window_seconds == 10.0
     assert tuple(result.methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
-    assert all(method.score == 1.0 for method in result.methods.values())
-    assert all(method.diagnostics["observation_window_seconds"] == 3.0 for method in result.methods.values())
+    assert {name: method.score for name, method in result.methods.items()} == pytest.approx(_EXPECTED_METHOD_SCORES)
+    assert all(method.diagnostics["observation_window_seconds"] == 10.0 for method in result.methods.values())
     assert result.input_sha256 == {
         "capture_json": hashlib.sha256(capture_bytes).hexdigest(),
         "generated_pcapng": hashlib.sha256((run_directory / "generated.pcapng").read_bytes()).hexdigest(),
@@ -96,9 +96,9 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
         name: method.as_dict() for name, method in result.methods.items()
     }
     assert json.loads((run_directory / "run.log").read_text(encoding="utf-8").splitlines()[-1]) == {
-        "aggregate_score": 1.0,
+        "aggregate_score": _EXPECTED_AGGREGATE_SCORE,
         "event": "comparison_succeeded",
-        "observation_window_seconds": 3.0,
+        "observation_window_seconds": 10.0,
         "path": str(run_directory / "similarity.json"),
         "reused": False,
         "stage": "compare",
@@ -110,9 +110,9 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     assert linked == [(linked[0][0], run_directory / "similarity.json")]
     assert len(fsync_calls) == 3
     assert json.loads((run_directory / "run.log").read_text(encoding="utf-8").splitlines()[-1]) == {
-        "aggregate_score": 1.0,
+        "aggregate_score": _EXPECTED_AGGREGATE_SCORE,
         "event": "comparison_succeeded",
-        "observation_window_seconds": 3.0,
+        "observation_window_seconds": 10.0,
         "path": str(run_directory / "similarity.json"),
         "reused": True,
         "stage": "compare",

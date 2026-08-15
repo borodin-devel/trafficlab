@@ -1,16 +1,9 @@
-"""Public-boundary coverage for the canonical expected-failure matrix.
-
-The matrix uses the checked JSONL rows as its expected values.  Study-acceptance
-detections scheduled for Task 11 are injected as typed errors at the nearest
-current public stage callback: this test verifies their downstream serialization
-and publication state, not a detector that is deliberately outside the current
-synthetic fixture harness.
-"""
+"""Public-boundary coverage for the canonical expected-failure matrix."""
 
 import copy
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, cast
@@ -23,9 +16,7 @@ import trafficlab.fitting as fitting
 import trafficlab.generation as generation
 import trafficlab.genetic.strategy as strategy_module
 import trafficlab.preflight as preflight
-import trafficlab.run as run
 import trafficlab.study_evidence as study_evidence
-from trafficlab.capture import CaptureResult
 from trafficlab.capture_policy import CaptureFailureOrigin, CaptureOutcome, FailureDetail, FailureKind
 from trafficlab.comparison import ComparisonResult
 from trafficlab.compatibility import ContentIdentity, identify_bytes
@@ -33,8 +24,7 @@ from trafficlab.config import ExperimentConfig, FloatBounds
 from trafficlab.config_io import render_effective_config
 from trafficlab.docker_cli import ServiceState
 from trafficlab.errors import FailureOutcome, TrafficlabError
-from trafficlab.fitting import FitDependencies, FitStageResult
-from trafficlab.generation import GenerationStageResult
+from trafficlab.fitting import FitDependencies
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.pcapng import encode_pcapng
@@ -47,16 +37,6 @@ _MODEL_FIXTURE = _ROOT / "examples" / "data" / "models" / "best_model.json"
 
 type _InjectionStage = Literal["capture", "fit", "generate", "compare", "publication"]
 
-# These rows belong to intentionally deferred Task 4/11 detectors.  They are
-# the only matrix cases allowed to inject an already-rendered outcome; every
-# other row must begin as a primitive source failure at its boundary harness.
-_DEFERRED_TYPED_DETECTOR_CASES = frozenset(
-    {
-        ("capture", "artifact_stale"),
-        ("fit", "artifact_changed"),
-        ("compare", "artifact_foreign"),
-    }
-)
 _PREFLIGHT_FINDING_NAMES = {
     "Docker Engine is unavailable": "docker_engine",
     "Docker Compose version is incompatible": "docker_compose",
@@ -79,13 +59,6 @@ _STAGE_OUTPUT_NAMES: dict[str, tuple[str, ...]] = {
     "compare": ("similarity.json",),
     "publication": ("accepted-evidence-bundle.json",),
 }
-_PRESERVED_EVIDENCE_NAMES: dict[str, tuple[str, ...]] = {
-    "best_model.json": ("best_model.json",),
-    "capture pair": ("capture.json", "reference.pcapng"),
-    "checkpoint.json": ("checkpoint.json",),
-    "generated.pcapng": ("generated.pcapng",),
-    "reference.pcapng": ("reference.pcapng",),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +67,6 @@ class _BoundaryCase:
 
     outcomes: tuple[FailureOutcome, ...]
     injection_stage: _InjectionStage | Literal["preflight"]
-    deferred_typed_detector: bool
 
     @property
     def primary(self) -> FailureOutcome:
@@ -102,8 +74,7 @@ class _BoundaryCase:
 
     @property
     def identifier(self) -> str:
-        route = "typed-task4-11" if self.deferred_typed_detector else "primitive-boundary"
-        return f"{route}-{self.primary.stage}-{self.primary.kind}-{self.primary.detail}"
+        return f"primitive-boundary-{self.primary.stage}-{self.primary.kind}-{self.primary.detail}"
 
 
 def _fixture_outcomes() -> tuple[FailureOutcome, ...]:
@@ -136,7 +107,6 @@ def _boundary_case(outcomes: tuple[FailureOutcome, ...]) -> _BoundaryCase:
     return _BoundaryCase(
         outcomes=outcomes,
         injection_stage=injection_stage,
-        deferred_typed_detector=(primary.stage, primary.kind) in _DEFERRED_TYPED_DETECTOR_CASES,
     )
 
 
@@ -148,11 +118,13 @@ def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
         ExperimentConfig,
         SimpleNamespace(
             capture=SimpleNamespace(
+                image="capture:test",
                 total_timeout_seconds=5.0,
                 readiness_timeout_seconds=1.0,
                 workload_timeout_seconds=1.0,
                 flush_timeout_seconds=1.0,
             ),
+            target=SimpleNamespace(image="target:test", mounts=()),
             run=SimpleNamespace(directory=run_directory),
         ),
     )
@@ -174,28 +146,6 @@ def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
         ),
         run_directory=run_directory,
     )
-
-
-def _preserved_paths(outcome: FailureOutcome, run_directory: Path) -> tuple[Path, ...]:
-    names = _PRESERVED_EVIDENCE_NAMES.get(outcome.affected_evidence, ())
-    if outcome.evidence_state == "preserved" and not names:
-        raise AssertionError(f"missing preserved-artifact mapping for {outcome.affected_evidence!r}")
-    return tuple(run_directory / name for name in names)
-
-
-def _prepare_publication_state(case: _BoundaryCase, run_directory: Path) -> dict[Path, bytes]:
-    primary = case.primary
-    expected: dict[Path, bytes] = {}
-    if primary.evidence_state == "preserved":
-        for path in _preserved_paths(primary, run_directory):
-            content = f"preserved fixture evidence: {path.name}\n".encode()
-            path.write_bytes(content)
-            expected[path] = content
-    elif primary.evidence_state == "possibly_remaining":
-        marker = run_directory / "inventory.marker"
-        marker.write_text("owned inventory may remain\n", encoding="utf-8")
-        expected[marker] = marker.read_bytes()
-    return expected
 
 
 def _assert_publication_state(case: _BoundaryCase, run_directory: Path, expected_preserved: dict[Path, bytes]) -> None:
@@ -272,101 +222,6 @@ def _run_preflight_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tm
     if records:
         _assert_serialized_outcomes(records[-1], case)
     _assert_publication_state(case, run_directory, {})
-
-
-def _run_deferred_typed_coordinator_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Exercise the public coordinator while only replacing completed-stage contracts.
-
-    The injected error is raised by the dependency matching its owner stage.
-    This keeps the test focused on real ``run_experiment`` failure logging and
-    artifact publication semantics rather than recreating unrelated fit and
-    capture fixtures for every adverse-condition row.
-    """
-    run_directory = tmp_path / "run"
-    run_directory.mkdir()
-    prepared = _prepared(run_directory)
-    expected_preserved = _prepare_publication_state(case, run_directory)
-    # Task 4/11 detector coverage is deliberately deferred.  Preserve the
-    # fixture payload only here so the coordinator contract remains covered
-    # without falsely claiming that a detector has already been implemented.
-    error = TrafficlabError(
-        case.primary.detail,
-        corrective_action=case.primary.corrective_action,
-        failure_outcomes=case.outcomes,
-    )
-    records: list[dict[str, object]] = []
-
-    def append(_directory: Path, record: dict[str, object]) -> None:
-        records.append(record)
-
-    def validate_noop(*_args: object) -> None:
-        return None
-
-    def validate_fit(*_args: object) -> tuple[float, bytes, dict[str, str]]:
-        return (1.0, b"", {})
-
-    def validate_generation(*_args: object) -> str:
-        return "generated-input-sha256"
-
-    def preflight_success(_path: Path) -> preflight.PreparedExperiment:
-        return prepared
-
-    def capture_success(_path: Path, _prepared: preflight.PreparedExperiment) -> CaptureResult:
-        return cast(CaptureResult, object())
-
-    def fit_success(_path: Path) -> FitStageResult:
-        return cast(FitStageResult, object())
-
-    def generation_success(_path: Path) -> GenerationStageResult:
-        return cast(GenerationStageResult, object())
-
-    def comparison_success(_path: Path) -> ComparisonResult:
-        return cast(ComparisonResult, object())
-
-    def capture_failure(_path: Path, _prepared: preflight.PreparedExperiment) -> CaptureResult:
-        raise error
-
-    def fit_failure(_path: Path) -> FitStageResult:
-        raise error
-
-    def generation_failure(_path: Path) -> GenerationStageResult:
-        raise error
-
-    def comparison_failure(_path: Path) -> ComparisonResult:
-        raise error
-
-    capture_stage: Callable[[Path, preflight.PreparedExperiment], CaptureResult] = (
-        capture_failure if case.injection_stage == "capture" else capture_success
-    )
-    fit_stage: Callable[[Path], FitStageResult] = fit_failure if case.injection_stage == "fit" else fit_success
-    generation_stage: Callable[[Path], GenerationStageResult] = (
-        generation_failure if case.injection_stage == "generate" else generation_success
-    )
-    comparison_stage: Callable[[Path], ComparisonResult] = (
-        comparison_failure if case.injection_stage == "compare" else comparison_success
-    )
-
-    monkeypatch.setattr(run, "append_run_log", append)
-    monkeypatch.setattr(run, "_validate_preflight_result", validate_noop)
-    monkeypatch.setattr(run, "_validate_capture_result", validate_noop)
-    monkeypatch.setattr(run, "_validate_fit_result", validate_fit)
-    monkeypatch.setattr(run, "_validate_generation_result", validate_generation)
-    monkeypatch.setattr(run, "_validate_comparison_result", validate_noop)
-
-    dependencies = run.RunDependencies(
-        preflight=preflight_success,
-        capture=capture_stage,
-        fit=fit_stage,
-        generate=generation_stage,
-        compare=comparison_stage,
-    )
-    with pytest.raises(TrafficlabError) as caught:
-        run.run_experiment(tmp_path / "experiment.toml", dependencies=dependencies)
-
-    assert caught.value is error
-    _assert_serialized_outcomes(records[-1], case)
-    assert records[-1]["failed_stage"] == case.injection_stage
-    _assert_publication_state(case, run_directory, expected_preserved)
 
 
 class _CaptureBoundaryDocker:
@@ -567,6 +422,68 @@ def _run_capture_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPa
     _assert_publication_state(case, run_directory, {})
 
 
+def _run_capture_stale_boundary_case(
+    case: _BoundaryCase,
+    tmp_path: Path,
+    valid_config_data: dict[str, object],
+) -> None:
+    """Drive valid-pair lineage rejection through the public no-Docker capture boundary."""
+    run_directory = tmp_path / "run"
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    cast(dict[str, object], data["target"])["mounts"] = []
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    experiment_path.write_bytes(render_effective_config(config))
+    prepared = preflight.open_or_prepare_experiment(experiment_path)
+    environment = preflight.CaptureEnvironmentIdentity(
+        host_architecture="linux/amd64",
+        target_reference=prepared.config.target.image,
+        target_content_id="sha256:" + ("c" * 64),
+        capture_reference=prepared.config.capture.image,
+        capture_content_id="sha256:" + ("d" * 64),
+        capture_tool_version="4.0.17",
+    )
+    prepared = replace(prepared, report=replace(prepared.report, environment_identity=environment))
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    metadata_path = run_directory / "capture.json"
+    reference_path = run_directory / "reference.pcapng"
+    metadata_content = render_capture_metadata(metadata)
+    original_reference = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
+    metadata_path.write_bytes(metadata_content)
+    reference_path.write_bytes(original_reference)
+    capture._append_event(  # pyright: ignore[reportPrivateUsage]
+        run_directory,
+        "capture_published",
+        **capture._capture_lineage(run_directory, environment),  # pyright: ignore[reportPrivateUsage]
+        packet_count=1,
+        path=str(reference_path),
+        project_name="matrix",
+        reused=False,
+    )
+    log_before = (run_directory / "run.log").read_bytes()
+    changed_reference = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 65),), metadata)
+    reference_path.write_bytes(changed_reference)
+
+    class NoDocker:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"stale public reuse touched Docker operation {name}")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture.capture_experiment(
+            experiment_path,
+            docker=cast(capture.CaptureDocker, NoDocker()),
+            clock=lambda: 100.0,
+            interruption=lambda: False,
+        )
+
+    assert tuple(caught.value.failure_outcomes) == case.outcomes
+    assert metadata_path.read_bytes() == metadata_content
+    assert reference_path.read_bytes() == changed_reference
+    assert (run_directory / "run.log").read_bytes() == log_before
+    assert list(run_directory.glob(".capture-*")) == []
+
+
 _FIT_METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
 _FIT_REFERENCE = (
     TraceEvent(10.0, Direction.OUTBOUND, 64),
@@ -712,6 +629,32 @@ def _run_fit_boundary_case(
             inputs,
             lambda _context: _fit_success_outcome(config),
         )
+    elif case.primary.kind == "artifact_changed":
+        reference_path = run_directory / "reference.pcapng"
+        original_reference = inputs[reference_path]
+        changed_reference = original_reference + b"changed after fitting\n"
+        reference_path.write_bytes(original_reference)
+        reads = 0
+
+        def read_bytes(path: Path) -> bytes:
+            nonlocal reads
+            if path == reference_path:
+                reads += 1
+                return original_reference if reads == 1 else changed_reference
+            return inputs[path]
+
+        prepared = preflight.PreparedExperiment(
+            experiment_path,
+            config,
+            preflight.PreflightReport(config, ()),
+            run_directory,
+        )
+        dependencies = FitDependencies(
+            lambda _path: prepared,
+            read_bytes,
+            lambda _context: _fit_success_outcome(config),
+        )
+        expected_preserved = {reference_path: original_reference}
     else:
         raise AssertionError(f"unsupported primitive fit outcome {case.primary.kind!r}")
 
@@ -722,6 +665,57 @@ def _run_fit_boundary_case(
     records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
     _assert_serialized_outcomes(records[-1], case)
     _assert_publication_state(case, run_directory, expected_preserved)
+
+
+def test_fit_changed_reference_without_resume_uses_the_generic_recovery_action(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """The resume-specific canonical action does not leak into a fresh non-resume fit."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    experiment_path = tmp_path / "experiment.toml"
+    base = _fit_config(valid_config_data, run_directory)
+    config = base.model_copy(update={"genetic": base.genetic.model_copy(update={"resume": False})})
+    inputs = _fit_inputs(config)
+    reference_path = run_directory / "reference.pcapng"
+    original_reference = inputs[reference_path]
+    reference_path.write_bytes(original_reference)
+    reads = 0
+
+    def read_bytes(path: Path) -> bytes:
+        nonlocal reads
+        if path == reference_path:
+            reads += 1
+            return original_reference if reads == 1 else original_reference + b"changed after fitting\n"
+        return inputs[path]
+
+    prepared = preflight.PreparedExperiment(
+        experiment_path,
+        config,
+        preflight.PreflightReport(config, ()),
+        run_directory,
+    )
+    dependencies = FitDependencies(
+        lambda _path: prepared,
+        read_bytes,
+        lambda _context: _fit_success_outcome(config),
+    )
+
+    with pytest.raises(TrafficlabError) as caught:
+        fitting.fit_experiment(experiment_path, dependencies=dependencies)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "kind": "artifact_changed",
+        "stage": "fit",
+        "detail": "reference.pcapng changed during fit",
+        "corrective_action": "restore the exact fitted inputs and rerun fit",
+        "affected_evidence": "reference.pcapng",
+        "evidence_state": "preserved",
+        "authority": "primary",
+    }
+    assert reference_path.read_bytes() == original_reference
 
 
 def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -985,68 +979,53 @@ def test_generation_preserves_published_bytes_when_post_publication_parse_fails(
     assert records[-1]["failure_outcome"] == outcome.as_dict()
 
 
-def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def _run_comparison_boundary_case(
+    case: _BoundaryCase,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    valid_config_data: dict[str, object],
+) -> None:
     """Exercise public comparison mapping from evaluation and publication sources."""
     run_directory = tmp_path / "run"
     run_directory.mkdir()
     experiment_path = tmp_path / "experiment.toml"
-    config = SimpleNamespace(run=SimpleNamespace(directory=run_directory), similarity=SimpleNamespace())
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    snapshot = render_effective_config(config)
+    experiment_path.write_bytes(snapshot)
+    (run_directory / "experiment.toml").write_bytes(snapshot)
+    example_data = _ROOT / "examples" / "data"
+    for source, destination in (
+        (example_data / "capture.json", run_directory / "capture.json"),
+        (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
+        (example_data / "models" / "generated.pcapng", run_directory / "generated.pcapng"),
+        (example_data / "models" / "best_model.json", run_directory / "best_model.json"),
+    ):
+        destination.write_bytes(source.read_bytes())
     records: list[dict[str, object]] = []
 
     def append(_directory: Path, record: dict[str, object]) -> None:
         records.append(record)
 
-    def load_config(_path: Path) -> object:
-        return config
-
-    def read_input(*_args: object, **_kwargs: object) -> bytes:
-        return b"input"
-
-    def parse_metadata(*_args: object, **_kwargs: object) -> object:
-        return object()
-
-    def parse_events(*_args: object, **_kwargs: object) -> tuple[()]:
-        return ()
-
-    def normalized(_events: object) -> tuple[tuple[()], float]:
-        return (), 1.0
-
-    def aligned(_events: object, _window: object) -> tuple[()]:
-        return ()
-
-    def settings_identity(_settings: object) -> ContentIdentity:
-        return identify_bytes(b"canonical similarity settings")
-
-    monkeypatch.setattr(comparison, "load_experiment", load_config)
-    monkeypatch.setattr(comparison, "_read_comparison_input", read_input)
-    monkeypatch.setattr(comparison, "parse_capture_metadata", parse_metadata)
-    monkeypatch.setattr(comparison, "parse_pcapng_bytes", parse_events)
-    monkeypatch.setattr(comparison, "normalize_reference", normalized)
-    monkeypatch.setattr(comparison, "align_generated", aligned)
-    monkeypatch.setattr(comparison, "similarity_settings_identity", settings_identity)
-    monkeypatch.setattr(comparison, "render_effective_config", _render_snapshot)
-
-    def identify_comparison_input(path: Path) -> ContentIdentity:
-        return identify_bytes(b"canonical snapshot" if path.name == "experiment.toml" else b"input")
-
-    monkeypatch.setattr(comparison, "identify_file", identify_comparison_input)
     monkeypatch.setattr(comparison, "append_run_log", append)
-    if case.primary.kind == "metric_infeasible":
+    expected_preserved: dict[Path, bytes] = {}
+    if case.primary.kind == "artifact_foreign":
+        generated_path = run_directory / "generated.pcapng"
+        foreign_generated = (run_directory / "reference.pcapng").read_bytes()
+        generated_path.write_bytes(foreign_generated)
+        expected_preserved = {generated_path: foreign_generated}
+    elif case.primary.kind == "metric_infeasible":
 
         def infeasible(*_args: object, **_kwargs: object) -> ComparisonResult:
             raise TrafficlabError(case.primary.detail, corrective_action=case.primary.corrective_action)
 
         monkeypatch.setattr(comparison, "compare_traces", infeasible)
     elif case.primary.kind == "publication_failed":
-        result_path = Path(__file__).parents[2] / "examples" / "data" / "similarity.json"
-
-        def result(*_args: object, **_kwargs: object) -> ComparisonResult:
-            return comparison.parse_comparison_result(result_path.read_bytes())
 
         def fail_fsync(_file_descriptor: int) -> None:
             raise OSError("injected similarity fsync failure")
 
-        monkeypatch.setattr(comparison, "compare_traces", result)
         monkeypatch.setattr(comparison.os, "fsync", fail_fsync)
     else:
         raise AssertionError(f"unsupported primitive comparison outcome {case.primary.kind!r}")
@@ -1056,7 +1035,7 @@ def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     _assert_serialized_outcomes(records[-1], case)
-    _assert_publication_state(case, run_directory, {})
+    _assert_publication_state(case, run_directory, expected_preserved)
     assert not (run_directory / "similarity.json").exists()
     assert list(run_directory.glob(".similarity.json.*.tmp")) == []
 
@@ -1086,7 +1065,7 @@ def test_public_boundary_case_registry_covers_each_authoritative_fixture_row_onc
 
     assert len(fixture_rows) == 43
     assert registry_rows == fixture_rows
-    assert any(case.deferred_typed_detector for case in _PUBLIC_BOUNDARY_CASES)
+    assert all(case.identifier.startswith("primitive-boundary-") for case in _PUBLIC_BOUNDARY_CASES)
 
 
 @pytest.mark.parametrize("case", _PUBLIC_BOUNDARY_CASES, ids=lambda case: case.identifier)
@@ -1099,16 +1078,17 @@ def test_public_boundaries_serialize_the_authoritative_failure_matrix(
     """A wrong owner, action, authority, state, or publication side effect breaks this matrix."""
     if case.injection_stage == "preflight":
         _run_preflight_case(case, monkeypatch, tmp_path)
-    elif case.deferred_typed_detector:
-        _run_deferred_typed_coordinator_case(case, monkeypatch, tmp_path)
     elif case.primary.stage == "capture":
-        _run_capture_boundary_case(case, monkeypatch, tmp_path)
+        if case.primary.kind == "artifact_stale":
+            _run_capture_stale_boundary_case(case, tmp_path, valid_config_data)
+        else:
+            _run_capture_boundary_case(case, monkeypatch, tmp_path)
     elif case.primary.stage == "fit":
         _run_fit_boundary_case(case, monkeypatch, tmp_path, valid_config_data)
     elif case.primary.stage == "generate":
         _run_generation_boundary_case(case, monkeypatch, tmp_path)
     elif case.primary.stage == "compare":
-        _run_comparison_boundary_case(case, monkeypatch, tmp_path)
+        _run_comparison_boundary_case(case, monkeypatch, tmp_path, valid_config_data)
     elif case.primary.stage == "publication":
         _run_study_publication_case(case, tmp_path)
     else:

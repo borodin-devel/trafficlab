@@ -222,6 +222,7 @@ def test_capture_happy_path_orders_full_lifecycle_and_publishes_reference(
     )
     assert events == [
         "run_preflight",
+        "run_preflight",
         "render_write_compose",
         "create_capture",
         "start_total_deadline",

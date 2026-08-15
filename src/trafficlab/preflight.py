@@ -11,10 +11,11 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Protocol, cast
 
 from trafficlab.artifacts import append_run_log, create_run_directory
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.compose import ComposePaths, render_production_compose, write_production_compose
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import ConfigurationPair, load_configuration_pair, load_experiment, render_effective_config
@@ -121,6 +122,47 @@ class PreflightFinding:
 
 
 @dataclass(frozen=True, slots=True)
+class MountedInputIdentity:
+    """One path-independent regular-file identity bound to its container mount semantics."""
+
+    target: str
+    read_only: bool
+    size: int
+    sha256: str
+
+    def __post_init__(self) -> None:
+        if type(self.target) is not str or not self.target.strip() or not PurePosixPath(self.target).is_absolute():
+            raise ValueError("mounted input target must be a nonempty absolute POSIX path")
+        if type(self.read_only) is not bool:
+            raise TypeError("mounted input read_only must be a boolean")
+        ContentIdentity(size=self.size, sha256=self.sha256)
+
+    def as_dict(self) -> dict[str, object]:
+        """Return the canonical flat JSON record."""
+        return {
+            "target": self.target,
+            "read_only": self.read_only,
+            "size": self.size,
+            "sha256": self.sha256,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> MountedInputIdentity:
+        """Strictly parse one persisted flat mounted-input record."""
+        if type(value) is not dict:
+            raise TypeError("mounted input identity must be an object")
+        document = cast(dict[str, object], value)
+        if set(document) != {"target", "read_only", "size", "sha256"}:
+            raise ValueError("mounted input identity fields are not canonical")
+        return cls(
+            target=cast(str, document["target"]),
+            read_only=cast(bool, document["read_only"]),
+            size=cast(int, document["size"]),
+            sha256=cast(str, document["sha256"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CaptureEnvironmentIdentity:
     """Resolved image and capture-tool identity required by a fresh capture."""
 
@@ -130,6 +172,13 @@ class CaptureEnvironmentIdentity:
     capture_reference: str
     capture_content_id: str
     capture_tool_version: str
+    mounted_inputs: tuple[MountedInputIdentity, ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.mounted_inputs) is not tuple or any(
+            type(identity) is not MountedInputIdentity for identity in self.mounted_inputs
+        ):
+            raise TypeError("mounted_inputs must be a tuple of MountedInputIdentity values")
 
 
 def capture_environment_identity(

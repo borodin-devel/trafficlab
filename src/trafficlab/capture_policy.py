@@ -61,6 +61,9 @@ class FailureKind(StrEnum):
     TOTAL_TIMEOUT = "total_timeout"
     FLUSH_FAILED = "flush_failed"
     VALIDATION_FAILED = "validation_failed"
+    SNAPSHOT_CHANGED = "snapshot_changed"
+    MOUNTED_INPUT_UNAVAILABLE = "mounted_input_unavailable"
+    MOUNTED_INPUT_INCOMPATIBLE = "mounted_input_incompatible"
     CLEANUP_FAILED = "cleanup_failed"
 
 
@@ -278,6 +281,31 @@ def record_flush_failure(outcome: CaptureOutcome, detail: str) -> CaptureOutcome
 def record_validation_failure(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
     """Record capture parsing or validation failure."""
     return _record_failure(outcome, FailureKind.VALIDATION_FAILED, detail, origin=CaptureFailureOrigin.VALIDATION)
+
+
+def record_snapshot_changed(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
+    """Retain a changed realized snapshot as typed capture-publication evidence."""
+    return _record_failure(outcome, FailureKind.SNAPSHOT_CHANGED, detail, origin=CaptureFailureOrigin.VALIDATION)
+
+
+def record_mounted_input_unavailable(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
+    """Retain an unavailable mounted input as typed preflight evidence."""
+    return _record_failure(
+        outcome,
+        FailureKind.MOUNTED_INPUT_UNAVAILABLE,
+        detail,
+        origin=CaptureFailureOrigin.VALIDATION,
+    )
+
+
+def record_mounted_input_incompatible(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
+    """Retain an incompatible mounted input as typed preflight evidence."""
+    return _record_failure(
+        outcome,
+        FailureKind.MOUNTED_INPUT_INCOMPATIBLE,
+        detail,
+        origin=CaptureFailureOrigin.VALIDATION,
+    )
 
 
 def record_cleanup_failure(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:

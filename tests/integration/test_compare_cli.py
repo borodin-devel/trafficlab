@@ -32,12 +32,12 @@ _REFERENCE_EVENTS = (
     TraceEvent(20.0, Direction.OUTBOUND, 60),
 )
 _GENERATED_EVENTS = (
-    TraceEvent(100.0, Direction.OUTBOUND, 60),
-    TraceEvent(102.0, Direction.OUTBOUND, 80),
-    TraceEvent(103.0, Direction.INBOUND, 100),
-    TraceEvent(107.0, Direction.INBOUND, 160),
-    TraceEvent(110.0, Direction.OUTBOUND, 60),
-    TraceEvent(111.0, Direction.INBOUND, 200),
+    TraceEvent(0.0, Direction.INBOUND, 100),
+    TraceEvent(3.812583265, Direction.OUTBOUND, 60),
+    TraceEvent(4.513747989, Direction.OUTBOUND, 60),
+    TraceEvent(6.525780057, Direction.INBOUND, 100),
+    TraceEvent(7.007390402, Direction.INBOUND, 100),
+    TraceEvent(8.814041505, Direction.INBOUND, 100),
 )
 _NORMALIZED_REFERENCE = (
     TraceEvent(0.0, Direction.OUTBOUND, 60),
@@ -47,11 +47,12 @@ _NORMALIZED_REFERENCE = (
     TraceEvent(10.0, Direction.OUTBOUND, 60),
 )
 _ALIGNED_GENERATED = (
-    TraceEvent(0.0, Direction.OUTBOUND, 60),
-    TraceEvent(2.0, Direction.OUTBOUND, 80),
-    TraceEvent(3.0, Direction.INBOUND, 100),
-    TraceEvent(7.0, Direction.INBOUND, 160),
-    TraceEvent(10.0, Direction.OUTBOUND, 60),
+    TraceEvent(0.0, Direction.INBOUND, 100),
+    TraceEvent(3.812583265, Direction.OUTBOUND, 60),
+    TraceEvent(4.513747989, Direction.OUTBOUND, 60),
+    TraceEvent(6.525780057, Direction.INBOUND, 100),
+    TraceEvent(7.007390402, Direction.INBOUND, 100),
+    TraceEvent(8.814041505, Direction.INBOUND, 100),
 )
 
 
@@ -62,7 +63,12 @@ def _prepare_existing_run(tmp_path: Path, name: str, *, include_similarity: bool
     caller_path = tmp_path / f"{name}.toml"
     caller_path.write_bytes(render_effective_config(config))
     create_run_directory(config)
-    artifact_names = ["capture.json", "reference.pcapng", "generated.pcapng"]
+    artifact_names = [
+        "capture.json",
+        "reference.pcapng",
+        "best_model.json",
+        "generated.pcapng",
+    ]
     if include_similarity:
         artifact_names.append("similarity.json")
     for artifact_name in artifact_names:
@@ -207,17 +213,18 @@ def test_checked_in_fixture_round_trip_preserves_canonical_values_and_one_shared
     assert normalized_reference == _NORMALIZED_REFERENCE
     assert aligned_generated == _ALIGNED_GENERATED
     assert normalized_reference[0].timestamp == aligned_generated[0].timestamp == 0.0
-    assert normalized_reference[-1].timestamp == aligned_generated[-1].timestamp == window
+    assert normalized_reference[-1].timestamp == window
+    assert aligned_generated[-1].timestamp <= window
     assert all(method.diagnostics["observation_window_seconds"] == window for method in result.methods.values())
     assert {name: method.score for name, method in result.methods.items()} == pytest.approx(
         {
-            "autocorrelation": 0.8368770764119602,
+            "autocorrelation": 0.8100292509744677,
             "frame_size_ks": 0.8,
-            "iat_ks": 1.0,
-            "multiscale_rate": 0.33043478260869574,
+            "iat_ks": 0.6,
+            "multiscale_rate": 0.1725417439703154,
         }
     )
-    assert result.aggregate_score == pytest.approx(0.741827964755164)
+    assert result.aggregate_score == pytest.approx(0.5956427487361957)
 
 
 def test_checked_in_similarity_artifact_keeps_the_fixed_four_method_json_shape() -> None:

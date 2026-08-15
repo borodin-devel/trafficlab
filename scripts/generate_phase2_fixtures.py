@@ -7,15 +7,31 @@ from pathlib import Path
 
 from trafficlab.artifacts import create_run_directory
 from trafficlab.comparison import compare_experiment
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
+from trafficlab.generation import reproduce_generated_pcapng
+from trafficlab.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng, write_pcapng
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, load_capture_metadata, render_capture_metadata
+from trafficlab.trace import (
+    CaptureMetadata,
+    Direction,
+    TraceEvent,
+    load_capture_metadata,
+    normalize_reference,
+    render_capture_metadata,
+)
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"
 _EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
-_ARTIFACT_NAMES = ("capture.json", "reference.pcapng", "generated.pcapng", "similarity.json")
+_ARTIFACT_NAMES = (
+    "capture.json",
+    "reference.pcapng",
+    "best_model.json",
+    "generated.pcapng",
+    "similarity.json",
+)
 
 _METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
 _REFERENCE_EVENTS = (
@@ -24,14 +40,6 @@ _REFERENCE_EVENTS = (
     TraceEvent(13.0, Direction.OUTBOUND, 140),
     TraceEvent(16.0, Direction.INBOUND, 100),
     TraceEvent(20.0, Direction.OUTBOUND, 60),
-)
-_GENERATED_EVENTS = (
-    TraceEvent(100.0, Direction.OUTBOUND, 60),
-    TraceEvent(102.0, Direction.OUTBOUND, 80),
-    TraceEvent(103.0, Direction.INBOUND, 100),
-    TraceEvent(107.0, Direction.INBOUND, 160),
-    TraceEvent(110.0, Direction.OUTBOUND, 60),
-    TraceEvent(111.0, Direction.INBOUND, 200),
 )
 
 
@@ -42,9 +50,37 @@ def _build_temporary_run(root: Path) -> Path:
     caller_path = root / "experiment.toml"
     caller_path.write_bytes(render_effective_config(config))
     create_run_directory(config)
-    (run_directory / "capture.json").write_bytes(render_capture_metadata(_METADATA))
-    write_pcapng(run_directory / "reference.pcapng", _REFERENCE_EVENTS, _METADATA)
-    write_pcapng(run_directory / "generated.pcapng", _GENERATED_EVENTS, _METADATA)
+    capture_path = run_directory / "capture.json"
+    reference_path = run_directory / "reference.pcapng"
+    model_path = run_directory / "best_model.json"
+    generated_path = run_directory / "generated.pcapng"
+    capture_content = render_capture_metadata(_METADATA)
+    capture_path.write_bytes(capture_content)
+    write_pcapng(reference_path, _REFERENCE_EVENTS, _METADATA)
+    reference_content = reference_path.read_bytes()
+    bounds = config.models.poisson_empirical
+    if bounds is None:
+        raise TrafficlabError(
+            "minimal example configuration has no Poisson model bounds",
+            corrective_action="restore models.poisson_empirical before generating Phase 2 fixtures",
+        )
+    reference, window = normalize_reference(_REFERENCE_EVENTS)
+    model = make_best_model(
+        POISSON_FAMILY,
+        reference,
+        (1.0,),
+        reference_identity=identify_bytes(reference_content),
+        capture_identity=identify_bytes(capture_content),
+        final_seed=config.run.final_seed,
+        final_limits=config.generation.final,
+        W=window,
+        bounds=bounds,
+    )
+    model_content = render_best_model(model)
+    model_path.write_bytes(model_content)
+    loaded = load_best_model(model_content, source=model_path)
+    _, _, generated_content = reproduce_generated_pcapng(loaded, _METADATA, clock=lambda: 0.0)
+    generated_path.write_bytes(generated_content)
     compare_experiment(caller_path)
     return run_directory
 
@@ -57,11 +93,18 @@ def _validate_canonical_events(run_directory: Path) -> None:
             corrective_action="restore the Phase 2 fixture metadata and regenerate",
         )
     parsed_reference = parse_pcapng(run_directory / "reference.pcapng", metadata)
-    parsed_generated = parse_pcapng(run_directory / "generated.pcapng", metadata)
-    if parsed_reference != _REFERENCE_EVENTS or parsed_generated != _GENERATED_EVENTS:
+    if parsed_reference != _REFERENCE_EVENTS:
         raise TrafficlabError(
-            "generated PCAPNG events do not match the hand-listed canonical fixtures",
-            corrective_action="restore the Phase 2 fixture events and regenerate",
+            "reference PCAPNG events do not match the hand-listed canonical fixture",
+            corrective_action="restore the Phase 2 reference events and regenerate",
+        )
+    model_path = run_directory / "best_model.json"
+    model = load_best_model(model_path.read_bytes(), source=model_path)
+    _, _, expected_generated = reproduce_generated_pcapng(model, metadata, clock=lambda: 0.0)
+    if (run_directory / "generated.pcapng").read_bytes() != expected_generated:
+        raise TrafficlabError(
+            "generated PCAPNG is not owned by the retained fitted model",
+            corrective_action="regenerate the Phase 2 model and generated capture together",
         )
 
 

@@ -308,10 +308,15 @@ def fit_experiment(
                     {evidence: identify_bytes(_read_stage_input(active.read_bytes, source_path))},
                 )
             except TrafficlabError as error:
+                detail = f"{evidence} changed during fit"
+                corrective_action = "restore the exact fitted inputs and rerun fit"
+                if evidence == "reference.pcapng" and prepared.config.genetic.resume:
+                    detail = "reference.pcapng changed during fit resume"
+                    corrective_action = "recreate the capture pair in a new matching run"
                 raise attach_failure_outcome(
                     TrafficlabError(
-                        f"{evidence} changed during fit",
-                        corrective_action="restore the exact fitted inputs and rerun fit",
+                        detail,
+                        corrective_action=corrective_action,
                     ),
                     kind="artifact_changed",
                     stage="fit",

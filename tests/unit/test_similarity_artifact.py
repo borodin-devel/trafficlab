@@ -13,14 +13,16 @@ from trafficlab.comparison import compare_experiment
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
-from trafficlab.pcapng import parse_pcapng_bytes, write_pcapng
+from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.trace import (
     CaptureMetadata,
-    Direction,
     TraceEvent,
     parse_capture_metadata,
-    render_capture_metadata,
 )
+
+_REPOSITORY = Path(__file__).parents[2]
+_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_EXPECTED_AGGREGATE_SCORE = 0.5956427487361957
 
 
 def _prepare_run(valid_config_data: dict[str, object], tmp_path: Path) -> tuple[Path, Path, ExperimentConfig]:
@@ -31,15 +33,13 @@ def _prepare_run(valid_config_data: dict[str, object], tmp_path: Path) -> tuple[
     caller_path = tmp_path / "caller.toml"
     caller_path.write_bytes(render_effective_config(config))
     create_run_directory(config)
-    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
-    (run_directory / "capture.json").write_bytes(render_capture_metadata(metadata))
-    events = (
-        TraceEvent(10.0, Direction.OUTBOUND, 60),
-        TraceEvent(11.0, Direction.INBOUND, 80),
-        TraceEvent(13.0, Direction.OUTBOUND, 100),
-    )
-    write_pcapng(run_directory / "reference.pcapng", events, metadata)
-    write_pcapng(run_directory / "generated.pcapng", events, metadata)
+    for artifact_name in (
+        "capture.json",
+        "reference.pcapng",
+        "best_model.json",
+        "generated.pcapng",
+    ):
+        (run_directory / artifact_name).write_bytes((_EXAMPLE_DATA / artifact_name).read_bytes())
     return caller_path, run_directory, config
 
 
@@ -189,9 +189,9 @@ def test_existing_identical_similarity_is_reused_and_success_is_logged(
     assert (run_directory / "similarity.json").read_bytes() == first_content
     assert _log_records(run_directory)[-2]["reused"] is False
     assert _log_records(run_directory)[-1] == {
-        "aggregate_score": 1.0,
+        "aggregate_score": first.aggregate_score,
         "event": "comparison_succeeded",
-        "observation_window_seconds": 3.0,
+        "observation_window_seconds": first.observation_window_seconds,
         "path": str(run_directory / "similarity.json"),
         "reused": True,
         "stage": "compare",
@@ -281,7 +281,10 @@ def test_post_link_temp_cleanup_failure_is_attempted_once_and_preserves_a_replac
 
     assert len(unlink_attempts) == 1
     assert unlink_attempts[0].read_bytes() == replacement
-    assert comparison.load_comparison_result(run_directory / "similarity.json").aggregate_score == 1.0
+    assert (
+        comparison.load_comparison_result(run_directory / "similarity.json").aggregate_score
+        == _EXPECTED_AGGREGATE_SCORE
+    )
     assert _log_records(run_directory)[-1]["failure_kind"] == "publication"
 
 
@@ -297,6 +300,10 @@ def test_valid_but_changed_rendered_result_is_rejected_before_temporary_publicat
         methods = cast(dict[str, object], changed_document["methods"])
         cast(dict[str, object], methods["autocorrelation"])["weight"] = 0.1
         cast(dict[str, object], methods["frame_size_ks"])["weight"] = 0.4
+        changed_document["aggregate_score"] = sum(
+            cast(float, method["score"]) * cast(float, method["weight"])
+            for method in cast(dict[str, dict[str, object]], methods).values()
+        )
         return real_render(comparison.ComparisonResult.from_dict(changed_document))
 
     monkeypatch.setattr(comparison, "render_comparison_result", render_different_result)
@@ -317,7 +324,7 @@ def test_numeric_type_tampering_is_rejected_by_canonical_temporary_validation(
 
     def tamper_count_type(path: Path) -> comparison.ComparisonResult:
         content = path.read_bytes()
-        changed = content.replace(b'"reference_count":3', b'"reference_count":3.0', 1)
+        changed = content.replace(b'"reference_count":5', b'"reference_count":5.0', 1)
         assert changed != content
         path.write_bytes(changed)
         return real_load(path)
@@ -416,7 +423,10 @@ def test_success_logging_failure_is_reported_after_the_valid_artifact_is_publish
     with pytest.raises(TrafficlabError, match="comparison result was published.*injected logging failure"):
         compare_experiment(caller_path)
 
-    assert comparison.load_comparison_result(run_directory / "similarity.json").aggregate_score == 1.0
+    assert (
+        comparison.load_comparison_result(run_directory / "similarity.json").aggregate_score
+        == _EXPECTED_AGGREGATE_SCORE
+    )
 
 
 def test_missing_authoritative_snapshot_is_logged_as_an_input_failure(
