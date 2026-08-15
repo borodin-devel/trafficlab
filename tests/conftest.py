@@ -174,8 +174,17 @@ class DockerTestEnvironment:
     fixture_root: Path = DOCKER_FIXTURE_ROOT
 
 
-def _build_image(tag: str, context: Path, *, dockerfile: Path | None = None) -> None:
-    argv = ["docker", "build", "--pull=false", "--tag", tag]
+def build_test_image(
+    tag: str,
+    context: Path,
+    *,
+    dockerfile: Path | None = None,
+    reproducible_capture: bool = False,
+) -> None:
+    argv = ["docker", "build", "--pull=false"]
+    if reproducible_capture:
+        argv.extend(("--provenance=false", "--platform", "linux/amd64"))
+    argv.extend(("--tag", tag))
     if dockerfile is not None:
         argv.extend(("--file", str(dockerfile)))
     argv.append(str(context))
@@ -195,11 +204,15 @@ def docker_test_environment(pytestconfig: pytest.Config) -> DockerTestEnvironmen
         timeout=20.0,
     )
     environment = DockerTestEnvironment()
-    _build_image(environment.capture_image, REPOSITORY_ROOT / "docker" / "capture")
-    _build_image(environment.client_image, environment.fixture_root / "images" / "client")
+    build_test_image(
+        environment.capture_image,
+        REPOSITORY_ROOT / "docker" / "capture",
+        reproducible_capture=True,
+    )
+    build_test_image(environment.client_image, environment.fixture_root / "images" / "client")
     if external_tests_requested(pytestconfig, "docker"):
-        _build_image(environment.endpoint_image, environment.fixture_root / "images" / "endpoint")
-        _build_image(environment.no_shell_image, environment.fixture_root / "images" / "no_shell")
+        build_test_image(environment.endpoint_image, environment.fixture_root / "images" / "endpoint")
+        build_test_image(environment.no_shell_image, environment.fixture_root / "images" / "no_shell")
     return environment
 
 

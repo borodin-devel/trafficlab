@@ -53,7 +53,16 @@ class _HappyDocker:
         return CommandResult(0, "Docker Compose version v2", "")
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
-        return CommandResult(0, "[]", "")
+        content_id = (
+            "sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602"
+            if image.startswith("trafficlab-capture:")
+            else "sha256:" + ("c" * 64)
+        )
+        return CommandResult(
+            0,
+            json.dumps([{"Id": content_id, "RepoDigests": [], "RepoTags": [image]}]),
+            "",
+        )
 
     def image_pull(self, image: str, *, deadline: float) -> CommandResult:
         raise AssertionError(f"available image was pulled: {image}")

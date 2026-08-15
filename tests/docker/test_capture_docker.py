@@ -14,7 +14,12 @@ from tests.conftest import (
     inspect_project_resources,
     merge_endpoint_overlay,
 )
-from tests.docker.support import capture_lifecycle_positions, capture_project_name, write_docker_experiment
+from tests.docker.support import (
+    capture_lifecycle_positions,
+    capture_project_name,
+    require_checked_capture_image,
+    write_docker_experiment,
+)
 from trafficlab.capture import capture_experiment, capture_prepared_experiment
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.compose import ComposePaths, render_production_compose
@@ -25,6 +30,14 @@ from trafficlab.preflight import run_preflight
 from trafficlab.trace import Direction
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
+
+
+def test_capture_image_matches_checked_content_identity(
+    docker_test_environment: DockerTestEnvironment,
+) -> None:
+    identity = require_checked_capture_image(docker_test_environment.capture_image)
+
+    assert identity.reference == docker_test_environment.capture_image
 
 
 def _services(document: bytes) -> dict[str, object]:

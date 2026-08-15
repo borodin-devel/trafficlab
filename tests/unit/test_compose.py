@@ -404,11 +404,15 @@ def test_capture_entrypoint_rejects_missing_eth0_before_starting_dumpcap(tmp_pat
 def test_capture_image_is_minimal_pinned_and_runs_entrypoint_directly() -> None:
     dockerfile = (Path(__file__).parents[2] / "docker" / "capture" / "Dockerfile").read_text(encoding="utf-8")
 
-    assert dockerfile.startswith("FROM debian:bookworm-20260803-slim\n")
+    assert dockerfile.startswith(
+        "FROM debian:bookworm-20260803-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241\n"
+    )
+    assert "snapshot.debian.org/archive/debian/20260803T203533Z/" in dockerfile
+    assert "snapshot.debian.org/archive/debian-security/20260803T203533Z/" in dockerfile
     assert "--no-install-recommends" in dockerfile
-    assert "ca-certificates" in dockerfile
-    assert "curl" in dockerfile
-    assert "wireshark-common" in dockerfile
+    assert "ca-certificates=20230311+deb12u1" in dockerfile
+    assert "curl=7.88.1-10+deb12u15" in dockerfile
+    assert "wireshark-common=4.0.17-0+deb12u3" in dockerfile
     assert 'ENTRYPOINT ["/usr/local/bin/trafficlab-capture"]' in dockerfile
     assert "node" not in dockerfile.lower()
     assert "npm" not in dockerfile.lower()

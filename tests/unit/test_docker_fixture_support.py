@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 from types import ModuleType
@@ -11,6 +12,139 @@ import pytest
 from tests import conftest
 from tests.docker import support
 from trafficlab.artifacts import append_run_log
+
+_CAPTURE_IMAGE_ID = "sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602"
+
+
+def test_capture_fixture_identity_uses_injected_inspect_result() -> None:
+    reference = "trafficlab-capture:phase3-test"
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        calls.append(argv)
+        stdout = json.dumps([{"Id": _CAPTURE_IMAGE_ID, "RepoDigests": [], "RepoTags": [reference]}])
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    identity = support.require_checked_capture_image(reference, runner=command)
+
+    assert identity.reference == reference
+    assert identity.content_id == _CAPTURE_IMAGE_ID
+    assert calls == [("docker", "image", "inspect", reference)]
+
+
+def test_capture_fixture_identity_rejects_mismatch_without_rewriting_lock() -> None:
+    reference = "trafficlab-capture:phase3-test"
+    lock_path = conftest.REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
+    before = lock_path.read_bytes()
+
+    def command(
+        argv: tuple[str, ...],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        stdout = json.dumps(
+            [
+                {
+                    "Id": "sha256:" + ("d" * 64),
+                    "RepoDigests": [],
+                    "RepoTags": [reference],
+                }
+            ]
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    with pytest.raises(AssertionError, match="checked lock"):
+        support.require_checked_capture_image(reference, runner=command)
+
+    assert lock_path.read_bytes() == before
+
+
+def test_capture_fixture_build_disables_nondeterministic_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        calls.append(tuple(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+
+    conftest.build_test_image(
+        "trafficlab-capture:test",
+        tmp_path,
+        reproducible_capture=True,
+    )
+
+    assert calls == [
+        (
+            "docker",
+            "build",
+            "--pull=false",
+            "--provenance=false",
+            "--platform",
+            "linux/amd64",
+            "--tag",
+            "trafficlab-capture:test",
+            str(tmp_path),
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    [
+        "snapshot.debian.org returned 404 Not Found",
+        "Version '7.88.1-10+deb12u15' for 'curl' was not found",
+    ],
+)
+def test_unavailable_locked_capture_input_fails_without_refreshing_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    diagnostic: str,
+) -> None:
+    lock_path = conftest.REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
+    before = lock_path.read_bytes()
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del argv, purpose, timeout, check
+        raise pytest.UsageError(diagnostic)
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+
+    with pytest.raises(pytest.UsageError) as caught:
+        conftest.build_test_image(
+            "trafficlab-capture:test",
+            tmp_path,
+            reproducible_capture=True,
+        )
+
+    assert diagnostic in str(caught.value)
+    assert lock_path.read_bytes() == before
 
 
 def _load_client() -> ModuleType:

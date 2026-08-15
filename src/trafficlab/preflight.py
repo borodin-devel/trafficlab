@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import platform
 import shutil
 import tempfile
 import time
@@ -24,7 +25,18 @@ from trafficlab.trace import load_capture_metadata
 
 if TYPE_CHECKING:
     from trafficlab.cleanup import CleanupResult
-    from trafficlab.docker_cli import ProcessHandle, ProjectInventory, ServiceState
+    from trafficlab.docker_cli import (
+        CaptureImageLock,
+        ImageIdentity,
+        ProcessHandle,
+        ProjectInventory,
+        ServiceState,
+    )
+
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+_CAPTURE_IMAGE_LOCK_PATH = _REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
+_CAPTURE_DOCKERFILE_PATH = _REPOSITORY_ROOT / "docker" / "capture" / "Dockerfile"
 
 
 class SupportsFree(Protocol):
@@ -103,11 +115,50 @@ class PreflightFinding:
 
 
 @dataclass(frozen=True, slots=True)
+class CaptureEnvironmentIdentity:
+    """Resolved image and capture-tool identity required by a fresh capture."""
+
+    host_architecture: str
+    target_reference: str
+    target_content_id: str
+    capture_reference: str
+    capture_content_id: str
+    capture_tool_version: str
+
+
+def capture_environment_identity(
+    *,
+    target: ImageIdentity,
+    capture: ImageIdentity,
+    lock: CaptureImageLock,
+    host_architecture: str | None = None,
+) -> CaptureEnvironmentIdentity:
+    """Bind resolved images to the checked lock, rejecting any capture mismatch."""
+    from trafficlab.docker_cli import CaptureImageLockError
+
+    if capture.content_id != lock.expected_capture_image_id:
+        raise CaptureImageLockError(
+            "resolved capture image does not match the expected capture image "
+            f"content ID: expected {lock.expected_capture_image_id}, "
+            f"resolved {capture.content_id}"
+        )
+    return CaptureEnvironmentIdentity(
+        host_architecture=host_architecture or platform.machine(),
+        target_reference=target.reference,
+        target_content_id=target.content_id,
+        capture_reference=capture.reference,
+        capture_content_id=capture.content_id,
+        capture_tool_version=lock.capture_tool_version,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class PreflightReport:
     """All local preflight findings for one validated configuration."""
 
     config: ExperimentConfig
     findings: tuple[PreflightFinding, ...]
+    environment_identity: CaptureEnvironmentIdentity | None = None
 
     def require_success(self) -> None:
         """Raise a direct stage error when any local check failed."""
@@ -225,13 +276,26 @@ def _cleanup_detail(cleanup: CleanupResult) -> str:
     return f"{cleanup.detail}; secondary: {'; '.join(cleanup.secondary_details)}"
 
 
-def _image_ready(compose: DockerPreflight, image: str, *, deadline: float) -> None:
+def _image_ready(
+    compose: DockerPreflight,
+    image: str,
+    *,
+    deadline: float,
+) -> ImageIdentity:
+    from trafficlab.docker_cli import CaptureImageLockError, parse_image_inspect
+
     try:
-        compose.image_inspect(image, deadline=deadline)
-        return
+        inspected = compose.image_inspect(image, deadline=deadline)
     except TrafficlabError:
         compose.image_pull(image, deadline=deadline)
-    compose.image_inspect(image, deadline=deadline)
+        inspected = compose.image_inspect(image, deadline=deadline)
+    try:
+        return parse_image_inspect(image, inspected.stdout)
+    except CaptureImageLockError as error:
+        raise TrafficlabError(
+            f"could not resolve image identity for {image!r}: {error}",
+            corrective_action="pull the exact configured image and retry without changing the checked capture lock",
+        ) from error
 
 
 def _probe_document(config: ExperimentConfig, paths: ComposePaths) -> bytes:
@@ -431,9 +495,39 @@ def check_docker(
 ) -> PreflightReport:
     """Run sequential Docker checks and one disposable capture/network probe within one deadline."""
     from trafficlab.cleanup import cleanup_project
-    from trafficlab.docker_cli import ProjectInventory
+    from trafficlab.docker_cli import (
+        CaptureImageLockError,
+        ImageIdentity,
+        ProjectInventory,
+        load_capture_image_lock,
+        validate_capture_dockerfile,
+    )
 
     findings: list[PreflightFinding] = []
+
+    try:
+        lock = load_capture_image_lock(_CAPTURE_IMAGE_LOCK_PATH)
+        dockerfile = _CAPTURE_DOCKERFILE_PATH.read_text(encoding="utf-8")
+        validate_capture_dockerfile(dockerfile, lock)
+    except (CaptureImageLockError, OSError) as error:
+        translated = TrafficlabError(
+            f"invalid checked capture image inputs: {error}",
+            corrective_action="restore the reviewed capture Dockerfile and image lock; never refresh the lock during preflight",
+        )
+        return PreflightReport(
+            config=config,
+            findings=(_failure("capture_image_lock", translated),),
+        )
+    findings.append(
+        PreflightFinding(
+            "capture_image_lock",
+            True,
+            "capture base, Debian snapshot, packages, tool, and expected image ID are locked",
+        )
+    )
+
+    target_identity: ImageIdentity | None = None
+    capture_identity: ImageIdentity | None = None
 
     for name, success_detail, action in (
         ("docker_daemon", "Docker daemon is reachable", lambda: compose.info(deadline=deadline)),
@@ -451,11 +545,35 @@ def check_docker(
     ):
         try:
             _require_deadline(deadline, clock)
-            action()
+            result = action()
         except TrafficlabError as error:
             findings.append(_failure(name, error))
             return PreflightReport(config=config, findings=tuple(findings))
+        if name == "target_image":
+            if not isinstance(result, ImageIdentity):
+                raise AssertionError("target image check did not resolve an identity")
+            target_identity = result
+        elif name == "capture_image":
+            if not isinstance(result, ImageIdentity):
+                raise AssertionError("capture image check did not resolve an identity")
+            capture_identity = result
         findings.append(PreflightFinding(name, True, success_detail))
+
+    if target_identity is None or capture_identity is None:
+        raise AssertionError("successful image checks must resolve both image identities")
+    try:
+        environment_identity = capture_environment_identity(
+            target=target_identity,
+            capture=capture_identity,
+            lock=lock,
+        )
+    except CaptureImageLockError as error:
+        translated = TrafficlabError(
+            str(error),
+            corrective_action="build or load the exact checked capture image; do not refresh the expected ID during preflight",
+        )
+        findings[-1] = _failure("capture_image", translated)
+        return PreflightReport(config=config, findings=tuple(findings))
 
     try:
         with tempfile.TemporaryDirectory(prefix="trafficlab-preflight-", dir=config.run.directory.parent) as temporary:
@@ -541,12 +659,14 @@ def check_docker(
             corrective_action="verify the run parent is writable and retry",
         )
         findings.append(_failure("compose_config", translated))
-    return PreflightReport(config=config, findings=tuple(findings))
+    return PreflightReport(
+        config=config,
+        findings=tuple(findings),
+        environment_identity=environment_identity,
+    )
 
 
-def _prepare_configuration_pair(
-    path: Path, pair: ConfigurationPair, *, writable: Writable
-) -> PreparedExperiment:
+def _prepare_configuration_pair(path: Path, pair: ConfigurationPair, *, writable: Writable) -> PreparedExperiment:
     config = pair.realized
     report = check_local(config, writable=writable)
     report.require_success()
@@ -697,7 +817,32 @@ def run_preflight(
             findings.append(_failure("run_log", error))
             break
 
-    report = PreflightReport(config=prepared.config, findings=tuple(findings))
+    environment_identity = docker_report.environment_identity
+    if environment_identity is not None and not any(
+        finding.name == "run_log" and not finding.ok for finding in findings
+    ):
+        try:
+            append_run_log(
+                prepared.run_directory,
+                {
+                    "capture_content_id": environment_identity.capture_content_id,
+                    "capture_reference": environment_identity.capture_reference,
+                    "capture_tool_version": environment_identity.capture_tool_version,
+                    "event": "capture_environment_identity",
+                    "host_architecture": environment_identity.host_architecture,
+                    "stage": "preflight",
+                    "target_content_id": environment_identity.target_content_id,
+                    "target_reference": environment_identity.target_reference,
+                },
+            )
+        except TrafficlabError as error:
+            findings.append(_failure("run_log", error))
+
+    report = PreflightReport(
+        config=prepared.config,
+        findings=tuple(findings),
+        environment_identity=environment_identity,
+    )
     report.require_success()
     return PreparedExperiment(
         source=prepared.source,

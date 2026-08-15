@@ -15,6 +15,9 @@ from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import check_docker
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
+_CAPTURE_IMAGE_ID = "sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602"
+_TARGET_IMAGE_ID = "sha256:" + ("c" * 64)
+
 
 @dataclass
 class _CleanupHandle:
@@ -44,11 +47,15 @@ class _Docker:
         failure: tuple[str, TrafficlabError] | None = None,
         target_exit: int = 0,
         cleanup: _CleanupHandle | None = None,
+        image_ids: dict[str, str] | None = None,
+        image_references: dict[str, str] | None = None,
     ) -> None:
         self.missing_images = set(missing_images or ())
         self.failure = failure
         self.target_exit = target_exit
         self.cleanup = cleanup or _CleanupHandle()
+        self.image_ids = dict(image_ids or {})
+        self.image_references = dict(image_references or {})
         self.calls: list[tuple[str, tuple[object, ...], float]] = []
         self.documents: list[dict[str, object]] = []
         self.capture_signalled = False
@@ -70,7 +77,20 @@ class _Docker:
         self._record("image_inspect", image, deadline=deadline)
         if image in self.missing_images:
             raise TrafficlabError("image is absent", corrective_action="pull it")
-        return CommandResult(0, "[]", "")
+        default_id = _CAPTURE_IMAGE_ID if image.startswith("trafficlab-capture:") else _TARGET_IMAGE_ID
+        return CommandResult(
+            0,
+            json.dumps(
+                [
+                    {
+                        "Id": self.image_ids.get(image, default_id),
+                        "RepoDigests": [],
+                        "RepoTags": [self.image_references.get(image, image)],
+                    }
+                ]
+            ),
+            "",
+        )
 
     def image_pull(self, image: str, *, deadline: float) -> CommandResult:
         self._record("image_pull", image, deadline=deadline)
@@ -160,6 +180,7 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
 
     assert all(finding.ok for finding in report.findings)
     assert [finding.name for finding in report.findings] == [
+        "capture_image_lock",
         "docker_daemon",
         "docker_compose",
         "target_image",
@@ -168,6 +189,12 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
         "network_probe",
         "probe_cleanup",
     ]
+    assert report.environment_identity is not None
+    assert report.environment_identity.target_reference == config.target.image
+    assert report.environment_identity.target_content_id == _TARGET_IMAGE_ID
+    assert report.environment_identity.capture_reference == config.capture.image
+    assert report.environment_identity.capture_content_id == _CAPTURE_IMAGE_ID
+    assert report.environment_identity.capture_tool_version == "4.0.17"
     assert _names(docker) == [
         "info",
         "compose_version",
@@ -214,6 +241,36 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     assert project_names[0] != project_names[1]
     assert project_names[1].startswith("trafficlab-preflight-")
     assert docker.cleanup.waits == [59.0]
+
+
+def test_capture_image_identity_mismatch_stops_before_compose_probe(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker(image_ids={config.capture.image: "sha256:" + ("d" * 64)})
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.environment_identity is None
+    assert report.findings[-1].name == "capture_image"
+    assert report.findings[-1].ok is False
+    assert "expected capture image" in report.findings[-1].detail
+    assert "config" not in _names(docker)
+
+
+def test_target_reference_mismatch_stops_before_capture_probe(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker(image_references={config.target.image: "unexpected-target:test"})
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.environment_identity is None
+    assert report.findings[-1].name == "target_image"
+    assert report.findings[-1].ok is False
+    assert "does not match requested reference" in report.findings[-1].detail
+    assert _names(docker).count("image_inspect") == 1
 
 
 def test_probe_project_name_is_unique_across_full_preflight_runs(

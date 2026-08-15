@@ -28,6 +28,208 @@ class CommandResult:
     stderr: str
 
 
+_SHA256_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_SNAPSHOT_PATTERN = re.compile(r"[0-9]{8}T[0-9]{6}Z\Z")
+_CAPTURE_TOOL_VERSION_PATTERN = re.compile(r"[0-9]+(?:\.[0-9]+){2}\Z")
+_CAPTURE_IMAGE_LOCK_FIELDS = frozenset(
+    {
+        "base_digest",
+        "base_reference",
+        "capture_tool_version",
+        "debian_snapshot",
+        "direct_packages",
+        "expected_capture_image_id",
+    }
+)
+_CAPTURE_DIRECT_PACKAGES = frozenset({"ca-certificates", "curl", "wireshark-common"})
+
+
+class CaptureImageLockError(ValueError):
+    """The checked capture-image contract is malformed or incompatible."""
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureImageLock:
+    """Immutable inputs and expected output for the capture image."""
+
+    base_reference: str
+    base_digest: str
+    debian_snapshot: str
+    direct_packages: Mapping[str, str]
+    capture_tool_version: str
+    expected_capture_image_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImageIdentity:
+    """A requested image reference and its resolved Docker content ID."""
+
+    reference: str
+    content_id: str
+
+
+def _canonical_lock_bytes(payload: Mapping[str, object]) -> bytes:
+    return (json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True) + "\n").encode("ascii")
+
+
+def _lock_string(payload: Mapping[str, object], field: str) -> str:
+    value = payload[field]
+    if not isinstance(value, str) or not value:
+        raise CaptureImageLockError(f"image-lock field {field!r} must be a string")
+    return value
+
+
+def load_capture_image_lock(path: Path) -> CaptureImageLock:
+    """Load a strict checked lock without ever creating or refreshing it."""
+
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise CaptureImageLockError(f"cannot read capture image lock {path}: {error}") from error
+    try:
+        parsed = cast(
+            object,
+            json.loads(raw.decode("utf-8"), object_pairs_hook=_reject_duplicate_json_keys),
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise CaptureImageLockError(f"invalid capture image lock JSON: {error}") from error
+    if not isinstance(parsed, dict):
+        raise CaptureImageLockError("capture image lock must be a JSON object")
+    payload = cast(dict[str, object], parsed)
+    fields = frozenset(payload)
+    if fields != _CAPTURE_IMAGE_LOCK_FIELDS:
+        missing = sorted(_CAPTURE_IMAGE_LOCK_FIELDS - fields)
+        unknown = sorted(fields - _CAPTURE_IMAGE_LOCK_FIELDS)
+        raise CaptureImageLockError(f"invalid image-lock fields; missing={missing!r}, unknown={unknown!r}")
+    if raw != _canonical_lock_bytes(payload):
+        raise CaptureImageLockError("capture image lock is not canonical JSON")
+
+    base_reference = _lock_string(payload, "base_reference")
+    if "@" in base_reference or any(character.isspace() for character in base_reference):
+        raise CaptureImageLockError("base_reference must be a tag-only OCI reference")
+    if ":" not in base_reference.rsplit("/", maxsplit=1)[-1]:
+        raise CaptureImageLockError("base_reference must include an explicit tag")
+    base_digest = _lock_string(payload, "base_digest")
+    if _SHA256_PATTERN.fullmatch(base_digest) is None:
+        raise CaptureImageLockError("base_digest must be a lowercase sha256 digest")
+    expected_image_id = _lock_string(payload, "expected_capture_image_id")
+    if _SHA256_PATTERN.fullmatch(expected_image_id) is None:
+        raise CaptureImageLockError("expected_capture_image_id must be a lowercase sha256 content ID")
+
+    snapshot = _lock_string(payload, "debian_snapshot")
+    if _SNAPSHOT_PATTERN.fullmatch(snapshot) is None:
+        raise CaptureImageLockError("debian_snapshot must use the YYYYMMDDTHHMMSSZ form")
+
+    packages_value = payload["direct_packages"]
+    if not isinstance(packages_value, dict):
+        raise CaptureImageLockError("direct_packages must be a JSON object")
+    packages = cast(dict[str, object], packages_value)
+    if frozenset(packages) != _CAPTURE_DIRECT_PACKAGES:
+        raise CaptureImageLockError("direct_packages must contain exactly ca-certificates, curl, and wireshark-common")
+    package_versions: dict[str, str] = {}
+    for package_name in sorted(packages):
+        version = packages[package_name]
+        if (
+            not isinstance(version, str)
+            or not version
+            or "=" in version
+            or any(character.isspace() for character in version)
+        ):
+            raise CaptureImageLockError(f"direct package {package_name!r} must have one exact version")
+        package_versions[package_name] = version
+
+    capture_tool_version = _lock_string(payload, "capture_tool_version")
+    if _CAPTURE_TOOL_VERSION_PATTERN.fullmatch(capture_tool_version) is None:
+        raise CaptureImageLockError("capture_tool_version must be a three-component numeric version")
+    return CaptureImageLock(
+        base_reference=base_reference,
+        base_digest=base_digest,
+        debian_snapshot=snapshot,
+        direct_packages=MappingProxyType(package_versions),
+        capture_tool_version=capture_tool_version,
+        expected_capture_image_id=expected_image_id,
+    )
+
+
+def validate_capture_dockerfile(
+    dockerfile: str,
+    lock: CaptureImageLock,
+) -> None:
+    """Require the capture Dockerfile to consume only inputs named by the lock."""
+
+    first_line = next((line.strip() for line in dockerfile.splitlines() if line.strip()), "")
+    expected_from = f"FROM {lock.base_reference}@{lock.base_digest}"
+    if first_line != expected_from:
+        raise CaptureImageLockError("capture Dockerfile base must use the locked tag and digest")
+    if "deb.debian.org" in dockerfile or "security.debian.org" in dockerfile:
+        raise CaptureImageLockError("capture Dockerfile must use the locked snapshot, not a live apt source")
+    for archive, suite in (
+        ("debian", "bookworm"),
+        ("debian-security", "bookworm-security"),
+    ):
+        source = f"http://snapshot.debian.org/archive/{archive}/{lock.debian_snapshot}/ {suite} main"
+        if source not in dockerfile:
+            raise CaptureImageLockError(f"capture Dockerfile must use locked snapshot source for {archive}")
+    if "Acquire::Check-Valid-Until=false" not in dockerfile:
+        raise CaptureImageLockError("capture Dockerfile must disable Valid-Until for the frozen snapshot")
+
+    install_match = re.search(
+        r"apt-get\s+install\s+-y\s+--no-install-recommends\s+(.*?)\s+&&",
+        dockerfile,
+        flags=re.DOTALL,
+    )
+    if install_match is None:
+        raise CaptureImageLockError("capture Dockerfile has no canonical apt install")
+    installed = install_match.group(1).replace("\\", " ").split()
+    expected_packages = [f"{name}={version}" for name, version in lock.direct_packages.items()]
+    if installed != expected_packages:
+        expected_names = ", ".join(lock.direct_packages)
+        raise CaptureImageLockError(f"capture Dockerfile packages must exactly pin {expected_names}")
+
+
+def parse_image_inspect(reference: str, stdout: str) -> ImageIdentity:
+    """Parse one Docker image-inspect record and bind it to the requested ref."""
+
+    try:
+        payload = cast(object, json.loads(stdout))
+    except json.JSONDecodeError as error:
+        raise CaptureImageLockError(f"invalid Docker image inspect JSON: {error}") from error
+    if not isinstance(payload, list):
+        raise CaptureImageLockError("Docker image inspect must return exactly one image")
+    records = cast(list[object], payload)
+    if len(records) != 1:
+        raise CaptureImageLockError("Docker image inspect must return exactly one image")
+    record = records[0]
+    if not isinstance(record, dict):
+        raise CaptureImageLockError("Docker image inspect record must be an object")
+    typed_record = cast(dict[str, object], record)
+    content_id = typed_record.get("Id")
+    if not isinstance(content_id, str) or _SHA256_PATTERN.fullmatch(content_id) is None:
+        raise CaptureImageLockError("Docker image inspect has an invalid content ID")
+    repo_tags_value = typed_record.get("RepoTags", [])
+    repo_digests_value = typed_record.get("RepoDigests", [])
+    if not isinstance(repo_tags_value, list):
+        raise CaptureImageLockError("Docker image inspect has invalid RepoTags")
+    repo_tags = cast(list[object], repo_tags_value)
+    if not all(isinstance(item, str) for item in repo_tags):
+        raise CaptureImageLockError("Docker image inspect has invalid RepoTags")
+    if not isinstance(repo_digests_value, list):
+        raise CaptureImageLockError("Docker image inspect has invalid RepoDigests")
+    repo_digests = cast(list[object], repo_digests_value)
+    if not all(isinstance(item, str) for item in repo_digests):
+        raise CaptureImageLockError("Docker image inspect has invalid RepoDigests")
+
+    if reference.startswith("sha256:"):
+        reference_matches = reference == content_id
+    elif "@sha256:" in reference:
+        reference_matches = reference in repo_digests
+    else:
+        reference_matches = reference in repo_tags
+    if not reference_matches:
+        raise CaptureImageLockError(f"Docker image inspect does not match requested reference {reference!r}")
+    return ImageIdentity(reference=reference, content_id=content_id)
+
+
 @dataclass(frozen=True, slots=True)
 class ServiceState:
     """Small validated view of one Compose service container."""

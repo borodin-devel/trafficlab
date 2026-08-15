@@ -6,9 +6,18 @@ from typing import cast
 import pytest
 import tomli_w
 
+import trafficlab.preflight as preflight_module
+from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
-from trafficlab.preflight import DockerPreflight, open_or_prepare_experiment, run_preflight
+from trafficlab.preflight import (
+    CaptureEnvironmentIdentity,
+    DockerPreflight,
+    PreflightFinding,
+    PreflightReport,
+    open_or_prepare_experiment,
+    run_preflight,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -161,4 +170,60 @@ def test_run_preflight_preserves_local_findings_and_logs_the_direct_docker_failu
         "name": "docker_daemon",
         "ok": False,
         "stage": "preflight",
+    }
+
+
+def test_run_preflight_propagates_resolved_environment_identity(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    experiment_path = tmp_path / "experiment.toml"
+    _write_config(experiment_path, valid_config_data)
+    identity = CaptureEnvironmentIdentity(
+        host_architecture="x86_64",
+        target_reference="curlimages/curl:8.10.1",
+        target_content_id="sha256:" + ("c" * 64),
+        capture_reference="trafficlab-capture:phase3-test",
+        capture_content_id="sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602",
+        capture_tool_version="4.0.17",
+    )
+
+    def successful_check(
+        config: ExperimentConfig,
+        docker: object,
+        *,
+        deadline: float,
+        clock: object,
+    ) -> PreflightReport:
+        del docker, clock
+        assert deadline == 160.0
+        return PreflightReport(
+            config=config,
+            findings=(PreflightFinding("docker_identity", True, "images resolved"),),
+            environment_identity=identity,
+        )
+
+    monkeypatch.setattr(preflight_module, "check_docker", successful_check)
+
+    prepared = run_preflight(
+        experiment_path,
+        config_only=False,
+        docker=cast(DockerPreflight, object()),
+        clock=lambda: 100.0,
+    )
+
+    assert prepared.report.environment_identity == identity
+    records = [
+        json.loads(line) for line in (prepared.run_directory / "run.log").read_text(encoding="utf-8").splitlines()
+    ]
+    assert records[-1] == {
+        "capture_content_id": identity.capture_content_id,
+        "capture_reference": identity.capture_reference,
+        "capture_tool_version": identity.capture_tool_version,
+        "event": "capture_environment_identity",
+        "host_architecture": identity.host_architecture,
+        "stage": "preflight",
+        "target_content_id": identity.target_content_id,
+        "target_reference": identity.target_reference,
     }

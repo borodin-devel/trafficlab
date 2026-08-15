@@ -2,12 +2,53 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 import tomli_w
 
-from tests.conftest import DockerProjectTracker, DockerTestEnvironment, inspect_project_resources
+from tests.conftest import (
+    REPOSITORY_ROOT,
+    DockerProjectTracker,
+    DockerTestEnvironment,
+    inspect_project_resources,
+    run_external_command,
+)
+from trafficlab.docker_cli import ImageIdentity, load_capture_image_lock, parse_image_inspect
+
+
+class CaptureInspectRunner(Protocol):
+    def __call__(
+        self,
+        argv: tuple[str, ...],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]: ...
+
+
+def require_checked_capture_image(
+    reference: str,
+    *,
+    runner: CaptureInspectRunner = run_external_command,
+) -> ImageIdentity:
+    """Resolve a built capture tag and require the checked expected content ID."""
+
+    completed = runner(
+        ("docker", "image", "inspect", reference),
+        purpose=f"inspect checked capture image {reference}",
+        timeout=20.0,
+    )
+    identity = parse_image_inspect(reference, completed.stdout)
+    lock = load_capture_image_lock(REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json")
+    if identity.content_id != lock.expected_capture_image_id:
+        raise AssertionError(
+            "resolved capture image content ID does not match the checked lock: "
+            f"expected {lock.expected_capture_image_id}, resolved {identity.content_id}"
+        )
+    return identity
 
 
 def write_docker_experiment(

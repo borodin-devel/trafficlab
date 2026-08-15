@@ -93,8 +93,15 @@ tr '\\000' ' ' < "/proc/$PPID/cmdline" > "$TRAFFICLAB_FAKE_DOCKER_PARENT"
 if [ "$1" = info ]; then
     exit 0
 fi
+if [ "$1" = image ] && [ "$2" = inspect ]; then
+    case "$3" in
+      trafficlab-capture:*) content_id=sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602 ;;
+      *) content_id=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc ;;
+    esac
+    printf '[{"Id":"%s","RepoDigests":[],"RepoTags":["%s"]}]\\n' "$content_id" "$3"
+    exit 0
+fi
 if [ "$1" = image ]; then
-    printf '[]\\n'
     exit 0
 fi
 if [ "$1" = compose ] && [ "$2" = version ]; then
