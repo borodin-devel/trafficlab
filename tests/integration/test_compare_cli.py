@@ -227,9 +227,7 @@ def test_checked_in_similarity_artifact_keeps_the_fixed_four_method_json_shape()
     assert tuple(document) == ("aggregate_score", "input_sha256", "methods", "observation_window_seconds")
     methods = cast(dict[str, dict[str, object]], document["methods"])
     assert tuple(methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
-    assert all(
-        tuple(method) == ("diagnostics", "score", "weight") for method in methods.values()
-    )
+    assert all(tuple(method) == ("diagnostics", "score", "weight") for method in methods.values())
 
 
 def test_reversing_only_directions_has_maximum_multiscale_discrepancy() -> None:

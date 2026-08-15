@@ -308,6 +308,21 @@ def test_timing_fallback_precedence(
     )
 
 
+@pytest.mark.parametrize("alpha", [0.0, 2.0])
+def test_fitted_diagnostics_classify_sparse_tiers_counts_and_unobserved_rows(alpha: float) -> None:
+    """Both uniform-row formulas and every sparse timing path must remain explicit fitted evidence."""
+    model = _two_state_model(alpha=alpha, minimum_support=2.0)
+
+    assert model.timing_diagnostics.transition_tiers == (
+        ("source", "source"),
+        ("global", "global"),
+    )
+    assert model.timing_diagnostics.reference_transition_count == 0
+    assert model.timing_diagnostics.reference_source_count == 1
+    assert model.timing_diagnostics.reference_global_count == 0
+    assert model.timing_diagnostics.unobserved_rows == (1,)
+
+
 @pytest.mark.parametrize(
     ("conditional", "source", "global_iats", "minimum_support"),
     [
@@ -423,6 +438,11 @@ def test_fitted_model_round_trips_the_exact_strict_json_layout() -> None:
         ],
         "thresholds": [35.0, 65.0],
         "time_scale": 1.0,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
         "transition_rows": [[0.0, 1.0], [0.5, 0.5]],
     }
     assert tuple(fitted.__dataclass_fields__) == (
@@ -434,6 +454,7 @@ def test_fitted_model_round_trips_the_exact_strict_json_layout() -> None:
         "thresholds",
         "time_scale",
         "transition_rows",
+        "timing_diagnostics",
     )
     assert fitted.family == "markov_renewal"
     assert FAMILY.load_fitted(payload, genes=(0.25, 0.75, 0.0, 2.0, 1.0), bounds=BOUNDS) == fitted
@@ -448,6 +469,111 @@ PAYLOAD_MUTATIONS: tuple[Callable[[dict[str, object]], object], ...] = (
     lambda payload: {**payload, "transition_rows": [[0.0, 1.0]]},
     lambda payload: {**payload, "transition_rows": [[0.0, 1.0], [0.6, 0.5]]},
     lambda payload: {**payload, "conditional_iats": [[[], [1.0]]]},
+    lambda payload: {key: value for key, value in payload.items() if key != "timing_diagnostics"},
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 1, "source": 0, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {**payload, "timing_diagnostics": []},
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": [],
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0, "extra": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": True, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": -1, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": (),
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [(), ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [[None, "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [["wrong", "source"], ["global", "global"]],
+            "unobserved_rows": [1],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": (),
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [True],
+        },
+    },
+    lambda payload: {
+        **payload,
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 1, "transition": 0},
+            "transition_tiers": [["source", "source"], ["global", "global"]],
+            "unobserved_rows": [-1],
+        },
+    },
 )
 
 
@@ -683,6 +809,39 @@ def test_final_only_state_uses_uniform_row_and_global_iat() -> None:
     )
     assert result.require_complete() == (TraceEvent(0.0, Direction.INBOUND, 80),)
     assert rng.calls == [("random", None), ("randrange", 1), ("random", None), ("randrange", 2)]
+    assert dict(result.model_diagnostics) == {
+        "timing_tier_transition_count": 0,
+        "timing_tier_source_count": 0,
+        "timing_tier_global_count": 1,
+        "uniform_unobserved_row_count": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("minimum_support", "expected_tier"),
+    [(1.0, "transition"), (2.0, "source")],
+)
+def test_generation_counts_each_selected_timing_tier(
+    minimum_support: float,
+    expected_tier: str,
+) -> None:
+    """The owner must count the actual tier chosen even when the sampled next event exceeds W."""
+    model = _two_state_model(alpha=0.0, minimum_support=minimum_support)
+    result = markov_renewal._generate_with_rng(
+        model,
+        ScriptedMarkovRng(random_values=[0.0, 0.9], indices=[0, 0]),
+        W=0.5,
+        limits=LARGE_LIMITS,
+        clock=ScriptedClock([0.0] * 12),
+    )
+
+    assert result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
+    assert dict(result.model_diagnostics) == {
+        "timing_tier_transition_count": int(expected_tier == "transition"),
+        "timing_tier_source_count": int(expected_tier == "source"),
+        "timing_tier_global_count": 0,
+        "uniform_unobserved_row_count": 0,
+    }
 
 
 def test_generation_completes_without_destination_frame_draw_after_window() -> None:

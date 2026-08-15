@@ -435,6 +435,103 @@ def test_run_experiment_strictly_reloads_every_owned_artifact_before_completion(
 
 
 @pytest.mark.parametrize(
+    ("artifact_name", "detail", "corrective_action"),
+    [
+        (
+            "checkpoint.json",
+            "checkpoint schema is incompatible",
+            "refit under the current schema in a new run directory",
+        ),
+        (
+            "best_model.json",
+            "best model schema is incompatible",
+            "refit under the current schema",
+        ),
+    ],
+)
+def test_final_reload_preserves_schema_incompatibility_outcome(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    artifact_name: str,
+    detail: str,
+    corrective_action: str,
+) -> None:
+    """Final reloads retain the source schema outcome instead of reclassifying it as corruption."""
+    experiment_path, prepared = _prepared_experiment(valid_config_data, tmp_path)
+    calls: list[str] = []
+    dependencies, _results = _success_dependencies(experiment_path, prepared, calls)
+    artifact_path = prepared.run_directory / artifact_name
+    original_compare = dependencies.compare
+    schema_one: bytes | None = None
+
+    def replace_schema_after_compare(path: Path) -> ComparisonResult:
+        nonlocal schema_one
+        result = original_compare(path)
+        document = cast(dict[str, object], json.loads(artifact_path.read_bytes()))
+        document["scientific_artifact_schema"] = 1
+        schema_one = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        artifact_path.write_bytes(schema_one)
+        return result
+
+    object.__setattr__(dependencies, "compare", replace_schema_after_compare)
+
+    with pytest.raises(TrafficlabError) as captured:
+        run_experiment(experiment_path, dependencies=dependencies)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "kind": "scientific_semantics_incompatible",
+        "stage": "fit",
+        "detail": detail,
+        "corrective_action": corrective_action,
+        "affected_evidence": artifact_name,
+        "evidence_state": "preserved",
+        "authority": "primary",
+    }
+    assert calls == ["preflight", "capture", "fit", "generate", "compare"]
+    assert captured.value.failure_outcomes == (outcome,)
+    assert schema_one is not None
+    assert artifact_path.read_bytes() == schema_one
+    records = _records(prepared)
+    failures = [record for record in records if record.get("event") == "run_failed"]
+    assert len(failures) == 1
+    assert failures[0]["failed_stage"] == "fit"
+    assert failures[0]["failure_outcome"] == outcome.as_dict()
+    assert failures[0]["corrective_action"] == corrective_action
+    assert [record for record in records if record.get("event") == "run_completed"] == []
+
+
+def test_final_reload_preserves_the_generic_checkpoint_error_boundary(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A non-schema checkpoint decode error still follows the existing fit corruption fallback."""
+    experiment_path, prepared = _prepared_experiment(valid_config_data, tmp_path)
+    dependencies, _results = _success_dependencies(experiment_path, prepared, [])
+    checkpoint_path = prepared.run_directory / "checkpoint.json"
+    original_compare = dependencies.compare
+
+    def replace_checkpoint_after_compare(path: Path) -> ComparisonResult:
+        result = original_compare(path)
+        checkpoint_path.write_bytes(b'{"scientific_artifact_schema":2}\n')
+        return result
+
+    object.__setattr__(dependencies, "compare", replace_checkpoint_after_compare)
+
+    with pytest.raises(TrafficlabError) as captured:
+        run_experiment(experiment_path, dependencies=dependencies)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_corrupt",
+        "fit",
+        "fit inputs",
+        "preserved",
+    )
+
+
+@pytest.mark.parametrize(
     ("name", "owner"),
     [
         ("experiment.toml", "preflight"),

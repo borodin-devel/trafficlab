@@ -199,6 +199,22 @@ def test_evaluation_fits_once_and_gives_each_trial_the_same_window_and_limits(
         cast(dict[str, object], evaluated.trials[0].methods[0].diagnostics)["changed"] = True
 
 
+def test_evaluation_retains_generation_owner_diagnostics_per_trial(family: RecordingFamily) -> None:
+    """Candidate evaluation must not discard the model owner's seeded usage counters."""
+    diagnostics = {
+        "timing_tier_transition_count": 1,
+        "timing_tier_source_count": 2,
+        "timing_tier_global_count": 3,
+        "uniform_unobserved_row_count": 1,
+    }
+    family.results[7] = GenerationResult(True, GENERATED, model_diagnostics=diagnostics)
+
+    evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
+
+    assert dict(evaluated.trials[0].model_diagnostics) == diagnostics
+    assert dict(evaluated.trials[1].model_diagnostics) == {}
+
+
 def test_common_metric_precondition_failure_aborts_before_candidate_loop(family: RecordingFamily) -> None:
     """Skipping reference self-comparison would misclassify a shared bad lag per candidate."""
     similarity = SIMILARITY.model_copy(update={"acf_lags": (2,)})
@@ -588,7 +604,9 @@ def test_zero_weight_method_preconditions_invalidate_evaluable_candidates(
     similarity = _similarity_with_zero_weight(zero_weight_method)
     family.results[7] = GenerationResult(True, generated)
 
-    evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family, similarity=similarity)))
+    evaluated = evaluate_candidate(
+        PENDING_POISSON, validate_evaluation_context(_context(family, similarity=similarity))
+    )
 
     assert evaluated.invalid is not None
     assert evaluated.invalid.kind == "similarity_precondition"

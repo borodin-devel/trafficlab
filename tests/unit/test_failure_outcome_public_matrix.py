@@ -683,7 +683,10 @@ def _run_fit_boundary_case(
         monkeypatch.setattr(strategy_module, "initial_population", forbid_search_draws)
         dependencies = _fit_dependencies(config, experiment_path, inputs, run_strategy)
     elif case.primary.kind == "publication_collision":
-        expected_preserved = _prepare_publication_state(case, run_directory)
+        best_model_path = run_directory / "best_model.json"
+        existing_best_model = _MODEL_FIXTURE.read_bytes()
+        best_model_path.write_bytes(existing_best_model)
+        expected_preserved = {best_model_path: existing_best_model}
 
         def collide(_path: Path, _content: bytes) -> object:
             raise TrafficlabError(case.primary.detail, corrective_action=case.primary.corrective_action)

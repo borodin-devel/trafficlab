@@ -21,7 +21,13 @@ from trafficlab.comparison import (
     similarity_settings_sha256,
 )
 from trafficlab.config_io import render_effective_config
-from trafficlab.errors import EvidenceState, TrafficlabError, append_failure_outcome, failure_outcome_from_error
+from trafficlab.errors import (
+    EvidenceState,
+    TrafficlabError,
+    append_failure_outcome,
+    attach_failure_outcome,
+    failure_outcome_from_error,
+)
 from trafficlab.fitting import FitStageResult, fit_experiment
 from trafficlab.generation import GenerationStageResult, generate_experiment
 from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
@@ -30,6 +36,7 @@ from trafficlab.genetic.types import Candidate, TrialResult
 from trafficlab.models.registry import BestModel, load_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, run_preflight
+from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import TraceEvent, normalize_reference, parse_capture_metadata
 
 _SUCCESSFUL_RUN_NAMES = frozenset(
@@ -249,16 +256,32 @@ class _FinalArtifactError(TrafficlabError):
 
     owner: _FinalOwner
 
-    def __init__(self, owner: _FinalOwner, detail: str) -> None:
+    def __init__(
+        self,
+        owner: _FinalOwner,
+        detail: str,
+        *,
+        originating_error: TrafficlabError | None = None,
+    ) -> None:
         self.owner = owner
         super().__init__(
             f"final run artifact validation failed for {owner}: {detail}",
-            corrective_action=f"preserve the existing artifacts, rerun {owner}, and retry the complete run",
+            corrective_action=(
+                originating_error.corrective_action
+                if originating_error is not None
+                else f"preserve the existing artifacts, rerun {owner}, and retry the complete run"
+            ),
+            failure_outcomes=(originating_error.failure_outcomes if originating_error is not None else None),
         )
 
 
-def _final_artifact_error(owner: _FinalOwner, detail: str) -> _FinalArtifactError:
-    return _FinalArtifactError(owner, detail)
+def _final_artifact_error(
+    owner: _FinalOwner,
+    detail: str,
+    *,
+    originating_error: TrafficlabError | None = None,
+) -> _FinalArtifactError:
+    return _FinalArtifactError(owner, detail, originating_error=originating_error)
 
 
 def _read_final_artifact(path: Path, *, owner: _FinalOwner, identities: _FinalIdentities) -> bytes:
@@ -370,8 +393,17 @@ def _validate_final_artifacts(
     checkpoint_content = _read_final_artifact(run_directory / "checkpoint.json", owner="fit", identities=identities)
     try:
         checkpoint = parse_checkpoint(checkpoint_content, context.compatibility)
+    except ScientificArtifactSchemaError as error:
+        attach_failure_outcome(
+            error,
+            kind="scientific_semantics_incompatible",
+            stage="fit",
+            affected_evidence="checkpoint.json",
+            evidence_state="preserved",
+        )
+        raise _final_artifact_error("fit", str(error), originating_error=error) from error
     except TrafficlabError as error:
-        raise _final_artifact_error("fit", str(error)) from error
+        raise _final_artifact_error("fit", str(error), originating_error=error) from error
     checkpoint_winner = {candidate.identifier: candidate for candidate in checkpoint.population}[
         checkpoint.best_identifier
     ]
@@ -389,8 +421,17 @@ def _validate_final_artifacts(
     best_model_content = _read_final_artifact(best_model_path, owner="fit", identities=identities)
     try:
         best_model = load_best_model(best_model_content, source=best_model_path)
+    except ScientificArtifactSchemaError as error:
+        attach_failure_outcome(
+            error,
+            kind="scientific_semantics_incompatible",
+            stage="fit",
+            affected_evidence="best_model.json",
+            evidence_state="preserved",
+        )
+        raise _final_artifact_error("fit", str(error), originating_error=error) from error
     except TrafficlabError as error:
-        raise _final_artifact_error("fit", str(error)) from error
+        raise _final_artifact_error("fit", str(error), originating_error=error) from error
     if render_best_model(best_model) != best_model_content:
         raise _final_artifact_error("fit", "best_model.json is not canonical")
     if best_model != fit.best_model:

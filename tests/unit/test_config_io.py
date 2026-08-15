@@ -119,9 +119,7 @@ def test_configuration_realization_preserves_every_non_path_section(
     """Changing a configuration value while realizing paths would invalidate reproducibility."""
     data = copy.deepcopy(valid_config_data)
     cast(dict[str, object], data["run"])["directory"] = "runs/portable-case"
-    cast(dict[str, object], data["target"])["mounts"] = [
-        {"source": "data", "target": "/work/data", "read_only": True}
-    ]
+    cast(dict[str, object], data["target"])["mounts"] = [{"source": "data", "target": "/work/data", "read_only": True}]
     path = tmp_path / "config" / "experiment.toml"
     _write_config(path, data)
 

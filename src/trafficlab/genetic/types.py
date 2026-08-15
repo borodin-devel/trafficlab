@@ -9,7 +9,7 @@ from typing import Literal
 
 from trafficlab.config import FamilyName
 from trafficlab.errors import EvidenceState, FailureAuthority
-from trafficlab.models.common import Genes
+from trafficlab.models.common import Genes, ModelDiagnostics, freeze_model_diagnostics
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
 
 type CandidateStatus = Literal["pending", "valid", "invalid"]
@@ -30,6 +30,10 @@ _FAILURE_AUTHORITIES = frozenset(("primary", "secondary"))
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _CANDIDATE_STATUSES = frozenset(("pending", "valid", "invalid"))
 _FAMILY_NAMES = frozenset(("poisson_empirical", "markov_renewal", "mmpp"))
+
+
+def _empty_model_diagnostics() -> dict[str, int]:
+    return {}
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -81,6 +85,7 @@ class TrialResult:
     seed: int
     aggregate_score: float
     methods: tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult]
+    model_diagnostics: ModelDiagnostics = field(default_factory=_empty_model_diagnostics)
 
     def __post_init__(self) -> None:
         if type(self.seed) is not int or self.seed < 0:
@@ -92,6 +97,7 @@ class TrialResult:
             raise TypeError("trial methods must be MethodTrialResult values")
         if tuple(method.name for method in self.methods) != METHOD_ORDER:
             raise ValueError("trial methods must contain every published method in published order")
+        object.__setattr__(self, "model_diagnostics", freeze_model_diagnostics(self.model_diagnostics))
 
 
 @dataclass(frozen=True, slots=True)

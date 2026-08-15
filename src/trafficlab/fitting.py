@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
-from trafficlab.artifacts import append_run_log, publish_best_model
+from trafficlab.artifacts import append_run_log, publish_best_model, validate_existing_best_model
 from trafficlab.comparison import sha256_bytes
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import (
@@ -20,6 +20,7 @@ from trafficlab.genetic.strategy import FitOutcome, StrategyContext, make_strate
 from trafficlab.models.registry import BestModel, get_family, make_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 
@@ -173,6 +174,25 @@ def fit_experiment(
         },
     )
     try:
+        best_model_path = run_directory / "best_model.json"
+        try:
+            validate_existing_best_model(best_model_path)
+        except ScientificArtifactSchemaError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="scientific_semantics_incompatible",
+                stage="fit",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="fit",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
         snapshot_path = run_directory / "experiment.toml"
         capture_path = run_directory / "capture.json"
         reference_path = run_directory / "reference.pcapng"
@@ -274,7 +294,15 @@ def fit_experiment(
         if best.genes != outcome.winner.genes:
             raise AssertionError("artifact construction must retain the same canonical winner genes")
         try:
-            publication = publish_best_model(run_directory / "best_model.json", render_best_model(best))
+            publication = publish_best_model(best_model_path, render_best_model(best))
+        except ScientificArtifactSchemaError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="scientific_semantics_incompatible",
+                stage="fit",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,

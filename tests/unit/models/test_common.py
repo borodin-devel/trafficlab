@@ -3,6 +3,7 @@
 import math
 from collections.abc import Sequence
 from dataclasses import FrozenInstanceError
+from typing import cast
 
 import pytest
 
@@ -90,6 +91,37 @@ def test_generation_result_requires_complete_trace_before_reuse() -> None:
     with pytest.raises(TrafficlabError, match="max_output_bytes") as caught:
         GenerationResult(complete=False, events=events, reason="max_output_bytes").require_complete()
     assert caught.value.corrective_action == "increase generation limits and generate a complete trace"
+
+
+def test_generation_result_freezes_exact_nonnegative_model_diagnostic_counts() -> None:
+    """Evaluation diagnostics must not be mutable or accept ambiguous counter values."""
+    result = GenerationResult(
+        complete=True,
+        events=_reference(14),
+        model_diagnostics={"timing_tier_source_count": 2},
+    )
+
+    assert dict(result.model_diagnostics) == {"timing_tier_source_count": 2}
+    with pytest.raises(TypeError):
+        result.model_diagnostics["timing_tier_source_count"] = 3  # type: ignore[index]
+
+    invalid_diagnostics: tuple[object, ...] = (
+        cast(object, []),
+        {"": 1},
+        {"counter": -1},
+        {"counter": True},
+        {1: 1},
+    )
+    for diagnostics in invalid_diagnostics:
+        with pytest.raises((TypeError, ValueError), match="diagnostic"):
+            GenerationResult(
+                complete=True,
+                events=_reference(14),
+                model_diagnostics=diagnostics,  # type: ignore[arg-type]
+            )
+
+    with pytest.raises(TypeError, match="complete"):
+        GenerationResult(complete=1, events=_reference(14))  # type: ignore[arg-type]
 
 
 def test_generation_result_rejects_noncanonical_diagnostic_events() -> None:

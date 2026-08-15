@@ -581,9 +581,7 @@ In `basic_generational.md`, define exactly:
 
 ```python
 priority_rng = random.Random(master_seed)
-family_priority = tuple(
-    priority_rng.sample(sorted_family_names, len(sorted_family_names))
-)
+family_priority = tuple(priority_rng.sample(sorted_family_names, len(sorted_family_names)))
 ```
 
 Clarify that this temporary RNG is discarded and the search RNG is initialized

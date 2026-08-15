@@ -420,6 +420,44 @@ def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnost
         cast(dict[str, object], loaded.population[0].trials[0].methods[0].diagnostics)["changed"] = True
 
 
+def test_checkpoint_round_trip_retains_exact_model_diagnostic_counts() -> None:
+    """Checkpoint evidence must preserve owner-derived per-seed model counters."""
+    diagnostics = {
+        "timing_tier_transition_count": 1,
+        "timing_tier_source_count": 2,
+        "timing_tier_global_count": 3,
+        "uniform_unobserved_row_count": 1,
+    }
+    trial = replace(MMPP_TRIAL, model_diagnostics=diagnostics)
+    candidate = replace(POPULATION[0], trials=(trial,))
+    state = replace(VALID_STATE, population=(candidate, *POPULATION[1:]))
+
+    content = render_checkpoint(state)
+    document = _decoded(content)
+    stored_trial = cast(
+        dict[str, object],
+        cast(list[object], cast(dict[str, object], cast(list[object], document["population"])[0])["trials"])[0],
+    )
+    assert stored_trial["model_diagnostics"] == diagnostics
+    loaded = parse_checkpoint(content, state.compatibility)
+    assert dict(loaded.population[0].trials[0].model_diagnostics) == diagnostics
+    with pytest.raises(TypeError):
+        loaded.population[0].trials[0].model_diagnostics["timing_tier_global_count"] = 4  # type: ignore[index]
+
+
+@pytest.mark.parametrize("diagnostics", [[], {"counter": True}, {"counter": -1}, {"": 1}])
+def test_checkpoint_rejects_malformed_model_diagnostic_counts(diagnostics: object) -> None:
+    """Loose counter JSON must not enter authoritative candidate evidence."""
+    document = _decoded()
+    population = cast(list[object], document["population"])
+    candidate = cast(dict[str, object], population[0])
+    trials = cast(list[object], candidate["trials"])
+    cast(dict[str, object], trials[0])["model_diagnostics"] = diagnostics
+
+    with pytest.raises(TrafficlabError, match="model diagnostics"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
+
+
 def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

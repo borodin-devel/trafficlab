@@ -31,6 +31,7 @@ from trafficlab.genetic.types import (
     TerminalReason,
     TrialResult,
 )
+from trafficlab.models.common import ModelDiagnostics, freeze_model_diagnostics
 from trafficlab.models.registry import get_family
 from trafficlab.scientific_schema import require_current_scientific_schema
 from trafficlab.similarity.common import FrozenJsonValue
@@ -743,17 +744,26 @@ def _parse_method(value: object, *, expected_name: MethodName) -> MethodTrialRes
 
 
 def _parse_trial(value: object) -> TrialResult:
-    document = _exact_object(value, ("seed", "aggregate_score", "methods"), name="candidate trial")
+    document = _exact_object(
+        value,
+        ("seed", "aggregate_score", "methods", "model_diagnostics"),
+        name="candidate trial",
+    )
     method_values = _array(document["methods"], name="trial methods")
     if len(method_values) != len(METHOD_ORDER):
         raise ValueError("trial methods must contain exactly four methods")
     methods = tuple(
         _parse_method(item, expected_name=name) for name, item in zip(METHOD_ORDER, method_values, strict=True)
     )
+    try:
+        model_diagnostics: ModelDiagnostics = freeze_model_diagnostics(document["model_diagnostics"])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"candidate trial model diagnostics are invalid: {error}") from error
     return TrialResult(
         _integer(document["seed"], name="trial seed"),
         _float(document["aggregate_score"], name="trial aggregate_score", bounded=True),
         cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
+        model_diagnostics,
     )
 
 
@@ -1196,6 +1206,7 @@ def _trial_document(trial: TrialResult) -> dict[str, object]:
         "seed": trial.seed,
         "aggregate_score": trial.aggregate_score,
         "methods": [_method_document(method) for method in trial.methods],
+        "model_diagnostics": dict(trial.model_diagnostics),
     }
 
 

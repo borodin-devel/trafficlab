@@ -182,7 +182,7 @@ def _best_model_entry_exists(destination: Path) -> bool:
     return True
 
 
-def _read_existing_best_model(destination: Path, expected_content: bytes) -> BestModelPublication | None:
+def _read_existing_best_model(destination: Path, expected_content: bytes | None) -> BestModelPublication | None:
     identity = _file_identity(
         destination,
         kind="best model entry",
@@ -203,6 +203,8 @@ def _read_existing_best_model(destination: Path, expected_content: bytes) -> Bes
             corrective_action="verify best_model.json is readable and retry fitting",
         ) from error
     _validate_best_model_content(existing_content, source=destination)
+    if expected_content is None:
+        return BestModelPublication(destination, existing_content, False)
     if existing_content != expected_content:
         raise attach_failure_outcome(
             TrafficlabError(
@@ -225,6 +227,11 @@ def _read_existing_best_model(destination: Path, expected_content: bytes) -> Bes
             corrective_action="preserve the replacement and retry fitting in a stable run directory",
         )
     return BestModelPublication(destination, existing_content, False)
+
+
+def validate_existing_best_model(path: Path) -> None:
+    """Reject a noncanonical occupied model before a fit can start strategy work."""
+    _read_existing_best_model(path, None)
 
 
 def _best_model_publication_error(
@@ -293,15 +300,18 @@ def _publisher_outcomes(
         )
     if cleanup_error is None:
         return outcomes
-    return (*outcomes, FailureOutcome(
-        kind="cleanup_failed",
-        stage=stage,
-        detail=f"owned temporary file cleanup failed: {cleanup_error}",
-        affected_evidence="inventory",
-        evidence_state="possibly_remaining",
-        corrective_action="remove the owned temporary file after preserving diagnostics",
-        authority="secondary",
-    ))
+    return (
+        *outcomes,
+        FailureOutcome(
+            kind="cleanup_failed",
+            stage=stage,
+            detail=f"owned temporary file cleanup failed: {cleanup_error}",
+            affected_evidence="inventory",
+            evidence_state="possibly_remaining",
+            corrective_action="remove the owned temporary file after preserving diagnostics",
+            authority="secondary",
+        ),
+    )
 
 
 def publish_best_model(path: Path, content: bytes) -> BestModelPublication:

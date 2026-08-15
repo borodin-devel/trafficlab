@@ -73,6 +73,19 @@ def test_trial_result_requires_each_method_once_in_published_order() -> None:
         )
 
 
+def test_trial_result_freezes_model_diagnostic_counts() -> None:
+    """Per-seed model diagnostics must remain immutable checkpoint evidence."""
+    trial = TrialResult(3, 0.5, _methods(), {"timing_tier_global_count": 2})
+
+    assert dict(trial.model_diagnostics) == {"timing_tier_global_count": 2}
+    with pytest.raises(TypeError):
+        trial.model_diagnostics["timing_tier_global_count"] = 3  # type: ignore[index]
+
+    for diagnostics in ({"": 1}, {"counter": -1}, {"counter": True}, {1: 1}):
+        with pytest.raises((TypeError, ValueError), match="diagnostic"):
+            TrialResult(3, 0.5, _methods(), diagnostics)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     ("factory", "message"),
     [

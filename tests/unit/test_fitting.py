@@ -29,6 +29,7 @@ from trafficlab.models.poisson import PoissonFamily
 from trafficlab.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreflightReport, PreparedExperiment, open_or_prepare_experiment
+from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 RAW_REFERENCE = (
@@ -543,6 +544,161 @@ def test_terminal_rerun_enters_strategy_refits_and_reuses_identical_best_model(
     assert second.best_model_path.read_bytes() == first_bytes
     records = [json.loads(line) for line in (run_directory / "run.log").read_text().splitlines()]
     assert records[-1]["event"] == "best_model_reused"
+
+
+def test_fit_rejects_an_occupied_schema_one_best_model_before_strategy_or_publication(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An incompatible retained model is scientific evidence, not a later publication collision."""
+    experiment_path = tmp_path / "experiment.toml"
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+    initial = fit_experiment(
+        experiment_path,
+        dependencies=_dependencies(config, experiment_path, inputs, lambda _context: _outcome(config)),
+    )
+    document = cast(dict[str, object], json.loads(initial.best_model_path.read_bytes()))
+    document["scientific_artifact_schema"] = 1
+    schema_one = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    initial.best_model_path.write_bytes(schema_one)
+    reads: list[str] = []
+
+    def forbidden_context(*_args: object, **_kwargs: object) -> StrategyContext:
+        pytest.fail("schema validation reached strategy-context construction")
+
+    def forbidden_strategy(_context: StrategyContext) -> FitOutcome:
+        pytest.fail("schema validation reached strategy/RNG/search")
+
+    def forbidden_publication(_path: Path, _content: bytes) -> object:
+        pytest.fail("schema validation reached best-model publication")
+
+    monkeypatch.setattr(fitting, "make_strategy_context", forbidden_context)
+    monkeypatch.setattr(fitting, "publish_best_model", forbidden_publication)
+
+    with pytest.raises(TrafficlabError) as captured:
+        fit_experiment(
+            experiment_path,
+            dependencies=_dependencies(config, experiment_path, inputs, forbidden_strategy, reads=reads),
+        )
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "kind": "scientific_semantics_incompatible",
+        "stage": "fit",
+        "detail": "best model schema is incompatible",
+        "corrective_action": "refit under the current schema",
+        "affected_evidence": "best_model.json",
+        "evidence_state": "preserved",
+        "authority": "primary",
+    }
+    assert reads == []
+    assert initial.best_model_path.read_bytes() == schema_one
+    records = [json.loads(line) for line in (run_directory / "run.log").read_text().splitlines()]
+    assert records[-1]["failure_outcome"] == outcome.as_dict()
+
+
+def test_fit_classifies_a_nonsemantic_existing_model_before_strategy_work(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Early occupancy validation keeps non-schema malformed evidence at the fit boundary."""
+    experiment_path = tmp_path / "experiment.toml"
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+    initial = fit_experiment(
+        experiment_path,
+        dependencies=_dependencies(config, experiment_path, inputs, lambda _context: _outcome(config)),
+    )
+    document = cast(dict[str, object], json.loads(initial.best_model_path.read_bytes()))
+    document["version"] = 2
+    initial.best_model_path.write_bytes((json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode())
+
+    def forbidden_context(*_args: object, **_kwargs: object) -> StrategyContext:
+        pytest.fail("malformed occupancy validation reached strategy-context construction")
+
+    monkeypatch.setattr(fitting, "make_strategy_context", forbidden_context)
+
+    with pytest.raises(TrafficlabError) as captured:
+        fit_experiment(
+            experiment_path,
+            dependencies=_dependencies(config, experiment_path, inputs, lambda _context: _outcome(config)),
+        )
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_corrupt",
+        "fit",
+        "best_model.json",
+        "preserved",
+    )
+
+
+def test_fit_classifies_reference_normalization_error(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The owning fit boundary retains a normalization failure as preserved reference evidence."""
+    experiment_path = tmp_path / "experiment.toml"
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+
+    def fail_normalization(_events: object) -> tuple[tuple[TraceEvent, ...], float]:
+        raise TrafficlabError("injected normalization failure", corrective_action="repair reference ordering")
+
+    monkeypatch.setattr(fitting, "normalize_reference", fail_normalization)
+
+    with pytest.raises(TrafficlabError) as captured:
+        fit_experiment(
+            experiment_path,
+            dependencies=_dependencies(config, experiment_path, inputs, lambda _context: _outcome(config)),
+        )
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_corrupt",
+        "fit",
+        "reference.pcapng",
+        "preserved",
+    )
+
+
+@pytest.mark.parametrize("semantic", [True, False], ids=["schema", "publication"])
+def test_fit_retains_the_owning_best_model_publisher_classification(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, semantic: bool
+) -> None:
+    """A publisher's typed schema error must not be overwritten by the collision fallback."""
+    experiment_path = tmp_path / "experiment.toml"
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+
+    def fail_publication(_path: Path, _content: bytes) -> object:
+        if semantic:
+            raise ScientificArtifactSchemaError(
+                "best model schema is incompatible",
+                corrective_action="refit under the current schema",
+            )
+        raise TrafficlabError("injected publication conflict", corrective_action="preserve the conflicting model")
+
+    monkeypatch.setattr(fitting, "publish_best_model", fail_publication)
+
+    with pytest.raises(TrafficlabError) as captured:
+        fit_experiment(
+            experiment_path,
+            dependencies=_dependencies(config, experiment_path, inputs, lambda _context: _outcome(config)),
+        )
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == ("scientific_semantics_incompatible" if semantic else "publication_collision")
 
 
 def test_real_terminal_checkpoint_repairs_history_validates_refits_and_reuses_best_model(

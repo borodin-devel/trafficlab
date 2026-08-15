@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from random import Random
 from time import monotonic
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 from trafficlab.config import FamilyName, FloatBounds, GenerationLimits, IntegerBounds, MarkovRenewalConfig
 from trafficlab.errors import TrafficlabError
@@ -19,6 +19,7 @@ from trafficlab.models.common import (
     GenerationGuard,
     GenerationResult,
     Genes,
+    IncompleteReason,
     validate_fit_inputs,
 )
 from trafficlab.trace import Direction, TraceEvent
@@ -26,6 +27,15 @@ from trafficlab.trace import Direction, TraceEvent
 _ROW_TOLERANCE = 1e-12
 _MINIMUM_FRAME_LENGTH = 14
 _MAXIMUM_FRAME_LENGTH = 2**32 - 1
+type TimingTier = Literal["transition", "source", "global"]
+
+_TIMING_TIERS = frozenset(("transition", "source", "global"))
+_TIMING_DIAGNOSTIC_KEYS = (
+    "timing_tier_transition_count",
+    "timing_tier_source_count",
+    "timing_tier_global_count",
+    "uniform_unobserved_row_count",
+)
 
 
 def _invalid(detail: str, *, corrective_action: str) -> TrafficlabError:
@@ -218,14 +228,13 @@ def _validate_iats(values: object, *, allow_empty: bool, context: str) -> tuple[
     return cast(tuple[float, ...], items)
 
 
-def choose_holding_sample(
+def _holding_selection(
     conditional: tuple[float, ...],
     source: tuple[float, ...],
     global_iats: tuple[float, ...],
     *,
     minimum_support: int,
-) -> tuple[float, ...]:
-    """Choose the first eligible empirical IAT sample in the documented fallback order."""
+) -> tuple[TimingTier, tuple[float, ...]]:
     try:
         checked_conditional = _validate_iats(conditional, allow_empty=True, context="conditional IAT sample")
         checked_source = _validate_iats(source, allow_empty=True, context="source IAT sample")
@@ -241,10 +250,26 @@ def choose_holding_sample(
             corrective_action="provide a positive exact integer minimum support",
         )
     if len(checked_conditional) >= minimum_support:
-        return checked_conditional
+        return ("transition", checked_conditional)
     if checked_source:
-        return checked_source
-    return checked_global
+        return ("source", checked_source)
+    return ("global", checked_global)
+
+
+def choose_holding_sample(
+    conditional: tuple[float, ...],
+    source: tuple[float, ...],
+    global_iats: tuple[float, ...],
+    *,
+    minimum_support: int,
+) -> tuple[float, ...]:
+    """Choose the first eligible empirical IAT sample in the documented fallback order."""
+    return _holding_selection(
+        conditional,
+        source,
+        global_iats,
+        minimum_support=minimum_support,
+    )[1]
 
 
 class _MarkovRng(Protocol):
@@ -418,6 +443,46 @@ class MarkovState:
 
 
 @dataclass(frozen=True, slots=True)
+class MarkovTimingDiagnostics:
+    """Deterministic fitted evidence for sparse timing and unobserved rows."""
+
+    transition_tiers: tuple[tuple[TimingTier, ...], ...]
+    reference_transition_count: int
+    reference_source_count: int
+    reference_global_count: int
+    unobserved_rows: tuple[int, ...]
+
+
+def _timing_diagnostics(
+    conditional_iats: tuple[tuple[tuple[float, ...], ...], ...],
+    states: tuple[MarkovState, ...],
+    minimum_support: int,
+) -> MarkovTimingDiagnostics:
+    rows: list[tuple[TimingTier, ...]] = []
+    counts: dict[TimingTier, int] = {"transition": 0, "source": 0, "global": 0}
+    for state, samples in zip(states, conditional_iats, strict=True):
+        tiers: list[TimingTier] = []
+        for sample in samples:
+            tier: TimingTier
+            if len(sample) >= minimum_support:
+                tier = "transition"
+            elif state.source_iats:
+                tier = "source"
+            else:
+                tier = "global"
+            tiers.append(tier)
+            counts[tier] += len(sample)
+        rows.append(tuple(tiers))
+    return MarkovTimingDiagnostics(
+        transition_tiers=tuple(rows),
+        reference_transition_count=counts["transition"],
+        reference_source_count=counts["source"],
+        reference_global_count=counts["global"],
+        unobserved_rows=tuple(index for index, state in enumerate(states) if not state.source_iats),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class MarkovRenewalModel:
     """A complete fitted transition kernel and aligned empirical samples."""
 
@@ -429,6 +494,7 @@ class MarkovRenewalModel:
     thresholds: tuple[float, float]
     time_scale: float
     transition_rows: tuple[tuple[float, ...], ...]
+    timing_diagnostics: MarkovTimingDiagnostics = field(init=False)
 
     def __post_init__(self) -> None:
         if type(self.alpha) is not float or not math.isfinite(self.alpha) or self.alpha < 0.0:
@@ -497,6 +563,11 @@ class MarkovRenewalModel:
                 for actual, wanted in zip(probabilities, expected, strict=True)
             ):
                 raise ValueError("transition rows must match the complete additive estimator")
+        object.__setattr__(
+            self,
+            "timing_diagnostics",
+            _timing_diagnostics(self.conditional_iats, self.states, self.minimum_support),
+        )
 
     @property
     def family(self) -> FamilyName:
@@ -588,14 +659,28 @@ def _generate_with_rng(
     guard = GenerationGuard.start(limits, clock=clock)
     events: list[TraceEvent] = []
     output_bytes = 0
+    timing_counts: dict[str, int] = {name: 0 for name in _TIMING_DIAGNOSTIC_KEYS}
+
+    def generation_result(
+        *,
+        complete: bool,
+        result_events: tuple[TraceEvent, ...],
+        reason: IncompleteReason | None = None,
+    ) -> GenerationResult:
+        return GenerationResult(
+            complete=complete,
+            events=result_events,
+            reason=reason,
+            model_diagnostics=timing_counts,
+        )
 
     reason = guard.pre_draw_reason(0, 0)
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return generation_result(complete=False, result_events=(), reason=reason)
     raw_state_draw = rng.random()
     reason = guard.post_draw_reason()
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return generation_result(complete=False, result_events=(), reason=reason)
     state_index = _weighted_index_from_draw(
         tuple(float(len(state.frame_lengths)) for state in checked_model.states), raw_state_draw
     )
@@ -604,11 +689,11 @@ def _generate_with_rng(
     raw_frame_draw = rng.randrange(len(state.frame_lengths))
     reason = guard.post_draw_reason()
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return generation_result(complete=False, result_events=(), reason=reason)
     frame_length = state.frame_lengths[_empirical_index_from_draw(len(state.frame_lengths), raw_frame_draw)]
     reason = guard.prospective_reason(0, 0, frame_length)
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return generation_result(complete=False, result_events=(), reason=reason)
     events.append(TraceEvent(0.0, state.direction, frame_length))
     output_bytes = frame_length
     current_time = 0.0
@@ -616,25 +701,28 @@ def _generate_with_rng(
     while True:
         reason = guard.pre_draw_reason(len(events), output_bytes)
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return generation_result(complete=False, result_events=tuple(events), reason=reason)
         raw_transition_draw = rng.random()
         reason = guard.post_draw_reason()
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return generation_result(complete=False, result_events=tuple(events), reason=reason)
         destination_index = _probability_index_from_draw(
             checked_model.transition_rows[state_index], raw_transition_draw
         )
-        holding_sample = choose_holding_sample(
+        timing_tier, holding_sample = _holding_selection(
             checked_model.conditional_iats[state_index][destination_index],
             checked_model.states[state_index].source_iats,
             checked_model.global_iats,
             minimum_support=checked_model.minimum_support,
         )
+        timing_counts[f"timing_tier_{timing_tier}_count"] += 1
+        if state_index in checked_model.timing_diagnostics.unobserved_rows:
+            timing_counts["uniform_unobserved_row_count"] += 1
 
         raw_holding_draw = rng.randrange(len(holding_sample))
         reason = guard.post_draw_reason()
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return generation_result(complete=False, result_events=tuple(events), reason=reason)
         holding_time = holding_sample[_empirical_index_from_draw(len(holding_sample), raw_holding_draw)]
         scaled_holding_time = holding_time * checked_model.time_scale
         next_time = current_time + scaled_holding_time
@@ -644,19 +732,19 @@ def _generate_with_rng(
                 corrective_action="use finite fitted timing samples and scale values that do not overflow",
             )
         if next_time > window:
-            return GenerationResult(complete=True, events=tuple(events))
+            return generation_result(complete=True, result_events=tuple(events))
 
         destination = checked_model.states[destination_index]
         raw_destination_frame_draw = rng.randrange(len(destination.frame_lengths))
         reason = guard.post_draw_reason()
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return generation_result(complete=False, result_events=tuple(events), reason=reason)
         destination_frame_length = destination.frame_lengths[
             _empirical_index_from_draw(len(destination.frame_lengths), raw_destination_frame_draw)
         ]
         reason = guard.prospective_reason(len(events), output_bytes, destination_frame_length)
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return generation_result(complete=False, result_events=tuple(events), reason=reason)
         events.append(TraceEvent(next_time, destination.direction, destination_frame_length))
         output_bytes += destination_frame_length
         current_time = next_time
@@ -679,6 +767,49 @@ def _load_int_list(value: object, *, context: str) -> tuple[int, ...]:
     if any(type(item) is not int for item in items):
         raise ValueError(f"{context} must be a list of exact integers")
     return tuple(cast(list[int], items))
+
+
+def _timing_diagnostics_document(diagnostics: MarkovTimingDiagnostics) -> dict[str, object]:
+    return {
+        "reference_usage_counts": {
+            "global": diagnostics.reference_global_count,
+            "source": diagnostics.reference_source_count,
+            "transition": diagnostics.reference_transition_count,
+        },
+        "transition_tiers": [list(row) for row in diagnostics.transition_tiers],
+        "unobserved_rows": list(diagnostics.unobserved_rows),
+    }
+
+
+def _matches_timing_diagnostics(value: object, expected: MarkovTimingDiagnostics) -> bool:
+    if type(value) is not dict:
+        return False
+    document = cast(dict[str, object], value)
+    if set(document) != {"reference_usage_counts", "transition_tiers", "unobserved_rows"}:
+        return False
+    counts = document["reference_usage_counts"]
+    if type(counts) is not dict:
+        return False
+    count_values = cast(dict[object, object], counts)
+    if (
+        len(count_values) != len(_TIMING_TIERS)
+        or any(type(name) is not str or name not in _TIMING_TIERS for name in count_values)
+        or any(type(item) is not int or item < 0 for item in count_values.values())
+    ):
+        return False
+    rows = document["transition_tiers"]
+    if type(rows) is not list or any(
+        type(row) is not list
+        or any(type(tier) is not str or tier not in _TIMING_TIERS for tier in cast(list[object], row))
+        for row in cast(list[object], rows)
+    ):
+        return False
+    unobserved = document["unobserved_rows"]
+    if type(unobserved) is not list or any(
+        type(index) is not int or index < 0 for index in cast(list[object], unobserved)
+    ):
+        return False
+    return document == _timing_diagnostics_document(expected)
 
 
 def _load_state(value: object) -> MarkovState:
@@ -772,6 +903,7 @@ class MarkovRenewalFamily:
             ],
             "thresholds": list(checked_model.thresholds),
             "time_scale": checked_model.time_scale,
+            "timing_diagnostics": _timing_diagnostics_document(checked_model.timing_diagnostics),
             "transition_rows": [list(row) for row in checked_model.transition_rows],
         }
 
@@ -786,6 +918,7 @@ class MarkovRenewalFamily:
             "states",
             "thresholds",
             "time_scale",
+            "timing_diagnostics",
             "transition_rows",
         }
         if type(data) is not dict:
@@ -859,7 +992,7 @@ class MarkovRenewalFamily:
                 if len(values) != state_count:
                     raise ValueError("transition_rows must be a K x K array")
                 transition_rows.append(values)
-            return MarkovRenewalModel(
+            model = MarkovRenewalModel(
                 alpha=alpha,
                 conditional_iats=tuple(conditional_rows),
                 global_iats=_load_float_list(payload["global_iats"], context="global_iats"),
@@ -869,6 +1002,9 @@ class MarkovRenewalFamily:
                 time_scale=time_scale,
                 transition_rows=tuple(transition_rows),
             )
+            if not _matches_timing_diagnostics(payload["timing_diagnostics"], model.timing_diagnostics):
+                raise ValueError("timing_diagnostics must exactly match the fitted sparse timing evidence")
+            return model
         except (TypeError, ValueError) as error:
             raise _invalid(
                 f"invalid fitted Markov renewal payload: {error}",

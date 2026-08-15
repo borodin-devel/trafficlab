@@ -26,6 +26,7 @@ from trafficlab.models.common import (
     FittedModel,
     GenerationResult,
     Genes,
+    ModelDiagnostics,
     ModelFamily,
     validate_fit_inputs,
 )
@@ -174,7 +175,7 @@ def _generate_candidate(
     model: FittedModel,
     seed: int,
     context: ValidatedEvaluationContext,
-) -> tuple[TraceEvent, ...]:
+) -> GenerationResult:
     family, _ = _family_and_bounds(candidate, context)
     try:
         result = family.generate(model, seed, context.window, context.trial_limits)
@@ -202,7 +203,7 @@ def _generate_candidate(
             corrective_action="increase generation limits or repair the candidate model",
             authority="primary",
         )
-    return result.events
+    return result
 
 
 def validate_candidate_similarity_preconditions(
@@ -251,7 +252,12 @@ def _score(value: object, *, name: str, seed: int) -> float:
     return value
 
 
-def _trial_from_comparison(result: ComparisonResult, *, seed: int) -> TrialResult:
+def _trial_from_comparison(
+    result: ComparisonResult,
+    *,
+    seed: int,
+    model_diagnostics: ModelDiagnostics,
+) -> TrialResult:
     aggregate_score = _score(result.aggregate_score, name="aggregate score", seed=seed)
     methods = cast(
         tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
@@ -264,7 +270,7 @@ def _trial_from_comparison(result: ComparisonResult, *, seed: int) -> TrialResul
             for name in METHOD_ORDER
         ),
     )
-    return TrialResult(seed, aggregate_score, methods)
+    return TrialResult(seed, aggregate_score, methods, model_diagnostics)
 
 
 def _evaluate_trial(
@@ -273,7 +279,8 @@ def _evaluate_trial(
     seed: int,
     context: ValidatedEvaluationContext,
 ) -> TrialResult:
-    generated = _generate_candidate(candidate, model, seed, context)
+    generation = _generate_candidate(candidate, model, seed, context)
+    generated = generation.events
     validate_candidate_similarity_preconditions(generated, context.similarity, seed=seed)
     try:
         comparison = compare_traces(context.reference, generated, context.window, context.similarity)
@@ -288,7 +295,7 @@ def _evaluate_trial(
             corrective_action=error.corrective_action,
             authority="primary",
         ) from error
-    return _trial_from_comparison(comparison, seed=seed)
+    return _trial_from_comparison(comparison, seed=seed, model_diagnostics=generation.model_diagnostics)
 
 
 def _invalid_candidate(candidate: Candidate, error: CandidateEvaluationError) -> Candidate:

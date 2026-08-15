@@ -29,11 +29,11 @@ from trafficlab.genetic.operators import ReproductionContext
 from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.genetic.types import Candidate, CandidateId
-from trafficlab.models.common import FittedModel, Genes
+from trafficlab.models.common import FittedModel, GenerationResult, Genes
 from trafficlab.models.registry import load_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
-from trafficlab.trace import TraceEvent, normalize_reference, parse_capture_metadata
+from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 pytestmark = pytest.mark.integration
 
@@ -159,7 +159,7 @@ def test_small_nondefault_three_family_population_keeps_each_family_and_common_e
         model: FittedModel,
         seed: int,
         context: ValidatedEvaluationContext,
-    ) -> tuple[TraceEvent, ...]:
+    ) -> GenerationResult:
         generation_trace.append((candidate.family, seed, context.window, context.trial_limits))
         return real_generate(candidate, model, seed, context)
 

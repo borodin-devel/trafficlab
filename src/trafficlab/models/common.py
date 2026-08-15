@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import monotonic
+from types import MappingProxyType
 from typing import Literal, Protocol, cast
 
 from trafficlab.config import FamilyName, GenerationLimits, MarkovRenewalConfig, MmppConfig, PoissonConfig
@@ -16,10 +17,29 @@ type Gene = float | int
 type Genes = tuple[Gene, ...]
 type IncompleteReason = Literal["max_packets", "max_output_bytes", "max_wall_seconds"]
 type FamilyBounds = PoissonConfig | MarkovRenewalConfig | MmppConfig
+type ModelDiagnostics = Mapping[str, int]
 
 _MINIMUM_FRAME_LENGTH = 14
 _MAXIMUM_FRAME_LENGTH = 2**32 - 1
 _INCOMPLETE_REASONS = frozenset(("max_packets", "max_output_bytes", "max_wall_seconds"))
+
+
+def freeze_model_diagnostics(value: object) -> ModelDiagnostics:
+    """Validate and freeze one finite mapping of named nonnegative counters."""
+    if not isinstance(value, Mapping):
+        raise TypeError("model diagnostics must be a mapping")
+    mapping = cast(Mapping[object, object], value)
+    items: tuple[tuple[object, object], ...] = tuple(mapping.items())
+    if any(type(name) is not str or not name for name, _count in items):
+        raise ValueError("model diagnostic names must be nonempty exact strings")
+    if any(type(count) is not int or count < 0 for _name, count in items):
+        raise ValueError("model diagnostic counts must be nonnegative exact integers")
+    checked = cast(tuple[tuple[str, int], ...], items)
+    return MappingProxyType(dict(sorted(checked)))
+
+
+def _empty_model_diagnostics() -> dict[str, int]:
+    return {}
 
 
 class FittedModel(Protocol):
@@ -133,6 +153,7 @@ class GenerationResult:
     complete: bool
     events: tuple[TraceEvent, ...]
     reason: IncompleteReason | None = None
+    model_diagnostics: ModelDiagnostics = field(default_factory=_empty_model_diagnostics)
 
     def __post_init__(self) -> None:
         if type(self.complete) is not bool:
@@ -143,6 +164,7 @@ class GenerationResult:
                 raise ValueError("complete generation must not have an incomplete reason")
         elif self.reason not in _INCOMPLETE_REASONS:
             raise ValueError("incomplete generation requires a recognized reason")
+        object.__setattr__(self, "model_diagnostics", freeze_model_diagnostics(self.model_diagnostics))
 
     def require_complete(self) -> tuple[TraceEvent, ...]:
         """Return only a full-window trace, never diagnostic partial events."""
