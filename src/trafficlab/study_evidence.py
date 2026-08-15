@@ -11,6 +11,7 @@ import stat
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 from trafficlab.errors import TrafficlabError
 
@@ -19,6 +20,21 @@ type BundleAudit = Callable[[Path], None]
 _AT_FDCWD = -100
 _RENAME_NOREPLACE = 1
 _SAFE_STUDY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*", flags=re.ASCII)
+
+
+class AcceptedBundlePublicationError(TrafficlabError):
+    """A post-rename durability failure whose accepted destination is preserved."""
+
+    def __init__(self, destination: Path, error: OSError) -> None:
+        super().__init__(
+            f"accepted evidence destination was preserved after a post-rename durability failure at "
+            f"{destination}: {error}",
+            corrective_action=(
+                "preserve and validate the accepted destination; do not retry publication under the occupied study ID"
+            ),
+        )
+        self.destination = destination
+        self.evidence_state: Literal["preserved"] = "preserved"
 
 
 def _publication_error(detail: str) -> TrafficlabError:
@@ -142,6 +158,7 @@ def publish_accepted_bundle(
         root_mode = evidence_root.lstat().st_mode
         if not stat.S_ISDIR(root_mode):
             raise OSError(errno.ENOTDIR, "evidence root is not a regular directory", evidence_root)
+        _fsync_open_path(evidence_root.parent, directory=True)
         temporary = Path(tempfile.mkdtemp(prefix=f".{checked_study_id}.", suffix=".tmp", dir=evidence_root))
     except OSError as error:
         raise _publication_error(str(error)) from error
@@ -150,7 +167,6 @@ def publish_accepted_bundle(
         shutil.copytree(checked_candidate, temporary, dirs_exist_ok=True, symlinks=True)
         _fsync_tree(temporary)
         _rename_noreplace(temporary, destination)
-        _fsync_open_path(evidence_root, directory=True)
     except OSError as error:
         cleanup_error = _cleanup_temporary(temporary)
         if error.errno in {errno.EEXIST, errno.ENOTEMPTY}:
@@ -163,5 +179,10 @@ def publish_accepted_bundle(
         if cleanup_error is not None:
             detail = f"{detail}; temporary cleanup also failed: {cleanup_error}"
         raise _publication_error(detail) from error
+
+    try:
+        _fsync_open_path(evidence_root, directory=True)
+    except OSError as error:
+        raise AcceptedBundlePublicationError(destination, error) from error
 
     return destination

@@ -85,6 +85,70 @@ def test_audit_runs_before_any_destination_or_temporary_sibling_exists(tmp_path:
     assert list(evidence_root.iterdir()) == [destination]
 
 
+def test_first_publication_fsyncs_parent_before_staging_and_root_after_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    operations: list[str] = []
+    original_fsync_open_path = study_evidence._fsync_open_path  # pyright: ignore[reportPrivateUsage]
+    original_fsync_tree = study_evidence._fsync_tree  # pyright: ignore[reportPrivateUsage]
+    original_rename = study_evidence._rename_noreplace  # pyright: ignore[reportPrivateUsage]
+
+    def record_fsync(path: Path, *, directory: bool) -> None:
+        if path == evidence_root.parent:
+            operations.append("parent_fsync")
+        elif path == evidence_root:
+            operations.append("root_fsync")
+        original_fsync_open_path(path, directory=directory)
+
+    def record_tree(root: Path) -> None:
+        operations.append("tree_fsync")
+        original_fsync_tree(root)
+
+    def record_rename(source: Path, destination: Path) -> None:
+        operations.append("rename")
+        original_rename(source, destination)
+
+    monkeypatch.setattr(study_evidence, "_fsync_open_path", record_fsync)
+    monkeypatch.setattr(study_evidence, "_fsync_tree", record_tree)
+    monkeypatch.setattr(study_evidence, "_rename_noreplace", record_rename)
+
+    publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    assert operations == ["parent_fsync", "tree_fsync", "rename", "root_fsync"]
+
+
+def test_post_rename_root_fsync_failure_reports_preserved_exact_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    destination = evidence_root / "study-1"
+    expected = _tree_bytes(candidate)
+    original_fsync_open_path = study_evidence._fsync_open_path  # pyright: ignore[reportPrivateUsage]
+
+    def fail_root_fsync(path: Path, *, directory: bool) -> None:
+        if path == evidence_root:
+            raise OSError(errno.EIO, "injected post-rename evidence-root fsync failure")
+        original_fsync_open_path(path, directory=directory)
+
+    monkeypatch.setattr(study_evidence, "_fsync_open_path", fail_root_fsync)
+
+    with pytest.raises(TrafficlabError) as error:
+        publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    assert getattr(error.value, "evidence_state", None) == "preserved"
+    assert getattr(error.value, "destination", None) == destination
+    assert error.value.corrective_action == (
+        "preserve and validate the accepted destination; do not retry publication under the occupied study ID"
+    )
+    assert _tree_bytes(destination) == expected
+    assert _temporary_siblings(evidence_root, "study-1") == []
+
+
 def test_failed_audit_preserves_its_exception_and_publishes_nothing(tmp_path: Path) -> None:
     candidate = _candidate(tmp_path)
     evidence_root = tmp_path / "evidence"
