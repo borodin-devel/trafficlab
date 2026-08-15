@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from trafficlab.errors import FailureOutcome, TrafficlabError, append_failure_outcome
+from trafficlab.errors import FailureOutcome, TrafficlabError, append_failure_outcome, attach_failure_outcome
 
 
 def _outcome(*, kind: str = "metric_infeasible", stage: str = "compare") -> FailureOutcome:
@@ -109,7 +109,7 @@ def test_trafficlab_error_retains_primary_and_secondary_outcomes_in_order() -> N
     assert error.failure_outcomes == (primary, secondary)
 
 
-def test_trafficlab_error_rejects_invalid_ordered_payloads_and_append_can_establish_primary() -> None:
+def test_trafficlab_error_rejects_invalid_ordered_payloads_and_append_requires_a_primary() -> None:
     primary = _outcome()
     secondary = FailureOutcome(
         kind="cleanup_failed",
@@ -125,12 +125,53 @@ def test_trafficlab_error_rejects_invalid_ordered_payloads_and_append_can_establ
         TrafficlabError(
             "invalid outcomes", corrective_action="repair", failure_outcomes=(cast(FailureOutcome, object()),)
         )
-    with pytest.raises(ValueError, match="first"):
+    with pytest.raises(TypeError, match="failure_outcome"):
+        TrafficlabError("invalid primary", corrective_action="repair", failure_outcome=cast(FailureOutcome, object()))
+    with pytest.raises(ValueError, match="match"):
         TrafficlabError(
             "mismatched outcomes", corrective_action="repair", failure_outcome=primary, failure_outcomes=(secondary,)
         )
-    error = TrafficlabError("primary later", corrective_action="repair")
-    append_failure_outcome(error, primary)
-    assert error.failure_outcomes == (primary,)
+    with pytest.raises(ValueError, match="first"):
+        TrafficlabError("secondary first", corrective_action="repair", failure_outcomes=(secondary,))
+    with pytest.raises(ValueError, match="secondary"):
+        TrafficlabError(
+            "later primary", corrective_action="repair", failure_outcomes=(primary, primary)
+        )
+    error = TrafficlabError("missing primary", corrective_action="repair")
+    with pytest.raises(ValueError, match="primary"):
+        append_failure_outcome(error, secondary)
+    with pytest.raises(ValueError, match="primary"):
+        append_failure_outcome(error, primary)
+    error = TrafficlabError("primary established", corrective_action="repair", failure_outcome=primary)
+    with pytest.raises(ValueError, match="secondary"):
+        append_failure_outcome(error, primary)
     with pytest.raises(TypeError, match="outcome"):
         append_failure_outcome(error, cast(FailureOutcome, object()))
+
+
+def test_attach_failure_outcome_cannot_establish_secondary_authority() -> None:
+    error = TrafficlabError("missing outcome", corrective_action="repair")
+
+    with pytest.raises(ValueError, match="primary"):
+        attach_failure_outcome(
+            error,
+            kind="metric_infeasible",
+            stage="compare",
+            affected_evidence="similarity.json",
+            evidence_state="not_published",
+            authority="secondary",
+        )
+
+    primary = _outcome()
+    established = TrafficlabError("established", corrective_action="repair", failure_outcome=primary)
+    assert (
+        attach_failure_outcome(
+            established,
+            kind="publication_failed",
+            stage="compare",
+            affected_evidence="similarity.json",
+            evidence_state="not_published",
+        )
+        is established
+    )
+    assert established.failure_outcomes == (primary,)

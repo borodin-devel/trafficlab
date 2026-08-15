@@ -253,6 +253,20 @@ def _best_model_publication_error(
     return TrafficlabError(detail, corrective_action=action, exit_code=exit_code, failure_outcomes=outcomes)
 
 
+def _fsync_published_best_model(path: Path) -> None:
+    """Classify a post-link durability failure after the destination already exists."""
+    try:
+        _fsync_containing_directory(path)
+    except TrafficlabError as error:
+        raise attach_failure_outcome(
+            error,
+            kind="publication_failed",
+            stage="fit",
+            affected_evidence="best_model.json",
+            evidence_state="preserved",
+        ) from error
+
+
 def _publisher_outcomes(
     error: TrafficlabError | OSError,
     *,
@@ -328,9 +342,9 @@ def publish_best_model(path: Path, content: bytes) -> BestModelPublication:
                     corrective_action="retry fitting after verifying the run directory is stable",
                 ) from error
             publication = winner
-            _fsync_containing_directory(path)
+            _fsync_published_best_model(path)
         else:
-            _fsync_containing_directory(path)
+            _fsync_published_best_model(path)
     except BaseException as error:
         cleanup_error: OSError | None = None
         if temporary_path is not None:

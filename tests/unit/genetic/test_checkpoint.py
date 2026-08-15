@@ -531,6 +531,74 @@ def test_checkpoint_round_trip_preserves_candidate_failure_scientific_diagnostic
         parse_checkpoint(_encoded(document), COMPATIBILITY)
 
 
+@pytest.mark.parametrize(
+    ("kind", "seed", "detail", "affected_evidence", "corrective_action"),
+    [
+        ("repair", None, "legacy repair", "candidate genes", "repair the candidate genes"),
+        ("fit", None, "legacy fit", "candidate model", "repair the candidate model"),
+        ("generation", 7, "legacy generation", "candidate trace", "repair the candidate model or generation settings"),
+        (
+            "incomplete_generation",
+            7,
+            "legacy incomplete generation",
+            "candidate trace",
+            "increase generation limits or repair the candidate model",
+        ),
+        (
+            "similarity_precondition",
+            7,
+            "legacy similarity precondition",
+            "candidate similarity",
+            "repair the candidate model to generate sufficient comparable events",
+        ),
+        (
+            "nonfinite_score",
+            7,
+            "legacy nonfinite score",
+            "candidate similarity",
+            "repair the candidate model or similarity computation",
+        ),
+    ],
+)
+def test_checkpoint_derives_complete_provenance_for_legacy_candidate_failure(
+    kind: str,
+    seed: int | None,
+    detail: str,
+    affected_evidence: str,
+    corrective_action: str,
+) -> None:
+    """A same-version three-field invalid diagnostic upgrades deterministically when read."""
+    document = _decoded()
+    invalid = cast(dict[str, object], cast(list[dict[str, object]], document["population"])[1]["invalid"])
+    invalid.clear()
+    invalid.update({"kind": kind, "seed": seed, "detail": detail})
+    legacy = _encoded(document)
+
+    loaded = parse_checkpoint(legacy, COMPATIBILITY)
+
+    assert loaded.population[1].invalid == CandidateFailure(
+        cast(Any, kind),
+        seed,
+        detail,
+        stage="fit",
+        affected_evidence=affected_evidence,
+        evidence_state="diagnostic_only",
+        corrective_action=corrective_action,
+        authority="primary",
+    )
+    rewritten = _decoded(render_checkpoint(loaded))
+    assert cast(list[dict[str, object]], rewritten["population"])[1]["invalid"] == {
+        "kind": kind,
+        "seed": seed,
+        "detail": detail,
+        "stage": "fit",
+        "affected_evidence": affected_evidence,
+        "evidence_state": "diagnostic_only",
+        "corrective_action": corrective_action,
+        "authority": "primary",
+    }
+
+
 def test_checkpoint_rejects_non_null_gaussian_cache_and_duplicate_candidate_ids() -> None:
     with pytest.raises(TrafficlabError, match="gauss_next"):
         parse_checkpoint(_changed(("rng", "state", "gauss_next"), 0.5), COMPATIBILITY)

@@ -1187,9 +1187,15 @@ def test_best_model_directory_durability_failure_preserves_the_published_winner(
 
     monkeypatch.setattr(artifacts.os, "open", fail_directory_open)
 
-    with pytest.raises(TrafficlabError, match="directory durability failure.*destination may be present"):
+    with pytest.raises(TrafficlabError, match="directory durability failure.*destination may be present") as caught:
         publish_best_model(destination, content)
 
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == "publication_failed"
+    assert outcome.stage == "fit"
+    assert outcome.affected_evidence == "best_model.json"
+    assert outcome.evidence_state == "preserved"
     assert destination.read_bytes() == content
     assert list(tmp_path.glob(".best_model.json.*.tmp")) == []
 

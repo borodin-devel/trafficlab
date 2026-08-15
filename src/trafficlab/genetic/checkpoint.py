@@ -41,6 +41,49 @@ _COORDINATE_KINDS = frozenset(("linear", "log", "integer"))
 _FAILURE_KINDS = frozenset(
     ("repair", "fit", "generation", "incomplete_generation", "similarity_precondition", "nonfinite_score")
 )
+_FAILURE_KEYS = (
+    "kind",
+    "seed",
+    "detail",
+    "stage",
+    "affected_evidence",
+    "evidence_state",
+    "corrective_action",
+    "authority",
+)
+_LEGACY_FAILURE_KEYS = ("kind", "seed", "detail")
+_LEGACY_FAILURE_PROVENANCE: dict[str, tuple[str, str, EvidenceState, str, FailureAuthority]] = {
+    "repair": ("fit", "candidate genes", "diagnostic_only", "repair the candidate genes", "primary"),
+    "fit": ("fit", "candidate model", "diagnostic_only", "repair the candidate model", "primary"),
+    "generation": (
+        "fit",
+        "candidate trace",
+        "diagnostic_only",
+        "repair the candidate model or generation settings",
+        "primary",
+    ),
+    "incomplete_generation": (
+        "fit",
+        "candidate trace",
+        "diagnostic_only",
+        "increase generation limits or repair the candidate model",
+        "primary",
+    ),
+    "similarity_precondition": (
+        "fit",
+        "candidate similarity",
+        "diagnostic_only",
+        "repair the candidate model to generate sufficient comparable events",
+        "primary",
+    ),
+    "nonfinite_score": (
+        "fit",
+        "candidate similarity",
+        "diagnostic_only",
+        "repair the candidate model or similarity computation",
+        "primary",
+    ),
+}
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _TERMINAL_REASONS = frozenset(("running", "hard_limit", "early_stop"))
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -702,19 +745,18 @@ def _parse_trial(value: object) -> TrialResult:
     )
 
 
+def _is_legacy_failure_document(value: object) -> bool:
+    if type(value) is not dict:
+        return False
+    document = cast(dict[object, object], value)
+    return all(type(key) is str for key in document) and set(document) == set(_LEGACY_FAILURE_KEYS)
+
+
 def _parse_failure(value: object) -> CandidateFailure:
+    legacy = _is_legacy_failure_document(value)
     document = _exact_object(
         value,
-        (
-            "kind",
-            "seed",
-            "detail",
-            "stage",
-            "affected_evidence",
-            "evidence_state",
-            "corrective_action",
-            "authority",
-        ),
+        _LEGACY_FAILURE_KEYS if legacy else _FAILURE_KEYS,
         name="candidate invalid diagnostic",
     )
     kind_value = _string(document["kind"], name="candidate failure kind")
@@ -722,10 +764,23 @@ def _parse_failure(value: object) -> CandidateFailure:
         raise ValueError("candidate failure kind is not recognized")
     seed_value = document["seed"]
     seed = None if seed_value is None else _integer(seed_value, name="candidate failure seed")
+    detail = _string(document["detail"], name="candidate failure detail", nonempty=True)
+    if legacy:
+        stage, affected_evidence, evidence_state, corrective_action, authority = _LEGACY_FAILURE_PROVENANCE[kind_value]
+        return CandidateFailure(
+            kind_value,
+            seed,
+            detail,
+            stage=stage,
+            affected_evidence=affected_evidence,
+            evidence_state=evidence_state,
+            corrective_action=corrective_action,
+            authority=authority,
+        )
     return CandidateFailure(
         kind_value,
         seed,
-        _string(document["detail"], name="candidate failure detail", nonempty=True),
+        detail,
         stage=_string(document["stage"], name="candidate failure stage", nonempty=True),
         affected_evidence=_string(
             document["affected_evidence"], name="candidate failure affected_evidence", nonempty=True
@@ -1255,7 +1310,17 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         )
         _validate_state(state)
         if render_checkpoint(state) != content:
-            raise ValueError("checkpoint JSON must use the canonical sorted compact encoding with one final newline")
+            population = _array(document["population"], name="population")
+            accepts_legacy = any(
+                type(candidate) is dict
+                and _is_legacy_failure_document(cast(dict[str, object], candidate).get("invalid"))
+                for candidate in population
+            )
+            legacy_content = (
+                f"{json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False)}\n".encode()
+            )
+            if not accepts_legacy or legacy_content != content:
+                raise ValueError("checkpoint JSON must use the canonical sorted compact encoding with one final newline")
         return state
     except TrafficlabError:
         raise

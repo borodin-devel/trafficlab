@@ -162,6 +162,16 @@ def failure_outcome_from_error(
     )
 
 
+def _validate_failure_outcome_order(outcomes: tuple[FailureOutcome, ...]) -> None:
+    """Require one primary outcome followed only by ordered secondary evidence."""
+    if not outcomes:
+        return
+    if outcomes[0].authority != "primary":
+        raise ValueError("the first failure outcome must have primary authority")
+    if any(outcome.authority != "secondary" for outcome in outcomes[1:]):
+        raise ValueError("later failure outcomes must have secondary authority")
+
+
 class TrafficlabError(Exception):
     """An expected trafficlab failure with a suggested corrective action."""
 
@@ -188,7 +198,8 @@ class TrafficlabError(Exception):
         if outcomes is None:
             outcomes = () if failure_outcome is None else (failure_outcome,)
         elif failure_outcome is not None and (not outcomes or outcomes[0] != failure_outcome):
-            raise ValueError("failure_outcome must be the first failure_outcomes item")
+            raise ValueError("failure_outcome must match the first failure_outcomes item")
+        _validate_failure_outcome_order(outcomes)
         self.failure_outcomes = outcomes
         self.failure_outcome = outcomes[0] if outcomes else None
 
@@ -205,6 +216,8 @@ def attach_failure_outcome(
 ) -> TrafficlabError:
     """Attach one owning-boundary outcome without changing an established error's interface."""
     if error.failure_outcome is None:
+        if authority != "primary":
+            raise ValueError("an attached first failure outcome must have primary authority")
         outcome = failure_outcome_from_error(
             error,
             kind=kind,
@@ -224,10 +237,11 @@ def append_failure_outcome(error: TrafficlabError, outcome: FailureOutcome) -> T
     if type(outcome) is not FailureOutcome:
         raise TypeError("outcome must be a FailureOutcome")
     if error.failure_outcome is None:
-        error.failure_outcomes = (outcome,)
-        error.failure_outcome = outcome
-    else:
-        error.failure_outcomes = (*error.failure_outcomes, outcome)
+        raise ValueError("secondary failure evidence requires an existing primary outcome")
+    if outcome.authority != "secondary":
+        raise ValueError("appended failure evidence must have secondary authority")
+    _validate_failure_outcome_order(error.failure_outcomes)
+    error.failure_outcomes = (*error.failure_outcomes, outcome)
     return error
 
 

@@ -22,6 +22,7 @@ from trafficlab.artifacts import (
     rollback_capture_publication,
 )
 from trafficlab.capture_policy import (
+    CaptureFailureOrigin,
     CaptureOutcome,
     EventObservation,
     FailureKind,
@@ -40,7 +41,14 @@ from trafficlab.cleanup import CleanupCompose, cleanup_project
 from trafficlab.compose import ComposePaths, write_production_compose
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.docker_cli import CommandResult, DockerCompose, ProjectInventory, ServiceState
-from trafficlab.errors import DeadlineExceededError, FailureAuthority, FailureOutcome, TrafficlabError
+from trafficlab.errors import (
+    DeadlineExceededError,
+    FailureAuthority,
+    FailureOutcome,
+    TrafficlabError,
+    append_failure_outcome,
+    failure_outcome_from_error,
+)
 from trafficlab.preflight import DockerPreflight, PreparedExperiment, run_preflight
 from trafficlab.trace import load_capture_metadata
 
@@ -310,11 +318,16 @@ def _record_flush_expiry(
     if not stage_expired and not total_expired:
         return None
     if stage_expired:
-        outcome = record_stage_timeout(outcome, "capture flush timed out")
+        outcome = record_stage_timeout(
+            outcome,
+            "capture flush timed out",
+            origin=CaptureFailureOrigin.FLUSH,
+        )
     if total_expired:
         outcome = record_total_timeout(
             outcome,
             "capture total-run deadline expired during flush, so capture could not be killed",
+            origin=CaptureFailureOrigin.FLUSH,
         )
     return outcome
 
@@ -455,6 +468,7 @@ def _capture_failure_outcome(
     detail: str,
     *,
     status: int | None,
+    origin: CaptureFailureOrigin,
     authority: FailureAuthority,
     all_kinds: tuple[FailureKind, ...],
     natural_target_succeeded: bool,
@@ -464,7 +478,7 @@ def _capture_failure_outcome(
     has_capture_and_total = (
         FailureKind.CAPTURE_STOPPED in all_kinds and FailureKind.TOTAL_TIMEOUT in all_kinds
     )
-    is_flush_timeout = kind is FailureKind.FLUSH_FAILED or "flush" in detail.lower()
+    is_flush_timeout = kind is FailureKind.FLUSH_FAILED or origin is CaptureFailureOrigin.FLUSH
     if kind in (FailureKind.TARGET_NONZERO_EXIT, FailureKind.NATURAL_TARGET_STATUS, FailureKind.INDUCED_TARGET_STATUS):
         outcome_kind, evidence, state = "target_failed", "capture pair", "diagnostic_only"
         if authority == "primary" and has_capture_and_total:
@@ -533,8 +547,8 @@ def _capture_failure_outcomes(
     """Render one primary and every retained secondary capture failure in existing discovery order."""
     if outcome.primary_kind is None or outcome.primary_detail is None:
         raise ValueError("capture failure outcomes require an existing primary failure")
-    all_details = ((outcome.primary_kind, outcome.primary_detail, outcome.primary_status),) + tuple(
-        (item.kind, item.detail, item.status) for item in outcome.secondary_details
+    all_details = ((outcome.primary_kind, outcome.primary_detail, outcome.primary_status, outcome.primary_origin),) + tuple(
+        (item.kind, item.detail, item.status, item.origin) for item in outcome.secondary_details
     )
     rendered_details = tuple(
         item
@@ -545,11 +559,12 @@ def _capture_failure_outcomes(
     natural_target_succeeded = any(
         item.kind is FailureKind.NATURAL_TARGET_STATUS and item.status == 0 for item in outcome.secondary_details
     )
-    primary_kind, primary_detail, primary_status = rendered_details[0]
+    primary_kind, primary_detail, primary_status, primary_origin = rendered_details[0]
     primary = _capture_failure_outcome(
         primary_kind,
         primary_detail,
         status=capture_status if primary_kind is FailureKind.CAPTURE_STOPPED else primary_status,
+        origin=primary_origin,
         authority="primary",
         all_kinds=all_kinds,
         natural_target_succeeded=natural_target_succeeded,
@@ -559,11 +574,12 @@ def _capture_failure_outcomes(
             kind,
             detail,
             status=capture_status if kind is FailureKind.CAPTURE_STOPPED else status,
+            origin=origin,
             authority="secondary",
             all_kinds=all_kinds,
             natural_target_succeeded=natural_target_succeeded,
         )
-        for kind, detail, status in rendered_details[1:]
+        for kind, detail, status, origin in rendered_details[1:]
     )
     return primary, secondary
 
@@ -798,7 +814,11 @@ def capture_prepared_experiment(
                                 clock=clock,
                             )
                         except DeadlineExceededError as error:
-                            outcome = record_total_timeout(outcome, str(error))
+                            outcome = record_total_timeout(
+                                outcome,
+                                str(error),
+                                origin=CaptureFailureOrigin.VALIDATION,
+                            )
                         except TrafficlabError as error:
                             outcome = record_validation_failure(outcome, str(error))
                         else:
@@ -897,7 +917,11 @@ def capture_prepared_experiment(
                             clock=clock,
                         )
                     except DeadlineExceededError as error:
-                        outcome = record_total_timeout(outcome, str(error))
+                        outcome = record_total_timeout(
+                            outcome,
+                            str(error),
+                            origin=CaptureFailureOrigin.VALIDATION,
+                        )
                     except TrafficlabError as error:
                         outcome = record_validation_failure(outcome, str(error))
                     else:
@@ -938,7 +962,11 @@ def capture_prepared_experiment(
                         clock=clock,
                     )
                 except DeadlineExceededError as error:
-                    outcome = record_total_timeout(outcome, str(error))
+                    outcome = record_total_timeout(
+                        outcome,
+                        str(error),
+                        origin=CaptureFailureOrigin.VALIDATION,
+                    )
                 except TrafficlabError as error:
                     outcome = record_validation_failure(outcome, str(error))
                 else:
@@ -980,23 +1008,37 @@ def capture_prepared_experiment(
             capture_state.exit_code if capture_state is not None and capture_state.state == "exited" else None
         )
         primary_outcome, secondary_outcomes = _capture_failure_outcomes(outcome, capture_status=capture_status)
-        _append_event(
-            run_directory,
-            "capture_failed",
-            detail=outcome.primary_detail,
-            failure_kind=outcome.primary_kind.value,
-            failure_outcome=primary_outcome.as_dict(),
-            primary_status=outcome.primary_status,
-            secondary_details=[item.detail for item in outcome.secondary_details],
-            secondary_failures=[
-                {"detail": item.detail, "kind": item.kind.value, "status": item.status}
-                for item in outcome.secondary_details
-            ],
-            secondary_outcomes=[item.as_dict() for item in secondary_outcomes],
-        )
         error = _outcome_error(outcome)
         error.failure_outcomes = (primary_outcome, *secondary_outcomes)
         error.failure_outcome = primary_outcome
+        try:
+            _append_event(
+                run_directory,
+                "capture_failed",
+                detail=outcome.primary_detail,
+                failure_kind=outcome.primary_kind.value,
+                failure_outcome=primary_outcome.as_dict(),
+                primary_status=outcome.primary_status,
+                secondary_details=[item.detail for item in outcome.secondary_details],
+                secondary_failures=[
+                    {"detail": item.detail, "kind": item.kind.value, "status": item.status}
+                    for item in outcome.secondary_details
+                ],
+                secondary_outcomes=[item.as_dict() for item in secondary_outcomes],
+            )
+        except TrafficlabError as logging_error:
+            append_failure_outcome(
+                error,
+                failure_outcome_from_error(
+                    logging_error,
+                    kind="publication_failed",
+                    stage="capture",
+                    affected_evidence="run.log",
+                    evidence_state="not_published",
+                    authority="secondary",
+                ),
+            )
+            error.args = (f"{error}; additionally could not append capture failure to run.log: {logging_error}",)
         raise error
     if result is None:
         raise TrafficlabError(

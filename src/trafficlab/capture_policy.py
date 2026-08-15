@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -64,6 +64,14 @@ class FailureKind(StrEnum):
     CLEANUP_FAILED = "cleanup_failed"
 
 
+class CaptureFailureOrigin(StrEnum):
+    """Capture phase that produced an otherwise generic failure kind."""
+
+    WORKLOAD = "workload"
+    FLUSH = "flush"
+    VALIDATION = "validation"
+
+
 def _require_detail(detail: object) -> str:
     if type(detail) is not str:
         raise TypeError("detail must be a nonempty string")
@@ -85,10 +93,13 @@ class FailureDetail:
     kind: FailureKind
     detail: str
     status: int | None = None
+    origin: CaptureFailureOrigin = field(default=CaptureFailureOrigin.WORKLOAD, kw_only=True)
 
     def __post_init__(self) -> None:
         if type(self.kind) is not FailureKind:
             raise TypeError("failure kind must be a FailureKind")
+        if type(self.origin) is not CaptureFailureOrigin:
+            raise TypeError("failure origin must be a CaptureFailureOrigin")
         _require_detail(self.detail)
         status_kinds = (
             FailureKind.TARGET_NONZERO_EXIT,
@@ -110,6 +121,7 @@ class CaptureOutcome:
     primary_kind: FailureKind | None = None
     primary_detail: str | None = None
     primary_status: int | None = None
+    primary_origin: CaptureFailureOrigin = field(default=CaptureFailureOrigin.WORKLOAD, kw_only=True)
     secondary_details: tuple[FailureDetail, ...] = ()
 
     def __post_init__(self) -> None:
@@ -120,11 +132,15 @@ class CaptureOutcome:
         if self.primary_kind is None:
             if self.primary_detail is not None or self.primary_status is not None:
                 raise ValueError("primary detail and status require a primary kind")
+            if self.primary_origin is not CaptureFailureOrigin.WORKLOAD:
+                raise ValueError("primary origin requires a primary failure")
             if self.secondary_details:
                 raise ValueError("secondary details require a primary failure")
         else:
             if type(self.primary_kind) is not FailureKind:
                 raise TypeError("primary_kind must be a FailureKind or None")
+            if type(self.primary_origin) is not CaptureFailureOrigin:
+                raise TypeError("primary_origin must be a CaptureFailureOrigin")
             if self.primary_detail is None:
                 raise ValueError("a primary failure requires a nonempty detail")
             _require_detail(self.primary_detail)
@@ -144,6 +160,7 @@ def _record_failure(
     detail: str,
     *,
     status: int | None = None,
+    origin: CaptureFailureOrigin = CaptureFailureOrigin.WORKLOAD,
 ) -> CaptureOutcome:
     validated_detail = _require_detail(detail)
     if status is not None:
@@ -153,13 +170,15 @@ def _record_failure(
             primary_kind=kind,
             primary_detail=validated_detail,
             primary_status=status,
+            primary_origin=origin,
             secondary_details=outcome.secondary_details,
         )
-    secondary = FailureDetail(kind, validated_detail, status)
+    secondary = FailureDetail(kind, validated_detail, status, origin=origin)
     return CaptureOutcome(
         primary_kind=outcome.primary_kind,
         primary_detail=outcome.primary_detail,
         primary_status=outcome.primary_status,
+        primary_origin=outcome.primary_origin,
         secondary_details=(*outcome.secondary_details, secondary),
     )
 
@@ -191,6 +210,7 @@ def record_natural_target_observation(outcome: CaptureOutcome, status: int) -> C
         primary_kind=outcome.primary_kind,
         primary_detail=outcome.primary_detail,
         primary_status=outcome.primary_status,
+        primary_origin=outcome.primary_origin,
         secondary_details=(*outcome.secondary_details, detail),
     )
 
@@ -215,6 +235,7 @@ def record_induced_target_status(outcome: CaptureOutcome, status: int) -> Captur
         primary_kind=outcome.primary_kind,
         primary_detail=outcome.primary_detail,
         primary_status=outcome.primary_status,
+        primary_origin=outcome.primary_origin,
         secondary_details=(*outcome.secondary_details, detail),
     )
 
@@ -224,9 +245,14 @@ def record_capture_stopped(outcome: CaptureOutcome, detail: str) -> CaptureOutco
     return _record_failure(outcome, FailureKind.CAPTURE_STOPPED, detail)
 
 
-def record_stage_timeout(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
+def record_stage_timeout(
+    outcome: CaptureOutcome,
+    detail: str,
+    *,
+    origin: CaptureFailureOrigin = CaptureFailureOrigin.WORKLOAD,
+) -> CaptureOutcome:
     """Record a stage-specific deadline expiry."""
-    return _record_failure(outcome, FailureKind.STAGE_TIMEOUT, detail)
+    return _record_failure(outcome, FailureKind.STAGE_TIMEOUT, detail, origin=origin)
 
 
 def record_interruption(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
@@ -234,19 +260,24 @@ def record_interruption(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
     return _record_failure(outcome, FailureKind.USER_INTERRUPTION, detail)
 
 
-def record_total_timeout(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
+def record_total_timeout(
+    outcome: CaptureOutcome,
+    detail: str,
+    *,
+    origin: CaptureFailureOrigin = CaptureFailureOrigin.WORKLOAD,
+) -> CaptureOutcome:
     """Record total-run deadline expiry."""
-    return _record_failure(outcome, FailureKind.TOTAL_TIMEOUT, detail)
+    return _record_failure(outcome, FailureKind.TOTAL_TIMEOUT, detail, origin=origin)
 
 
 def record_flush_failure(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
     """Record a failure while flushing the capture service."""
-    return _record_failure(outcome, FailureKind.FLUSH_FAILED, detail)
+    return _record_failure(outcome, FailureKind.FLUSH_FAILED, detail, origin=CaptureFailureOrigin.FLUSH)
 
 
 def record_validation_failure(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:
     """Record capture parsing or validation failure."""
-    return _record_failure(outcome, FailureKind.VALIDATION_FAILED, detail)
+    return _record_failure(outcome, FailureKind.VALIDATION_FAILED, detail, origin=CaptureFailureOrigin.VALIDATION)
 
 
 def record_cleanup_failure(outcome: CaptureOutcome, detail: str) -> CaptureOutcome:

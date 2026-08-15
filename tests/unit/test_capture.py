@@ -271,6 +271,37 @@ def test_readiness_log_jsonl_failure_is_ordered_secondary_evidence(
     ]
 
 
+def test_capture_failure_log_append_preserves_the_existing_primary_outcome(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    experiment_path, _prepared_result = _prepared(valid_config_data, tmp_path, monkeypatch)
+    docker = _Docker("target_nonzero")
+    original_append = capture_module._append_event  # pyright: ignore[reportPrivateUsage]
+
+    def fail_capture_failure_record(*args: object, **kwargs: object) -> None:
+        if args[1] == "capture_failed":
+            raise TrafficlabError("injected final run-log failure", corrective_action="repair run log")
+        original_append(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(capture_module, "_append_event", fail_capture_failure_record)
+
+    with pytest.raises(TrafficlabError, match="target exited naturally with status 23") as caught:
+        capture_experiment(experiment_path, docker=docker, clock=_Clock(docker), interruption=lambda: False)
+
+    assert caught.value.exit_code == 23
+    assert "could not append capture failure to run.log: injected final run-log failure" in str(caught.value)
+    outcomes = caught.value.failure_outcomes
+    assert len(outcomes) == 2
+    primary = outcomes[0]
+    secondary = outcomes[1]
+    assert primary.kind == "target_failed"
+    assert primary.authority == "primary"
+    assert primary.evidence_state == "diagnostic_only"
+    assert secondary.kind == "publication_failed"
+    assert secondary.affected_evidence == "run.log"
+    assert secondary.authority == "secondary"
+
+
 def test_natural_nonzero_status_is_exact_primary_and_output_is_diagnostic_only(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

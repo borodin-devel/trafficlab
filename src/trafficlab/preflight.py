@@ -898,8 +898,10 @@ def run_preflight(
         )
 
     docker_report = check_docker(prepared.config, docker, deadline=deadline, clock=clock)
-    findings = list(prepared.report.findings) + list(docker_report.findings)
-    for finding in docker_report.findings:
+    prepared_findings = list(prepared.report.findings)
+    docker_findings = list(docker_report.findings)
+    findings = [*prepared_findings, *docker_findings]
+    for index, finding in enumerate(docker_findings):
         try:
             record: dict[str, object] = {
                 "detail": finding.detail,
@@ -909,7 +911,9 @@ def run_preflight(
                 "stage": "preflight",
             }
             if not finding.ok:
-                earlier_failure = any(not previous.ok for previous in findings)
+                earlier_failure = any(
+                    not previous.ok for previous in (*prepared_findings, *docker_findings[:index])
+                )
                 authority: FailureAuthority = (
                     "secondary" if finding.name == "probe_cleanup" and earlier_failure else "primary"
                 )
@@ -954,7 +958,7 @@ def run_preflight(
             secondary = tuple(
                 _preflight_failure_outcome(finding, authority="secondary")
                 for finding in failed_findings[1:]
-                if finding.name == "probe_cleanup"
+                if finding.name in {"probe_cleanup", "run_log"}
             )
             error.failure_outcomes = (primary, *secondary)
             error.failure_outcome = primary
