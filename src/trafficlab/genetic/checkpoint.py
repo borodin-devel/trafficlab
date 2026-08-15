@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from trafficlab.artifacts import atomic_replace as _atomic_replace
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, SimilarityConfig
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import EvidenceState, FailureAuthority, TrafficlabError
 from trafficlab.genetic.coordinates import GeneCoordinate
 from trafficlab.genetic.types import (
     METHOD_ORDER,
@@ -703,7 +703,20 @@ def _parse_trial(value: object) -> TrialResult:
 
 
 def _parse_failure(value: object) -> CandidateFailure:
-    document = _exact_object(value, ("kind", "seed", "detail"), name="candidate invalid diagnostic")
+    document = _exact_object(
+        value,
+        (
+            "kind",
+            "seed",
+            "detail",
+            "stage",
+            "affected_evidence",
+            "evidence_state",
+            "corrective_action",
+            "authority",
+        ),
+        name="candidate invalid diagnostic",
+    )
     kind_value = _string(document["kind"], name="candidate failure kind")
     if kind_value not in _FAILURE_KINDS:
         raise ValueError("candidate failure kind is not recognized")
@@ -713,6 +726,21 @@ def _parse_failure(value: object) -> CandidateFailure:
         kind_value,
         seed,
         _string(document["detail"], name="candidate failure detail", nonempty=True),
+        stage=_string(document["stage"], name="candidate failure stage", nonempty=True),
+        affected_evidence=_string(
+            document["affected_evidence"], name="candidate failure affected_evidence", nonempty=True
+        ),
+        evidence_state=cast(
+            EvidenceState,
+            _string(document["evidence_state"], name="candidate failure evidence_state", nonempty=True),
+        ),
+        corrective_action=_string(
+            document["corrective_action"], name="candidate failure corrective_action", nonempty=True
+        ),
+        authority=cast(
+            FailureAuthority,
+            _string(document["authority"], name="candidate failure authority", nonempty=True),
+        ),
     )
 
 
@@ -1117,7 +1145,18 @@ def _candidate_document(candidate: Candidate) -> dict[str, object]:
         "status": candidate.status,
         "fitness": candidate.fitness,
         "trials": [_trial_document(trial) for trial in candidate.trials],
-        "invalid": None if invalid is None else {"kind": invalid.kind, "seed": invalid.seed, "detail": invalid.detail},
+        "invalid": None
+        if invalid is None
+        else {
+            "kind": invalid.kind,
+            "seed": invalid.seed,
+            "detail": invalid.detail,
+            "stage": invalid.stage,
+            "affected_evidence": invalid.affected_evidence,
+            "evidence_state": invalid.evidence_state,
+            "corrective_action": invalid.corrective_action,
+            "authority": invalid.authority,
+        },
         "duplicate_diagnostics": [
             {"attempt": item.attempt, "outcome": item.outcome, "detail": item.detail}
             for item in candidate.duplicate_diagnostics

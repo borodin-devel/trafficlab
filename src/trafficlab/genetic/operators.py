@@ -99,7 +99,16 @@ def _missing_parent_genes(identifier: CandidateId, family: FamilyName) -> Candid
         "invalid",
         0.0,
         (),
-        CandidateFailure("repair", None, "selected parent has no canonical genes"),
+        CandidateFailure(
+            "repair",
+            None,
+            "selected parent has no canonical genes",
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action="select a parent with canonical genes",
+            authority="primary",
+        ),
         (),
     )
 
@@ -154,7 +163,16 @@ def _repair(family: FamilyName, genes: Genes, *, context: ReproductionContext) -
     try:
         return registered.repair(genes, context.bounds_for(family), context.reference)
     except TrafficlabError as error:
-        raise CandidateEvaluationError("repair", None, str(error)) from error
+        raise CandidateEvaluationError(
+            "repair",
+            None,
+            str(error),
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action=error.corrective_action,
+            authority="primary",
+        ) from error
 
 
 def _pending_or_invalid(
@@ -175,7 +193,16 @@ def _pending_or_invalid(
             "invalid",
             0.0,
             (),
-            CandidateFailure(error.kind, error.seed, error.detail),
+            CandidateFailure(
+                error.kind,
+                error.seed,
+                error.detail,
+                stage=error.stage,
+                affected_evidence=error.affected_evidence,
+                evidence_state=error.evidence_state,
+                corrective_action=error.corrective_action,
+                authority=error.authority,
+            ),
             diagnostics,
         )
     return Candidate(identifier, family, repaired, "pending", 0.0, (), None, diagnostics)

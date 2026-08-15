@@ -10,7 +10,7 @@ from typing import Any, cast
 import pytest
 
 from trafficlab.config import ExperimentConfig
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.genetic import strategy
 from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint
 from trafficlab.genetic.evaluation import ValidatedEvaluationContext
@@ -292,6 +292,81 @@ def test_resume_absent_starts_fresh_and_false_rejects_present_checkpoint(
         initialize_or_resume(occupied)
 
     assert (occupied.run_directory / "checkpoint.json").read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("checkpoint_state", "expected_kind"),
+    [
+        ("parse", "artifact_corrupt"),
+        ("schema", "artifact_corrupt"),
+        ("incompatible", "scientific_semantics_incompatible"),
+    ],
+)
+def test_resume_checkpoint_failures_retain_the_canonical_preserved_outcome(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    checkpoint_state: str,
+    expected_kind: str,
+) -> None:
+    """The resume owner must classify checkpoint bytes before fit-stage logging sees them."""
+    context = _context(valid_config_data, tmp_path / checkpoint_state, generation_count=0)
+    _install_scoring(monkeypatch, {0: (0.4, 0.5)})
+    run_strategy(context)
+    checkpoint_path = context.run_directory / "checkpoint.json"
+    original = checkpoint_path.read_bytes()
+    if checkpoint_state == "parse":
+        checkpoint_path.write_bytes(b"{\n")
+    elif checkpoint_state == "schema":
+        checkpoint_path.write_bytes(b"{}\n")
+    else:
+        marker = b'"experiment_sha256":"' + (b"a" * 64) + b'"'
+        checkpoint_path.write_bytes(original.replace(marker, b'"experiment_sha256":"' + (b"0" * 64) + b'"'))
+
+    with pytest.raises(TrafficlabError) as captured:
+        initialize_or_resume(context)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == (expected_kind, "fit", "checkpoint.json", "preserved", "primary")
+    assert outcome.detail == str(captured.value)
+    assert outcome.corrective_action == captured.value.corrective_action
+
+
+def test_resume_keeps_an_existing_checkpoint_outcome_without_reclassification(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resume boundary must not replace an already classified checkpoint failure."""
+    context = _context(valid_config_data, tmp_path / "classified", generation_count=0)
+    checkpoint_path = context.run_directory / "checkpoint.json"
+    checkpoint_path.write_bytes(b"present\n")
+    outcome = FailureOutcome(
+        kind="artifact_corrupt",
+        stage="fit",
+        detail="checkpoint.json is corrupt",
+        affected_evidence="checkpoint.json",
+        evidence_state="preserved",
+        corrective_action="recreate fit in a new run directory",
+        authority="primary",
+    )
+    error = TrafficlabError(outcome.detail, corrective_action=outcome.corrective_action, failure_outcome=outcome)
+
+    def fail_load(_directory: Path, _compatibility: object) -> object:
+        raise error
+
+    monkeypatch.setattr(strategy, "load_generation", fail_load)
+
+    with pytest.raises(TrafficlabError) as captured:
+        initialize_or_resume(context)
+
+    assert captured.value is error
+    assert captured.value.failure_outcomes == (outcome,)
 
 
 def test_context_resolves_lexical_families_and_exact_effective_settings_once(

@@ -140,6 +140,18 @@ def test_post_rename_root_fsync_failure_reports_preserved_exact_destination(
     with pytest.raises(TrafficlabError) as error:
         publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
 
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+        outcome.status,
+    ) == ("publication_failed", "publication", "accepted evidence bundle", "preserved", "primary", None)
+    assert outcome.detail == str(error.value)
+    assert outcome.corrective_action == error.value.corrective_action
     assert getattr(error.value, "evidence_state", None) == "preserved"
     assert getattr(error.value, "destination", None) == destination
     assert error.value.corrective_action == (
@@ -179,6 +191,18 @@ def test_occupied_study_id_is_never_replaced_or_merged(tmp_path: Path, occupied_
     with pytest.raises(TrafficlabError, match="publication_collision") as error:
         publish_accepted_bundle(candidate, evidence_root, "study-1", audit_calls.append)
 
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+        outcome.status,
+    ) == ("publication_collision", "publication", "candidate accepted evidence bundle", "not_published", "primary", None)
+    assert outcome.detail == str(error.value)
+    assert outcome.corrective_action == error.value.corrective_action
     assert error.value.corrective_action == "choose a new study ID; accepted evidence bundles are immutable"
     assert audit_calls == [candidate]
     assert destination.stat().st_ino == before_inode

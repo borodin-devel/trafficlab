@@ -18,6 +18,7 @@ from trafficlab.comparison import (
     render_comparison_result,
 )
 from trafficlab.config import ExperimentConfig, SimilarityConfig
+from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity import SimilarityResult
 from trafficlab.trace import Direction, TraceEvent
@@ -32,6 +33,67 @@ def _trace() -> tuple[TraceEvent, ...]:
         TraceEvent(0.0, Direction.OUTBOUND, 60),
         TraceEvent(1.0, Direction.INBOUND, 80),
         TraceEvent(3.0, Direction.OUTBOUND, 100),
+    )
+
+
+def test_compare_public_boundary_classifies_a_missing_capture_input(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A missing comparison input is source evidence, not an infeasible metric result."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory = tmp_path / "run"
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    experiment_path.write_bytes(render_effective_config(config))
+    run_directory.mkdir()
+    (run_directory / "experiment.toml").write_bytes(render_effective_config(config))
+
+    with pytest.raises(TrafficlabError) as caught:
+        comparison.compare_experiment(experiment_path)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_missing",
+        "compare",
+        "capture.json",
+        "not_published",
+    )
+
+
+def test_compare_public_boundary_classifies_an_unreadable_capture_input(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreadable comparison source remains preserved artifact evidence rather than a metric failure."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory = tmp_path / "run"
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    experiment_path.write_bytes(render_effective_config(config))
+    run_directory.mkdir()
+    (run_directory / "experiment.toml").write_bytes(render_effective_config(config))
+    capture_path = run_directory / "capture.json"
+    real_read_bytes = Path.read_bytes
+
+    def unreadable(path: Path) -> bytes:
+        if path == capture_path:
+            raise PermissionError("injected denied capture")
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", unreadable)
+
+    with pytest.raises(TrafficlabError) as caught:
+        comparison.compare_experiment(experiment_path)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_corrupt",
+        "compare",
+        "capture.json",
+        "preserved",
     )
 
 

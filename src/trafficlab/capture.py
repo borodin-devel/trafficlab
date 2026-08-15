@@ -456,25 +456,65 @@ def _capture_failure_outcome(
     *,
     status: int | None,
     authority: FailureAuthority,
-    corrective_action: str,
+    all_kinds: tuple[FailureKind, ...],
+    natural_target_succeeded: bool,
 ) -> FailureOutcome:
-    """Translate existing capture arbitration values without changing their priority or detail."""
+    """Translate the complete existing capture arbitration result to its canonical evidence."""
+    has_cleanup = FailureKind.CLEANUP_FAILED in all_kinds
+    has_capture_and_total = (
+        FailureKind.CAPTURE_STOPPED in all_kinds and FailureKind.TOTAL_TIMEOUT in all_kinds
+    )
+    is_flush_timeout = kind is FailureKind.FLUSH_FAILED or "flush" in detail.lower()
     if kind in (FailureKind.TARGET_NONZERO_EXIT, FailureKind.NATURAL_TARGET_STATUS, FailureKind.INDUCED_TARGET_STATUS):
         outcome_kind, evidence, state = "target_failed", "capture pair", "diagnostic_only"
+        if authority == "primary" and has_capture_and_total:
+            state = "not_published"
+            corrective_action = "inspect target first, then capture and budget"
+        elif authority == "primary" and has_cleanup:
+            corrective_action = "inspect target then remove project"
+        else:
+            corrective_action = "inspect target status and log"
     elif kind is FailureKind.USER_INTERRUPTION:
         outcome_kind, evidence, state = "interrupted", "capture pair", "diagnostic_only"
         status = 130
+        corrective_action = "retry when ready"
     elif kind is FailureKind.CLEANUP_FAILED:
         outcome_kind, evidence, state = "cleanup_failed", "inventory", "possibly_remaining"
         status = None
+        corrective_action = "remove the named project"
     elif kind is FailureKind.CAPTURE_STOPPED:
         outcome_kind, evidence, state = "capture_failed", "capture pair", "not_published"
+        corrective_action = (
+            "inspect capture status without SIGINT or flush wait"
+            if authority == "primary" and natural_target_succeeded
+            else "inspect capture status and log"
+        )
     elif kind is FailureKind.STAGE_TIMEOUT:
         outcome_kind, evidence, state = "stage_timeout", "capture pair", "diagnostic_only"
+        if is_flush_timeout:
+            state = "not_published"
+            corrective_action = "correct flush then total budget" if FailureKind.TOTAL_TIMEOUT in all_kinds else "correct capture flush or budget"
+        elif FailureKind.INDUCED_TARGET_STATUS in all_kinds:
+            corrective_action = "correct workload or timeout"
+        else:
+            corrective_action = "correct timeout or workload"
     elif kind in (FailureKind.TOTAL_TIMEOUT, FailureKind.FLUSH_FAILED):
         outcome_kind, evidence, state = "stage_timeout", "capture pair", "not_published"
+        if kind is FailureKind.TOTAL_TIMEOUT:
+            corrective_action = (
+                "increase total budget"
+                if (
+                    FailureKind.STAGE_TIMEOUT in all_kinds
+                    or FailureKind.FLUSH_FAILED in all_kinds
+                    or FailureKind.CAPTURE_STOPPED in all_kinds
+                )
+                else "increase total budget or reduce validation input"
+            )
+        else:
+            corrective_action = "correct capture flush or budget"
     else:
         outcome_kind, evidence, state = "capture_malformed", "capture pair", "diagnostic_only"
+        corrective_action = "correct the capture producer"
     return FailureOutcome(
         kind=outcome_kind,
         stage="capture",
@@ -493,23 +533,37 @@ def _capture_failure_outcomes(
     """Render one primary and every retained secondary capture failure in existing discovery order."""
     if outcome.primary_kind is None or outcome.primary_detail is None:
         raise ValueError("capture failure outcomes require an existing primary failure")
-    action = _outcome_error(outcome).corrective_action
+    all_details = ((outcome.primary_kind, outcome.primary_detail, outcome.primary_status),) + tuple(
+        (item.kind, item.detail, item.status) for item in outcome.secondary_details
+    )
+    rendered_details = tuple(
+        item
+        for item in all_details
+        if not (item[0] is FailureKind.NATURAL_TARGET_STATUS and item[2] == 0)
+    )
+    all_kinds = tuple(item[0] for item in rendered_details)
+    natural_target_succeeded = any(
+        item.kind is FailureKind.NATURAL_TARGET_STATUS and item.status == 0 for item in outcome.secondary_details
+    )
+    primary_kind, primary_detail, primary_status = rendered_details[0]
     primary = _capture_failure_outcome(
-        outcome.primary_kind,
-        outcome.primary_detail,
-        status=capture_status if outcome.primary_kind is FailureKind.CAPTURE_STOPPED else outcome.primary_status,
+        primary_kind,
+        primary_detail,
+        status=capture_status if primary_kind is FailureKind.CAPTURE_STOPPED else primary_status,
         authority="primary",
-        corrective_action=action,
+        all_kinds=all_kinds,
+        natural_target_succeeded=natural_target_succeeded,
     )
     secondary = tuple(
         _capture_failure_outcome(
-            item.kind,
-            item.detail,
-            status=capture_status if item.kind is FailureKind.CAPTURE_STOPPED else item.status,
+            kind,
+            detail,
+            status=capture_status if kind is FailureKind.CAPTURE_STOPPED else status,
             authority="secondary",
-            corrective_action=action,
+            all_kinds=all_kinds,
+            natural_target_succeeded=natural_target_succeeded,
         )
-        for item in outcome.secondary_details
+        for kind, detail, status in rendered_details[1:]
     )
     return primary, secondary
 
@@ -941,6 +995,7 @@ def capture_prepared_experiment(
             secondary_outcomes=[item.as_dict() for item in secondary_outcomes],
         )
         error = _outcome_error(outcome)
+        error.failure_outcomes = (primary_outcome, *secondary_outcomes)
         error.failure_outcome = primary_outcome
         raise error
     if result is None:

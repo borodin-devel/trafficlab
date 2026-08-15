@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from trafficlab.config import FamilyName
+from trafficlab.errors import EvidenceState, FailureAuthority
 from trafficlab.models.common import Genes
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
 
@@ -24,6 +25,8 @@ _METHOD_NAMES = frozenset(METHOD_ORDER)
 _FAILURE_KINDS = frozenset(
     ("repair", "fit", "generation", "incomplete_generation", "similarity_precondition", "nonfinite_score")
 )
+_EVIDENCE_STATES = frozenset(("not_published", "diagnostic_only", "preserved", "possibly_remaining"))
+_FAILURE_AUTHORITIES = frozenset(("primary", "secondary"))
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _CANDIDATE_STATUSES = frozenset(("pending", "valid", "invalid"))
 _FAMILY_NAMES = frozenset(("poisson_empirical", "markov_renewal", "mmpp"))
@@ -98,14 +101,25 @@ class CandidateFailure:
     kind: CandidateFailureKind
     seed: int | None
     detail: str
+    stage: str = field(kw_only=True)
+    affected_evidence: str = field(kw_only=True)
+    evidence_state: EvidenceState = field(kw_only=True)
+    corrective_action: str = field(kw_only=True)
+    authority: FailureAuthority = field(kw_only=True)
 
     def __post_init__(self) -> None:
         if self.kind not in _FAILURE_KINDS:
             raise ValueError("candidate failure kind is not recognized")
         if self.seed is not None and (type(self.seed) is not int or self.seed < 0):
             raise ValueError("candidate failure seed must be a nonnegative exact integer or None")
-        if type(self.detail) is not str or not self.detail:
-            raise ValueError("candidate failure detail must be a nonempty string")
+        for name in ("detail", "stage", "affected_evidence", "corrective_action"):
+            value = getattr(self, name)
+            if type(value) is not str or not value.strip():
+                raise ValueError(f"candidate failure {name} must be a nonempty string")
+        if self.evidence_state not in _EVIDENCE_STATES:
+            raise ValueError("candidate failure evidence state is not recognized")
+        if self.authority not in _FAILURE_AUTHORITIES:
+            raise ValueError("candidate failure authority is not recognized")
 
 
 @dataclass(frozen=True, slots=True)

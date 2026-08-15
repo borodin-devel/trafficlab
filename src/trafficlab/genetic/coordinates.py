@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from random import Random
 from typing import Literal, cast
 
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.types import CandidateFailureKind
+from trafficlab.errors import EvidenceState, FailureAuthority, TrafficlabError
+from trafficlab.genetic.types import CandidateFailure, CandidateFailureKind
 from trafficlab.models.common import FamilyBounds, Gene, Genes, ModelFamily
 from trafficlab.models.registry import MARKOV_RENEWAL_FAMILY, REGISTRY, get_family
 from trafficlab.trace import TraceEvent
@@ -38,8 +38,23 @@ class CandidateEvaluationError(Exception):
     kind: CandidateFailureKind
     seed: int | None
     detail: str
+    stage: str = field(kw_only=True)
+    affected_evidence: str = field(kw_only=True)
+    evidence_state: EvidenceState = field(kw_only=True)
+    corrective_action: str = field(kw_only=True)
+    authority: FailureAuthority = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        CandidateFailure(
+            self.kind,
+            self.seed,
+            self.detail,
+            stage=self.stage,
+            affected_evidence=self.affected_evidence,
+            evidence_state=self.evidence_state,
+            corrective_action=self.corrective_action,
+            authority=self.authority,
+        )
         Exception.__init__(self, self.detail)
 
 
@@ -147,7 +162,16 @@ def initialize_candidate(
     try:
         return checked_family.repair(tuple(raw_genes), bounds, reference)
     except TrafficlabError as error:
-        raise CandidateEvaluationError("repair", None, str(error)) from error
+        raise CandidateEvaluationError(
+            "repair",
+            None,
+            str(error),
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action=error.corrective_action,
+            authority="primary",
+        ) from error
 
 
 def bernoulli(rng: Random, probability: float) -> bool:

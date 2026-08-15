@@ -10,7 +10,12 @@ from typing import Self
 from trafficlab.artifacts import append_run_log, publish_best_model
 from trafficlab.comparison import sha256_bytes
 from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError, attach_failure_outcome, failure_outcome_from_error
+from trafficlab.errors import (
+    TrafficlabError,
+    append_failure_outcome,
+    attach_failure_outcome,
+    failure_outcome_from_error,
+)
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
 from trafficlab.models.registry import BestModel, get_family, make_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
@@ -49,11 +54,67 @@ def read_fit_input(path: Path) -> bytes:
     """Read one prepared fit input exactly once through the package error boundary."""
     try:
         return path.read_bytes()
-    except OSError as error:
-        raise TrafficlabError(
-            f"could not read fit input {path}: {error}",
-            corrective_action="verify the prepared fit inputs exist and are readable",
+    except FileNotFoundError as error:
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read fit input {path}: {error}",
+                corrective_action="verify the prepared fit inputs exist and are readable",
+            ),
+            kind="artifact_missing",
+            stage="fit",
+            affected_evidence=path.name,
+            evidence_state="not_published",
         ) from error
+    except OSError as error:
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read fit input {path}: {error}",
+                corrective_action="verify the prepared fit inputs exist and are readable",
+            ),
+            kind="artifact_corrupt",
+            stage="fit",
+            affected_evidence=path.name,
+            evidence_state="preserved",
+        ) from error
+
+
+def _read_stage_input(read_bytes: Callable[[Path], bytes], path: Path) -> bytes:
+    """Preserve a dependency's source classification or attach one at the fit boundary."""
+    try:
+        return read_bytes(path)
+    except FileNotFoundError as error:
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read fit input {path}: {error}",
+                corrective_action="verify the prepared fit inputs exist and are readable",
+            ),
+            kind="artifact_missing",
+            stage="fit",
+            affected_evidence=path.name,
+            evidence_state="not_published",
+        ) from error
+    except OSError as error:
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read fit input {path}: {error}",
+                corrective_action="verify the prepared fit inputs exist and are readable",
+            ),
+            kind="artifact_corrupt",
+            stage="fit",
+            affected_evidence=path.name,
+            evidence_state="preserved",
+        ) from error
+    except TrafficlabError as error:
+        if error.failure_outcome is None:
+            missing = isinstance(error.__cause__, FileNotFoundError)
+            attach_failure_outcome(
+                error,
+                kind="artifact_missing" if missing else "artifact_corrupt",
+                stage="fit",
+                affected_evidence=path.name,
+                evidence_state="not_published" if missing else "preserved",
+            )
+        raise
 
 
 def _append_failure(run_directory: Path, primary: TrafficlabError) -> None:
@@ -63,26 +124,35 @@ def _append_failure(run_directory: Path, primary: TrafficlabError) -> None:
             primary,
             kind="artifact_corrupt",
             stage="fit",
-            affected_evidence="best_model.json",
-            evidence_state="not_published",
+            affected_evidence="fit inputs",
+            evidence_state="preserved",
         )
+        primary.failure_outcomes = (outcome,)
+        primary.failure_outcome = outcome
     try:
-        append_run_log(
-            run_directory,
-            {
-                "corrective_action": primary.corrective_action,
-                "detail": str(primary),
-                "event": "stage_failed",
-                "failure_outcome": outcome.as_dict(),
-                "stage": "fit",
-            },
-        )
+        record: dict[str, object] = {
+            "corrective_action": primary.corrective_action,
+            "detail": str(primary),
+            "event": "stage_failed",
+            "failure_outcome": outcome.as_dict(),
+            "stage": "fit",
+        }
+        if primary.failure_outcomes[1:]:
+            record["secondary_outcomes"] = [item.as_dict() for item in primary.failure_outcomes[1:]]
+        append_run_log(run_directory, record)
     except TrafficlabError as logging_error:
-        raise TrafficlabError(
-            f"{primary}; additionally could not append fitting failure to run.log: {logging_error}",
-            corrective_action=primary.corrective_action,
-            exit_code=primary.exit_code,
-        ) from primary
+        append_failure_outcome(
+            primary,
+            failure_outcome_from_error(
+                logging_error,
+                kind="publication_failed",
+                stage="fit",
+                affected_evidence="run.log",
+                evidence_state="not_published",
+                authority="secondary",
+            ),
+        )
+        primary.args = (f"{primary}; additionally could not append fitting failure to run.log: {logging_error}",)
 
 
 def fit_experiment(
@@ -106,7 +176,7 @@ def fit_experiment(
         snapshot_path = run_directory / "experiment.toml"
         capture_path = run_directory / "capture.json"
         reference_path = run_directory / "reference.pcapng"
-        snapshot_bytes = active.read_bytes(snapshot_path)
+        snapshot_bytes = _read_stage_input(active.read_bytes, snapshot_path)
         if snapshot_bytes != render_effective_config(prepared.config):
             raise attach_failure_outcome(
                 TrafficlabError(
@@ -118,10 +188,19 @@ def fit_experiment(
                 affected_evidence="experiment.toml",
                 evidence_state="preserved",
             )
-        capture_bytes = active.read_bytes(capture_path)
-        reference_bytes = active.read_bytes(reference_path)
+        capture_bytes = _read_stage_input(active.read_bytes, capture_path)
+        reference_bytes = _read_stage_input(active.read_bytes, reference_path)
 
-        metadata = parse_capture_metadata(capture_bytes, source=capture_path)
+        try:
+            metadata = parse_capture_metadata(capture_bytes, source=capture_path)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="fit",
+                affected_evidence="capture.json",
+                evidence_state="preserved",
+            ) from error
         try:
             reference_events = parse_pcapng_bytes(reference_bytes, metadata, source=reference_path)
         except TrafficlabError as error:
@@ -137,7 +216,16 @@ def fit_experiment(
                 affected_evidence="reference.pcapng",
                 evidence_state="preserved",
             ) from error
-        reference, window = normalize_reference(reference_events)
+        try:
+            reference, window = normalize_reference(reference_events)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="fit",
+                affected_evidence="reference.pcapng",
+                evidence_state="preserved",
+            ) from error
         context = make_strategy_context(
             prepared.config,
             reference,

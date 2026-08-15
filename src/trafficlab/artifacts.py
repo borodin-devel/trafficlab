@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from trafficlab.capture_validation import CaptureInspection, validate_capture_pair
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
-from trafficlab.errors import DeadlineExceededError, TrafficlabError
+from trafficlab.errors import DeadlineExceededError, FailureOutcome, TrafficlabError, attach_failure_outcome
 from trafficlab.models.registry import load_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.trace import CaptureMetadata, TraceEvent
@@ -204,9 +204,15 @@ def _read_existing_best_model(destination: Path, expected_content: bytes) -> Bes
         ) from error
     _validate_best_model_content(existing_content, source=destination)
     if existing_content != expected_content:
-        raise TrafficlabError(
-            f"best_model already exists: {destination}",
-            corrective_action="preserve the existing artifact or start a new run directory",
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"best_model already exists: {destination}",
+                corrective_action="preserve the existing artifact or start a new run directory",
+            ),
+            kind="publication_collision",
+            stage="fit",
+            affected_evidence="best_model.json",
+            evidence_state="preserved",
         )
     current_identity = _file_identity(
         destination,
@@ -236,7 +242,52 @@ def _best_model_publication_error(
         exit_code = 2
     if cleanup_error is not None:
         detail = f"{detail}; cleanup incomplete: could not remove owned temporary file: {cleanup_error}"
-    return TrafficlabError(detail, corrective_action=action, exit_code=exit_code)
+    outcomes = _publisher_outcomes(
+        error,
+        stage="fit",
+        affected_evidence="best_model.json",
+        detail=detail,
+        corrective_action=action,
+        cleanup_error=cleanup_error,
+    )
+    return TrafficlabError(detail, corrective_action=action, exit_code=exit_code, failure_outcomes=outcomes)
+
+
+def _publisher_outcomes(
+    error: TrafficlabError | OSError,
+    *,
+    stage: str,
+    affected_evidence: str,
+    detail: str,
+    corrective_action: str,
+    cleanup_error: OSError | None,
+) -> tuple[FailureOutcome, ...]:
+    """Keep an owning publisher's exact primary state and append owned cleanup evidence."""
+    if isinstance(error, TrafficlabError) and error.failure_outcomes:
+        outcomes = error.failure_outcomes
+    else:
+        outcomes = (
+            FailureOutcome(
+                kind="publication_collision" if isinstance(error, FileExistsError) else "publication_failed",
+                stage=stage,
+                detail=detail,
+                affected_evidence=affected_evidence,
+                evidence_state="preserved" if isinstance(error, FileExistsError) else "not_published",
+                corrective_action=corrective_action,
+                authority="primary",
+            ),
+        )
+    if cleanup_error is None:
+        return outcomes
+    return (*outcomes, FailureOutcome(
+        kind="cleanup_failed",
+        stage=stage,
+        detail=f"owned temporary file cleanup failed: {cleanup_error}",
+        affected_evidence="inventory",
+        evidence_state="possibly_remaining",
+        corrective_action="remove the owned temporary file after preserving diagnostics",
+        authority="secondary",
+    ))
 
 
 def publish_best_model(path: Path, content: bytes) -> BestModelPublication:
@@ -296,9 +347,31 @@ def publish_best_model(path: Path, content: bytes) -> BestModelPublication:
         os.unlink(temporary_path)
     except OSError as error:
         state = "published" if publication.created_by_call else "reused"
+        detail = f"best model was {state} at {path}, but owned temporary file cleanup failed: {error}"
+        action = "preserve the best model and remove the reported temporary file if it is still owned"
         raise TrafficlabError(
-            f"best model was {state} at {path}, but owned temporary file cleanup failed: {error}",
-            corrective_action="preserve the best model and remove the reported temporary file if it is still owned",
+            detail,
+            corrective_action=action,
+            failure_outcomes=(
+                FailureOutcome(
+                    kind="publication_failed",
+                    stage="fit",
+                    detail=detail,
+                    affected_evidence="best_model.json",
+                    evidence_state="preserved",
+                    corrective_action=action,
+                    authority="primary",
+                ),
+                FailureOutcome(
+                    kind="cleanup_failed",
+                    stage="fit",
+                    detail=f"owned temporary file cleanup failed: {error}",
+                    affected_evidence="inventory",
+                    evidence_state="possibly_remaining",
+                    corrective_action="remove the owned temporary file after preserving diagnostics",
+                    authority="secondary",
+                ),
+            ),
         ) from error
     return publication
 
@@ -402,9 +475,15 @@ def _read_existing_generated(
             corrective_action="verify generated.pcapng is readable and retry generation",
         ) from error
     if existing_content != expected_content:
-        raise TrafficlabError(
-            f"generated capture already exists: {destination}",
-            corrective_action="preserve the existing artifact or start a new run directory",
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"generated capture already exists: {destination}",
+                corrective_action="preserve the existing artifact or start a new run directory",
+            ),
+            kind="publication_collision",
+            stage="generate",
+            affected_evidence="generated.pcapng",
+            evidence_state="preserved",
         )
     _validate_generated_content(
         existing_content,
@@ -445,7 +524,15 @@ def _generated_publication_error(
         exit_code = 2
     if cleanup_error is not None:
         detail = f"{detail}; cleanup incomplete: could not remove owned temporary file: {cleanup_error}"
-    return TrafficlabError(detail, corrective_action=action, exit_code=exit_code)
+    outcomes = _publisher_outcomes(
+        error,
+        stage="generate",
+        affected_evidence="generated.pcapng",
+        detail=detail,
+        corrective_action=action,
+        cleanup_error=cleanup_error,
+    )
+    return TrafficlabError(detail, corrective_action=action, exit_code=exit_code, failure_outcomes=outcomes)
 
 
 def publish_generated_pcapng(
@@ -528,9 +615,31 @@ def publish_generated_pcapng(
         os.unlink(temporary_path)
     except OSError as error:
         state = "published" if publication.created_by_call else "reused"
+        detail = f"generated capture was {state} at {destination}, but owned temporary file cleanup failed: {error}"
+        action = "preserve the generated capture and remove the reported temporary file if it is still owned"
         raise TrafficlabError(
-            f"generated capture was {state} at {destination}, but owned temporary file cleanup failed: {error}",
-            corrective_action="preserve the generated capture and remove the reported temporary file if it is still owned",
+            detail,
+            corrective_action=action,
+            failure_outcomes=(
+                FailureOutcome(
+                    kind="publication_failed",
+                    stage="generate",
+                    detail=detail,
+                    affected_evidence="generated.pcapng",
+                    evidence_state="preserved",
+                    corrective_action=action,
+                    authority="primary",
+                ),
+                FailureOutcome(
+                    kind="cleanup_failed",
+                    stage="generate",
+                    detail=f"owned temporary file cleanup failed: {error}",
+                    affected_evidence="inventory",
+                    evidence_state="possibly_remaining",
+                    corrective_action="remove the owned temporary file after preserving diagnostics",
+                    authority="secondary",
+                ),
+            ),
         ) from error
     return publication
 

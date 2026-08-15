@@ -20,7 +20,7 @@ import trafficlab.genetic.strategy as strategy_module
 from trafficlab.artifacts import publish_best_model
 from trafficlab.config import ExperimentConfig, FloatBounds, PoissonConfig
 from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.genetic.checkpoint import load_checkpoint, publish_checkpoint
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
@@ -131,6 +131,166 @@ def _strategy_context_for_inputs(config: ExperimentConfig, inputs: dict[Path, by
         reference_sha256=hashlib.sha256(inputs[run_directory / "reference.pcapng"]).hexdigest(),
         capture_sha256=hashlib.sha256(inputs[run_directory / "capture.json"]).hexdigest(),
     )
+
+
+def test_fit_public_boundary_classifies_a_missing_reference_input(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A stage dependency's missing source must not collapse to a best-model corruption fallback."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    experiment_path = tmp_path / "experiment.toml"
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+
+    def read(path: Path) -> bytes:
+        if path.name == "reference.pcapng":
+            raise FileNotFoundError("injected missing reference")
+        return inputs[path]
+
+    dependencies = FitDependencies(
+        lambda _path: _prepared(config, experiment_path),
+        read,
+        lambda _context: _outcome(config),
+    )
+
+    with pytest.raises(TrafficlabError) as caught:
+        fit_experiment(experiment_path, dependencies=dependencies)
+
+    assert caught.value.failure_outcome == FailureOutcome(
+        kind="artifact_missing",
+        stage="fit",
+        detail=f"could not read fit input {run_directory / 'reference.pcapng'}: injected missing reference",
+        affected_evidence="reference.pcapng",
+        evidence_state="not_published",
+        corrective_action="verify the prepared fit inputs exist and are readable",
+        authority="primary",
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_kind", "expected_state"),
+    [
+        ("unreadable", "artifact_corrupt", "preserved"),
+        ("unclassified", "artifact_corrupt", "preserved"),
+        ("caused_missing", "artifact_missing", "not_published"),
+        ("classified", "artifact_changed", "preserved"),
+    ],
+)
+def test_fit_public_boundary_retains_source_specific_read_failures(
+    valid_config_data: dict[str, object], tmp_path: Path, mode: str, expected_kind: str, expected_state: str
+) -> None:
+    """Raw and translated dependency failures receive source-specific outcomes at the public fit boundary."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    experiment_path = tmp_path / "experiment.toml"
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+    caused_missing = TrafficlabError("translated missing reference", corrective_action="restore reference")
+    caused_missing.__cause__ = FileNotFoundError("injected missing reference")
+    classified = TrafficlabError(
+        "reference changed",
+        corrective_action="recreate the capture pair in a new matching run",
+        failure_outcome=FailureOutcome(
+            kind="artifact_changed",
+            stage="fit",
+            detail="reference changed",
+            affected_evidence="reference.pcapng",
+            evidence_state="preserved",
+            corrective_action="recreate the capture pair in a new matching run",
+            authority="primary",
+        ),
+    )
+
+    def read(path: Path) -> bytes:
+        if path.name != "reference.pcapng":
+            return inputs[path]
+        if mode == "unreadable":
+            raise PermissionError("injected unreadable reference")
+        if mode == "caused_missing":
+            raise caused_missing
+        if mode == "classified":
+            raise classified
+        raise TrafficlabError("unclassified reference failure", corrective_action="repair reference")
+
+    dependencies = FitDependencies(
+        lambda _path: _prepared(config, experiment_path),
+        read,
+        lambda _context: _outcome(config),
+    )
+
+    with pytest.raises(TrafficlabError) as caught:
+        fit_experiment(experiment_path, dependencies=dependencies)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        expected_kind,
+        "fit",
+        "reference.pcapng",
+        expected_state,
+    )
+
+
+def test_read_fit_input_classifies_an_unreadable_source_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The production input reader distinguishes unreadability from absence before fit orchestration."""
+    path = tmp_path / "reference.pcapng"
+
+    def denied(_path: Path) -> bytes:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+
+    with pytest.raises(TrafficlabError) as caught:
+        read_fit_input(path)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_corrupt",
+        "reference.pcapng",
+        "preserved",
+    )
+
+
+def test_fit_failure_log_retains_ordered_secondary_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Failure logging cannot replace the source primary when cleanup evidence is also present."""
+    primary = FailureOutcome(
+        kind="artifact_corrupt",
+        stage="fit",
+        detail="checkpoint.json is corrupt",
+        affected_evidence="checkpoint.json",
+        evidence_state="preserved",
+        corrective_action="recreate fit in a new run directory",
+        authority="primary",
+    )
+    secondary = FailureOutcome(
+        kind="cleanup_failed",
+        stage="fit",
+        detail="temporary cleanup failed",
+        affected_evidence="inventory",
+        evidence_state="possibly_remaining",
+        corrective_action="remove the owned temporary file after preserving diagnostics",
+        authority="secondary",
+    )
+    error = TrafficlabError(
+        primary.detail,
+        corrective_action=primary.corrective_action,
+        failure_outcomes=(primary, secondary),
+    )
+    records: list[dict[str, object]] = []
+
+    def append(_directory: Path, record: dict[str, object]) -> None:
+        records.append(record)
+
+    monkeypatch.setattr(fitting, "append_run_log", append)
+
+    fitting._append_failure(tmp_path, error)  # pyright: ignore[reportPrivateUsage]
+
+    assert records[0]["failure_outcome"] == primary.as_dict()
+    assert records[0]["secondary_outcomes"] == [secondary.as_dict()]
 
 
 def _create_real_terminal_run(
@@ -572,6 +732,52 @@ def test_noncanonical_strategy_winner_is_not_repaired_into_a_different_published
         )
 
     assert not (run_directory / "best_model.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("checkpoint_state", "expected_kind"),
+    [
+        ("parse", "artifact_corrupt"),
+        ("schema", "artifact_corrupt"),
+        ("incompatible", "scientific_semantics_incompatible"),
+    ],
+)
+def test_fit_preserves_and_logs_canonical_resume_checkpoint_outcomes(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    checkpoint_state: str,
+    expected_kind: str,
+) -> None:
+    """A real fit must retain the source-owned checkpoint classification in its failure log."""
+    experiment_path, config, inputs = _create_real_terminal_run(valid_config_data, tmp_path)
+    checkpoint_path = config.run.directory / "checkpoint.json"
+    original = checkpoint_path.read_bytes()
+    if checkpoint_state == "parse":
+        checkpoint_path.write_bytes(b"{\n")
+    elif checkpoint_state == "schema":
+        checkpoint_path.write_bytes(b"{}\n")
+    else:
+        document = cast(dict[str, object], json.loads(original))
+        marker = cast(str, document["experiment_sha256"]).encode()
+        checkpoint_path.write_bytes(original.replace(marker, b"0" * 64, 1))
+
+    with pytest.raises(TrafficlabError) as captured:
+        fit_experiment(
+            experiment_path,
+            dependencies=_dependencies(config, experiment_path, inputs, run_strategy),
+        )
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == (expected_kind, "fit", "checkpoint.json", "preserved", "primary")
+    records = [json.loads(line) for line in (config.run.directory / "run.log").read_text().splitlines()]
+    assert records[-1]["failure_outcome"] == outcome.as_dict()
 
 
 def test_fit_logs_only_completed_events_in_stage_order(valid_config_data: dict[str, object], tmp_path: Path) -> None:

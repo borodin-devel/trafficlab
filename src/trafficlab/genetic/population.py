@@ -63,7 +63,16 @@ def initial_population(
                         "invalid",
                         0.0,
                         (),
-                        CandidateFailure(error.kind, error.seed, error.detail),
+                        CandidateFailure(
+                            error.kind,
+                            error.seed,
+                            error.detail,
+                            stage=error.stage,
+                            affected_evidence=error.affected_evidence,
+                            evidence_state=error.evidence_state,
+                            corrective_action=error.corrective_action,
+                            authority=error.authority,
+                        ),
                         (),
                     )
                 )

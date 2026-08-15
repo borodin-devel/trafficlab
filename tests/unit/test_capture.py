@@ -345,6 +345,19 @@ def test_simultaneous_target_zero_and_capture_stop_rejects_output_without_signal
     assert "signal_capture" not in docker.calls
     assert "kill_capture" not in docker.calls
     assert not (prepared.run_directory / "reference.pcapng").exists()
+    assert caught.value.failure_outcome is not None
+    assert (
+        caught.value.failure_outcome.kind,
+        caught.value.failure_outcome.evidence_state,
+        caught.value.failure_outcome.corrective_action,
+        caught.value.failure_outcome.status,
+    ) == (
+        "capture_failed",
+        "not_published",
+        "inspect capture status without SIGINT or flush wait",
+        7,
+    )
+    assert len(caught.value.failure_outcomes) == 1
     records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
     assert records[-1]["secondary_failures"] == [
         {

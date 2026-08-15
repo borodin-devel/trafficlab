@@ -145,7 +145,16 @@ def missing_genes(index: int, family: FamilyName) -> Candidate:
         "invalid",
         0.0,
         (),
-        CandidateFailure("repair", None, "initializer repair failed"),
+        CandidateFailure(
+            "repair",
+            None,
+            "initializer repair failed",
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action="repair candidate initialization",
+            authority="primary",
+        ),
         (),
     )
 
@@ -255,7 +264,16 @@ def test_missing_fitter_genes_create_invalid_child_without_operator_draws() -> N
         "invalid",
         0.0,
     )
-    assert child.invalid == CandidateFailure("repair", None, "selected parent has no canonical genes")
+    assert child.invalid == CandidateFailure(
+        "repair",
+        None,
+        "selected parent has no canonical genes",
+        stage="fit",
+        affected_evidence="candidate genes",
+        evidence_state="diagnostic_only",
+        corrective_action="select a parent with canonical genes",
+        authority="primary",
+    )
     assert child.duplicate_diagnostics == ()
     assert rng.calls == []
 
@@ -299,7 +317,16 @@ def test_same_family_selected_crossover_with_missing_parent_is_invalid_after_dec
         "invalid",
         0.0,
     )
-    assert child.invalid == CandidateFailure("repair", None, "selected parent has no canonical genes")
+    assert child.invalid == CandidateFailure(
+        "repair",
+        None,
+        "selected parent has no canonical genes",
+        stage="fit",
+        affected_evidence="candidate genes",
+        evidence_state="diagnostic_only",
+        corrective_action="select a parent with canonical genes",
+        authority="primary",
+    )
     assert rng.calls == [("random",)]
 
 
@@ -500,7 +527,16 @@ def test_evaluation_invalid_survivor_with_repaired_genes_remains_a_duplicate(
         "invalid",
         0.0,
         (),
-        CandidateFailure(kind, seed, "candidate evaluation failed"),
+        CandidateFailure(
+            kind,
+            seed,
+            "candidate evaluation failed",
+            stage="fit",
+            affected_evidence="candidate diagnostic",
+            evidence_state="diagnostic_only",
+            corrective_action="repair candidate evidence",
+            authority="primary",
+        ),
         (),
     )
     rng = ScriptedRandom(random_values=[0.9, 0.9, 0.9], ranges=[0], normal_values=[0.0])
@@ -691,8 +727,26 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
     )
     assert all(item.status == "invalid" and item.fitness == 0.0 for item in next_population)
     assert tuple(item.invalid for item in next_population[1:]) == (
-        CandidateFailure("repair", None, "selected parent has no canonical genes"),
-        CandidateFailure("repair", None, "selected parent has no canonical genes"),
+        CandidateFailure(
+            "repair",
+            None,
+            "selected parent has no canonical genes",
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action="select a parent with canonical genes",
+            authority="primary",
+        ),
+        CandidateFailure(
+            "repair",
+            None,
+            "selected parent has no canonical genes",
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action="select a parent with canonical genes",
+            authority="primary",
+        ),
     )
     initializer_calls = [
         call

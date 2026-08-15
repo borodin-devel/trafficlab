@@ -19,7 +19,13 @@ from trafficlab.artifacts import append_run_log, create_run_directory
 from trafficlab.compose import ComposePaths, render_production_compose, write_production_compose
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import ConfigurationPair, load_configuration_pair, load_experiment, render_effective_config
-from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome, failure_outcome_from_error
+from trafficlab.errors import (
+    FailureAuthority,
+    FailureOutcome,
+    TrafficlabError,
+    attach_failure_outcome,
+    failure_outcome_from_error,
+)
 from trafficlab.pcapng import parse_pcapng
 from trafficlab.trace import load_capture_metadata
 
@@ -275,7 +281,9 @@ def _failure(name: str, error: TrafficlabError) -> PreflightFinding:
     return PreflightFinding(name, False, str(error), error.corrective_action)
 
 
-def _preflight_failure_outcome(finding: PreflightFinding) -> FailureOutcome:
+def _preflight_failure_outcome(
+    finding: PreflightFinding, *, authority: FailureAuthority = "primary"
+) -> FailureOutcome:
     """Render a direct preflight finding without changing its existing error path."""
     docker_findings = {
         "capture_image_lock",
@@ -299,7 +307,17 @@ def _preflight_failure_outcome(finding: PreflightFinding) -> FailureOutcome:
             affected_evidence="inventory",
             evidence_state="possibly_remaining",
             corrective_action=finding.corrective_action or "remove the reported preflight resources and retry",
-            authority="primary",
+            authority=authority,
+        )
+    if finding.name == "run_log":
+        return FailureOutcome(
+            kind="publication_failed",
+            stage="preflight",
+            detail=finding.detail,
+            affected_evidence="run.log",
+            evidence_state="not_published",
+            corrective_action=finding.corrective_action or "restore run.log durability and retry",
+            authority=authority,
         )
     is_docker = finding.name in docker_findings
     return FailureOutcome(
@@ -309,7 +327,7 @@ def _preflight_failure_outcome(finding: PreflightFinding) -> FailureOutcome:
         affected_evidence="capture evidence" if is_docker else "run evidence",
         evidence_state="not_published",
         corrective_action=finding.corrective_action or "correct the reported preflight failure",
-        authority="primary",
+        authority=authority,
     )
 
 
@@ -836,13 +854,15 @@ def run_preflight(
         prepared = open_or_prepare_experiment(path, writable=writable)
     except TrafficlabError as error:
         if error.failure_outcome is None:
-            error.failure_outcome = failure_outcome_from_error(
+            outcome = failure_outcome_from_error(
                 error,
                 kind="configuration_invalid",
                 stage="preflight",
                 affected_evidence="run evidence",
                 evidence_state="not_published",
             )
+            error.failure_outcomes = (outcome,)
+            error.failure_outcome = outcome
         raise
     if config_only:
         return prepared
@@ -889,7 +909,11 @@ def run_preflight(
                 "stage": "preflight",
             }
             if not finding.ok:
-                record["failure_outcome"] = _preflight_failure_outcome(finding).as_dict()
+                earlier_failure = any(not previous.ok for previous in findings)
+                authority: FailureAuthority = (
+                    "secondary" if finding.name == "probe_cleanup" and earlier_failure else "primary"
+                )
+                record["failure_outcome"] = _preflight_failure_outcome(finding, authority=authority).as_dict()
             append_run_log(prepared.run_directory, record)
         except TrafficlabError as error:
             findings.append(_failure("run_log", error))
@@ -925,8 +949,15 @@ def run_preflight(
         report.require_success()
     except TrafficlabError as error:
         if error.failure_outcome is None:
-            first_failure = next(finding for finding in findings if not finding.ok)
-            error.failure_outcome = _preflight_failure_outcome(first_failure)
+            failed_findings = tuple(finding for finding in findings if not finding.ok)
+            primary = _preflight_failure_outcome(failed_findings[0])
+            secondary = tuple(
+                _preflight_failure_outcome(finding, authority="secondary")
+                for finding in failed_findings[1:]
+                if finding.name == "probe_cleanup"
+            )
+            error.failure_outcomes = (primary, *secondary)
+            error.failure_outcome = primary
         raise
     return PreparedExperiment(
         source=prepared.source,

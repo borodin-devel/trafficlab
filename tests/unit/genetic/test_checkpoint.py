@@ -102,7 +102,16 @@ POPULATION = (
         "invalid",
         0.0,
         (),
-        CandidateFailure("repair", None, "no canonical genes"),
+        CandidateFailure(
+            "repair",
+            None,
+            "no canonical genes",
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action="provide canonical candidate genes",
+            authority="primary",
+        ),
         (DuplicateDiagnostic(0, "exhausted", "source-equal child"),),
     ),
     Candidate(
@@ -477,8 +486,49 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
     loaded = parse_checkpoint(render_checkpoint(state), COMPATIBILITY)
     stored = next(candidate for candidate in loaded.population if candidate.identifier == CandidateId(1, 0))
     assert (stored.status, stored.genes, stored.fitness, stored.trials) == ("invalid", None, 0.0, ())
-    assert stored.invalid == CandidateFailure("repair", None, "offspring repair failed")
+    assert stored.invalid == CandidateFailure(
+        "repair",
+        None,
+        "offspring repair failed",
+        stage="fit",
+        affected_evidence="candidate genes",
+        evidence_state="diagnostic_only",
+        corrective_action="retain invalid evidence",
+        authority="primary",
+    )
     assert loaded.history[-1].valid_count == 2
+
+
+def test_checkpoint_round_trip_preserves_candidate_failure_scientific_diagnostics() -> None:
+    """Candidate-invalid provenance is exact checkpoint evidence, not an in-memory-only detail."""
+    failure = CandidateFailure(
+        "incomplete_generation",
+        7,
+        "max_packets",
+        stage="generate",
+        affected_evidence="candidate trace",
+        evidence_state="not_published",
+        corrective_action="increase generation limits or repair the candidate model",
+        authority="primary",
+    )
+    state = replace(VALID_STATE, population=(POPULATION[0], replace(POPULATION[1], invalid=failure), POPULATION[2]))
+
+    document = _decoded(render_checkpoint(state))
+    assert cast(list[dict[str, object]], document["population"])[1]["invalid"] == {
+        "kind": "incomplete_generation",
+        "seed": 7,
+        "detail": "max_packets",
+        "stage": "generate",
+        "affected_evidence": "candidate trace",
+        "evidence_state": "not_published",
+        "corrective_action": "increase generation limits or repair the candidate model",
+        "authority": "primary",
+    }
+    assert parse_checkpoint(render_checkpoint(state), COMPATIBILITY).population[1].invalid == failure
+
+    del cast(dict[str, object], cast(list[dict[str, object]], document["population"])[1]["invalid"])["authority"]
+    with pytest.raises(TrafficlabError, match="candidate invalid diagnostic"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
 
 
 def test_checkpoint_rejects_non_null_gaussian_cache_and_duplicate_candidate_ids() -> None:
@@ -728,7 +778,19 @@ def test_checkpoint_recomputes_method_aggregate_candidate_fitness_and_history() 
 
 
 def test_checkpoint_rejects_valid_invalid_and_duplicate_trial_seed_inconsistencies() -> None:
-    valid_with_invalid = _mutated(("population", 0, "invalid"), {"kind": "fit", "seed": None, "detail": "bad"})
+    valid_with_invalid = _mutated(
+        ("population", 0, "invalid"),
+        {
+            "kind": "fit",
+            "seed": None,
+            "detail": "bad",
+            "stage": "fit",
+            "affected_evidence": "candidate model",
+            "evidence_state": "diagnostic_only",
+            "corrective_action": "repair the candidate model",
+            "authority": "primary",
+        },
+    )
     with pytest.raises(TrafficlabError, match="valid candidate invalid"):
         parse_checkpoint(_encoded(valid_with_invalid), COMPATIBILITY)
 
@@ -900,7 +962,22 @@ def test_checkpoint_accepts_history_through_its_first_terminal_boundary(
 
 def test_summarize_generation_uses_stable_identifier_tie_and_rejects_invalid_input() -> None:
     tied = tuple(
-        replace(candidate, fitness=0.0, status="invalid", trials=(), invalid=CandidateFailure("fit", None, "bad"))
+        replace(
+            candidate,
+            fitness=0.0,
+            status="invalid",
+            trials=(),
+            invalid=CandidateFailure(
+                "fit",
+                None,
+                "bad",
+                stage="fit",
+                affected_evidence="candidate model",
+                evidence_state="diagnostic_only",
+                corrective_action="repair the candidate model",
+                authority="primary",
+            ),
+        )
         for candidate in POPULATION
     )
     rows = summarize_generation(0, tied, ("mmpp", "poisson_empirical"))
@@ -1109,7 +1186,22 @@ def test_render_rejects_population_and_best_state_inconsistencies() -> None:
         replace(VALID_STATE, population=(replace(candidate, genes=None), *POPULATION[1:])),
         replace(
             VALID_STATE,
-            population=(replace(candidate, invalid=CandidateFailure("fit", None, "bad")), *POPULATION[1:]),
+            population=(
+                replace(
+                    candidate,
+                    invalid=CandidateFailure(
+                        "fit",
+                        None,
+                        "bad",
+                        stage="fit",
+                        affected_evidence="candidate model",
+                        evidence_state="diagnostic_only",
+                        corrective_action="repair the candidate model",
+                        authority="primary",
+                    ),
+                ),
+                *POPULATION[1:],
+            ),
         ),
         replace(VALID_STATE, population=(duplicate_trial_candidate, *POPULATION[1:])),
         replace(

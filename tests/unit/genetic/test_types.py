@@ -99,9 +99,110 @@ def _methods() -> tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult,
 @pytest.mark.parametrize(
     ("factory", "message"),
     [
-        (lambda: CandidateFailure(cast(Any, "wrong"), None, "detail"), "failure kind"),
-        (lambda: CandidateFailure("repair", -1, "detail"), "failure seed"),
-        (lambda: CandidateFailure("repair", None, ""), "failure detail"),
+        (
+            lambda: CandidateFailure(
+                cast(Any, "wrong"),
+                None,
+                "detail",
+                stage="fit",
+                affected_evidence="candidate evidence",
+                evidence_state="diagnostic_only",
+                corrective_action="repair candidate evidence",
+                authority="primary",
+            ),
+            "failure kind",
+        ),
+        (
+            lambda: CandidateFailure(
+                "repair",
+                -1,
+                "detail",
+                stage="fit",
+                affected_evidence="candidate evidence",
+                evidence_state="diagnostic_only",
+                corrective_action="repair candidate evidence",
+                authority="primary",
+            ),
+            "failure seed",
+        ),
+        (
+            lambda: CandidateFailure(
+                "repair",
+                None,
+                "",
+                stage="fit",
+                affected_evidence="candidate evidence",
+                evidence_state="diagnostic_only",
+                corrective_action="repair candidate evidence",
+                authority="primary",
+            ),
+            "failure detail",
+        ),
+        (
+            lambda: CandidateFailure(
+                "repair",
+                None,
+                "detail",
+                stage="",
+                affected_evidence="candidate evidence",
+                evidence_state="diagnostic_only",
+                corrective_action="repair candidate evidence",
+                authority="primary",
+            ),
+            "failure stage",
+        ),
+        (
+            lambda: CandidateFailure(
+                "repair",
+                None,
+                "detail",
+                stage="fit",
+                affected_evidence="",
+                evidence_state="diagnostic_only",
+                corrective_action="repair candidate evidence",
+                authority="primary",
+            ),
+            "affected_evidence",
+        ),
+        (
+            lambda: CandidateFailure(
+                "repair",
+                None,
+                "detail",
+                stage="fit",
+                affected_evidence="candidate evidence",
+                evidence_state=cast(Any, "wrong"),
+                corrective_action="repair candidate evidence",
+                authority="primary",
+            ),
+            "evidence state",
+        ),
+        (
+            lambda: CandidateFailure(
+                "repair",
+                None,
+                "detail",
+                stage="fit",
+                affected_evidence="candidate evidence",
+                evidence_state="diagnostic_only",
+                corrective_action="",
+                authority="primary",
+            ),
+            "corrective_action",
+        ),
+        (
+            lambda: CandidateFailure(
+                "repair",
+                None,
+                "detail",
+                stage="fit",
+                affected_evidence="candidate evidence",
+                evidence_state="diagnostic_only",
+                corrective_action="repair candidate evidence",
+                authority=cast(Any, "wrong"),
+            ),
+            "authority",
+        ),
         (lambda: DuplicateDiagnostic(-1, "duplicate", "detail"), "attempt"),
         (lambda: DuplicateDiagnostic(0, cast(Any, "wrong"), "detail"), "outcome"),
         (lambda: DuplicateDiagnostic(0, "duplicate", ""), "detail"),
@@ -121,7 +222,16 @@ def test_candidate_related_records_preserve_valid_immutable_values() -> None:
         7, 0.5, cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods)
     )
     candidate = Candidate(identifier, "poisson_empirical", (1.0,), "valid", 0.5, (trial,), None, ())
-    failure = CandidateFailure("repair", None, "cannot repair")
+    failure = CandidateFailure(
+        "repair",
+        None,
+        "cannot repair",
+        stage="fit",
+        affected_evidence="candidate model",
+        evidence_state="diagnostic_only",
+        corrective_action="repair the candidate model",
+        authority="primary",
+    )
     diagnostic = DuplicateDiagnostic(1, "duplicate", "same genes")
     history = HistoryRow(2, "family", "poisson_empirical", 3, 2, 0.5, 0.25, identifier)
 
@@ -131,10 +241,56 @@ def test_candidate_related_records_preserve_valid_immutable_values() -> None:
     assert history.best_identifier == identifier
 
 
+def test_candidate_failure_retains_canonical_scientific_diagnostics() -> None:
+    """Candidate-invalid records keep the same provenance fields as failure outcomes."""
+    failure = CandidateFailure(
+        "incomplete_generation",
+        7,
+        "max_packets",
+        stage="generate",
+        affected_evidence="candidate trace",
+        evidence_state="not_published",
+        corrective_action="increase generation limits or repair the candidate model",
+        authority="primary",
+    )
+
+    assert (
+        failure.stage,
+        failure.affected_evidence,
+        failure.evidence_state,
+        failure.corrective_action,
+        failure.authority,
+    ) == (
+        "generate",
+        "candidate trace",
+        "not_published",
+        "increase generation limits or repair the candidate model",
+        "primary",
+    )
+
+
 def test_candidate_accepts_immutable_exact_integer_and_float_genes() -> None:
     """Exact finite numeric tuples remain valid without imposing family arity here."""
     candidate = Candidate(CandidateId(0, 0), "poisson_empirical", (1, 1.0), "pending", 0.0, (), None, ())
-    invalid = Candidate(CandidateId(0, 1), "mmpp", None, "invalid", 0.0, (), CandidateFailure("repair", None, "x"), ())
+    invalid = Candidate(
+        CandidateId(0, 1),
+        "mmpp",
+        None,
+        "invalid",
+        0.0,
+        (),
+        CandidateFailure(
+            "repair",
+            None,
+            "x",
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action="repair candidate genes",
+            authority="primary",
+        ),
+        (),
+    )
 
     assert candidate.genes == (1, 1.0)
     assert invalid.genes is None

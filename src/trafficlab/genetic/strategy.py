@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Literal, cast
 
 from trafficlab.config import ExperimentConfig, FamilyName, FamilyOperators
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import TrafficlabError, attach_failure_outcome
 from trafficlab.genetic.checkpoint import (
     RNG_ENGINE,
     CheckpointCompatibility,
@@ -187,7 +187,22 @@ def initialize_or_resume(context: StrategyContext) -> CheckpointState | None:
             f"checkpoint already exists at {checkpoint_path} while resume is disabled",
             corrective_action="enable genetic resume or choose a new run directory",
         )
-    return load_generation(context.run_directory, context.compatibility)
+    try:
+        return load_generation(context.run_directory, context.compatibility)
+    except TrafficlabError as error:
+        if error.failure_outcome is None:
+            attach_failure_outcome(
+                error,
+                kind=(
+                    "artifact_corrupt"
+                    if str(error).startswith("invalid checkpoint")
+                    else "scientific_semantics_incompatible"
+                ),
+                stage="fit",
+                affected_evidence="checkpoint.json",
+                evidence_state="preserved",
+            )
+        raise
 
 
 def _evaluate_population(

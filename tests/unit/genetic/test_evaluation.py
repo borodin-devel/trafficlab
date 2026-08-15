@@ -220,7 +220,16 @@ def test_incomplete_generation_is_invalid_candidate_not_infrastructure_abort(fam
     assert evaluated.status == "invalid"
     assert evaluated.fitness == 0.0
     assert evaluated.trials == ()
-    assert evaluated.invalid == CandidateFailure("incomplete_generation", 7, "max_packets")
+    assert evaluated.invalid == CandidateFailure(
+        "incomplete_generation",
+        7,
+        "max_packets",
+        stage="fit",
+        affected_evidence="candidate trace",
+        evidence_state="diagnostic_only",
+        corrective_action="increase generation limits or repair the candidate model",
+        authority="primary",
+    )
     assert family.generate_calls == [(7, W, TRIAL_LIMITS)]
 
 
@@ -265,14 +274,19 @@ def test_final_validation_refits_once_and_returns_no_fitted_python_state(family:
 
 
 @pytest.mark.parametrize(
-    ("boundary", "kind", "seed"),
-    [("repair", "repair", None), ("fit", "fit", None), ("generate", "generation", 7)],
+    ("boundary", "kind", "seed", "affected_evidence"),
+    [
+        ("repair", "repair", None, "candidate genes"),
+        ("fit", "fit", None, "candidate model"),
+        ("generate", "generation", 7, "candidate trace"),
+    ],
 )
 def test_only_direct_family_trafficlab_errors_are_invalid_candidates(
     family: RecordingFamily,
     boundary: str,
     kind: str,
     seed: int | None,
+    affected_evidence: str,
 ) -> None:
     """Registered repair, fit, and generation failures are the named family classifications."""
     error = _trafficlab_error(f"{boundary} rejected")
@@ -286,7 +300,16 @@ def test_only_direct_family_trafficlab_errors_are_invalid_candidates(
     evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
 
     assert evaluated.status == "invalid"
-    assert evaluated.invalid == CandidateFailure(cast(Any, kind), seed, f"{boundary} rejected")
+    assert evaluated.invalid == CandidateFailure(
+        cast(Any, kind),
+        seed,
+        f"{boundary} rejected",
+        stage="fit",
+        affected_evidence=affected_evidence,
+        evidence_state="diagnostic_only",
+        corrective_action="test corrective action",
+        authority="primary",
+    )
 
 
 @pytest.mark.parametrize("boundary", ["repair", "fit", "generate"])
@@ -345,7 +368,14 @@ def test_aggregate_score_is_checked_separately(family: RecordingFamily, monkeypa
     evaluated = evaluate_candidate(PENDING_POISSON, validated)
 
     assert evaluated.invalid == CandidateFailure(
-        "nonfinite_score", 7, "aggregate score must be a finite float in [0, 1]"
+        "nonfinite_score",
+        7,
+        "aggregate score must be a finite float in [0, 1]",
+        stage="fit",
+        affected_evidence="candidate similarity",
+        evidence_state="diagnostic_only",
+        corrective_action="repair the candidate model or similarity computation",
+        authority="primary",
     )
 
 
@@ -394,7 +424,16 @@ def test_already_invalid_candidate_never_calls_a_family(family: RecordingFamily)
         PENDING_POISSON,
         genes=None,
         status="invalid",
-        invalid=CandidateFailure("repair", None, "initialization failed"),
+        invalid=CandidateFailure(
+            "repair",
+            None,
+            "initialization failed",
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action="repair candidate initialization",
+            authority="primary",
+        ),
     )
 
     assert evaluate_candidate(invalid, validate_evaluation_context(_context(family))) is invalid
@@ -590,7 +629,16 @@ def test_zero_weight_component_failure_invalidates_a_complete_candidate(
     assert evaluated.status == "invalid"
     assert evaluated.fitness == 0.0
     assert evaluated.trials == ()
-    assert evaluated.invalid == CandidateFailure("similarity_precondition", 7, f"{zero_weight_method} component failed")
+    assert evaluated.invalid == CandidateFailure(
+        "similarity_precondition",
+        7,
+        f"{zero_weight_method} component failed",
+        stage="fit",
+        affected_evidence="candidate similarity",
+        evidence_state="diagnostic_only",
+        corrective_action=f"repair {zero_weight_method} evidence",
+        authority="primary",
+    )
     assert failure.corrective_action == f"repair {zero_weight_method} evidence"
 
 
@@ -600,7 +648,16 @@ def test_pending_candidate_without_genes_is_invalid_without_family_call(family: 
 
     evaluated = evaluate_candidate(pending, validate_evaluation_context(_context(family)))
 
-    assert evaluated.invalid == CandidateFailure("repair", None, "candidate has no genes")
+    assert evaluated.invalid == CandidateFailure(
+        "repair",
+        None,
+        "candidate has no genes",
+        stage="fit",
+        affected_evidence="candidate genes",
+        evidence_state="diagnostic_only",
+        corrective_action="provide canonical candidate genes",
+        authority="primary",
+    )
     assert family.repair_calls == family.fit_calls == 0
 
 
@@ -660,5 +717,14 @@ def test_final_validation_translates_a_classified_component_failure(
     )
     cause = captured.value.__cause__
     assert type(cause) is CandidateEvaluationError
-    assert cause == CandidateEvaluationError("similarity_precondition", 101, "evaluator defect")
+    assert cause == CandidateEvaluationError(
+        "similarity_precondition",
+        101,
+        "evaluator defect",
+        stage="fit",
+        affected_evidence="candidate similarity",
+        evidence_state="diagnostic_only",
+        corrective_action="test corrective action",
+        authority="primary",
+    )
     assert cause.__cause__ is error

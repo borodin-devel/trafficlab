@@ -21,7 +21,7 @@ from trafficlab.comparison import (
     similarity_settings_sha256,
 )
 from trafficlab.config_io import render_effective_config
-from trafficlab.errors import EvidenceState, TrafficlabError, failure_outcome_from_error
+from trafficlab.errors import EvidenceState, TrafficlabError, append_failure_outcome, failure_outcome_from_error
 from trafficlab.fitting import FitStageResult, fit_experiment
 from trafficlab.generation import GenerationStageResult, generate_experiment
 from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
@@ -445,38 +445,52 @@ def _append_run_failure(
     failed_stage: str,
     completed_stages: tuple[str, ...],
 ) -> None:
-    outcome_by_stage: dict[str, tuple[str, str, EvidenceState]] = {
-        "capture": ("capture_malformed", "capture pair", "diagnostic_only"),
-        "fit": ("artifact_corrupt", "best_model.json", "not_published"),
-        "generate": ("generation_incomplete", "generated.pcapng", "not_published"),
-        "compare": ("metric_infeasible", "similarity.json", "not_published"),
-        "preflight": ("configuration_invalid", "run evidence", "not_published"),
-        "run": ("artifact_corrupt", "run evidence", "preserved"),
+    outcome_by_stage: dict[str, tuple[str, str, str, EvidenceState]] = {
+        "capture": ("capture_malformed", "capture", "capture pair", "diagnostic_only"),
+        "fit": ("artifact_corrupt", "fit", "fit inputs", "preserved"),
+        "generate": ("generation_incomplete", "generate", "generated.pcapng", "not_published"),
+        "compare": ("metric_infeasible", "compare", "similarity.json", "not_published"),
+        "preflight": ("configuration_invalid", "preflight", "run evidence", "not_published"),
+        "run": ("artifact_corrupt", "publication", "run evidence", "preserved"),
     }
     outcome = primary.failure_outcome
     if outcome is None:
-        kind, evidence, evidence_state = outcome_by_stage[failed_stage]
+        kind, canonical_stage, evidence, evidence_state = outcome_by_stage[failed_stage]
         outcome = failure_outcome_from_error(
             primary,
             kind=kind,
-            stage=failed_stage,
+            stage=canonical_stage,
             affected_evidence=evidence,
             evidence_state=evidence_state,
         )
+        primary.failure_outcomes = (outcome,)
+        primary.failure_outcome = outcome
+    secondary_outcomes = primary.failure_outcomes[1:]
     try:
-        append_run_log(
-            run_directory,
-            {
-                "completed_stages": list(completed_stages),
-                "corrective_action": primary.corrective_action,
-                "detail": str(primary),
-                "event": "run_failed",
-                "failed_stage": failed_stage,
-                "failure_outcome": outcome.as_dict(),
-                "stage": "run",
-            },
-        )
+        record: dict[str, object] = {
+            "completed_stages": list(completed_stages),
+            "corrective_action": primary.corrective_action,
+            "detail": str(primary),
+            "event": "run_failed",
+            "failed_stage": failed_stage,
+            "failure_outcome": outcome.as_dict(),
+            "stage": "run",
+        }
+        if secondary_outcomes:
+            record["secondary_outcomes"] = [item.as_dict() for item in secondary_outcomes]
+        append_run_log(run_directory, record)
     except TrafficlabError as logging_error:
+        append_failure_outcome(
+            primary,
+            failure_outcome_from_error(
+                logging_error,
+                kind="publication_failed",
+                stage=outcome.stage,
+                affected_evidence="run.log",
+                evidence_state="not_published",
+                authority="secondary",
+            ),
+        )
         primary.args = (f"{primary}; additionally could not append run failure to run.log: {logging_error}",)
 
 

@@ -9,7 +9,12 @@ from pathlib import Path
 from time import monotonic
 
 from trafficlab.artifacts import append_run_log, publish_generated_pcapng, quantize_generated_events
-from trafficlab.errors import TrafficlabError, attach_failure_outcome, failure_outcome_from_error
+from trafficlab.errors import (
+    TrafficlabError,
+    append_failure_outcome,
+    attach_failure_outcome,
+    failure_outcome_from_error,
+)
 from trafficlab.models.registry import get_family, load_best_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
@@ -31,10 +36,27 @@ class GenerationStageResult:
 def _read_required_bytes(path: Path, *, kind: str, corrective_action: str) -> bytes:
     try:
         return path.read_bytes()
+    except FileNotFoundError as error:
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read {kind} {path}: {error}",
+                corrective_action=corrective_action,
+            ),
+            kind="artifact_missing",
+            stage="generate",
+            affected_evidence=path.name,
+            evidence_state="not_published",
+        ) from error
     except OSError as error:
-        raise TrafficlabError(
-            f"could not read {kind} {path}: {error}",
-            corrective_action=corrective_action,
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read {kind} {path}: {error}",
+                corrective_action=corrective_action,
+            ),
+            kind="artifact_corrupt",
+            stage="generate",
+            affected_evidence=path.name,
+            evidence_state="preserved",
         ) from error
 
 
@@ -43,28 +65,37 @@ def _append_failure(run_directory: Path, primary: TrafficlabError) -> None:
     if outcome is None:
         outcome = failure_outcome_from_error(
             primary,
-            kind="generation_incomplete",
+            kind="artifact_corrupt",
             stage="generate",
-            affected_evidence="generated.pcapng",
-            evidence_state="not_published",
+            affected_evidence="generation inputs",
+            evidence_state="preserved",
         )
+        primary.failure_outcomes = (outcome,)
+        primary.failure_outcome = outcome
     try:
-        append_run_log(
-            run_directory,
-            {
-                "corrective_action": primary.corrective_action,
-                "detail": str(primary),
-                "event": "stage_failed",
-                "failure_outcome": outcome.as_dict(),
-                "stage": "generate",
-            },
-        )
+        record: dict[str, object] = {
+            "corrective_action": primary.corrective_action,
+            "detail": str(primary),
+            "event": "stage_failed",
+            "failure_outcome": outcome.as_dict(),
+            "stage": "generate",
+        }
+        if primary.failure_outcomes[1:]:
+            record["secondary_outcomes"] = [item.as_dict() for item in primary.failure_outcomes[1:]]
+        append_run_log(run_directory, record)
     except TrafficlabError as logging_error:
-        raise TrafficlabError(
-            f"{primary}; additionally could not append generation failure to run.log: {logging_error}",
-            corrective_action=primary.corrective_action,
-            exit_code=primary.exit_code,
-        ) from primary
+        append_failure_outcome(
+            primary,
+            failure_outcome_from_error(
+                logging_error,
+                kind="publication_failed",
+                stage="generate",
+                affected_evidence="run.log",
+                evidence_state="not_published",
+                authority="secondary",
+            ),
+        )
+        primary.args = (f"{primary}; additionally could not append generation failure to run.log: {logging_error}",)
 
 
 def generate_experiment(
@@ -152,7 +183,7 @@ def generate_experiment(
                 kind="artifact_missing",
                 stage="generate",
                 affected_evidence="capture.json",
-                evidence_state="preserved",
+                evidence_state="not_published",
             ) from error
         try:
             metadata = parse_capture_metadata(capture_content, source=capture_path)
@@ -177,15 +208,24 @@ def generate_experiment(
                 evidence_state="preserved",
             )
 
-        events = family.generate(
-            best.fitted,
-            config.run.final_seed,
-            best.observation_window_seconds,
-            config.generation.final,
-            clock=clock,
-        ).require_complete()
-        rendered_events = quantize_generated_events(events, best.observation_window_seconds)
-        content = encode_pcapng(rendered_events, metadata)
+        try:
+            events = family.generate(
+                best.fitted,
+                config.run.final_seed,
+                best.observation_window_seconds,
+                config.generation.final,
+                clock=clock,
+            ).require_complete()
+            rendered_events = quantize_generated_events(events, best.observation_window_seconds)
+            content = encode_pcapng(rendered_events, metadata)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="generation_incomplete",
+                stage="generate",
+                affected_evidence="generated.pcapng",
+                evidence_state="not_published",
+            ) from error
         try:
             publication = publish_generated_pcapng(
                 run_directory,
@@ -202,7 +242,16 @@ def generate_experiment(
                 affected_evidence="generated.pcapng",
                 evidence_state="not_published",
             ) from error
-        parsed_events = parse_pcapng_bytes(publication.content, metadata, source=publication.path)
+        try:
+            parsed_events = parse_pcapng_bytes(publication.content, metadata, source=publication.path)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="generate",
+                affected_evidence="generated.pcapng",
+                evidence_state="preserved",
+            ) from error
         if any(event.timestamp < 0.0 or event.timestamp > best.observation_window_seconds for event in parsed_events):
             raise attach_failure_outcome(
                 TrafficlabError(

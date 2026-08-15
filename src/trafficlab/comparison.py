@@ -15,7 +15,13 @@ from typing import Any, Self, cast
 from trafficlab.artifacts import append_run_log
 from trafficlab.config import SimilarityConfig
 from trafficlab.config_io import load_experiment
-from trafficlab.errors import TrafficlabError, attach_failure_outcome, failure_outcome_from_error
+from trafficlab.errors import (
+    FailureOutcome,
+    TrafficlabError,
+    append_failure_outcome,
+    attach_failure_outcome,
+    failure_outcome_from_error,
+)
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.similarity.autocorrelation import autocorrelation_similarity
 from trafficlab.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
@@ -677,10 +683,27 @@ def _read_comparison_input(path: Path, *, kind: str, corrective_action: str) -> 
     """Read one comparison input exactly once with its artifact-specific error."""
     try:
         return path.read_bytes()
+    except FileNotFoundError as error:
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read {kind} {path}: {error}",
+                corrective_action=corrective_action,
+            ),
+            kind="artifact_missing",
+            stage="compare",
+            affected_evidence=path.name,
+            evidence_state="not_published",
+        ) from error
     except OSError as error:
-        raise TrafficlabError(
-            f"could not read {kind} {path}: {error}",
-            corrective_action=corrective_action,
+        raise attach_failure_outcome(
+            TrafficlabError(
+                f"could not read {kind} {path}: {error}",
+                corrective_action=corrective_action,
+            ),
+            kind="artifact_corrupt",
+            stage="compare",
+            affected_evidence=path.name,
+            evidence_state="preserved",
         ) from error
 
 
@@ -771,7 +794,27 @@ def _publication_error(error: Exception, destination: Path, cleanup_error: BaseE
         action = "verify the run directory is writable and has available space"
     if cleanup_error is not None:
         detail = f"{detail}; cleanup incomplete: could not remove owned temporary file: {cleanup_error}"
-    return _PublicationError(detail, corrective_action=action)
+    outcome = FailureOutcome(
+        kind="publication_collision" if isinstance(error, FileExistsError) else "publication_failed",
+        stage="compare",
+        detail=detail,
+        affected_evidence="similarity.json",
+        evidence_state="preserved" if isinstance(error, FileExistsError) else "not_published",
+        corrective_action=action,
+        authority="primary",
+    )
+    outcomes = (outcome,)
+    if cleanup_error is not None:
+        outcomes = (*outcomes, FailureOutcome(
+            kind="cleanup_failed",
+            stage="compare",
+            detail=f"owned temporary file cleanup failed: {cleanup_error}",
+            affected_evidence="inventory",
+            evidence_state="possibly_remaining",
+            corrective_action="remove the owned temporary file after preserving diagnostics",
+            authority="secondary",
+        ))
+    return _PublicationError(detail, corrective_action=action, failure_outcomes=outcomes)
 
 
 def _existing_result_is_reusable(destination: Path, expected_content: bytes, *, missing_ok: bool) -> bool:
@@ -862,6 +905,28 @@ def _publish_comparison_result(destination: Path, result: ComparisonResult) -> b
                 corrective_action=(
                     "preserve the published result and remove the reported temporary file if it is still owned"
                 ),
+                failure_outcomes=(
+                    FailureOutcome(
+                        kind="publication_failed",
+                        stage="compare",
+                        detail=detail,
+                        affected_evidence="similarity.json",
+                        evidence_state="preserved",
+                        corrective_action=(
+                            "preserve the published result and remove the reported temporary file if it is still owned"
+                        ),
+                        authority="primary",
+                    ),
+                    FailureOutcome(
+                        kind="cleanup_failed",
+                        stage="compare",
+                        detail=f"owned temporary file cleanup failed: {cleanup_error}",
+                        affected_evidence="inventory",
+                        evidence_state="possibly_remaining",
+                        corrective_action="remove the owned temporary file after preserving diagnostics",
+                        authority="secondary",
+                    ),
+                ),
             ) from cleanup_error
         raise cleanup_error
     return created_by_call
@@ -878,23 +943,32 @@ def _append_failure(run_directory: Path, primary: TrafficlabError, *, failure_ki
             affected_evidence="similarity.json",
             evidence_state="not_published",
         )
+        primary.failure_outcomes = (outcome,)
+        primary.failure_outcome = outcome
     try:
-        append_run_log(
-            run_directory,
-            {
-                "detail": str(primary),
-                "event": "comparison_failed",
-                "failure_kind": failure_kind,
-                "failure_outcome": outcome.as_dict(),
-                "stage": "compare",
-            },
-        )
+        record: dict[str, object] = {
+            "detail": str(primary),
+            "event": "comparison_failed",
+            "failure_kind": failure_kind,
+            "failure_outcome": outcome.as_dict(),
+            "stage": "compare",
+        }
+        if primary.failure_outcomes[1:]:
+            record["secondary_outcomes"] = [item.as_dict() for item in primary.failure_outcomes[1:]]
+        append_run_log(run_directory, record)
     except TrafficlabError as logging_error:
-        raise TrafficlabError(
-            f"{primary}; additionally could not append comparison failure to run.log: {logging_error}",
-            corrective_action=primary.corrective_action,
-            exit_code=primary.exit_code,
-        ) from primary
+        append_failure_outcome(
+            primary,
+            failure_outcome_from_error(
+                logging_error,
+                kind="publication_failed",
+                stage="compare",
+                affected_evidence="run.log",
+                evidence_state="not_published",
+                authority="secondary",
+            ),
+        )
+        primary.args = (f"{primary}; additionally could not append comparison failure to run.log: {logging_error}",)
 
 
 def compare_experiment(experiment_path: Path) -> ComparisonResult:
@@ -923,29 +997,65 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
             kind="capture metadata",
             corrective_action="verify capture.json exists and is readable",
         )
-        metadata = parse_capture_metadata(metadata_content, source=metadata_path)
+        try:
+            metadata = parse_capture_metadata(metadata_content, source=metadata_path)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="compare",
+                affected_evidence="capture.json",
+                evidence_state="preserved",
+            ) from error
         reference_content = _read_comparison_input(
             reference_path,
             kind="PCAPNG",
             corrective_action="verify the PCAPNG exists and is readable",
         )
-        reference_events = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
+        try:
+            reference_events = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="compare",
+                affected_evidence="reference.pcapng",
+                evidence_state="preserved",
+            ) from error
         generated_content = _read_comparison_input(
             generated_path,
             kind="PCAPNG",
             corrective_action="verify the PCAPNG exists and is readable",
         )
-        generated_events = parse_pcapng_bytes(generated_content, metadata, source=generated_path)
-        reference, window = normalize_reference(reference_events)
-        generated = align_generated(generated_events, window)
-        result = compare_traces(reference, generated, window, snapshot_config.similarity).with_input_sha256(
-            {
-                "capture_json": sha256_bytes(metadata_content),
-                "generated_pcapng": sha256_bytes(generated_content),
-                "reference_pcapng": sha256_bytes(reference_content),
-                "similarity_settings": similarity_settings_sha256(snapshot_config.similarity),
-            }
-        )
+        try:
+            generated_events = parse_pcapng_bytes(generated_content, metadata, source=generated_path)
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="artifact_corrupt",
+                stage="compare",
+                affected_evidence="generated.pcapng",
+                evidence_state="preserved",
+            ) from error
+        try:
+            reference, window = normalize_reference(reference_events)
+            generated = align_generated(generated_events, window)
+            result = compare_traces(reference, generated, window, snapshot_config.similarity).with_input_sha256(
+                {
+                    "capture_json": sha256_bytes(metadata_content),
+                    "generated_pcapng": sha256_bytes(generated_content),
+                    "reference_pcapng": sha256_bytes(reference_content),
+                    "similarity_settings": similarity_settings_sha256(snapshot_config.similarity),
+                }
+            )
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="metric_infeasible",
+                stage="compare",
+                affected_evidence="similarity.json",
+                evidence_state="not_published",
+            ) from error
         created_by_call = _publish_comparison_result(output_path, result)
     except TrafficlabError as error:
         failure_kind = "publication" if isinstance(error, _PublicationError) else "evaluation_or_input"

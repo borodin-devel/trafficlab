@@ -140,7 +140,16 @@ def _repair_candidate(candidate: Candidate, context: ValidatedEvaluationContext)
     try:
         return family.repair(cast(Genes, candidate.genes), bounds, context.reference)
     except TrafficlabError as error:
-        raise CandidateEvaluationError("repair", None, str(error)) from error
+        raise CandidateEvaluationError(
+            "repair",
+            None,
+            str(error),
+            stage="fit",
+            affected_evidence="candidate genes",
+            evidence_state="diagnostic_only",
+            corrective_action=error.corrective_action,
+            authority="primary",
+        ) from error
 
 
 def _fit_candidate(candidate: Candidate, context: ValidatedEvaluationContext) -> FittedModel:
@@ -148,7 +157,16 @@ def _fit_candidate(candidate: Candidate, context: ValidatedEvaluationContext) ->
     try:
         return family.fit(context.reference, cast(Genes, candidate.genes), W=context.window, bounds=bounds)
     except TrafficlabError as error:
-        raise CandidateEvaluationError("fit", None, str(error)) from error
+        raise CandidateEvaluationError(
+            "fit",
+            None,
+            str(error),
+            stage="fit",
+            affected_evidence="candidate model",
+            evidence_state="diagnostic_only",
+            corrective_action=error.corrective_action,
+            authority="primary",
+        ) from error
 
 
 def _generate_candidate(
@@ -161,11 +179,29 @@ def _generate_candidate(
     try:
         result = family.generate(model, seed, context.window, context.trial_limits)
     except TrafficlabError as error:
-        raise CandidateEvaluationError("generation", seed, str(error)) from error
+        raise CandidateEvaluationError(
+            "generation",
+            seed,
+            str(error),
+            stage="fit",
+            affected_evidence="candidate trace",
+            evidence_state="diagnostic_only",
+            corrective_action=error.corrective_action,
+            authority="primary",
+        ) from error
     if type(result) is not GenerationResult:
         raise TypeError("registered family generate must return a GenerationResult")
     if not result.complete:
-        raise CandidateEvaluationError("incomplete_generation", seed, cast(str, result.reason))
+        raise CandidateEvaluationError(
+            "incomplete_generation",
+            seed,
+            cast(str, result.reason),
+            stage="fit",
+            affected_evidence="candidate trace",
+            evidence_state="diagnostic_only",
+            corrective_action="increase generation limits or repair the candidate model",
+            authority="primary",
+        )
     return result.events
 
 
@@ -188,12 +224,30 @@ def validate_candidate_similarity_preconditions(
     if event_count < 1:
         failures.append("multiscale_rate requires at least one generated event")
     if failures:
-        raise CandidateEvaluationError("similarity_precondition", seed, "; ".join(failures))
+        raise CandidateEvaluationError(
+            "similarity_precondition",
+            seed,
+            "; ".join(failures),
+            stage="fit",
+            affected_evidence="candidate similarity",
+            evidence_state="diagnostic_only",
+            corrective_action="repair the candidate model to generate sufficient comparable events",
+            authority="primary",
+        )
 
 
 def _score(value: object, *, name: str, seed: int) -> float:
     if type(value) is not float or not math.isfinite(value) or not 0.0 <= value <= 1.0:
-        raise CandidateEvaluationError("nonfinite_score", seed, f"{name} must be a finite float in [0, 1]")
+        raise CandidateEvaluationError(
+            "nonfinite_score",
+            seed,
+            f"{name} must be a finite float in [0, 1]",
+            stage="fit",
+            affected_evidence="candidate similarity",
+            evidence_state="diagnostic_only",
+            corrective_action="repair the candidate model or similarity computation",
+            authority="primary",
+        )
     return value
 
 
@@ -224,7 +278,16 @@ def _evaluate_trial(
     try:
         comparison = compare_traces(context.reference, generated, context.window, context.similarity)
     except TrafficlabError as error:
-        raise CandidateEvaluationError("similarity_precondition", seed, str(error)) from error
+        raise CandidateEvaluationError(
+            "similarity_precondition",
+            seed,
+            str(error),
+            stage="fit",
+            affected_evidence="candidate similarity",
+            evidence_state="diagnostic_only",
+            corrective_action=error.corrective_action,
+            authority="primary",
+        ) from error
     return _trial_from_comparison(comparison, seed=seed)
 
 
@@ -234,7 +297,16 @@ def _invalid_candidate(candidate: Candidate, error: CandidateEvaluationError) ->
         status="invalid",
         fitness=0.0,
         trials=(),
-        invalid=CandidateFailure(error.kind, error.seed, error.detail),
+        invalid=CandidateFailure(
+            error.kind,
+            error.seed,
+            error.detail,
+            stage=error.stage,
+            affected_evidence=error.affected_evidence,
+            evidence_state=error.evidence_state,
+            corrective_action=error.corrective_action,
+            authority=error.authority,
+        ),
     )
 
 
@@ -248,7 +320,19 @@ def evaluate_candidate(candidate: Candidate, context: ValidatedEvaluationContext
     if candidate.status != "pending":
         raise ValueError("candidate must be pending before evaluation")
     if candidate.genes is None:
-        return _invalid_candidate(candidate, CandidateEvaluationError("repair", None, "candidate has no genes"))
+        return _invalid_candidate(
+            candidate,
+            CandidateEvaluationError(
+                "repair",
+                None,
+                "candidate has no genes",
+                stage="fit",
+                affected_evidence="candidate genes",
+                evidence_state="diagnostic_only",
+                corrective_action="provide canonical candidate genes",
+                authority="primary",
+            ),
+        )
     _family_and_bounds(candidate, checked_context)
     repaired_candidate = candidate
     try:
@@ -285,7 +369,18 @@ def evaluate_final(
     if type(candidate) is not Candidate:
         raise TypeError("candidate must be a Candidate")
     if candidate.status != "valid" or candidate.genes is None:
-        raise _final_validation_error(CandidateEvaluationError("fit", None, "stored winner is not a valid candidate"))
+        raise _final_validation_error(
+            CandidateEvaluationError(
+                "fit",
+                None,
+                "stored winner is not a valid candidate",
+                stage="fit",
+                affected_evidence="candidate model",
+                evidence_state="diagnostic_only",
+                corrective_action="select a valid stored winner",
+                authority="primary",
+            )
+        )
     _family_and_bounds(candidate, checked_context)
     try:
         model = _fit_candidate(candidate, checked_context)
