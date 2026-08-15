@@ -176,11 +176,20 @@ class _Docker:
         return ProjectInventory(containers=())
 
 
-def _config(valid_config_data: dict[str, object], tmp_path: Path) -> ExperimentConfig:
+def _config(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    *,
+    mounts: list[dict[str, object]] | None = None,
+) -> ExperimentConfig:
     data = dict(valid_config_data)
     run = dict(cast(dict[str, object], data["run"]))
     run["directory"] = str(tmp_path / "run")
     data["run"] = run
+    if mounts is not None:
+        target = dict(cast(dict[str, object], data["target"]))
+        target["mounts"] = mounts
+        data["target"] = target
     config = ExperimentConfig.model_validate(data)
     config.run.directory.mkdir()
     return config
@@ -280,7 +289,8 @@ def test_capture_image_identity_mismatch_stops_before_compose_probe(
     assert report.environment_identity is None
     assert report.findings[-1].name == "capture_image"
     assert report.findings[-1].ok is False
-    assert "expected capture image" in report.findings[-1].detail
+    assert report.findings[-1].detail == "capture image identity is incompatible"
+    assert report.findings[-1].corrective_action == "restore the declared image content identity and architecture"
     assert "config" not in _names(docker)
 
 
@@ -407,10 +417,18 @@ def test_full_preflight_returns_the_direct_boundary_failure_without_later_stages
 
     failed = [finding for finding in report.findings if not finding.ok]
     assert len(failed) == 1
-    assert failed[0].detail == str(failure)
-    with pytest.raises(TrafficlabError, match=f"{operation} unavailable") as caught:
+    expected_detail = {
+        "info": "Docker Engine is unavailable",
+        "compose_version": "Docker Compose version is incompatible",
+    }.get(operation, str(failure))
+    expected_action = {
+        "info": "restore Docker Engine and Compose availability",
+        "compose_version": "provide the named required Docker and Compose features",
+    }.get(operation, f"repair {operation}")
+    assert failed[0].detail == expected_detail
+    with pytest.raises(TrafficlabError, match=expected_detail) as caught:
         report.require_success()
-    assert caught.value.corrective_action == f"repair {operation}"
+    assert caught.value.corrective_action == expected_action
     if operation != "config":
         assert "start_down" not in _names(docker)
 
@@ -427,11 +445,11 @@ def test_probe_failure_remains_primary_when_cleanup_also_fails(
 
     failures = [finding for finding in report.findings if not finding.ok]
     assert [finding.name for finding in failures] == ["network_probe", "probe_cleanup"]
-    assert "status 7" in failures[0].detail
+    assert failures[0].detail == "capture prerequisite is unavailable"
     assert "status 19" in failures[1].detail
-    with pytest.raises(TrafficlabError, match="status 7.*status 19") as caught:
+    with pytest.raises(TrafficlabError, match="capture prerequisite is unavailable.*status 19") as caught:
         report.require_success()
-    assert "probe endpoint" in caught.value.corrective_action
+    assert caught.value.corrective_action == "make the named prerequisite available"
     assert _names(docker)[-2:] == ["start_down", "project_inventory"]
 
 
@@ -582,3 +600,139 @@ def test_disposable_workspace_failure_is_returned_as_an_actionable_finding(
     assert "workspace denied" in report.findings[-1].detail
     with pytest.raises(TrafficlabError, match="workspace denied"):
         report.require_success()
+
+
+def test_image_still_missing_after_pull_is_owned_by_the_image_stage(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+
+    class MissingAfterPull(_Docker):
+        def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
+            self._record("image_inspect", image, deadline=deadline)
+            if image == config.target.image:
+                return CommandResult(1, "", "still missing")
+            return super().image_inspect(image, deadline=deadline)
+
+    report = check_docker(config, MissingAfterPull(), deadline=160.0, clock=lambda: 100.0)
+
+    assert report.findings[-1].name == "target_image"
+    assert report.findings[-1].detail == f"target image {config.target.image} is unavailable"
+
+
+def test_capture_readiness_distinguishes_missing_and_unreadable_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "probe"
+    output.mkdir()
+    assert preflight_module._capture_ready(output) is False  # pyright: ignore[reportPrivateUsage]
+
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    (output / "capture.json").write_bytes(render_capture_metadata(metadata))
+    capture_path = output / "reference.pcapng.tmp"
+    capture_path.write_bytes(b"x" * 28)
+    real_read_bytes = Path.read_bytes
+
+    def fail_capture_read(path: Path) -> bytes:
+        if path == capture_path:
+            raise OSError("injected header read failure")
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_capture_read)
+    with pytest.raises(TrafficlabError, match="could not inspect preflight capture header"):
+        preflight_module._capture_ready(output)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("states", [(None,), ("running", "exited")], ids=["missing", "not-ready-then-exited"])
+def test_capture_readiness_rejects_a_missing_or_stopped_service(tmp_path: Path, states: tuple[str | None, ...]) -> None:
+    output = tmp_path / "probe"
+    output.mkdir()
+
+    class States:
+        def __init__(self) -> None:
+            self.values = iter(states)
+
+        def service_state(
+            self, compose_path: Path, project_name: str, service: str, *, deadline: float
+        ) -> ServiceState | None:
+            del compose_path, project_name, service, deadline
+            state = next(self.values)
+            if state is None:
+                return None
+            return ServiceState("capture", "capture", "capture", state, 127 if state == "exited" else 0)
+
+    with pytest.raises(TrafficlabError, match="dumpcap is unavailable"):
+        preflight_module._wait_capture_ready(  # pyright: ignore[reportPrivateUsage]
+            cast(preflight_module.DockerPreflight, States()),
+            tmp_path / "compose.json",
+            "probe",
+            output,
+            deadline=2.0,
+            clock=lambda: 1.0,
+            observed={},
+        )
+
+
+def test_target_probe_waits_through_absent_and_running_states(tmp_path: Path) -> None:
+    states = iter(
+        (
+            None,
+            ServiceState("target", "target", "target", "running", 0),
+            ServiceState("target", "target", "target", "exited", 0),
+        )
+    )
+
+    class States:
+        def service_state(
+            self, compose_path: Path, project_name: str, service: str, *, deadline: float
+        ) -> ServiceState | None:
+            del compose_path, project_name, service, deadline
+            return next(states)
+
+    observed: dict[str, ServiceState] = {}
+    preflight_module._wait_target(  # pyright: ignore[reportPrivateUsage]
+        cast(preflight_module.DockerPreflight, States()),
+        tmp_path / "compose.json",
+        "probe",
+        deadline=2.0,
+        clock=lambda: 1.0,
+        observed=observed,
+    )
+
+    assert observed["target"].state == "exited"
+
+
+def test_nonmount_compose_configuration_failure_keeps_its_owner(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+
+    class InvalidCompose(_Docker):
+        def config(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+            self._record("config", compose_path, project_name, deadline=deadline)
+            return CommandResult(1, "", "invalid compose")
+
+    report = check_docker(config, InvalidCompose(), deadline=160.0, clock=lambda: 100.0)
+
+    assert report.findings[-1].name == "compose_config"
+    assert report.findings[-1].detail == "production Compose configuration is incompatible"
+
+
+def test_mount_compose_exception_is_canonicalized_at_the_real_owner(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    source = tmp_path / "fixture-data"
+    source.write_bytes(b"fixture")
+    config = _config(
+        valid_config_data,
+        tmp_path,
+        mounts=[{"source": str(source), "target": "/work/data", "read_only": True}],
+    )
+    failure = TrafficlabError("compose rejected mount", corrective_action="raw compose repair")
+    docker = _Docker(failure=("config", failure))
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.findings[-1].name == "compose_config"
+    assert report.findings[-1].detail == "mount target /work/data is incompatible"
+    assert report.findings[-1].corrective_action == "correct the declared container target and mode"

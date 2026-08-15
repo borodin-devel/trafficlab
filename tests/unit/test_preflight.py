@@ -64,7 +64,8 @@ def test_missing_mount_source_is_a_direct_failure(valid_config_data: dict[str, o
     finding = report.findings[0]
     assert finding.name == "mounts"
     assert not finding.ok
-    assert str(missing) in finding.detail
+    assert finding.detail == "mount source missing is unavailable"
+    assert finding.corrective_action == "make the named host source available to Docker"
     with pytest.raises(TrafficlabError, match="mounts:"):
         report.require_success()
 

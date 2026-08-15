@@ -10,6 +10,10 @@ from trafficlab.trace import Direction, TraceEvent
 _ROUNDING_TOLERANCE = 1e-15
 
 
+class AutocorrelationSamplesInsufficientError(TrafficlabError):
+    """Configured autocorrelation lags exceed at least one observed sample."""
+
+
 def _clamp_documented_range(value: float, *, lower: float, upper: float, name: str) -> float:
     """Clamp negligible roundoff at one documented interval boundary."""
     if not math.isfinite(value):
@@ -257,7 +261,7 @@ def _validate_lags_fit_samples(lags: tuple[int, ...], samples: dict[str, tuple[i
     """Require every configured lag to fit reference and generated IAT and size samples."""
     for sample_name, values in samples.items():
         if any(lag >= len(values) for lag in lags):
-            raise TrafficlabError(
+            raise AutocorrelationSamplesInsufficientError(
                 f"invalid autocorrelation lags: every lag must be smaller than the {sample_name} sample length",
                 corrective_action="provide lags smaller than all reference and generated IAT and size samples",
             )

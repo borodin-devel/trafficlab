@@ -153,7 +153,7 @@ def test_run_preflight_preserves_local_findings_and_logs_the_direct_docker_failu
             assert deadline == 160.0
             raise TrafficlabError("daemon permission denied", corrective_action="grant Docker daemon access")
 
-    with pytest.raises(TrafficlabError, match="docker_daemon: daemon permission denied") as caught:
+    with pytest.raises(TrafficlabError, match="docker_daemon: Docker Engine is unavailable") as caught:
         run_preflight(
             experiment_path,
             config_only=False,
@@ -161,17 +161,17 @@ def test_run_preflight_preserves_local_findings_and_logs_the_direct_docker_failu
             clock=lambda: 100.0,
         )
 
-    assert caught.value.corrective_action == "grant Docker daemon access"
+    assert caught.value.corrective_action == "restore Docker Engine and Compose availability"
     run_directory = Path(cast(str, cast(dict[str, object], valid_config_data["run"])["directory"]))
     records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
     assert records[-1] == {
-        "detail": "daemon permission denied",
+        "detail": "Docker Engine is unavailable",
         "event": "preflight_check",
         "failure_outcome": {
             "affected_evidence": "capture evidence",
             "authority": "primary",
-            "corrective_action": "grant Docker daemon access",
-            "detail": "daemon permission denied",
+            "corrective_action": "restore Docker Engine and Compose availability",
+            "detail": "Docker Engine is unavailable",
             "evidence_state": "not_published",
             "kind": "docker_preflight_failed",
             "stage": "preflight",

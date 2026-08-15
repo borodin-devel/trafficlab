@@ -1158,7 +1158,8 @@ def test_stage_reports_missing_or_invalid_model_as_direct_generation_error(
     else:
         model_path.write_bytes(b"not JSON")
 
-    with pytest.raises(TrafficlabError, match="best model") as error:
+    expected_detail = "best_model.json is missing" if defect == "missing" else "best model"
+    with pytest.raises(TrafficlabError, match=expected_detail) as error:
         generate_experiment(experiment_path, clock=lambda: 0.0)
 
     assert _log_records(run_directory)[-1] == {
@@ -1176,6 +1177,21 @@ def test_stage_reports_missing_or_invalid_model_as_direct_generation_error(
         },
         "stage": "generate",
     }
+
+
+def test_stage_reports_a_missing_capture_metadata_file_through_the_real_reader(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
+    (run_directory / "capture.json").unlink()
+
+    with pytest.raises(TrafficlabError, match="could not read capture metadata") as error:
+        generate_experiment(experiment_path, clock=lambda: 0.0)
+
+    assert error.value.failure_outcome is not None
+    assert error.value.failure_outcome.affected_evidence == "capture.json"
+    assert error.value.failure_outcome.evidence_state == "not_published"
+    assert not (run_directory / "generated.pcapng").exists()
 
 
 def test_stage_rejects_incompatible_model_schema_before_generation(
@@ -1252,7 +1268,7 @@ def test_stage_rejects_incomplete_generation_without_publication(
 
     monkeypatch.setattr(generation_module, "get_family", get_incomplete_family)
 
-    with pytest.raises(TrafficlabError, match="did not complete"):
+    with pytest.raises(TrafficlabError, match="generation exceeded the configured packet limit"):
         generate_experiment(experiment_path, clock=lambda: 0.0)
 
     assert not (run_directory / "generated.pcapng").exists()

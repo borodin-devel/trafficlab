@@ -58,9 +58,14 @@ def _read_required_bytes(path: Path, *, kind: str, corrective_action: str) -> by
     try:
         return path.read_bytes()
     except FileNotFoundError as error:
+        if path.name == "best_model.json":
+            detail = "best_model.json is missing"
+            corrective_action = "rerun fit"
+        else:
+            detail = f"could not read {kind} {path}: {error}"
         raise attach_failure_outcome(
             TrafficlabError(
-                f"could not read {kind} {path}: {error}",
+                detail,
                 corrective_action=corrective_action,
             ),
             kind="artifact_missing",

@@ -142,5 +142,6 @@ def test_every_family_reports_each_incomplete_reason(
         result = case.family.generate(fitted, 2468, WINDOW, limits, clock=clock)  # type: ignore[arg-type]
     assert result.complete is False
     assert result.reason == reason
-    with pytest.raises(TrafficlabError, match=reason):
+    expected_detail = "generation exceeded the configured packet limit" if reason == "max_packets" else reason
+    with pytest.raises(TrafficlabError, match=expected_detail):
         result.require_complete()

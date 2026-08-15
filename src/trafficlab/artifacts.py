@@ -208,8 +208,8 @@ def _read_existing_best_model(destination: Path, expected_content: bytes | None)
     if existing_content != expected_content:
         raise attach_failure_outcome(
             TrafficlabError(
-                f"best_model already exists: {destination}",
-                corrective_action="preserve the existing artifact or start a new run directory",
+                "best_model.json already exists",
+                corrective_action="choose a new run directory",
             ),
             kind="publication_collision",
             stage="fit",

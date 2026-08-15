@@ -129,7 +129,7 @@ def test_prepare_experiment_failure_before_publication_leaves_no_run_directory(
     experiment_path = tmp_path / "experiment.toml"
     _write_config(experiment_path, data)
 
-    with pytest.raises(TrafficlabError, match="missing mount"):
+    with pytest.raises(TrafficlabError, match="mounts: mount source missing is unavailable"):
         preflight_module.prepare_experiment(experiment_path)
 
     assert not run_directory.exists()

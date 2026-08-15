@@ -1143,7 +1143,7 @@ def test_best_model_is_exclusive_except_validated_identical_reuse(tmp_path: Path
 
     assert (first.path, first.content, first.created_by_call) == (destination, first_content, True)
     assert (reused.path, reused.content, reused.created_by_call) == (destination, first_content, False)
-    with pytest.raises(TrafficlabError, match="best_model already exists"):
+    with pytest.raises(TrafficlabError, match=r"best_model\.json already exists"):
         publish_best_model(destination, other_content)
     assert destination.read_bytes() == first_content
 
@@ -1282,7 +1282,7 @@ def test_best_model_publication_race_preserves_and_validates_the_winner(
         publication = publish_best_model(destination, prospective)
         assert publication.created_by_call is False
     else:
-        with pytest.raises(TrafficlabError, match="best_model already exists"):
+        with pytest.raises(TrafficlabError, match=r"best_model\.json already exists"):
             publish_best_model(destination, prospective)
 
     assert destination.read_bytes() == winner

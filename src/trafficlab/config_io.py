@@ -75,6 +75,12 @@ def load_configuration_pair(path: Path) -> ConfigurationPair:
     try:
         portable = ExperimentConfig.model_validate(data)
     except ValidationError as error:
+        details = error.errors()
+        if len(details) == 1 and tuple(details[0]["loc"]) == ("target", "argv") and details[0]["type"] == "too_short":
+            raise TrafficlabError(
+                "target.argv: must contain at least one argument",
+                corrective_action="correct the named field or path",
+            ) from error
         raise TrafficlabError(
             f"invalid experiment configuration {path}: {_format_validation_errors(error)}",
             corrective_action="correct the reported configuration values and retry",

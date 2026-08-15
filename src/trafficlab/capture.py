@@ -761,6 +761,12 @@ def _capture_failure_outcome(
     is_flush_timeout = kind is FailureKind.FLUSH_FAILED or origin is CaptureFailureOrigin.FLUSH
     stage = "capture"
     if kind in (FailureKind.TARGET_NONZERO_EXIT, FailureKind.NATURAL_TARGET_STATUS, FailureKind.INDUCED_TARGET_STATUS):
+        assert status is not None
+        detail = (
+            f"target exited after Trafficlab requested termination with status {status}"
+            if kind is FailureKind.INDUCED_TARGET_STATUS
+            else f"target exited naturally with status {status}"
+        )
         outcome_kind, evidence, state = "target_failed", "capture pair", "diagnostic_only"
         if authority == "primary" and has_capture_and_total:
             state = "not_published"
@@ -770,10 +776,12 @@ def _capture_failure_outcome(
         else:
             corrective_action = "inspect target status and log"
     elif kind is FailureKind.USER_INTERRUPTION:
+        detail = "capture interrupted by user"
         outcome_kind, evidence, state = "interrupted", "capture pair", "diagnostic_only"
         status = 130
         corrective_action = "retry when ready"
     elif kind is FailureKind.CLEANUP_FAILED:
+        detail = "capture cleanup timed out"
         outcome_kind, evidence, state = "cleanup_failed", "inventory", "possibly_remaining"
         status = None
         corrective_action = "remove the named project"
@@ -792,6 +800,14 @@ def _capture_failure_outcome(
         status = None
         corrective_action = "restore the declared mounted-input content identity"
     elif kind is FailureKind.CAPTURE_STOPPED:
+        if status is not None:
+            detail = (
+                f"capture stopped with status {status} after natural target success"
+                if authority == "primary" and natural_target_succeeded
+                else f"capture stopped with status {status} while target remained active"
+                if authority == "primary"
+                else f"capture stopped with status {status}"
+            )
         outcome_kind, evidence, state = "capture_failed", "capture pair", "not_published"
         corrective_action = (
             "inspect capture status without SIGINT or flush wait"
@@ -799,6 +815,13 @@ def _capture_failure_outcome(
             else "inspect capture status and log"
         )
     elif kind is FailureKind.STAGE_TIMEOUT:
+        detail = (
+            "flush deadline expired after natural target success"
+            if is_flush_timeout and natural_target_succeeded and FailureKind.TOTAL_TIMEOUT not in all_kinds
+            else "flush deadline expired"
+            if is_flush_timeout
+            else "workload deadline expired"
+        )
         outcome_kind, evidence, state = "stage_timeout", "capture pair", "diagnostic_only"
         if is_flush_timeout:
             state = "not_published"
@@ -812,6 +835,12 @@ def _capture_failure_outcome(
         else:
             corrective_action = "correct timeout or workload"
     elif kind in (FailureKind.TOTAL_TIMEOUT, FailureKind.FLUSH_FAILED):
+        if kind is FailureKind.TOTAL_TIMEOUT:
+            detail = (
+                "total-run deadline expired during validation"
+                if origin is CaptureFailureOrigin.VALIDATION
+                else "total-run deadline expired"
+            )
         outcome_kind, evidence, state = "stage_timeout", "capture pair", "not_published"
         if kind is FailureKind.TOTAL_TIMEOUT:
             corrective_action = (
@@ -826,6 +855,7 @@ def _capture_failure_outcome(
         else:
             corrective_action = "correct capture flush or budget"
     else:
+        detail = "capture PCAPNG is malformed"
         outcome_kind, evidence, state = "capture_malformed", "capture pair", "diagnostic_only"
         corrective_action = "correct the capture producer"
     return FailureOutcome(
@@ -856,7 +886,10 @@ def _normalize_capture_pair_evidence_states(
 
 
 def _capture_failure_outcomes(
-    outcome: CaptureOutcome, *, capture_status: int | None = None
+    outcome: CaptureOutcome,
+    *,
+    capture_status: int | None = None,
+    natural_target_succeeded: bool = False,
 ) -> tuple[FailureOutcome, tuple[FailureOutcome, ...]]:
     """Render one primary and every retained secondary capture failure in existing discovery order."""
     if outcome.primary_kind is None or outcome.primary_detail is None:
@@ -868,7 +901,7 @@ def _capture_failure_outcomes(
         item for item in all_details if not (item[0] is FailureKind.NATURAL_TARGET_STATUS and item[2] == 0)
     )
     all_kinds = tuple(item[0] for item in rendered_details)
-    natural_target_succeeded = any(
+    natural_target_succeeded = natural_target_succeeded or any(
         item.kind is FailureKind.NATURAL_TARGET_STATUS and item.status == 0 for item in outcome.secondary_details
     )
     primary_kind, primary_detail, primary_status, primary_origin = rendered_details[0]
@@ -1084,6 +1117,7 @@ def capture_prepared_experiment(
     publication: CapturePublication | None = None
     target_may_exist = False
     project_may_exist = False
+    natural_target_succeeded = False
 
     def record_temporary_cleanup_failure(detail: str) -> None:
         nonlocal outcome
@@ -1251,6 +1285,7 @@ def capture_prepared_experiment(
                         clock=clock,
                     )
                 target_status = target.exit_code if natural_target and target is not None else None
+                natural_target_succeeded = target_status == 0
                 closed_capture = states.get("capture")
                 capture_closed_cleanly = (
                     closed_capture is not None and closed_capture.state == "exited" and closed_capture.exit_code == 0
@@ -1369,7 +1404,11 @@ def capture_prepared_experiment(
         capture_status = (
             capture_state.exit_code if capture_state is not None and capture_state.state == "exited" else None
         )
-        primary_outcome, secondary_outcomes = _capture_failure_outcomes(outcome, capture_status=capture_status)
+        primary_outcome, secondary_outcomes = _capture_failure_outcomes(
+            outcome,
+            capture_status=capture_status,
+            natural_target_succeeded=natural_target_succeeded,
+        )
         error = _outcome_error(outcome)
         error.failure_outcomes = (primary_outcome, *secondary_outcomes)
         error.failure_outcome = primary_outcome

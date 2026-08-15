@@ -119,9 +119,7 @@ def test_configuration_realization_preserves_every_non_path_section(
     """Changing a configuration value while realizing paths would invalidate reproducibility."""
     data = copy.deepcopy(valid_config_data)
     cast(dict[str, object], data["run"])["directory"] = "runs/portable-case"
-    cast(dict[str, object], data["target"])["mounts"] = [
-        {"source": "data", "target": "/work/data", "read_only": True}
-    ]
+    cast(dict[str, object], data["target"])["mounts"] = [{"source": "data", "target": "/work/data", "read_only": True}]
     path = tmp_path / "config" / "experiment.toml"
     _write_config(path, data)
 
@@ -229,6 +227,20 @@ def test_validation_error_reports_the_dotted_configuration_path(
         load_experiment(path)
 
     assert error.value.corrective_action
+
+
+def test_other_validation_errors_retain_the_generic_configuration_context(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["capture"])["total_timeout_seconds"] = 0.0
+    path = tmp_path / "experiment.toml"
+    _write_config(path, data)
+
+    with pytest.raises(TrafficlabError, match="invalid experiment configuration") as error:
+        load_experiment(path)
+
+    assert error.value.corrective_action == "correct the reported configuration values and retry"
 
 
 def test_effective_config_bytes_are_deterministic_and_round_trip(

@@ -262,8 +262,12 @@ def _nearest_existing_parent(path: Path) -> Path:
 def _check_mounts(config: ExperimentConfig) -> PreflightFinding:
     missing = [mount.source for mount in config.target.mounts if not mount.source.exists()]
     if missing:
-        detail = "missing mount source(s): " + ", ".join(str(path) for path in missing)
-        return PreflightFinding("mounts", False, detail)
+        return PreflightFinding(
+            "mounts",
+            False,
+            f"mount source {missing[0].name} is unavailable",
+            "make the named host source available to Docker",
+        )
     return PreflightFinding("mounts", True, "all mount sources exist")
 
 
@@ -395,14 +399,25 @@ def _image_ready(
     image: str,
     *,
     deadline: float,
+    unavailable_detail: str,
+    unavailable_action: str,
 ) -> ImageIdentity:
     from trafficlab.docker_cli import CaptureImageLockError, parse_image_inspect, validate_capture_platform
 
     try:
         inspected = compose.image_inspect(image, deadline=deadline)
+        if inspected.returncode != 0:
+            raise TrafficlabError(unavailable_detail, corrective_action=unavailable_action)
     except TrafficlabError:
-        compose.image_pull(image, deadline=deadline)
-        inspected = compose.image_inspect(image, deadline=deadline)
+        try:
+            pulled = compose.image_pull(image, deadline=deadline)
+            if pulled.returncode != 0:
+                raise TrafficlabError(unavailable_detail, corrective_action=unavailable_action)
+            inspected = compose.image_inspect(image, deadline=deadline)
+            if inspected.returncode != 0:
+                raise TrafficlabError(unavailable_detail, corrective_action=unavailable_action)
+        except TrafficlabError as error:
+            raise TrafficlabError(unavailable_detail, corrective_action=unavailable_action) from error
     try:
         identity = parse_image_inspect(image, inspected.stdout)
         validate_capture_platform(
@@ -486,8 +501,8 @@ def _capture_ready(output: Path) -> bool:
         ) from error
     if len(header) < 28 or header[:4] != b"\x0a\x0d\x0d\x0a":
         raise TrafficlabError(
-            "capture probe did not create a valid nonempty PCAPNG header",
-            corrective_action="verify the capture image contains a working dumpcap executable",
+            "dumpcap version is incompatible",
+            corrective_action="restore the declared capture-tool version",
         )
     return True
 
@@ -509,8 +524,8 @@ def _wait_capture_ready(
             observed[state.service] = state
         if state is None or state.state != "running":
             raise TrafficlabError(
-                "capture probe stopped before dumpcap became ready",
-                corrective_action="verify the capture image can read eth0 and start dumpcap",
+                "dumpcap is unavailable",
+                corrective_action="install the declared capture tool in the capture image",
             )
         if _capture_ready(output):
             return
@@ -534,13 +549,13 @@ def _wait_target(
             continue
         if state.state != "exited":
             raise TrafficlabError(
-                f"network probe target entered unexpected state {state.state!r}",
-                corrective_action="inspect the capture image and Docker Compose probe project",
+                "capture prerequisite is incompatible",
+                corrective_action="satisfy the named prerequisite compatibility contract",
             )
         if state.exit_code != 0:
             raise TrafficlabError(
-                f"network probe target exited with status {state.exit_code}",
-                corrective_action="verify DNS and the configured probe endpoint are reachable from Docker",
+                "capture prerequisite is unavailable",
+                corrective_action="make the named prerequisite available",
             )
         return
 
@@ -632,6 +647,7 @@ def check_docker(
     from trafficlab.cleanup import cleanup_project
     from trafficlab.docker_cli import (
         CaptureImageLockError,
+        CommandResult,
         ProjectInventory,
         load_capture_image_lock,
         parse_docker_info_platform,
@@ -664,8 +680,19 @@ def check_docker(
     try:
         _require_deadline(deadline, clock)
         docker_info = compose.info(deadline=deadline)
-    except TrafficlabError as error:
-        findings.append(_failure("docker_daemon", error))
+    except TrafficlabError:
+        translated = TrafficlabError(
+            "Docker Engine is unavailable",
+            corrective_action="restore Docker Engine and Compose availability",
+        )
+        findings.append(_failure("docker_daemon", translated))
+        return PreflightReport(config=config, findings=tuple(findings))
+    if docker_info.returncode != 0:
+        translated = TrafficlabError(
+            "Docker Engine is unavailable",
+            corrective_action="restore Docker Engine and Compose availability",
+        )
+        findings.append(_failure("docker_daemon", translated))
         return PreflightReport(config=config, findings=tuple(findings))
     findings.append(PreflightFinding("docker_daemon", True, "Docker daemon is reachable"))
 
@@ -694,18 +721,47 @@ def check_docker(
         (
             "target_image",
             "target image is locally available",
-            lambda: _image_ready(compose, config.target.image, deadline=deadline),
+            lambda: _image_ready(
+                compose,
+                config.target.image,
+                deadline=deadline,
+                unavailable_detail=f"target image {config.target.image} is unavailable",
+                unavailable_action="make the named image reference available",
+            ),
         ),
         (
             "capture_image",
             "capture image is locally available",
-            lambda: _image_ready(compose, config.capture.image, deadline=deadline),
+            lambda: _image_ready(
+                compose,
+                config.capture.image,
+                deadline=deadline,
+                unavailable_detail="capture image identity is incompatible",
+                unavailable_action="restore the declared image content identity and architecture",
+            ),
         ),
     ):
         try:
             _require_deadline(deadline, clock)
-            result = action()
         except TrafficlabError as error:
+            findings.append(_failure(name, error))
+            return PreflightReport(config=config, findings=tuple(findings))
+        try:
+            result = action()
+            if name == "docker_compose":
+                compose_result = cast(CommandResult, result)
+                if compose_result.returncode != 0 or "Docker Compose version v2" not in compose_result.stdout:
+                    raise TrafficlabError(
+                        "Docker Compose version is incompatible",
+                        corrective_action="provide the named required Docker and Compose features",
+                    )
+        except TrafficlabError as source_error:
+            error = source_error
+            if name == "docker_compose":
+                error = TrafficlabError(
+                    "Docker Compose version is incompatible",
+                    corrective_action="provide the named required Docker and Compose features",
+                )
             findings.append(_failure(name, error))
             return PreflightReport(config=config, findings=tuple(findings))
         if name == "target_image":
@@ -721,10 +777,10 @@ def check_docker(
             lock=lock,
             execution_platform=capture_platform,
         )
-    except CaptureImageLockError as error:
+    except CaptureImageLockError:
         translated = TrafficlabError(
-            str(error),
-            corrective_action="build or load the exact checked capture image; do not refresh the expected ID during preflight",
+            "capture image identity is incompatible",
+            corrective_action="restore the declared image content identity and architecture",
         )
         findings[-1] = _failure("capture_image", translated)
         return PreflightReport(config=config, findings=tuple(findings))
@@ -744,7 +800,35 @@ def check_docker(
                 capture_image=environment_identity.capture_content_id,
             )
             _require_deadline(deadline, clock)
-            compose.config(production_path, production_name, deadline=deadline)
+            mount_finding = _check_mounts(config)
+            if not mount_finding.ok:
+                findings.append(mount_finding)
+                return PreflightReport(
+                    config=config,
+                    findings=tuple(findings),
+                    environment_identity=environment_identity,
+                )
+            try:
+                configured = compose.config(production_path, production_name, deadline=deadline)
+            except TrafficlabError as error:
+                if config.target.mounts:
+                    mount = config.target.mounts[0]
+                    raise TrafficlabError(
+                        f"mount target {mount.target} is incompatible",
+                        corrective_action="correct the declared container target and mode",
+                    ) from error
+                raise
+            if configured.returncode != 0:
+                if config.target.mounts:
+                    mount = config.target.mounts[0]
+                    raise TrafficlabError(
+                        f"mount target {mount.target} is incompatible",
+                        corrective_action="correct the declared container target and mode",
+                    )
+                raise TrafficlabError(
+                    "production Compose configuration is incompatible",
+                    corrective_action="correct the generated Compose configuration and retry",
+                )
             findings.append(PreflightFinding("compose_config", True, "production Compose configuration is valid"))
 
             probe_name = f"trafficlab-preflight-{uuid.uuid4().hex}"

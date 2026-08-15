@@ -2,6 +2,7 @@
 
 import copy
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -17,16 +18,15 @@ import trafficlab.generation as generation
 import trafficlab.genetic.strategy as strategy_module
 import trafficlab.preflight as preflight
 import trafficlab.study_evidence as study_evidence
-from trafficlab.capture_policy import CaptureFailureOrigin, CaptureOutcome, FailureDetail, FailureKind
-from trafficlab.comparison import ComparisonResult
 from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FloatBounds
 from trafficlab.config_io import render_effective_config
-from trafficlab.docker_cli import ServiceState
+from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState, load_capture_image_lock
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import FitDependencies
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.models.registry import load_best_model, render_best_model
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
@@ -35,20 +35,87 @@ _ROOT = Path(__file__).parents[2]
 _FIT_CHECKPOINT_FIXTURE = _ROOT / "examples" / "data" / "fit" / "checkpoint.json"
 _MODEL_FIXTURE = _ROOT / "examples" / "data" / "models" / "best_model.json"
 
-type _InjectionStage = Literal["capture", "fit", "generate", "compare", "publication"]
+type _Scenario = Literal[
+    "config_invalid",
+    "docker_unavailable",
+    "compose_incompatible",
+    "target_image_unavailable",
+    "capture_image_incompatible",
+    "dumpcap_unavailable",
+    "dumpcap_incompatible",
+    "mount_source_unavailable",
+    "mount_target_incompatible",
+    "mounted_input_unavailable",
+    "mounted_input_incompatible",
+    "prerequisite_unavailable",
+    "prerequisite_incompatible",
+    "target_exit_23",
+    "capture_exit_42_active",
+    "capture_exit_42_after_target_0",
+    "workload_timeout",
+    "flush_timeout_after_target_0",
+    "validation_total_timeout",
+    "user_interrupt",
+    "malformed_capture",
+    "best_model_missing",
+    "reference_changed",
+    "foreign_generated",
+    "stale_capture_pair",
+    "checkpoint_corrupt",
+    "checkpoint_schema",
+    "best_model_schema",
+    "metric_infeasible",
+    "packet_limit",
+    "best_model_collision",
+    "accepted_collision",
+    "similarity_durability",
+    "cleanup_timeout_after_success",
+    "target_23_cleanup_timeout",
+    "workload_timeout_target_137",
+    "flush_and_total_timeout",
+    "target_23_capture_42_total_timeout",
+]
 
-_PREFLIGHT_FINDING_NAMES = {
-    "Docker Engine is unavailable": "docker_engine",
-    "Docker Compose version is incompatible": "docker_compose",
-    "target image example.invalid/app is unavailable": "target_image",
-    "capture image identity is incompatible": "capture_image",
-    "dumpcap is unavailable": "capture_tool",
-    "dumpcap version is incompatible": "capture_tool",
-    "mount source fixture-data is unavailable": "mounts",
-    "mount target /work/data is incompatible": "mounts",
-    "capture prerequisite is unavailable": "network_probe",
-    "capture prerequisite is incompatible": "network_probe",
-}
+_SCENARIOS: tuple[_Scenario, ...] = (
+    "config_invalid",
+    "docker_unavailable",
+    "compose_incompatible",
+    "target_image_unavailable",
+    "capture_image_incompatible",
+    "dumpcap_unavailable",
+    "dumpcap_incompatible",
+    "mount_source_unavailable",
+    "mount_target_incompatible",
+    "mounted_input_unavailable",
+    "mounted_input_incompatible",
+    "prerequisite_unavailable",
+    "prerequisite_incompatible",
+    "target_exit_23",
+    "capture_exit_42_active",
+    "capture_exit_42_after_target_0",
+    "workload_timeout",
+    "flush_timeout_after_target_0",
+    "validation_total_timeout",
+    "user_interrupt",
+    "malformed_capture",
+    "best_model_missing",
+    "reference_changed",
+    "foreign_generated",
+    "stale_capture_pair",
+    "checkpoint_corrupt",
+    "checkpoint_schema",
+    "best_model_schema",
+    "metric_infeasible",
+    "packet_limit",
+    "best_model_collision",
+    "accepted_collision",
+    "similarity_durability",
+    "cleanup_timeout_after_success",
+    "target_23_cleanup_timeout",
+    "workload_timeout_target_137",
+    "flush_and_total_timeout",
+    "target_23_capture_42_total_timeout",
+)
 _STAGE_OUTPUT_NAMES: dict[str, tuple[str, ...]] = {
     "preflight": ("capture.json", "reference.pcapng"),
     "capture": ("capture.json", "reference.pcapng"),
@@ -63,8 +130,8 @@ _STAGE_OUTPUT_NAMES: dict[str, tuple[str, ...]] = {
 class _BoundaryCase:
     """One primary outcome and all of its ordered fixture-defined secondaries."""
 
+    scenario: _Scenario
     outcomes: tuple[FailureOutcome, ...]
-    injection_stage: _InjectionStage | Literal["preflight"]
 
     @property
     def primary(self) -> FailureOutcome:
@@ -72,7 +139,7 @@ class _BoundaryCase:
 
     @property
     def identifier(self) -> str:
-        return f"primitive-boundary-{self.primary.stage}-{self.primary.kind}-{self.primary.detail}"
+        return f"primitive-boundary-{self.scenario}"
 
 
 def _fixture_outcomes() -> tuple[FailureOutcome, ...]:
@@ -80,31 +147,22 @@ def _fixture_outcomes() -> tuple[FailureOutcome, ...]:
 
 
 def _build_boundary_cases() -> tuple[_BoundaryCase, ...]:
-    cases: list[_BoundaryCase] = []
+    grouped: list[tuple[FailureOutcome, ...]] = []
     active: list[FailureOutcome] = []
     for outcome in _fixture_outcomes():
         if outcome.authority == "primary":
             if active:
-                cases.append(_boundary_case(tuple(active)))
+                grouped.append(tuple(active))
             active = [outcome]
         else:
             if not active:
                 raise AssertionError("a fixture secondary outcome must follow a primary outcome")
             active.append(outcome)
     if active:
-        cases.append(_boundary_case(tuple(active)))
-    return tuple(cases)
-
-
-def _boundary_case(outcomes: tuple[FailureOutcome, ...]) -> _BoundaryCase:
-    primary = outcomes[0]
-    if primary.stage == "preflight":
-        injection_stage: _InjectionStage | Literal["preflight"] = "preflight"
-    else:
-        injection_stage = cast(_InjectionStage, primary.stage)
-    return _BoundaryCase(
-        outcomes=outcomes,
-        injection_stage=injection_stage,
+        grouped.append(tuple(active))
+    return tuple(
+        _BoundaryCase(scenario=scenario, outcomes=outcomes)
+        for scenario, outcomes in zip(_SCENARIOS, grouped, strict=True)
     )
 
 
@@ -162,262 +220,409 @@ def _assert_serialized_outcomes(record: dict[str, object], case: _BoundaryCase) 
     assert record.get("secondary_outcomes", []) == [outcome.as_dict() for outcome in case.outcomes[1:]]
 
 
-def _run_preflight_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    primary = case.primary
+class _CompletedHandle:
+    def __init__(self, *, timeout: bool = False) -> None:
+        self.timeout = timeout
+        self.waited = False
+
+    def wait(self, *, timeout: float) -> CommandResult | None:
+        del timeout
+        self.waited = True
+        return None if self.timeout else CommandResult(0, "", "")
+
+    def terminate(self) -> None:
+        return None
+
+    def kill(self) -> None:
+        return None
+
+
+class _PreflightClock:
+    def __init__(self, scenario: _Scenario) -> None:
+        self.scenario = scenario
+        self.calls = 0
+
+    def __call__(self) -> float:
+        self.calls += 1
+        if self.scenario == "dumpcap_incompatible" and self.calls > 20:
+            return 100.0
+        return 0.0
+
+
+class _PreflightDocker:
+    """Primitive command, state, and file effects for full public preflight."""
+
+    def __init__(self, scenario: _Scenario, mount_source: Path | None) -> None:
+        self.scenario = scenario
+        self.mount_source = mount_source
+        self.signaled = False
+        lock = load_capture_image_lock(preflight._CAPTURE_IMAGE_LOCK_PATH)  # pyright: ignore[reportPrivateUsage]
+        self.capture_id = lock.expected_capture_image_id
+
+    @staticmethod
+    def _result(returncode: int = 0, stdout: str = "") -> CommandResult:
+        return CommandResult(returncode, stdout, "command failed" if returncode else "")
+
+    def info(self, *, deadline: float) -> CommandResult:
+        del deadline
+        if self.mount_source is not None and self.scenario == "mount_source_unavailable":
+            self.mount_source.unlink()
+        if self.scenario == "docker_unavailable":
+            return self._result(1)
+        return self._result(stdout='{"OSType":"linux","Architecture":"x86_64"}')
+
+    def compose_version(self, *, deadline: float) -> CommandResult:
+        del deadline
+        version = (
+            "Docker Compose version v1.29.2"
+            if self.scenario == "compose_incompatible"
+            else "Docker Compose version v2.29.0"
+        )
+        return self._result(stdout=version)
+
+    def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
+        del deadline
+        if self.scenario == "target_image_unavailable" and "example.invalid/app" in image:
+            return self._result(1)
+        content_id = self.capture_id if "capture" in image else "sha256:" + ("c" * 64)
+        if self.scenario == "capture_image_incompatible" and "capture" in image:
+            content_id = "sha256:" + ("e" * 64)
+        return self._result(
+            stdout=json.dumps(
+                [
+                    {
+                        "Id": content_id,
+                        "RepoDigests": [],
+                        "RepoTags": [image],
+                        "Os": "linux",
+                        "Architecture": "amd64",
+                    }
+                ]
+            )
+        )
+
+    def image_pull(self, image: str, *, deadline: float) -> CommandResult:
+        del image, deadline
+        return self._result(1 if self.scenario == "target_image_unavailable" else 0)
+
+    def config(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        return self._result(1 if self.scenario == "mount_target_incompatible" else 0)
+
+    def create_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del project_name, deadline
+        output = compose_path.parent / "probe-output"
+        if self.scenario != "dumpcap_unavailable":
+            metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+            (output / "capture.json").write_bytes(render_capture_metadata(metadata))
+            pcap = (
+                b"not-pcapng"
+                if self.scenario == "dumpcap_incompatible"
+                else encode_pcapng((TraceEvent(1.0, Direction.OUTBOUND, 64),), metadata)
+            )
+            (output / "reference.pcapng.tmp").write_bytes(pcap)
+        return self._result()
+
+    def start_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        return self._result()
+
+    def start_target(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        return self._result()
+
+    def service_state(
+        self, compose_path: Path, project_name: str, service: str, *, deadline: float
+    ) -> ServiceState | None:
+        del compose_path, project_name, deadline
+        if service == "capture":
+            if self.scenario == "dumpcap_unavailable":
+                return ServiceState("capture", "capture", "capture", "exited", 127)
+            return ServiceState("capture", "capture", "capture", "exited" if self.signaled else "running", 0)
+        if self.scenario == "prerequisite_unavailable":
+            return ServiceState("target", "target", "target", "exited", 7)
+        if self.scenario == "prerequisite_incompatible":
+            return ServiceState("target", "target", "target", "dead", 0)
+        return ServiceState("target", "target", "target", "exited", 0)
+
+    def signal_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        self.signaled = True
+        return self._result()
+
+    def start_down(self, compose_path: Path, project_name: str, *, deadline: float) -> _CompletedHandle:
+        del compose_path, project_name, deadline
+        return _CompletedHandle()
+
+    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory:
+        del compose_path, project_name, deadline
+        return ProjectInventory(())
+
+
+def _run_preflight_case(
+    case: _BoundaryCase,
+    tmp_path: Path,
+    valid_config_data: dict[str, object],
+) -> None:
     run_directory = tmp_path / "run"
-    run_directory.mkdir()
-    prepared = _prepared(run_directory)
-    records: list[dict[str, object]] = []
+    experiment_path = tmp_path / "experiment.toml"
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    target = cast(dict[str, object], data["target"])
+    target["mounts"] = []
+    if case.scenario == "target_image_unavailable":
+        target["image"] = "example.invalid/app"
+    mount_source: Path | None = None
+    if case.scenario in {"mount_source_unavailable", "mount_target_incompatible"}:
+        mount_source = tmp_path / "fixture-data"
+        mount_source.write_bytes(b"fixture")
+        target["mounts"] = [{"source": str(mount_source), "target": "/work/data", "read_only": True}]
+    config = ExperimentConfig.model_validate(data)
+    content = render_effective_config(config)
+    if case.scenario == "config_invalid":
+        content = re.sub(rb"argv = \[[\s\S]*?\]", b"argv = []", content, count=1)
+    experiment_path.write_bytes(content)
+    docker = _PreflightDocker(case.scenario, mount_source)
+    clock = _PreflightClock(case.scenario)
 
-    def append(_directory: Path, record: dict[str, object]) -> None:
-        records.append(record)
-
-    monkeypatch.setattr(preflight, "append_run_log", append)
-    if primary.kind == "configuration_invalid":
-        source_error = TrafficlabError(primary.detail, corrective_action=primary.corrective_action)
-
-        def fail_open(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
-            del writable
-            raise source_error
-
-        monkeypatch.setattr(preflight, "open_or_prepare_experiment", fail_open)
-        with pytest.raises(TrafficlabError) as caught:
-            preflight.run_preflight(tmp_path / "experiment.toml", config_only=True)
-    else:
-        finding_name = _PREFLIGHT_FINDING_NAMES[primary.detail]
-
-        def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
-            del writable
-            return prepared
-
-        def docker_report(
-            _config: ExperimentConfig, _docker: object, *, deadline: float, clock: object
-        ) -> preflight.PreflightReport:
-            del _config, _docker, deadline, clock
-            return preflight.PreflightReport(
-                config=prepared.config,
-                findings=(
-                    preflight.PreflightFinding(
-                        finding_name,
-                        False,
-                        primary.detail,
-                        primary.corrective_action,
-                    ),
-                ),
-            )
-
-        monkeypatch.setattr(preflight, "open_or_prepare_experiment", open_prepared)
-        monkeypatch.setattr(preflight, "check_docker", docker_report)
-        with pytest.raises(TrafficlabError) as caught:
-            preflight.run_preflight(
-                tmp_path / "experiment.toml",
-                config_only=False,
-                docker=cast(preflight.DockerPreflight, object()),
-                clock=lambda: 100.0,
-            )
+    with pytest.raises(TrafficlabError) as caught:
+        preflight.run_preflight(
+            experiment_path,
+            config_only=case.scenario == "config_invalid",
+            docker=cast(preflight.DockerPreflight, docker),
+            clock=clock,
+        )
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    if records:
-        _assert_serialized_outcomes(records[-1], case)
+    if (run_directory / "run.log").exists():
+        records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
+        failure_records = [record for record in records if "failure_outcome" in record]
+        _assert_serialized_outcomes(failure_records[-1], case)
     _assert_publication_state(case, run_directory, {})
-
-
-class _CaptureBoundaryDocker:
-    """The smallest lifecycle fake needed after the real public entry point starts."""
-
-    def create_capture(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def start_capture(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def start_target(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def kill_target(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def signal_capture(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def kill_capture(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def service_state(self, *_args: object, **_kwargs: object) -> ServiceState | None:
-        return None
-
-    def service_logs(self, *_args: object, **_kwargs: object) -> str:
-        return "capture diagnostics"
-
-
-def _no_op(*_args: object, **_kwargs: object) -> None:
-    return None
 
 
 def _render_snapshot(_config: object) -> bytes:
     return b"canonical snapshot"
 
 
-def _capture_source_kind(outcome: FailureOutcome, *, primary: bool) -> tuple[FailureKind, CaptureFailureOrigin]:
-    """Describe a lower-boundary lifecycle observation, never an output payload."""
-    if outcome.kind == "target_failed":
-        return (
-            FailureKind.TARGET_NONZERO_EXIT if primary else FailureKind.INDUCED_TARGET_STATUS,
-            CaptureFailureOrigin.WORKLOAD,
-        )
-    if outcome.kind == "capture_failed":
-        return FailureKind.CAPTURE_STOPPED, CaptureFailureOrigin.WORKLOAD
-    if outcome.kind == "interrupted":
-        return FailureKind.USER_INTERRUPTION, CaptureFailureOrigin.WORKLOAD
-    if outcome.kind == "capture_malformed":
-        return FailureKind.VALIDATION_FAILED, CaptureFailureOrigin.VALIDATION
-    if outcome.kind == "cleanup_failed":
-        return FailureKind.CLEANUP_FAILED, CaptureFailureOrigin.WORKLOAD
-    if outcome.kind != "stage_timeout":
-        raise AssertionError(f"unsupported primitive capture outcome {outcome.kind!r}")
-    if outcome.detail in {
-        "flush deadline expired after natural target success",
-        "flush deadline expired",
-    }:
-        return FailureKind.STAGE_TIMEOUT, CaptureFailureOrigin.FLUSH
-    if outcome.detail == "total-run deadline expired during validation":
-        return FailureKind.TOTAL_TIMEOUT, CaptureFailureOrigin.VALIDATION
-    if outcome.detail == "total-run deadline expired":
-        return FailureKind.TOTAL_TIMEOUT, CaptureFailureOrigin.FLUSH
-    return FailureKind.STAGE_TIMEOUT, CaptureFailureOrigin.WORKLOAD
-
-
-def _capture_lifecycle_outcome(case: _BoundaryCase) -> CaptureOutcome:
-    """Build primitive observed states that the public capture boundary renders."""
-    primary = case.primary
-    if primary.kind == "cleanup_failed":
-        return CaptureOutcome()
-    primary_kind, primary_origin = _capture_source_kind(primary, primary=True)
-    secondary: list[FailureDetail] = []
-    for item in case.outcomes[1:]:
-        if item.kind == "cleanup_failed":
-            continue
-        kind, origin = _capture_source_kind(item, primary=False)
-        secondary.append(
-            FailureDetail(
-                kind,
-                item.detail,
-                cast(int | None, item.status)
-                if kind in (FailureKind.INDUCED_TARGET_STATUS, FailureKind.NATURAL_TARGET_STATUS)
-                else None,
-                origin=origin,
-            )
-        )
-    if primary.detail == "capture stopped with status 42 after natural target success":
-        secondary.append(
-            FailureDetail(
-                FailureKind.NATURAL_TARGET_STATUS,
-                "target was also observed naturally exited with status 0",
-                0,
-            )
-        )
-    return CaptureOutcome(
-        primary_kind,
-        primary.detail,
-        cast(int | None, primary.status) if primary_kind is FailureKind.TARGET_NONZERO_EXIT else None,
-        primary_origin=primary_origin,
-        secondary_details=tuple(secondary),
-    )
-
-
-def _capture_states(case: _BoundaryCase) -> tuple[ServiceState | None, ServiceState]:
-    primary = case.primary
-    has_capture_failure = any(item.kind == "capture_failed" for item in case.outcomes)
-    flush = primary.detail in {
-        "flush deadline expired after natural target success",
-        "flush deadline expired",
+_CAPTURE_FAILURE_SCENARIOS = frozenset(
+    {
+        "target_exit_23",
+        "capture_exit_42_active",
+        "capture_exit_42_after_target_0",
+        "workload_timeout",
+        "flush_timeout_after_target_0",
+        "validation_total_timeout",
+        "user_interrupt",
+        "malformed_capture",
+        "cleanup_timeout_after_success",
+        "target_23_cleanup_timeout",
+        "workload_timeout_target_137",
+        "flush_and_total_timeout",
+        "target_23_capture_42_total_timeout",
     }
-    capture_state = ServiceState(
-        "capture",
-        "capture",
-        "capture",
-        "running" if flush else "exited",
-        0 if flush else (42 if has_capture_failure else 7),
-    )
-    if primary.kind == "target_failed":
-        return (
-            ServiceState("target", "target", "target", "exited", cast(int, primary.status)),
-            capture_state,
-        )
-    if (
-        primary.kind == "capture_failed"
-        and primary.detail == "capture stopped with status 42 while target remained active"
-    ):
-        return None, capture_state
-    return ServiceState("target", "target", "target", "exited", 0), capture_state
+)
 
 
-def _run_capture_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Route capture rows through ``capture_prepared_experiment`` and its final mapper."""
+class _CaptureDocker:
+    """Primitive service observations and capture bytes for the real lifecycle."""
+
+    def __init__(self, scenario: _Scenario) -> None:
+        self.scenario = scenario
+        self.target_started = False
+        self.target_killed = False
+        self.capture_signaled = False
+        self.capture_killed = False
+        self.target_observed = False
+        self.workload_clock_observed = False
+        self.flush_done = False
+        self.lifecycle_done = False
+        self.total_pending = False
+        self.total_emitted = False
+        self.cleanup_handle: _CompletedHandle | None = None
+
+    @staticmethod
+    def _result() -> CommandResult:
+        return CommandResult(0, "", "")
+
+    def create_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del project_name, deadline
+        metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+        (compose_path.parent / "capture.json").write_bytes(render_capture_metadata(metadata))
+        valid_content = encode_pcapng((TraceEvent(1.0, Direction.OUTBOUND, 64),), metadata)
+        content = valid_content[:28] if self.scenario == "malformed_capture" else valid_content
+        (compose_path.parent / "reference.pcapng.tmp").write_bytes(content)
+        return self._result()
+
+    def start_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        return self._result()
+
+    def start_target(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        self.target_started = True
+        return self._result()
+
+    def kill_target(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        self.target_killed = True
+        self.lifecycle_done = True
+        return self._result()
+
+    def signal_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        self.capture_signaled = True
+        return self._result()
+
+    def kill_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
+        del compose_path, project_name, deadline
+        self.capture_killed = True
+        self.lifecycle_done = True
+        return self._result()
+
+    def service_state(
+        self, compose_path: Path, project_name: str, service: str, *, deadline: float
+    ) -> ServiceState | None:
+        del compose_path, project_name, deadline
+        if service == "target":
+            if self.target_killed:
+                if self.scenario == "workload_timeout_target_137":
+                    return ServiceState("target", "target", "target", "exited", 137)
+                return None
+            if self.scenario in {
+                "target_exit_23",
+                "target_23_cleanup_timeout",
+                "target_23_capture_42_total_timeout",
+            }:
+                self.target_observed = True
+                return ServiceState("target", "target", "target", "exited", 23)
+            if self.scenario in {
+                "capture_exit_42_after_target_0",
+                "flush_timeout_after_target_0",
+                "validation_total_timeout",
+                "malformed_capture",
+                "cleanup_timeout_after_success",
+                "flush_and_total_timeout",
+            }:
+                self.target_observed = True
+                return ServiceState("target", "target", "target", "exited", 0)
+            return None
+        if not self.target_started:
+            return ServiceState("capture", "capture", "capture", "running", 0)
+        if self.scenario in {
+            "capture_exit_42_active",
+            "capture_exit_42_after_target_0",
+            "target_23_capture_42_total_timeout",
+        }:
+            self.lifecycle_done = self.scenario != "target_23_capture_42_total_timeout"
+            if self.scenario == "target_23_capture_42_total_timeout":
+                self.total_pending = True
+            return ServiceState("capture", "capture", "capture", "exited", 42)
+        if self.capture_signaled:
+            self.flush_done = True
+            self.lifecycle_done = self.scenario not in {
+                "validation_total_timeout",
+                "cleanup_timeout_after_success",
+                "target_23_cleanup_timeout",
+            }
+            return ServiceState("capture", "capture", "capture", "exited", 0)
+        return ServiceState("capture", "capture", "capture", "running", 0)
+
+    def service_logs(self, compose_path: Path, project_name: str, service: str, *, deadline: float) -> str:
+        del compose_path, project_name, service, deadline
+        return "capture diagnostics"
+
+    def start_down(self, compose_path: Path, project_name: str, *, deadline: float) -> _CompletedHandle:
+        del compose_path, project_name, deadline
+        timeout = self.scenario in {"cleanup_timeout_after_success", "target_23_cleanup_timeout"}
+        self.cleanup_handle = _CompletedHandle(timeout=timeout)
+        return self.cleanup_handle
+
+    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory:
+        del compose_path, project_name, deadline
+        return ProjectInventory(())
+
+    def clock(self) -> float:
+        if self.cleanup_handle is not None and self.cleanup_handle.timeout and self.cleanup_handle.waited:
+            return 11.0
+        if self.total_pending and not self.total_emitted:
+            self.total_emitted = True
+            self.lifecycle_done = True
+            return 11.0
+        if (
+            self.scenario in {"workload_timeout", "workload_timeout_target_137"}
+            and self.target_started
+            and not self.lifecycle_done
+        ):
+            return 6.0
+        if (
+            self.scenario in {"flush_timeout_after_target_0", "flush_and_total_timeout"}
+            and self.target_observed
+            and not self.lifecycle_done
+        ):
+            if not self.workload_clock_observed:
+                self.workload_clock_observed = True
+                return 0.0
+            self.lifecycle_done = True
+            return 11.0 if self.scenario == "flush_and_total_timeout" else 6.0
+        if self.scenario == "validation_total_timeout" and self.flush_done and not self.total_emitted:
+            self.total_emitted = True
+            self.lifecycle_done = True
+            return 11.0
+        return 0.0
+
+
+def _capture_prepared(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> tuple[Path, preflight.PreparedExperiment]:
     run_directory = tmp_path / "run"
-    run_directory.mkdir()
-    prepared = _prepared(run_directory)
-    lifecycle = _capture_lifecycle_outcome(case)
-    target_state, capture_state = _capture_states(case)
-    has_cleanup = any(item.kind == "cleanup_failed" for item in case.outcomes)
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    cast(dict[str, object], data["target"])["mounts"] = []
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    experiment_path.write_bytes(render_effective_config(config))
+    prepared = preflight.open_or_prepare_experiment(experiment_path)
+    environment = preflight.CaptureEnvironmentIdentity(
+        host_architecture="linux/amd64",
+        target_reference=prepared.config.target.image,
+        target_content_id="sha256:" + ("c" * 64),
+        capture_reference=prepared.config.capture.image,
+        capture_content_id="sha256:" + ("d" * 64),
+        capture_tool_version="4.0.17",
+    )
+    return run_directory, replace(prepared, report=replace(prepared.report, environment_identity=environment))
 
-    def ready(*_args: object, **_kwargs: object) -> CaptureOutcome:
-        return CaptureOutcome()
 
-    def observe(
-        _docker: object,
-        _compose_path: Path,
-        _project_name: str,
-        states: dict[str, ServiceState],
-        **_kwargs: object,
-    ) -> tuple[CaptureOutcome, ServiceState]:
-        if target_state is not None:
-            states["target"] = target_state
-        states["capture"] = capture_state
-        return lifecycle, capture_state
+def _run_capture_boundary_case(
+    case: _BoundaryCase,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    valid_config_data: dict[str, object],
+) -> None:
+    run_directory, prepared = _capture_prepared(valid_config_data, tmp_path)
+    docker = _CaptureDocker(case.scenario)
 
-    def flush(
-        _docker: object,
-        _compose_path: Path,
-        _project_name: str,
-        states: dict[str, ServiceState],
-        outcome: CaptureOutcome,
-        **_kwargs: object,
-    ) -> CaptureOutcome:
-        states["capture"] = ServiceState("capture", "capture", "capture", "exited", 7)
-        return outcome
+    def fixed_deadline(_clock: Callable[[], float], _seconds: float, *, stage: str) -> float:
+        if case.scenario == "target_23_capture_42_total_timeout" and stage == "workload":
+            return 20.0
+        return 10.0 if stage in {"project creation", "total-run"} else 5.0
 
-    def cleanup(*_args: object, **_kwargs: object) -> SimpleNamespace:
-        if has_cleanup:
-            cleanup_outcome = next(item for item in case.outcomes if item.kind == "cleanup_failed")
-            return SimpleNamespace(success=False, detail=cleanup_outcome.detail, secondary_details=())
-        return SimpleNamespace(success=True, detail="", secondary_details=())
-
-    def validated_prepared(_path: Path, _prepared_value: preflight.PreparedExperiment) -> Path:
-        return run_directory
-
-    monkeypatch.setattr(capture, "_validate_prepared_capture", validated_prepared)
-    monkeypatch.setattr(capture, "render_effective_config", _render_snapshot)
-    monkeypatch.setattr(capture, "_require_unchanged_capture_snapshot", _no_op)
-    monkeypatch.setattr(capture, "load_or_recover_capture_pair", _no_op)
-    monkeypatch.setattr(capture, "write_production_compose", _no_op)
-    monkeypatch.setattr(capture, "_wait_readiness", ready)
-    monkeypatch.setattr(capture, "_observe_workload", observe)
-    monkeypatch.setattr(capture, "_flush_capture", flush)
-    monkeypatch.setattr(capture, "cleanup_project", cleanup)
-
+    monkeypatch.setattr(capture, "_future_deadline", fixed_deadline)
     with pytest.raises(TrafficlabError) as caught:
         capture.capture_prepared_experiment(
             prepared.source,
             prepared,
-            docker=cast(capture.CaptureDocker, _CaptureBoundaryDocker()),
-            clock=lambda: 0.0,
+            docker=cast(capture.CaptureDocker, docker),
+            clock=docker.clock,
+            interruption=lambda: case.scenario == "user_interrupt" and docker.target_started,
         )
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
     _assert_serialized_outcomes(records[-1], case)
     _assert_publication_state(case, run_directory, {})
+    assert list(run_directory.glob(".capture-*")) == []
 
 
 def _run_capture_stale_boundary_case(
@@ -482,12 +687,6 @@ def _run_capture_stale_boundary_case(
     assert list(run_directory.glob(".capture-*")) == []
 
 
-_MOUNTED_INPUT_DETAILS = {
-    "mounted input request.txt is unavailable": "remove",
-    "mounted input request.txt is incompatible": "change",
-}
-
-
 def _run_capture_mounted_input_boundary_case(
     case: _BoundaryCase,
     monkeypatch: pytest.MonkeyPatch,
@@ -534,7 +733,7 @@ def _run_capture_mounted_input_boundary_case(
         reused=False,
     )
     log_before = (run_directory / "run.log").read_bytes()
-    mutation = _MOUNTED_INPUT_DETAILS[case.primary.detail]
+    mutation = "remove" if case.scenario == "mounted_input_unavailable" else "change"
     real_run_preflight = capture.run_preflight
     mutated = False
 
@@ -697,7 +896,7 @@ def _run_fit_boundary_case(
     config = _fit_config(valid_config_data, run_directory)
     inputs = _fit_inputs(config)
 
-    if case.primary.kind == "artifact_corrupt":
+    if case.scenario == "checkpoint_corrupt":
         checkpoint_path = run_directory / "checkpoint.json"
         checkpoint_path.write_bytes(b"{\n")
         expected_preserved = {checkpoint_path: b"{\n"}
@@ -707,7 +906,7 @@ def _run_fit_boundary_case(
 
         monkeypatch.setattr(strategy_module, "initial_population", forbid_search_draws)
         dependencies = _fit_dependencies(config, experiment_path, inputs, run_strategy)
-    elif case.primary.kind == "scientific_semantics_incompatible":
+    elif case.scenario == "checkpoint_schema":
         checkpoint_path = run_directory / "checkpoint.json"
         document = cast(dict[str, object], json.loads(_FIT_CHECKPOINT_FIXTURE.read_bytes()))
         document["scientific_artifact_schema"] = 1
@@ -720,23 +919,20 @@ def _run_fit_boundary_case(
 
         monkeypatch.setattr(strategy_module, "initial_population", forbid_search_draws)
         dependencies = _fit_dependencies(config, experiment_path, inputs, run_strategy)
-    elif case.primary.kind == "publication_collision":
+    elif case.scenario == "best_model_collision":
         best_model_path = run_directory / "best_model.json"
-        existing_best_model = _MODEL_FIXTURE.read_bytes()
+        existing = load_best_model(_MODEL_FIXTURE.read_bytes(), source=_MODEL_FIXTURE)
+        existing_best_model = render_best_model(replace(existing, final_seed=existing.final_seed + 1))
         best_model_path.write_bytes(existing_best_model)
         expected_preserved = {best_model_path: existing_best_model}
 
-        def collide(_path: Path, _content: bytes) -> object:
-            raise TrafficlabError(case.primary.detail, corrective_action=case.primary.corrective_action)
-
-        monkeypatch.setattr(fitting, "publish_best_model", collide)
         dependencies = _fit_dependencies(
             config,
             experiment_path,
             inputs,
             lambda _context: _fit_success_outcome(config),
         )
-    elif case.primary.kind == "artifact_changed":
+    elif case.scenario == "reference_changed":
         reference_path = run_directory / "reference.pcapng"
         original_reference = inputs[reference_path]
         changed_reference = original_reference + b"changed after fitting\n"
@@ -763,7 +959,7 @@ def _run_fit_boundary_case(
         )
         expected_preserved = {reference_path: original_reference}
     else:
-        raise AssertionError(f"unsupported primitive fit outcome {case.primary.kind!r}")
+        raise AssertionError(f"unsupported primitive fit scenario {case.scenario!r}")
 
     with pytest.raises(TrafficlabError) as caught:
         fitting.fit_experiment(experiment_path, dependencies=dependencies)
@@ -825,85 +1021,48 @@ def test_fit_changed_reference_without_resume_uses_the_generic_recovery_action(
     assert reference_path.read_bytes() == original_reference
 
 
-def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Exercise public generation mapping from bare read and generator failures."""
+def _run_generation_boundary_case(
+    case: _BoundaryCase,
+    tmp_path: Path,
+    valid_config_data: dict[str, object],
+) -> None:
+    """Exercise missing, incompatible, and limited generation through real files and models."""
     run_directory = tmp_path / "run"
-    run_directory.mkdir()
-    prepared = _prepared(run_directory)
-    prepared_config = cast(Any, prepared.config)
-    prepared_config.run.final_seed = 1
-    prepared_config.models = SimpleNamespace(enabled=("poisson_empirical",), poisson_empirical=SimpleNamespace())
-    final_limits = SimpleNamespace()
-    prepared_config.generation = SimpleNamespace(final=final_limits)
-    records: list[dict[str, object]] = []
-
-    def append(_directory: Path, record: dict[str, object]) -> None:
-        records.append(record)
-
-    def open_prepared(_path: Path) -> preflight.PreparedExperiment:
-        return prepared
-
-    monkeypatch.setattr(generation, "open_or_prepare_experiment", open_prepared)
-    monkeypatch.setattr(generation, "append_run_log", append)
-    if case.primary.kind == "artifact_missing":
-
-        def missing(_path: Path, **_kwargs: object) -> bytes:
-            raise TrafficlabError(case.primary.detail, corrective_action=case.primary.corrective_action)
-
-        monkeypatch.setattr(generation, "_read_required_bytes", missing)
-    elif case.primary.kind == "scientific_semantics_incompatible":
-        document = cast(dict[str, object], json.loads(_MODEL_FIXTURE.read_bytes()))
-        document["scientific_artifact_schema"] = 1
-        incompatible = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
-
-        def read_incompatible_model(_path: Path, **_kwargs: object) -> bytes:
-            return incompatible
-
-        monkeypatch.setattr(generation, "_read_required_bytes", read_incompatible_model)
-    elif case.primary.kind == "generation_incomplete":
-        captured = b"capture metadata"
-        best = SimpleNamespace(
-            family="poisson_empirical",
-            gene_bounds={},
-            capture_identity=identify_bytes(captured),
-            final_seed=1,
-            final_limits=final_limits,
-            observation_window_seconds=1.0,
-            fitted=object(),
+    experiment_path = tmp_path / "experiment.toml"
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    cast(dict[str, object], data["target"])["mounts"] = []
+    config = ExperimentConfig.model_validate(data)
+    best_content = _MODEL_FIXTURE.read_bytes()
+    if case.scenario == "packet_limit":
+        best = load_best_model(best_content, source=_MODEL_FIXTURE)
+        limits = best.final_limits.model_copy(update={"max_packets": 1})
+        best_content = render_best_model(replace(best, final_limits=limits))
+        trial_limits = config.generation.trial.model_copy(update={"max_packets": 1})
+        config = config.model_copy(
+            update={"generation": config.generation.model_copy(update={"trial": trial_limits, "final": limits})}
         )
-
-        def read(_path: Path, **_kwargs: object) -> bytes:
-            return captured
-
-        def load_best(*_args: object, **_kwargs: object) -> object:
-            return best
-
-        def family_for(_name: str) -> object:
-            return _Family()
-
-        def parse_metadata(*_args: object, **_kwargs: object) -> object:
-            return object()
-
-        class _Family:
-            gene_names: tuple[str, ...] = ()
-
-            @staticmethod
-            def generate(*_args: object, **_kwargs: object) -> object:
-                raise TrafficlabError(case.primary.detail, corrective_action=case.primary.corrective_action)
-
-        monkeypatch.setattr(generation, "_read_required_bytes", read)
-        monkeypatch.setattr(generation, "load_best_model", load_best)
-        monkeypatch.setattr(generation, "get_family", family_for)
-        monkeypatch.setattr(generation, "parse_capture_metadata", parse_metadata)
-    else:
-        raise AssertionError(f"unsupported primitive generation outcome {case.primary.kind!r}")
+    experiment_path.write_bytes(render_effective_config(config))
+    prepared = preflight.open_or_prepare_experiment(experiment_path)
+    capture_content = (_ROOT / "examples" / "data" / "capture.json").read_bytes()
+    (run_directory / "capture.json").write_bytes(capture_content)
+    expected_preserved: dict[Path, bytes] = {}
+    if case.scenario == "best_model_schema":
+        document = cast(dict[str, object], json.loads(best_content))
+        document["scientific_artifact_schema"] = 1
+        best_content = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    if case.scenario != "best_model_missing":
+        model_path = run_directory / "best_model.json"
+        model_path.write_bytes(best_content)
+        expected_preserved[model_path] = best_content
 
     with pytest.raises(TrafficlabError) as caught:
-        generation.generate_experiment(prepared.source)
+        generation.generate_experiment(prepared.source, clock=lambda: 0.0)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
+    records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
     _assert_serialized_outcomes(records[-1], case)
-    _assert_publication_state(case, run_directory, {})
+    _assert_publication_state(case, run_directory, expected_preserved)
 
 
 def test_generation_maps_missing_capture_after_a_validated_model(
@@ -1098,6 +1257,10 @@ def _run_comparison_boundary_case(
     experiment_path = tmp_path / "experiment.toml"
     data = copy.deepcopy(valid_config_data)
     cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    if case.scenario == "metric_infeasible":
+        similarity = cast(dict[str, object], data["similarity"])
+        similarity["acf_lags"] = [100]
+        similarity["acf_lag_weights"] = [1.0]
     config = ExperimentConfig.model_validate(data)
     snapshot = render_effective_config(config)
     experiment_path.write_bytes(snapshot)
@@ -1117,25 +1280,21 @@ def _run_comparison_boundary_case(
 
     monkeypatch.setattr(comparison, "append_run_log", append)
     expected_preserved: dict[Path, bytes] = {}
-    if case.primary.kind == "artifact_foreign":
+    if case.scenario == "foreign_generated":
         generated_path = run_directory / "generated.pcapng"
         foreign_generated = (run_directory / "reference.pcapng").read_bytes()
         generated_path.write_bytes(foreign_generated)
         expected_preserved = {generated_path: foreign_generated}
-    elif case.primary.kind == "metric_infeasible":
-
-        def infeasible(*_args: object, **_kwargs: object) -> ComparisonResult:
-            raise TrafficlabError(case.primary.detail, corrective_action=case.primary.corrective_action)
-
-        monkeypatch.setattr(comparison, "compare_traces", infeasible)
-    elif case.primary.kind == "publication_failed":
+    elif case.scenario == "metric_infeasible":
+        pass
+    elif case.scenario == "similarity_durability":
 
         def fail_fsync(_file_descriptor: int) -> None:
             raise OSError("injected similarity fsync failure")
 
         monkeypatch.setattr(comparison.os, "fsync", fail_fsync)
     else:
-        raise AssertionError(f"unsupported primitive comparison outcome {case.primary.kind!r}")
+        raise AssertionError(f"unsupported primitive comparison scenario {case.scenario!r}")
 
     with pytest.raises(TrafficlabError) as caught:
         comparison.compare_experiment(experiment_path)
@@ -1171,6 +1330,8 @@ def test_public_boundary_case_registry_covers_each_authoritative_fixture_row_onc
     registry_rows = tuple(outcome.as_dict() for case in _PUBLIC_BOUNDARY_CASES for outcome in case.outcomes)
 
     assert len(fixture_rows) == 43
+    assert len(_PUBLIC_BOUNDARY_CASES) == 38
+    assert len(set(_SCENARIOS)) == 38
     assert registry_rows == fixture_rows
     assert all(case.identifier.startswith("primitive-boundary-") for case in _PUBLIC_BOUNDARY_CASES)
 
@@ -1183,22 +1344,34 @@ def test_public_boundaries_serialize_the_authoritative_failure_matrix(
     valid_config_data: dict[str, object],
 ) -> None:
     """A wrong owner, action, authority, state, or publication side effect breaks this matrix."""
-    if case.primary.detail in _MOUNTED_INPUT_DETAILS:
+    if case.scenario in {"mounted_input_unavailable", "mounted_input_incompatible"}:
         _run_capture_mounted_input_boundary_case(case, monkeypatch, tmp_path, valid_config_data)
-    elif case.injection_stage == "preflight":
-        _run_preflight_case(case, monkeypatch, tmp_path)
-    elif case.primary.stage == "capture":
-        if case.primary.kind == "artifact_stale":
+    elif case.scenario in {
+        "config_invalid",
+        "docker_unavailable",
+        "compose_incompatible",
+        "target_image_unavailable",
+        "capture_image_incompatible",
+        "dumpcap_unavailable",
+        "dumpcap_incompatible",
+        "mount_source_unavailable",
+        "mount_target_incompatible",
+        "prerequisite_unavailable",
+        "prerequisite_incompatible",
+    }:
+        _run_preflight_case(case, tmp_path, valid_config_data)
+    elif case.scenario in _CAPTURE_FAILURE_SCENARIOS | {"stale_capture_pair"}:
+        if case.scenario == "stale_capture_pair":
             _run_capture_stale_boundary_case(case, tmp_path, valid_config_data)
         else:
-            _run_capture_boundary_case(case, monkeypatch, tmp_path)
-    elif case.primary.stage == "fit":
+            _run_capture_boundary_case(case, monkeypatch, tmp_path, valid_config_data)
+    elif case.scenario in {"checkpoint_corrupt", "checkpoint_schema", "best_model_collision", "reference_changed"}:
         _run_fit_boundary_case(case, monkeypatch, tmp_path, valid_config_data)
-    elif case.primary.stage == "generate":
-        _run_generation_boundary_case(case, monkeypatch, tmp_path)
-    elif case.primary.stage == "compare":
+    elif case.scenario in {"best_model_missing", "best_model_schema", "packet_limit"}:
+        _run_generation_boundary_case(case, tmp_path, valid_config_data)
+    elif case.scenario in {"foreign_generated", "metric_infeasible", "similarity_durability"}:
         _run_comparison_boundary_case(case, monkeypatch, tmp_path, valid_config_data)
-    elif case.primary.stage == "publication":
+    elif case.scenario == "accepted_collision":
         _run_study_publication_case(case, tmp_path)
     else:
-        raise AssertionError(f"unsupported public boundary stage {case.primary.stage!r}")
+        raise AssertionError(f"unsupported public boundary scenario {case.scenario!r}")

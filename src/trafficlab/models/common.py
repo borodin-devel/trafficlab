@@ -176,6 +176,11 @@ class GenerationResult:
     def require_complete(self) -> tuple[TraceEvent, ...]:
         """Return only a full-window trace, never diagnostic partial events."""
         if not self.complete:
+            if self.reason == "max_packets":
+                raise TrafficlabError(
+                    "generation exceeded the configured packet limit",
+                    corrective_action="correct limit or model",
+                )
             raise TrafficlabError(
                 f"generation did not complete: {self.reason}",
                 corrective_action="increase generation limits and generate a complete trace",

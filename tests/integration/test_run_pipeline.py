@@ -218,7 +218,8 @@ def test_installed_run_preflight_failure_matches_direct_coordinator_without_dock
     assert result.returncode == raised.value.exit_code
     assert result.stdout == ""
     assert result.stderr == f"run: {raised.value}; {raised.value.corrective_action}\n"
-    assert "preflight" in result.stderr
+    assert "mounts: mount source missing is unavailable" in result.stderr
+    assert "make the named host source available to Docker" in result.stderr
     assert "Traceback" not in result.stderr
     assert not run_directory.exists()
     assert not docker_marker.exists()

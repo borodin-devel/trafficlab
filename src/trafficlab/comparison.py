@@ -26,7 +26,10 @@ from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.models.registry import load_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
-from trafficlab.similarity.autocorrelation import autocorrelation_similarity
+from trafficlab.similarity.autocorrelation import (
+    AutocorrelationSamplesInsufficientError,
+    autocorrelation_similarity,
+)
 from trafficlab.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
 from trafficlab.similarity.ks import frame_size_ks, iat_ks
 from trafficlab.similarity.multiscale import multiscale_rate_similarity
@@ -754,10 +757,10 @@ def compare_traces(
     """Evaluate all four configured metrics over exactly one observation window."""
     reference_trace = tuple(reference)
     generated_trace = tuple(generated)
-    component_results = {
-        "frame_size_ks": frame_size_ks(reference_trace, generated_trace, W),
-        "iat_ks": iat_ks(reference_trace, generated_trace, W, settings.iat_diagnostic_quantile),
-        "autocorrelation": autocorrelation_similarity(
+    frame_size = frame_size_ks(reference_trace, generated_trace, W)
+    interarrival = iat_ks(reference_trace, generated_trace, W, settings.iat_diagnostic_quantile)
+    try:
+        autocorrelation = autocorrelation_similarity(
             reference_trace,
             generated_trace,
             W,
@@ -765,7 +768,16 @@ def compare_traces(
             settings.acf_lag_weights,
             settings.acf_iat_weight,
             settings.acf_size_weight,
-        ),
+        )
+    except AutocorrelationSamplesInsufficientError as error:
+        raise TrafficlabError(
+            "autocorrelation requires more samples",
+            corrective_action="correct samples or settings",
+        ) from error
+    component_results = {
+        "frame_size_ks": frame_size,
+        "iat_ks": interarrival,
+        "autocorrelation": autocorrelation,
         "multiscale_rate": multiscale_rate_similarity(
             reference_trace,
             generated_trace,
