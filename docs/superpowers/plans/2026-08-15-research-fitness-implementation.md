@@ -56,6 +56,12 @@ Docker Engine and Compose for capture-only gates, and the existing uv-managed pr
 | Validation study | existing study runner, new offline auditor, accepted evidence, report and examples |
 | Acceptance | roadmap/assessment updates only after retained evidence and final independent review |
 
+## Execution Order
+
+Execute tasks in roadmap dependency order: `1, 2, 3, 9, 10, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16`.
+Tasks 9 and 10 close the capture and diagnostic foundation before corrected model semantics begin. Task numbers retain
+their stable brief and ledger identities; this ordering rule overrides their document position.
+
 ---
 
 ### Task 1: Portable and Realized Configuration Pair
