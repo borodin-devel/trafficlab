@@ -102,6 +102,7 @@ def test_make_best_model_repairs_and_owns_all_outer_metadata() -> None:
         bounds=POISSON_BOUNDS,
     )
     assert artifact.version == 1
+    assert artifact.scientific_artifact_schema == 2
     assert artifact.family == "poisson_empirical"
     assert artifact.genes == (4.0,)
     assert artifact.reference_sha256 == "a" * 64
@@ -124,6 +125,7 @@ def test_best_model_render_is_canonical(valid_best_model: BestModel) -> None:
     document = json.loads(rendered)
     assert set(document) == {
         "version",
+        "scientific_artifact_schema",
         "family",
         "genes",
         "fitted",
@@ -185,7 +187,8 @@ def test_best_model_rejects_every_missing_and_extra_outer_key(valid_best_model: 
     for key in tuple(original):
         missing = copy.deepcopy(original)
         del missing[key]
-        with pytest.raises(TrafficlabError, match="outer object"):
+        match = "best model schema is incompatible" if key == "scientific_artifact_schema" else "outer object"
+        with pytest.raises(TrafficlabError, match=match):
             load_best_model(_encoded(missing), source=Path("best_model.json"))
     extra = copy.deepcopy(original)
     extra["lineage"] = {}
@@ -198,6 +201,36 @@ def test_best_model_rejects_noncanonical_version(valid_best_model: BestModel, ve
     document = _document(valid_best_model)
     document["version"] = version
     with pytest.raises(TrafficlabError, match="version"):
+        load_best_model(_encoded(document), source=Path("best_model.json"))
+
+
+@pytest.mark.parametrize(
+    ("present", "value"),
+    (
+        (False, None),
+        (True, None),
+        (True, 1),
+        (True, 3),
+        (True, True),
+        (True, "2"),
+        (True, 2.0),
+    ),
+    ids=("missing", "null", "old", "future", "boolean", "string", "nonintegral"),
+)
+def test_best_model_rejects_noncurrent_scientific_schema_before_fitted_decode(
+    valid_best_model: BestModel,
+    present: bool,
+    value: object,
+) -> None:
+    """A schema mismatch is scientific incompatibility, not malformed fitted-model data."""
+    document = _document(valid_best_model)
+    document["fitted"] = {"deliberately": "unreadable"}
+    if present:
+        document["scientific_artifact_schema"] = value
+    else:
+        document.pop("scientific_artifact_schema", None)
+
+    with pytest.raises(TrafficlabError, match="best model schema is incompatible"):
         load_best_model(_encoded(document), source=Path("best_model.json"))
 
 
@@ -291,6 +324,12 @@ def test_best_model_rejects_invalid_utf8_and_non_object_policy(valid_best_model:
     document["seed_policy"] = []
     with pytest.raises(TrafficlabError, match="seed policy"):
         load_best_model(_encoded(document), source=Path("best_model.json"))
+
+
+@pytest.mark.parametrize("content", [b"[]", b"null"])
+def test_best_model_loader_rejects_non_object_root_before_schema_validation(content: bytes) -> None:
+    with pytest.raises(TrafficlabError, match="outer object"):
+        load_best_model(content, source=Path("best_model.json"))
 
 
 @pytest.mark.parametrize(

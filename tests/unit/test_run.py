@@ -303,7 +303,7 @@ def test_run_experiment_appends_one_exact_completion_record(
         ("capture-pair", "capture", "capture validation failed"),
         ("experiment", "preflight", "experiment.toml"),
         ("missing-checkpoint", "run", "directory entries"),
-        ("checkpoint", "fit", "invalid checkpoint"),
+        ("checkpoint", "fit", "checkpoint schema is incompatible"),
         ("checkpoint-state", "fit", "terminal state"),
         ("history", "fit", "ga_history.csv"),
         ("best-model", "fit", "best_model.json"),

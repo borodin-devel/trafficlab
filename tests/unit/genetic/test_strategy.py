@@ -298,7 +298,7 @@ def test_resume_absent_starts_fresh_and_false_rejects_present_checkpoint(
     ("checkpoint_state", "expected_kind"),
     [
         ("parse", "artifact_corrupt"),
-        ("schema", "artifact_corrupt"),
+        ("schema", "scientific_semantics_incompatible"),
         ("incompatible", "scientific_semantics_incompatible"),
     ],
 )

@@ -184,6 +184,7 @@ GENETIC = GeneticCheckpointSettings(
     resume=True,
 )
 COMPATIBILITY = CheckpointCompatibility(
+    scientific_artifact_schema=2,
     experiment_sha256="a" * 64,
     reference_sha256="b" * 64,
     capture_sha256="c" * 64,
@@ -413,7 +414,7 @@ def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnost
     assert content.endswith(b"\n")
     decoded = json.loads(content)
     assert content == (json.dumps(decoded, sort_keys=True, separators=(",", ":")) + "\n").encode()
-    assert b'"schema"' not in content
+    assert decoded["scientific_artifact_schema"] == 2
     assert tuple(method.name for method in loaded.population[0].trials[0].methods) == METHOD_ORDER
     with pytest.raises(TypeError):
         cast(dict[str, object], loaded.population[0].trials[0].methods[0].diagnostics)["changed"] = True
@@ -647,12 +648,55 @@ def test_checkpoint_rejects_encoding_syntax_root_shape_and_exact_key_errors(cont
         parse_checkpoint(content, COMPATIBILITY)
 
 
+def test_checkpoint_parser_rejects_non_bytes_before_json_parsing() -> None:
+    with pytest.raises(TypeError, match="checkpoint content must be bytes"):
+        parse_checkpoint(cast(bytes, "not bytes"), COMPATIBILITY)
+
+
 def test_checkpoint_rejects_noncanonical_but_equivalent_json() -> None:
     canonical = render_checkpoint(VALID_STATE)
     data = json.loads(canonical)
     noncanonical = json.dumps(data, indent=2).encode()
     with pytest.raises(TrafficlabError, match="canonical"):
         parse_checkpoint(noncanonical, COMPATIBILITY)
+
+
+@pytest.mark.parametrize(
+    ("present", "value"),
+    (
+        (False, None),
+        (True, None),
+        (True, 1),
+        (True, 3),
+        (True, True),
+        (True, "2"),
+        (True, 2.0),
+    ),
+    ids=("missing", "null", "old", "future", "boolean", "string", "nonintegral"),
+)
+def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
+    monkeypatch: pytest.MonkeyPatch,
+    present: bool,
+    value: object,
+) -> None:
+    """Older scientific semantics must fail before malformed RNG state can be reconstructed."""
+    document = _decoded()
+    document["rng"] = {"deliberately": "unreadable"}
+    if present:
+        document["scientific_artifact_schema"] = value
+    else:
+        document.pop("scientific_artifact_schema", None)
+    parsed_rng = False
+
+    def fail_rng(_value: object) -> object:
+        nonlocal parsed_rng
+        parsed_rng = True
+        raise AssertionError("schema validation must precede RNG decoding")
+
+    monkeypatch.setattr(checkpoint, "_parse_rng", fail_rng)
+    with pytest.raises(TrafficlabError, match="checkpoint schema is incompatible"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
+    assert parsed_rng is False
 
 
 @pytest.mark.parametrize(

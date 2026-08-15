@@ -18,6 +18,7 @@ from trafficlab.errors import (
 from trafficlab.models.registry import get_family, load_best_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
+from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import TraceEvent, parse_capture_metadata
 
 
@@ -126,6 +127,14 @@ def generate_experiment(
             ) from error
         try:
             best = load_best_model(model_content, source=model_path)
+        except ScientificArtifactSchemaError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="scientific_semantics_incompatible",
+                stage="generate",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,

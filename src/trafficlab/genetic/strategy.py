@@ -38,6 +38,7 @@ from trafficlab.genetic.population import initial_population, rank_candidates
 from trafficlab.genetic.types import Candidate, CandidateId, TerminalReason, TrialResult
 from trafficlab.models.common import FamilyBounds, ModelFamily
 from trafficlab.models.registry import get_family
+from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.trace import TraceEvent
 
 
@@ -133,6 +134,7 @@ def make_strategy_context(
         similarity=config.similarity,
     )
     compatibility = CheckpointCompatibility(
+        scientific_artifact_schema=SCIENTIFIC_ARTIFACT_SCHEMA_VERSION,
         experiment_sha256=experiment_sha256,
         reference_sha256=reference_sha256,
         capture_sha256=capture_sha256,

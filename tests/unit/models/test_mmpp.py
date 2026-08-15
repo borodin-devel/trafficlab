@@ -79,7 +79,7 @@ def test_family_declares_the_mmpp_chromosome_contract() -> None:
     assert FAMILY.bounds_type is MmppConfig
     assert FAMILY.estimator_choices == {
         "rates": "direct_genes",
-        "initial_regime": "stationary",
+        "initial_regime": "arrival_epoch",
         "marks": "joint_empirical_first_appearance",
         "tie": "regime_change",
         "first_event": "zero",
@@ -99,6 +99,45 @@ def test_stationary_probabilities_avoid_overflow_in_transition_sum() -> None:
     assert math.isfinite(model.pi0)
     assert math.isfinite(model.pi1)
     assert math.isclose(model.pi0 + model.pi1, 1.0, rel_tol=0.0, abs_tol=1e-12)
+
+
+def test_arrival_epoch_probabilities_weight_stationary_regimes_by_arrival_rates() -> None:
+    """Initial events sample stationary mass weighted by each regime's arrival intensity."""
+    assert mmpp._arrival_epoch_probabilities(1.0, 3.0, 1.0, 9.0) == (0.25, 0.75)
+
+
+def test_arrival_epoch_probabilities_normalize_near_the_largest_finite_rates() -> None:
+    """Finite rate products near the float limit must not overflow before normalization."""
+    below_maximum = math.nextafter(sys.float_info.max, 0.0)
+    a0, a1 = mmpp._arrival_epoch_probabilities(
+        sys.float_info.max,
+        below_maximum,
+        below_maximum,
+        sys.float_info.max,
+    )
+
+    assert math.isfinite(a0)
+    assert math.isfinite(a1)
+    assert 0.0 < a0 < 1.0
+    assert 0.0 < a1 < 1.0
+    assert math.isclose(a0 + a1, 1.0, rel_tol=0.0, abs_tol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "rates",
+    [
+        (0.0, 1.0, 1.0, 2.0),
+        (1.0, math.nan, 1.0, 2.0),
+        (1.0, 3.0, 0.0, 2.0),
+        (1.0, 3.0, 1.0, math.inf),
+    ],
+)
+def test_arrival_epoch_probabilities_reject_invalid_derived_rate_boundaries(
+    rates: tuple[float, float, float, float],
+) -> None:
+    """A zero or nonfinite CTMC or arrival rate has no valid arrival-epoch law."""
+    with pytest.raises(ValueError, match="arrival-epoch"):
+        mmpp._arrival_epoch_probabilities(*rates)
 
 
 def test_repair_sorts_only_arrival_rates() -> None:
@@ -217,6 +256,17 @@ def test_generate_races_arrival_before_transition_and_resamples_both_clocks(mode
     ]
 
 
+def test_generate_stops_before_any_draw_when_initial_wall_clock_is_invalid(model: MmppModel) -> None:
+    rng = ScriptedMmppRng(random_values=[0.0], indices=[0], exponentials=[2.0, 2.0])
+
+    result = _generate_with_rng(model, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([math.inf]))
+
+    assert result.complete is False
+    assert result.events == ()
+    assert result.reason == "max_wall_seconds"
+    assert rng.calls == []
+
+
 def test_generate_exact_race_tie_changes_regime_without_emission(model: MmppModel) -> None:
     """Arrival ties belong to the CTMC transition, so no simultaneous packet is emitted."""
     rng = ScriptedMmppRng(random_values=[0.0], indices=[0], exponentials=[0.5, 0.5, 2.0, 2.0])
@@ -232,13 +282,58 @@ def test_generate_exact_race_tie_changes_regime_without_emission(model: MmppMode
     assert ("randrange", model.marks.total_count) not in rng.calls[2:]
 
 
-def test_generate_starts_in_high_regime_from_stationary_draw(model: MmppModel) -> None:
-    """Selecting the wrong stationary partition would use the wrong first pair of rates."""
+def test_generate_starts_in_high_regime_from_arrival_epoch_draw(model: MmppModel) -> None:
+    """Selecting the wrong arrival-epoch partition would use the wrong first pair of rates."""
     rng = ScriptedMmppRng(random_values=[0.9], indices=[0, 2], exponentials=[0.25, 0.5, 2.0, 2.0])
     result = _generate_with_rng(model, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 20))
 
     assert result.require_complete()[1] == TraceEvent(0.25, Direction.INBOUND, 80)
     assert rng.calls[2:4] == [("expovariate", model.lambda1), ("expovariate", model.q10)]
+
+
+def test_generate_arrival_epoch_threshold_selects_regime_one(model: MmppModel) -> None:
+    """The equality boundary belongs to regime one under the conditioned initial law."""
+    conditioned = MmppModel(1.0, 3.0, 1.0, 9.0, model.marks)
+    rng = ScriptedMmppRng(random_values=[0.25], indices=[0], exponentials=[2.0, 2.0])
+
+    result = _generate_with_rng(conditioned, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 12))
+
+    assert result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert rng.calls[2:4] == [("expovariate", conditioned.lambda1), ("expovariate", conditioned.q10)]
+
+
+def test_generate_samples_the_conditioned_time_zero_mark_before_later_clocks(model: MmppModel) -> None:
+    """Arrival-epoch conditioning changes only regime selection, not the documented mark-first draw order."""
+    conditioned = MmppModel(1.0, 3.0, 1.0, 9.0, model.marks)
+    rng = ScriptedMmppRng(random_values=[0.0], indices=[2], exponentials=[2.0, 2.0])
+
+    result = _generate_with_rng(conditioned, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 12))
+
+    assert result.require_complete() == (TraceEvent(0.0, Direction.INBOUND, 80),)
+    assert rng.calls == [
+        ("random", None),
+        ("randrange", conditioned.marks.total_count),
+        ("expovariate", conditioned.lambda0),
+        ("expovariate", conditioned.q01),
+    ]
+
+
+def test_generate_arrival_epoch_tie_still_changes_regime_without_emission(model: MmppModel) -> None:
+    """Conditioning the first regime must not change the strict arrival-before-transition race rule."""
+    conditioned = MmppModel(1.0, 3.0, 1.0, 9.0, model.marks)
+    rng = ScriptedMmppRng(random_values=[0.25], indices=[0], exponentials=[0.5, 0.5, 2.0, 2.0])
+
+    result = _generate_with_rng(conditioned, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 20))
+
+    assert result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert rng.calls == [
+        ("random", None),
+        ("randrange", conditioned.marks.total_count),
+        ("expovariate", conditioned.lambda1),
+        ("expovariate", conditioned.q10),
+        ("expovariate", conditioned.lambda0),
+        ("expovariate", conditioned.q01),
+    ]
 
 
 def test_generate_processes_closed_window_endpoint_and_completes_only_after_selected_event(model: MmppModel) -> None:
@@ -325,7 +420,7 @@ def test_generate_rejects_invalid_exponential_delays(model: MmppModel, delay: fl
 
 @pytest.mark.parametrize("draw", [True, 1, -0.1, 1.0, math.nan, math.inf])
 def test_generate_rejects_invalid_initial_regime_draw(model: MmppModel, draw: object) -> None:
-    """A noncanonical uniform draw makes stationary initialization undefined."""
+    """A noncanonical uniform draw makes arrival-epoch initialization undefined."""
     with pytest.raises(TrafficlabError, match="random draw"):
         _generate_with_rng(
             model,

@@ -19,11 +19,13 @@ from trafficlab.models.common import FamilyBounds, FittedModel, Gene, Genes, Mod
 from trafficlab.models.markov_renewal import MarkovRenewalFamily
 from trafficlab.models.mmpp import MmppFamily
 from trafficlab.models.poisson import PoissonFamily
+from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION, require_current_scientific_schema
 from trafficlab.trace import TraceEvent
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _OUTER_KEYS = {
     "version",
+    "scientific_artifact_schema",
     "family",
     "genes",
     "fitted",
@@ -76,6 +78,7 @@ class BestModel:
     """One fully self-contained, lineage-bound fitted traffic model."""
 
     version: Literal[1]
+    scientific_artifact_schema: int
     family: FamilyName
     genes: Genes
     fitted: FittedModel
@@ -265,6 +268,7 @@ def _exact_mapping(value: object, expected: Mapping[str, str | int | float], *, 
 def _validate_best_model(model: BestModel) -> None:
     if type(model.version) is not int or model.version != 1:
         raise _invalid("invalid best-model version", corrective_action="use integer best-model version 1")
+    require_current_scientific_schema(model.scientific_artifact_schema, artifact="best model")
     if type(model.family) is not str:
         raise _invalid("invalid best-model family", corrective_action="select one registered model family")
     family = get_family(model.family)
@@ -352,6 +356,7 @@ def make_best_model(
     fitted = family.fit(reference, repaired, W=window, bounds=bounds)
     return BestModel(
         version=1,
+        scientific_artifact_schema=SCIENTIFIC_ARTIFACT_SCHEMA_VERSION,
         family=family.name,
         genes=repaired,
         fitted=fitted,
@@ -396,12 +401,18 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
             f"invalid JSON in best model {source}: {error}",
             corrective_action="correct the strict JSON syntax and duplicate keys",
         ) from error
-    if type(raw) is not dict or set(cast(dict[object, object], raw)) != _OUTER_KEYS:
+    if type(raw) is not dict:
         raise _invalid(
             "invalid best-model outer object",
-            corrective_action="provide exactly the ten documented version-1 fields",
+            corrective_action="provide exactly the eleven documented version-1 fields",
         )
     document = cast(dict[str, object], raw)
+    require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="best model")
+    if set(document) != _OUTER_KEYS:
+        raise _invalid(
+            "invalid best-model outer object",
+            corrective_action="provide exactly the eleven documented version-1 fields",
+        )
     version = document["version"]
     if type(version) is not int or version != 1:
         raise _invalid("invalid best-model version", corrective_action="use integer best-model version 1")
@@ -427,6 +438,7 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
         ) from error
     return BestModel(
         version=1,
+        scientific_artifact_schema=cast(int, document["scientific_artifact_schema"]),
         family=_family_name(family_value),
         genes=genes,
         fitted=fitted,
@@ -447,6 +459,7 @@ def render_best_model(model: BestModel) -> bytes:
     family = get_family(model.family)
     document: dict[str, object] = {
         "version": model.version,
+        "scientific_artifact_schema": model.scientific_artifact_schema,
         "family": model.family,
         "genes": list(model.genes),
         "fitted": family.dump_fitted(model.fitted),

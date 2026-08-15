@@ -1117,6 +1117,36 @@ def test_stage_reports_missing_or_invalid_model_as_direct_generation_error(
     }
 
 
+def test_stage_rejects_incompatible_model_schema_before_generation(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+) -> None:
+    """An old fitted-model schema is preserved scientific evidence, not corrupt input."""
+    experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
+    model_path = run_directory / "best_model.json"
+    document = cast(dict[str, object], json.loads(model_path.read_bytes()))
+    document["scientific_artifact_schema"] = 1
+    incompatible = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    model_path.write_bytes(incompatible)
+
+    with pytest.raises(TrafficlabError, match="best model schema is incompatible") as raised:
+        generate_experiment(experiment_path, clock=lambda: 0.0)
+
+    assert model_path.read_bytes() == incompatible
+    assert not (run_directory / "generated.pcapng").exists()
+    assert raised.value.failure_outcome is not None
+    assert raised.value.failure_outcome.as_dict() == {
+        "affected_evidence": "best_model.json",
+        "authority": "primary",
+        "corrective_action": "refit under the current schema",
+        "detail": "best model schema is incompatible",
+        "evidence_state": "preserved",
+        "kind": "scientific_semantics_incompatible",
+        "stage": "generate",
+    }
+    assert _log_records(run_directory)[-1]["failure_outcome"] == raised.value.failure_outcome.as_dict()
+
+
 @pytest.mark.parametrize("defect", ["capture-hash", "metadata"], ids=["capture-hash-mismatch", "malformed-metadata"])
 def test_stage_rejects_invalid_capture_lineage_before_generation(
     valid_config_data: dict[str, object],

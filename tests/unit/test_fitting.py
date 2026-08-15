@@ -253,9 +253,7 @@ def test_read_fit_input_classifies_an_unreadable_source_entry(tmp_path: Path, mo
     )
 
 
-def test_fit_failure_log_retains_ordered_secondary_evidence(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_fit_failure_log_retains_ordered_secondary_evidence(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Failure logging cannot replace the source primary when cleanup evidence is also present."""
     primary = FailureOutcome(
         kind="artifact_corrupt",
@@ -611,7 +609,7 @@ def test_real_terminal_checkpoint_repairs_history_validates_refits_and_reuses_be
         ("window", "observation window"),
         ("bounds", "coordinate metadata for family poisson_empirical"),
         ("operators", "operator values for family poisson_empirical"),
-        ("checkpoint", "invalid checkpoint"),
+        ("checkpoint", "checkpoint schema is incompatible"),
         ("final_seed", "genetic setting final_seed"),
     ],
 )
@@ -738,7 +736,7 @@ def test_noncanonical_strategy_winner_is_not_repaired_into_a_different_published
     ("checkpoint_state", "expected_kind"),
     [
         ("parse", "artifact_corrupt"),
-        ("schema", "artifact_corrupt"),
+        ("schema", "scientific_semantics_incompatible"),
         ("incompatible", "scientific_semantics_incompatible"),
     ],
 )

@@ -1,10 +1,10 @@
 """Public-boundary coverage for the canonical expected-failure matrix.
 
-The matrix uses the checked JSONL rows as its expected values.  Artifact-identity
-and study-acceptance detections scheduled for Tasks 4 and 11 are injected as
-typed errors at the nearest current public stage callback: this test verifies
-their downstream serialization and publication state, not a detector that is
-deliberately outside the current synthetic fixture harness.
+The matrix uses the checked JSONL rows as its expected values.  Study-acceptance
+detections scheduled for Task 11 are injected as typed errors at the nearest
+current public stage callback: this test verifies their downstream serialization
+and publication state, not a detector that is deliberately outside the current
+synthetic fixture harness.
 """
 
 import copy
@@ -41,6 +41,9 @@ from trafficlab.pcapng import encode_pcapng
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 _FIXTURE = Path(__file__).parents[1] / "fixtures" / "diagnostics" / "failure-outcomes.jsonl"
+_ROOT = Path(__file__).parents[2]
+_FIT_CHECKPOINT_FIXTURE = _ROOT / "examples" / "data" / "fit" / "checkpoint.json"
+_MODEL_FIXTURE = _ROOT / "examples" / "data" / "models" / "best_model.json"
 
 type _InjectionStage = Literal["capture", "fit", "generate", "compare", "publication"]
 
@@ -51,8 +54,6 @@ _DEFERRED_TYPED_DETECTOR_CASES = frozenset(
     {
         ("capture", "artifact_stale"),
         ("fit", "artifact_changed"),
-        ("fit", "scientific_semantics_incompatible"),
-        ("generate", "scientific_semantics_incompatible"),
         ("compare", "artifact_foreign"),
     }
 )
@@ -668,6 +669,19 @@ def _run_fit_boundary_case(
 
         monkeypatch.setattr(strategy_module, "initial_population", forbid_search_draws)
         dependencies = _fit_dependencies(config, experiment_path, inputs, run_strategy)
+    elif case.primary.kind == "scientific_semantics_incompatible":
+        checkpoint_path = run_directory / "checkpoint.json"
+        document = cast(dict[str, object], json.loads(_FIT_CHECKPOINT_FIXTURE.read_bytes()))
+        document["scientific_artifact_schema"] = 1
+        incompatible = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        checkpoint_path.write_bytes(incompatible)
+        expected_preserved = {checkpoint_path: incompatible}
+
+        def forbid_search_draws(*_args: object, **_kwargs: object) -> object:
+            pytest.fail("incompatible checkpoint schema reached genetic search draws")
+
+        monkeypatch.setattr(strategy_module, "initial_population", forbid_search_draws)
+        dependencies = _fit_dependencies(config, experiment_path, inputs, run_strategy)
     elif case.primary.kind == "publication_collision":
         expected_preserved = _prepare_publication_state(case, run_directory)
 
@@ -718,6 +732,15 @@ def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
             raise TrafficlabError(case.primary.detail, corrective_action=case.primary.corrective_action)
 
         monkeypatch.setattr(generation, "_read_required_bytes", missing)
+    elif case.primary.kind == "scientific_semantics_incompatible":
+        document = cast(dict[str, object], json.loads(_MODEL_FIXTURE.read_bytes()))
+        document["scientific_artifact_schema"] = 1
+        incompatible = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+        def read_incompatible_model(_path: Path, **_kwargs: object) -> bytes:
+            return incompatible
+
+        monkeypatch.setattr(generation, "_read_required_bytes", read_incompatible_model)
     elif case.primary.kind == "generation_incomplete":
         captured = b"capture metadata"
         best = SimpleNamespace(
@@ -760,6 +783,169 @@ def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     _assert_serialized_outcomes(records[-1], case)
     _assert_publication_state(case, run_directory, {})
+
+
+def test_generation_maps_missing_capture_after_a_validated_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The public generator retains the missing-capture primary outcome before generation."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    prepared = _prepared(run_directory)
+    config = cast(Any, prepared.config)
+    config.run.final_seed = 1
+    config.models = SimpleNamespace(enabled=("poisson_empirical",), poisson_empirical=SimpleNamespace())
+    config.generation = SimpleNamespace(final=SimpleNamespace())
+    records: list[dict[str, object]] = []
+    best = SimpleNamespace(
+        family="poisson_empirical",
+        gene_bounds={},
+        capture_sha256="",
+        observation_window_seconds=1.0,
+        fitted=object(),
+    )
+
+    def append(_directory: Path, record: dict[str, object]) -> None:
+        records.append(record)
+
+    def read(path: Path, **_kwargs: object) -> bytes:
+        if path.name == "best_model.json":
+            return b"best model"
+        raise TrafficlabError(
+            "capture.json is missing",
+            corrective_action="restore capture.json before generation",
+        )
+
+    class _Family:
+        gene_names: tuple[str, ...] = ()
+
+    def open_prepared(_path: Path) -> preflight.PreparedExperiment:
+        return prepared
+
+    def load_best(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return best
+
+    def get_family(_name: str) -> _Family:
+        return _Family()
+
+    monkeypatch.setattr(generation, "open_or_prepare_experiment", open_prepared)
+    monkeypatch.setattr(generation, "append_run_log", append)
+    monkeypatch.setattr(generation, "_read_required_bytes", read)
+    monkeypatch.setattr(generation, "load_best_model", load_best)
+    monkeypatch.setattr(generation, "get_family", get_family)
+
+    with pytest.raises(TrafficlabError) as caught:
+        generation.generate_experiment(prepared.source)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "kind": "artifact_missing",
+        "stage": "generate",
+        "detail": "capture.json is missing",
+        "corrective_action": "restore capture.json before generation",
+        "affected_evidence": "capture.json",
+        "evidence_state": "not_published",
+        "authority": "primary",
+    }
+    assert records[-1]["failure_outcome"] == outcome.as_dict()
+
+
+def test_generation_preserves_published_bytes_when_post_publication_parse_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Post-publication verification failure records preserved generated evidence."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    prepared = _prepared(run_directory)
+    config = cast(Any, prepared.config)
+    config.run.final_seed = 1
+    config.models = SimpleNamespace(enabled=("poisson_empirical",), poisson_empirical=SimpleNamespace())
+    config.generation = SimpleNamespace(final=SimpleNamespace())
+    records: list[dict[str, object]] = []
+    captured = b"capture metadata"
+    best = SimpleNamespace(
+        family="poisson_empirical",
+        gene_bounds={},
+        capture_sha256=hashlib.sha256(captured).hexdigest(),
+        observation_window_seconds=1.0,
+        fitted=object(),
+    )
+    generated_path = run_directory / "generated.pcapng"
+
+    def append(_directory: Path, record: dict[str, object]) -> None:
+        records.append(record)
+
+    def read(path: Path, **_kwargs: object) -> bytes:
+        return b"best model" if path.name == "best_model.json" else captured
+
+    def publish(*_args: object, **_kwargs: object) -> object:
+        generated_path.write_bytes(b"generated bytes")
+        return SimpleNamespace(content=b"generated bytes", path=generated_path)
+
+    def parse_failure(*_args: object, **_kwargs: object) -> tuple[()]:
+        raise TrafficlabError(
+            "generated bytes cannot be parsed",
+            corrective_action="repair generated PCAPNG serialization",
+        )
+
+    class _Generated:
+        @staticmethod
+        def require_complete() -> tuple[()]:
+            return ()
+
+    class _Family:
+        gene_names: tuple[str, ...] = ()
+
+        @staticmethod
+        def generate(*_args: object, **_kwargs: object) -> _Generated:
+            return _Generated()
+
+    def open_prepared(_path: Path) -> preflight.PreparedExperiment:
+        return prepared
+
+    def load_best(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return best
+
+    def get_family(_name: str) -> _Family:
+        return _Family()
+
+    def parse_metadata(*_args: object, **_kwargs: object) -> object:
+        return object()
+
+    def quantize(*_args: object, **_kwargs: object) -> tuple[()]:
+        return ()
+
+    def encode(*_args: object, **_kwargs: object) -> bytes:
+        return b"generated bytes"
+
+    monkeypatch.setattr(generation, "open_or_prepare_experiment", open_prepared)
+    monkeypatch.setattr(generation, "append_run_log", append)
+    monkeypatch.setattr(generation, "_read_required_bytes", read)
+    monkeypatch.setattr(generation, "load_best_model", load_best)
+    monkeypatch.setattr(generation, "get_family", get_family)
+    monkeypatch.setattr(generation, "parse_capture_metadata", parse_metadata)
+    monkeypatch.setattr(generation, "quantize_generated_events", quantize)
+    monkeypatch.setattr(generation, "encode_pcapng", encode)
+    monkeypatch.setattr(generation, "publish_generated_pcapng", publish)
+    monkeypatch.setattr(generation, "parse_pcapng_bytes", parse_failure)
+
+    with pytest.raises(TrafficlabError) as caught:
+        generation.generate_experiment(prepared.source)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "kind": "artifact_corrupt",
+        "stage": "generate",
+        "detail": "generated bytes cannot be parsed",
+        "corrective_action": "repair generated PCAPNG serialization",
+        "affected_evidence": "generated.pcapng",
+        "evidence_state": "preserved",
+        "authority": "primary",
+    }
+    assert generated_path.read_bytes() == b"generated bytes"
+    assert records[-1]["failure_outcome"] == outcome.as_dict()
 
 
 def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

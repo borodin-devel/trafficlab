@@ -32,6 +32,7 @@ from trafficlab.genetic.types import (
     TrialResult,
 )
 from trafficlab.models.registry import get_family
+from trafficlab.scientific_schema import require_current_scientific_schema
 from trafficlab.similarity.common import FrozenJsonValue
 
 RNG_ENGINE: Literal["python.random.Random/MT19937"] = "python.random.Random/MT19937"
@@ -88,6 +89,7 @@ _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _TERMINAL_REASONS = frozenset(("running", "hard_limit", "early_stop"))
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _ROOT_KEYS = (
+    "scientific_artifact_schema",
     "experiment_sha256",
     "reference_sha256",
     "capture_sha256",
@@ -185,6 +187,7 @@ class RngState:
 class CheckpointCompatibility:
     """Exact inputs and effective settings that must match before resume."""
 
+    scientific_artifact_schema: int
     experiment_sha256: str
     reference_sha256: str
     capture_sha256: str
@@ -352,7 +355,9 @@ def _load_json(content: bytes) -> dict[str, object]:
             object_pairs_hook=_duplicate_free_object,
             parse_constant=lambda token: (_ for _ in ()).throw(ValueError(f"nonfinite JSON number {token}")),
         )
-        return _exact_object(value, _ROOT_KEYS, name="checkpoint root")
+        if type(value) is not dict:
+            raise ValueError("checkpoint root must be an object")
+        return cast(dict[str, object], value)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as error:
         raise _invalid(str(error)) from error
 
@@ -425,6 +430,7 @@ def _validate_genetic(settings: GeneticCheckpointSettings, *, family_count: int,
 def _validate_compatibility_shape(value: CheckpointCompatibility, *, require_current_rng_engine: bool = True) -> None:
     if type(value) is not CheckpointCompatibility:
         raise TypeError("compatibility must be CheckpointCompatibility")
+    require_current_scientific_schema(value.scientific_artifact_schema, artifact="checkpoint")
     _sha256(value.experiment_sha256, name="experiment_sha256")
     _sha256(value.reference_sha256, name="reference_sha256")
     _sha256(value.capture_sha256, name="capture_sha256")
@@ -569,7 +575,9 @@ def _parse_similarity(value: object) -> SimilarityConfig:
 
 
 def _parse_compatibility(document: dict[str, object]) -> CheckpointCompatibility:
+    require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="checkpoint")
     compatibility = CheckpointCompatibility(
+        scientific_artifact_schema=cast(int, document["scientific_artifact_schema"]),
         experiment_sha256=_sha256(document["experiment_sha256"], name="experiment_sha256"),
         reference_sha256=_sha256(document["reference_sha256"], name="reference_sha256"),
         capture_sha256=_sha256(document["capture_sha256"], name="capture_sha256"),
@@ -1240,6 +1248,7 @@ def _checkpoint_document(state: CheckpointState) -> dict[str, object]:
     compatibility = state.compatibility
     rng = state.rng_state
     return {
+        "scientific_artifact_schema": compatibility.scientific_artifact_schema,
         "experiment_sha256": compatibility.experiment_sha256,
         "reference_sha256": compatibility.reference_sha256,
         "capture_sha256": compatibility.capture_sha256,
@@ -1283,6 +1292,8 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         raise TypeError("checkpoint content must be bytes")
     document = _load_json(content)
     try:
+        require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="checkpoint")
+        document = _exact_object(document, _ROOT_KEYS, name="checkpoint root")
         experiment_sha256 = _sha256(document["experiment_sha256"], name="experiment_sha256")
         _validate_compatibility_shape(compatibility)
         if experiment_sha256 != compatibility.experiment_sha256:
@@ -1324,7 +1335,9 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
                 f"{json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False)}\n".encode()
             )
             if not accepts_legacy or legacy_content != content:
-                raise ValueError("checkpoint JSON must use the canonical sorted compact encoding with one final newline")
+                raise ValueError(
+                    "checkpoint JSON must use the canonical sorted compact encoding with one final newline"
+                )
         return state
     except TrafficlabError:
         raise

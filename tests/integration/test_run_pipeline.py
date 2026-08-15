@@ -350,8 +350,7 @@ def test_bad_or_different_best_model_is_preserved_and_rejected(tmp_path: Path, k
         bad = b"{}"
     else:
         document = cast(dict[str, Any], json.loads(path.read_bytes()))
-        fitted = cast(dict[str, object], document["fitted"])
-        fitted["rate"] = cast(float, fitted["rate"]) + 0.125
+        document["reference_sha256"] = "0" * 64
         bad = _canonical_json(document)
     path.write_bytes(bad)
 

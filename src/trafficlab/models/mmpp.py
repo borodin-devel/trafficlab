@@ -127,6 +127,31 @@ def _stationary_probabilities(q01: object, q10: object) -> tuple[float, float]:
     return (pi0, pi1)
 
 
+def _arrival_epoch_probabilities(
+    q01: object,
+    q10: object,
+    lambda0: object,
+    lambda1: object,
+) -> tuple[float, float]:
+    """Return the stationary regime law conditioned on an arrival at time zero."""
+    rates = (q01, q10, lambda0, lambda1)
+    if any(type(rate) is not float or not math.isfinite(rate) or rate <= 0.0 for rate in rates):
+        raise ValueError("arrival-epoch rates must be finite positive floats")
+
+    checked_q01 = cast(float, q01)
+    checked_q10 = cast(float, q10)
+    checked_lambda0 = cast(float, lambda0)
+    checked_lambda1 = cast(float, lambda1)
+    log_weight0 = math.log(checked_q10) + math.log(checked_lambda0)
+    log_weight1 = math.log(checked_q01) + math.log(checked_lambda1)
+    maximum_log_weight = max(log_weight0, log_weight1)
+    weight0 = math.exp(log_weight0 - maximum_log_weight)
+    weight1 = math.exp(log_weight1 - maximum_log_weight)
+    total_weight = weight0 + weight1
+    a0 = weight0 / total_weight
+    return (a0, weight1 / total_weight)
+
+
 @dataclass(frozen=True, slots=True)
 class MmppModel:
     """A validated two-regime CTMC, ordered arrival rates, and joint marks."""
@@ -199,7 +224,7 @@ class _RandomMmppRng:
     random_source: Random
 
     def random(self) -> float:
-        """Draw the initial stationary-regime variate."""
+        """Draw the initial arrival-epoch regime variate."""
         return self.random_source.random()
 
     def randrange(self, stop: int) -> int:
@@ -279,7 +304,13 @@ def _generate_with_rng(
     reason = guard.post_draw_reason()
     if reason is not None:
         return GenerationResult(complete=False, events=(), reason=reason)
-    regime = 0 if _validate_unit_draw(raw_regime_draw) < checked_model.pi0 else 1
+    arrival_epoch_a0, _ = _arrival_epoch_probabilities(
+        checked_model.q01,
+        checked_model.q10,
+        checked_model.lambda0,
+        checked_model.lambda1,
+    )
+    regime = 0 if _validate_unit_draw(raw_regime_draw) < arrival_epoch_a0 else 1
     sampled_mark = _sample_mark(checked_model.marks, rng, guard)
     if sampled_mark is None:
         return GenerationResult(complete=False, events=(), reason="max_wall_seconds")
@@ -351,7 +382,7 @@ class MmppFamily:
     bounds_type = MmppConfig
     estimator_choices: Mapping[str, str | int | float] = {
         "rates": "direct_genes",
-        "initial_regime": "stationary",
+        "initial_regime": "arrival_epoch",
         "marks": "joint_empirical_first_appearance",
         "tie": "regime_change",
         "first_event": "zero",
