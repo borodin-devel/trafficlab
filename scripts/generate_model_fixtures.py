@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 from pathlib import Path
 
 from trafficlab.artifacts import quantize_generated_events
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config_io import load_experiment
 from trafficlab.errors import TrafficlabError
 from trafficlab.models.registry import POISSON_FAMILY, get_family, load_best_model, make_best_model, render_best_model
@@ -48,8 +48,10 @@ def _build_fixture() -> tuple[bytes, bytes]:
         POISSON_FAMILY,
         reference,
         (1.0,),
-        reference_sha256=hashlib.sha256(reference_content).hexdigest(),
-        capture_sha256=hashlib.sha256(capture_content).hexdigest(),
+        reference_identity=identify_bytes(reference_content),
+        capture_identity=identify_bytes(capture_content),
+        final_seed=config.run.final_seed,
+        final_limits=config.generation.final,
         W=window,
         bounds=bounds,
     )

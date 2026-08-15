@@ -18,7 +18,8 @@ import trafficlab.fitting as fitting
 import trafficlab.genetic.checkpoint as checkpoint
 import trafficlab.genetic.strategy as strategy_module
 from trafficlab.artifacts import publish_best_model
-from trafficlab.config import ExperimentConfig, FloatBounds, PoissonConfig
+from trafficlab.compatibility import ContentIdentity, identify_bytes
+from trafficlab.config import ExperimentConfig, FloatBounds, GenerationLimits, PoissonConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
@@ -113,8 +114,10 @@ def _valid_best_bytes(*, gene: float = 1.0, reference_hash: str = "a" * 64) -> b
         POISSON_FAMILY,
         NORMALIZED_REFERENCE,
         (gene,),
-        reference_sha256=reference_hash,
-        capture_sha256="b" * 64,
+        reference_identity=ContentIdentity(size=1, sha256=reference_hash),
+        capture_identity=ContentIdentity(size=1, sha256="b" * 64),
+        final_seed=101,
+        final_limits=GenerationLimits(max_packets=1, max_output_bytes=1, max_wall_seconds=1.0),
         W=2.0,
         bounds=PoissonConfig(c_lambda=FloatBounds(lower=0.25, upper=4.0)),
     )
@@ -128,9 +131,9 @@ def _strategy_context_for_inputs(config: ExperimentConfig, inputs: dict[Path, by
         NORMALIZED_REFERENCE,
         2.0,
         run_directory,
-        experiment_sha256=hashlib.sha256(inputs[run_directory / "experiment.toml"]).hexdigest(),
-        reference_sha256=hashlib.sha256(inputs[run_directory / "reference.pcapng"]).hexdigest(),
-        capture_sha256=hashlib.sha256(inputs[run_directory / "capture.json"]).hexdigest(),
+        experiment_identity=identify_bytes(inputs[run_directory / "experiment.toml"]),
+        reference_identity=identify_bytes(inputs[run_directory / "reference.pcapng"]),
+        capture_identity=identify_bytes(inputs[run_directory / "capture.json"]),
     )
 
 
@@ -322,10 +325,10 @@ def _create_real_terminal_run(
     return experiment_path, config, inputs
 
 
-def test_fit_reads_each_input_once_hashes_exact_bytes_and_passes_one_normalized_window(
+def test_fit_hashes_exact_bytes_and_passes_one_normalized_window(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Reopening an input or hashing its path would detach lineage from the bytes actually evaluated."""
+    """Lineage comes from evaluated bytes and the same inputs are rechecked before publication."""
     experiment_path = tmp_path / "experiment.toml"
     run_directory = tmp_path / "run"
     run_directory.mkdir()
@@ -345,8 +348,6 @@ def test_fit_reads_each_input_once_hashes_exact_bytes_and_passes_one_normalized_
 
     def strategy(context: StrategyContext) -> FitOutcome:
         contexts.append(context)
-        for path in inputs:
-            inputs[path] = f"changed {path.name}".encode()
         return _outcome(config)
 
     monkeypatch.setattr(fitting, "normalize_reference", normalize)
@@ -354,7 +355,14 @@ def test_fit_reads_each_input_once_hashes_exact_bytes_and_passes_one_normalized_
         experiment_path, dependencies=_dependencies(config, experiment_path, inputs, strategy, reads=reads)
     )
 
-    assert reads == ["experiment.toml", "capture.json", "reference.pcapng"]
+    assert reads == [
+        "experiment.toml",
+        "capture.json",
+        "reference.pcapng",
+        "experiment.toml",
+        "capture.json",
+        "reference.pcapng",
+    ]
     assert normalizations == 1
     assert len(contexts) == 1
     context = contexts[0]
@@ -377,6 +385,32 @@ def test_fit_reads_each_input_once_hashes_exact_bytes_and_passes_one_normalized_
     assert poisson_bounds is not None
     assert result.best_model.gene_bounds == {"c_lambda": poisson_bounds.c_lambda}
     assert load_best_model(result.best_model_path.read_bytes(), source=result.best_model_path) == result.best_model
+
+
+def test_fit_rejects_reference_mutation_before_best_model_publication(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A strategy cannot publish lineage for a reference that no longer has the fitted bytes."""
+    experiment_path = tmp_path / "experiment.toml"
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+    reference_path = run_directory / "reference.pcapng"
+
+    def mutate_reference(_context: StrategyContext) -> FitOutcome:
+        inputs[reference_path] += b"changed after fitting"
+        return _outcome(config)
+
+    with pytest.raises(TrafficlabError, match="reference.pcapng changed during fit") as caught:
+        fit_experiment(
+            experiment_path,
+            dependencies=_dependencies(config, experiment_path, inputs, mutate_reference),
+        )
+
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.kind == "artifact_changed"
+    assert not (run_directory / "best_model.json").exists()
 
 
 def test_fit_rejects_snapshot_bytes_that_do_not_encode_the_prepared_config(
@@ -912,7 +946,7 @@ def test_fit_preserves_and_logs_canonical_resume_checkpoint_outcomes(
         checkpoint_path.write_bytes(b"{}\n")
     else:
         document = cast(dict[str, object], json.loads(original))
-        marker = cast(str, document["experiment_sha256"]).encode()
+        marker = cast(str, cast(dict[str, object], document["experiment_identity"])["sha256"]).encode()
         checkpoint_path.write_bytes(original.replace(marker, b"0" * 64, 1))
 
     with pytest.raises(TrafficlabError) as captured:

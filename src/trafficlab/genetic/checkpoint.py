@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import json
 import math
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from io import StringIO
@@ -16,8 +15,9 @@ from typing import Literal, cast
 from pydantic import ValidationError
 
 from trafficlab.artifacts import atomic_replace as _atomic_replace
-from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, SimilarityConfig
-from trafficlab.errors import EvidenceState, FailureAuthority, TrafficlabError
+from trafficlab.compatibility import ContentIdentity, require_compatible
+from trafficlab.config import FamilyName, FloatBounds, GenerationLimits, IntegerBounds, SimilarityConfig
+from trafficlab.errors import EvidenceState, FailureAuthority, FailureOutcome, TrafficlabError
 from trafficlab.genetic.coordinates import GeneCoordinate
 from trafficlab.genetic.population import priority_rank_key, rank_candidates, validate_family_priority
 from trafficlab.genetic.types import (
@@ -91,14 +91,14 @@ _LEGACY_FAILURE_PROVENANCE: dict[str, tuple[str, str, EvidenceState, str, Failur
 }
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _TERMINAL_REASONS = frozenset(("running", "hard_limit", "early_stop"))
-_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _ROOT_KEYS = (
     "scientific_artifact_schema",
-    "experiment_sha256",
-    "reference_sha256",
-    "capture_sha256",
+    "experiment_identity",
+    "reference_identity",
+    "capture_identity",
     "observation_window_seconds",
     "trial_seeds",
+    "trial_limits",
     "families",
     "family_priority",
     "genetic",
@@ -193,17 +193,30 @@ class CheckpointCompatibility:
     """Exact inputs and effective settings that must match before resume."""
 
     scientific_artifact_schema: int
-    experiment_sha256: str
-    reference_sha256: str
-    capture_sha256: str
+    experiment_identity: ContentIdentity
+    reference_identity: ContentIdentity
+    capture_identity: ContentIdentity
     observation_window_seconds: float
     trial_seeds: tuple[int, ...]
+    trial_limits: GenerationLimits
     families: tuple[FamilyCheckpointSpec, ...]
     family_priority: FamilyPriority
     genetic: GeneticCheckpointSettings
     similarity: SimilarityConfig
     python_version: str
     rng_engine: Literal["python.random.Random/MT19937"]
+
+    @property
+    def experiment_sha256(self) -> str:
+        return self.experiment_identity.sha256
+
+    @property
+    def reference_sha256(self) -> str:
+        return self.reference_identity.sha256
+
+    @property
+    def capture_sha256(self) -> str:
+        return self.capture_identity.sha256
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,13 +317,6 @@ def _boolean(value: object, *, name: str) -> bool:
     if type(value) is not bool:
         raise ValueError(f"{name} must be a boolean")
     return value
-
-
-def _sha256(value: object, *, name: str) -> str:
-    result = _string(value, name=name)
-    if _SHA256.fullmatch(result) is None:
-        raise ValueError(f"{name} must be a 64-character lowercase hexadecimal SHA-256")
-    return result
 
 
 def _family_name(value: object, *, name: str) -> FamilyName:
@@ -438,9 +444,13 @@ def _validate_compatibility_shape(value: CheckpointCompatibility, *, require_cur
     if type(value) is not CheckpointCompatibility:
         raise TypeError("compatibility must be CheckpointCompatibility")
     require_current_scientific_schema(value.scientific_artifact_schema, artifact="checkpoint")
-    _sha256(value.experiment_sha256, name="experiment_sha256")
-    _sha256(value.reference_sha256, name="reference_sha256")
-    _sha256(value.capture_sha256, name="capture_sha256")
+    for name, identity in (
+        ("experiment", value.experiment_identity),
+        ("reference", value.reference_identity),
+        ("capture", value.capture_identity),
+    ):
+        if type(identity) is not ContentIdentity:
+            raise TypeError(f"{name}_identity must be a ContentIdentity")
     _float(value.observation_window_seconds, name="observation_window_seconds", positive=True)
     if type(value.trial_seeds) is not tuple or not value.trial_seeds:
         raise ValueError("trial_seeds must be a nonempty tuple")
@@ -448,6 +458,8 @@ def _validate_compatibility_shape(value: CheckpointCompatibility, *, require_cur
         _integer(seed, name="trial seed")
     if len(value.trial_seeds) != len(set(value.trial_seeds)):
         raise ValueError("trial_seeds must be unique")
+    if type(value.trial_limits) is not GenerationLimits:
+        raise TypeError("trial_limits must be GenerationLimits")
     if type(value.families) is not tuple or not value.families:
         raise ValueError("families must be a nonempty tuple")
     for family in value.families:
@@ -539,6 +551,22 @@ def _parse_genetic(value: object) -> GeneticCheckpointSettings:
     )
 
 
+def _parse_generation_limits(value: object, *, name: str) -> GenerationLimits:
+    document = _exact_object(
+        value,
+        ("max_packets", "max_output_bytes", "max_wall_seconds"),
+        name=name,
+    )
+    try:
+        return GenerationLimits(
+            max_packets=_integer(document["max_packets"], name=f"{name} max_packets", minimum=1),
+            max_output_bytes=_integer(document["max_output_bytes"], name=f"{name} max_output_bytes", minimum=1),
+            max_wall_seconds=_float(document["max_wall_seconds"], name=f"{name} max_wall_seconds", positive=True),
+        )
+    except ValidationError as error:
+        raise ValueError(f"invalid {name}: {error}") from error
+
+
 def _float_array(value: object, *, name: str) -> list[float]:
     return [_float(item, name=f"{name} item") for item in _array(value, name=name)]
 
@@ -586,13 +614,14 @@ def _parse_compatibility(document: dict[str, object]) -> CheckpointCompatibility
     require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="checkpoint")
     compatibility = CheckpointCompatibility(
         scientific_artifact_schema=cast(int, document["scientific_artifact_schema"]),
-        experiment_sha256=_sha256(document["experiment_sha256"], name="experiment_sha256"),
-        reference_sha256=_sha256(document["reference_sha256"], name="reference_sha256"),
-        capture_sha256=_sha256(document["capture_sha256"], name="capture_sha256"),
+        experiment_identity=ContentIdentity.from_dict(document["experiment_identity"], name="experiment"),
+        reference_identity=ContentIdentity.from_dict(document["reference_identity"], name="reference"),
+        capture_identity=ContentIdentity.from_dict(document["capture_identity"], name="capture"),
         observation_window_seconds=_float(
             document["observation_window_seconds"], name="observation_window_seconds", positive=True
         ),
         trial_seeds=tuple(_integer_array(document["trial_seeds"], name="trial_seeds")),
+        trial_limits=_parse_generation_limits(document["trial_limits"], name="trial limits"),
         families=tuple(_parse_family(item) for item in _array(document["families"], name="families")),
         family_priority=tuple(
             _family_name(item, name="family_priority")
@@ -621,16 +650,40 @@ def validate_compatibility(stored: CheckpointCompatibility, expected: Checkpoint
         _validate_compatibility_shape(expected)
     except (TypeError, ValueError) as error:
         raise _invalid(str(error)) from error
-    if stored.experiment_sha256 != expected.experiment_sha256:
-        raise _compatibility_error("experiment snapshot SHA-256")
-    for field_name, label in (
-        ("reference_sha256", "reference SHA-256"),
-        ("capture_sha256", "capture SHA-256"),
-        ("observation_window_seconds", "observation window"),
-        ("trial_seeds", "trial seeds"),
-    ):
-        if getattr(stored, field_name) != getattr(expected, field_name):
-            raise _compatibility_error(label)
+    ordered_expected: dict[str, object] = {
+        "experiment snapshot SHA-256/size identity": expected.experiment_identity,
+        "reference SHA-256/size identity": expected.reference_identity,
+        "capture SHA-256/size identity": expected.capture_identity,
+        "observation window": expected.observation_window_seconds,
+        "trial seeds": expected.trial_seeds,
+        "trial generation limits": expected.trial_limits,
+    }
+    ordered_stored: dict[str, object] = {
+        "experiment snapshot SHA-256/size identity": stored.experiment_identity,
+        "reference SHA-256/size identity": stored.reference_identity,
+        "capture SHA-256/size identity": stored.capture_identity,
+        "observation window": stored.observation_window_seconds,
+        "trial seeds": stored.trial_seeds,
+        "trial generation limits": stored.trial_limits,
+    }
+    try:
+        require_compatible(ordered_expected, ordered_stored)
+    except TrafficlabError as error:
+        if stored.reference_identity != expected.reference_identity:
+            raise TrafficlabError(
+                f"checkpoint is incompatible: reference SHA-256/size identity differs: {error}",
+                corrective_action="recreate the capture pair in a new matching run",
+                failure_outcome=FailureOutcome(
+                    kind="artifact_changed",
+                    stage="fit",
+                    detail="reference.pcapng changed during fit resume",
+                    affected_evidence="reference.pcapng",
+                    evidence_state="preserved",
+                    corrective_action="recreate the capture pair in a new matching run",
+                    authority="primary",
+                ),
+            ) from error
+        raise _compatibility_error(str(error)) from error
     stored_names = tuple(family.name for family in stored.families)
     expected_names = tuple(family.name for family in expected.families)
     if stored_names != expected_names:
@@ -1321,11 +1374,12 @@ def _checkpoint_document(state: CheckpointState) -> dict[str, object]:
     rng = state.rng_state
     return {
         "scientific_artifact_schema": compatibility.scientific_artifact_schema,
-        "experiment_sha256": compatibility.experiment_sha256,
-        "reference_sha256": compatibility.reference_sha256,
-        "capture_sha256": compatibility.capture_sha256,
+        "experiment_identity": compatibility.experiment_identity.as_dict(),
+        "reference_identity": compatibility.reference_identity.as_dict(),
+        "capture_identity": compatibility.capture_identity.as_dict(),
         "observation_window_seconds": compatibility.observation_window_seconds,
         "trial_seeds": list(compatibility.trial_seeds),
+        "trial_limits": compatibility.trial_limits.model_dump(mode="python"),
         "families": [_family_document(family) for family in compatibility.families],
         "family_priority": list(state.family_priority),
         "genetic": _genetic_document(compatibility.genetic),
@@ -1367,10 +1421,10 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
     try:
         require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="checkpoint")
         document = _exact_object(document, _ROOT_KEYS, name="checkpoint root")
-        experiment_sha256 = _sha256(document["experiment_sha256"], name="experiment_sha256")
+        experiment_identity = ContentIdentity.from_dict(document["experiment_identity"], name="experiment")
         _validate_compatibility_shape(compatibility)
-        if experiment_sha256 != compatibility.experiment_sha256:
-            raise _compatibility_error("experiment snapshot SHA-256")
+        if experiment_identity != compatibility.experiment_identity:
+            raise _compatibility_error("experiment snapshot SHA-256/size identity")
         stored_compatibility = _parse_compatibility(document)
         validate_compatibility(stored_compatibility, compatibility)
         family_names: frozenset[FamilyName] = frozenset(family.name for family in stored_compatibility.families)

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import hashlib
 import platform
 from pathlib import Path
 
 import pytest
 
 from scripts import generate_fit_fixtures as fixture_generator
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config_io import load_experiment
 from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.checkpoint import load_checkpoint
@@ -46,9 +46,9 @@ def test_development_runtime_pin_exactly_matches_checked_checkpoint_python_versi
         reference,
         window,
         _FIT_DIRECTORY,
-        experiment_sha256=hashlib.sha256(experiment_path.read_bytes()).hexdigest(),
-        reference_sha256=hashlib.sha256(reference_bytes).hexdigest(),
-        capture_sha256=hashlib.sha256(capture_bytes).hexdigest(),
+        experiment_identity=identify_bytes(experiment_path.read_bytes()),
+        reference_identity=identify_bytes(reference_bytes),
+        capture_identity=identify_bytes(capture_bytes),
     )
     checkpoint = load_checkpoint(_FIT_DIRECTORY / "checkpoint.json", context.compatibility)
     assert checkpoint.compatibility.python_version == runtime_pin

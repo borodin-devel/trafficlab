@@ -4,7 +4,6 @@ import hashlib
 import json
 import math
 import os
-import re
 import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -13,8 +12,9 @@ from types import MappingProxyType
 from typing import Any, Self, cast
 
 from trafficlab.artifacts import append_run_log
+from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
 from trafficlab.config import SimilarityConfig
-from trafficlab.config_io import load_experiment
+from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import (
     FailureOutcome,
     TrafficlabError,
@@ -22,6 +22,8 @@ from trafficlab.errors import (
     attach_failure_outcome,
     failure_outcome_from_error,
 )
+from trafficlab.generation import reproduce_generated_pcapng
+from trafficlab.models.registry import load_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.similarity.autocorrelation import autocorrelation_similarity
 from trafficlab.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
@@ -31,7 +33,6 @@ from trafficlab.trace import TraceEvent, align_generated, normalize_reference, p
 
 _METHOD_NAMES = ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
 _INPUT_NAMES = ("capture_json", "generated_pcapng", "reference_pcapng", "similarity_settings")
-_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _WEIGHT_TOLERANCE = 1e-12
 
 
@@ -512,14 +513,14 @@ class ComparisonResult:
     aggregate_score: float
     observation_window_seconds: float
     methods: Mapping[str, MethodComparison]
-    input_sha256: Mapping[str, str] | None
+    input_identities: Mapping[str, ContentIdentity] | None
 
     def __init__(
         self,
         aggregate_score: float,
         observation_window_seconds: float,
         methods: Mapping[str, MethodComparison],
-        input_sha256: Mapping[str, str] | None,
+        input_identities: Mapping[str, ContentIdentity] | None,
     ) -> None:
         aggregate = _bounded_float(aggregate_score, name="aggregate_score")
         window = _strict_float(
@@ -547,24 +548,31 @@ class ComparisonResult:
         if not math.isclose(weighted_score, aggregate, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
             raise ValueError("aggregate_score must equal the exact configured weighted sum")
 
-        frozen_inputs: Mapping[str, str] | None = None
-        if input_sha256 is not None:
-            if set(input_sha256) != set(_INPUT_NAMES):
-                raise ValueError(f"input_sha256 must contain exactly: {', '.join(_INPUT_NAMES)}")
-            ordered_inputs: dict[str, str] = {}
+        frozen_inputs: Mapping[str, ContentIdentity] | None = None
+        if input_identities is not None:
+            if set(input_identities) != set(_INPUT_NAMES):
+                raise ValueError(f"input_identities must contain exactly: {', '.join(_INPUT_NAMES)}")
+            ordered_inputs: dict[str, ContentIdentity] = {}
             for name in _INPUT_NAMES:
-                identity = input_sha256[name]
-                if type(identity) is not str or _SHA256_PATTERN.fullmatch(identity) is None:
-                    raise ValueError(f"input_sha256.{name} must be a lowercase SHA-256 hexadecimal digest")
+                identity = input_identities[name]
+                if type(identity) is not ContentIdentity:
+                    raise ValueError(f"input_identities.{name} must be a ContentIdentity")
                 ordered_inputs[name] = identity
             frozen_inputs = MappingProxyType(ordered_inputs)
 
         object.__setattr__(self, "aggregate_score", aggregate)
         object.__setattr__(self, "observation_window_seconds", window)
         object.__setattr__(self, "methods", MappingProxyType(ordered_methods))
-        object.__setattr__(self, "input_sha256", frozen_inputs)
+        object.__setattr__(self, "input_identities", frozen_inputs)
 
-    def with_input_sha256(self, identities: Mapping[str, str]) -> Self:
+    @property
+    def input_sha256(self) -> Mapping[str, str] | None:
+        """Expose digests for diagnostics that do not need byte counts."""
+        if self.input_identities is None:
+            return None
+        return MappingProxyType({name: identity.sha256 for name, identity in self.input_identities.items()})
+
+    def with_input_identities(self, identities: Mapping[str, ContentIdentity]) -> Self:
         """Return the same scientific result with exact file and settings identities."""
         return type(self)(
             self.aggregate_score,
@@ -575,11 +583,13 @@ class ComparisonResult:
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return the exact publishable JSON shape as fresh mutable values."""
-        if self.input_sha256 is None:
-            raise ValueError("input SHA-256 identities are required for a similarity artifact")
+        if self.input_identities is None:
+            raise ValueError("input content identities are required for a similarity artifact")
         return {
             "aggregate_score": self.aggregate_score,
-            "input_sha256": dict(self.input_sha256),
+            "input_identities": {
+                name: cast(dict[str, JsonValue], identity.as_dict()) for name, identity in self.input_identities.items()
+            },
             "methods": {name: method.as_dict() for name, method in self.methods.items()},
             "observation_window_seconds": self.observation_window_seconds,
         }
@@ -589,14 +599,19 @@ class ComparisonResult:
         """Strictly validate the documented similarity artifact object."""
         document = _exact_keys(
             value,
-            ("aggregate_score", "input_sha256", "methods", "observation_window_seconds"),
+            ("aggregate_score", "input_identities", "methods", "observation_window_seconds"),
             name="comparison result",
         )
         methods_document = _exact_keys(document["methods"], _METHOD_NAMES, name="methods")
         methods = {name: MethodComparison.from_dict(name, methods_document[name]) for name in _METHOD_NAMES}
-        inputs_document = _exact_keys(document["input_sha256"], _INPUT_NAMES, name="input_sha256")
-        if any(type(identity) is not str for identity in inputs_document.values()):
-            raise ValueError("input SHA-256 identities must be strings")
+        inputs_document = _exact_keys(document["input_identities"], _INPUT_NAMES, name="input_identities")
+        try:
+            identities = {
+                name: ContentIdentity.from_dict(inputs_document[name], name=f"comparison input {name}")
+                for name in _INPUT_NAMES
+            }
+        except (TypeError, ValueError) as error:
+            raise ValueError(str(error)) from error
         return cls(
             _bounded_float(document["aggregate_score"], name="aggregate_score"),
             _strict_float(
@@ -605,7 +620,7 @@ class ComparisonResult:
                 positive=True,
             ),
             methods,
-            cast(dict[str, str], inputs_document),
+            identities,
         )
 
 
@@ -716,6 +731,17 @@ def similarity_settings_sha256(settings: SimilarityConfig) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return sha256_bytes(content)
+
+
+def similarity_settings_identity(settings: SimilarityConfig) -> ContentIdentity:
+    """Identify the exact canonical effective similarity settings bytes."""
+    content = json.dumps(
+        settings.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return identify_bytes(content)
 
 
 def compare_traces(
@@ -1046,15 +1072,49 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 affected_evidence="generated.pcapng",
                 evidence_state="preserved",
             ) from error
+        model_path = run_directory / "best_model.json"
+        model_identity: ContentIdentity | None = None
+        if model_path.exists():
+            model_content = _read_comparison_input(
+                model_path,
+                kind="best model",
+                corrective_action="verify best_model.json is readable",
+            )
+            model_identity = identify_bytes(model_content)
+            try:
+                best = load_best_model(model_content, source=model_path)
+                _, _, expected_generated_content = reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
+            except TrafficlabError as error:
+                raise attach_failure_outcome(
+                    error,
+                    kind="scientific_semantics_incompatible",
+                    stage="compare",
+                    affected_evidence="best_model.json",
+                    evidence_state="preserved",
+                ) from error
+            if generated_content != expected_generated_content:
+                raise TrafficlabError(
+                    "generated.pcapng is foreign",
+                    corrective_action="regenerate from the current fitted model",
+                    failure_outcome=FailureOutcome(
+                        kind="artifact_foreign",
+                        stage="compare",
+                        detail="generated.pcapng is foreign",
+                        affected_evidence="generated.pcapng",
+                        evidence_state="preserved",
+                        corrective_action="regenerate from the current fitted model",
+                        authority="primary",
+                    ),
+                )
         try:
             reference, window = normalize_reference(reference_events)
             generated = align_generated(generated_events, window)
-            result = compare_traces(reference, generated, window, snapshot_config.similarity).with_input_sha256(
+            result = compare_traces(reference, generated, window, snapshot_config.similarity).with_input_identities(
                 {
-                    "capture_json": sha256_bytes(metadata_content),
-                    "generated_pcapng": sha256_bytes(generated_content),
-                    "reference_pcapng": sha256_bytes(reference_content),
-                    "similarity_settings": similarity_settings_sha256(snapshot_config.similarity),
+                    "capture_json": identify_bytes(metadata_content),
+                    "generated_pcapng": identify_bytes(generated_content),
+                    "reference_pcapng": identify_bytes(reference_content),
+                    "similarity_settings": similarity_settings_identity(snapshot_config.similarity),
                 }
             )
         except TrafficlabError as error:
@@ -1065,6 +1125,32 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 affected_evidence="similarity.json",
                 evidence_state="not_published",
             ) from error
+        authoritative_inputs = [
+            (
+                "experiment.toml",
+                run_directory / "experiment.toml",
+                identify_bytes(render_effective_config(snapshot_config)),
+            ),
+            ("capture.json", metadata_path, identify_bytes(metadata_content)),
+            ("reference.pcapng", reference_path, identify_bytes(reference_content)),
+            ("generated.pcapng", generated_path, identify_bytes(generated_content)),
+        ]
+        if model_identity is not None:
+            authoritative_inputs.append(("best_model.json", model_path, model_identity))
+        for evidence, source_path, expected_identity in authoritative_inputs:
+            try:
+                require_compatible({evidence: expected_identity}, {evidence: identify_file(source_path)})
+            except TrafficlabError as error:
+                raise attach_failure_outcome(
+                    TrafficlabError(
+                        f"{evidence} changed during compare",
+                        corrective_action="restore the exact comparison inputs and rerun compare",
+                    ),
+                    kind="artifact_changed",
+                    stage="compare",
+                    affected_evidence=evidence,
+                    evidence_state="preserved",
+                ) from error
         created_by_call = _publish_comparison_result(output_path, result)
     except TrafficlabError as error:
         failure_kind = "publication" if isinstance(error, _PublicationError) else "evaluation_or_input"

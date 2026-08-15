@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import pytest
 
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.genetic import strategy
@@ -101,9 +102,9 @@ def _context(
         REFERENCE,
         2.0,
         run_directory,
-        experiment_sha256="a" * 64,
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
 
 
@@ -151,9 +152,9 @@ def _matrix_context(
         MATRIX_REFERENCE,
         10.0,
         run_directory,
-        experiment_sha256="a" * 64,
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
 
 
@@ -430,8 +431,8 @@ def test_resume_checkpoint_failures_retain_the_canonical_preserved_outcome(
     elif checkpoint_state == "schema":
         checkpoint_path.write_bytes(b"{}\n")
     else:
-        marker = b'"experiment_sha256":"' + (b"a" * 64) + b'"'
-        checkpoint_path.write_bytes(original.replace(marker, b'"experiment_sha256":"' + (b"0" * 64) + b'"'))
+        marker = b'"sha256":"' + (b"a" * 64) + b'"'
+        checkpoint_path.write_bytes(original.replace(marker, b'"sha256":"' + (b"0" * 64) + b'"', 1))
 
     with pytest.raises(TrafficlabError) as captured:
         initialize_or_resume(context)
@@ -498,9 +499,9 @@ def test_context_resolves_lexical_families_and_exact_effective_settings_once(
         REFERENCE,
         2.0,
         tmp_path,
-        experiment_sha256="a" * 64,
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
 
     assert tuple(context.evaluation.families) == ("markov_renewal", "mmpp", "poisson_empirical")
@@ -539,9 +540,9 @@ def test_context_persists_each_documented_priority_seed_without_advancing_search
         REFERENCE,
         2.0,
         tmp_path / str(master_seed),
-        experiment_sha256="a" * 64,
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
     context.run_directory.mkdir(parents=True)
     expected_priority = tuple(

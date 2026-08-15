@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Self
 
 from trafficlab.artifacts import append_run_log, publish_best_model, validate_existing_best_model
-from trafficlab.comparison import sha256_bytes
+from trafficlab.compatibility import identify_bytes, require_compatible
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import (
     TrafficlabError,
@@ -251,9 +251,9 @@ def fit_experiment(
             reference,
             window,
             run_directory,
-            experiment_sha256=sha256_bytes(snapshot_bytes),
-            reference_sha256=sha256_bytes(reference_bytes),
-            capture_sha256=sha256_bytes(capture_bytes),
+            experiment_identity=identify_bytes(snapshot_bytes),
+            reference_identity=identify_bytes(reference_bytes),
+            capture_identity=identify_bytes(capture_bytes),
         )
         outcome = active.strategy(context)
         if outcome.family_priority != context.compatibility.family_priority:
@@ -288,13 +288,36 @@ def fit_experiment(
             family=winner_family,
             reference=reference,
             genes=outcome.winner.genes,
-            reference_sha256=context.compatibility.reference_sha256,
-            capture_sha256=context.compatibility.capture_sha256,
+            reference_identity=context.compatibility.reference_identity,
+            capture_identity=context.compatibility.capture_identity,
+            final_seed=prepared.config.run.final_seed,
+            final_limits=prepared.config.generation.final,
             W=window,
             bounds=winner_bounds,
         )
         if best.genes != outcome.winner.genes:
             raise AssertionError("artifact construction must retain the same canonical winner genes")
+        for evidence, source_path, expected_identity in (
+            ("experiment.toml", snapshot_path, context.compatibility.experiment_identity),
+            ("capture.json", capture_path, context.compatibility.capture_identity),
+            ("reference.pcapng", reference_path, context.compatibility.reference_identity),
+        ):
+            try:
+                require_compatible(
+                    {evidence: expected_identity},
+                    {evidence: identify_bytes(_read_stage_input(active.read_bytes, source_path))},
+                )
+            except TrafficlabError as error:
+                raise attach_failure_outcome(
+                    TrafficlabError(
+                        f"{evidence} changed during fit",
+                        corrective_action="restore the exact fitted inputs and rerun fit",
+                    ),
+                    kind="artifact_changed",
+                    stage="fit",
+                    affected_evidence=evidence,
+                    evidence_state="preserved",
+                ) from error
         try:
             publication = publish_best_model(best_model_path, render_best_model(best))
         except ScientificArtifactSchemaError as error:

@@ -17,9 +17,9 @@ from trafficlab.comparison import (
     compare_experiment,
     parse_comparison_result,
     render_comparison_result,
-    sha256_bytes,
-    similarity_settings_sha256,
+    similarity_settings_identity,
 )
+from trafficlab.compatibility import ContentIdentity, identify_bytes, require_compatible
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import (
     EvidenceState,
@@ -131,7 +131,7 @@ def _validate_fit_result(
     result: FitStageResult,
     experiment_path: Path,
     prepared: PreparedExperiment,
-) -> tuple[float, bytes, dict[str, str]]:
+) -> tuple[float, bytes, dict[str, ContentIdentity]]:
     if type(result) is not FitStageResult:
         raise _invalid_stage_result("fit", "expected an exact FitStageResult")
     if result.experiment_path != experiment_path or result.run_directory != prepared.run_directory:
@@ -176,19 +176,32 @@ def _validate_fit_result(
     reference_path = prepared.run_directory / "reference.pcapng"
     capture_content = _read_stage_bytes(capture_path, stage="fit", kind="capture metadata")
     reference_content = _read_stage_bytes(reference_path, stage="fit", kind="reference PCAPNG")
-    capture_sha256 = sha256_bytes(capture_content)
-    reference_sha256 = sha256_bytes(reference_content)
-    if result.best_model.capture_sha256 != capture_sha256:
-        raise _invalid_stage_result("fit", "best_model.json capture lineage does not match capture.json")
-    if result.best_model.reference_sha256 != reference_sha256:
-        raise _invalid_stage_result("fit", "best_model.json reference lineage does not match reference.pcapng")
+    capture_identity = identify_bytes(capture_content)
+    reference_identity = identify_bytes(reference_content)
+    try:
+        require_compatible(
+            {
+                "capture lineage": capture_identity,
+                "reference lineage": reference_identity,
+                "final seed": prepared.config.run.final_seed,
+                "final generation limits": prepared.config.generation.final,
+            },
+            {
+                "capture lineage": result.best_model.capture_identity,
+                "reference lineage": result.best_model.reference_identity,
+                "final seed": result.best_model.final_seed,
+                "final generation limits": result.best_model.final_limits,
+            },
+        )
+    except TrafficlabError as error:
+        raise _invalid_stage_result("fit", f"best_model.json lineage is incompatible: {error}") from error
     return (
         window,
         capture_content,
         {
-            "capture_json": capture_sha256,
-            "reference_pcapng": reference_sha256,
-            "similarity_settings": similarity_settings_sha256(prepared.config.similarity),
+            "capture_json": capture_identity,
+            "reference_pcapng": reference_identity,
+            "similarity_settings": similarity_settings_identity(prepared.config.similarity),
         },
     )
 
@@ -198,7 +211,7 @@ def _validate_generation_result(
     prepared: PreparedExperiment,
     observation_window_seconds: float,
     capture_content: bytes,
-) -> str:
+) -> ContentIdentity:
     if type(result) is not GenerationStageResult:
         raise _invalid_stage_result("generate", "expected an exact GenerationStageResult")
     if result.run_directory != prepared.run_directory:
@@ -228,13 +241,13 @@ def _validate_generation_result(
         raise _invalid_stage_result("generate", f"could not validate generated output identity: {error}") from error
     if generated_events != result.events:
         raise _invalid_stage_result("generate", "generated output events do not match generated.pcapng")
-    return sha256_bytes(generated_content)
+    return identify_bytes(generated_content)
 
 
 def _validate_comparison_result(
     result: ComparisonResult,
     observation_window_seconds: float,
-    expected_input_sha256: dict[str, str],
+    expected_input_identities: dict[str, ContentIdentity],
 ) -> None:
     if type(result) is not ComparisonResult:
         raise _invalid_stage_result("compare", "expected an exact ComparisonResult")
@@ -243,8 +256,12 @@ def _validate_comparison_result(
         or result.observation_window_seconds != observation_window_seconds
     ):
         raise _invalid_stage_result("compare", "observation window does not match fitting and generation")
-    if result.input_sha256 != expected_input_sha256:
-        raise _invalid_stage_result("compare", "input lineage does not match the validated stage outputs")
+    if result.input_identities is None:
+        raise _invalid_stage_result("compare", "input lineage is absent")
+    try:
+        require_compatible(expected_input_identities, result.input_identities)
+    except TrafficlabError as error:
+        raise _invalid_stage_result("compare", f"input lineage is incompatible: {error}") from error
 
 
 type _FinalOwner = Literal["preflight", "capture", "fit", "generate", "compare", "run"]
@@ -375,20 +392,20 @@ def _validate_final_artifacts(
     if window != fit.observation_window_seconds:
         raise _final_artifact_error("capture", "strict reference window does not match the fitting result")
 
-    input_sha256 = {
-        "capture_json": sha256_bytes(capture_content),
-        "generated_pcapng": "",
-        "reference_pcapng": sha256_bytes(reference_content),
-        "similarity_settings": similarity_settings_sha256(prepared.config.similarity),
+    input_identities = {
+        "capture_json": identify_bytes(capture_content),
+        "generated_pcapng": ContentIdentity(size=0, sha256="0" * 64),
+        "reference_pcapng": identify_bytes(reference_content),
+        "similarity_settings": similarity_settings_identity(prepared.config.similarity),
     }
     context = make_strategy_context(
         prepared.config,
         reference,
         window,
         run_directory,
-        experiment_sha256=sha256_bytes(snapshot_content),
-        reference_sha256=input_sha256["reference_pcapng"],
-        capture_sha256=input_sha256["capture_json"],
+        experiment_identity=identify_bytes(snapshot_content),
+        reference_identity=identify_bytes(reference_content),
+        capture_identity=identify_bytes(capture_content),
     )
     checkpoint_content = _read_final_artifact(run_directory / "checkpoint.json", owner="fit", identities=identities)
     try:
@@ -438,8 +455,10 @@ def _validate_final_artifacts(
     if best_model != fit.best_model:
         raise _final_artifact_error("fit", "best_model.json does not match the fitting result")
     if (
-        best_model.capture_sha256 != input_sha256["capture_json"]
-        or best_model.reference_sha256 != input_sha256["reference_pcapng"]
+        best_model.capture_identity != input_identities["capture_json"]
+        or best_model.reference_identity != input_identities["reference_pcapng"]
+        or best_model.final_seed != prepared.config.run.final_seed
+        or best_model.final_limits != prepared.config.generation.final
         or best_model.observation_window_seconds != window
     ):
         raise _final_artifact_error("fit", "best_model.json lineage does not match the strict capture pair")
@@ -452,7 +471,7 @@ def _validate_final_artifacts(
         raise _final_artifact_error("generate", str(error)) from error
     if generated_events != generation.events:
         raise _final_artifact_error("generate", "generated.pcapng does not match the generation result")
-    input_sha256["generated_pcapng"] = sha256_bytes(generated_content)
+    input_identities["generated_pcapng"] = identify_bytes(generated_content)
 
     similarity_path = run_directory / "similarity.json"
     similarity_content = _read_final_artifact(similarity_path, owner="compare", identities=identities)
@@ -464,7 +483,7 @@ def _validate_final_artifacts(
         raise _final_artifact_error("compare", "similarity.json is not canonical")
     if persisted_comparison != comparison:
         raise _final_artifact_error("compare", "similarity.json does not match the comparison result")
-    if persisted_comparison.input_sha256 != input_sha256:
+    if persisted_comparison.input_identities != input_identities:
         raise _final_artifact_error("compare", "similarity.json lineage does not match the strict final artifacts")
     for path, (owner, identity) in identities.items():
         try:
@@ -555,14 +574,14 @@ def run_experiment(
 
         current_stage = "fit"
         fit = active.fit(experiment_path)
-        observation_window_seconds, capture_content, expected_input_sha256 = _validate_fit_result(
+        observation_window_seconds, capture_content, expected_input_identities = _validate_fit_result(
             fit, experiment_path, prepared
         )
         completed_stages = (*completed_stages, "fit")
 
         current_stage = "generate"
         generation = active.generate(experiment_path)
-        expected_input_sha256["generated_pcapng"] = _validate_generation_result(
+        expected_input_identities["generated_pcapng"] = _validate_generation_result(
             generation,
             prepared,
             observation_window_seconds,
@@ -572,7 +591,7 @@ def run_experiment(
 
         current_stage = "compare"
         comparison = active.compare(experiment_path)
-        _validate_comparison_result(comparison, observation_window_seconds, expected_input_sha256)
+        _validate_comparison_result(comparison, observation_window_seconds, expected_input_identities)
         completed_stages = (*completed_stages, "compare")
         _validate_final_artifacts(prepared, capture, fit, generation, comparison)
 

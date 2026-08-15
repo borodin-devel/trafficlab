@@ -10,6 +10,7 @@ from random import Random
 from types import MappingProxyType
 from typing import Literal, cast
 
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig, FamilyName, FamilyOperators
 from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
 from trafficlab.genetic.checkpoint import (
@@ -122,9 +123,9 @@ def make_strategy_context(
     window: float,
     run_directory: Path,
     *,
-    experiment_sha256: str,
-    reference_sha256: str,
-    capture_sha256: str,
+    experiment_identity: ContentIdentity,
+    reference_identity: ContentIdentity,
+    capture_identity: ContentIdentity,
 ) -> StrategyContext:
     """Resolve lexical registry, bounds, operators, and compatibility exactly once."""
     families = tuple(sorted(config.models.enabled))
@@ -142,11 +143,12 @@ def make_strategy_context(
     )
     compatibility = CheckpointCompatibility(
         scientific_artifact_schema=SCIENTIFIC_ARTIFACT_SCHEMA_VERSION,
-        experiment_sha256=experiment_sha256,
-        reference_sha256=reference_sha256,
-        capture_sha256=capture_sha256,
+        experiment_identity=experiment_identity,
+        reference_identity=reference_identity,
+        capture_identity=capture_identity,
         observation_window_seconds=window,
         trial_seeds=config.genetic.trial_seeds,
+        trial_limits=config.generation.trial,
         families=_family_specs(families, registered, bounds),
         family_priority=family_priority,
         genetic=_genetic_settings(config),

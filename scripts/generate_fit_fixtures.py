@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import sys
 import tempfile
 import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
@@ -260,9 +260,9 @@ def _validate_fixture_tree(tree: dict[str, bytes], run_directory: Path) -> None:
         reference,
         window,
         run_directory,
-        experiment_sha256=hashlib.sha256(tree["experiment.toml"]).hexdigest(),
-        reference_sha256=hashlib.sha256(tree["reference.pcapng"]).hexdigest(),
-        capture_sha256=hashlib.sha256(tree["capture.json"]).hexdigest(),
+        experiment_identity=identify_bytes(tree["experiment.toml"]),
+        reference_identity=identify_bytes(tree["reference.pcapng"]),
+        capture_identity=identify_bytes(tree["capture.json"]),
     )
     checkpoint = parse_checkpoint(tree["checkpoint.json"], context.compatibility)
     if render_history_csv(checkpoint) != tree["ga_history.csv"]:

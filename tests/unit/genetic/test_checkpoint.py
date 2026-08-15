@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 
 import trafficlab.genetic.checkpoint as checkpoint
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import (
     FloatBounds,
     GenerationLimits,
@@ -193,11 +194,12 @@ GENETIC = GeneticCheckpointSettings(
 )
 COMPATIBILITY = CheckpointCompatibility(
     scientific_artifact_schema=2,
-    experiment_sha256="a" * 64,
-    reference_sha256="b" * 64,
-    capture_sha256="c" * 64,
+    experiment_identity=ContentIdentity(size=101, sha256="a" * 64),
+    reference_identity=ContentIdentity(size=102, sha256="b" * 64),
+    capture_identity=ContentIdentity(size=103, sha256="c" * 64),
     observation_window_seconds=2.0,
     trial_seeds=(7,),
+    trial_limits=GenerationLimits(max_packets=1_000, max_output_bytes=2_000, max_wall_seconds=3.0),
     families=FAMILIES,
     family_priority=("mmpp", "poisson_empirical"),
     genetic=GENETIC,
@@ -225,6 +227,21 @@ def _decoded(content: bytes | None = None) -> dict[str, object]:
 
 def _encoded(data: object) -> bytes:
     return (json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=True) + "\n").encode()
+
+
+def test_checkpoint_persists_exact_content_identities_and_trial_limits() -> None:
+    """Hash-only lineage or omitted trial limits cannot establish compatible resume."""
+    document = _decoded()
+
+    assert document["experiment_identity"] == {"size": 101, "sha256": "a" * 64}
+    assert document["reference_identity"] == {"size": 102, "sha256": "b" * 64}
+    assert document["capture_identity"] == {"size": 103, "sha256": "c" * 64}
+    assert document["trial_limits"] == {
+        "max_output_bytes": 2_000,
+        "max_packets": 1_000,
+        "max_wall_seconds": 3.0,
+    }
+    assert not {"experiment_sha256", "reference_sha256", "capture_sha256"} & set(document)
 
 
 def _changed(path: tuple[str | int, ...], value: object) -> bytes:
@@ -724,8 +741,8 @@ def test_checkpoint_rejects_duplicate_json_keys() -> None:
         b"\xff",
         b"{",
         b"[]\n",
-        b'{"experiment_sha256":NaN}\n',
-        _without(("capture_sha256",)),
+        b'{"experiment_identity":NaN}\n',
+        _without(("capture_identity",)),
         _encoded({**_decoded(), "unknown": 1}),
     ],
 )
@@ -859,8 +876,11 @@ def test_checkpoint_state_priority_must_match_its_compatibility() -> None:
 @pytest.mark.parametrize(
     ("path", "value"),
     [
-        (("reference_sha256",), "A" * 64),
-        (("capture_sha256",), "short"),
+        (("reference_identity", "sha256"), "A" * 64),
+        (("capture_identity", "sha256"), "short"),
+        (("trial_limits", "max_packets"), True),
+        (("trial_limits", "max_output_bytes"), 0),
+        (("trial_limits", "max_wall_seconds"), 3),
         (("observation_window_seconds",), 2),
         (("observation_window_seconds",), 0.0),
         (("trial_seeds",), []),
@@ -1432,11 +1452,31 @@ def test_compatibility_reports_each_scientifically_relevant_difference_specifica
     )
     changed_similarity = SIMILARITY.model_copy(update={"iat_diagnostic_quantile": 0.6})
     cases = (
-        (replace(COMPATIBILITY, experiment_sha256="d" * 64), "experiment snapshot SHA-256"),
-        (replace(COMPATIBILITY, reference_sha256="d" * 64), "reference SHA-256"),
-        (replace(COMPATIBILITY, capture_sha256="d" * 64), "capture SHA-256"),
+        (
+            replace(COMPATIBILITY, experiment_identity=ContentIdentity(size=101, sha256="d" * 64)),
+            "experiment snapshot SHA-256",
+        ),
+        (
+            replace(COMPATIBILITY, reference_identity=ContentIdentity(size=102, sha256="d" * 64)),
+            "reference SHA-256",
+        ),
+        (
+            replace(COMPATIBILITY, capture_identity=ContentIdentity(size=103, sha256="d" * 64)),
+            "capture SHA-256",
+        ),
+        (
+            replace(COMPATIBILITY, reference_identity=ContentIdentity(size=999, sha256="b" * 64)),
+            "reference SHA-256",
+        ),
         (replace(COMPATIBILITY, observation_window_seconds=3.0), "observation window"),
         (replace(COMPATIBILITY, trial_seeds=(8,)), "trial seeds"),
+        (
+            replace(
+                COMPATIBILITY,
+                trial_limits=GenerationLimits(max_packets=1_001, max_output_bytes=2_000, max_wall_seconds=3.0),
+            ),
+            "trial generation limits",
+        ),
         (
             replace(
                 COMPATIBILITY,
@@ -1506,9 +1546,11 @@ def test_render_rejects_malformed_family_genetic_and_compatibility_instances() -
 
     compatibility_cases: tuple[Any, ...] = (
         None,
+        replace(COMPATIBILITY, reference_identity=cast(Any, None)),
         replace(COMPATIBILITY, trial_seeds=cast(Any, [])),
         replace(COMPATIBILITY, trial_seeds=()),
         replace(COMPATIBILITY, trial_seeds=(7, 7)),
+        replace(COMPATIBILITY, trial_limits=cast(Any, None)),
         replace(COMPATIBILITY, families=cast(Any, [])),
         replace(COMPATIBILITY, families=()),
         replace(COMPATIBILITY, families=tuple(reversed(FAMILIES))),
@@ -1829,7 +1871,7 @@ def test_history_rows_have_exact_header_lexical_family_rows_then_overall(tmp_pat
 
 def test_experiment_hash_mismatch_precedes_redundant_operator_mismatch() -> None:
     data = _decoded()
-    data["experiment_sha256"] = "d" * 64
+    data["experiment_identity"] = {"size": 101, "sha256": "d" * 64}
     operators = cast(dict[str, object], cast(list[dict[str, object]], data["families"])[0]["operators"])
     operators["mutation_probability"] = 0.4
     with pytest.raises(TrafficlabError, match="experiment snapshot SHA-256"):
@@ -1843,7 +1885,7 @@ def test_experiment_hash_mismatch_precedes_rng_engine_and_engine_mismatch_is_spe
         parse_checkpoint(_encoded(engine_only), COMPATIBILITY)
 
     engine_and_experiment = cast(dict[str, object], json.loads(_encoded(engine_only)))
-    engine_and_experiment["experiment_sha256"] = "d" * 64
+    engine_and_experiment["experiment_identity"] = {"size": 101, "sha256": "d" * 64}
     with pytest.raises(TrafficlabError, match="experiment snapshot SHA-256"):
         parse_checkpoint(_encoded(engine_and_experiment), COMPATIBILITY)
 

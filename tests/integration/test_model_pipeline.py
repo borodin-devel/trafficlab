@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config import (
     FloatBounds,
     GenerationLimits,
@@ -72,16 +72,18 @@ def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
     metadata = parse_capture_metadata(capture_content, source=capture_path)
     parsed_reference = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
     normalized_reference, window = normalize_reference(parsed_reference)
-    capture_sha256 = hashlib.sha256(capture_content).hexdigest()
-    reference_sha256 = hashlib.sha256(reference_content).hexdigest()
+    capture_identity = identify_bytes(capture_content)
+    reference_identity = identify_bytes(reference_content)
 
     for family, genes, bounds in CASES:
         artifact = make_best_model(
             family,
             normalized_reference,
             genes,
-            reference_sha256=reference_sha256,
-            capture_sha256=capture_sha256,
+            reference_identity=reference_identity,
+            capture_identity=capture_identity,
+            final_seed=54321,
+            final_limits=_LIMITS,
             W=window,
             bounds=bounds,
         )

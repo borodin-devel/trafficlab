@@ -24,6 +24,7 @@ from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import ComparisonResult, compare_experiment, compare_traces
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import GenerationLimits, SimilarityConfig
 from trafficlab.errors import TrafficlabError
 from trafficlab.fitting import fit_experiment
@@ -1216,9 +1217,9 @@ def _terminal_checkpoint_and_best(tmp_path: Path) -> tuple[CheckpointState, Best
         reference,
         3.0,
         tmp_path / "run",
-        experiment_sha256="a" * 64,
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
     population = (
         _evaluated_candidate(CandidateId(2, 3), "markov_renewal", (0.2, 0.7, 1.0, 4, 1.0), 0.5, 0.7),
@@ -1246,8 +1247,10 @@ def _terminal_checkpoint_and_best(tmp_path: Path) -> tuple[CheckpointState, Best
         get_family("poisson_empirical"),
         reference,
         (1.0,),
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
+        final_seed=config.run.final_seed,
+        final_limits=config.generation.final,
         W=3.0,
         bounds=bounds,
     )
@@ -1639,9 +1642,9 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
         changed = TraceEvent(first.timestamp, first.direction, first.frame_length + 1)
         result = replace(result, generation=replace(result.generation, events=(changed, *remaining)))
     elif mutation == "similarity-lineage-differ":
-        identities = dict(cast(dict[str, str], result.comparison.input_sha256))
-        identities["capture_json"] = "0" * 64
-        result = replace(result, comparison=result.comparison.with_input_sha256(identities))
+        identities = dict(cast(dict[str, ContentIdentity], result.comparison.input_identities))
+        identities["capture_json"] = ContentIdentity(size=identities["capture_json"].size, sha256="0" * 64)
+        result = replace(result, comparison=result.comparison.with_input_identities(identities))
     elif mutation == "cleanup-not-proven":
         run_log = spec.run_directory / "run.log"
         records = [json.loads(line) for line in run_log.read_text().splitlines()]
@@ -2035,9 +2038,9 @@ def test_validation_study_mmpp_bounds_retain_a_valid_candidate_for_a_short_obser
         reference,
         window,
         tmp_path / "run",
-        experiment_sha256="a" * 64,
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
     validated = validate_evaluation_context(context.evaluation)
     pending = initial_population(
@@ -4299,8 +4302,8 @@ def _reject_direct_reproduction_mutation(mutation: str, repository_root: Path) -
             study._require_published_lineage(  # pyright: ignore[reportPrivateUsage]
                 comparison,
                 comparison,
-                {"capture.json": _HASH, "reference.pcapng": _HASH, "generated.pcapng": _HASH},
-                _HASH,
+                {"capture.json": b"capture", "reference.pcapng": b"reference", "generated.pcapng": b"generated"},
+                ContentIdentity(size=1, sha256=_HASH),
             )
         return True
     return False

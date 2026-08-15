@@ -123,10 +123,10 @@ def test_compare_experiment_rejects_a_caller_snapshot_mismatch_and_logs_it(
     }
 
 
-def test_compare_experiment_hashes_the_exact_bytes_evaluated_when_input_paths_change(
+def test_compare_experiment_rejects_when_input_paths_change_after_evaluation(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Reopening a changed path for hashing would publish identities for bytes the metrics never evaluated."""
+    """Cached evaluated bytes cannot authorize publication after their source paths change."""
     caller_path, run_directory, _config = _prepare_run(valid_config_data, tmp_path)
     evaluated_sha256: dict[str, str] = {}
 
@@ -149,13 +149,14 @@ def test_compare_experiment_hashes_the_exact_bytes_evaluated_when_input_paths_ch
     monkeypatch.setattr(comparison, "parse_capture_metadata", mutate_after_metadata_read)
     monkeypatch.setattr(comparison, "parse_pcapng_bytes", mutate_after_pcapng_read)
 
-    result = compare_experiment(caller_path)
+    with pytest.raises(TrafficlabError, match="capture.json changed during compare") as caught:
+        compare_experiment(caller_path)
 
-    assert result.input_sha256 is not None
-    assert {name: result.input_sha256[name] for name in evaluated_sha256} == evaluated_sha256
-    assert comparison.sha256_file(run_directory / "capture.json") != result.input_sha256["capture_json"]
-    assert comparison.sha256_file(run_directory / "reference.pcapng") != result.input_sha256["reference_pcapng"]
-    assert comparison.sha256_file(run_directory / "generated.pcapng") != result.input_sha256["generated_pcapng"]
+    assert set(evaluated_sha256) == {"capture_json", "reference_pcapng", "generated_pcapng"}
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.kind == "artifact_changed"
+    assert caught.value.failure_outcome.affected_evidence == "capture.json"
+    assert not (run_directory / "similarity.json").exists()
 
 
 def test_existing_similarity_is_not_replaced_and_publication_failure_is_logged(

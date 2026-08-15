@@ -38,6 +38,7 @@ from trafficlab.capture_policy import (
     record_validation_failure,
 )
 from trafficlab.cleanup import CleanupCompose, cleanup_project
+from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
 from trafficlab.compose import ComposePaths, write_production_compose
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.docker_cli import CommandResult, DockerCompose, ProjectInventory, ServiceState
@@ -49,10 +50,18 @@ from trafficlab.errors import (
     append_failure_outcome,
     failure_outcome_from_error,
 )
-from trafficlab.preflight import DockerPreflight, PreparedExperiment, run_preflight
+from trafficlab.preflight import CaptureEnvironmentIdentity, DockerPreflight, PreparedExperiment, run_preflight
 from trafficlab.trace import load_capture_metadata
 
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
+_CAPTURE_ENVIRONMENT_FIELDS = (
+    "host_architecture",
+    "target_reference",
+    "target_content_id",
+    "capture_reference",
+    "capture_content_id",
+    "capture_tool_version",
+)
 
 
 class CaptureDocker(DockerPreflight, CleanupCompose, Protocol):
@@ -94,6 +103,100 @@ class CaptureResult:
 
 def _append_event(run_directory: Path, event: str, **detail: object) -> None:
     append_run_log(run_directory, {"event": event, "stage": "capture", **detail})
+
+
+def _capture_environment_document(identity: CaptureEnvironmentIdentity) -> dict[str, object]:
+    return {name: getattr(identity, name) for name in _CAPTURE_ENVIRONMENT_FIELDS}
+
+
+def _capture_lineage(
+    run_directory: Path,
+    environment_identity: CaptureEnvironmentIdentity,
+    *,
+    experiment_identity: ContentIdentity | None = None,
+) -> dict[str, object]:
+    if experiment_identity is None:
+        experiment_identity = identify_file(run_directory / "experiment.toml")
+    return {
+        "experiment_identity": experiment_identity.as_dict(),
+        "capture_identity": identify_file(run_directory / "capture.json").as_dict(),
+        "reference_identity": identify_file(run_directory / "reference.pcapng").as_dict(),
+        "capture_environment_identity": _capture_environment_document(environment_identity),
+    }
+
+
+def _require_unchanged_capture_snapshot(run_directory: Path, expected: ContentIdentity) -> None:
+    try:
+        require_compatible(
+            {"experiment.toml": expected},
+            {"experiment.toml": identify_file(run_directory / "experiment.toml")},
+        )
+    except TrafficlabError as error:
+        raise TrafficlabError(
+            "experiment.toml changed during capture",
+            corrective_action="restore the prepared experiment snapshot and rerun capture",
+        ) from error
+
+
+def _capture_pair_stale_error() -> TrafficlabError:
+    error = TrafficlabError(
+        "capture pair has another identity",
+        corrective_action="select its matching run or a new run directory",
+    )
+    outcome = FailureOutcome(
+        kind="artifact_stale",
+        stage="capture",
+        detail=str(error),
+        affected_evidence="capture pair",
+        evidence_state="preserved",
+        corrective_action=error.corrective_action,
+        authority="primary",
+    )
+    error.failure_outcomes = (outcome,)
+    error.failure_outcome = outcome
+    return error
+
+
+def _parse_capture_lineage(record: dict[str, object]) -> dict[str, object]:
+    environment = record.get("capture_environment_identity")
+    if type(environment) is not dict:
+        raise TypeError("capture environment identity must be an object")
+    environment_document = cast(dict[str, object], environment)
+    if set(environment_document) != set(_CAPTURE_ENVIRONMENT_FIELDS):
+        raise ValueError("capture environment identity fields are not canonical")
+    return {
+        "experiment_identity": ContentIdentity.from_dict(
+            record.get("experiment_identity"), name="experiment"
+        ).as_dict(),
+        "capture_identity": ContentIdentity.from_dict(record.get("capture_identity"), name="capture").as_dict(),
+        "reference_identity": ContentIdentity.from_dict(record.get("reference_identity"), name="reference").as_dict(),
+        "capture_environment_identity": environment_document,
+    }
+
+
+def _require_matching_capture_lineage(
+    run_directory: Path,
+    environment_identity: CaptureEnvironmentIdentity | None,
+) -> None:
+    try:
+        if environment_identity is None:
+            raise ValueError("capture environment identity is unavailable")
+        log_text = (run_directory / "run.log").read_bytes().decode("utf-8", errors="strict")
+        records = [json.loads(line) for line in log_text.splitlines()]
+        publications: list[dict[str, object]] = []
+        for record in records:
+            if type(record) is not dict:
+                raise TypeError("run log record must be an object")
+            document = cast(dict[str, object], record)
+            if document.get("event") == "capture_published":
+                publications.append(document)
+        if len(publications) != 1:
+            raise ValueError("capture publication lineage must occur exactly once")
+        actual = _parse_capture_lineage(publications[0])
+        expected = _capture_lineage(run_directory, environment_identity)
+        require_compatible(expected, actual)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TrafficlabError, TypeError, ValueError) as error:
+        raise _capture_pair_stale_error() from error
 
 
 @contextmanager
@@ -728,8 +831,10 @@ def capture_prepared_experiment(
 ) -> CaptureResult:
     """Capture an already-preflighted experiment or reuse its stable valid pair."""
     run_directory = _validate_prepared_capture(path, prepared)
+    experiment_identity = identify_bytes(render_effective_config(prepared.config))
     existing = load_or_recover_capture_pair(run_directory, deadline=None, clock=clock)
     if existing is not None:
+        _require_matching_capture_lineage(run_directory, prepared.report.environment_identity)
         remove_stable_capture_diagnostics(run_directory)
         result = CaptureResult(
             run_directory=run_directory,
@@ -830,6 +935,7 @@ def capture_prepared_experiment(
                         and closed_capture.exit_code == 0
                     ):
                         try:
+                            _require_unchanged_capture_snapshot(run_directory, experiment_identity)
                             publication = publish_capture_pair(
                                 metadata_path,
                                 pcapng_path,
@@ -933,6 +1039,7 @@ def capture_prepared_experiment(
                 if capture_closed_cleanly:
                     operation = "validate and publish capture output"
                     try:
+                        _require_unchanged_capture_snapshot(run_directory, experiment_identity)
                         publication = publish_capture_pair(
                             metadata_path,
                             pcapng_path,
@@ -978,6 +1085,7 @@ def capture_prepared_experiment(
             closed_capture = states.get("capture")
             if closed_capture is not None and closed_capture.state == "exited" and closed_capture.exit_code == 0:
                 try:
+                    _require_unchanged_capture_snapshot(run_directory, experiment_identity)
                     publication = publish_capture_pair(
                         metadata_path,
                         pcapng_path,
@@ -1074,6 +1182,7 @@ def capture_prepared_experiment(
     _append_event(
         run_directory,
         "capture_published",
+        **_capture_lineage(run_directory, environment_identity, experiment_identity=experiment_identity),
         packet_count=result.packet_count,
         path=str(result.reference_path),
         project_name=project_name,

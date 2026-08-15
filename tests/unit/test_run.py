@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import struct
@@ -21,6 +20,7 @@ from trafficlab.artifacts import FileIdentity
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import CaptureInspection
 from trafficlab.comparison import ComparisonResult, render_comparison_result
+from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import FamilyName
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
@@ -74,12 +74,16 @@ def _fit_outcome(
     return FitOutcome(winner, (_trial(final_seed),), 0, "hard_limit", ("poisson_empirical",))
 
 
-def _comparison(window: float = 10.0, *, identities: dict[str, str] | None = None) -> ComparisonResult:
+def _comparison(
+    window: float = 10.0,
+    *,
+    identities: dict[str, ContentIdentity] | None = None,
+) -> ComparisonResult:
     fixture = Path(__file__).parents[2] / "examples" / "data" / "similarity.json"
     document = cast(dict[str, object], json.loads(fixture.read_bytes()))
     result = ComparisonResult.from_dict(document)
     if identities is not None:
-        result = result.with_input_sha256(identities)
+        result = result.with_input_identities(identities)
     if window != result.observation_window_seconds:
         object.__setattr__(result, "observation_window_seconds", window)
     return result
@@ -115,8 +119,10 @@ def _stage_results(
         POISSON_FAMILY,
         reference_events,
         (1.0,),
-        reference_sha256=hashlib.sha256(reference_content).hexdigest(),
-        capture_sha256=hashlib.sha256(capture_content).hexdigest(),
+        reference_identity=identify_bytes(reference_content),
+        capture_identity=identify_bytes(capture_content),
+        final_seed=prepared.config.run.final_seed,
+        final_limits=prepared.config.generation.final,
         W=window,
         bounds=bounds,
     )
@@ -151,10 +157,10 @@ def _stage_results(
         allow_nan=False,
     ).encode("utf-8")
     identities = {
-        "capture_json": hashlib.sha256(capture_content).hexdigest(),
-        "generated_pcapng": hashlib.sha256(generated_content).hexdigest(),
-        "reference_pcapng": hashlib.sha256(reference_content).hexdigest(),
-        "similarity_settings": hashlib.sha256(settings_content).hexdigest(),
+        "capture_json": identify_bytes(capture_content),
+        "generated_pcapng": identify_bytes(generated_content),
+        "reference_pcapng": identify_bytes(reference_content),
+        "similarity_settings": identify_bytes(settings_content),
     }
     comparison = _comparison(window, identities=identities)
 
@@ -164,9 +170,9 @@ def _stage_results(
         reference_events,
         window,
         run_directory,
-        experiment_sha256=hashlib.sha256(snapshot_content).hexdigest(),
-        reference_sha256=identities["reference_pcapng"],
-        capture_sha256=identities["capture_json"],
+        experiment_identity=identify_bytes(snapshot_content),
+        reference_identity=identify_bytes(reference_content),
+        capture_identity=identify_bytes(capture_content),
     )
     fit = replace(fit, outcome=replace(fit.outcome, family_priority=context.compatibility.family_priority))
     family_names = cast(tuple[FamilyName, ...], tuple(family.name for family in context.compatibility.families))
@@ -399,7 +405,10 @@ def test_run_experiment_strictly_reloads_every_owned_artifact_before_completion(
         changed_content = b"not the checkpoint projection\n"
     elif corruption in {"best-model", "best-model-lineage"}:
         changed_path = run_directory / "best_model.json"
-        changed_model = replace(fit.best_model, capture_sha256="0" * 64)
+        changed_model = replace(
+            fit.best_model,
+            capture_identity=ContentIdentity(size=fit.best_model.capture_identity.size, sha256="0" * 64),
+        )
         if corruption == "best-model-lineage":
             post_compare_best_model = changed_model
         changed_content = render_best_model(changed_model)
@@ -425,10 +434,13 @@ def test_run_experiment_strictly_reloads_every_owned_artifact_before_completion(
         elif corruption == "similarity-noncanonical":
             changed_content = changed_path.read_bytes().rstrip(b"\n") + b" \n"
         else:
-            assert comparison.input_sha256 is not None
-            identities = dict(comparison.input_sha256)
-            identities["generated_pcapng"] = "0" * 64
-            changed_content = render_comparison_result(comparison.with_input_sha256(identities))
+            assert comparison.input_identities is not None
+            identities = dict(comparison.input_identities)
+            identities["generated_pcapng"] = ContentIdentity(
+                size=identities["generated_pcapng"].size,
+                sha256="0" * 64,
+            )
+            changed_content = render_comparison_result(comparison.with_input_identities(identities))
     else:
         changed_path = run_directory / "unexpected.txt"
         changed_content = b"preserve unexpected entry\n"
@@ -1329,9 +1341,17 @@ def test_run_experiment_rejects_nested_and_lineage_corruption_before_the_next_ca
         elif corruption == "reference-read":
             (prepared.run_directory / "reference.pcapng").unlink()
         elif corruption == "capture-lineage":
-            object.__setattr__(fit.best_model, "capture_sha256", "0" * 64)
+            object.__setattr__(
+                fit.best_model,
+                "capture_identity",
+                ContentIdentity(size=fit.best_model.capture_identity.size, sha256="0" * 64),
+            )
         else:
-            object.__setattr__(fit.best_model, "reference_sha256", "0" * 64)
+            object.__setattr__(
+                fit.best_model,
+                "reference_identity",
+                ContentIdentity(size=fit.best_model.reference_identity.size, sha256="0" * 64),
+            )
 
         def corrupted_fit(path: Path) -> FitStageResult:
             del path
@@ -1373,16 +1393,16 @@ def test_run_experiment_rejects_nested_and_lineage_corruption_before_the_next_ca
                 None,
             )
         else:
-            assert comparison.input_sha256 is not None
-            identities = dict(comparison.input_sha256)
+            assert comparison.input_identities is not None
+            identities = dict(comparison.input_identities)
             identity_name = {
                 "lineage-capture": "capture_json",
                 "lineage-reference": "reference_pcapng",
                 "lineage-generated": "generated_pcapng",
                 "lineage-settings": "similarity_settings",
             }[corruption]
-            identities[identity_name] = "0" * 64
-            comparison = comparison.with_input_sha256(identities)
+            identities[identity_name] = ContentIdentity(size=identities[identity_name].size, sha256="0" * 64)
+            comparison = comparison.with_input_identities(identities)
 
         def corrupted_comparison(path: Path) -> ComparisonResult:
             del path

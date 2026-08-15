@@ -33,6 +33,7 @@ from trafficlab.comparison import (
     sha256_bytes,
     similarity_settings_sha256,
 )
+from trafficlab.compatibility import identify_bytes
 from trafficlab.compose import ComposePaths
 from trafficlab.config import ExperimentConfig, GenerationLimits
 from trafficlab.config_io import load_experiment
@@ -263,9 +264,9 @@ def test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_pro
         reference,
         window,
         run_directory,
-        experiment_sha256=sha256_bytes((run_directory / "experiment.toml").read_bytes()),
-        reference_sha256=sha256_bytes(reference_content),
-        capture_sha256=sha256_bytes(capture_content),
+        experiment_identity=identify_bytes((run_directory / "experiment.toml").read_bytes()),
+        reference_identity=identify_bytes(reference_content),
+        capture_identity=identify_bytes(capture_content),
     )
     checkpoint = load_checkpoint(run_directory / "checkpoint.json", context.compatibility)
     assert render_history_csv(checkpoint) == (run_directory / "ga_history.csv").read_bytes()

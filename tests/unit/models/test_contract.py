@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import (
     FloatBounds,
     GenerationLimits,
@@ -87,8 +88,10 @@ def test_every_family_round_trips_and_reproduces(case: FamilyCase) -> None:
         case.family,
         REFERENCE,
         case.genes,
-        reference_sha256="a" * 64,
-        capture_sha256="b" * 64,
+        reference_identity=ContentIdentity(size=1, sha256="a" * 64),
+        capture_identity=ContentIdentity(size=2, sha256="b" * 64),
+        final_seed=2468,
+        final_limits=COMPLETE_LIMITS,
         W=WINDOW,
         bounds=case.bounds,
     )

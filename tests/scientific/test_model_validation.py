@@ -10,7 +10,6 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
-from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -22,6 +21,7 @@ from tests.scientific.oracles import (
     markov_stationary_distribution,
     mmpp_moments,
 )
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config import (
     FloatBounds,
     GenerationLimits,
@@ -586,8 +586,10 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
         family,
         reference,
         genes,
-        reference_sha256=sha256(reference_content).hexdigest(),
-        capture_sha256=sha256(metadata_content).hexdigest(),
+        reference_identity=identify_bytes(reference_content),
+        capture_identity=identify_bytes(metadata_content),
+        final_seed=54321,
+        final_limits=_LIMITS,
         W=window,
         bounds=bounds,
     )

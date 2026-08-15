@@ -38,8 +38,9 @@ from trafficlab.comparison import (
     parse_comparison_result,
     render_comparison_result,
     sha256_bytes,
-    similarity_settings_sha256,
+    similarity_settings_identity,
 )
+from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FamilyName, SimilarityConfig
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
@@ -1602,9 +1603,15 @@ def _load_persisted_run_evidence(spec: StudyRunSpec) -> _LoadedRunEvidence:
         reference,
         window,
         spec.run_directory,
-        experiment_sha256=cast(str, artifact_sha256["experiment.toml"]),
-        reference_sha256=cast(str, artifact_sha256["reference.pcapng"]),
-        capture_sha256=cast(str, artifact_sha256["capture.json"]),
+        experiment_identity=ContentIdentity(
+            size=len(contents["experiment.toml"]), sha256=cast(str, artifact_sha256["experiment.toml"])
+        ),
+        reference_identity=ContentIdentity(
+            size=len(contents["reference.pcapng"]), sha256=cast(str, artifact_sha256["reference.pcapng"])
+        ),
+        capture_identity=ContentIdentity(
+            size=len(contents["capture.json"]), sha256=cast(str, artifact_sha256["capture.json"])
+        ),
     )
     checkpoint = parse_checkpoint(contents["checkpoint.json"], context.compatibility)
     _require(
@@ -1790,18 +1797,18 @@ def _sole_final_trial(trials: Sequence[TrialResult]) -> TrialResult:
 def _require_published_lineage(
     rebuilt: ComparisonResult,
     persisted: ComparisonResult,
-    artifact_sha256: Mapping[str, JsonValue],
-    settings_sha256: str,
+    artifact_contents: Mapping[str, bytes],
+    settings_identity: ContentIdentity,
 ) -> None:
-    input_sha256 = rebuilt.input_sha256
-    _require(input_sha256 is not None, "published comparison must carry exact input lineage")
+    input_identities = rebuilt.input_identities
+    _require(input_identities is not None, "published comparison must carry exact input lineage")
     expected = {
-        "capture_json": artifact_sha256["capture.json"],
-        "reference_pcapng": artifact_sha256["reference.pcapng"],
-        "generated_pcapng": artifact_sha256["generated.pcapng"],
-        "similarity_settings": settings_sha256,
+        "capture_json": identify_bytes(artifact_contents["capture.json"]),
+        "reference_pcapng": identify_bytes(artifact_contents["reference.pcapng"]),
+        "generated_pcapng": identify_bytes(artifact_contents["generated.pcapng"]),
+        "similarity_settings": settings_identity,
     }
-    _require(input_sha256 == expected, "published comparison input lineage must match exact artifact hashes")
+    _require(input_identities == expected, "published comparison input lineage must match exact artifact identities")
     _require(rebuilt == persisted, "published comparison must equal strict persisted similarity evidence")
 
 
@@ -1842,16 +1849,16 @@ def _reconstruct_science(
         "generated artifact must equal quantized and reparsed raw seed-97 events",
     )
     aligned = align_generated(reparsed, window)
-    settings_hash = similarity_settings_sha256(evidence.config.similarity)
-    published = compare_traces(evidence.reference, aligned, window, evidence.config.similarity).with_input_sha256(
+    settings_identity = similarity_settings_identity(evidence.config.similarity)
+    published = compare_traces(evidence.reference, aligned, window, evidence.config.similarity).with_input_identities(
         {
-            "capture_json": cast(str, evidence.artifact_sha256["capture.json"]),
-            "reference_pcapng": cast(str, evidence.artifact_sha256["reference.pcapng"]),
-            "generated_pcapng": cast(str, evidence.artifact_sha256["generated.pcapng"]),
-            "similarity_settings": settings_hash,
+            "capture_json": identify_bytes(evidence.contents["capture.json"]),
+            "reference_pcapng": identify_bytes(evidence.contents["reference.pcapng"]),
+            "generated_pcapng": identify_bytes(evidence.contents["generated.pcapng"]),
+            "similarity_settings": settings_identity,
         }
     )
-    _require_published_lineage(published, evidence.comparison, evidence.artifact_sha256, settings_hash)
+    _require_published_lineage(published, evidence.comparison, evidence.contents, settings_identity)
     return _ReconstructedScience(held_out, raw_trial, reparsed, aligned, published)
 
 

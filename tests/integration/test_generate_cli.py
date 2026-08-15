@@ -20,6 +20,7 @@ import trafficlab.artifacts as artifact_module
 import trafficlab.cli as cli_module
 import trafficlab.generation as generation_module
 from trafficlab.artifacts import create_run_directory, publish_generated_pcapng
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
@@ -888,12 +889,12 @@ def test_stage_uses_authoritative_preparation_single_read_lineage_and_no_referen
     assert not reference_path.exists()
 
 
-def test_stage_hashes_and_parses_the_same_capture_bytes_and_parses_the_same_model_bytes(
+def test_stage_hashes_parses_and_rechecks_the_same_model_and_capture_bytes(
     valid_config_data: dict[str, object],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Hashing or parsing a reopened path could accept model lineage for bytes not used by generation."""
+    """Hashing and parsing use cached bytes, then publication rechecks their authoritative paths."""
     experiment_path, _run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
     model_seen: list[bytes] = []
     capture_seen: list[bytes] = []
@@ -902,12 +903,10 @@ def test_stage_hashes_and_parses_the_same_capture_bytes_and_parses_the_same_mode
 
     def observe_model(content: bytes, *, source: Path) -> BestModel:
         model_seen.append(content)
-        source.write_bytes(b"changed after model read")
         return real_load(content, source=source)
 
     def observe_capture(content: bytes, *, source: Path) -> CaptureMetadata:
         capture_seen.append(content)
-        source.write_bytes(b"changed after capture read")
         return real_parse(content, source=source)
 
     monkeypatch.setattr(generation_module, "load_best_model", observe_model)
@@ -972,6 +971,66 @@ def test_stage_uses_only_stored_family_window_and_configured_final_seed_and_limi
     ]
 
 
+@pytest.mark.parametrize("change", ["final-seed", "final-limits"])
+def test_stage_rejects_generation_policy_drift_before_family_or_rng_use(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+) -> None:
+    """Mutable configuration cannot silently replace the seed or guards retained by best_model.json."""
+    data = copy.deepcopy(valid_config_data)
+    if change == "final-seed":
+        run = cast(dict[str, object], data["run"])
+        run["final_seed"] = cast(int, run["final_seed"]) + 100_000
+    else:
+        generation = cast(dict[str, object], data["generation"])
+        final = cast(dict[str, object], generation["final"])
+        final["max_packets"] = cast(int, final["max_packets"]) + 1
+    experiment_path, run_directory, _config = _prepare_stage_run(data, tmp_path)
+
+    def forbidden_family(_name: str) -> ModelFamily:
+        raise AssertionError("incompatible generation policy reached the model family or RNG")
+
+    monkeypatch.setattr(generation_module, "get_family", forbidden_family)
+
+    with pytest.raises(TrafficlabError, match="generation policy") as caught:
+        generate_experiment(experiment_path, clock=lambda: 0.0)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "scientific_semantics_incompatible",
+        "generate",
+        "best_model.json",
+        "preserved",
+    )
+    assert not (run_directory / "generated.pcapng").exists()
+
+
+def test_stage_rejects_best_model_mutation_before_generated_publication(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Generation cannot publish bytes after its authoritative fitted model changes."""
+    experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
+    model_path = run_directory / "best_model.json"
+    real_reproduce = generation_module.reproduce_generated_pcapng
+
+    def reproduce_and_mutate(*args: Any, **kwargs: Any) -> object:
+        result = real_reproduce(*args, **kwargs)
+        model_path.write_bytes(model_path.read_bytes() + b"changed after generation")
+        return result
+
+    monkeypatch.setattr(generation_module, "reproduce_generated_pcapng", reproduce_and_mutate)
+
+    with pytest.raises(TrafficlabError, match="best_model.json changed during generate") as caught:
+        generate_experiment(experiment_path, clock=lambda: 0.0)
+
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.kind == "artifact_changed"
+    assert not (run_directory / "generated.pcapng").exists()
+
+
 def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
     valid_config_data: dict[str, object],
     tmp_path: Path,
@@ -1002,8 +1061,10 @@ def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
         family,
         reference,
         (1.0,),
-        reference_sha256=hashlib.sha256(binary_reference).hexdigest(),
-        capture_sha256=hashlib.sha256(_CAPTURE_BYTES).hexdigest(),
+        reference_identity=identify_bytes(binary_reference),
+        capture_identity=identify_bytes(_CAPTURE_BYTES),
+        final_seed=config.run.final_seed,
+        final_limits=config.generation.final,
         W=window,
         bounds=bounds,
     )

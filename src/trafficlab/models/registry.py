@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +12,16 @@ from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
-from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
+from trafficlab.compatibility import ContentIdentity
+from trafficlab.config import (
+    FamilyName,
+    FloatBounds,
+    GenerationLimits,
+    IntegerBounds,
+    MarkovRenewalConfig,
+    MmppConfig,
+    PoissonConfig,
+)
 from trafficlab.errors import TrafficlabError
 from trafficlab.models.common import FamilyBounds, FittedModel, Gene, Genes, ModelFamily
 from trafficlab.models.markov_renewal import MarkovRenewalFamily
@@ -22,15 +30,16 @@ from trafficlab.models.poisson import PoissonFamily
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION, require_current_scientific_schema
 from trafficlab.trace import TraceEvent
 
-_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _OUTER_KEYS = {
     "version",
     "scientific_artifact_schema",
     "family",
     "genes",
     "fitted",
-    "reference_sha256",
-    "capture_sha256",
+    "reference_identity",
+    "capture_identity",
+    "final_seed",
+    "final_limits",
     "observation_window_seconds",
     "gene_bounds",
     "estimator_choices",
@@ -82,8 +91,10 @@ class BestModel:
     family: FamilyName
     genes: Genes
     fitted: FittedModel
-    reference_sha256: str
-    capture_sha256: str
+    reference_identity: ContentIdentity
+    capture_identity: ContentIdentity
+    final_seed: int
+    final_limits: GenerationLimits
     observation_window_seconds: float
     gene_bounds: dict[str, FloatBounds | IntegerBounds]
     estimator_choices: dict[str, str | int | float]
@@ -92,18 +103,85 @@ class BestModel:
     def __post_init__(self) -> None:
         _validate_best_model(self)
 
+    @property
+    def reference_sha256(self) -> str:
+        """Expose the reference digest for callers that do not need its byte count."""
+        return self.reference_identity.sha256
+
+    @property
+    def capture_sha256(self) -> str:
+        """Expose the capture-metadata digest for existing comparison callers."""
+        return self.capture_identity.sha256
+
 
 def _invalid(detail: str, *, corrective_action: str) -> TrafficlabError:
     return TrafficlabError(detail, corrective_action=corrective_action)
 
 
-def _validate_hash(value: object, *, name: str) -> str:
-    if type(value) is not str or _SHA256_PATTERN.fullmatch(value) is None:
+def _validate_identity(value: object, *, name: str) -> ContentIdentity:
+    if type(value) is not ContentIdentity:
         raise _invalid(
-            f"invalid {name} SHA-256 identity",
-            corrective_action="provide exactly 64 lowercase hexadecimal SHA-256 characters",
+            f"invalid best-model {name} identity",
+            corrective_action=f"provide the exact nested size and SHA-256 identity for the {name} artifact",
         )
     return value
+
+
+def _parse_identity(value: object, *, name: str) -> ContentIdentity:
+    try:
+        return ContentIdentity.from_dict(value, name=f"best-model {name}")
+    except (TypeError, ValueError) as error:
+        raise _invalid(
+            f"invalid best-model {name} identity: {error}",
+            corrective_action=f"restore the exact nested size and SHA-256 identity for the {name} artifact",
+        ) from error
+
+
+def _validate_final_seed(value: object) -> int:
+    if type(value) is not int or value < 0:
+        raise _invalid(
+            "invalid best-model final seed",
+            corrective_action="provide one exact nonnegative integer final_seed",
+        )
+    return value
+
+
+def _invalid_final_limits() -> TrafficlabError:
+    return _invalid(
+        "invalid best-model final limits",
+        corrective_action=(
+            "provide exactly positive integer max_packets and max_output_bytes plus a finite positive float "
+            "max_wall_seconds"
+        ),
+    )
+
+
+def _validate_final_limits(value: object) -> GenerationLimits:
+    if type(value) is not GenerationLimits:
+        raise _invalid_final_limits()
+    return value
+
+
+def _parse_final_limits(value: object) -> GenerationLimits:
+    if type(value) is not dict:
+        raise _invalid_final_limits()
+    document = cast(dict[object, object], value)
+    if set(document) != {"max_packets", "max_output_bytes", "max_wall_seconds"}:
+        raise _invalid_final_limits()
+    max_packets = document["max_packets"]
+    max_output_bytes = document["max_output_bytes"]
+    max_wall_seconds = document["max_wall_seconds"]
+    if type(max_packets) is not int or max_packets <= 0:
+        raise _invalid_final_limits()
+    if type(max_output_bytes) is not int or max_output_bytes <= 0:
+        raise _invalid_final_limits()
+    if type(max_wall_seconds) is not float or max_wall_seconds <= 0.0:
+        raise _invalid_final_limits()
+    return GenerationLimits(
+        max_packets=max_packets,
+        max_output_bytes=max_output_bytes,
+        max_wall_seconds=max_wall_seconds,
+    )
 
 
 def _validate_window(value: object) -> float:
@@ -274,8 +352,10 @@ def _validate_best_model(model: BestModel) -> None:
     family = get_family(model.family)
     bounds = _bounds_from_config(family, _config_from_bound_mapping(family, model.gene_bounds))
     genes = _validate_genes(family, model.genes, bounds)
-    _validate_hash(model.reference_sha256, name="reference")
-    _validate_hash(model.capture_sha256, name="capture")
+    _validate_identity(model.reference_identity, name="reference")
+    _validate_identity(model.capture_identity, name="capture")
+    _validate_final_seed(model.final_seed)
+    _validate_final_limits(model.final_limits)
     _validate_window(model.observation_window_seconds)
     _exact_mapping(model.estimator_choices, dict(family.estimator_choices), name="estimator choices")
     _exact_mapping(model.seed_policy, _SEED_POLICY, name="seed policy")
@@ -337,8 +417,10 @@ def make_best_model(
     reference: Sequence[TraceEvent],
     genes: Sequence[Gene],
     *,
-    reference_sha256: str,
-    capture_sha256: str,
+    reference_identity: ContentIdentity,
+    capture_identity: ContentIdentity,
+    final_seed: int,
+    final_limits: GenerationLimits,
     W: float,
     bounds: FamilyBounds,
 ) -> BestModel:
@@ -348,8 +430,10 @@ def make_best_model(
             "unknown model family object",
             corrective_action="use a family object returned by get_family",
         )
-    _validate_hash(reference_sha256, name="reference")
-    _validate_hash(capture_sha256, name="capture")
+    reference_identity = _validate_identity(reference_identity, name="reference")
+    capture_identity = _validate_identity(capture_identity, name="capture")
+    final_seed = _validate_final_seed(final_seed)
+    final_limits = _validate_final_limits(final_limits)
     window = _validate_window(W)
     bound_mapping = _bounds_from_config(family, bounds)
     repaired = family.repair(genes, bounds, reference)
@@ -360,8 +444,10 @@ def make_best_model(
         family=family.name,
         genes=repaired,
         fitted=fitted,
-        reference_sha256=reference_sha256,
-        capture_sha256=capture_sha256,
+        reference_identity=reference_identity,
+        capture_identity=capture_identity,
+        final_seed=final_seed,
+        final_limits=final_limits,
         observation_window_seconds=window,
         gene_bounds=dict(bound_mapping),
         estimator_choices=dict(family.estimator_choices),
@@ -404,14 +490,14 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
     if type(raw) is not dict:
         raise _invalid(
             "invalid best-model outer object",
-            corrective_action="provide exactly the eleven documented version-1 fields",
+            corrective_action="provide exactly the documented version-1 fields",
         )
     document = cast(dict[str, object], raw)
     require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="best model")
     if set(document) != _OUTER_KEYS:
         raise _invalid(
             "invalid best-model outer object",
-            corrective_action="provide exactly the eleven documented version-1 fields",
+            corrective_action="provide exactly the documented version-1 fields",
         )
     version = document["version"]
     if type(version) is not int or version != 1:
@@ -422,8 +508,10 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
     family = get_family(family_value)
     bounds, bound_mapping = _build_bounds(family, document["gene_bounds"])
     genes = _parse_genes(family, document["genes"], bound_mapping)
-    reference_sha256 = _validate_hash(document["reference_sha256"], name="reference")
-    capture_sha256 = _validate_hash(document["capture_sha256"], name="capture")
+    reference_identity = _parse_identity(document["reference_identity"], name="reference")
+    capture_identity = _parse_identity(document["capture_identity"], name="capture")
+    final_seed = _validate_final_seed(document["final_seed"])
+    final_limits = _parse_final_limits(document["final_limits"])
     window = _validate_window(document["observation_window_seconds"])
     estimator_choices = _exact_mapping(
         document["estimator_choices"], dict(family.estimator_choices), name="estimator choices"
@@ -442,8 +530,10 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
         family=_family_name(family_value),
         genes=genes,
         fitted=fitted,
-        reference_sha256=reference_sha256,
-        capture_sha256=capture_sha256,
+        reference_identity=reference_identity,
+        capture_identity=capture_identity,
+        final_seed=final_seed,
+        final_limits=final_limits,
         observation_window_seconds=window,
         gene_bounds=dict(bound_mapping),
         estimator_choices=cast(dict[str, str | int | float], estimator_choices),
@@ -463,8 +553,14 @@ def render_best_model(model: BestModel) -> bytes:
         "family": model.family,
         "genes": list(model.genes),
         "fitted": family.dump_fitted(model.fitted),
-        "reference_sha256": model.reference_sha256,
-        "capture_sha256": model.capture_sha256,
+        "reference_identity": model.reference_identity.as_dict(),
+        "capture_identity": model.capture_identity.as_dict(),
+        "final_seed": model.final_seed,
+        "final_limits": {
+            "max_packets": model.final_limits.max_packets,
+            "max_output_bytes": model.final_limits.max_output_bytes,
+            "max_wall_seconds": model.final_limits.max_wall_seconds,
+        },
         "observation_window_seconds": model.observation_window_seconds,
         "gene_bounds": {
             name: {"lower": bound.lower, "upper": bound.upper} for name, bound in model.gene_bounds.items()

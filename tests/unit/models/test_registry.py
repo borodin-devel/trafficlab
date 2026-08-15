@@ -12,7 +12,15 @@ from typing import Any, cast
 
 import pytest
 
-from trafficlab.config import FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
+from trafficlab.compatibility import ContentIdentity
+from trafficlab.config import (
+    FloatBounds,
+    GenerationLimits,
+    IntegerBounds,
+    MarkovRenewalConfig,
+    MmppConfig,
+    PoissonConfig,
+)
 from trafficlab.errors import TrafficlabError
 from trafficlab.models.common import ModelFamily
 from trafficlab.models.registry import (
@@ -56,6 +64,10 @@ SEED_POLICY = {
     "generator": "random.Random",
     "weighted": "random_cumulative",
 }
+REFERENCE_IDENTITY = ContentIdentity(size=1_024, sha256="a" * 64)
+CAPTURE_IDENTITY = ContentIdentity(size=256, sha256="b" * 64)
+FINAL_SEED = 17
+FINAL_LIMITS = GenerationLimits(max_packets=10_000, max_output_bytes=10_000_000, max_wall_seconds=30.0)
 
 
 def test_registry_is_closed_and_stably_ordered() -> None:
@@ -75,8 +87,10 @@ def valid_best_model() -> BestModel:
         POISSON_FAMILY,
         REFERENCE,
         (1.0,),
-        reference_sha256="a" * 64,
-        capture_sha256="b" * 64,
+        reference_identity=REFERENCE_IDENTITY,
+        capture_identity=CAPTURE_IDENTITY,
+        final_seed=FINAL_SEED,
+        final_limits=FINAL_LIMITS,
         W=WINDOW,
         bounds=POISSON_BOUNDS,
     )
@@ -96,8 +110,10 @@ def test_make_best_model_repairs_and_owns_all_outer_metadata() -> None:
         POISSON_FAMILY,
         REFERENCE,
         (99.0,),
-        reference_sha256="a" * 64,
-        capture_sha256="b" * 64,
+        reference_identity=REFERENCE_IDENTITY,
+        capture_identity=CAPTURE_IDENTITY,
+        final_seed=FINAL_SEED,
+        final_limits=FINAL_LIMITS,
         W=WINDOW,
         bounds=POISSON_BOUNDS,
     )
@@ -105,8 +121,12 @@ def test_make_best_model_repairs_and_owns_all_outer_metadata() -> None:
     assert artifact.scientific_artifact_schema == 2
     assert artifact.family == "poisson_empirical"
     assert artifact.genes == (4.0,)
-    assert artifact.reference_sha256 == "a" * 64
-    assert artifact.capture_sha256 == "b" * 64
+    assert artifact.reference_identity == REFERENCE_IDENTITY
+    assert artifact.capture_identity == CAPTURE_IDENTITY
+    assert artifact.reference_sha256 == REFERENCE_IDENTITY.sha256
+    assert artifact.capture_sha256 == CAPTURE_IDENTITY.sha256
+    assert artifact.final_seed == FINAL_SEED
+    assert artifact.final_limits == FINAL_LIMITS
     assert artifact.observation_window_seconds == WINDOW
     assert artifact.gene_bounds == {"c_lambda": FloatBounds(lower=0.25, upper=4.0)}
     assert artifact.estimator_choices == {
@@ -129,8 +149,10 @@ def test_best_model_render_is_canonical(valid_best_model: BestModel) -> None:
         "family",
         "genes",
         "fitted",
-        "reference_sha256",
-        "capture_sha256",
+        "reference_identity",
+        "capture_identity",
+        "final_seed",
+        "final_limits",
         "observation_window_seconds",
         "gene_bounds",
         "estimator_choices",
@@ -159,8 +181,10 @@ def test_best_model_round_trips_every_real_fitted_family(
         family,  # type: ignore[arg-type]
         REFERENCE,
         genes,
-        reference_sha256="a" * 64,
-        capture_sha256="b" * 64,
+        reference_identity=REFERENCE_IDENTITY,
+        capture_identity=CAPTURE_IDENTITY,
+        final_seed=FINAL_SEED,
+        final_limits=FINAL_LIMITS,
         W=WINDOW,
         bounds=bounds,  # type: ignore[arg-type]
     )
@@ -234,12 +258,62 @@ def test_best_model_rejects_noncurrent_scientific_schema_before_fitted_decode(
         load_best_model(_encoded(document), source=Path("best_model.json"))
 
 
-@pytest.mark.parametrize("field", ["reference_sha256", "capture_sha256"])
-@pytest.mark.parametrize("digest", ["a" * 63, "A" * 64, "g" * 64, True])
-def test_best_model_rejects_noncanonical_hashes(valid_best_model: BestModel, field: str, digest: object) -> None:
+@pytest.mark.parametrize("field", ["reference_identity", "capture_identity"])
+@pytest.mark.parametrize(
+    "identity",
+    [
+        None,
+        {"size": 1},
+        {"size": True, "sha256": "a" * 64},
+        {"size": -1, "sha256": "a" * 64},
+        {"size": 1, "sha256": "A" * 64},
+        {"size": 1, "sha256": "a" * 64, "path": "/host/artifact"},
+    ],
+)
+def test_best_model_rejects_malformed_content_identities(
+    valid_best_model: BestModel, field: str, identity: object
+) -> None:
     document = _document(valid_best_model)
-    document[field] = digest
-    with pytest.raises(TrafficlabError, match="SHA-256"):
+    document[field] = identity
+    with pytest.raises(TrafficlabError, match="identity"):
+        load_best_model(_encoded(document), source=Path("best_model.json"))
+
+
+def test_best_model_rejects_legacy_hash_only_lineage(valid_best_model: BestModel) -> None:
+    document = _document(valid_best_model)
+    document["reference_sha256"] = document.pop("reference_identity")["sha256"]
+    document["capture_sha256"] = document.pop("capture_identity")["sha256"]
+
+    with pytest.raises(TrafficlabError, match="outer object"):
+        load_best_model(_encoded(document), source=Path("best_model.json"))
+
+
+@pytest.mark.parametrize("seed", [True, -1, 1.0, "1", None])
+def test_best_model_rejects_noncanonical_final_seed(valid_best_model: BestModel, seed: object) -> None:
+    document = _document(valid_best_model)
+    document["final_seed"] = seed
+    with pytest.raises(TrafficlabError, match="final seed"):
+        load_best_model(_encoded(document), source=Path("best_model.json"))
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        None,
+        {},
+        {"max_packets": True, "max_output_bytes": 100, "max_wall_seconds": 1.0},
+        {"max_packets": 0, "max_output_bytes": 100, "max_wall_seconds": 1.0},
+        {"max_packets": 1, "max_output_bytes": True, "max_wall_seconds": 1.0},
+        {"max_packets": 1, "max_output_bytes": 0, "max_wall_seconds": 1.0},
+        {"max_packets": 1, "max_output_bytes": 100, "max_wall_seconds": 1},
+        {"max_packets": 1, "max_output_bytes": 100, "max_wall_seconds": 0.0},
+        {"max_packets": 1, "max_output_bytes": 100, "max_wall_seconds": 1.0, "extra": 1},
+    ],
+)
+def test_best_model_rejects_malformed_final_limits(valid_best_model: BestModel, limits: object) -> None:
+    document = _document(valid_best_model)
+    document["final_limits"] = limits
+    with pytest.raises(TrafficlabError, match="final limits"):
         load_best_model(_encoded(document), source=Path("best_model.json"))
 
 
@@ -396,6 +470,12 @@ def test_best_model_constructor_and_renderer_reject_noncanonical_values(valid_be
         replace(valid_best_model, version=True)  # type: ignore[arg-type]
     with pytest.raises(TrafficlabError, match="gene bounds"):
         replace(valid_best_model, gene_bounds={})
+    with pytest.raises(TrafficlabError, match="reference identity"):
+        replace(valid_best_model, reference_identity=cast(Any, REFERENCE_IDENTITY.as_dict()))
+    with pytest.raises(TrafficlabError, match="final seed"):
+        replace(valid_best_model, final_seed=True)  # type: ignore[arg-type]
+    with pytest.raises(TrafficlabError, match="final limits"):
+        replace(valid_best_model, final_limits=cast(Any, FINAL_LIMITS.model_dump()))
     with pytest.raises(TypeError, match="BestModel"):
         render_best_model(object())  # type: ignore[arg-type]
 
@@ -415,8 +495,10 @@ def test_make_best_model_rejects_a_nonregistry_family_instance() -> None:
             PoissonFamily(),
             REFERENCE,
             (1.0,),
-            reference_sha256="a" * 64,
-            capture_sha256="b" * 64,
+            reference_identity=REFERENCE_IDENTITY,
+            capture_identity=CAPTURE_IDENTITY,
+            final_seed=FINAL_SEED,
+            final_limits=FINAL_LIMITS,
             W=WINDOW,
             bounds=POISSON_BOUNDS,
         )

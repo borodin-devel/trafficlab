@@ -291,7 +291,7 @@ def test_bad_checkpoint_is_preserved_and_rejected(tmp_path: Path, kind: str) -> 
     else:
         original = checkpoint.read_bytes()
         document = cast(dict[str, object], json.loads(original))
-        document["experiment_sha256"] = "0" * 64
+        cast(dict[str, object], document["experiment_identity"])["sha256"] = "0" * 64
         bad = _canonical_json(document)
     checkpoint.write_bytes(bad)
     best_before = (run_directory / "best_model.json").read_bytes()
@@ -350,7 +350,7 @@ def test_bad_or_different_best_model_is_preserved_and_rejected(tmp_path: Path, k
         bad = b"{}"
     else:
         document = cast(dict[str, Any], json.loads(path.read_bytes()))
-        document["reference_sha256"] = "0" * 64
+        cast(dict[str, Any], document["reference_identity"])["sha256"] = "0" * 64
         bad = _canonical_json(document)
     path.write_bytes(bad)
 

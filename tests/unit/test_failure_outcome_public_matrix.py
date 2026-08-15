@@ -8,7 +8,6 @@ synthetic fixture harness.
 """
 
 import copy
-import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,6 +28,7 @@ import trafficlab.study_evidence as study_evidence
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_policy import CaptureFailureOrigin, CaptureOutcome, FailureDetail, FailureKind
 from trafficlab.comparison import ComparisonResult
+from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FloatBounds
 from trafficlab.config_io import render_effective_config
 from trafficlab.docker_cli import ServiceState
@@ -401,6 +401,10 @@ def _no_op(*_args: object, **_kwargs: object) -> None:
     return None
 
 
+def _render_snapshot(_config: object) -> bytes:
+    return b"canonical snapshot"
+
+
 def _capture_source_kind(outcome: FailureOutcome, *, primary: bool) -> tuple[FailureKind, CaptureFailureOrigin]:
     """Describe a lower-boundary lifecycle observation, never an output payload."""
     if outcome.kind == "target_failed":
@@ -540,6 +544,8 @@ def _run_capture_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPa
         return run_directory
 
     monkeypatch.setattr(capture, "_validate_prepared_capture", validated_prepared)
+    monkeypatch.setattr(capture, "render_effective_config", _render_snapshot)
+    monkeypatch.setattr(capture, "_require_unchanged_capture_snapshot", _no_op)
     monkeypatch.setattr(capture, "load_or_recover_capture_pair", _no_op)
     monkeypatch.setattr(capture, "write_production_compose", _no_op)
     monkeypatch.setattr(capture, "_wait_readiness", ready)
@@ -726,7 +732,8 @@ def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
     prepared_config = cast(Any, prepared.config)
     prepared_config.run.final_seed = 1
     prepared_config.models = SimpleNamespace(enabled=("poisson_empirical",), poisson_empirical=SimpleNamespace())
-    prepared_config.generation = SimpleNamespace(final=SimpleNamespace())
+    final_limits = SimpleNamespace()
+    prepared_config.generation = SimpleNamespace(final=final_limits)
     records: list[dict[str, object]] = []
 
     def append(_directory: Path, record: dict[str, object]) -> None:
@@ -757,7 +764,9 @@ def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
         best = SimpleNamespace(
             family="poisson_empirical",
             gene_bounds={},
-            capture_sha256=hashlib.sha256(captured).hexdigest(),
+            capture_identity=identify_bytes(captured),
+            final_seed=1,
+            final_limits=final_limits,
             observation_window_seconds=1.0,
             fitted=object(),
         )
@@ -806,12 +815,15 @@ def test_generation_maps_missing_capture_after_a_validated_model(
     config = cast(Any, prepared.config)
     config.run.final_seed = 1
     config.models = SimpleNamespace(enabled=("poisson_empirical",), poisson_empirical=SimpleNamespace())
-    config.generation = SimpleNamespace(final=SimpleNamespace())
+    final_limits = SimpleNamespace()
+    config.generation = SimpleNamespace(final=final_limits)
     records: list[dict[str, object]] = []
     best = SimpleNamespace(
         family="poisson_empirical",
         gene_bounds={},
-        capture_sha256="",
+        capture_identity=ContentIdentity(size=0, sha256="0" * 64),
+        final_seed=1,
+        final_limits=final_limits,
         observation_window_seconds=1.0,
         fitted=object(),
     )
@@ -872,13 +884,16 @@ def test_generation_preserves_published_bytes_when_post_publication_parse_fails(
     config = cast(Any, prepared.config)
     config.run.final_seed = 1
     config.models = SimpleNamespace(enabled=("poisson_empirical",), poisson_empirical=SimpleNamespace())
-    config.generation = SimpleNamespace(final=SimpleNamespace())
+    final_limits = SimpleNamespace()
+    config.generation = SimpleNamespace(final=final_limits)
     records: list[dict[str, object]] = []
     captured = b"capture metadata"
     best = SimpleNamespace(
         family="poisson_empirical",
         gene_bounds={},
-        capture_sha256=hashlib.sha256(captured).hexdigest(),
+        capture_identity=identify_bytes(captured),
+        final_seed=1,
+        final_limits=final_limits,
         observation_window_seconds=1.0,
         fitted=object(),
     )
@@ -940,6 +955,17 @@ def test_generation_preserves_published_bytes_when_post_publication_parse_fails(
     monkeypatch.setattr(generation, "encode_pcapng", encode)
     monkeypatch.setattr(generation, "publish_generated_pcapng", publish)
     monkeypatch.setattr(generation, "parse_pcapng_bytes", parse_failure)
+    monkeypatch.setattr(generation, "render_effective_config", _render_snapshot)
+
+    def identify_generation_input(path: Path) -> ContentIdentity:
+        contents = {
+            "experiment.toml": b"canonical snapshot",
+            "best_model.json": b"best model",
+            "capture.json": captured,
+        }
+        return identify_bytes(contents[path.name])
+
+    monkeypatch.setattr(generation, "identify_file", identify_generation_input)
 
     with pytest.raises(TrafficlabError) as caught:
         generation.generate_experiment(prepared.source)
@@ -988,8 +1014,8 @@ def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
     def aligned(_events: object, _window: object) -> tuple[()]:
         return ()
 
-    def settings_hash(_settings: object) -> str:
-        return "a" * 64
+    def settings_identity(_settings: object) -> ContentIdentity:
+        return identify_bytes(b"canonical similarity settings")
 
     monkeypatch.setattr(comparison, "load_experiment", load_config)
     monkeypatch.setattr(comparison, "_read_comparison_input", read_input)
@@ -997,7 +1023,13 @@ def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
     monkeypatch.setattr(comparison, "parse_pcapng_bytes", parse_events)
     monkeypatch.setattr(comparison, "normalize_reference", normalized)
     monkeypatch.setattr(comparison, "align_generated", aligned)
-    monkeypatch.setattr(comparison, "similarity_settings_sha256", settings_hash)
+    monkeypatch.setattr(comparison, "similarity_settings_identity", settings_identity)
+    monkeypatch.setattr(comparison, "render_effective_config", _render_snapshot)
+
+    def identify_comparison_input(path: Path) -> ContentIdentity:
+        return identify_bytes(b"canonical snapshot" if path.name == "experiment.toml" else b"input")
+
+    monkeypatch.setattr(comparison, "identify_file", identify_comparison_input)
     monkeypatch.setattr(comparison, "append_run_log", append)
     if case.primary.kind == "metric_infeasible":
 

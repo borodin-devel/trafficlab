@@ -11,6 +11,7 @@ import trafficlab.artifacts as artifact_module
 import trafficlab.capture as capture_module
 from trafficlab.capture import CaptureResult, capture_experiment, capture_prepared_experiment
 from trafficlab.capture_policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
+from trafficlab.compatibility import identify_file
 from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
 from trafficlab.pcapng import encode_pcapng
@@ -221,6 +222,30 @@ def _prepared(
 
     monkeypatch.setattr(capture_module, "run_preflight", already_prepared)
     return experiment_path, prepared
+
+
+def _seed_capture_lineage(prepared: PreparedExperiment) -> None:
+    environment = prepared.report.environment_identity
+    assert environment is not None
+    artifact_module.append_run_log(
+        prepared.run_directory,
+        {
+            "capture_environment_identity": {
+                "host_architecture": environment.host_architecture,
+                "target_reference": environment.target_reference,
+                "target_content_id": environment.target_content_id,
+                "capture_reference": environment.capture_reference,
+                "capture_content_id": environment.capture_content_id,
+                "capture_tool_version": environment.capture_tool_version,
+            },
+            "capture_identity": identify_file(prepared.run_directory / "capture.json").as_dict(),
+            "event": "capture_published",
+            "experiment_identity": identify_file(prepared.run_directory / "experiment.toml").as_dict(),
+            "reference_identity": identify_file(prepared.run_directory / "reference.pcapng").as_dict(),
+            "reused": False,
+            "stage": "capture",
+        },
+    )
 
 
 def test_readiness_timeout_reports_capture_logs_and_never_starts_target(
@@ -1115,6 +1140,7 @@ def test_pre_workload_reuse_preserves_the_preexisting_reference_pair_without_cle
     pcapng_bytes = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
     (prepared.run_directory / "capture.json").write_bytes(metadata_bytes)
     (prepared.run_directory / "reference.pcapng").write_bytes(pcapng_bytes)
+    _seed_capture_lineage(prepared)
     docker = _Docker("cleanup_failure")
 
     result = capture_experiment(experiment_path, docker=docker, clock=_Clock(docker), interruption=lambda: False)
@@ -1123,6 +1149,158 @@ def test_pre_workload_reuse_preserves_the_preexisting_reference_pair_without_cle
     assert docker.calls == []
     assert (prepared.run_directory / "capture.json").read_bytes() == metadata_bytes
     assert (prepared.run_directory / "reference.pcapng").read_bytes() == pcapng_bytes
+
+
+def test_capture_reuse_rejects_a_valid_pair_bound_to_another_environment(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parseable pair from another image/tool identity is stale, not reusable."""
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    first_docker = _Docker("normal")
+    first = capture_prepared_experiment(
+        experiment_path,
+        prepared,
+        docker=first_docker,
+        clock=_Clock(first_docker),
+        interruption=lambda: False,
+    )
+    assert first.reused is False
+    before = {name: (prepared.run_directory / name).read_bytes() for name in ("capture.json", "reference.pcapng")}
+    original_identity = prepared.report.environment_identity
+    assert original_identity is not None
+    incompatible = replace(
+        prepared,
+        report=replace(
+            prepared.report,
+            environment_identity=replace(original_identity, capture_tool_version="4.0.18"),
+        ),
+    )
+    second_docker = _Docker("normal")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture_prepared_experiment(
+            experiment_path,
+            incompatible,
+            docker=second_docker,
+            clock=_Clock(second_docker),
+            interruption=lambda: False,
+        )
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.corrective_action,
+        outcome.authority,
+        outcome.status,
+    ) == (
+        "artifact_stale",
+        "capture",
+        "capture pair has another identity",
+        "capture pair",
+        "preserved",
+        "select its matching run or a new run directory",
+        "primary",
+        None,
+    )
+    assert second_docker.calls == []
+    assert {
+        name: (prepared.run_directory / name).read_bytes() for name in ("capture.json", "reference.pcapng")
+    } == before
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "missing",
+        "malformed",
+        "content-mismatch",
+        "environment-not-object",
+        "environment-fields",
+        "environment-unavailable",
+        "log-record-not-object",
+    ],
+)
+def test_capture_reuse_rejects_missing_or_invalid_lineage_before_boundaries(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    corruption: str,
+) -> None:
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    first_docker = _Docker("normal")
+    capture_prepared_experiment(
+        experiment_path,
+        prepared,
+        docker=first_docker,
+        clock=_Clock(first_docker),
+        interruption=lambda: False,
+    )
+    pair_before = {name: (prepared.run_directory / name).read_bytes() for name in ("capture.json", "reference.pcapng")}
+    log_path = prepared.run_directory / "run.log"
+    records = [json.loads(line) for line in log_path.read_text().splitlines()]
+    publication = next(record for record in records if record["event"] == "capture_published")
+    candidate = prepared
+    if corruption == "missing":
+        records.remove(publication)
+    elif corruption == "malformed":
+        publication["capture_identity"] = {"size": "wrong", "sha256": "0" * 64}
+    elif corruption == "content-mismatch":
+        publication["reference_identity"] = {"size": 1, "sha256": "0" * 64}
+    elif corruption == "environment-not-object":
+        publication["capture_environment_identity"] = []
+    elif corruption == "environment-fields":
+        environment = cast(dict[str, object], publication["capture_environment_identity"])
+        del environment["capture_tool_version"]
+    elif corruption == "environment-unavailable":
+        candidate = replace(prepared, report=replace(prepared.report, environment_identity=None))
+    else:
+        records.append([])
+    log_path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+
+    class NoDocker:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"invalid lineage touched Docker operation {name}")
+
+    def reject_clock() -> float:
+        raise AssertionError("invalid lineage touched the clock")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture_prepared_experiment(
+            experiment_path,
+            candidate,
+            docker=cast(Any, NoDocker()),
+            clock=reject_clock,
+        )
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.corrective_action,
+        outcome.authority,
+        outcome.status,
+    ) == (
+        "artifact_stale",
+        "capture",
+        "capture pair has another identity",
+        "capture pair",
+        "preserved",
+        "select its matching run or a new run directory",
+        "primary",
+        None,
+    )
+    assert {
+        name: (prepared.run_directory / name).read_bytes() for name in ("capture.json", "reference.pcapng")
+    } == pair_before
 
 
 def test_cleanup_rollback_preserves_a_concurrent_replacement_pair(
@@ -1239,6 +1417,7 @@ def test_prepared_capture_reuses_a_stable_pair_before_any_workload_setup(
     (prepared.run_directory / "reference.pcapng").write_bytes(
         encode_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 64),), metadata)
     )
+    _seed_capture_lineage(prepared)
 
     class NoDocker:
         def __getattr__(self, name: str) -> object:
@@ -1311,6 +1490,7 @@ def test_prepared_capture_removes_a_stable_stale_diagnostic_pair_before_reuse_su
     (prepared.run_directory / "reference.pcapng").write_bytes(
         encode_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 64),), metadata)
     )
+    _seed_capture_lineage(prepared)
     (prepared.run_directory / "diagnostic-capture.json").write_bytes(b"stale metadata")
     (prepared.run_directory / "diagnostic-reference.pcapng").write_bytes(b"stale pcapng")
 
@@ -1335,6 +1515,7 @@ def test_prepared_capture_preserves_a_diagnostic_replacement_and_rejects_reuse_s
     (prepared.run_directory / "reference.pcapng").write_bytes(
         encode_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 64),), metadata)
     )
+    _seed_capture_lineage(prepared)
     diagnostic_metadata = prepared.run_directory / "diagnostic-capture.json"
     diagnostic_pcapng = prepared.run_directory / "diagnostic-reference.pcapng"
     diagnostic_metadata.write_bytes(b"stale metadata")
@@ -1402,6 +1583,35 @@ def test_prepared_capture_rejects_mismatched_authoritative_inputs_before_docker(
 
     with pytest.raises((TypeError, TrafficlabError), match="prepared"):
         capture_prepared_experiment(experiment_path, cast(Any, candidate), docker=cast(Any, object()))
+
+
+def test_fresh_capture_rejects_snapshot_mutation_before_pair_publication(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Capture cannot publish a pair under snapshot bytes changed during the workload."""
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    docker = _Docker("normal")
+    snapshot_path = prepared.run_directory / "experiment.toml"
+    real_flush = capture_module._flush_capture  # pyright: ignore[reportPrivateUsage]
+
+    def flush_and_mutate(*args: Any, **kwargs: Any) -> object:
+        result = real_flush(*args, **kwargs)
+        snapshot_path.write_bytes(snapshot_path.read_bytes() + b"\n")
+        return result
+
+    monkeypatch.setattr(capture_module, "_flush_capture", flush_and_mutate)
+
+    with pytest.raises(TrafficlabError, match="experiment.toml changed during capture"):
+        capture_prepared_experiment(
+            experiment_path,
+            prepared,
+            docker=docker,
+            clock=_Clock(docker),
+            interruption=lambda: False,
+        )
+
+    assert not (prepared.run_directory / "capture.json").exists()
+    assert not (prepared.run_directory / "reference.pcapng").exists()
 
 
 def test_readiness_and_workload_state_errors_are_classified_at_the_observation_boundary(

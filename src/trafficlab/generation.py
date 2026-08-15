@@ -2,24 +2,25 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
 from trafficlab.artifacts import append_run_log, publish_generated_pcapng, quantize_generated_events
+from trafficlab.compatibility import identify_bytes, identify_file, require_compatible
+from trafficlab.config_io import render_effective_config
 from trafficlab.errors import (
     TrafficlabError,
     append_failure_outcome,
     attach_failure_outcome,
     failure_outcome_from_error,
 )
-from trafficlab.models.registry import get_family, load_best_model
+from trafficlab.models.registry import BestModel, get_family, load_best_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
-from trafficlab.trace import TraceEvent, parse_capture_metadata
+from trafficlab.trace import CaptureMetadata, TraceEvent, parse_capture_metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,25 @@ class GenerationStageResult:
     seed: int
     observation_window_seconds: float
     reused: bool
+
+
+def reproduce_generated_pcapng(
+    best: BestModel,
+    metadata: CaptureMetadata,
+    *,
+    clock: Callable[[], float] = monotonic,
+) -> tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], bytes]:
+    """Reproduce the exact final trace and PCAPNG bytes bound into a best model."""
+    family = get_family(best.family)
+    events = family.generate(
+        best.fitted,
+        best.final_seed,
+        best.observation_window_seconds,
+        best.final_limits,
+        clock=clock,
+    ).require_complete()
+    rendered_events = quantize_generated_events(events, best.observation_window_seconds)
+    return events, rendered_events, encode_pcapng(rendered_events, metadata)
 
 
 def _read_required_bytes(path: Path, *, kind: str, corrective_action: str) -> bytes:
@@ -108,6 +128,7 @@ def generate_experiment(
     prepared = open_or_prepare_experiment(path)
     run_directory = prepared.run_directory
     config = prepared.config
+    snapshot_path = run_directory / "experiment.toml"
     model_path = run_directory / "best_model.json"
     capture_path = run_directory / "capture.json"
     try:
@@ -154,6 +175,28 @@ def generate_experiment(
                 affected_evidence="best_model.json",
                 evidence_state="preserved",
             )
+        try:
+            require_compatible(
+                {
+                    "final seed": best.final_seed,
+                    "final generation limits": best.final_limits,
+                },
+                {
+                    "final seed": config.run.final_seed,
+                    "final generation limits": config.generation.final,
+                },
+            )
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                TrafficlabError(
+                    f"stored best-model generation policy does not match the authoritative configuration: {error}",
+                    corrective_action="use the exact final seed and limits retained by the fitted model",
+                ),
+                kind="scientific_semantics_incompatible",
+                stage="generate",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
         family = get_family(best.family)
         configured_bounds = getattr(config.models, best.family)
         if configured_bounds is None:
@@ -204,11 +247,11 @@ def generate_experiment(
                 affected_evidence="capture.json",
                 evidence_state="preserved",
             ) from error
-        capture_sha256 = hashlib.sha256(capture_content).hexdigest()
-        if capture_sha256 != best.capture_sha256:
+        capture_identity = identify_bytes(capture_content)
+        if capture_identity != best.capture_identity:
             raise attach_failure_outcome(
                 TrafficlabError(
-                    "capture.json SHA-256 does not match the stored best model",
+                    "capture.json identity does not match the stored best model",
                     corrective_action="restore the exact capture.json used to fit best_model.json",
                 ),
                 kind="artifact_foreign",
@@ -218,15 +261,7 @@ def generate_experiment(
             )
 
         try:
-            events = family.generate(
-                best.fitted,
-                config.run.final_seed,
-                best.observation_window_seconds,
-                config.generation.final,
-                clock=clock,
-            ).require_complete()
-            rendered_events = quantize_generated_events(events, best.observation_window_seconds)
-            content = encode_pcapng(rendered_events, metadata)
+            events, rendered_events, content = reproduce_generated_pcapng(best, metadata, clock=clock)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -235,6 +270,24 @@ def generate_experiment(
                 affected_evidence="generated.pcapng",
                 evidence_state="not_published",
             ) from error
+        for evidence, source_path, expected_identity in (
+            ("experiment.toml", snapshot_path, identify_bytes(render_effective_config(config))),
+            ("best_model.json", model_path, identify_bytes(model_content)),
+            ("capture.json", capture_path, capture_identity),
+        ):
+            try:
+                require_compatible({evidence: expected_identity}, {evidence: identify_file(source_path)})
+            except TrafficlabError as error:
+                raise attach_failure_outcome(
+                    TrafficlabError(
+                        f"{evidence} changed during generate",
+                        corrective_action="restore the exact generation inputs and rerun generate",
+                    ),
+                    kind="artifact_changed",
+                    stage="generate",
+                    affected_evidence=evidence,
+                    evidence_state="preserved",
+                ) from error
         try:
             publication = publish_generated_pcapng(
                 run_directory,
@@ -287,7 +340,7 @@ def generate_experiment(
             run_directory=run_directory,
             generated_path=publication.path,
             events=parsed_events,
-            seed=config.run.final_seed,
+            seed=best.final_seed,
             observation_window_seconds=best.observation_window_seconds,
             reused=not publication.created_by_call,
         )

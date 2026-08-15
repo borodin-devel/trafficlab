@@ -5,7 +5,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 from types import MappingProxyType
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -17,6 +17,7 @@ from trafficlab.comparison import (
     parse_comparison_result,
     render_comparison_result,
 )
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig, SimilarityConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
@@ -97,6 +98,166 @@ def test_compare_public_boundary_classifies_an_unreadable_capture_input(
     )
 
 
+def test_compare_public_boundary_rejects_a_foreign_generated_capture_before_publication(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A parseable generated capture must still prove exact derivation from the current fitted model."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory = tmp_path / "run"
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    snapshot = render_effective_config(config)
+    experiment_path.write_bytes(snapshot)
+    run_directory.mkdir()
+    (run_directory / "experiment.toml").write_bytes(snapshot)
+    example_data = Path(__file__).parents[2] / "examples" / "data"
+    for source, destination in (
+        (example_data / "capture.json", run_directory / "capture.json"),
+        (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
+        (example_data / "models" / "best_model.json", run_directory / "best_model.json"),
+    ):
+        destination.write_bytes(source.read_bytes())
+    foreign = (run_directory / "reference.pcapng").read_bytes()
+    (run_directory / "generated.pcapng").write_bytes(foreign)
+
+    with pytest.raises(TrafficlabError) as caught:
+        comparison.compare_experiment(experiment_path)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "affected_evidence": "generated.pcapng",
+        "authority": "primary",
+        "corrective_action": "regenerate from the current fitted model",
+        "detail": "generated.pcapng is foreign",
+        "evidence_state": "preserved",
+        "kind": "artifact_foreign",
+        "stage": "compare",
+    }
+    assert (run_directory / "generated.pcapng").read_bytes() == foreign
+    assert not (run_directory / "similarity.json").exists()
+    assert list(run_directory.glob(".similarity.json.*.tmp")) == []
+
+
+def test_compare_rejects_reference_mutation_before_similarity_publication(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Comparison cannot publish lineage after one authoritative input changes."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory = tmp_path / "run"
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    snapshot = render_effective_config(config)
+    experiment_path.write_bytes(snapshot)
+    run_directory.mkdir()
+    (run_directory / "experiment.toml").write_bytes(snapshot)
+    example_data = Path(__file__).parents[2] / "examples" / "data"
+    for source, destination in (
+        (example_data / "capture.json", run_directory / "capture.json"),
+        (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
+        (example_data / "models" / "best_model.json", run_directory / "best_model.json"),
+        (example_data / "models" / "generated.pcapng", run_directory / "generated.pcapng"),
+    ):
+        destination.write_bytes(source.read_bytes())
+    reference_path = run_directory / "reference.pcapng"
+    real_compare = comparison.compare_traces
+
+    def compare_and_mutate(
+        reference: tuple[TraceEvent, ...],
+        generated: tuple[TraceEvent, ...],
+        W: float,
+        settings: SimilarityConfig,
+    ) -> ComparisonResult:
+        result = real_compare(reference, generated, W, settings)
+        reference_path.write_bytes(reference_path.read_bytes() + b"changed after comparison")
+        return result
+
+    monkeypatch.setattr(comparison, "compare_traces", compare_and_mutate)
+
+    with pytest.raises(TrafficlabError, match="reference.pcapng changed during compare") as caught:
+        comparison.compare_experiment(experiment_path)
+
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.kind == "artifact_changed"
+    assert not (run_directory / "similarity.json").exists()
+    assert list(run_directory.glob(".similarity.json.*.tmp")) == []
+
+
+def test_compare_rejects_incompatible_best_model_before_similarity_publication(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """Deterministic provenance failure remains owned by the best-model adapter."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory = tmp_path / "run"
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    snapshot = render_effective_config(config)
+    experiment_path.write_bytes(snapshot)
+    run_directory.mkdir()
+    (run_directory / "experiment.toml").write_bytes(snapshot)
+    example_data = Path(__file__).parents[2] / "examples" / "data"
+    for source, destination in (
+        (example_data / "capture.json", run_directory / "capture.json"),
+        (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
+        (example_data / "models" / "generated.pcapng", run_directory / "generated.pcapng"),
+    ):
+        destination.write_bytes(source.read_bytes())
+    (run_directory / "best_model.json").write_bytes(b"{}\n")
+
+    with pytest.raises(TrafficlabError) as caught:
+        comparison.compare_experiment(experiment_path)
+
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.kind == "scientific_semantics_incompatible"
+    assert caught.value.failure_outcome.affected_evidence == "best_model.json"
+    assert not (run_directory / "similarity.json").exists()
+
+
+@pytest.mark.parametrize("input_name", ["reference.pcapng", "generated.pcapng"])
+def test_compare_translates_each_pcap_parse_failure_before_publication(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    input_name: str,
+) -> None:
+    """Each PCAP input retains its own corruption classification at the public boundary."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory = tmp_path / "run"
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    snapshot = render_effective_config(config)
+    experiment_path.write_bytes(snapshot)
+    run_directory.mkdir()
+    (run_directory / "experiment.toml").write_bytes(snapshot)
+    example_data = Path(__file__).parents[2] / "examples" / "data"
+    for source, destination in (
+        (example_data / "capture.json", run_directory / "capture.json"),
+        (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
+        (example_data / "generated.pcapng", run_directory / "generated.pcapng"),
+    ):
+        destination.write_bytes(source.read_bytes())
+    real_parse = comparison.parse_pcapng_bytes
+
+    def fail_selected(content: bytes, metadata: object, *, source: Path) -> tuple[TraceEvent, ...]:
+        if source.name == input_name:
+            raise TrafficlabError("injected parse failure", corrective_action="restore valid PCAPNG bytes")
+        return real_parse(content, cast(Any, metadata), source=source)
+
+    monkeypatch.setattr(comparison, "parse_pcapng_bytes", fail_selected)
+
+    with pytest.raises(TrafficlabError) as caught:
+        comparison.compare_experiment(experiment_path)
+
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.kind == "artifact_corrupt"
+    assert caught.value.failure_outcome.affected_evidence == input_name
+    assert not (run_directory / "similarity.json").exists()
+
+
 def _add_top_level_field(document: dict[str, object]) -> None:
     document["unexpected"] = 1
 
@@ -106,7 +267,8 @@ def _remove_iat_method(document: dict[str, object]) -> None:
 
 
 def _shorten_capture_hash(document: dict[str, object]) -> None:
-    cast(dict[str, object], document["input_sha256"])["capture_json"] = "short"
+    inputs = cast(dict[str, object], document["input_identities"])
+    cast(dict[str, object], inputs["capture_json"])["sha256"] = "short"
 
 
 def _add_method_field(document: dict[str, object]) -> None:
@@ -134,11 +296,21 @@ def _change_aggregate(document: dict[str, object]) -> None:
 
 
 def _remove_input_identity(document: dict[str, object]) -> None:
-    cast(dict[str, object], document["input_sha256"]).pop("capture_json")
+    cast(dict[str, object], document["input_identities"]).pop("capture_json")
 
 
 def _make_input_identity_non_string(document: dict[str, object]) -> None:
-    cast(dict[str, object], document["input_sha256"])["capture_json"] = 1
+    cast(dict[str, object], document["input_identities"])["capture_json"] = 1
+
+
+def _make_input_identity_size_boolean(document: dict[str, object]) -> None:
+    inputs = cast(dict[str, object], document["input_identities"])
+    cast(dict[str, object], inputs["capture_json"])["size"] = True
+
+
+def _add_input_identity_field(document: dict[str, object]) -> None:
+    inputs = cast(dict[str, object], document["input_identities"])
+    cast(dict[str, object], inputs["capture_json"])["path"] = "capture.json"
 
 
 def _valid_result_document() -> dict[str, object]:
@@ -148,6 +320,21 @@ def _valid_result_document() -> dict[str, object]:
 
 def _valid_result() -> ComparisonResult:
     return ComparisonResult.from_dict(_valid_result_document())
+
+
+def test_similarity_artifact_retains_exact_nested_input_content_identities() -> None:
+    """Digest-only lineage cannot prove the authoritative bytes used by comparison."""
+    document = _valid_result_document()
+    identities = cast(dict[str, object], document["input_identities"])
+
+    assert tuple(identities) == (
+        "capture_json",
+        "generated_pcapng",
+        "reference_pcapng",
+        "similarity_settings",
+    )
+    assert all(set(cast(dict[str, object], value)) == {"size", "sha256"} for value in identities.values())
+    assert "input_sha256" not in document
 
 
 def _method_document(document: dict[str, object], method_name: str) -> tuple[dict[str, object], dict[str, object]]:
@@ -355,15 +542,15 @@ def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
     if 1.0 in method_weights.values():
         selected_method = next(name for name, weight in method_weights.items() if weight == 1.0)
         assert result.aggregate_score == scores[selected_method]
-    artifact = result.with_input_sha256(
+    artifact = result.with_input_identities(
         {
-            "capture_json": "a" * 64,
-            "generated_pcapng": "b" * 64,
-            "reference_pcapng": "c" * 64,
-            "similarity_settings": "d" * 64,
+            "capture_json": ContentIdentity(size=1, sha256="a" * 64),
+            "generated_pcapng": ContentIdentity(size=2, sha256="b" * 64),
+            "reference_pcapng": ContentIdentity(size=3, sha256="c" * 64),
+            "similarity_settings": ContentIdentity(size=4, sha256="d" * 64),
         }
     ).as_dict()
-    assert tuple(artifact) == ("aggregate_score", "input_sha256", "methods", "observation_window_seconds")
+    assert tuple(artifact) == ("aggregate_score", "input_identities", "methods", "observation_window_seconds")
     methods_document = cast(dict[str, dict[str, object]], artifact["methods"])
     assert all(tuple(method) == ("diagnostics", "score", "weight") for method in methods_document.values())
 
@@ -524,15 +711,15 @@ def test_comparison_result_defensively_rejects_corrupted_method_windows(
     "identities",
     [
         {
-            "generated_pcapng": "b" * 64,
-            "reference_pcapng": "c" * 64,
-            "similarity_settings": "d" * 64,
+            "generated_pcapng": ContentIdentity(size=2, sha256="b" * 64),
+            "reference_pcapng": ContentIdentity(size=3, sha256="c" * 64),
+            "similarity_settings": ContentIdentity(size=4, sha256="d" * 64),
         },
         {
             "capture_json": 1,
-            "generated_pcapng": "b" * 64,
-            "reference_pcapng": "c" * 64,
-            "similarity_settings": "d" * 64,
+            "generated_pcapng": ContentIdentity(size=2, sha256="b" * 64),
+            "reference_pcapng": ContentIdentity(size=3, sha256="c" * 64),
+            "similarity_settings": ContentIdentity(size=4, sha256="d" * 64),
         },
     ],
     ids=["missing-input", "non-string-input"],
@@ -543,7 +730,7 @@ def test_comparison_result_defensively_rejects_invalid_identity_mappings(
     """Direct typed-result construction must enforce the complete lowercase SHA-256 identity map."""
     result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
 
-    with pytest.raises(ValueError, match="input_sha256"):
+    with pytest.raises(ValueError, match="input_identities"):
         ComparisonResult(result.aggregate_score, 3.0, result.methods, identities)  # type: ignore[arg-type]
 
 
@@ -685,8 +872,18 @@ def test_result_parser_rejects_schema_drift(mutation: Callable[[dict[str, object
         _change_aggregate,
         _remove_input_identity,
         _make_input_identity_non_string,
+        _make_input_identity_size_boolean,
+        _add_input_identity_field,
     ],
-    ids=["different-window", "unnormalized-weights", "wrong-aggregate", "missing-identity", "non-string-identity"],
+    ids=[
+        "different-window",
+        "unnormalized-weights",
+        "wrong-aggregate",
+        "missing-identity",
+        "non-object-identity",
+        "boolean-identity-size",
+        "extra-identity-field",
+    ],
 )
 def test_result_parser_rejects_semantic_drift(mutation: Callable[[dict[str, object]], None]) -> None:
     """A structurally valid document must still preserve shared-W, weighting, and identity invariants."""
@@ -747,7 +944,7 @@ def test_result_serializer_requires_file_identities(valid_config_data: dict[str,
     """Publishing an aggregation-only result would omit the artifact inputs needed for reproduction."""
     result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
 
-    with pytest.raises(ValueError, match="input SHA-256 identities"):
+    with pytest.raises(ValueError, match="input content identities"):
         render_comparison_result(result)
 
 
@@ -796,10 +993,10 @@ def test_publication_rejects_renderer_bytes_for_a_different_valid_result_before_
     """A replaced renderer must not redefine which scientific result qualifies for exact reuse."""
     destination = tmp_path / "similarity.json"
     expected = _valid_result()
-    assert expected.input_sha256 is not None
-    different_inputs = dict(expected.input_sha256)
-    different_inputs["capture_json"] = "d" * 64
-    rendered_result = expected.with_input_sha256(different_inputs)
+    assert expected.input_identities is not None
+    different_inputs = dict(expected.input_identities)
+    different_inputs["capture_json"] = ContentIdentity(size=1, sha256="d" * 64)
+    rendered_result = expected.with_input_identities(different_inputs)
     rendered_content = render_comparison_result(rendered_result)
     destination.write_bytes(rendered_content)
 
@@ -841,10 +1038,10 @@ def test_publication_preserves_a_valid_existing_result_with_different_lineage(tm
     """A valid result for different exact inputs must remain a collision rather than a successful retry."""
     destination = tmp_path / "similarity.json"
     expected = _valid_result()
-    assert expected.input_sha256 is not None
-    different_inputs = dict(expected.input_sha256)
-    different_inputs["capture_json"] = "f" * 64
-    different = expected.with_input_sha256(different_inputs)
+    assert expected.input_identities is not None
+    different_inputs = dict(expected.input_identities)
+    different_inputs["capture_json"] = ContentIdentity(size=1, sha256="f" * 64)
+    different = expected.with_input_identities(different_inputs)
     different_content = render_comparison_result(different)
     destination.write_bytes(different_content)
 
@@ -860,14 +1057,14 @@ def test_publication_preserves_a_valid_existing_result_with_a_different_score(
     """Matching lineage alone must not permit reuse of a scientifically different comparison."""
     destination = tmp_path / "similarity.json"
     expected = _valid_result()
-    assert expected.input_sha256 is not None
+    assert expected.input_identities is not None
     changed_trace = (
         TraceEvent(0.0, Direction.OUTBOUND, 60),
         TraceEvent(1.0, Direction.INBOUND, 180),
         TraceEvent(3.0, Direction.OUTBOUND, 100),
     )
-    different = compare_traces(_trace(), changed_trace, 3.0, _settings(valid_config_data)).with_input_sha256(
-        expected.input_sha256
+    different = compare_traces(_trace(), changed_trace, 3.0, _settings(valid_config_data)).with_input_identities(
+        expected.input_identities
     )
     different_content = render_comparison_result(different)
     assert different.aggregate_score != expected.aggregate_score
@@ -889,10 +1086,10 @@ def test_publication_rejects_a_canonical_entry_replaced_immediately_after_its_va
     destination = tmp_path / "similarity.json"
     expected = _valid_result()
     expected_content = render_comparison_result(expected)
-    assert expected.input_sha256 is not None
-    replacement_inputs = dict(expected.input_sha256)
-    replacement_inputs["capture_json"] = "a" * 64
-    replacement_content = render_comparison_result(expected.with_input_sha256(replacement_inputs))
+    assert expected.input_identities is not None
+    replacement_inputs = dict(expected.input_identities)
+    replacement_inputs["capture_json"] = ContentIdentity(size=1, sha256="a" * 64)
+    replacement_content = render_comparison_result(expected.with_input_identities(replacement_inputs))
     if not collision:
         destination.write_bytes(expected_content)
 
@@ -937,10 +1134,10 @@ def test_publication_link_race_reuses_only_an_identical_winner_and_preserves_bot
     if winner_kind == "identical":
         winner = expected_content
     else:
-        assert expected.input_sha256 is not None
-        different_inputs = dict(expected.input_sha256)
-        different_inputs["capture_json"] = "e" * 64
-        winner = render_comparison_result(expected.with_input_sha256(different_inputs))
+        assert expected.input_identities is not None
+        different_inputs = dict(expected.input_identities)
+        different_inputs["capture_json"] = ContentIdentity(size=1, sha256="e" * 64)
+        winner = render_comparison_result(expected.with_input_identities(different_inputs))
     real_link = os.link
 
     def collide(source: str | Path, destination_arg: str | Path) -> None:

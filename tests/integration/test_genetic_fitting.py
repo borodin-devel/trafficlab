@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import subprocess
@@ -18,7 +17,8 @@ import trafficlab.genetic.evaluation as genetic_evaluation
 import trafficlab.genetic.operators as genetic_operators
 import trafficlab.genetic.strategy as genetic_strategy
 from trafficlab.artifacts import create_run_directory
-from trafficlab.comparison import compare_experiment, load_comparison_result, sha256_bytes
+from trafficlab.comparison import compare_experiment, load_comparison_result
+from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FamilyName, GenerationLimits, MethodWeights
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
@@ -99,9 +99,9 @@ def _strategy_context(config: ExperimentConfig, run_directory: Path):  # type: i
         reference,
         window,
         run_directory,
-        experiment_sha256=sha256_bytes((run_directory / "experiment.toml").read_bytes()),
-        reference_sha256=sha256_bytes(_REFERENCE_BYTES),
-        capture_sha256=sha256_bytes(_CAPTURE_BYTES),
+        experiment_identity=identify_bytes((run_directory / "experiment.toml").read_bytes()),
+        reference_identity=identify_bytes(_REFERENCE_BYTES),
+        capture_identity=identify_bytes(_CAPTURE_BYTES),
     )
 
 
@@ -224,9 +224,9 @@ def test_checked_fit_artifacts_load_through_every_strict_production_codec() -> N
         reference,
         window,
         _FIT_DIRECTORY,
-        experiment_sha256=hashlib.sha256(_EXPERIMENT_BYTES).hexdigest(),
-        reference_sha256=hashlib.sha256(_REFERENCE_BYTES).hexdigest(),
-        capture_sha256=hashlib.sha256(_CAPTURE_BYTES).hexdigest(),
+        experiment_identity=identify_bytes(_EXPERIMENT_BYTES),
+        reference_identity=identify_bytes(_REFERENCE_BYTES),
+        capture_identity=identify_bytes(_CAPTURE_BYTES),
     )
     checkpoint = load_checkpoint(_FIT_DIRECTORY / "checkpoint.json", context.compatibility)
     best = load_best_model((_FIT_DIRECTORY / "best_model.json").read_bytes(), source=_FIT_DIRECTORY / "best_model.json")
@@ -443,9 +443,9 @@ def test_guard_truncated_real_candidate_is_invalid_with_direct_seed_reason(tmp_p
         reference,
         window,
         tmp_path,
-        experiment_sha256="a" * 64,
-        reference_sha256="b" * 64,
-        capture_sha256="c" * 64,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
 
     with pytest.raises(TrafficlabError, match="final validation"):
