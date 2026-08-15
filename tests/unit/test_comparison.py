@@ -247,6 +247,94 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
     ]
 
 
+@pytest.mark.parametrize(
+    "method_weights",
+    [
+        {"frame_size_ks": 1.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
+        {"frame_size_ks": 0.0, "iat_ks": 1.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
+        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 1.0, "multiscale_rate": 0.0},
+        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 1.0},
+        {"frame_size_ks": 0.1, "iat_ks": 0.2, "autocorrelation": 0.3, "multiscale_rate": 0.4},
+        {"frame_size_ks": 0.0, "iat_ks": 0.5, "autocorrelation": 0.5, "multiscale_rate": 0.0},
+    ],
+)
+def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
+    valid_config_data: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    method_weights: dict[str, float],
+) -> None:
+    """Aggregation weights must never choose which mandatory comparisons execute or appear in the artifact."""
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["similarity"])["method_weights"] = method_weights
+    scores = {"frame_size_ks": 0.2, "iat_ks": 0.4, "autocorrelation": 0.6, "multiscale_rate": 0.8}
+    calls: list[str] = []
+
+    def component(name: str) -> Callable[..., SimilarityResult]:
+        def evaluate(*_args: object) -> SimilarityResult:
+            calls.append(name)
+            return SimilarityResult(scores[name], {"component": name, "observation_window_seconds": 3.0})
+
+        return evaluate
+
+    monkeypatch.setattr(comparison, "frame_size_ks", component("frame_size_ks"))
+    monkeypatch.setattr(comparison, "iat_ks", component("iat_ks"))
+    monkeypatch.setattr(comparison, "autocorrelation_similarity", component("autocorrelation"))
+    monkeypatch.setattr(comparison, "multiscale_rate_similarity", component("multiscale_rate"))
+
+    result = compare_traces(_trace(), _trace(), 3.0, _settings(data))
+
+    assert calls == ["frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate"]
+    assert tuple(result.methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert {name: method.diagnostics["component"] for name, method in result.methods.items()} == {
+        name: name for name in result.methods
+    }
+    assert result.aggregate_score == pytest.approx(math.fsum(method_weights[name] * scores[name] for name in scores))
+    artifact = result.with_input_sha256(
+        {
+            "capture_json": "a" * 64,
+            "generated_pcapng": "b" * 64,
+            "reference_pcapng": "c" * 64,
+            "similarity_settings": "d" * 64,
+        }
+    ).as_dict()
+    assert tuple(artifact) == ("aggregate_score", "input_sha256", "methods", "observation_window_seconds")
+    methods_document = cast(dict[str, dict[str, object]], artifact["methods"])
+    assert all(tuple(method) == ("diagnostics", "score", "weight") for method in methods_document.values())
+
+
+@pytest.mark.parametrize(
+    ("zero_weight_method", "component_name"),
+    [
+        ("frame_size_ks", "frame_size_ks"),
+        ("iat_ks", "iat_ks"),
+        ("autocorrelation", "autocorrelation_similarity"),
+        ("multiscale_rate", "multiscale_rate_similarity"),
+    ],
+)
+def test_compare_traces_propagates_each_zero_weight_component_failure(
+    valid_config_data: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    zero_weight_method: str,
+    component_name: str,
+) -> None:
+    """A failed zero-weight component is evidence failure, not a score that can be ignored."""
+    data = copy.deepcopy(valid_config_data)
+    weights = {name: 0.0 for name in ("frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate")}
+    weights[next(name for name in weights if name != zero_weight_method)] = 1.0
+    cast(dict[str, object], data["similarity"])["method_weights"] = weights
+    failure = TrafficlabError(f"{zero_weight_method} failed", corrective_action="repair the component")
+
+    def fail(*_args: object) -> SimilarityResult:
+        raise failure
+
+    monkeypatch.setattr(comparison, component_name, fail)
+
+    with pytest.raises(TrafficlabError) as captured:
+        compare_traces(_trace(), _trace(), 3.0, _settings(data))
+
+    assert captured.value is failure
+
+
 def test_compare_traces_propagates_a_component_failure(
     valid_config_data: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:

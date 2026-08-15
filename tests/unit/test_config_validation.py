@@ -462,6 +462,41 @@ def test_each_method_weight_is_bounded_before_normalized_sum_validation(
 
 
 @pytest.mark.parametrize(
+    "path",
+    [
+        ("iat_diagnostic_quantile",),
+        ("acf_lags",),
+        ("acf_lag_weights",),
+        ("acf_iat_weight",),
+        ("acf_size_weight",),
+        ("multiscale_widths_seconds",),
+        ("multiscale_scale_weights",),
+        ("multiscale_packet_weight",),
+        ("multiscale_byte_weight",),
+        ("max_direction_bin_cells",),
+        ("method_weights",),
+        ("method_weights", "frame_size_ks"),
+        ("method_weights", "iat_ks"),
+        ("method_weights", "autocorrelation"),
+        ("method_weights", "multiscale_rate"),
+    ],
+)
+def test_every_similarity_setting_and_method_weight_is_mandatory(
+    valid_config_data: dict[str, object], path: tuple[str, ...]
+) -> None:
+    """An omitted setting or zero-weight method field must not silently select a reduced metric set."""
+    data = copy.deepcopy(valid_config_data)
+    similarity = cast(dict[str, object], data["similarity"])
+    if len(path) == 1:
+        similarity.pop(path[0])
+    else:
+        cast(dict[str, object], similarity[path[0]]).pop(path[1])
+
+    with pytest.raises(ValidationError):
+        ExperimentConfig.model_validate(data)
+
+
+@pytest.mark.parametrize(
     ("location", "validation_location"),
     [
         ("acf_lag_weights", ("similarity",)),

@@ -495,6 +495,70 @@ def test_all_generated_sample_preconditions_are_reported() -> None:
     assert captured.value.seed == 7
 
 
+@pytest.mark.parametrize(
+    "zero_weight_method",
+    [
+        "frame_size_ks",
+        "iat_ks",
+        "autocorrelation",
+        "multiscale_rate",
+    ],
+)
+def test_zero_weight_method_preconditions_remain_mandatory(
+    zero_weight_method: str,
+) -> None:
+    """A zero aggregation weight must not bypass any component's candidate precondition."""
+    weights = SIMILARITY.method_weights.model_dump()
+    selected_method = next(name for name in weights if name != zero_weight_method)
+    weights[zero_weight_method] = 0.0
+    weights[selected_method] = 1.0
+    for name in weights:
+        if name not in {zero_weight_method, selected_method}:
+            weights[name] = 0.0
+    similarity = SIMILARITY.model_copy(update={"method_weights": MethodWeights(**weights)})
+
+    with pytest.raises(CandidateEvaluationError) as captured:
+        validate_candidate_similarity_preconditions((), similarity, seed=7)
+
+    assert captured.value.kind == "similarity_precondition"
+    assert captured.value.seed == 7
+    assert zero_weight_method in captured.value.detail
+
+
+@pytest.mark.parametrize(
+    ("zero_weight_method", "generated"),
+    [
+        ("iat_ks", (TraceEvent(0.0, Direction.OUTBOUND, 60),)),
+        (
+            "autocorrelation",
+            (TraceEvent(0.0, Direction.OUTBOUND, 60), TraceEvent(1.0, Direction.INBOUND, 60)),
+        ),
+    ],
+)
+def test_zero_weight_method_preconditions_invalidate_evaluable_candidates(
+    family: RecordingFamily,
+    zero_weight_method: str,
+    generated: tuple[TraceEvent, ...],
+) -> None:
+    """A complete candidate still becomes invalid when a zero-weight method lacks its required samples."""
+    weights = SIMILARITY.method_weights.model_dump()
+    selected_method = next(name for name in weights if name != zero_weight_method)
+    weights[zero_weight_method] = 0.0
+    weights[selected_method] = 1.0
+    for name in weights:
+        if name not in {zero_weight_method, selected_method}:
+            weights[name] = 0.0
+    similarity = SIMILARITY.model_copy(update={"method_weights": MethodWeights(**weights)})
+    family.results[7] = GenerationResult(True, generated)
+
+    evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family, similarity=similarity)))
+
+    assert evaluated.invalid is not None
+    assert evaluated.invalid.kind == "similarity_precondition"
+    assert evaluated.invalid.seed == 7
+    assert zero_weight_method in evaluated.invalid.detail
+
+
 def test_pending_candidate_without_genes_is_invalid_without_family_call(family: RecordingFamily) -> None:
     """A missing chromosome is a deterministic repair failure, not a family invocation."""
     pending = replace(PENDING_POISSON, genes=None)

@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -218,6 +218,18 @@ def test_checked_in_fixture_round_trip_preserves_canonical_values_and_one_shared
         }
     )
     assert result.aggregate_score == pytest.approx(0.741827964755164)
+
+
+def test_checked_in_similarity_artifact_keeps_the_fixed_four_method_json_shape() -> None:
+    """A weight choice must not remove a required method or its retained diagnostics from published JSON."""
+    document = load_comparison_result(_EXAMPLE_DATA / "similarity.json").as_dict()
+
+    assert tuple(document) == ("aggregate_score", "input_sha256", "methods", "observation_window_seconds")
+    methods = cast(dict[str, dict[str, object]], document["methods"])
+    assert tuple(methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert all(
+        tuple(method) == ("diagnostics", "score", "weight") for method in methods.values()
+    )
 
 
 def test_reversing_only_directions_has_maximum_multiscale_discrepancy() -> None:
