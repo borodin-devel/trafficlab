@@ -600,7 +600,7 @@ def _publish_run_log(run_directory: Path, owned_files: list[Path]) -> None:
 
 
 def create_run_directory(config: ExperimentConfig) -> Path:
-    """Create a new run directory and atomically publish its effective configuration."""
+    """Create a run directory and atomically publish its realized configuration."""
     run_directory = config.run.directory
     try:
         run_directory.mkdir(parents=True, exist_ok=False)

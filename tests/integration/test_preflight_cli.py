@@ -93,9 +93,13 @@ def test_prepare_experiment_publishes_the_validated_effective_configuration(
     _write_config(experiment_path, valid_config_data)
 
     prepared = preflight_module.prepare_experiment(experiment_path)
+    from trafficlab.config_io import load_configuration_pair
+
+    pair = load_configuration_pair(experiment_path)
 
     assert prepared.source == experiment_path
-    assert prepared.config == load_experiment(experiment_path)
+    assert prepared.portable_config == pair.portable
+    assert prepared.config == pair.realized
     assert prepared.report.config == prepared.config
     assert all(finding.ok for finding in prepared.report.findings)
     assert prepared.run_directory == prepared.config.run.directory
@@ -140,6 +144,15 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
     """Routing config-only through an external command would violate the one-process API contract."""
     experiment_path = tmp_path / "experiment.toml"
     _write_config(experiment_path, valid_config_data)
+    from trafficlab.config_io import load_configuration_pair
+
+    prepared_results: list[PreparedExperiment] = []
+
+    def prepare(path: Path) -> PreparedExperiment:
+        prepared = preflight_module.prepare_experiment(path)
+        prepared_results.append(prepared)
+        return prepared
+
     real_import = builtins.__import__
 
     def reject_subprocess(*_args: object, **_kwargs: object) -> None:
@@ -168,14 +181,13 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
     monkeypatch.setattr(builtins, "__import__", reject_eager_import)
 
     reloaded_cli = importlib.reload(cli)
-    assert reloaded_cli.main(["preflight", str(experiment_path), "--config-only"]) == 0
+    assert reloaded_cli.main(["preflight", str(experiment_path), "--config-only"], prepare=prepare) == 0
 
     captured = capsys.readouterr()
     assert str(_configured_run_directory(valid_config_data)) in captured.out
     assert captured.err == ""
-    assert load_experiment(_configured_run_directory(valid_config_data) / "experiment.toml") == load_experiment(
-        experiment_path
-    )
+    assert prepared_results[0].portable_config == load_configuration_pair(experiment_path).portable
+    assert load_experiment(_configured_run_directory(valid_config_data) / "experiment.toml") == prepared_results[0].config
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
     assert not hasattr(trafficlab, "docker_cli")
     assert "trafficlab.run" not in sys.modules

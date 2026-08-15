@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from trafficlab.artifacts import append_run_log, create_run_directory
 from trafficlab.compose import ComposePaths, render_production_compose, write_production_compose
 from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment, render_effective_config
+from trafficlab.config_io import ConfigurationPair, load_configuration_pair, load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
 from trafficlab.pcapng import parse_pcapng
 from trafficlab.trace import load_capture_metadata
@@ -128,6 +128,11 @@ class PreparedExperiment:
     config: ExperimentConfig
     report: PreflightReport
     run_directory: Path
+    portable_config: ExperimentConfig = cast(ExperimentConfig, None)
+
+    def __post_init__(self) -> None:
+        if cast(object, self.portable_config) is None:
+            object.__setattr__(self, "portable_config", self.config)
 
 
 def _nearest_existing_parent(path: Path) -> Path:
@@ -539,13 +544,25 @@ def check_docker(
     return PreflightReport(config=config, findings=tuple(findings))
 
 
-def prepare_experiment(path: Path, *, writable: Writable = default_writable) -> PreparedExperiment:
-    """Load, locally validate, and publish a new experiment run directory."""
-    config = load_experiment(path)
+def _prepare_configuration_pair(
+    path: Path, pair: ConfigurationPair, *, writable: Writable
+) -> PreparedExperiment:
+    config = pair.realized
     report = check_local(config, writable=writable)
     report.require_success()
     run_directory = create_run_directory(config)
-    return PreparedExperiment(source=path, config=config, report=report, run_directory=run_directory)
+    return PreparedExperiment(
+        source=path,
+        portable_config=pair.portable,
+        config=config,
+        report=report,
+        run_directory=run_directory,
+    )
+
+
+def prepare_experiment(path: Path, *, writable: Writable = default_writable) -> PreparedExperiment:
+    """Load, locally validate, and publish a new experiment run directory."""
+    return _prepare_configuration_pair(path, load_configuration_pair(path), writable=writable)
 
 
 def _initial_run_records(run_directory: Path) -> tuple[dict[str, object], dict[str, object]]:
@@ -589,9 +606,10 @@ def _validate_existing_run(config: ExperimentConfig) -> None:
 
 def open_or_prepare_experiment(path: Path, *, writable: Writable = default_writable) -> PreparedExperiment:
     """Prepare an absent run or reopen an exact, authoritative prepared run without mutation."""
-    config = load_experiment(path)
+    pair = load_configuration_pair(path)
+    config = pair.realized
     if not config.run.directory.exists():
-        return prepare_experiment(path, writable=writable)
+        return _prepare_configuration_pair(path, pair, writable=writable)
     if not config.run.directory.is_dir():
         raise TrafficlabError(
             f"existing run is not reusable: run path is not a directory: {config.run.directory}",
@@ -621,7 +639,13 @@ def open_or_prepare_experiment(path: Path, *, writable: Writable = default_writa
         ),
     )
     report.require_success()
-    return PreparedExperiment(source=path, config=config, report=report, run_directory=config.run.directory)
+    return PreparedExperiment(
+        source=path,
+        portable_config=pair.portable,
+        config=config,
+        report=report,
+        run_directory=config.run.directory,
+    )
 
 
 def run_preflight(
@@ -677,6 +701,7 @@ def run_preflight(
     report.require_success()
     return PreparedExperiment(
         source=prepared.source,
+        portable_config=prepared.portable_config,
         config=prepared.config,
         report=report,
         run_directory=prepared.run_directory,

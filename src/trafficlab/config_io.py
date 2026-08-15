@@ -1,6 +1,7 @@
 """TOML loading and deterministic rendering for experiment configurations."""
 
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,14 @@ from pydantic import ValidationError
 
 from trafficlab.config import ExperimentConfig
 from trafficlab.errors import TrafficlabError
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigurationPair:
+    """One portable configuration and its host-path-realized counterpart."""
+
+    portable: ExperimentConfig
+    realized: ExperimentConfig
 
 
 def _format_validation_errors(error: ValidationError) -> str:
@@ -25,8 +34,25 @@ def _resolve_source_path(path: Path, source_directory: Path) -> Path:
     return (source_directory / path).resolve()
 
 
-def load_experiment(path: Path) -> ExperimentConfig:
-    """Load one experiment and resolve its host paths relative to its TOML file."""
+def realize_configuration(portable: ExperimentConfig, config_directory: Path) -> ExperimentConfig:
+    """Resolve only host path values from a portable validated configuration."""
+    try:
+        data: dict[str, Any] = portable.model_dump(mode="python")
+        run = data["run"]
+        run["directory"] = _resolve_source_path(run["directory"], config_directory)
+        target = data["target"]
+        for mount in target["mounts"]:
+            mount["source"] = _resolve_source_path(mount["source"], config_directory)
+        return ExperimentConfig.model_validate(data)
+    except (OSError, RuntimeError, ValidationError) as error:
+        raise TrafficlabError(
+            f"could not resolve experiment paths from {config_directory}: {error}",
+            corrective_action="verify the configured host paths can be resolved and retry",
+        ) from error
+
+
+def load_configuration_pair(path: Path) -> ConfigurationPair:
+    """Load a portable experiment and realize its host paths relative to its TOML file."""
     try:
         with path.open("rb") as stream:
             data = tomllib.load(stream)
@@ -47,7 +73,7 @@ def load_experiment(path: Path) -> ExperimentConfig:
         ) from error
 
     try:
-        config = ExperimentConfig.model_validate(data)
+        portable = ExperimentConfig.model_validate(data)
     except ValidationError as error:
         raise TrafficlabError(
             f"invalid experiment configuration {path}: {_format_validation_errors(error)}",
@@ -55,19 +81,20 @@ def load_experiment(path: Path) -> ExperimentConfig:
         ) from error
 
     try:
-        source_directory = path.parent.resolve()
-        run = config.run.model_copy(update={"directory": _resolve_source_path(config.run.directory, source_directory)})
-        mounts = tuple(
-            mount.model_copy(update={"source": _resolve_source_path(mount.source, source_directory)})
-            for mount in config.target.mounts
+        return ConfigurationPair(
+            portable=portable,
+            realized=realize_configuration(portable, path.parent.resolve()),
         )
-        target = config.target.model_copy(update={"mounts": mounts})
-        return config.model_copy(update={"run": run, "target": target})
     except (OSError, RuntimeError) as error:
         raise TrafficlabError(
             f"could not resolve experiment paths from {path}: {error}",
             corrective_action="verify the configured host paths can be resolved and retry",
         ) from error
+
+
+def load_experiment(path: Path) -> ExperimentConfig:
+    """Load one experiment in the realized form for compatibility."""
+    return load_configuration_pair(path).realized
 
 
 def render_effective_config(config: ExperimentConfig) -> bytes:

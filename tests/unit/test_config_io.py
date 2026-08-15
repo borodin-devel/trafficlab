@@ -74,6 +74,62 @@ def test_relative_run_and_mount_sources_resolve_against_the_config_file(
     assert config.target.mounts[1].source == absolute_source
 
 
+def _non_path_dump(config: ExperimentConfig) -> dict[str, object]:
+    data = config.model_dump(mode="json")
+    run = cast(dict[str, object], data["run"])
+    del run["directory"]
+    for mount in cast(list[dict[str, object]], cast(dict[str, object], data["target"])["mounts"]):
+        del mount["source"]
+    return data
+
+
+def test_configuration_pair_retains_portable_values_across_relocation(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """Resolving more than host paths would make a copied experiment scientifically different."""
+    paths = (tmp_path / "first" / "config" / "experiment.toml", tmp_path / "second" / "config" / "experiment.toml")
+    pairs: list[config_io.ConfigurationPair] = []
+    for path in paths:
+        data = copy.deepcopy(valid_config_data)
+        cast(dict[str, object], data["run"])["directory"] = "runs/portable-case"
+        target = cast(dict[str, object], data["target"])
+        target["argv"] = ["--request", "custom-request.txt"]
+        target["environment"] = {"MODE": "portable", "RETRIES": "7"}
+        target["mounts"] = [{"source": "data", "target": "/work/data", "read_only": True}]
+        _write_config(path, data)
+        pairs.append(config_io.load_configuration_pair(path))
+
+    first, second = pairs
+
+    assert first.portable == second.portable
+    assert first.realized.run.directory != second.realized.run.directory
+    assert first.realized.target.mounts[0].source != second.realized.target.mounts[0].source
+    assert _non_path_dump(first.portable) == _non_path_dump(first.realized)
+    assert _non_path_dump(first.realized) == _non_path_dump(second.realized)
+
+
+@pytest.mark.parametrize(
+    "section",
+    ("run", "target", "capture", "models"),
+    ids=("seeds-bounds-limits", "image-argv-environment", "url", "methods-similarity-operators"),
+)
+def test_configuration_realization_preserves_every_non_path_section(
+    valid_config_data: dict[str, object], tmp_path: Path, section: str
+) -> None:
+    """Changing a configuration value while realizing paths would invalidate reproducibility."""
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = "runs/portable-case"
+    cast(dict[str, object], data["target"])["mounts"] = [
+        {"source": "data", "target": "/work/data", "read_only": True}
+    ]
+    path = tmp_path / "config" / "experiment.toml"
+    _write_config(path, data)
+
+    pair = config_io.load_configuration_pair(path)
+
+    assert _non_path_dump(pair.portable)[section] == _non_path_dump(pair.realized)[section]
+
+
 @pytest.mark.parametrize(
     "resolution_error",
     [OSError("injected resolution failure"), RuntimeError("injected resolution failure")],
