@@ -288,7 +288,11 @@ def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
     assert {name: method.diagnostics["component"] for name, method in result.methods.items()} == {
         name: name for name in result.methods
     }
-    assert result.aggregate_score == pytest.approx(math.fsum(method_weights[name] * scores[name] for name in scores))
+    expected_aggregate = math.fsum(method_weights[name] * scores[name] for name in scores)
+    assert result.aggregate_score == expected_aggregate
+    if 1.0 in method_weights.values():
+        selected_method = next(name for name, weight in method_weights.items() if weight == 1.0)
+        assert result.aggregate_score == scores[selected_method]
     artifact = result.with_input_sha256(
         {
             "capture_json": "a" * 64,

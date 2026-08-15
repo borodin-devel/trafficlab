@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import pytest
 
+import trafficlab.comparison as comparison
 from trafficlab.config import (
     FamilyName,
     FloatBounds,
@@ -166,6 +167,17 @@ def _context(family: RecordingFamily, **changes: object) -> EvaluationContext:
 
 def _trafficlab_error(message: str) -> TrafficlabError:
     return TrafficlabError(message, corrective_action="test corrective action")
+
+
+def _similarity_with_zero_weight(method_name: str) -> SimilarityConfig:
+    weights = SIMILARITY.method_weights.model_dump()
+    selected_method = next(name for name in weights if name != method_name)
+    weights[method_name] = 0.0
+    weights[selected_method] = 1.0
+    for name in weights:
+        if name not in {method_name, selected_method}:
+            weights[name] = 0.0
+    return SIMILARITY.model_copy(update={"method_weights": MethodWeights(**weights)})
 
 
 def test_evaluation_fits_once_and_gives_each_trial_the_same_window_and_limits(
@@ -508,14 +520,7 @@ def test_zero_weight_method_preconditions_remain_mandatory(
     zero_weight_method: str,
 ) -> None:
     """A zero aggregation weight must not bypass any component's candidate precondition."""
-    weights = SIMILARITY.method_weights.model_dump()
-    selected_method = next(name for name in weights if name != zero_weight_method)
-    weights[zero_weight_method] = 0.0
-    weights[selected_method] = 1.0
-    for name in weights:
-        if name not in {zero_weight_method, selected_method}:
-            weights[name] = 0.0
-    similarity = SIMILARITY.model_copy(update={"method_weights": MethodWeights(**weights)})
+    similarity = _similarity_with_zero_weight(zero_weight_method)
 
     with pytest.raises(CandidateEvaluationError) as captured:
         validate_candidate_similarity_preconditions((), similarity, seed=7)
@@ -541,14 +546,7 @@ def test_zero_weight_method_preconditions_invalidate_evaluable_candidates(
     generated: tuple[TraceEvent, ...],
 ) -> None:
     """A complete candidate still becomes invalid when a zero-weight method lacks its required samples."""
-    weights = SIMILARITY.method_weights.model_dump()
-    selected_method = next(name for name in weights if name != zero_weight_method)
-    weights[zero_weight_method] = 0.0
-    weights[selected_method] = 1.0
-    for name in weights:
-        if name not in {zero_weight_method, selected_method}:
-            weights[name] = 0.0
-    similarity = SIMILARITY.model_copy(update={"method_weights": MethodWeights(**weights)})
+    similarity = _similarity_with_zero_weight(zero_weight_method)
     family.results[7] = GenerationResult(True, generated)
 
     evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family, similarity=similarity)))
@@ -557,6 +555,39 @@ def test_zero_weight_method_preconditions_invalidate_evaluable_candidates(
     assert evaluated.invalid.kind == "similarity_precondition"
     assert evaluated.invalid.seed == 7
     assert zero_weight_method in evaluated.invalid.detail
+
+
+@pytest.mark.parametrize(
+    ("zero_weight_method", "component_name"),
+    [
+        ("frame_size_ks", "frame_size_ks"),
+        ("iat_ks", "iat_ks"),
+        ("autocorrelation", "autocorrelation_similarity"),
+        ("multiscale_rate", "multiscale_rate_similarity"),
+    ],
+)
+def test_zero_weight_component_failure_invalidates_a_complete_candidate(
+    family: RecordingFamily,
+    monkeypatch: pytest.MonkeyPatch,
+    zero_weight_method: str,
+    component_name: str,
+) -> None:
+    """A complete candidate must become invalid when any zero-weight metric reports a classified failure."""
+    similarity = _similarity_with_zero_weight(zero_weight_method)
+    validated = validate_evaluation_context(_context(family, similarity=similarity))
+    failure = CandidateEvaluationError("similarity_precondition", 7, f"{zero_weight_method} component failed")
+
+    def fail_component(*_args: object) -> Any:
+        raise failure
+
+    monkeypatch.setattr(comparison, component_name, fail_component)
+
+    evaluated = evaluate_candidate(PENDING_POISSON, validated)
+
+    assert evaluated.status == "invalid"
+    assert evaluated.fitness == 0.0
+    assert evaluated.trials == ()
+    assert evaluated.invalid == CandidateFailure("similarity_precondition", 7, f"{zero_weight_method} component failed")
 
 
 def test_pending_candidate_without_genes_is_invalid_without_family_call(family: RecordingFamily) -> None:
