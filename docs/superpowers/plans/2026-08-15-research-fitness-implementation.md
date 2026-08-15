@@ -215,7 +215,6 @@ git commit -m "test: prove mandatory similarity execution"
 ```python
 type BundleAudit = Callable[[Path], None]
 
-
 def publish_accepted_bundle(
     candidate: Path,
     evidence_root: Path,
@@ -279,7 +278,6 @@ git commit -m "feat: gate accepted evidence publication"
 
 ```python
 SCIENTIFIC_ARTIFACT_SCHEMA_VERSION: Final = 2
-
 
 def require_current_scientific_schema(value: object, *, artifact: str) -> None: ...
 ```
@@ -436,7 +434,6 @@ git commit -m "test: validate traffic model science"
 
 ```python
 type FamilyPriority = tuple[str, ...]
-
 
 def derive_family_priority(master_seed: int, family_names: Iterable[str]) -> FamilyPriority: ...
 def family_quotas(population_size: int, family_priority: FamilyPriority) -> dict[str, int]: ...
@@ -683,7 +680,6 @@ git commit -m "feat: standardize failure evidence"
 class ContentIdentity:
     size: int
     sha256: str
-
 
 def identify_file(path: Path) -> ContentIdentity: ...
 def require_compatible(expected: Mapping[str, object], actual: Mapping[str, object]) -> None: ...

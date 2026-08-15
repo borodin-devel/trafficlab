@@ -162,10 +162,7 @@ def test_run_preflight_uses_preceding_findings_for_probe_cleanup_and_keeps_log_s
     _install_prepared(monkeypatch, prepared, _report(prepared, (standalone,)))
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
-            tmp_path / "experiment.toml",
-            config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
-            clock=lambda: 100.0,
+            tmp_path / "experiment.toml", config_only=False, docker=cast(preflight.DockerPreflight, object()), clock=lambda: 100.0
         )
     assert [item.authority for item in caught.value.failure_outcomes] == ["primary"]
     assert records[-1]["failure_outcome"] == caught.value.failure_outcome.as_dict()  # type: ignore[union-attr]
@@ -175,10 +172,7 @@ def test_run_preflight_uses_preceding_findings_for_probe_cleanup_and_keeps_log_s
     _install_prepared(monkeypatch, prepared, _report(prepared, (primary, standalone)))
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
-            tmp_path / "experiment.toml",
-            config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
-            clock=lambda: 100.0,
+            tmp_path / "experiment.toml", config_only=False, docker=cast(preflight.DockerPreflight, object()), clock=lambda: 100.0
         )
     outcomes = caught.value.failure_outcomes
     assert [item.authority for item in outcomes] == ["primary", "secondary"]
@@ -192,10 +186,7 @@ def test_run_preflight_uses_preceding_findings_for_probe_cleanup_and_keeps_log_s
     _install_prepared(monkeypatch, prepared, _report(prepared, (primary,)))
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
-            tmp_path / "experiment.toml",
-            config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
-            clock=lambda: 100.0,
+            tmp_path / "experiment.toml", config_only=False, docker=cast(preflight.DockerPreflight, object()), clock=lambda: 100.0
         )
     outcomes = caught.value.failure_outcomes
     assert [item.kind for item in outcomes] == ["docker_preflight_failed", "publication_failed"]
@@ -203,9 +194,7 @@ def test_run_preflight_uses_preceding_findings_for_probe_cleanup_and_keeps_log_s
     assert outcomes[1].affected_evidence == "run.log"
 
 
-def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_preflight_identity_log_failure_and_existing_failure_outcome(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     prepared = _prepared(tmp_path / "run")
     identity = cast(
         preflight.CaptureEnvironmentIdentity,
@@ -226,10 +215,7 @@ def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
     monkeypatch.setattr(preflight, "append_run_log", append)
     _install_prepared(monkeypatch, prepared, _report(prepared, identity=identity))
     result = preflight.run_preflight(
-        tmp_path / "experiment.toml",
-        config_only=False,
-        docker=cast(preflight.DockerPreflight, object()),
-        clock=lambda: 100.0,
+        tmp_path / "experiment.toml", config_only=False, docker=cast(preflight.DockerPreflight, object()), clock=lambda: 100.0
     )
     assert result.run_directory == prepared.run_directory
     assert result.report.environment_identity == identity
@@ -243,10 +229,7 @@ def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
     monkeypatch.setattr(preflight, "append_run_log", fail_identity)
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
-            tmp_path / "experiment.toml",
-            config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
-            clock=lambda: 100.0,
+            tmp_path / "experiment.toml", config_only=False, docker=cast(preflight.DockerPreflight, object()), clock=lambda: 100.0
         )
     assert caught.value.failure_outcome is not None
     assert caught.value.failure_outcome.affected_evidence == "run.log"
@@ -269,9 +252,6 @@ def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
     _install_prepared(monkeypatch, prepared, _report(prepared))
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
-            tmp_path / "experiment.toml",
-            config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
-            clock=lambda: 100.0,
+            tmp_path / "experiment.toml", config_only=False, docker=cast(preflight.DockerPreflight, object()), clock=lambda: 100.0
         )
     assert caught.value.failure_outcome == established

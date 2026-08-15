@@ -71,9 +71,7 @@ def test_credential_free_fixture_is_a_strict_authoritative_adverse_condition_tab
         "stage_timeout",
         "target_failed",
     }
-    assert all(
-        "/home/" not in line and "token" not in line.lower() and "password" not in line.lower() for line in raw_records
-    )
+    assert all("/home/" not in line and "token" not in line.lower() and "password" not in line.lower() for line in raw_records)
 
 
 @pytest.mark.parametrize(
@@ -186,16 +184,13 @@ def test_expected_error_rejects_a_noncanonical_payload_and_attachment_preserves_
     error.failure_outcome = existing
 
     assert attached is error
-    assert (
-        attach_failure_outcome(
-            error,
-            kind="metric_infeasible",
-            stage="compare",
-            affected_evidence="similarity.json",
-            evidence_state="not_published",
-        ).failure_outcome
-        is existing
-    )
+    assert attach_failure_outcome(
+        error,
+        kind="metric_infeasible",
+        stage="compare",
+        affected_evidence="similarity.json",
+        evidence_state="not_published",
+    ).failure_outcome is existing
 
 
 def test_direct_preflight_configuration_failure_carries_outcome_without_a_log(
@@ -360,13 +355,7 @@ def test_run_preflight_constructs_docker_and_logs_successful_findings(
 
     assert result.run_directory == prepared.run_directory
     assert records == [
-        {
-            "detail": "Docker is ready",
-            "event": "preflight_check",
-            "name": "docker_daemon",
-            "ok": True,
-            "stage": "preflight",
-        }
+        {"detail": "Docker is ready", "event": "preflight_check", "name": "docker_daemon", "ok": True, "stage": "preflight"}
     ]
 
 
@@ -473,7 +462,11 @@ def test_run_preflight_preserves_docker_failure_when_its_log_append_fails(
         del _config, _docker, deadline, clock
         return preflight.PreflightReport(
             config=prepared.config,
-            findings=(preflight.PreflightFinding("docker_daemon", False, "Docker is unavailable", "restore Docker"),),
+            findings=(
+                preflight.PreflightFinding(
+                    "docker_daemon", False, "Docker is unavailable", "restore Docker"
+                ),
+            ),
         )
 
     def fail_append(_directory: Path, _record: dict[str, object]) -> None:
@@ -512,16 +505,13 @@ def test_run_preflight_keeps_probe_cleanup_as_secondary_after_probe_failure(
         return preflight.PreflightReport(
             config=prepared.config,
             findings=(
-                preflight.PreflightFinding(
-                    "network_probe", False, "capture prerequisite is unavailable", "repair probe"
-                ),
+                preflight.PreflightFinding("network_probe", False, "capture prerequisite is unavailable", "repair probe"),
                 preflight.PreflightFinding("probe_cleanup", False, "probe project remained", "remove probe project"),
             ),
         )
 
     monkeypatch.setattr(preflight, "open_or_prepare_experiment", open_prepared)
     monkeypatch.setattr(preflight, "check_docker", check)
-
     def append(_directory: Path, _record: dict[str, object]) -> None:
         return None
 
@@ -535,10 +525,7 @@ def test_run_preflight_keeps_probe_cleanup_as_secondary_after_probe_failure(
             clock=lambda: 100.0,
         )
 
-    assert [
-        (item.kind, item.authority, item.affected_evidence, item.evidence_state)
-        for item in caught.value.failure_outcomes
-    ] == [
+    assert [(item.kind, item.authority, item.affected_evidence, item.evidence_state) for item in caught.value.failure_outcomes] == [
         ("docker_preflight_failed", "primary", "capture evidence", "not_published"),
         ("cleanup_failed", "secondary", "inventory", "possibly_remaining"),
     ]
@@ -821,8 +808,6 @@ def test_capture_adapter_uses_the_full_arbitration_sequence_for_combined_evidenc
             "authority": "secondary",
         },
     ]
-
-
 def test_capture_adapter_requires_an_existing_primary_failure() -> None:
     """The adapter cannot invent a primary when capture arbitration succeeded."""
     with pytest.raises(ValueError, match="primary failure"):
@@ -867,18 +852,15 @@ def test_existing_stage_failure_log_adapters_render_canonical_outcomes(
     else:
         stage_module._append_failure(tmp_path, error)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateUsage]
 
-    assert (
-        records[0]["failure_outcome"]
-        == FailureOutcome(
-            kind=kind,
-            stage=stage,
-            detail=f"{stage} injected failure",
-            affected_evidence=affected_evidence,
-            evidence_state=evidence_state,  # type: ignore[arg-type]
-            corrective_action=f"repair {stage}",
-            authority="primary",
-        ).as_dict()
-    )
+    assert records[0]["failure_outcome"] == FailureOutcome(
+        kind=kind,
+        stage=stage,
+        detail=f"{stage} injected failure",
+        affected_evidence=affected_evidence,
+        evidence_state=evidence_state,  # type: ignore[arg-type]
+        corrective_action=f"repair {stage}",
+        authority="primary",
+    ).as_dict()
 
 
 def test_preflight_and_capture_adapters_preserve_primary_secondary_authority() -> None:
