@@ -10,7 +10,7 @@ from typing import Self
 from trafficlab.artifacts import append_run_log, publish_best_model
 from trafficlab.comparison import sha256_bytes
 from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import TrafficlabError, attach_failure_outcome, failure_outcome_from_error
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
 from trafficlab.models.registry import BestModel, get_family, make_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
@@ -57,6 +57,15 @@ def read_fit_input(path: Path) -> bytes:
 
 
 def _append_failure(run_directory: Path, primary: TrafficlabError) -> None:
+    outcome = primary.failure_outcome
+    if outcome is None:
+        outcome = failure_outcome_from_error(
+            primary,
+            kind="artifact_corrupt",
+            stage="fit",
+            affected_evidence="best_model.json",
+            evidence_state="not_published",
+        )
     try:
         append_run_log(
             run_directory,
@@ -64,6 +73,7 @@ def _append_failure(run_directory: Path, primary: TrafficlabError) -> None:
                 "corrective_action": primary.corrective_action,
                 "detail": str(primary),
                 "event": "stage_failed",
+                "failure_outcome": outcome.as_dict(),
                 "stage": "fit",
             },
         )
@@ -98,9 +108,15 @@ def fit_experiment(
         reference_path = run_directory / "reference.pcapng"
         snapshot_bytes = active.read_bytes(snapshot_path)
         if snapshot_bytes != render_effective_config(prepared.config):
-            raise TrafficlabError(
-                f"authoritative experiment snapshot {snapshot_path} does not match the prepared effective configuration",
-                corrective_action="restore experiment.toml to the exact prepared effective configuration",
+            raise attach_failure_outcome(
+                TrafficlabError(
+                    f"authoritative experiment snapshot {snapshot_path} does not match the prepared effective configuration",
+                    corrective_action="restore experiment.toml to the exact prepared effective configuration",
+                ),
+                kind="artifact_foreign",
+                stage="fit",
+                affected_evidence="experiment.toml",
+                evidence_state="preserved",
             )
         capture_bytes = active.read_bytes(capture_path)
         reference_bytes = active.read_bytes(reference_path)
@@ -109,10 +125,17 @@ def fit_experiment(
         try:
             reference_events = parse_pcapng_bytes(reference_bytes, metadata, source=reference_path)
         except TrafficlabError as error:
-            raise TrafficlabError(
+            translated = TrafficlabError(
                 f"invalid reference PCAPNG {reference_path}: {error}",
                 corrective_action=error.corrective_action,
                 exit_code=error.exit_code,
+            )
+            raise attach_failure_outcome(
+                translated,
+                kind="artifact_corrupt",
+                stage="fit",
+                affected_evidence="reference.pcapng",
+                evidence_state="preserved",
             ) from error
         reference, window = normalize_reference(reference_events)
         context = make_strategy_context(
@@ -162,7 +185,16 @@ def fit_experiment(
         )
         if best.genes != outcome.winner.genes:
             raise AssertionError("artifact construction must retain the same canonical winner genes")
-        publication = publish_best_model(run_directory / "best_model.json", render_best_model(best))
+        try:
+            publication = publish_best_model(run_directory / "best_model.json", render_best_model(best))
+        except TrafficlabError as error:
+            raise attach_failure_outcome(
+                error,
+                kind="publication_collision",
+                stage="fit",
+                affected_evidence="best_model.json",
+                evidence_state="preserved",
+            ) from error
         result = FitStageResult(
             experiment_path,
             run_directory,
@@ -192,8 +224,15 @@ def fit_experiment(
         )
     except TrafficlabError as logging_error:
         state = "reused" if result.reused_best_model else "published"
-        raise TrafficlabError(
+        error = TrafficlabError(
             f"best model was {state} at {result.best_model_path}, but success logging failed: {logging_error}",
             corrective_action=logging_error.corrective_action,
+        )
+        raise attach_failure_outcome(
+            error,
+            kind="publication_failed",
+            stage="fit",
+            affected_evidence="best_model.json",
+            evidence_state="preserved",
         ) from logging_error
     return result

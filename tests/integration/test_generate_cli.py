@@ -1104,6 +1104,15 @@ def test_stage_reports_missing_or_invalid_model_as_direct_generation_error(
         "corrective_action": error.value.corrective_action,
         "detail": str(error.value),
         "event": "stage_failed",
+        "failure_outcome": {
+            "affected_evidence": "best_model.json",
+            "authority": "primary",
+            "corrective_action": error.value.corrective_action,
+            "detail": str(error.value),
+            "evidence_state": "not_published" if defect == "missing" else "preserved",
+            "kind": "artifact_missing" if defect == "missing" else "artifact_corrupt",
+            "stage": "generate",
+        },
         "stage": "generate",
     }
 

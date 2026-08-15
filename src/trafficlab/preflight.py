@@ -19,7 +19,7 @@ from trafficlab.artifacts import append_run_log, create_run_directory
 from trafficlab.compose import ComposePaths, render_production_compose, write_production_compose
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import ConfigurationPair, load_configuration_pair, load_experiment, render_effective_config
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome, failure_outcome_from_error
 from trafficlab.pcapng import parse_pcapng
 from trafficlab.trace import load_capture_metadata
 
@@ -273,6 +273,44 @@ def _require_deadline(deadline: float, clock: Callable[[], float]) -> float:
 
 def _failure(name: str, error: TrafficlabError) -> PreflightFinding:
     return PreflightFinding(name, False, str(error), error.corrective_action)
+
+
+def _preflight_failure_outcome(finding: PreflightFinding) -> FailureOutcome:
+    """Render a direct preflight finding without changing its existing error path."""
+    docker_findings = {
+        "capture_image_lock",
+        "capture_image",
+        "capture_platform",
+        "capture_tool",
+        "compose_config",
+        "docker_compose",
+        "docker_daemon",
+        "docker_engine",
+        "docker_version",
+        "mounts",
+        "network_probe",
+        "target_image",
+    }
+    if finding.name == "probe_cleanup":
+        return FailureOutcome(
+            kind="cleanup_failed",
+            stage="preflight",
+            detail=finding.detail,
+            affected_evidence="inventory",
+            evidence_state="possibly_remaining",
+            corrective_action=finding.corrective_action or "remove the reported preflight resources and retry",
+            authority="primary",
+        )
+    is_docker = finding.name in docker_findings
+    return FailureOutcome(
+        kind="docker_preflight_failed" if is_docker else "configuration_invalid",
+        stage="preflight",
+        detail=finding.detail,
+        affected_evidence="capture evidence" if is_docker else "run evidence",
+        evidence_state="not_published",
+        corrective_action=finding.corrective_action or "correct the reported preflight failure",
+        authority="primary",
+    )
 
 
 def _cleanup_detail(cleanup: CleanupResult) -> str:
@@ -794,7 +832,18 @@ def run_preflight(
     writable: Writable = default_writable,
 ) -> PreparedExperiment:
     """Run local preparation and, unless disabled, the injected Docker preflight."""
-    prepared = open_or_prepare_experiment(path, writable=writable)
+    try:
+        prepared = open_or_prepare_experiment(path, writable=writable)
+    except TrafficlabError as error:
+        if error.failure_outcome is None:
+            error.failure_outcome = failure_outcome_from_error(
+                error,
+                kind="configuration_invalid",
+                stage="preflight",
+                affected_evidence="run evidence",
+                evidence_state="not_published",
+            )
+        raise
     if config_only:
         return prepared
 
@@ -806,30 +855,42 @@ def run_preflight(
         started = clock()
         deadline = started + prepared.config.capture.total_timeout_seconds
     except ArithmeticError as error:
-        raise TrafficlabError(
-            "could not calculate the Docker preflight deadline",
-            corrective_action="use a finite monotonic clock and retry",
+        raise attach_failure_outcome(
+            TrafficlabError(
+                "could not calculate the Docker preflight deadline",
+                corrective_action="use a finite monotonic clock and retry",
+            ),
+            kind="docker_preflight_failed",
+            stage="preflight",
+            affected_evidence="capture evidence",
+            evidence_state="not_published",
         ) from error
     if not math.isfinite(started) or not math.isfinite(deadline) or deadline <= started:
-        raise TrafficlabError(
-            "could not calculate a finite future Docker preflight deadline",
-            corrective_action="use a finite monotonic clock and positive total timeout",
+        raise attach_failure_outcome(
+            TrafficlabError(
+                "could not calculate a finite future Docker preflight deadline",
+                corrective_action="use a finite monotonic clock and positive total timeout",
+            ),
+            kind="docker_preflight_failed",
+            stage="preflight",
+            affected_evidence="capture evidence",
+            evidence_state="not_published",
         )
 
     docker_report = check_docker(prepared.config, docker, deadline=deadline, clock=clock)
     findings = list(prepared.report.findings) + list(docker_report.findings)
     for finding in docker_report.findings:
         try:
-            append_run_log(
-                prepared.run_directory,
-                {
-                    "detail": finding.detail,
-                    "event": "preflight_check",
-                    "name": finding.name,
-                    "ok": finding.ok,
-                    "stage": "preflight",
-                },
-            )
+            record: dict[str, object] = {
+                "detail": finding.detail,
+                "event": "preflight_check",
+                "name": finding.name,
+                "ok": finding.ok,
+                "stage": "preflight",
+            }
+            if not finding.ok:
+                record["failure_outcome"] = _preflight_failure_outcome(finding).as_dict()
+            append_run_log(prepared.run_directory, record)
         except TrafficlabError as error:
             findings.append(_failure("run_log", error))
             break
@@ -860,7 +921,13 @@ def run_preflight(
         findings=tuple(findings),
         environment_identity=environment_identity,
     )
-    report.require_success()
+    try:
+        report.require_success()
+    except TrafficlabError as error:
+        if error.failure_outcome is None:
+            first_failure = next(finding for finding in findings if not finding.ok)
+            error.failure_outcome = _preflight_failure_outcome(first_failure)
+        raise
     return PreparedExperiment(
         source=prepared.source,
         portable_config=prepared.portable_config,

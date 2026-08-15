@@ -40,7 +40,7 @@ from trafficlab.cleanup import CleanupCompose, cleanup_project
 from trafficlab.compose import ComposePaths, write_production_compose
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.docker_cli import CommandResult, DockerCompose, ProjectInventory, ServiceState
-from trafficlab.errors import DeadlineExceededError, TrafficlabError
+from trafficlab.errors import DeadlineExceededError, FailureAuthority, FailureOutcome, TrafficlabError
 from trafficlab.preflight import DockerPreflight, PreparedExperiment, run_preflight
 from trafficlab.trace import load_capture_metadata
 
@@ -450,6 +450,70 @@ def _outcome_error(outcome: CaptureOutcome) -> TrafficlabError:
     )
 
 
+def _capture_failure_outcome(
+    kind: FailureKind,
+    detail: str,
+    *,
+    status: int | None,
+    authority: FailureAuthority,
+    corrective_action: str,
+) -> FailureOutcome:
+    """Translate existing capture arbitration values without changing their priority or detail."""
+    if kind in (FailureKind.TARGET_NONZERO_EXIT, FailureKind.NATURAL_TARGET_STATUS, FailureKind.INDUCED_TARGET_STATUS):
+        outcome_kind, evidence, state = "target_failed", "capture pair", "diagnostic_only"
+    elif kind is FailureKind.USER_INTERRUPTION:
+        outcome_kind, evidence, state = "interrupted", "capture pair", "diagnostic_only"
+        status = 130
+    elif kind is FailureKind.CLEANUP_FAILED:
+        outcome_kind, evidence, state = "cleanup_failed", "inventory", "possibly_remaining"
+        status = None
+    elif kind is FailureKind.CAPTURE_STOPPED:
+        outcome_kind, evidence, state = "capture_failed", "capture pair", "not_published"
+    elif kind is FailureKind.STAGE_TIMEOUT:
+        outcome_kind, evidence, state = "stage_timeout", "capture pair", "diagnostic_only"
+    elif kind in (FailureKind.TOTAL_TIMEOUT, FailureKind.FLUSH_FAILED):
+        outcome_kind, evidence, state = "stage_timeout", "capture pair", "not_published"
+    else:
+        outcome_kind, evidence, state = "capture_malformed", "capture pair", "diagnostic_only"
+    return FailureOutcome(
+        kind=outcome_kind,
+        stage="capture",
+        detail=detail,
+        affected_evidence=evidence,
+        evidence_state=state,
+        corrective_action=corrective_action,
+        authority=authority,
+        status=status,
+    )
+
+
+def _capture_failure_outcomes(
+    outcome: CaptureOutcome, *, capture_status: int | None = None
+) -> tuple[FailureOutcome, tuple[FailureOutcome, ...]]:
+    """Render one primary and every retained secondary capture failure in existing discovery order."""
+    if outcome.primary_kind is None or outcome.primary_detail is None:
+        raise ValueError("capture failure outcomes require an existing primary failure")
+    action = _outcome_error(outcome).corrective_action
+    primary = _capture_failure_outcome(
+        outcome.primary_kind,
+        outcome.primary_detail,
+        status=capture_status if outcome.primary_kind is FailureKind.CAPTURE_STOPPED else outcome.primary_status,
+        authority="primary",
+        corrective_action=action,
+    )
+    secondary = tuple(
+        _capture_failure_outcome(
+            item.kind,
+            item.detail,
+            status=capture_status if item.kind is FailureKind.CAPTURE_STOPPED else item.status,
+            authority="secondary",
+            corrective_action=action,
+        )
+        for item in outcome.secondary_details
+    )
+    return primary, secondary
+
+
 def _capture_failure_logs(
     docker: CaptureDocker,
     compose_path: Path,
@@ -857,19 +921,28 @@ def capture_prepared_experiment(
         result = None
 
     if outcome.primary_kind is not None:
+        capture_state = states.get("capture")
+        capture_status = (
+            capture_state.exit_code if capture_state is not None and capture_state.state == "exited" else None
+        )
+        primary_outcome, secondary_outcomes = _capture_failure_outcomes(outcome, capture_status=capture_status)
         _append_event(
             run_directory,
             "capture_failed",
             detail=outcome.primary_detail,
             failure_kind=outcome.primary_kind.value,
+            failure_outcome=primary_outcome.as_dict(),
             primary_status=outcome.primary_status,
             secondary_details=[item.detail for item in outcome.secondary_details],
             secondary_failures=[
                 {"detail": item.detail, "kind": item.kind.value, "status": item.status}
                 for item in outcome.secondary_details
             ],
+            secondary_outcomes=[item.as_dict() for item in secondary_outcomes],
         )
-        raise _outcome_error(outcome)
+        error = _outcome_error(outcome)
+        error.failure_outcome = primary_outcome
+        raise error
     if result is None:
         raise TrafficlabError(
             "capture completed without a reusable reference",

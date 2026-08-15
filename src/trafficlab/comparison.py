@@ -15,7 +15,7 @@ from typing import Any, Self, cast
 from trafficlab.artifacts import append_run_log
 from trafficlab.config import SimilarityConfig
 from trafficlab.config_io import load_experiment
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import TrafficlabError, attach_failure_outcome, failure_outcome_from_error
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.similarity.autocorrelation import autocorrelation_similarity
 from trafficlab.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
@@ -868,6 +868,16 @@ def _publish_comparison_result(destination: Path, result: ComparisonResult) -> b
 
 
 def _append_failure(run_directory: Path, primary: TrafficlabError, *, failure_kind: str) -> None:
+    outcome = primary.failure_outcome
+    if outcome is None:
+        outcome_kind = "publication_failed" if failure_kind == "publication" else "metric_infeasible"
+        outcome = failure_outcome_from_error(
+            primary,
+            kind=outcome_kind,
+            stage="compare",
+            affected_evidence="similarity.json",
+            evidence_state="not_published",
+        )
     try:
         append_run_log(
             run_directory,
@@ -875,6 +885,7 @@ def _append_failure(run_directory: Path, primary: TrafficlabError, *, failure_ki
                 "detail": str(primary),
                 "event": "comparison_failed",
                 "failure_kind": failure_kind,
+                "failure_outcome": outcome.as_dict(),
                 "stage": "compare",
             },
         )
@@ -894,9 +905,15 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
     try:
         snapshot_config = load_experiment(run_directory / "experiment.toml")
         if caller_config != snapshot_config:
-            raise TrafficlabError(
-                f"caller configuration {experiment_path} does not match the authoritative run snapshot",
-                corrective_action="use the exact experiment configuration that created this run",
+            raise attach_failure_outcome(
+                TrafficlabError(
+                    f"caller configuration {experiment_path} does not match the authoritative run snapshot",
+                    corrective_action="use the exact experiment configuration that created this run",
+                ),
+                kind="artifact_foreign",
+                stage="compare",
+                affected_evidence="experiment.toml",
+                evidence_state="preserved",
             )
         metadata_path = run_directory / "capture.json"
         reference_path = run_directory / "reference.pcapng"
@@ -948,8 +965,15 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
             },
         )
     except TrafficlabError as logging_error:
-        raise TrafficlabError(
+        error = TrafficlabError(
             f"comparison result was published at {output_path}, but success logging failed: {logging_error}",
             corrective_action=logging_error.corrective_action,
+        )
+        raise attach_failure_outcome(
+            error,
+            kind="publication_failed",
+            stage="compare",
+            affected_evidence="similarity.json",
+            evidence_state="preserved",
         ) from logging_error
     return result

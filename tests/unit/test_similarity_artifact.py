@@ -110,6 +110,15 @@ def test_compare_experiment_rejects_a_caller_snapshot_mismatch_and_logs_it(
         "detail": f"caller configuration {caller_path} does not match the authoritative run snapshot",
         "event": "comparison_failed",
         "failure_kind": "evaluation_or_input",
+        "failure_outcome": {
+            "affected_evidence": "experiment.toml",
+            "authority": "primary",
+            "corrective_action": "use the exact experiment configuration that created this run",
+            "detail": f"caller configuration {caller_path} does not match the authoritative run snapshot",
+            "evidence_state": "preserved",
+            "kind": "artifact_foreign",
+            "stage": "compare",
+        },
         "stage": "compare",
     }
 
@@ -379,6 +388,15 @@ def test_comparison_result_assembly_failure_is_translated_and_logged(
         "detail": str(error.value),
         "event": "comparison_failed",
         "failure_kind": "evaluation_or_input",
+        "failure_outcome": {
+            "affected_evidence": "similarity.json",
+            "authority": "primary",
+            "corrective_action": error.value.corrective_action,
+            "detail": str(error.value),
+            "evidence_state": "not_published",
+            "kind": "metric_infeasible",
+            "stage": "compare",
+        },
         "stage": "compare",
     }
 

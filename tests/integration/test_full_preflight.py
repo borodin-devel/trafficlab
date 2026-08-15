@@ -167,6 +167,15 @@ def test_run_preflight_preserves_local_findings_and_logs_the_direct_docker_failu
     assert records[-1] == {
         "detail": "daemon permission denied",
         "event": "preflight_check",
+        "failure_outcome": {
+            "affected_evidence": "capture evidence",
+            "authority": "primary",
+            "corrective_action": "grant Docker daemon access",
+            "detail": "daemon permission denied",
+            "evidence_state": "not_published",
+            "kind": "docker_preflight_failed",
+            "stage": "preflight",
+        },
         "name": "docker_daemon",
         "ok": False,
         "stage": "preflight",

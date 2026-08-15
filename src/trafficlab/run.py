@@ -21,7 +21,7 @@ from trafficlab.comparison import (
     similarity_settings_sha256,
 )
 from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import EvidenceState, TrafficlabError, failure_outcome_from_error
 from trafficlab.fitting import FitStageResult, fit_experiment
 from trafficlab.generation import GenerationStageResult, generate_experiment
 from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
@@ -445,6 +445,24 @@ def _append_run_failure(
     failed_stage: str,
     completed_stages: tuple[str, ...],
 ) -> None:
+    outcome_by_stage: dict[str, tuple[str, str, EvidenceState]] = {
+        "capture": ("capture_malformed", "capture pair", "diagnostic_only"),
+        "fit": ("artifact_corrupt", "best_model.json", "not_published"),
+        "generate": ("generation_incomplete", "generated.pcapng", "not_published"),
+        "compare": ("metric_infeasible", "similarity.json", "not_published"),
+        "preflight": ("configuration_invalid", "run evidence", "not_published"),
+        "run": ("artifact_corrupt", "run evidence", "preserved"),
+    }
+    outcome = primary.failure_outcome
+    if outcome is None:
+        kind, evidence, evidence_state = outcome_by_stage[failed_stage]
+        outcome = failure_outcome_from_error(
+            primary,
+            kind=kind,
+            stage=failed_stage,
+            affected_evidence=evidence,
+            evidence_state=evidence_state,
+        )
     try:
         append_run_log(
             run_directory,
@@ -454,6 +472,7 @@ def _append_run_failure(
                 "detail": str(primary),
                 "event": "run_failed",
                 "failed_stage": failed_stage,
+                "failure_outcome": outcome.as_dict(),
                 "stage": "run",
             },
         )
