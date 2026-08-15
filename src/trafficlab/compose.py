@@ -38,15 +38,21 @@ def _target_mount(mount: MountConfig) -> dict[str, object]:
     return _bind_mount(mount.source, mount.target, read_only=mount.read_only)
 
 
-def render_production_compose(config: ExperimentConfig, paths: ComposePaths) -> bytes:
+def render_production_compose(
+    config: ExperimentConfig,
+    paths: ComposePaths,
+    *,
+    target_image: str,
+    capture_image: str,
+) -> bytes:
     """Render the exact two-service production topology as deterministic JSON."""
     capture: dict[str, object] = {
-        "image": config.capture.image,
+        "image": capture_image,
         "cap_add": ["NET_RAW", "NET_ADMIN"],
         "volumes": [_bind_mount(paths.output_directory, _CAPTURE_OUTPUT_DIRECTORY, read_only=False)],
     }
     target: dict[str, object] = {
-        "image": config.target.image,
+        "image": target_image,
         "command": list(config.target.argv),
         "environment": dict(config.target.environment),
         "working_dir": config.target.working_directory,
@@ -62,9 +68,21 @@ def render_production_compose(config: ExperimentConfig, paths: ComposePaths) -> 
     return f"{rendered}\n".encode()
 
 
-def write_production_compose(path: Path, config: ExperimentConfig, paths: ComposePaths) -> None:
+def write_production_compose(
+    path: Path,
+    config: ExperimentConfig,
+    paths: ComposePaths,
+    *,
+    target_image: str,
+    capture_image: str,
+) -> None:
     """Write a production Compose document exactly as rendered."""
-    rendered = render_production_compose(config, paths)
+    rendered = render_production_compose(
+        config,
+        paths,
+        target_image=target_image,
+        capture_image=capture_image,
+    )
     try:
         path.write_bytes(rendered)
     except OSError as error:

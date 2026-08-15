@@ -38,7 +38,14 @@ def test_render_production_compose_has_exact_two_service_topology(
     config = _config(valid_config_data, tmp_path)
     paths = ComposePaths(project_name="trafficlab-case-0123", output_directory=tmp_path / "capture output")
 
-    document = _document(render_production_compose(config, paths))
+    document = _document(
+        render_production_compose(
+            config,
+            paths,
+            target_image=config.target.image,
+            capture_image=config.capture.image,
+        )
+    )
 
     assert document["name"] == "trafficlab-case-0123"
     services = cast(dict[str, dict[str, object]], document["services"])
@@ -85,8 +92,18 @@ def test_render_production_compose_is_sorted_compact_and_deterministic(
     config = _config(valid_config_data, tmp_path)
     paths = ComposePaths(project_name="trafficlab-deterministic", output_directory=tmp_path / "output")
 
-    first = render_production_compose(config, paths)
-    second = render_production_compose(config, paths)
+    first = render_production_compose(
+        config,
+        paths,
+        target_image=config.target.image,
+        capture_image=config.capture.image,
+    )
+    second = render_production_compose(
+        config,
+        paths,
+        target_image=config.target.image,
+        capture_image=config.capture.image,
+    )
     document = json.loads(first)
 
     assert first == second
@@ -110,6 +127,8 @@ def test_render_resolves_relative_docker_bind_sources(
         render_production_compose(
             config,
             ComposePaths(project_name="trafficlab-relative", output_directory=Path("relative-output")),
+            target_image=config.target.image,
+            capture_image=config.capture.image,
         )
     )
 
@@ -130,6 +149,8 @@ def test_compose_document_has_no_privileged_or_wrapper_features(
         render_production_compose(
             config,
             ComposePaths(project_name="trafficlab-simple", output_directory=tmp_path / "output"),
+            target_image=config.target.image,
+            capture_image=config.capture.image,
         )
     )
     services = cast(dict[str, dict[str, object]], document["services"])
@@ -158,9 +179,20 @@ def test_writer_writes_exact_rendered_bytes(valid_config_data: dict[str, object]
     paths = ComposePaths(project_name="trafficlab-write", output_directory=tmp_path / "output")
     destination = tmp_path / "compose.json"
 
-    write_production_compose(destination, config, paths)
+    write_production_compose(
+        destination,
+        config,
+        paths,
+        target_image=config.target.image,
+        capture_image=config.capture.image,
+    )
 
-    assert destination.read_bytes() == render_production_compose(config, paths)
+    assert destination.read_bytes() == render_production_compose(
+        config,
+        paths,
+        target_image=config.target.image,
+        capture_image=config.capture.image,
+    )
 
 
 @pytest.mark.parametrize(
@@ -184,7 +216,12 @@ def test_renderer_translates_bind_resolution_failures(
     monkeypatch.setattr(Path, "resolve", fail_resolve)
 
     with pytest.raises(TrafficlabError, match="could not resolve Docker bind source") as error:
-        render_production_compose(config, paths)
+        render_production_compose(
+            config,
+            paths,
+            target_image=config.target.image,
+            capture_image=config.capture.image,
+        )
 
     assert error.value.corrective_action == "verify Docker bind source paths can be resolved and retry"
 
@@ -194,7 +231,13 @@ def test_writer_translates_destination_write_failures(valid_config_data: dict[st
     paths = ComposePaths(project_name="trafficlab-write-failure", output_directory=tmp_path / "output")
 
     with pytest.raises(TrafficlabError, match="could not write Compose file") as error:
-        write_production_compose(tmp_path, config, paths)
+        write_production_compose(
+            tmp_path,
+            config,
+            paths,
+            target_image=config.target.image,
+            capture_image=config.capture.image,
+        )
 
     assert error.value.corrective_action == "verify the Compose destination is writable"
 
@@ -405,6 +448,7 @@ def test_capture_image_is_minimal_pinned_and_runs_entrypoint_directly() -> None:
     dockerfile = (Path(__file__).parents[2] / "docker" / "capture" / "Dockerfile").read_text(encoding="utf-8")
 
     assert dockerfile.startswith(
+        "ARG SOURCE_DATE_EPOCH=1785789333\n"
         "FROM debian:bookworm-20260803-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241\n"
     )
     assert "snapshot.debian.org/archive/debian/20260803T203533Z/" in dockerfile

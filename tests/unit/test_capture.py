@@ -14,7 +14,7 @@ from trafficlab.capture_policy import CaptureOutcome, FailureKind, record_flush_
 from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
 from trafficlab.pcapng import encode_pcapng
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.preflight import CaptureEnvironmentIdentity, PreparedExperiment, open_or_prepare_experiment
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 
@@ -201,6 +201,20 @@ def _prepared(
     experiment_path = tmp_path / "experiment.toml"
     experiment_path.write_text(tomli_w.dumps(valid_config_data), encoding="utf-8")
     prepared = open_or_prepare_experiment(experiment_path)
+    prepared = replace(
+        prepared,
+        report=replace(
+            prepared.report,
+            environment_identity=CaptureEnvironmentIdentity(
+                host_architecture="linux/amd64",
+                target_reference=prepared.config.target.image,
+                target_content_id="sha256:" + ("c" * 64),
+                capture_reference=prepared.config.capture.image,
+                capture_content_id=("sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"),
+                capture_tool_version="4.0.17",
+            ),
+        ),
+    )
 
     def already_prepared(*args: object, **kwargs: object) -> PreparedExperiment:
         return prepared
@@ -1258,6 +1272,33 @@ def test_prepared_capture_reuses_a_stable_pair_before_any_workload_setup(
         "reused": True,
         "stage": "capture",
     }
+
+
+def test_fresh_capture_requires_full_preflight_image_identity_before_compose(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    prepared = replace(
+        prepared,
+        report=replace(prepared.report, environment_identity=None),
+    )
+
+    def reject_compose(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("capture without image identity rendered Compose")
+
+    monkeypatch.setattr(capture_module, "write_production_compose", reject_compose)
+
+    with pytest.raises(TrafficlabError, match="resolved Docker image identities") as caught:
+        capture_prepared_experiment(
+            experiment_path,
+            prepared,
+            docker=cast(Any, object()),
+        )
+
+    assert caught.value.corrective_action == "run full preflight without --config-only and retry capture"
 
 
 def test_prepared_capture_removes_a_stable_stale_diagnostic_pair_before_reuse_success(

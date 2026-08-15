@@ -16,7 +16,7 @@ from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import check_docker
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
-_CAPTURE_IMAGE_ID = "sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602"
+_CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
 _TARGET_IMAGE_ID = "sha256:" + ("c" * 64)
 
 
@@ -50,6 +50,11 @@ class _Docker:
         cleanup: _CleanupHandle | None = None,
         image_ids: dict[str, str] | None = None,
         image_references: dict[str, str] | None = None,
+        daemon_os: str = "linux",
+        daemon_architecture: str = "x86_64",
+        image_os: str = "linux",
+        image_architecture: str = "amd64",
+        image_platforms: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         self.missing_images = set(missing_images or ())
         self.failure = failure
@@ -57,6 +62,11 @@ class _Docker:
         self.cleanup = cleanup or _CleanupHandle()
         self.image_ids = dict(image_ids or {})
         self.image_references = dict(image_references or {})
+        self.daemon_os = daemon_os
+        self.daemon_architecture = daemon_architecture
+        self.image_os = image_os
+        self.image_architecture = image_architecture
+        self.image_platforms = dict(image_platforms or {})
         self.calls: list[tuple[str, tuple[object, ...], float]] = []
         self.documents: list[dict[str, object]] = []
         self.capture_signalled = False
@@ -68,7 +78,11 @@ class _Docker:
 
     def info(self, *, deadline: float) -> CommandResult:
         self._record("info", deadline=deadline)
-        return CommandResult(0, "daemon ready", "")
+        return CommandResult(
+            0,
+            json.dumps({"Architecture": self.daemon_architecture, "OSType": self.daemon_os}),
+            "",
+        )
 
     def compose_version(self, *, deadline: float) -> CommandResult:
         self._record("compose_version", deadline=deadline)
@@ -79,12 +93,18 @@ class _Docker:
         if image in self.missing_images:
             raise TrafficlabError("image is absent", corrective_action="pull it")
         default_id = _CAPTURE_IMAGE_ID if image.startswith("trafficlab-capture:") else _TARGET_IMAGE_ID
+        image_os, image_architecture = self.image_platforms.get(
+            image,
+            (self.image_os, self.image_architecture),
+        )
         return CommandResult(
             0,
             json.dumps(
                 [
                     {
                         "Id": self.image_ids.get(image, default_id),
+                        "Architecture": image_architecture,
+                        "Os": image_os,
                         "RepoDigests": [],
                         "RepoTags": [self.image_references.get(image, image)],
                     }
@@ -182,8 +202,8 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     assert all(finding.ok for finding in report.findings)
     assert [finding.name for finding in report.findings] == [
         "capture_image_lock",
-        "capture_platform",
         "docker_daemon",
+        "capture_platform",
         "docker_compose",
         "target_image",
         "capture_image",
@@ -224,15 +244,18 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     production, probe = docker.documents
     assert set(cast(dict[str, object], production["services"])) == {"capture", "target"}
     production_target = cast(dict[str, object], cast(dict[str, object], production["services"])["target"])
-    assert production_target["image"] == config.target.image
+    assert production_target["image"] == _TARGET_IMAGE_ID
     assert production_target["command"] == list(config.target.argv)
     production_capture = cast(dict[str, object], cast(dict[str, object], production["services"])["capture"])
+    assert production_capture["image"] == _CAPTURE_IMAGE_ID
     capture_mount = cast(dict[str, object], cast(list[object], production_capture["volumes"])[0])
     assert Path(cast(str, capture_mount["source"])).is_absolute()
     probe_services = cast(dict[str, object], probe["services"])
     probe_target = cast(dict[str, object], probe_services["target"])
     assert set(probe_services) == {"capture", "target"}
-    assert probe_target["image"] == config.capture.image
+    assert probe_target["image"] == _CAPTURE_IMAGE_ID
+    probe_capture = cast(dict[str, object], probe_services["capture"])
+    assert probe_capture["image"] == _CAPTURE_IMAGE_ID
     entrypoint = cast(list[object], probe_target["entrypoint"])
     assert entrypoint[-1] == config.capture.network_probe_url
     assert entrypoint[0] == "curl"
@@ -276,29 +299,61 @@ def test_target_reference_mismatch_stops_before_capture_probe(
     assert _names(docker).count("image_inspect") == 1
 
 
-@pytest.mark.parametrize("host_architecture", ["aarch64", "arm64", "", "unknown"])
-def test_unsupported_capture_platform_stops_before_docker(
+@pytest.mark.parametrize(
+    ("image_kind", "operating_system", "architecture", "expected_finding"),
+    [
+        ("target", "linux", "arm64", "target_image"),
+        ("capture", "windows", "amd64", "capture_image"),
+    ],
+)
+def test_unsupported_image_platform_stops_at_its_owning_preflight_stage(
     valid_config_data: dict[str, object],
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    host_architecture: str,
+    image_kind: str,
+    operating_system: str,
+    architecture: str,
+    expected_finding: str,
 ) -> None:
     config = _config(valid_config_data, tmp_path)
-    docker = _Docker()
-    monkeypatch.setattr(preflight_module.platform, "machine", lambda: host_architecture)
+    image = config.target.image if image_kind == "target" else config.capture.image
+    docker = _Docker(image_platforms={image: (operating_system, architecture)})
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.environment_identity is None
+    assert report.findings[-1].name == expected_finding
+    assert report.findings[-1].ok is False
+    assert "linux/amd64" in report.findings[-1].detail
+    assert "config" not in _names(docker)
+
+
+@pytest.mark.parametrize(
+    ("daemon_os", "daemon_architecture"),
+    [("linux", "arm64"), ("windows", "amd64"), ("", "amd64"), ("linux", "")],
+)
+def test_unsupported_remote_capture_platform_stops_before_compose_or_images(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    daemon_os: str,
+    daemon_architecture: str,
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker(daemon_os=daemon_os, daemon_architecture=daemon_architecture)
 
     report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
 
     assert [finding.name for finding in report.findings] == [
         "capture_image_lock",
+        "docker_daemon",
         "capture_platform",
     ]
     assert report.findings[0].ok is True
-    assert report.findings[1].ok is False
-    assert "linux/amd64" in report.findings[1].detail
-    assert report.findings[1].corrective_action is not None
-    assert "linux/amd64" in report.findings[1].corrective_action
-    assert docker.calls == []
+    assert report.findings[1].ok is True
+    assert report.findings[2].ok is False
+    assert "linux/amd64" in report.findings[2].detail
+    assert report.findings[2].corrective_action is not None
+    assert "linux/amd64" in report.findings[2].corrective_action
+    assert _names(docker) == ["info"]
 
 
 def test_invalid_checked_capture_inputs_stop_before_docker(

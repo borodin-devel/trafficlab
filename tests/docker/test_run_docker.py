@@ -110,8 +110,21 @@ def _install_unready_capture(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the real container alive without creating the capture readiness files."""
     original_write = capture_module.write_production_compose
 
-    def write(path: Path, config: ExperimentConfig, paths: ComposePaths) -> None:
-        original_write(path, config, paths)
+    def write(
+        path: Path,
+        config: ExperimentConfig,
+        paths: ComposePaths,
+        *,
+        target_image: str,
+        capture_image: str,
+    ) -> None:
+        original_write(
+            path,
+            config,
+            paths,
+            target_image=target_image,
+            capture_image=capture_image,
+        )
         document = cast(dict[str, object], json.loads(path.read_bytes()))
         services = cast(dict[str, object], document["services"])
         capture = cast(dict[str, object], services["capture"])

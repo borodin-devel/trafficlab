@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import time
+import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -181,9 +182,21 @@ def build_test_image(
     dockerfile: Path | None = None,
     reproducible_capture: bool = False,
 ) -> None:
-    argv = ["docker", "build", "--pull=false"]
+    argv = ["docker", "build"]
     if reproducible_capture:
-        argv.extend(("--provenance=false", "--platform", "linux/amd64"))
+        argv.extend(
+            (
+                "--pull",
+                "--no-cache",
+                "--provenance=false",
+                "--platform",
+                "linux/amd64",
+                "--output",
+                "type=image,rewrite-timestamp=true,unpack=false",
+            )
+        )
+    else:
+        argv.append("--pull=false")
     argv.extend(("--tag", tag))
     if dockerfile is not None:
         argv.extend(("--file", str(dockerfile)))
@@ -192,7 +205,7 @@ def build_test_image(
 
 
 @pytest.fixture(scope="session")
-def docker_test_environment(pytestconfig: pytest.Config) -> DockerTestEnvironment:
+def docker_test_environment(pytestconfig: pytest.Config) -> Iterator[DockerTestEnvironment]:
     """Require and build the real-Docker test environment; never skip explicit selection."""
     if not (external_tests_requested(pytestconfig, "docker") or external_tests_requested(pytestconfig, "internet")):
         raise pytest.UsageError("Docker fixtures may only be used by an explicitly selected external test scope")
@@ -203,17 +216,27 @@ def docker_test_environment(pytestconfig: pytest.Config) -> DockerTestEnvironmen
         purpose="verify the Docker Compose v2 plugin",
         timeout=20.0,
     )
-    environment = DockerTestEnvironment()
-    build_test_image(
-        environment.capture_image,
-        REPOSITORY_ROOT / "docker" / "capture",
-        reproducible_capture=True,
-    )
-    build_test_image(environment.client_image, environment.fixture_root / "images" / "client")
-    if external_tests_requested(pytestconfig, "docker"):
-        build_test_image(environment.endpoint_image, environment.fixture_root / "images" / "endpoint")
-        build_test_image(environment.no_shell_image, environment.fixture_root / "images" / "no_shell")
-    return environment
+    environment = DockerTestEnvironment(capture_image=f"{CAPTURE_IMAGE}-{uuid.uuid4().hex}")
+    capture_built = False
+    try:
+        build_test_image(
+            environment.capture_image,
+            REPOSITORY_ROOT / "docker" / "capture",
+            reproducible_capture=True,
+        )
+        capture_built = True
+        build_test_image(environment.client_image, environment.fixture_root / "images" / "client")
+        if external_tests_requested(pytestconfig, "docker"):
+            build_test_image(environment.endpoint_image, environment.fixture_root / "images" / "endpoint")
+            build_test_image(environment.no_shell_image, environment.fixture_root / "images" / "no_shell")
+        yield environment
+    finally:
+        if capture_built:
+            run_external_command(
+                ("docker", "image", "rm", "--force", environment.capture_image),
+                purpose=f"remove owned capture test image {environment.capture_image}",
+                timeout=20.0,
+            )
 
 
 @pytest.fixture(scope="session")
@@ -445,12 +468,26 @@ def _install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
         path: Path,
         config: ExperimentConfig,
         paths: ComposePaths,
+        *,
+        target_image: str,
+        capture_image: str,
     ) -> None:
-        write_production_compose(path, config, paths)
+        write_production_compose(
+            path,
+            config,
+            paths,
+            target_image=target_image,
+            capture_image=capture_image,
+        )
         path.write_bytes(merge_endpoint_overlay(path.read_bytes()))
 
-    def probe_with_endpoint(config: ExperimentConfig, paths: ComposePaths) -> bytes:
-        return merge_endpoint_overlay(original_probe_document(config, paths))
+    def probe_with_endpoint(
+        config: ExperimentConfig,
+        paths: ComposePaths,
+        *,
+        capture_image: str,
+    ) -> bytes:
+        return merge_endpoint_overlay(original_probe_document(config, paths, capture_image=capture_image))
 
     monkeypatch.setattr(capture_module, "write_production_compose", write_with_endpoint)
     monkeypatch.setattr(preflight_module, "_probe_document", probe_with_endpoint)

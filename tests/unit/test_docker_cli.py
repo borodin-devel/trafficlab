@@ -115,7 +115,7 @@ def test_command_values_are_immutable() -> None:
 @pytest.mark.parametrize(
     ("operation", "expected"),
     [
-        ("info", ("docker", "info")),
+        ("info", ("docker", "info", "--format", "{{json .}}")),
         ("compose_version", ("docker", "compose", "version")),
         (
             "image_inspect",

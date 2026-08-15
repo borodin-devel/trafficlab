@@ -475,9 +475,7 @@ def _capture_failure_outcome(
 ) -> FailureOutcome:
     """Translate the complete existing capture arbitration result to its canonical evidence."""
     has_cleanup = FailureKind.CLEANUP_FAILED in all_kinds
-    has_capture_and_total = (
-        FailureKind.CAPTURE_STOPPED in all_kinds and FailureKind.TOTAL_TIMEOUT in all_kinds
-    )
+    has_capture_and_total = FailureKind.CAPTURE_STOPPED in all_kinds and FailureKind.TOTAL_TIMEOUT in all_kinds
     is_flush_timeout = kind is FailureKind.FLUSH_FAILED or origin is CaptureFailureOrigin.FLUSH
     if kind in (FailureKind.TARGET_NONZERO_EXIT, FailureKind.NATURAL_TARGET_STATUS, FailureKind.INDUCED_TARGET_STATUS):
         outcome_kind, evidence, state = "target_failed", "capture pair", "diagnostic_only"
@@ -507,7 +505,11 @@ def _capture_failure_outcome(
         outcome_kind, evidence, state = "stage_timeout", "capture pair", "diagnostic_only"
         if is_flush_timeout:
             state = "not_published"
-            corrective_action = "correct flush then total budget" if FailureKind.TOTAL_TIMEOUT in all_kinds else "correct capture flush or budget"
+            corrective_action = (
+                "correct flush then total budget"
+                if FailureKind.TOTAL_TIMEOUT in all_kinds
+                else "correct capture flush or budget"
+            )
         elif FailureKind.INDUCED_TARGET_STATUS in all_kinds:
             corrective_action = "correct workload or timeout"
         else:
@@ -562,13 +564,11 @@ def _capture_failure_outcomes(
     """Render one primary and every retained secondary capture failure in existing discovery order."""
     if outcome.primary_kind is None or outcome.primary_detail is None:
         raise ValueError("capture failure outcomes require an existing primary failure")
-    all_details = ((outcome.primary_kind, outcome.primary_detail, outcome.primary_status, outcome.primary_origin),) + tuple(
-        (item.kind, item.detail, item.status, item.origin) for item in outcome.secondary_details
-    )
+    all_details = (
+        (outcome.primary_kind, outcome.primary_detail, outcome.primary_status, outcome.primary_origin),
+    ) + tuple((item.kind, item.detail, item.status, item.origin) for item in outcome.secondary_details)
     rendered_details = tuple(
-        item
-        for item in all_details
-        if not (item[0] is FailureKind.NATURAL_TARGET_STATUS and item[2] == 0)
+        item for item in all_details if not (item[0] is FailureKind.NATURAL_TARGET_STATUS and item[2] == 0)
     )
     all_kinds = tuple(item[0] for item in rendered_details)
     natural_target_succeeded = any(
@@ -747,6 +747,13 @@ def capture_prepared_experiment(
         )
         return result
 
+    environment_identity = prepared.report.environment_identity
+    if environment_identity is None:
+        raise TrafficlabError(
+            "fresh capture requires resolved Docker image identities from full preflight",
+            corrective_action="run full preflight without --config-only and retry capture",
+        )
+
     if docker is None:
         docker = cast(CaptureDocker, DockerCompose(clock=clock))
     config = prepared.config
@@ -775,6 +782,8 @@ def capture_prepared_experiment(
             compose_path,
             config,
             ComposePaths(project_name=project_name, output_directory=capture_directory),
+            target_image=environment_identity.target_content_id,
+            capture_image=environment_identity.capture_content_id,
         )
         creation_deadline = _future_deadline(clock, config.capture.total_timeout_seconds, stage="project creation")
         operation = "record capture project creation"

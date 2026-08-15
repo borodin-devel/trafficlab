@@ -159,7 +159,18 @@ def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
         source=run_directory.parent / "experiment.toml",
         portable_config=config,
         config=config,
-        report=preflight.PreflightReport(config=config, findings=()),
+        report=preflight.PreflightReport(
+            config=config,
+            findings=(),
+            environment_identity=preflight.CaptureEnvironmentIdentity(
+                host_architecture="linux/amd64",
+                target_reference="target:test",
+                target_content_id="sha256:" + ("c" * 64),
+                capture_reference="capture:test",
+                capture_content_id="sha256:" + ("d" * 64),
+                capture_tool_version="4.0.17",
+            ),
+        ),
         run_directory=run_directory,
     )
 

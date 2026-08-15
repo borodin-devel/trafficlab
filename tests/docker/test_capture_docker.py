@@ -81,7 +81,12 @@ def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
         argv=["traffic", "--tcp-count", "2", "--udp-count", "3"],
     )
     config: ExperimentConfig = load_experiment(experiment)
-    production = render_production_compose(config, ComposePaths("trafficlab-contract", tmp_path.resolve()))
+    production = render_production_compose(
+        config,
+        ComposePaths("trafficlab-contract", tmp_path.resolve()),
+        target_image=config.target.image,
+        capture_image=config.capture.image,
+    )
 
     assert set(_services(production)) == {"capture", "target"}
     overlay_services = _services(merge_endpoint_overlay(production))

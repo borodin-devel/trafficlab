@@ -3,9 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+from collections.abc import Callable, Generator
 from pathlib import Path
-from types import ModuleType
-from typing import Protocol, Self, cast
+from types import ModuleType, SimpleNamespace
+from typing import Any, Protocol, Self, cast
 
 import pytest
 
@@ -13,7 +14,7 @@ from tests import conftest
 from tests.docker import support
 from trafficlab.artifacts import append_run_log
 
-_CAPTURE_IMAGE_ID = "sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602"
+_CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
 
 
 def test_capture_fixture_identity_uses_injected_inspect_result() -> None:
@@ -29,7 +30,17 @@ def test_capture_fixture_identity_uses_injected_inspect_result() -> None:
     ) -> subprocess.CompletedProcess[str]:
         del purpose, timeout, check
         calls.append(argv)
-        stdout = json.dumps([{"Id": _CAPTURE_IMAGE_ID, "RepoDigests": [], "RepoTags": [reference]}])
+        stdout = json.dumps(
+            [
+                {
+                    "Id": _CAPTURE_IMAGE_ID,
+                    "Architecture": "amd64",
+                    "Os": "linux",
+                    "RepoDigests": [],
+                    "RepoTags": [reference],
+                }
+            ]
+        )
         return subprocess.CompletedProcess(argv, 0, stdout, "")
 
     identity = support.require_checked_capture_image(reference, runner=command)
@@ -56,6 +67,8 @@ def test_capture_fixture_identity_rejects_mismatch_without_rewriting_lock() -> N
             [
                 {
                     "Id": "sha256:" + ("d" * 64),
+                    "Architecture": "amd64",
+                    "Os": "linux",
                     "RepoDigests": [],
                     "RepoTags": [reference],
                 }
@@ -98,15 +111,56 @@ def test_capture_fixture_build_disables_nondeterministic_provenance(
         (
             "docker",
             "build",
-            "--pull=false",
+            "--pull",
+            "--no-cache",
             "--provenance=false",
             "--platform",
             "linux/amd64",
+            "--output",
+            "type=image,rewrite-timestamp=true,unpack=false",
             "--tag",
             "trafficlab-capture:test",
             str(tmp_path),
         )
     ]
+
+
+def test_docker_environment_owns_a_unique_capture_tag_and_removes_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        calls.append(tuple(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    class _SelectedDockerConfig:
+        option = SimpleNamespace(numprocesses=0)
+        invocation_params = SimpleNamespace(args=("tests/docker",))
+
+        def getoption(self, name: str) -> str:
+            assert name == "markexpr"
+            return "docker"
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+    fixture = cast(
+        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
+        cast(Any, conftest.docker_test_environment).__wrapped__,
+    )
+    iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
+    environment = next(iterator)
+
+    assert environment.capture_image.startswith("trafficlab-capture:phase3-test-")
+    assert environment.capture_image != conftest.CAPTURE_IMAGE
+    iterator.close()
+    assert calls[-1] == ("docker", "image", "rm", "--force", environment.capture_image)
 
 
 @pytest.mark.parametrize(

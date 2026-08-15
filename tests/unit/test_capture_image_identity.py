@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import pytest
 
+import trafficlab.docker_cli as docker_cli_module
 from trafficlab.docker_cli import (
     CaptureImageLockError,
     ImageIdentity,
@@ -50,6 +51,7 @@ _INVALID_LOCK_MUTATIONS: list[Callable[[dict[str, Any]], object]] = [
     lambda payload: payload.__setitem__("expected_capture_image_id", "sha256:not-an-id"),
     lambda payload: payload.__setitem__("base_reference", "debian@sha256:bad"),
     lambda payload: payload.__setitem__("debian_snapshot", "2026-08-03"),
+    lambda payload: payload.__setitem__("debian_snapshot", "20260230T000000Z"),
     lambda payload: payload.__setitem__("direct_packages", {"curl": ""}),
     lambda payload: payload.__setitem__("capture_tool_version", ""),
 ]
@@ -64,6 +66,10 @@ _INVALID_DOCKERFILE_MUTATIONS: list[tuple[Callable[[str], str], str]] = [
     (
         lambda text: text.replace("20260803T203533Z", "20260802T000000Z", 1),
         "snapshot",
+    ),
+    (
+        lambda text: text.replace("SOURCE_DATE_EPOCH=1785789333", "SOURCE_DATE_EPOCH=1785789334", 1),
+        "SOURCE_DATE_EPOCH",
     ),
     (
         lambda text: (
@@ -83,7 +89,8 @@ _INVALID_DOCKERFILE_MUTATIONS: list[tuple[Callable[[str], str], str]] = [
 def _dockerfile() -> str:
     payload = _lock_payload()
     packages = payload["direct_packages"]
-    return f"""FROM {payload["base_reference"]}@{payload["base_digest"]}
+    return f"""ARG SOURCE_DATE_EPOCH=1785789333
+FROM {payload["base_reference"]}@{payload["base_digest"]}
 
 RUN printf '%s\\n' \\
     'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/{payload["debian_snapshot"]}/ bookworm main' \\
@@ -95,7 +102,7 @@ RUN printf '%s\\n' \\
    ca-certificates={packages["ca-certificates"]} \\
    curl={packages["curl"]} \\
    wireshark-common={packages["wireshark-common"]} \\
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* /var/cache/* /var/log/* /tmp/* /var/tmp/*
 
 COPY --chmod=0755 capture.sh /usr/local/bin/trafficlab-capture
 
@@ -112,6 +119,7 @@ def test_capture_image_lock_requires_canonical_valid_content(tmp_path: Path) -> 
     assert lock.base_reference == "debian:bookworm-20260803-slim"
     assert lock.base_digest == _BASE_DIGEST
     assert lock.debian_snapshot == "20260803T203533Z"
+    assert lock.source_date_epoch == 1785789333
     assert dict(lock.direct_packages) == _lock_payload()["direct_packages"]
     assert lock.capture_tool_version == "4.0.17"
     assert lock.expected_capture_image_id == _IMAGE_ID
@@ -240,6 +248,8 @@ def test_parse_image_inspect_returns_requested_reference_and_content_id() -> Non
         [
             {
                 "Id": _IMAGE_ID,
+                "Architecture": "amd64",
+                "Os": "linux",
                 "RepoDigests": [],
                 "RepoTags": ["trafficlab-capture:task9"],
             }
@@ -250,12 +260,44 @@ def test_parse_image_inspect_returns_requested_reference_and_content_id() -> Non
 
     assert identity.reference == "trafficlab-capture:task9"
     assert identity.content_id == _IMAGE_ID
+    assert identity.operating_system == "linux"
+    assert identity.architecture == "amd64"
+
+
+@pytest.mark.parametrize(
+    ("reference", "repo_digests"),
+    [
+        (_IMAGE_ID, []),
+        ("registry.example/capture@" + _BASE_DIGEST, ["registry.example/capture@" + _BASE_DIGEST]),
+    ],
+    ids=["content-id", "repository-digest"],
+)
+def test_parse_image_inspect_accepts_immutable_reference_forms(
+    reference: str,
+    repo_digests: list[str],
+) -> None:
+    raw = json.dumps(
+        [
+            {
+                "Id": _IMAGE_ID,
+                "Architecture": "amd64",
+                "Os": "linux",
+                "RepoDigests": repo_digests,
+                "RepoTags": [],
+            }
+        ]
+    )
+
+    assert parse_image_inspect(reference, raw).reference == reference
 
 
 @pytest.mark.parametrize(
     ("reference", "raw", "message"),
     [
+        ("target:test", "not-json", "inspect JSON"),
+        ("target:test", "{}", "one image"),
         ("target:test", "[]", "one image"),
+        ("target:test", "[1]", "record.*object"),
         (
             "target:test",
             json.dumps([{"Id": "sha256:bad", "RepoTags": ["target:test"]}]),
@@ -263,8 +305,82 @@ def test_parse_image_inspect_returns_requested_reference_and_content_id() -> Non
         ),
         (
             "target:test",
+            json.dumps([{"Id": _IMAGE_ID, "RepoTags": 1}]),
+            "RepoTags",
+        ),
+        (
+            "target:test",
+            json.dumps([{"Id": _IMAGE_ID, "RepoTags": [1]}]),
+            "RepoTags",
+        ),
+        (
+            "target:test",
+            json.dumps([{"Id": _IMAGE_ID, "RepoDigests": 1, "RepoTags": ["target:test"]}]),
+            "RepoDigests",
+        ),
+        (
+            "target:test",
+            json.dumps([{"Id": _IMAGE_ID, "RepoDigests": [1], "RepoTags": ["target:test"]}]),
+            "RepoDigests",
+        ),
+        (
+            "target:test",
             json.dumps([{"Id": _IMAGE_ID, "RepoTags": ["other:test"]}]),
             "reference",
+        ),
+        (
+            "target:test",
+            json.dumps(
+                [
+                    {
+                        "Id": _IMAGE_ID,
+                        "Architecture": "amd64",
+                        "RepoTags": ["target:test"],
+                    }
+                ]
+            ),
+            "operating system",
+        ),
+        (
+            "target:test",
+            json.dumps(
+                [
+                    {
+                        "Id": _IMAGE_ID,
+                        "Os": "linux",
+                        "RepoTags": ["target:test"],
+                    }
+                ]
+            ),
+            "architecture",
+        ),
+        (
+            "target:test",
+            json.dumps(
+                [
+                    {
+                        "Id": _IMAGE_ID,
+                        "Architecture": "amd64",
+                        "Os": 1,
+                        "RepoTags": ["target:test"],
+                    }
+                ]
+            ),
+            "operating system",
+        ),
+        (
+            "target:test",
+            json.dumps(
+                [
+                    {
+                        "Id": _IMAGE_ID,
+                        "Architecture": 1,
+                        "Os": "linux",
+                        "RepoTags": ["target:test"],
+                    }
+                ]
+            ),
+            "architecture",
         ),
     ],
 )
@@ -286,10 +402,10 @@ def test_capture_environment_identity_records_both_resolved_images(
     target_id = "sha256:" + ("c" * 64)
 
     identity = capture_environment_identity(
-        target=ImageIdentity("trafficlab-target:test", target_id),
-        capture=ImageIdentity("trafficlab-capture:test", _IMAGE_ID),
+        target=ImageIdentity("trafficlab-target:test", target_id, "linux", "amd64"),
+        capture=ImageIdentity("trafficlab-capture:test", _IMAGE_ID, "linux", "amd64"),
         lock=lock,
-        host_architecture="amd64",
+        execution_platform="linux/amd64",
     )
 
     assert identity.host_architecture == "linux/amd64"
@@ -310,28 +426,95 @@ def test_capture_environment_identity_rejects_mismatch_without_refreshing_lock(
 
     with pytest.raises(CaptureImageLockError, match="expected capture image"):
         capture_environment_identity(
-            target=ImageIdentity("trafficlab-target:test", "sha256:" + ("c" * 64)),
-            capture=ImageIdentity("trafficlab-capture:test", "sha256:" + ("d" * 64)),
+            target=ImageIdentity("trafficlab-target:test", "sha256:" + ("c" * 64), "linux", "amd64"),
+            capture=ImageIdentity("trafficlab-capture:test", "sha256:" + ("d" * 64), "linux", "amd64"),
             lock=lock,
-            host_architecture="amd64",
+            execution_platform="linux/amd64",
         )
 
     assert lock_path.read_bytes() == before
 
 
-@pytest.mark.parametrize("host_architecture", ["aarch64", "arm64", "", "unknown"])
-def test_capture_environment_identity_rejects_unsupported_platform(
+def test_capture_environment_identity_rejects_noncanonical_execution_platform(
     tmp_path: Path,
-    host_architecture: str,
 ) -> None:
     lock_path = tmp_path / "image-lock.json"
     _write_lock(lock_path)
     lock = load_capture_image_lock(lock_path)
 
-    with pytest.raises(CaptureImageLockError, match="linux/amd64"):
+    with pytest.raises(CaptureImageLockError, match="Docker execution platform.*linux/amd64"):
         capture_environment_identity(
-            target=ImageIdentity("trafficlab-target:test", "sha256:" + ("c" * 64)),
-            capture=ImageIdentity("trafficlab-capture:test", _IMAGE_ID),
+            target=ImageIdentity(
+                "trafficlab-target:test",
+                "sha256:" + ("c" * 64),
+                "linux",
+                "amd64",
+            ),
+            capture=ImageIdentity("trafficlab-capture:test", _IMAGE_ID, "linux", "amd64"),
             lock=lock,
-            host_architecture=host_architecture,
+            execution_platform=cast(Any, "linux/arm64"),
         )
+
+
+@pytest.mark.parametrize(
+    ("image_name", "operating_system", "architecture"),
+    [
+        ("target", "windows", "amd64"),
+        ("target", "linux", "arm64"),
+        ("capture", "windows", "amd64"),
+        ("capture", "linux", "arm64"),
+    ],
+)
+def test_capture_environment_identity_rejects_unsupported_image_platform(
+    tmp_path: Path,
+    image_name: str,
+    operating_system: str,
+    architecture: str,
+) -> None:
+    lock_path = tmp_path / "image-lock.json"
+    _write_lock(lock_path)
+    lock = load_capture_image_lock(lock_path)
+    target_platform = (operating_system, architecture) if image_name == "target" else ("linux", "amd64")
+    capture_platform = (operating_system, architecture) if image_name == "capture" else ("linux", "amd64")
+
+    with pytest.raises(CaptureImageLockError, match=rf"{image_name} image.*linux/amd64"):
+        capture_environment_identity(
+            target=ImageIdentity(
+                "trafficlab-target:test",
+                "sha256:" + ("c" * 64),
+                *target_platform,
+            ),
+            capture=ImageIdentity("trafficlab-capture:test", _IMAGE_ID, *capture_platform),
+            lock=lock,
+            execution_platform="linux/amd64",
+        )
+
+
+def test_parse_docker_info_platform_accepts_the_remote_capture_platform() -> None:
+    assert (
+        docker_cli_module.parse_docker_info_platform(json.dumps({"Architecture": "x86_64", "OSType": "linux"}))
+        == "linux/amd64"
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ("not-json", "Docker info JSON"),
+        ("[]", "Docker info.*object"),
+        (json.dumps({"Architecture": "amd64"}), "operating system"),
+        (json.dumps({"Architecture": "amd64", "OSType": ""}), "operating system"),
+        (json.dumps({"Architecture": "amd64", "OSType": 1}), "operating system"),
+        (json.dumps({"OSType": "linux"}), "architecture"),
+        (json.dumps({"Architecture": "", "OSType": "linux"}), "architecture"),
+        (json.dumps({"Architecture": 1, "OSType": "linux"}), "architecture"),
+        (json.dumps({"Architecture": "arm64", "OSType": "linux"}), "linux/amd64"),
+        (json.dumps({"Architecture": "amd64", "OSType": "windows"}), "linux/amd64"),
+    ],
+)
+def test_parse_docker_info_platform_rejects_malformed_or_unsupported_daemon(
+    raw: str,
+    message: str,
+) -> None:
+    with pytest.raises(CaptureImageLockError, match=message):
+        docker_cli_module.parse_docker_info_platform(raw)

@@ -9,6 +9,7 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final, Literal, Protocol, cast
@@ -67,6 +68,49 @@ def normalize_capture_platform(host_architecture: str) -> CapturePlatform:
     )
 
 
+def validate_capture_platform(
+    operating_system: str,
+    architecture: str,
+    *,
+    source: str,
+) -> CapturePlatform:
+    """Require one Docker execution or image platform to be linux/amd64."""
+
+    if operating_system.casefold() != "linux":
+        raise CaptureImageLockError(
+            f"unsupported {source} platform {operating_system!r}/{architecture!r}; "
+            f"required platform is {CAPTURE_PLATFORM}"
+        )
+    try:
+        return normalize_capture_platform(architecture)
+    except CaptureImageLockError as error:
+        raise CaptureImageLockError(
+            f"unsupported {source} platform {operating_system!r}/{architecture!r}; "
+            f"required platform is {CAPTURE_PLATFORM}"
+        ) from error
+
+
+def parse_docker_info_platform(stdout: str) -> CapturePlatform:
+    """Parse the remote Docker daemon platform from formatted Docker info."""
+
+    try:
+        parsed = cast(object, json.loads(stdout))
+    except json.JSONDecodeError as error:
+        raise CaptureImageLockError(f"invalid Docker info JSON: {error}") from error
+    if not isinstance(parsed, dict):
+        raise CaptureImageLockError("Docker info JSON must be an object")
+    payload = cast(dict[str, object], parsed)
+    operating_system = payload.get("OSType")
+    if not isinstance(operating_system, str) or not operating_system:
+        raise CaptureImageLockError(
+            f"Docker info has an invalid operating system; required platform is {CAPTURE_PLATFORM}"
+        )
+    architecture = payload.get("Architecture")
+    if not isinstance(architecture, str) or not architecture:
+        raise CaptureImageLockError(f"Docker info has an invalid architecture; required platform is {CAPTURE_PLATFORM}")
+    return validate_capture_platform(operating_system, architecture, source="Docker daemon")
+
+
 @dataclass(frozen=True, slots=True)
 class CaptureImageLock:
     """Immutable inputs and expected output for the capture image."""
@@ -74,6 +118,7 @@ class CaptureImageLock:
     base_reference: str
     base_digest: str
     debian_snapshot: str
+    source_date_epoch: int
     direct_packages: Mapping[str, str]
     capture_tool_version: str
     expected_capture_image_id: str
@@ -85,6 +130,8 @@ class ImageIdentity:
 
     reference: str
     content_id: str
+    operating_system: str
+    architecture: str
 
 
 def _canonical_lock_bytes(payload: Mapping[str, object]) -> bytes:
@@ -138,6 +185,10 @@ def load_capture_image_lock(path: Path) -> CaptureImageLock:
     snapshot = _lock_string(payload, "debian_snapshot")
     if _SNAPSHOT_PATTERN.fullmatch(snapshot) is None:
         raise CaptureImageLockError("debian_snapshot must use the YYYYMMDDTHHMMSSZ form")
+    try:
+        source_date_epoch = int(datetime.strptime(snapshot, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC).timestamp())
+    except ValueError as error:
+        raise CaptureImageLockError("debian_snapshot must be a valid UTC timestamp") from error
 
     packages_value = payload["direct_packages"]
     if not isinstance(packages_value, dict):
@@ -159,6 +210,7 @@ def load_capture_image_lock(path: Path) -> CaptureImageLock:
         base_reference=base_reference,
         base_digest=base_digest,
         debian_snapshot=snapshot,
+        source_date_epoch=source_date_epoch,
         direct_packages=MappingProxyType(package_versions),
         capture_tool_version=capture_tool_version,
         expected_capture_image_id=expected_image_id,
@@ -171,7 +223,8 @@ def validate_capture_dockerfile(
 ) -> None:
     """Require the capture Dockerfile to consume only inputs named by the lock."""
 
-    expected = f"""FROM {lock.base_reference}@{lock.base_digest}
+    expected = f"""ARG SOURCE_DATE_EPOCH={lock.source_date_epoch}
+FROM {lock.base_reference}@{lock.base_digest}
 
 RUN printf '%s\\n' \\
     'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/{lock.debian_snapshot}/ bookworm main' \\
@@ -183,7 +236,7 @@ RUN printf '%s\\n' \\
    ca-certificates={lock.direct_packages["ca-certificates"]} \\
    curl={lock.direct_packages["curl"]} \\
    wireshark-common={lock.direct_packages["wireshark-common"]} \\
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* /var/cache/* /var/log/* /tmp/* /var/tmp/*
 
 COPY --chmod=0755 capture.sh /usr/local/bin/trafficlab-capture
 
@@ -191,8 +244,8 @@ ENTRYPOINT ["/usr/local/bin/trafficlab-capture"]
 """
     if dockerfile != expected:
         raise CaptureImageLockError(
-            "capture Dockerfile must exactly match the locked base digest, snapshot "
-            "APT sources, apt operations, and package versions including curl"
+            "capture Dockerfile must exactly match the locked base digest, snapshot-derived "
+            "SOURCE_DATE_EPOCH, snapshot APT sources, apt operations, and package versions including curl"
         )
 
 
@@ -236,7 +289,18 @@ def parse_image_inspect(reference: str, stdout: str) -> ImageIdentity:
         reference_matches = reference in repo_tags
     if not reference_matches:
         raise CaptureImageLockError(f"Docker image inspect does not match requested reference {reference!r}")
-    return ImageIdentity(reference=reference, content_id=content_id)
+    operating_system = typed_record.get("Os")
+    if not isinstance(operating_system, str) or not operating_system:
+        raise CaptureImageLockError("Docker image inspect has an invalid operating system")
+    architecture = typed_record.get("Architecture")
+    if not isinstance(architecture, str) or not architecture:
+        raise CaptureImageLockError("Docker image inspect has an invalid architecture")
+    return ImageIdentity(
+        reference=reference,
+        content_id=content_id,
+        operating_system=operating_system,
+        architecture=architecture,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -674,7 +738,12 @@ class DockerCompose:
 
     def info(self, *, timeout: float | None = None, deadline: float | None = None) -> CommandResult:
         """Check Docker daemon availability."""
-        return self._run(("docker", "info"), "Docker info", timeout=timeout, deadline=deadline)
+        return self._run(
+            ("docker", "info", "--format", "{{json .}}"),
+            "Docker info",
+            timeout=timeout,
+            deadline=deadline,
+        )
 
     def compose_version(self, *, timeout: float | None = None, deadline: float | None = None) -> CommandResult:
         """Check Docker Compose v2 availability."""

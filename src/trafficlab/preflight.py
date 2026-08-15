@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import platform
 import shutil
 import tempfile
 import time
@@ -138,14 +137,21 @@ def capture_environment_identity(
     target: ImageIdentity,
     capture: ImageIdentity,
     lock: CaptureImageLock,
-    host_architecture: str | None = None,
+    execution_platform: CapturePlatform,
 ) -> CaptureEnvironmentIdentity:
     """Bind resolved images to the checked lock, rejecting any capture mismatch."""
-    from trafficlab.docker_cli import CaptureImageLockError, normalize_capture_platform
+    from trafficlab.docker_cli import CAPTURE_PLATFORM, CaptureImageLockError, validate_capture_platform
 
-    capture_platform = normalize_capture_platform(
-        platform.machine() if host_architecture is None else host_architecture
-    )
+    if execution_platform != CAPTURE_PLATFORM:
+        raise CaptureImageLockError(
+            f"unsupported Docker execution platform {execution_platform!r}; required platform is {CAPTURE_PLATFORM}"
+        )
+    for name, identity in (("target", target), ("capture", capture)):
+        validate_capture_platform(
+            identity.operating_system,
+            identity.architecture,
+            source=f"{name} image",
+        )
 
     if capture.content_id != lock.expected_capture_image_id:
         raise CaptureImageLockError(
@@ -154,7 +160,7 @@ def capture_environment_identity(
             f"resolved {capture.content_id}"
         )
     return CaptureEnvironmentIdentity(
-        host_architecture=capture_platform,
+        host_architecture=execution_platform,
         target_reference=target.reference,
         target_content_id=target.content_id,
         capture_reference=capture.reference,
@@ -281,9 +287,7 @@ def _failure(name: str, error: TrafficlabError) -> PreflightFinding:
     return PreflightFinding(name, False, str(error), error.corrective_action)
 
 
-def _preflight_failure_outcome(
-    finding: PreflightFinding, *, authority: FailureAuthority = "primary"
-) -> FailureOutcome:
+def _preflight_failure_outcome(finding: PreflightFinding, *, authority: FailureAuthority = "primary") -> FailureOutcome:
     """Render a direct preflight finding without changing its existing error path."""
     docker_findings = {
         "capture_image_lock",
@@ -343,7 +347,7 @@ def _image_ready(
     *,
     deadline: float,
 ) -> ImageIdentity:
-    from trafficlab.docker_cli import CaptureImageLockError, parse_image_inspect
+    from trafficlab.docker_cli import CaptureImageLockError, parse_image_inspect, validate_capture_platform
 
     try:
         inspected = compose.image_inspect(image, deadline=deadline)
@@ -351,7 +355,13 @@ def _image_ready(
         compose.image_pull(image, deadline=deadline)
         inspected = compose.image_inspect(image, deadline=deadline)
     try:
-        return parse_image_inspect(image, inspected.stdout)
+        identity = parse_image_inspect(image, inspected.stdout)
+        validate_capture_platform(
+            identity.operating_system,
+            identity.architecture,
+            source=f"Docker image {image!r}",
+        )
+        return identity
     except CaptureImageLockError as error:
         raise TrafficlabError(
             f"could not resolve image identity for {image!r}: {error}",
@@ -359,8 +369,23 @@ def _image_ready(
         ) from error
 
 
-def _probe_document(config: ExperimentConfig, paths: ComposePaths) -> bytes:
-    document = cast(dict[str, object], json.loads(render_production_compose(config, paths)))
+def _probe_document(
+    config: ExperimentConfig,
+    paths: ComposePaths,
+    *,
+    capture_image: str,
+) -> bytes:
+    document = cast(
+        dict[str, object],
+        json.loads(
+            render_production_compose(
+                config,
+                paths,
+                target_image=capture_image,
+                capture_image=capture_image,
+            )
+        ),
+    )
     services = cast(dict[str, object], document["services"])
     target = cast(dict[str, object], services["target"])
     target.clear()
@@ -379,7 +404,7 @@ def _probe_document(config: ExperimentConfig, paths: ComposePaths) -> bytes:
                 f"{config.capture.total_timeout_seconds:g}",
                 config.capture.network_probe_url,
             ],
-            "image": config.capture.image,
+            "image": capture_image,
             "init": True,
             "network_mode": "service:capture",
         }
@@ -560,7 +585,7 @@ def check_docker(
         CaptureImageLockError,
         ProjectInventory,
         load_capture_image_lock,
-        normalize_capture_platform,
+        parse_docker_info_platform,
         validate_capture_dockerfile,
     )
 
@@ -588,11 +613,19 @@ def check_docker(
     )
 
     try:
-        capture_platform = normalize_capture_platform(platform.machine())
+        _require_deadline(deadline, clock)
+        docker_info = compose.info(deadline=deadline)
+    except TrafficlabError as error:
+        findings.append(_failure("docker_daemon", error))
+        return PreflightReport(config=config, findings=tuple(findings))
+    findings.append(PreflightFinding("docker_daemon", True, "Docker daemon is reachable"))
+
+    try:
+        capture_platform = parse_docker_info_platform(docker_info.stdout)
     except CaptureImageLockError as error:
         translated = TrafficlabError(
             str(error),
-            corrective_action="run capture preflight on a linux/amd64 host and rebuild the checked capture image there",
+            corrective_action="use a Docker daemon executing the linux/amd64 platform and retry full preflight",
         )
         findings.append(_failure("capture_platform", translated))
         return PreflightReport(config=config, findings=tuple(findings))
@@ -600,7 +633,7 @@ def check_docker(
         PreflightFinding(
             "capture_platform",
             True,
-            f"host architecture resolves to supported capture platform {capture_platform}",
+            f"Docker daemon executes the supported capture platform {capture_platform}",
         )
     )
 
@@ -608,7 +641,6 @@ def check_docker(
     capture_identity: ImageIdentity | None = None
 
     for name, success_detail, action in (
-        ("docker_daemon", "Docker daemon is reachable", lambda: compose.info(deadline=deadline)),
         ("docker_compose", "Docker Compose v2 is available", lambda: compose.compose_version(deadline=deadline)),
         (
             "target_image",
@@ -638,7 +670,7 @@ def check_docker(
             target=cast("ImageIdentity", target_identity),
             capture=cast("ImageIdentity", capture_identity),
             lock=lock,
-            host_architecture=capture_platform,
+            execution_platform=capture_platform,
         )
     except CaptureImageLockError as error:
         translated = TrafficlabError(
@@ -659,6 +691,8 @@ def check_docker(
                 production_path,
                 config,
                 ComposePaths(project_name=production_name, output_directory=production_output),
+                target_image=environment_identity.target_content_id,
+                capture_image=environment_identity.capture_content_id,
             )
             _require_deadline(deadline, clock)
             compose.config(production_path, production_name, deadline=deadline)
@@ -668,7 +702,14 @@ def check_docker(
             probe_output = root / "probe-output"
             probe_output.mkdir()
             probe_path = root / "probe.json"
-            _write_bytes(probe_path, _probe_document(config, ComposePaths(probe_name, probe_output)))
+            _write_bytes(
+                probe_path,
+                _probe_document(
+                    config,
+                    ComposePaths(probe_name, probe_output),
+                    capture_image=environment_identity.capture_content_id,
+                ),
+            )
             observed: dict[str, ServiceState] = {}
             probe_created = False
 
@@ -911,9 +952,7 @@ def run_preflight(
                 "stage": "preflight",
             }
             if not finding.ok:
-                earlier_failure = any(
-                    not previous.ok for previous in (*prepared_findings, *docker_findings[:index])
-                )
+                earlier_failure = any(not previous.ok for previous in (*prepared_findings, *docker_findings[:index]))
                 authority: FailureAuthority = (
                     "secondary" if finding.name == "probe_cleanup" and earlier_failure else "primary"
                 )

@@ -8,7 +8,8 @@ import tomli_w
 
 import trafficlab.capture as capture_module
 from trafficlab.capture import CaptureResult, capture_experiment
-from trafficlab.compose import write_production_compose
+from trafficlab.compose import ComposePaths, write_production_compose
+from trafficlab.config import ExperimentConfig
 from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import run_preflight
@@ -35,6 +36,7 @@ class _HappyDocker:
         self.events = events
         self.production_created = False
         self.capture_signalled = False
+        self.production_images: tuple[str, str] | None = None
 
     def _production(self, project_name: str) -> bool:
         return project_name.startswith("trafficlab-capture-")
@@ -47,20 +49,30 @@ class _HappyDocker:
         return Path(cast(str, volume["source"]))
 
     def info(self, *, deadline: float) -> CommandResult:
-        return CommandResult(0, "ready", "")
+        return CommandResult(0, json.dumps({"Architecture": "x86_64", "OSType": "linux"}), "")
 
     def compose_version(self, *, deadline: float) -> CommandResult:
         return CommandResult(0, "Docker Compose version v2", "")
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
         content_id = (
-            "sha256:854b21990ba8c1a566c0b5f5abaef8d72840cbf4a0ebb22230da7127462ed602"
+            "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
             if image.startswith("trafficlab-capture:")
             else "sha256:" + ("c" * 64)
         )
         return CommandResult(
             0,
-            json.dumps([{"Id": content_id, "RepoDigests": [], "RepoTags": [image]}]),
+            json.dumps(
+                [
+                    {
+                        "Id": content_id,
+                        "Architecture": "amd64",
+                        "Os": "linux",
+                        "RepoDigests": [],
+                        "RepoTags": [image],
+                    }
+                ]
+            ),
             "",
         )
 
@@ -163,8 +175,22 @@ def test_capture_happy_path_orders_full_lifecycle_and_publishes_reference(
         events.append("run_preflight")
         return prepared
 
-    def traced_write(path: Path, config: object, paths: object) -> None:
-        write_production_compose(path, config, paths)  # type: ignore[arg-type]
+    def traced_write(
+        path: Path,
+        config: ExperimentConfig,
+        paths: ComposePaths,
+        *,
+        target_image: str,
+        capture_image: str,
+    ) -> None:
+        docker.production_images = (target_image, capture_image)
+        write_production_compose(
+            path,
+            config,
+            paths,
+            target_image=target_image,
+            capture_image=capture_image,
+        )
         events.append("render_write_compose")
 
     original_publish = capture_module.publish_capture_pair
@@ -190,6 +216,10 @@ def test_capture_happy_path_orders_full_lifecycle_and_publishes_reference(
     )
     assert result.packet_count == 2
     assert result.target_status == 0
+    assert docker.production_images == (
+        "sha256:" + ("c" * 64),
+        "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+    )
     assert events == [
         "run_preflight",
         "render_write_compose",
