@@ -252,13 +252,7 @@ def _assert_adverse_inventory_unchanged(
     assert _temporary_residue(run_directory) == ()
 
 
-def _assert_serialized_outcomes(record: dict[str, object], case: _BoundaryCase) -> None:
-    assert record["failure_outcome"] == case.primary.as_dict()
-    assert record.get("secondary_outcomes", []) == [outcome.as_dict() for outcome in case.outcomes[1:]]
-
-
 type _LogSnapshot = tuple[bool, bytes]
-type _LogMark = tuple[str, str | None]
 
 
 def _log_snapshot(run_directory: Path) -> _LogSnapshot:
@@ -292,31 +286,27 @@ def _strict_canonical_log_rows(content: bytes) -> tuple[dict[str, object], ...]:
     return tuple(records)
 
 
-def _log_mark(record: dict[str, object]) -> _LogMark:
-    event = record.get("event")
-    name = record.get("name")
-    assert type(event) is str
-    assert name is None or type(name) is str
-    return event, name
+def _canonical_log_bytes(records: tuple[dict[str, object], ...]) -> bytes:
+    return b"".join(
+        (json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+        for record in records
+    )
 
 
 def _assert_failure_log_suffix(
     run_directory: Path,
     before: _LogSnapshot,
     *,
-    expected_marks: tuple[_LogMark, ...],
-    case: _BoundaryCase,
+    expected_records: tuple[dict[str, object], ...],
 ) -> None:
     before_exists, before_bytes = before
     after_exists, after_bytes = _log_snapshot(run_directory)
     assert after_exists
     assert after_bytes[: len(before_bytes)] == before_bytes
     assert before_exists or before_bytes == b""
-    records = _strict_canonical_log_rows(after_bytes[len(before_bytes) :])
-    assert tuple(_log_mark(record) for record in records) == expected_marks
-    failure_records = tuple(record for record in records if "failure_outcome" in record)
-    assert len(failure_records) == 1
-    _assert_serialized_outcomes(failure_records[0], case)
+    suffix = after_bytes[len(before_bytes) :]
+    assert _strict_canonical_log_rows(suffix) == expected_records
+    assert suffix == _canonical_log_bytes(expected_records)
 
 
 def _assert_log_unchanged(run_directory: Path, before: _LogSnapshot) -> None:
@@ -361,6 +351,9 @@ class _PreflightDocker:
         self.signaled = False
         lock = load_capture_image_lock(preflight._CAPTURE_IMAGE_LOCK_PATH)  # pyright: ignore[reportPrivateUsage]
         self.capture_id = lock.expected_capture_image_id
+        self.target_id = "sha256:" + ("c" * 64)
+        self.host_architecture = "linux/amd64"
+        self.capture_tool_version = "4.0.17"
 
     @staticmethod
     def _result(returncode: int = 0, stdout: str = "") -> CommandResult:
@@ -387,7 +380,7 @@ class _PreflightDocker:
         del deadline
         if self.scenario == "target_image_unavailable" and "example.invalid/app" in image:
             return self._result(1)
-        content_id = self.capture_id if "capture" in image else "sha256:" + ("c" * 64)
+        content_id = self.capture_id if "capture" in image else self.target_id
         if self.scenario == "capture_image_incompatible" and "capture" in image:
             content_id = "sha256:" + ("e" * 64)
         return self._result(
@@ -558,6 +551,73 @@ _PREFLIGHT_ENVIRONMENT_LOG_SCENARIOS = frozenset(
         "prerequisite_incompatible",
     }
 )
+_PREFLIGHT_SUCCESS_DETAILS = {
+    "capture_image_lock": "capture base, Debian snapshot, packages, tool, and expected image ID are locked",
+    "docker_daemon": "Docker daemon is reachable",
+    "capture_platform": "Docker daemon executes the supported capture platform linux/amd64",
+    "docker_compose": "Docker Compose v2 is available",
+    "target_image": "target image is locally available",
+    "capture_image": "capture image is locally available",
+    "compose_config": "production Compose configuration is valid",
+    "probe_cleanup": "disposable probe project was removed",
+}
+_PREFLIGHT_FAILURE_FINDING: dict[_Scenario, str] = {
+    "docker_unavailable": "docker_daemon",
+    "compose_incompatible": "docker_compose",
+    "target_image_unavailable": "target_image",
+    "capture_image_incompatible": "capture_image",
+    "dumpcap_unavailable": "network_probe",
+    "dumpcap_incompatible": "network_probe",
+    "mount_source_unavailable": "mounts",
+    "mount_target_incompatible": "compose_config",
+    "prerequisite_unavailable": "network_probe",
+    "prerequisite_incompatible": "network_probe",
+}
+
+
+def _expected_preflight_log_records(
+    case: _BoundaryCase,
+    config: ExperimentConfig,
+    docker: _PreflightDocker,
+) -> tuple[dict[str, object], ...]:
+    failure_name = _PREFLIGHT_FAILURE_FINDING[case.scenario]
+    records: list[dict[str, object]] = []
+    for name in _PREFLIGHT_LOG_FINDINGS[case.scenario]:
+        if name == failure_name:
+            records.append(
+                {
+                    "detail": case.primary.detail,
+                    "event": "preflight_check",
+                    "failure_outcome": case.primary.as_dict(),
+                    "name": name,
+                    "ok": False,
+                    "stage": "preflight",
+                }
+            )
+        else:
+            records.append(
+                {
+                    "detail": _PREFLIGHT_SUCCESS_DETAILS[name],
+                    "event": "preflight_check",
+                    "name": name,
+                    "ok": True,
+                    "stage": "preflight",
+                }
+            )
+    if case.scenario in _PREFLIGHT_ENVIRONMENT_LOG_SCENARIOS:
+        records.append(
+            {
+                "capture_content_id": docker.capture_id,
+                "capture_reference": config.capture.image,
+                "capture_tool_version": docker.capture_tool_version,
+                "event": "capture_environment_identity",
+                "host_architecture": docker.host_architecture,
+                "stage": "preflight",
+                "target_content_id": docker.target_id,
+                "target_reference": config.target.image,
+            }
+        )
+    return tuple(records)
 
 
 def _run_preflight_case(
@@ -608,10 +668,11 @@ def _run_preflight_case(
     if case.scenario == "config_invalid":
         _assert_log_unchanged(run_directory, log_before)
     else:
-        expected_marks = tuple(("preflight_check", name) for name in _PREFLIGHT_LOG_FINDINGS[case.scenario])
-        if case.scenario in _PREFLIGHT_ENVIRONMENT_LOG_SCENARIOS:
-            expected_marks += (("capture_environment_identity", None),)
-        _assert_failure_log_suffix(run_directory, log_before, expected_marks=expected_marks, case=case)
+        _assert_failure_log_suffix(
+            run_directory,
+            log_before,
+            expected_records=_expected_preflight_log_records(case, config, docker),
+        )
     assert experiment_path.read_bytes() == source_before
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
@@ -649,6 +710,84 @@ _CAPTURE_DIAGNOSTIC_SCENARIOS = frozenset(
 _CAPTURE_LOG_SCENARIOS = frozenset({"capture_exit_42_active", "capture_exit_42_after_target_0"})
 
 
+@dataclass(frozen=True, slots=True)
+class _CaptureFailureLog:
+    detail: str
+    failure_kind: str
+    primary_status: int | None = None
+    secondary_failures: tuple[tuple[str, str, int | None], ...] = ()
+
+
+_CAPTURE_FAILURE_LOGS: dict[_Scenario, _CaptureFailureLog] = {
+    "target_exit_23": _CaptureFailureLog(
+        "target exited naturally with status 23",
+        "target_nonzero_exit",
+        23,
+    ),
+    "capture_exit_42_active": _CaptureFailureLog(
+        "capture stopped during target workload",
+        "capture_stopped",
+    ),
+    "capture_exit_42_after_target_0": _CaptureFailureLog(
+        "capture stopped during target workload",
+        "capture_stopped",
+        secondary_failures=(("natural_target_status", "target was also observed naturally exited with status 0", 0),),
+    ),
+    "workload_timeout": _CaptureFailureLog("target workload timed out", "stage_timeout"),
+    "flush_timeout_after_target_0": _CaptureFailureLog("capture flush timed out", "stage_timeout"),
+    "validation_total_timeout": _CaptureFailureLog(
+        "capture validation failed: capture inspection exceeded the total-run deadline",
+        "total_timeout",
+    ),
+    "user_interrupt": _CaptureFailureLog("capture interrupted during target workload", "user_interruption"),
+    "malformed_capture": _CaptureFailureLog(
+        "capture validation failed: invalid PCAPNG: capture has no Interface Description Block",
+        "validation_failed",
+    ),
+    "cleanup_timeout_after_success": _CaptureFailureLog(
+        "cleanup command exceeded its deadline; project resources may remain",
+        "cleanup_failed",
+    ),
+    "target_23_cleanup_timeout": _CaptureFailureLog(
+        "target exited naturally with status 23",
+        "target_nonzero_exit",
+        23,
+        (("cleanup_failed", "cleanup command exceeded its deadline; project resources may remain", None),),
+    ),
+    "workload_timeout_target_137": _CaptureFailureLog(
+        "target workload timed out",
+        "stage_timeout",
+        secondary_failures=(
+            (
+                "induced_target_status",
+                "target exited after Trafficlab requested termination with status 137",
+                137,
+            ),
+        ),
+    ),
+    "flush_and_total_timeout": _CaptureFailureLog(
+        "capture flush timed out",
+        "stage_timeout",
+        secondary_failures=(
+            (
+                "total_timeout",
+                "capture total-run deadline expired during flush, so capture could not be killed",
+                None,
+            ),
+        ),
+    ),
+    "target_23_capture_42_total_timeout": _CaptureFailureLog(
+        "target exited naturally with status 23",
+        "target_nonzero_exit",
+        23,
+        (
+            ("capture_stopped", "capture stopped during target workload", None),
+            ("total_timeout", "capture total-run deadline expired", None),
+        ),
+    ),
+}
+
+
 class _CaptureDocker:
     """Primitive service observations and capture bytes for the real lifecycle."""
 
@@ -667,13 +806,18 @@ class _CaptureDocker:
         self.cleanup_handle: _CompletedHandle | None = None
         self.created_metadata: bytes | None = None
         self.created_reference: bytes | None = None
+        self.project_name: str | None = None
+        self.target_exit_status: int | None = None
+        self.capture_exit_status: int | None = None
 
     @staticmethod
     def _result() -> CommandResult:
         return CommandResult(0, "", "")
 
     def create_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
-        del project_name, deadline
+        del deadline
+        assert self.project_name is None or self.project_name == project_name
+        self.project_name = project_name
         metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
         self.created_metadata = render_capture_metadata(metadata)
         (compose_path.parent / "capture.json").write_bytes(self.created_metadata)
@@ -716,6 +860,7 @@ class _CaptureDocker:
         if service == "target":
             if self.target_killed:
                 if self.scenario == "workload_timeout_target_137":
+                    self.target_exit_status = 137
                     return ServiceState("target", "target", "target", "exited", 137)
                 return None
             if self.scenario in {
@@ -724,6 +869,7 @@ class _CaptureDocker:
                 "target_23_capture_42_total_timeout",
             }:
                 self.target_observed = True
+                self.target_exit_status = 23
                 return ServiceState("target", "target", "target", "exited", 23)
             if self.scenario in {
                 "capture_exit_42_after_target_0",
@@ -734,6 +880,7 @@ class _CaptureDocker:
                 "flush_and_total_timeout",
             }:
                 self.target_observed = True
+                self.target_exit_status = 0
                 return ServiceState("target", "target", "target", "exited", 0)
             return None
         if not self.target_started:
@@ -746,6 +893,7 @@ class _CaptureDocker:
             self.lifecycle_done = self.scenario != "target_23_capture_42_total_timeout"
             if self.scenario == "target_23_capture_42_total_timeout":
                 self.total_pending = True
+            self.capture_exit_status = 42
             return ServiceState("capture", "capture", "capture", "exited", 42)
         if self.capture_signaled:
             self.flush_done = True
@@ -754,6 +902,7 @@ class _CaptureDocker:
                 "cleanup_timeout_after_success",
                 "target_23_cleanup_timeout",
             }
+            self.capture_exit_status = 0
             return ServiceState("capture", "capture", "capture", "exited", 0)
         return ServiceState("capture", "capture", "capture", "running", 0)
 
@@ -799,6 +948,53 @@ class _CaptureDocker:
             self.lifecycle_done = True
             return 11.0
         return 0.0
+
+
+def _expected_capture_log_records(
+    case: _BoundaryCase,
+    docker: _CaptureDocker,
+) -> tuple[dict[str, object], ...]:
+    spec = _CAPTURE_FAILURE_LOGS[case.scenario]
+    project_name = docker.project_name
+    assert project_name is not None
+    if spec.primary_status is not None:
+        assert docker.target_exit_status == spec.primary_status
+    for kind, _detail, status in spec.secondary_failures:
+        if kind in {"natural_target_status", "induced_target_status"}:
+            assert docker.target_exit_status == status
+    if case.primary.status == 42 or any(outcome.status == 42 for outcome in case.outcomes[1:]):
+        assert docker.capture_exit_status == 42
+
+    records: list[dict[str, object]] = [
+        {"event": "capture_project_created", "project_name": project_name, "stage": "capture"},
+        {"event": "capture_ready", "project_name": project_name, "stage": "capture"},
+    ]
+    if case.scenario in _CAPTURE_LOG_SCENARIOS:
+        records.append(
+            {
+                "detail": "capture diagnostics",
+                "event": "capture_logs",
+                "project_name": project_name,
+                "stage": "capture",
+            }
+        )
+    secondary_failures = [
+        {"detail": detail, "kind": kind, "status": status} for kind, detail, status in spec.secondary_failures
+    ]
+    records.append(
+        {
+            "detail": spec.detail,
+            "event": "capture_failed",
+            "failure_kind": spec.failure_kind,
+            "failure_outcome": case.primary.as_dict(),
+            "primary_status": spec.primary_status,
+            "secondary_details": [failure["detail"] for failure in secondary_failures],
+            "secondary_failures": secondary_failures,
+            "secondary_outcomes": [outcome.as_dict() for outcome in case.outcomes[1:]],
+            "stage": "capture",
+        }
+    )
+    return tuple(records)
 
 
 def _capture_prepared(
@@ -850,14 +1046,11 @@ def _run_capture_boundary_case(
         )
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    expected_marks: tuple[_LogMark, ...] = (
-        ("capture_project_created", None),
-        ("capture_ready", None),
+    _assert_failure_log_suffix(
+        run_directory,
+        log_before,
+        expected_records=_expected_capture_log_records(case, docker),
     )
-    if case.scenario in _CAPTURE_LOG_SCENARIOS:
-        expected_marks += (("capture_logs", None),)
-    expected_marks += (("capture_failed", None),)
-    _assert_failure_log_suffix(run_directory, log_before, expected_marks=expected_marks, case=case)
     expected_new: dict[str, _TreeValue] = {}
     if case.scenario in _CAPTURE_DIAGNOSTIC_SCENARIOS:
         assert docker.created_metadata is not None
@@ -1130,6 +1323,53 @@ def _fit_dependencies(
     return FitDependencies(lambda _path: prepared, lambda path: inputs[path], strategy)
 
 
+def _expected_fit_log_records(
+    case: _BoundaryCase,
+    experiment_path: Path,
+    config: ExperimentConfig,
+) -> tuple[dict[str, object], ...]:
+    records: list[dict[str, object]] = [
+        {"event": "fit_started", "experiment_path": str(experiment_path), "stage": "fit"}
+    ]
+    if case.scenario in {"best_model_collision", "reference_changed"}:
+        records.extend(
+            (
+                {
+                    "event": "checkpoint_ready",
+                    "generation": 0,
+                    "path": str(config.run.directory / "checkpoint.json"),
+                    "stage": "fit",
+                    "terminal_reason": "hard_limit",
+                },
+                {
+                    "event": "final_validation_succeeded",
+                    "family": "poisson_empirical",
+                    "fitness": 0.75,
+                    "seed": config.run.final_seed,
+                    "stage": "fit",
+                    "trial_count": 1,
+                },
+            )
+        )
+    if case.scenario == "checkpoint_corrupt":
+        detail = "invalid checkpoint: Expecting property name enclosed in double quotes: line 2 column 1 (char 2)"
+        corrective_action = "preserve the checkpoint and resume from a compatible complete generation"
+    else:
+        detail = case.primary.detail
+        corrective_action = case.primary.corrective_action
+    failure_record: dict[str, object] = {
+        "corrective_action": corrective_action,
+        "detail": detail,
+        "event": "stage_failed",
+        "failure_outcome": case.primary.as_dict(),
+        "stage": "fit",
+    }
+    if case.outcomes[1:]:
+        failure_record["secondary_outcomes"] = [outcome.as_dict() for outcome in case.outcomes[1:]]
+    records.append(failure_record)
+    return tuple(records)
+
+
 def _run_fit_boundary_case(
     case: _BoundaryCase,
     monkeypatch: pytest.MonkeyPatch,
@@ -1210,11 +1450,11 @@ def _run_fit_boundary_case(
         fitting.fit_experiment(experiment_path, dependencies=dependencies)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    expected_marks: tuple[_LogMark, ...] = (("fit_started", None),)
-    if case.scenario in {"best_model_collision", "reference_changed"}:
-        expected_marks += (("checkpoint_ready", None), ("final_validation_succeeded", None))
-    expected_marks += (("stage_failed", None),)
-    _assert_failure_log_suffix(run_directory, log_before, expected_marks=expected_marks, case=case)
+    _assert_failure_log_suffix(
+        run_directory,
+        log_before,
+        expected_records=_expected_fit_log_records(case, experiment_path, config),
+    )
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
@@ -1269,6 +1509,19 @@ def test_fit_changed_reference_without_resume_uses_the_generic_recovery_action(
     assert reference_path.read_bytes() == original_reference
 
 
+def _expected_generation_log_records(case: _BoundaryCase) -> tuple[dict[str, object], ...]:
+    record: dict[str, object] = {
+        "corrective_action": case.primary.corrective_action,
+        "detail": case.primary.detail,
+        "event": "stage_failed",
+        "failure_outcome": case.primary.as_dict(),
+        "stage": "generate",
+    }
+    if case.outcomes[1:]:
+        record["secondary_outcomes"] = [outcome.as_dict() for outcome in case.outcomes[1:]]
+    return (record,)
+
+
 def _run_generation_boundary_case(
     case: _BoundaryCase,
     tmp_path: Path,
@@ -1311,8 +1564,7 @@ def _run_generation_boundary_case(
     _assert_failure_log_suffix(
         run_directory,
         log_before,
-        expected_marks=(("stage_failed", None),),
-        case=case,
+        expected_records=_expected_generation_log_records(case),
     )
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
@@ -1552,8 +1804,21 @@ def _run_comparison_boundary_case(
         comparison.compare_experiment(experiment_path)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    assert len(records) == 1
-    _assert_serialized_outcomes(records[-1], case)
+    detail = (
+        f"could not publish similarity artifact {run_directory / 'similarity.json'}: injected similarity fsync failure"
+        if case.scenario == "similarity_durability"
+        else case.primary.detail
+    )
+    expected_record: dict[str, object] = {
+        "detail": detail,
+        "event": "comparison_failed",
+        "failure_kind": "publication" if case.scenario == "similarity_durability" else "evaluation_or_input",
+        "failure_outcome": case.primary.as_dict(),
+        "stage": "compare",
+    }
+    if case.outcomes[1:]:
+        expected_record["secondary_outcomes"] = [outcome.as_dict() for outcome in case.outcomes[1:]]
+    assert records == [expected_record]
     _assert_log_unchanged(run_directory, log_before)
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
@@ -1595,6 +1860,35 @@ def _run_study_publication_case(case: _BoundaryCase, tmp_path: Path) -> None:
 def test_public_matrix_log_oracle_rejects_noncanonical_jsonl(content: bytes) -> None:
     with pytest.raises(AssertionError):
         _strict_canonical_log_rows(content)
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra", "wrong"))
+def test_public_matrix_log_oracle_rejects_wrong_outer_record(
+    mutation: str,
+    tmp_path: Path,
+) -> None:
+    expected: dict[str, object] = {
+        "detail": "expected detail",
+        "event": "stage_failed",
+        "stage": "fit",
+    }
+    actual = copy.deepcopy(expected)
+    if mutation == "missing":
+        actual.pop("detail")
+    elif mutation == "extra":
+        actual["unexpected"] = True
+    else:
+        actual["detail"] = "wrong detail"
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    (run_directory / "run.log").write_bytes(_canonical_log_bytes((actual,)))
+
+    with pytest.raises(AssertionError):
+        _assert_failure_log_suffix(
+            run_directory,
+            (False, b""),
+            expected_records=(expected,),
+        )
 
 
 def test_public_boundary_case_registry_covers_each_authoritative_fixture_row_once() -> None:
