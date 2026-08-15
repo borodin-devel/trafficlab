@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import socket
@@ -16,8 +17,8 @@ import trafficlab.docker_cli as docker_cli
 import trafficlab.genetic.strategy as genetic_strategy
 from trafficlab.artifacts import create_run_directory, load_or_recover_capture_pair
 from trafficlab.capture import CaptureResult
-from trafficlab.comparison import ComparisonResult, compare_experiment, similarity_settings_identity
-from trafficlab.compatibility import ContentIdentity, identify_bytes
+from trafficlab.comparison import ComparisonResult, compare_experiment
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import ConfigurationPair, load_configuration_pair, render_effective_config
 from trafficlab.fitting import FitDependencies, FitStageResult, fit_experiment, read_fit_input
@@ -26,7 +27,6 @@ from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint
 from trafficlab.genetic.evaluation import ValidatedEvaluationContext
 from trafficlab.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate
-from trafficlab.models.registry import load_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
 from trafficlab.run import RunDependencies, run_experiment
@@ -169,9 +169,9 @@ def _strategy_context(offline: _OfflineRun):  # type: ignore[no-untyped-def]
         reference,
         window,
         run_directory,
-        experiment_identity=identify_bytes((run_directory / "experiment.toml").read_bytes()),
-        reference_identity=identify_bytes(_REFERENCE_BYTES),
-        capture_identity=identify_bytes(_CAPTURE_BYTES),
+        experiment_identity=_local_identity((run_directory / "experiment.toml").read_bytes()),
+        reference_identity=_local_identity(_REFERENCE_BYTES),
+        capture_identity=_local_identity(_CAPTURE_BYTES),
     )
 
 
@@ -193,12 +193,16 @@ def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]
 
 
 def _strict_log_record(line: bytes) -> dict[str, object]:
+    return _strict_json_object(line, artifact="run.log record")
+
+
+def _strict_json_object(content: bytes, *, artifact: str) -> dict[str, object]:
     try:
-        value = json.loads(line, object_pairs_hook=_reject_duplicate_keys)
+        value = json.loads(content, object_pairs_hook=_reject_duplicate_keys)
     except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise AssertionError(f"run.log record is not strict JSON: {error}") from error
+        raise AssertionError(f"{artifact} is not strict JSON: {error}") from error
     if type(value) is not dict:
-        raise AssertionError("run.log record must be a JSON object")
+        raise AssertionError(f"{artifact} must be a JSON object")
     return cast(dict[str, object], value)
 
 
@@ -219,16 +223,69 @@ def _assert_regular_inventory(run_directory: Path, expected: tuple[str, ...]) ->
     assert all(path.is_file() and not path.is_symlink() for path in entries)
 
 
+def _local_identity(content: bytes) -> ContentIdentity:
+    """Independent content identity oracle over exactly the bytes passed to it."""
+    return ContentIdentity(size=len(content), sha256=hashlib.sha256(content).hexdigest())
+
+
+def _canonical_similarity_settings_bytes(config: ExperimentConfig) -> bytes:
+    """Render the documented effective similarity settings without production serializers."""
+    settings = config.similarity
+    weights = settings.method_weights
+    document = {
+        "acf_iat_weight": settings.acf_iat_weight,
+        "acf_lag_weights": list(settings.acf_lag_weights),
+        "acf_lags": list(settings.acf_lags),
+        "acf_size_weight": settings.acf_size_weight,
+        "iat_diagnostic_quantile": settings.iat_diagnostic_quantile,
+        "max_direction_bin_cells": settings.max_direction_bin_cells,
+        "method_weights": {
+            "autocorrelation": weights.autocorrelation,
+            "frame_size_ks": weights.frame_size_ks,
+            "iat_ks": weights.iat_ks,
+            "multiscale_rate": weights.multiscale_rate,
+        },
+        "multiscale_byte_weight": settings.multiscale_byte_weight,
+        "multiscale_packet_weight": settings.multiscale_packet_weight,
+        "multiscale_scale_weights": list(settings.multiscale_scale_weights),
+        "multiscale_widths_seconds": list(settings.multiscale_widths_seconds),
+    }
+    return json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
 def _independent_identities(artifacts: dict[str, bytes], config: ExperimentConfig) -> dict[str, ContentIdentity]:
     return {
-        "best_model.json": identify_bytes(artifacts["best_model.json"]),
-        "capture.json": identify_bytes(artifacts["capture.json"]),
-        "checkpoint.json": identify_bytes(artifacts["checkpoint.json"]),
-        "experiment.toml": identify_bytes(artifacts["experiment.toml"]),
-        "generated.pcapng": identify_bytes(artifacts["generated.pcapng"]),
-        "reference.pcapng": identify_bytes(artifacts["reference.pcapng"]),
-        "similarity.json": identify_bytes(artifacts["similarity.json"]),
-        "similarity_settings": similarity_settings_identity(config.similarity),
+        "best_model.json": _local_identity(artifacts["best_model.json"]),
+        "capture.json": _local_identity(artifacts["capture.json"]),
+        "checkpoint.json": _local_identity(artifacts["checkpoint.json"]),
+        "experiment.toml": _local_identity(artifacts["experiment.toml"]),
+        "generated.pcapng": _local_identity(artifacts["generated.pcapng"]),
+        "reference.pcapng": _local_identity(artifacts["reference.pcapng"]),
+        "similarity.json": _local_identity(artifacts["similarity.json"]),
+        "similarity_settings": _local_identity(_canonical_similarity_settings_bytes(config)),
+    }
+
+
+def _identity_document(identity: ContentIdentity) -> dict[str, object]:
+    return {"size": identity.size, "sha256": identity.sha256}
+
+
+def _assert_serialized_lineage(artifacts: dict[str, bytes], identities: dict[str, ContentIdentity]) -> None:
+    checkpoint = _strict_json_object(artifacts["checkpoint.json"], artifact="checkpoint.json")
+    assert checkpoint["experiment_identity"] == _identity_document(identities["experiment.toml"])
+    assert checkpoint["reference_identity"] == _identity_document(identities["reference.pcapng"])
+    assert checkpoint["capture_identity"] == _identity_document(identities["capture.json"])
+
+    best_model = _strict_json_object(artifacts["best_model.json"], artifact="best_model.json")
+    assert best_model["reference_identity"] == _identity_document(identities["reference.pcapng"])
+    assert best_model["capture_identity"] == _identity_document(identities["capture.json"])
+
+    comparison = _strict_json_object(artifacts["similarity.json"], artifact="similarity.json")
+    assert comparison["input_identities"] == {
+        "capture_json": _identity_document(identities["capture.json"]),
+        "generated_pcapng": _identity_document(identities["generated.pcapng"]),
+        "reference_pcapng": _identity_document(identities["reference.pcapng"]),
+        "similarity_settings": _identity_document(identities["similarity_settings"]),
     }
 
 
@@ -264,9 +321,6 @@ def test_full_pipeline_resume_after_atomic_checkpoint_is_scientifically_byte_ide
     uninterrupted_checkpoint = load_checkpoint(
         uninterrupted_directory / "checkpoint.json", uninterrupted_context.compatibility
     )
-    uninterrupted_best = load_best_model(
-        uninterrupted_bytes["best_model.json"], source=uninterrupted_directory / "best_model.json"
-    )
 
     shutil.rmtree(uninterrupted_directory)
     resumed = _prepare_offline_run(tmp_path)
@@ -301,7 +355,6 @@ def test_full_pipeline_resume_after_atomic_checkpoint_is_scientifically_byte_ide
     resumed_log_lines = _raw_log_lines(resumed_directory)
     resumed_context = _strategy_context(resumed)
     resumed_checkpoint = load_checkpoint(resumed_directory / "checkpoint.json", resumed_context.compatibility)
-    resumed_best = load_best_model(resumed_bytes["best_model.json"], source=resumed_directory / "best_model.json")
 
     assert uninterrupted_calls == resumed_calls == ["preflight", "capture", "fit", "generate", "compare"]
     assert sorted(uninterrupted_bytes) == sorted(resumed_bytes) == list(_NINE_FILE_INVENTORY)
@@ -344,28 +397,8 @@ def test_full_pipeline_resume_after_atomic_checkpoint_is_scientifically_byte_ide
     assert parse_pcapng_bytes(
         uninterrupted_bytes["generated.pcapng"], metadata, source=uninterrupted_directory / "generated.pcapng"
     ) == parse_pcapng_bytes(resumed_bytes["generated.pcapng"], metadata, source=resumed_directory / "generated.pcapng")
-    assert uninterrupted_best.reference_identity == resumed_best.reference_identity == identify_bytes(_REFERENCE_BYTES)
-    assert uninterrupted_best.capture_identity == resumed_best.capture_identity == identify_bytes(_CAPTURE_BYTES)
-    assert uninterrupted_checkpoint.compatibility.experiment_identity == identify_bytes(
-        uninterrupted_bytes["experiment.toml"]
-    )
-    assert uninterrupted_checkpoint.compatibility.reference_identity == uninterrupted_best.reference_identity
-    assert uninterrupted_checkpoint.compatibility.capture_identity == uninterrupted_best.capture_identity
     uninterrupted_identities = _independent_identities(uninterrupted_bytes, uninterrupted.pair.realized)
     resumed_identities = _independent_identities(resumed_bytes, resumed.pair.realized)
     assert uninterrupted_identities == resumed_identities
-    assert uninterrupted_checkpoint.compatibility.experiment_identity == uninterrupted_identities["experiment.toml"]
-    assert uninterrupted_checkpoint.compatibility.reference_identity == uninterrupted_identities["reference.pcapng"]
-    assert uninterrupted_checkpoint.compatibility.capture_identity == uninterrupted_identities["capture.json"]
-    assert uninterrupted_best.reference_identity == uninterrupted_identities["reference.pcapng"]
-    assert uninterrupted_best.capture_identity == uninterrupted_identities["capture.json"]
-    assert (
-        uninterrupted_result.comparison.input_identities
-        == resumed_result.comparison.input_identities
-        == {
-            "capture_json": uninterrupted_identities["capture.json"],
-            "generated_pcapng": uninterrupted_identities["generated.pcapng"],
-            "reference_pcapng": uninterrupted_identities["reference.pcapng"],
-            "similarity_settings": uninterrupted_identities["similarity_settings"],
-        }
-    )
+    _assert_serialized_lineage(uninterrupted_bytes, uninterrupted_identities)
+    _assert_serialized_lineage(resumed_bytes, resumed_identities)

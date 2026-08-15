@@ -116,14 +116,6 @@ _SCENARIOS: tuple[_Scenario, ...] = (
     "flush_and_total_timeout",
     "target_23_capture_42_total_timeout",
 )
-_STAGE_OUTPUT_NAMES: dict[str, tuple[str, ...]] = {
-    "preflight": ("capture.json", "reference.pcapng"),
-    "capture": ("capture.json", "reference.pcapng"),
-    "fit": ("best_model.json",),
-    "generate": ("generated.pcapng",),
-    "compare": ("similarity.json",),
-    "publication": ("accepted-evidence-bundle.json",),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,15 +196,60 @@ def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
     )
 
 
-def _assert_publication_state(case: _BoundaryCase, run_directory: Path, expected_preserved: dict[Path, bytes]) -> None:
-    primary = case.primary
-    for path, expected in expected_preserved.items():
-        assert path.read_bytes() == expected
-    preserved = frozenset(expected_preserved)
-    for output_name in _STAGE_OUTPUT_NAMES[primary.stage]:
-        output_path = run_directory / output_name
-        if output_path not in preserved:
-            assert not output_path.exists()
+type _TreeKind = Literal["directory", "file", "symlink"]
+type _TreeValue = tuple[_TreeKind, bytes]
+type _TreeEntry = tuple[str, _TreeKind, bytes]
+type _TreeInventory = tuple[bool, tuple[_TreeEntry, ...]]
+
+
+def _tree_inventory(root: Path, *, excluded: frozenset[str] = frozenset()) -> _TreeInventory:
+    """Snapshot a complete local tree without following links or omitting empty directories."""
+    if not root.exists():
+        return False, ()
+    entries: list[_TreeEntry] = []
+    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+        relative = path.relative_to(root).as_posix()
+        if relative in excluded:
+            continue
+        if path.is_symlink():
+            entries.append((relative, "symlink", str(path.readlink()).encode()))
+        elif path.is_dir():
+            entries.append((relative, "directory", b""))
+        else:
+            entries.append((relative, "file", path.read_bytes()))
+    return True, tuple(entries)
+
+
+def _scientific_inventory(run_directory: Path) -> _TreeInventory:
+    """Retain every run artifact byte while allowing the failure ledger to append."""
+    return _tree_inventory(run_directory, excluded=frozenset({"run.log"}))
+
+
+def _temporary_residue(root: Path) -> tuple[str, ...]:
+    if not root.exists():
+        return ()
+    return tuple(
+        path.relative_to(root).as_posix()
+        for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+        if path.name.endswith(".tmp") or path.name.startswith(".capture-")
+    )
+
+
+def _assert_adverse_inventory_unchanged(
+    run_directory: Path,
+    before: _TreeInventory,
+    *,
+    expected_new: dict[str, _TreeValue] | None = None,
+) -> None:
+    before_exists, before_entries = before
+    expected = {path: (kind, content) for path, kind, content in before_entries}
+    additions = {} if expected_new is None else expected_new
+    assert expected.keys().isdisjoint(additions)
+    expected.update(additions)
+    after_exists, after_entries = _scientific_inventory(run_directory)
+    assert after_exists == before_exists
+    assert {path: (kind, content) for path, kind, content in after_entries} == expected
+    assert _temporary_residue(run_directory) == ()
 
 
 def _assert_serialized_outcomes(record: dict[str, object], case: _BoundaryCase) -> None:
@@ -384,6 +421,15 @@ def _run_preflight_case(
     experiment_path.write_bytes(content)
     docker = _PreflightDocker(case.scenario, mount_source)
     clock = _PreflightClock(case.scenario)
+    if case.scenario != "config_invalid":
+        preflight.run_preflight(
+            experiment_path,
+            config_only=True,
+            docker=cast(preflight.DockerPreflight, docker),
+            clock=clock,
+        )
+    source_before = experiment_path.read_bytes()
+    inventory_before = _scientific_inventory(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
@@ -398,7 +444,8 @@ def _run_preflight_case(
         records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
         failure_records = [record for record in records if "failure_outcome" in record]
         _assert_serialized_outcomes(failure_records[-1], case)
-    _assert_publication_state(case, run_directory, {})
+    assert experiment_path.read_bytes() == source_before
+    _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
 def _render_snapshot(_config: object) -> bytes:
@@ -422,6 +469,15 @@ _CAPTURE_FAILURE_SCENARIOS = frozenset(
         "target_23_capture_42_total_timeout",
     }
 )
+_CAPTURE_DIAGNOSTIC_SCENARIOS = frozenset(
+    {
+        "target_exit_23",
+        "workload_timeout",
+        "user_interrupt",
+        "target_23_cleanup_timeout",
+        "workload_timeout_target_137",
+    }
+)
 
 
 class _CaptureDocker:
@@ -440,6 +496,8 @@ class _CaptureDocker:
         self.total_pending = False
         self.total_emitted = False
         self.cleanup_handle: _CompletedHandle | None = None
+        self.created_metadata: bytes | None = None
+        self.created_reference: bytes | None = None
 
     @staticmethod
     def _result() -> CommandResult:
@@ -448,8 +506,10 @@ class _CaptureDocker:
     def create_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
         del project_name, deadline
         metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
-        (compose_path.parent / "capture.json").write_bytes(render_capture_metadata(metadata))
+        self.created_metadata = render_capture_metadata(metadata)
+        (compose_path.parent / "capture.json").write_bytes(self.created_metadata)
         valid_content = encode_pcapng((TraceEvent(1.0, Direction.OUTBOUND, 64),), metadata)
+        self.created_reference = valid_content
         content = valid_content[:28] if self.scenario == "malformed_capture" else valid_content
         (compose_path.parent / "reference.pcapng.tmp").write_bytes(content)
         return self._result()
@@ -602,6 +662,7 @@ def _run_capture_boundary_case(
 ) -> None:
     run_directory, prepared = _capture_prepared(valid_config_data, tmp_path)
     docker = _CaptureDocker(case.scenario)
+    inventory_before = _scientific_inventory(run_directory)
 
     def fixed_deadline(_clock: Callable[[], float], _seconds: float, *, stage: str) -> float:
         if case.scenario == "target_23_capture_42_total_timeout" and stage == "workload":
@@ -621,8 +682,15 @@ def _run_capture_boundary_case(
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
     _assert_serialized_outcomes(records[-1], case)
-    _assert_publication_state(case, run_directory, {})
-    assert list(run_directory.glob(".capture-*")) == []
+    expected_new: dict[str, _TreeValue] = {}
+    if case.scenario in _CAPTURE_DIAGNOSTIC_SCENARIOS:
+        assert docker.created_metadata is not None
+        assert docker.created_reference is not None
+        expected_new = {
+            "diagnostic-capture.json": ("file", docker.created_metadata),
+            "diagnostic-reference.pcapng": ("file", docker.created_reference),
+        }
+    _assert_adverse_inventory_unchanged(run_directory, inventory_before, expected_new=expected_new)
 
 
 def _run_capture_stale_boundary_case(
@@ -667,6 +735,7 @@ def _run_capture_stale_boundary_case(
     log_before = (run_directory / "run.log").read_bytes()
     changed_reference = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 65),), metadata)
     reference_path.write_bytes(changed_reference)
+    inventory_before = _scientific_inventory(run_directory)
 
     class NoDocker:
         def __getattr__(self, name: str) -> object:
@@ -684,7 +753,7 @@ def _run_capture_stale_boundary_case(
     assert metadata_path.read_bytes() == metadata_content
     assert reference_path.read_bytes() == changed_reference
     assert (run_directory / "run.log").read_bytes() == log_before
-    assert list(run_directory.glob(".capture-*")) == []
+    _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
 def _run_capture_mounted_input_boundary_case(
@@ -733,6 +802,7 @@ def _run_capture_mounted_input_boundary_case(
         reused=False,
     )
     log_before = (run_directory / "run.log").read_bytes()
+    inventory_before = _scientific_inventory(run_directory)
     mutation = "remove" if case.scenario == "mounted_input_unavailable" else "change"
     real_run_preflight = capture.run_preflight
     mutated = False
@@ -788,6 +858,7 @@ def _run_capture_mounted_input_boundary_case(
         "reference.pcapng",
         "run.log",
     }
+    _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
 _FIT_METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
@@ -899,7 +970,6 @@ def _run_fit_boundary_case(
     if case.scenario == "checkpoint_corrupt":
         checkpoint_path = run_directory / "checkpoint.json"
         checkpoint_path.write_bytes(b"{\n")
-        expected_preserved = {checkpoint_path: b"{\n"}
 
         def forbid_search_draws(*_args: object, **_kwargs: object) -> object:
             pytest.fail("malformed checkpoint bytes reached genetic search draws")
@@ -912,7 +982,6 @@ def _run_fit_boundary_case(
         document["scientific_artifact_schema"] = 1
         incompatible = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
         checkpoint_path.write_bytes(incompatible)
-        expected_preserved = {checkpoint_path: incompatible}
 
         def forbid_search_draws(*_args: object, **_kwargs: object) -> object:
             pytest.fail("incompatible checkpoint schema reached genetic search draws")
@@ -924,7 +993,6 @@ def _run_fit_boundary_case(
         existing = load_best_model(_MODEL_FIXTURE.read_bytes(), source=_MODEL_FIXTURE)
         existing_best_model = render_best_model(replace(existing, final_seed=existing.final_seed + 1))
         best_model_path.write_bytes(existing_best_model)
-        expected_preserved = {best_model_path: existing_best_model}
 
         dependencies = _fit_dependencies(
             config,
@@ -957,9 +1025,9 @@ def _run_fit_boundary_case(
             read_bytes,
             lambda _context: _fit_success_outcome(config),
         )
-        expected_preserved = {reference_path: original_reference}
     else:
         raise AssertionError(f"unsupported primitive fit scenario {case.scenario!r}")
+    inventory_before = _scientific_inventory(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         fitting.fit_experiment(experiment_path, dependencies=dependencies)
@@ -967,7 +1035,7 @@ def _run_fit_boundary_case(
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
     _assert_serialized_outcomes(records[-1], case)
-    _assert_publication_state(case, run_directory, expected_preserved)
+    _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
 def test_fit_changed_reference_without_resume_uses_the_generic_recovery_action(
@@ -1046,7 +1114,6 @@ def _run_generation_boundary_case(
     prepared = preflight.open_or_prepare_experiment(experiment_path)
     capture_content = (_ROOT / "examples" / "data" / "capture.json").read_bytes()
     (run_directory / "capture.json").write_bytes(capture_content)
-    expected_preserved: dict[Path, bytes] = {}
     if case.scenario == "best_model_schema":
         document = cast(dict[str, object], json.loads(best_content))
         document["scientific_artifact_schema"] = 1
@@ -1054,7 +1121,7 @@ def _run_generation_boundary_case(
     if case.scenario != "best_model_missing":
         model_path = run_directory / "best_model.json"
         model_path.write_bytes(best_content)
-        expected_preserved[model_path] = best_content
+    inventory_before = _scientific_inventory(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         generation.generate_experiment(prepared.source, clock=lambda: 0.0)
@@ -1062,7 +1129,7 @@ def _run_generation_boundary_case(
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
     _assert_serialized_outcomes(records[-1], case)
-    _assert_publication_state(case, run_directory, expected_preserved)
+    _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
 def test_generation_maps_missing_capture_after_a_validated_model(
@@ -1279,12 +1346,10 @@ def _run_comparison_boundary_case(
         records.append(record)
 
     monkeypatch.setattr(comparison, "append_run_log", append)
-    expected_preserved: dict[Path, bytes] = {}
     if case.scenario == "foreign_generated":
         generated_path = run_directory / "generated.pcapng"
         foreign_generated = (run_directory / "reference.pcapng").read_bytes()
         generated_path.write_bytes(foreign_generated)
-        expected_preserved = {generated_path: foreign_generated}
     elif case.scenario == "metric_infeasible":
         pass
     elif case.scenario == "similarity_durability":
@@ -1295,15 +1360,14 @@ def _run_comparison_boundary_case(
         monkeypatch.setattr(comparison.os, "fsync", fail_fsync)
     else:
         raise AssertionError(f"unsupported primitive comparison scenario {case.scenario!r}")
+    inventory_before = _scientific_inventory(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison.compare_experiment(experiment_path)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     _assert_serialized_outcomes(records[-1], case)
-    _assert_publication_state(case, run_directory, expected_preserved)
-    assert not (run_directory / "similarity.json").exists()
-    assert list(run_directory.glob(".similarity.json.*.tmp")) == []
+    _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
 def _run_study_publication_case(case: _BoundaryCase, tmp_path: Path) -> None:
@@ -1316,12 +1380,17 @@ def _run_study_publication_case(case: _BoundaryCase, tmp_path: Path) -> None:
     destination.mkdir(parents=True)
     retained = destination / "retained.txt"
     retained.write_bytes(b"accepted evidence\n")
+    candidate_before = _tree_inventory(candidate)
+    evidence_before = _tree_inventory(evidence_root)
 
     with pytest.raises(TrafficlabError) as caught:
         study_evidence.publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    assert retained.read_bytes() == b"accepted evidence\n"
+    assert _tree_inventory(candidate) == candidate_before
+    assert _tree_inventory(evidence_root) == evidence_before
+    assert tuple(evidence_root.glob(".study-1.*.tmp")) == ()
+    assert _temporary_residue(evidence_root) == ()
 
 
 def test_public_boundary_case_registry_covers_each_authoritative_fixture_row_once() -> None:
