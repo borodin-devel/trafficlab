@@ -140,6 +140,27 @@ def test_arrival_epoch_probabilities_reject_invalid_derived_rate_boundaries(
         mmpp._arrival_epoch_probabilities(*rates)
 
 
+@pytest.mark.parametrize(
+    "rates",
+    [
+        (True, 3.0, 1.0, 2.0),
+        (1.0, 3, 1.0, 2.0),
+        (1.0, 3.0, 1, 2.0),
+        (1.0, 3.0, 1.0, False),
+        (-1.0, 3.0, 1.0, 2.0),
+        (1.0, -3.0, 1.0, 2.0),
+        (1.0, 3.0, -1.0, 2.0),
+        (1.0, 3.0, 1.0, -2.0),
+    ],
+)
+def test_arrival_epoch_probabilities_reject_non_float_and_negative_rates(
+    rates: tuple[object, object, object, object],
+) -> None:
+    """All four rate positions require exact positive finite floats."""
+    with pytest.raises(ValueError, match="arrival-epoch"):
+        mmpp._arrival_epoch_probabilities(*rates)
+
+
 def test_repair_sorts_only_arrival_rates() -> None:
     """Transition rates have named directions; only lambda genes are exchangeable."""
     assert FAMILY.repair((1.0, 3.0, 8.0, 2.0), BOUNDS, REFERENCE) == (1.0, 3.0, 2.0, 8.0)
