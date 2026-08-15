@@ -335,8 +335,16 @@ def test_resume_checkpoint_failures_retain_the_canonical_preserved_outcome(
         outcome.evidence_state,
         outcome.authority,
     ) == (expected_kind, "fit", "checkpoint.json", "preserved", "primary")
-    assert outcome.detail == str(captured.value)
-    assert outcome.corrective_action == captured.value.corrective_action
+    if expected_kind == "artifact_corrupt":
+        assert str(captured.value).startswith("invalid checkpoint:")
+        assert captured.value.corrective_action == (
+            "preserve the checkpoint and resume from a compatible complete generation"
+        )
+        assert outcome.detail == "checkpoint.json is corrupt"
+        assert outcome.corrective_action == "recreate fit in a new run directory"
+    else:
+        assert outcome.detail == str(captured.value)
+        assert outcome.corrective_action == captured.value.corrective_action
 
 
 def test_resume_keeps_an_existing_checkpoint_outcome_without_reclassification(

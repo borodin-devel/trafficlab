@@ -794,26 +794,35 @@ def _publication_error(error: Exception, destination: Path, cleanup_error: BaseE
         action = "verify the run directory is writable and has available space"
     if cleanup_error is not None:
         detail = f"{detail}; cleanup incomplete: could not remove owned temporary file: {cleanup_error}"
+    if isinstance(error, OSError) and not isinstance(error, FileExistsError):
+        outcome_detail = "similarity.json durability check failed"
+        outcome_action = "correct storage and rerun compare"
+    else:
+        outcome_detail = detail
+        outcome_action = action
     outcome = FailureOutcome(
         kind="publication_collision" if isinstance(error, FileExistsError) else "publication_failed",
         stage="compare",
-        detail=detail,
+        detail=outcome_detail,
         affected_evidence="similarity.json",
         evidence_state="preserved" if isinstance(error, FileExistsError) else "not_published",
-        corrective_action=action,
+        corrective_action=outcome_action,
         authority="primary",
     )
     outcomes = (outcome,)
     if cleanup_error is not None:
-        outcomes = (*outcomes, FailureOutcome(
-            kind="cleanup_failed",
-            stage="compare",
-            detail=f"owned temporary file cleanup failed: {cleanup_error}",
-            affected_evidence="inventory",
-            evidence_state="possibly_remaining",
-            corrective_action="remove the owned temporary file after preserving diagnostics",
-            authority="secondary",
-        ))
+        outcomes = (
+            *outcomes,
+            FailureOutcome(
+                kind="cleanup_failed",
+                stage="compare",
+                detail=f"owned temporary file cleanup failed: {cleanup_error}",
+                affected_evidence="inventory",
+                evidence_state="possibly_remaining",
+                corrective_action="remove the owned temporary file after preserving diagnostics",
+                authority="secondary",
+            ),
+        )
     return _PublicationError(detail, corrective_action=action, failure_outcomes=outcomes)
 
 

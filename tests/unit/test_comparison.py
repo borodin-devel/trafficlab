@@ -991,9 +991,29 @@ def test_publication_fsync_failure_is_translated_and_cleans_the_owned_temp(
 
     monkeypatch.setattr(comparison.os, "fsync", fail_fsync)
 
-    with pytest.raises(TrafficlabError, match="injected similarity fsync failure"):
+    with pytest.raises(TrafficlabError, match="injected similarity fsync failure") as caught:
         comparison._publish_comparison_result(destination, _valid_result())  # pyright: ignore[reportPrivateUsage]
 
+    assert caught.value.corrective_action == "verify the run directory is writable and has available space"
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.corrective_action,
+        outcome.authority,
+    ) == (
+        "publication_failed",
+        "compare",
+        "similarity.json durability check failed",
+        "similarity.json",
+        "not_published",
+        "correct storage and rerun compare",
+        "primary",
+    )
     assert not destination.exists()
     assert list(tmp_path.glob(".similarity.json.*.tmp")) == []
 

@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Literal, cast
 
 from trafficlab.config import ExperimentConfig, FamilyName, FamilyOperators
-from trafficlab.errors import TrafficlabError, attach_failure_outcome
+from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
 from trafficlab.genetic.checkpoint import (
     RNG_ENGINE,
     CheckpointCompatibility,
@@ -192,17 +192,26 @@ def initialize_or_resume(context: StrategyContext) -> CheckpointState | None:
         return load_generation(context.run_directory, context.compatibility)
     except TrafficlabError as error:
         if error.failure_outcome is None:
-            attach_failure_outcome(
-                error,
-                kind=(
-                    "artifact_corrupt"
-                    if isinstance(error, CheckpointCorruptionError)
-                    else "scientific_semantics_incompatible"
-                ),
-                stage="fit",
-                affected_evidence="checkpoint.json",
-                evidence_state="preserved",
-            )
+            if isinstance(error, CheckpointCorruptionError):
+                outcome = FailureOutcome(
+                    kind="artifact_corrupt",
+                    stage="fit",
+                    detail="checkpoint.json is corrupt",
+                    affected_evidence="checkpoint.json",
+                    evidence_state="preserved",
+                    corrective_action="recreate fit in a new run directory",
+                    authority="primary",
+                )
+                error.failure_outcomes = (outcome,)
+                error.failure_outcome = outcome
+            else:
+                attach_failure_outcome(
+                    error,
+                    kind="scientific_semantics_incompatible",
+                    stage="fit",
+                    affected_evidence="checkpoint.json",
+                    evidence_state="preserved",
+                )
         raise
 
 

@@ -35,7 +35,6 @@ from trafficlab.docker_cli import ServiceState
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import FitDependencies, FitStageResult
 from trafficlab.generation import GenerationStageResult
-from trafficlab.genetic.checkpoint import CheckpointCorruptionError
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.pcapng import encode_pcapng
@@ -107,11 +106,7 @@ class _BoundaryCase:
 
 
 def _fixture_outcomes() -> tuple[FailureOutcome, ...]:
-    return tuple(
-        FailureOutcome.from_json(line)
-        for line in _FIXTURE.read_text(encoding="utf-8").splitlines()
-        if line
-    )
+    return tuple(FailureOutcome.from_json(line) for line in _FIXTURE.read_text(encoding="utf-8").splitlines() if line)
 
 
 def _build_boundary_cases() -> tuple[_BoundaryCase, ...]:
@@ -191,9 +186,7 @@ def _prepare_publication_state(case: _BoundaryCase, run_directory: Path) -> dict
     return expected
 
 
-def _assert_publication_state(
-    case: _BoundaryCase, run_directory: Path, expected_preserved: dict[Path, bytes]
-) -> None:
+def _assert_publication_state(case: _BoundaryCase, run_directory: Path, expected_preserved: dict[Path, bytes]) -> None:
     primary = case.primary
     for path, expected in expected_preserved.items():
         assert path.read_bytes() == expected
@@ -269,9 +262,7 @@ def _run_preflight_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tm
     _assert_publication_state(case, run_directory, {})
 
 
-def _run_deferred_typed_coordinator_case(
-    case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def _run_deferred_typed_coordinator_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Exercise the public coordinator while only replacing completed-stage contracts.
 
     The injected error is raised by the dependency matching its owner stage.
@@ -484,7 +475,10 @@ def _capture_states(case: _BoundaryCase) -> tuple[ServiceState | None, ServiceSt
             ServiceState("target", "target", "target", "exited", cast(int, primary.status)),
             capture_state,
         )
-    if primary.kind == "capture_failed" and primary.detail == "capture stopped with status 42 while target remained active":
+    if (
+        primary.kind == "capture_failed"
+        and primary.detail == "capture stopped with status 42 while target remained active"
+    ):
         return None, capture_state
     return ServiceState("target", "target", "target", "exited", 0), capture_state
 
@@ -585,7 +579,9 @@ def _fit_config(valid_config_data: dict[str, object], run_directory: Path) -> Ex
     return base.model_copy(
         update={
             "models": base.models.model_copy(
-                update={"poisson_empirical": poisson.model_copy(update={"c_lambda": FloatBounds(lower=20.0, upper=21.0)})}
+                update={
+                    "poisson_empirical": poisson.model_copy(update={"c_lambda": FloatBounds(lower=20.0, upper=21.0)})
+                }
             )
         }
     )
@@ -653,13 +649,13 @@ def _run_fit_boundary_case(
 
     if case.primary.kind == "artifact_corrupt":
         checkpoint_path = run_directory / "checkpoint.json"
-        checkpoint_path.write_bytes(b"corrupt checkpoint\n")
-        expected_preserved = {checkpoint_path: b"corrupt checkpoint\n"}
+        checkpoint_path.write_bytes(b"{\n")
+        expected_preserved = {checkpoint_path: b"{\n"}
 
-        def corrupt_checkpoint(*_args: object, **_kwargs: object) -> object:
-            raise CheckpointCorruptionError(case.primary.detail, corrective_action=case.primary.corrective_action)
+        def forbid_search_draws(*_args: object, **_kwargs: object) -> object:
+            pytest.fail("malformed checkpoint bytes reached genetic search draws")
 
-        monkeypatch.setattr(strategy_module, "load_generation", corrupt_checkpoint)
+        monkeypatch.setattr(strategy_module, "initial_population", forbid_search_draws)
         dependencies = _fit_dependencies(config, experiment_path, inputs, run_strategy)
     elif case.primary.kind == "publication_collision":
         expected_preserved = _prepare_publication_state(case, run_directory)
@@ -753,6 +749,7 @@ def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     _assert_serialized_outcomes(records[-1], case)
     _assert_publication_state(case, run_directory, {})
+    assert list(run_directory.glob(".similarity.json.*.tmp")) == []
 
 
 def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -802,22 +799,16 @@ def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
 
         monkeypatch.setattr(comparison, "compare_traces", infeasible)
     elif case.primary.kind == "publication_failed":
+        result_path = Path(__file__).parents[2] / "examples" / "data" / "similarity.json"
 
-        class _Result:
-            def with_input_sha256(self, _identities: object) -> "_Result":
-                return self
+        def result(*_args: object, **_kwargs: object) -> ComparisonResult:
+            return comparison.parse_comparison_result(result_path.read_bytes())
 
-        def result(*_args: object, **_kwargs: object) -> _Result:
-            return _Result()
-
-        def durability(_path: Path, _result: object) -> bool:
-            raise comparison._PublicationError(  # pyright: ignore[reportPrivateUsage]
-                case.primary.detail,
-                corrective_action=case.primary.corrective_action,
-            )
+        def fail_fsync(_file_descriptor: int) -> None:
+            raise OSError("injected similarity fsync failure")
 
         monkeypatch.setattr(comparison, "compare_traces", result)
-        monkeypatch.setattr(comparison, "_publish_comparison_result", durability)
+        monkeypatch.setattr(comparison.os, "fsync", fail_fsync)
     else:
         raise AssertionError(f"unsupported primitive comparison outcome {case.primary.kind!r}")
 
@@ -849,9 +840,7 @@ def _run_study_publication_case(case: _BoundaryCase, tmp_path: Path) -> None:
 
 def test_public_boundary_case_registry_covers_each_authoritative_fixture_row_once() -> None:
     """Every checked fixture row belongs to one public-boundary primary/secondary case."""
-    fixture_rows = tuple(
-        json.loads(line) for line in _FIXTURE.read_text(encoding="utf-8").splitlines() if line
-    )
+    fixture_rows = tuple(json.loads(line) for line in _FIXTURE.read_text(encoding="utf-8").splitlines() if line)
     registry_rows = tuple(outcome.as_dict() for case in _PUBLIC_BOUNDARY_CASES for outcome in case.outcomes)
 
     assert len(fixture_rows) == 43
