@@ -749,7 +749,6 @@ def _run_generation_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     _assert_serialized_outcomes(records[-1], case)
     _assert_publication_state(case, run_directory, {})
-    assert list(run_directory.glob(".similarity.json.*.tmp")) == []
 
 
 def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -818,6 +817,8 @@ def _run_comparison_boundary_case(case: _BoundaryCase, monkeypatch: pytest.Monke
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     _assert_serialized_outcomes(records[-1], case)
     _assert_publication_state(case, run_directory, {})
+    assert not (run_directory / "similarity.json").exists()
+    assert list(run_directory.glob(".similarity.json.*.tmp")) == []
 
 
 def _run_study_publication_case(case: _BoundaryCase, tmp_path: Path) -> None:
