@@ -539,18 +539,81 @@ def test_post_preflight_stage_failure_preserves_prior_artifacts_stops_and_cleans
         "compare": ("similarity.json",),
     }
     assert all(not (run_directory / name).exists() for name in downstream[failed_stage])
+    expected_primary_by_stage: dict[_FailureStage, dict[str, object]] = {
+        "capture": {
+            "affected_evidence": "capture pair",
+            "authority": "primary",
+            "corrective_action": "correct timeout or workload",
+            "detail": "capture readiness timed out",
+            "evidence_state": "diagnostic_only",
+            "kind": "stage_timeout",
+            "stage": "capture",
+        },
+        "fit": {
+            "affected_evidence": "fit inputs",
+            "authority": "primary",
+            "corrective_action": "repair fit boundary",
+            "detail": "injected fit Docker-boundary failure",
+            "evidence_state": "preserved",
+            "kind": "artifact_corrupt",
+            "stage": "fit",
+        },
+        "generate": {
+            "affected_evidence": "generated.pcapng",
+            "authority": "primary",
+            "corrective_action": "repair generate boundary",
+            "detail": "injected generate Docker-boundary failure",
+            "evidence_state": "not_published",
+            "kind": "generation_incomplete",
+            "stage": "generate",
+        },
+        "compare": {
+            "affected_evidence": "similarity.json",
+            "authority": "primary",
+            "corrective_action": "repair compare boundary",
+            "detail": "injected compare Docker-boundary failure",
+            "evidence_state": "not_published",
+            "kind": "metric_infeasible",
+            "stage": "compare",
+        },
+    }
+    expected_primary = expected_primary_by_stage[failed_stage]
+    expected_secondaries: list[dict[str, object]] = []
+    if failed_stage == "capture":
+        primary_detail, separator, inspection_detail = str(primary).partition("; secondary: ")
+        assert primary_detail == "capture readiness timed out"
+        assert separator == "; secondary: "
+        assert inspection_detail.startswith(
+            "could not inspect capture readiness state: Docker command timed out after "
+        )
+        expected_secondaries = [
+            {
+                "affected_evidence": "capture pair",
+                "authority": "secondary",
+                "corrective_action": "correct the capture producer",
+                "detail": inspection_detail,
+                "evidence_state": "diagnostic_only",
+                "kind": "capture_malformed",
+                "stage": "capture",
+            }
+        ]
+    expected_outcomes = [expected_primary, *expected_secondaries]
+    assert [outcome.as_dict() for outcome in primary.failure_outcomes] == expected_outcomes
+
     records = capture_log(run_directory)
     coordinator_failures = [record for record in records if record.get("event") == "run_failed"]
-    assert coordinator_failures == [
-        {
-            "completed_stages": list(_STAGE_ORDER[: _STAGE_ORDER.index(failed_stage)]),
-            "corrective_action": primary.corrective_action,
-            "detail": str(primary),
-            "event": "run_failed",
-            "failed_stage": failed_stage,
-            "stage": "run",
-        }
-    ]
+    expected_coordinator_failure: dict[str, object] = {
+        "completed_stages": list(_STAGE_ORDER[: _STAGE_ORDER.index(failed_stage)]),
+        "corrective_action": primary.corrective_action,
+        "detail": str(primary),
+        "event": "run_failed",
+        "failed_stage": failed_stage,
+        "failure_outcome": expected_primary,
+        "stage": "run",
+    }
+    if expected_secondaries:
+        expected_coordinator_failure["secondary_outcomes"] = expected_secondaries
+    assert coordinator_failures == [expected_coordinator_failure]
     assert all(record.get("event") != "run_completed" for record in records)
     assert len(docker.tracker.projects) == 2
     assert_tracked_projects_clean(docker.tracker)
