@@ -221,7 +221,10 @@ def _evaluate_trial(
 ) -> TrialResult:
     generated = _generate_candidate(candidate, model, seed, context)
     validate_candidate_similarity_preconditions(generated, context.similarity, seed=seed)
-    comparison = compare_traces(context.reference, generated, context.window, context.similarity)
+    try:
+        comparison = compare_traces(context.reference, generated, context.window, context.similarity)
+    except TrafficlabError as error:
+        raise CandidateEvaluationError("similarity_precondition", seed, str(error)) from error
     return _trial_from_comparison(comparison, seed=seed)
 
 

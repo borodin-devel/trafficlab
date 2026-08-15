@@ -371,7 +371,7 @@ def test_fitness_uses_math_fsum_across_all_trials(
     assert evaluated.fitness != sum(scores) / 3.0
 
 
-@pytest.mark.parametrize("error", [_trafficlab_error("injected"), RuntimeError("injected")])
+@pytest.mark.parametrize("error", [RuntimeError("injected")])
 def test_unclassified_evaluator_errors_abort(
     family: RecordingFamily,
     monkeypatch: pytest.MonkeyPatch,
@@ -572,10 +572,13 @@ def test_zero_weight_component_failure_invalidates_a_complete_candidate(
     zero_weight_method: str,
     component_name: str,
 ) -> None:
-    """A complete candidate must become invalid when any zero-weight metric reports a classified failure."""
+    """A complete candidate must classify an expected failure from every zero-weight metric."""
     similarity = _similarity_with_zero_weight(zero_weight_method)
     validated = validate_evaluation_context(_context(family, similarity=similarity))
-    failure = CandidateEvaluationError("similarity_precondition", 7, f"{zero_weight_method} component failed")
+    failure = TrafficlabError(
+        f"{zero_weight_method} component failed",
+        corrective_action=f"repair {zero_weight_method} evidence",
+    )
 
     def fail_component(*_args: object) -> Any:
         raise failure
@@ -588,6 +591,7 @@ def test_zero_weight_component_failure_invalidates_a_complete_candidate(
     assert evaluated.fitness == 0.0
     assert evaluated.trials == ()
     assert evaluated.invalid == CandidateFailure("similarity_precondition", 7, f"{zero_weight_method} component failed")
+    assert failure.corrective_action == f"repair {zero_weight_method} evidence"
 
 
 def test_pending_candidate_without_genes_is_invalid_without_family_call(family: RecordingFamily) -> None:
@@ -634,11 +638,11 @@ def test_final_classified_fit_failure_is_stage_fatal(family: RecordingFamily) ->
         evaluate_final(valid, validate_evaluation_context(_context(family)), final_seed=101)
 
 
-def test_unclassified_final_comparison_failure_propagates_unchanged(
+def test_final_validation_translates_a_classified_component_failure(
     family: RecordingFamily,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Final validation must prefix only an explicitly classified candidate failure."""
+    """Final validation must preserve the classified component cause and its stage corrective action."""
     validated = validate_evaluation_context(_context(family))
     error = _trafficlab_error("evaluator defect")
 
@@ -648,7 +652,13 @@ def test_unclassified_final_comparison_failure_propagates_unchanged(
     monkeypatch.setattr(evaluation, "compare_traces", fail)
     valid = replace(PENDING_POISSON, status="valid", fitness=0.75)
 
-    with pytest.raises(TrafficlabError, match="evaluator defect") as captured:
+    with pytest.raises(TrafficlabError, match="final validation failed: evaluator defect") as captured:
         evaluate_final(valid, validated, final_seed=101)
 
-    assert captured.value is error
+    assert captured.value.corrective_action == (
+        "inspect the selected winner and increase trial generation limits if necessary"
+    )
+    cause = captured.value.__cause__
+    assert type(cause) is CandidateEvaluationError
+    assert cause == CandidateEvaluationError("similarity_precondition", 101, "evaluator defect")
+    assert cause.__cause__ is error
