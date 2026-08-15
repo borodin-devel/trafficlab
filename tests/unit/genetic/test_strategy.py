@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from dataclasses import replace
 from pathlib import Path
+from random import Random
 from typing import Any, cast
 
 import pytest
@@ -23,6 +24,7 @@ from trafficlab.genetic.strategy import (
     should_stop_early,
 )
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, MethodTrialResult, TrialResult
+from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
 from trafficlab.trace import Direction, TraceEvent
 
 REFERENCE = (
@@ -93,9 +95,10 @@ def _context(
     )
 
 
-def _trial(seed: int, score: float) -> TrialResult:
+def _trial(seed: int, score: float, *, family: str = "poisson_empirical") -> TrialResult:
     methods = tuple(MethodTrialResult(name, score, {"literal": score}) for name in METHOD_ORDER)
-    return TrialResult(seed, score, cast(Any, methods))
+    diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
+    return TrialResult(seed, score, cast(Any, methods), diagnostics)
 
 
 def _install_scoring(
@@ -114,12 +117,17 @@ def _install_scoring(
             seen_generations.add(generation)
         generation_scores = scores[generation]
         score = generation_scores[candidate.identifier.birth_index % len(generation_scores)]
-        return replace(candidate, status="valid", fitness=score, trials=(_trial(context.trial_seeds[0], score),))
+        return replace(
+            candidate,
+            status="valid",
+            fitness=score,
+            trials=(_trial(context.trial_seeds[0], score, family=candidate.family),),
+        )
 
     def final(candidate: Candidate, context: ValidatedEvaluationContext, final_seed: int) -> tuple[TrialResult, ...]:
         if events is not None:
             events.append(f"final:{candidate.identifier.birth_generation}")
-        return (_trial(final_seed, candidate.fitness),)
+        return (_trial(final_seed, candidate.fitness, family=candidate.family),)
 
     monkeypatch.setattr(strategy, "evaluate_candidate", evaluate)
     monkeypatch.setattr(strategy, "evaluate_final", final)
@@ -406,6 +414,55 @@ def test_context_resolves_lexical_families_and_exact_effective_settings_once(
     assert context.compatibility.genetic.early_stopping_tolerance == 0.0
     assert context.evaluation.trial_limits is config.generation.trial
     assert context.compatibility.similarity is config.similarity
+    names = tuple(spec.name for spec in context.compatibility.families)
+    assert context.compatibility.family_priority == tuple(
+        Random(config.run.master_seed).sample(sorted(names), len(names))
+    )
+
+
+@pytest.mark.parametrize("master_seed", (4, 0, 6))
+def test_context_persists_each_documented_priority_seed_without_advancing_search_rng(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    master_seed: int,
+) -> None:
+    """The discarded priority stream must not perturb the dedicated search stream."""
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["master_seed"] = master_seed
+    cast(dict[str, object], data["genetic"]).update(generation_count=0, trial_seeds=[7])
+    config = ExperimentConfig.model_validate(data)
+    context = make_strategy_context(
+        config,
+        REFERENCE,
+        2.0,
+        tmp_path / str(master_seed),
+        experiment_sha256="a" * 64,
+        reference_sha256="b" * 64,
+        capture_sha256="c" * 64,
+    )
+    context.run_directory.mkdir(parents=True)
+    expected_priority = tuple(
+        Random(master_seed).sample(
+            sorted(spec.name for spec in context.compatibility.families),
+            len(context.compatibility.families),
+        )
+    )
+    assert context.compatibility.family_priority == expected_priority
+
+    search_states: list[object] = []
+    original_initial_population = strategy.initial_population
+
+    def record_search_state(*args: object, **kwargs: object) -> tuple[Candidate, ...]:
+        rng = cast(Random, kwargs["rng"])
+        search_states.append(rng.getstate())
+        return original_initial_population(*args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(strategy, "initial_population", record_search_state)
+    _install_scoring(monkeypatch, {0: (0.5, 0.4, 0.3, 0.2, 0.1, 0.0)})
+    run_strategy(context)
+
+    assert search_states == [Random(master_seed).getstate()]
 
 
 class _InterruptedAfterGenerationOne(RuntimeError):
@@ -452,11 +509,13 @@ def test_resume_matches_uninterrupted_population_history_winner_and_rng_state(
         resumed_context.compatibility,
     )
     assert (checkpoint_after_interrupt.generation, checkpoint_after_interrupt.consecutive_stagnation) == (1, 1)
+    assert checkpoint_after_interrupt.family_priority == resumed_context.compatibility.family_priority
     (resumed_context.run_directory / "ga_history.csv").write_bytes(b"stale\n")
 
     resumed = run_strategy(resumed_context)
 
     assert resumed == uninterrupted
+    assert resumed.family_priority == uninterrupted.family_priority == resumed_context.compatibility.family_priority
     assert resumed.generation == 2
     assert resumed.terminal_reason == "early_stop"
     assert (resumed_context.run_directory / "checkpoint.json").read_bytes() == (

@@ -19,12 +19,14 @@ from trafficlab.artifacts import atomic_replace as _atomic_replace
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, SimilarityConfig
 from trafficlab.errors import EvidenceState, FailureAuthority, TrafficlabError
 from trafficlab.genetic.coordinates import GeneCoordinate
+from trafficlab.genetic.population import priority_rank_key, rank_candidates, validate_family_priority
 from trafficlab.genetic.types import (
     METHOD_ORDER,
     Candidate,
     CandidateFailure,
     CandidateId,
     DuplicateDiagnostic,
+    FamilyPriority,
     HistoryRow,
     MethodName,
     MethodTrialResult,
@@ -98,6 +100,7 @@ _ROOT_KEYS = (
     "observation_window_seconds",
     "trial_seeds",
     "families",
+    "family_priority",
     "genetic",
     "similarity",
     "rng",
@@ -196,6 +199,7 @@ class CheckpointCompatibility:
     observation_window_seconds: float
     trial_seeds: tuple[int, ...]
     families: tuple[FamilyCheckpointSpec, ...]
+    family_priority: FamilyPriority
     genetic: GeneticCheckpointSettings
     similarity: SimilarityConfig
     python_version: str
@@ -215,6 +219,7 @@ class CheckpointState:
     best_fitness: float
     consecutive_stagnation: int
     terminal_reason: TerminalReason
+    family_priority: FamilyPriority
 
 
 class CheckpointCorruptionError(TrafficlabError):
@@ -452,6 +457,7 @@ def _validate_compatibility_shape(value: CheckpointCompatibility, *, require_cur
         raise ValueError("families must be in lexical order")
     if len(family_names) != len(set(family_names)):
         raise ValueError("families contain a duplicate family name")
+    validate_family_priority(value.family_priority, enabled_families=family_names)
     _validate_genetic(value.genetic, family_count=len(value.families), trial_seeds=value.trial_seeds)
     if type(value.similarity) is not SimilarityConfig:
         raise TypeError("similarity must be SimilarityConfig")
@@ -588,6 +594,10 @@ def _parse_compatibility(document: dict[str, object]) -> CheckpointCompatibility
         ),
         trial_seeds=tuple(_integer_array(document["trial_seeds"], name="trial_seeds")),
         families=tuple(_parse_family(item) for item in _array(document["families"], name="families")),
+        family_priority=tuple(
+            _family_name(item, name="family_priority")
+            for item in _array(document["family_priority"], name="family_priority")
+        ),
         genetic=_parse_genetic(document["genetic"]),
         similarity=_parse_similarity(document["similarity"]),
         python_version=_string(
@@ -625,6 +635,8 @@ def validate_compatibility(stored: CheckpointCompatibility, expected: Checkpoint
     expected_names = tuple(family.name for family in expected.families)
     if stored_names != expected_names:
         raise _compatibility_error("lexical family names")
+    if stored.family_priority != expected.family_priority:
+        raise _compatibility_error("family priority")
     for stored_family, expected_family in zip(stored.families, expected.families, strict=True):
         name = stored_family.name
         if stored_family.gene_order != expected_family.gene_order:
@@ -1000,6 +1012,8 @@ def summarize_generation(
     generation: int,
     population: Sequence[Candidate],
     families: Sequence[FamilyName],
+    *,
+    family_priority: FamilyPriority,
 ) -> tuple[HistoryRow, ...]:
     """Derive lexical family rows followed by one overall row from an evaluated population."""
     _integer(generation, name="history generation")
@@ -1008,11 +1022,19 @@ def summarize_generation(
     family_names = tuple(families)
     if family_names != tuple(sorted(family_names)) or len(family_names) != len(set(family_names)):
         raise _invalid("history families must be unique and lexical")
+    try:
+        priority = validate_family_priority(family_priority, enabled_families=family_names)
+    except (TypeError, ValueError) as error:
+        raise _invalid(str(error)) from error
 
     def make_row(candidates: tuple[Candidate, ...], family: FamilyName | None) -> HistoryRow:
         if not candidates:
             raise _invalid(f"history family {family} has no candidate")
-        best = min(candidates, key=lambda item: (-item.fitness, item.identifier))
+        best = (
+            rank_candidates(candidates, family_priority=priority)[0]
+            if family is None
+            else rank_candidates(candidates, family_priority=(family,))[0]
+        )
         return HistoryRow(
             generation,
             "overall" if family is None else "family",
@@ -1035,11 +1057,25 @@ def summarize_generation(
     return tuple(rows)
 
 
+def _history_winner(rows: Sequence[HistoryRow], family_priority: FamilyPriority) -> HistoryRow:
+    """Choose one family-row winner through the shared scientific ranking key."""
+    return min(
+        rows,
+        key=lambda row: priority_rank_key(
+            row.best_fitness,
+            cast(FamilyName, row.family),
+            row.best_identifier,
+            family_priority=family_priority,
+        ),
+    )
+
+
 def _validate_history(state: CheckpointState, family_names: tuple[FamilyName, ...]) -> None:
     block_size = len(family_names) + 1
     expected_length = (state.generation + 1) * block_size
     if len(state.history) != expected_length:
         raise ValueError("history must contain one complete block for every generation")
+    priority = validate_family_priority(state.family_priority, enabled_families=family_names)
     for generation in range(state.generation + 1):
         block = state.history[generation * block_size : (generation + 1) * block_size]
         expected_shape = tuple((generation, "family", family) for family in family_names) + (
@@ -1070,7 +1106,7 @@ def _validate_history(state: CheckpointState, family_names: tuple[FamilyName, ..
             raise ValueError("history overall valid_count does not equal family counts")
         if overall.candidate_count != state.compatibility.genetic.population_size:
             raise ValueError("history overall candidate_count does not equal population_size")
-        family_best = min(family_rows, key=lambda row: (-row.best_fitness, row.best_identifier))
+        family_best = _history_winner(family_rows, priority)
         if (overall.best_fitness, overall.best_identifier) != (
             family_best.best_fitness,
             family_best.best_identifier,
@@ -1081,23 +1117,42 @@ def _validate_history(state: CheckpointState, family_names: tuple[FamilyName, ..
         )
         if overall.mean_fitness != expected_mean:
             raise ValueError("history overall mean does not equal the recomputed family mean")
-    current = summarize_generation(state.generation, state.population, family_names)
+    current = summarize_generation(
+        state.generation,
+        state.population,
+        family_names,
+        family_priority=priority,
+    )
     if state.history[-block_size:] != current:
         raise ValueError("last history block does not equal the current population summary")
 
 
-def _history_progress(state: CheckpointState, *, block_size: int) -> tuple[CandidateId, float, int]:
+def _history_progress(
+    state: CheckpointState,
+    *,
+    block_size: int,
+    family_priority: FamilyPriority,
+) -> tuple[CandidateId, float, int]:
     """Recompute the retained winner and exact stagnation counter from overall history rows."""
-    overall_rows = state.history[block_size - 1 :: block_size]
-    retained_identifier = overall_rows[0].best_identifier
-    retained_fitness = overall_rows[0].best_fitness
+    retained = _history_winner(state.history[: block_size - 1], family_priority)
     consecutive_stagnation = 0
     genetic = state.compatibility.genetic
-    for generation, row in enumerate(overall_rows[1:], start=1):
-        improvement = row.best_fitness - retained_fitness
-        if improvement > 0.0:
-            retained_identifier = row.best_identifier
-            retained_fitness = row.best_fitness
+    for generation in range(1, state.generation + 1):
+        block = state.history[generation * block_size : (generation + 1) * block_size]
+        current = _history_winner(block[:-1], family_priority)
+        improvement = current.best_fitness - retained.best_fitness
+        if priority_rank_key(
+            current.best_fitness,
+            cast(FamilyName, current.family),
+            current.best_identifier,
+            family_priority=family_priority,
+        ) < priority_rank_key(
+            retained.best_fitness,
+            cast(FamilyName, retained.family),
+            retained.best_identifier,
+            family_priority=family_priority,
+        ):
+            retained = current
         consecutive_stagnation = 0 if improvement > genetic.early_stopping_tolerance else consecutive_stagnation + 1
         historical_terminal: TerminalReason
         if generation == genetic.generation_count:
@@ -1108,7 +1163,7 @@ def _history_progress(state: CheckpointState, *, block_size: int) -> tuple[Candi
             historical_terminal = "running"
         if generation < state.generation and historical_terminal == "early_stop":
             raise ValueError(f"history continues after early_stop at generation {generation}")
-    return retained_identifier, retained_fitness, consecutive_stagnation
+    return retained.best_identifier, retained.best_fitness, consecutive_stagnation
 
 
 def _validate_state(state: CheckpointState) -> None:
@@ -1124,6 +1179,9 @@ def _validate_state(state: CheckpointState) -> None:
     if len(state.population) != state.compatibility.genetic.population_size:
         raise ValueError("population must contain exactly population_size candidates")
     family_names: tuple[FamilyName, ...] = tuple(family.name for family in state.compatibility.families)
+    priority = validate_family_priority(state.family_priority, enabled_families=family_names)
+    if priority != state.compatibility.family_priority:
+        raise ValueError("state family_priority must equal compatibility family_priority")
     specs: dict[FamilyName, FamilyCheckpointSpec] = {family.name: family for family in state.compatibility.families}
     for candidate in state.population:
         _validate_candidate(candidate, state, specs)
@@ -1141,13 +1199,14 @@ def _validate_state(state: CheckpointState) -> None:
     best = candidates_by_id[state.best_identifier]
     if best.fitness != state.best_fitness:
         raise ValueError("best fitness must equal the identified current candidate fitness")
-    current_best = min(state.population, key=lambda candidate: (-candidate.fitness, candidate.identifier))
+    current_best = rank_candidates(state.population, family_priority=priority)[0]
     if (state.best_fitness, state.best_identifier) != (current_best.fitness, current_best.identifier):
         raise ValueError("best must equal the stable current population winner")
     _float(state.best_fitness, name="best fitness", bounded=True)
     retained_identifier, retained_fitness, expected_stagnation = _history_progress(
         state,
         block_size=len(family_names) + 1,
+        family_priority=priority,
     )
     if (state.best_fitness, state.best_identifier) != (retained_fitness, retained_identifier):
         raise ValueError("best does not equal the retained history winner")
@@ -1268,6 +1327,7 @@ def _checkpoint_document(state: CheckpointState) -> dict[str, object]:
         "observation_window_seconds": compatibility.observation_window_seconds,
         "trial_seeds": list(compatibility.trial_seeds),
         "families": [_family_document(family) for family in compatibility.families],
+        "family_priority": list(state.family_priority),
         "genetic": _genetic_document(compatibility.genetic),
         "similarity": _similarity_document(compatibility.similarity),
         "rng": {
@@ -1335,6 +1395,7 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
             _float(best["fitness"], name="best fitness", bounded=True),
             _integer(document["consecutive_stagnation"], name="consecutive_stagnation"),
             terminal_value,
+            stored_compatibility.family_priority,
         )
         _validate_state(state)
         if render_checkpoint(state) != content:

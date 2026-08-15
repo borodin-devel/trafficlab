@@ -256,6 +256,8 @@ def fit_experiment(
             capture_sha256=sha256_bytes(capture_bytes),
         )
         outcome = active.strategy(context)
+        if outcome.family_priority != context.compatibility.family_priority:
+            raise AssertionError("strategy family priority does not match the resolved checkpoint compatibility")
         append_run_log(
             run_directory,
             {

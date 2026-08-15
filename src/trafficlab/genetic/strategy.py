@@ -34,7 +34,12 @@ from trafficlab.genetic.evaluation import (
     validate_evaluation_context,
 )
 from trafficlab.genetic.operators import ReproductionContext, fill_next_population
-from trafficlab.genetic.population import derive_family_priority, initial_population, rank_candidates
+from trafficlab.genetic.population import (
+    derive_family_priority,
+    initial_population,
+    priority_rank_key,
+    rank_candidates,
+)
 from trafficlab.genetic.types import Candidate, CandidateId, FamilyPriority, TerminalReason, TrialResult
 from trafficlab.models.common import FamilyBounds, ModelFamily
 from trafficlab.models.registry import get_family
@@ -60,6 +65,7 @@ class FitOutcome:
     final_trials: tuple[TrialResult, ...]
     generation: int
     terminal_reason: Literal["hard_limit", "early_stop"]
+    family_priority: FamilyPriority
 
 
 def _enabled_bounds(config: ExperimentConfig, families: Sequence[FamilyName]) -> dict[FamilyName, FamilyBounds]:
@@ -122,6 +128,7 @@ def make_strategy_context(
 ) -> StrategyContext:
     """Resolve lexical registry, bounds, operators, and compatibility exactly once."""
     families = tuple(sorted(config.models.enabled))
+    family_priority = derive_family_priority(config.run.master_seed, families)
     registered: dict[FamilyName, ModelFamily] = {name: get_family(name) for name in families}
     bounds = _enabled_bounds(config, families)
     evaluation = EvaluationContext(
@@ -141,6 +148,7 @@ def make_strategy_context(
         observation_window_seconds=window,
         trial_seeds=config.genetic.trial_seeds,
         families=_family_specs(families, registered, bounds),
+        family_priority=family_priority,
         genetic=_genetic_settings(config),
         similarity=config.similarity,
         python_version=platform.python_version(),
@@ -243,6 +251,7 @@ def _finish_evaluated_generation(
         generation,
         evaluated,
         family_names,
+        family_priority=family_priority,
     )
     generation_best = rank_candidates(evaluated, family_priority=family_priority)[0]
     if previous is None:
@@ -251,12 +260,19 @@ def _finish_evaluated_generation(
         consecutive_stagnation = 0
     else:
         improvement = generation_best.fitness - previous.best_fitness
-        if improvement > 0.0:
-            best_identifier = generation_best.identifier
-            best_fitness = generation_best.fitness
-        else:
-            best_identifier = previous.best_identifier
-            best_fitness = previous.best_fitness
+        previous_best = _candidate_by_id(previous.population, previous.best_identifier)
+        retained_best = min(
+            generation_best,
+            previous_best,
+            key=lambda candidate: priority_rank_key(
+                candidate.fitness,
+                candidate.family,
+                candidate.identifier,
+                family_priority=family_priority,
+            ),
+        )
+        best_identifier = retained_best.identifier
+        best_fitness = retained_best.fitness
         consecutive_stagnation = (
             0
             if improvement > context.compatibility.genetic.early_stopping_tolerance
@@ -279,6 +295,7 @@ def _finish_evaluated_generation(
         best_fitness=best_fitness,
         consecutive_stagnation=consecutive_stagnation,
         terminal_reason=terminal_reason,
+        family_priority=family_priority,
     )
 
 
@@ -326,11 +343,10 @@ def _candidate_by_id(population: Sequence[Candidate], identifier: CandidateId) -
 def run_strategy(context: StrategyContext) -> FitOutcome:
     """Run or exactly resume the bounded GA and freshly validate its stored winner."""
     evaluation = validate_evaluation_context(context.evaluation)
-    family_priority = derive_family_priority(
-        context.compatibility.genetic.master_seed,
-        tuple(family.name for family in context.compatibility.families),
-    )
+    family_priority = context.compatibility.family_priority
     state = initialize_or_resume(context)
+    if state is not None:
+        family_priority = state.family_priority
     rng: Random | None = None
     if state is None:
         rng = Random(context.compatibility.genetic.master_seed)
@@ -364,4 +380,5 @@ def run_strategy(context: StrategyContext) -> FitOutcome:
         final_trials,
         state.generation,
         state.terminal_reason,
+        state.family_priority,
     )

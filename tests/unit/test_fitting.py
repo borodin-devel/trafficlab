@@ -80,7 +80,7 @@ def _outcome(config: ExperimentConfig, *, genes: tuple[float, ...] = (1.0,)) -> 
         None,
         (),
     )
-    return FitOutcome(winner, (_trial(config.run.final_seed),), 0, "hard_limit")
+    return FitOutcome(winner, (_trial(config.run.final_seed),), 0, "hard_limit", ("poisson_empirical",))
 
 
 def _inputs(config: ExperimentConfig, *, snapshot: bytes | None = None) -> dict[Path, bytes]:
@@ -1061,9 +1061,35 @@ def test_strategy_contract_violation_with_missing_winner_genes_never_publishes(
         None,
         (),
     )
-    outcome = FitOutcome(malformed_winner, (_trial(config.run.final_seed),), 0, "hard_limit")
+    outcome = FitOutcome(
+        malformed_winner,
+        (_trial(config.run.final_seed),),
+        0,
+        "hard_limit",
+        ("poisson_empirical",),
+    )
 
     with pytest.raises(AssertionError, match="canonical genes"):
+        fit_experiment(
+            experiment_path,
+            dependencies=_dependencies(config, experiment_path, inputs, lambda _context: outcome),
+        )
+
+    assert not (run_directory / "best_model.json").exists()
+
+
+def test_fit_rejects_a_strategy_priority_that_disagrees_with_its_checkpoint_context(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """Final publication must not accept a strategy result from a different priority lineage."""
+    experiment_path = tmp_path / "experiment.toml"
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    config = _config(valid_config_data, run_directory)
+    inputs = _inputs(config)
+    outcome = replace(_outcome(config), family_priority=("mmpp",))
+
+    with pytest.raises(AssertionError, match="family priority"):
         fit_experiment(
             experiment_path,
             dependencies=_dependencies(config, experiment_path, inputs, lambda _context: outcome),

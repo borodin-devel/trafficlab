@@ -39,6 +39,7 @@ from trafficlab.genetic.checkpoint import (
 from trafficlab.genetic.coordinates import GeneCoordinate
 from trafficlab.genetic.evaluation import EvaluationContext, evaluate_candidate, validate_evaluation_context
 from trafficlab.genetic.operators import ReproductionContext, reproduce_child
+from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.types import (
     METHOD_ORDER,
     Candidate,
@@ -198,6 +199,7 @@ COMPATIBILITY = CheckpointCompatibility(
     observation_window_seconds=2.0,
     trial_seeds=(7,),
     families=FAMILIES,
+    family_priority=("mmpp", "poisson_empirical"),
     genetic=GENETIC,
     similarity=SIMILARITY,
     python_version=platform.python_version(),
@@ -213,6 +215,7 @@ VALID_STATE = CheckpointState(
     POISSON_TRIAL.aggregate_score,
     0,
     "running",
+    ("mmpp", "poisson_empirical"),
 )
 
 
@@ -381,7 +384,11 @@ def _markov_state(genes: tuple[float, float, float, int, float]) -> CheckpointSt
         0.3,
         0.2,
     )
-    compatibility = replace(COMPATIBILITY, families=(markov, FAMILIES[1]))
+    compatibility = replace(
+        COMPATIBILITY,
+        families=(markov, FAMILIES[1]),
+        family_priority=("markov_renewal", "poisson_empirical"),
+    )
     markov_trial = replace(MMPP_TRIAL, model_diagnostics=MARKOV_MODEL_DIAGNOSTICS)
     population = (
         replace(POPULATION[0], family="markov_renewal", genes=genes, trials=(markov_trial,)),
@@ -393,6 +400,7 @@ def _markov_state(genes: tuple[float, float, float, int, float]) -> CheckpointSt
         compatibility=compatibility,
         population=population,
         history=(markov_row, POISSON_ROW, OVERALL_ROW),
+        family_priority=compatibility.family_priority,
     )
 
 
@@ -551,6 +559,7 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
         1,
         current_population,
         ("mmpp", "poisson_empirical"),
+        family_priority=VALID_STATE.family_priority,
     )
     state = replace(
         VALID_STATE,
@@ -778,6 +787,73 @@ def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
     with pytest.raises(TrafficlabError, match="checkpoint schema is incompatible"):
         parse_checkpoint(_encoded(document), COMPATIBILITY)
     assert parsed_rng is False
+
+
+@pytest.mark.parametrize(
+    ("value", "case"),
+    (
+        (None, "null"),
+        ("mmpp", "string"),
+        (["mmpp"], "missing"),
+        (["mmpp", "mmpp"], "duplicate"),
+        (["mmpp", "markov_renewal"], "foreign"),
+        (["poisson_empirical", "mmpp"], "reordered"),
+    ),
+)
+def test_checkpoint_priority_is_strict_and_rejected_before_rng_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+    value: object,
+    case: str,
+) -> None:
+    """Priority is scientific compatibility, never a permissive resume hint."""
+    document = _decoded()
+    assert document["family_priority"] == list(COMPATIBILITY.family_priority)
+    document["family_priority"] = value
+    parsed_rng = False
+
+    def fail_rng(_value: object) -> object:
+        nonlocal parsed_rng
+        parsed_rng = True
+        raise AssertionError("priority validation must precede RNG parsing")
+
+    monkeypatch.setattr(checkpoint, "_parse_rng", fail_rng)
+    with pytest.raises(TrafficlabError, match="priority|checkpoint"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
+    assert parsed_rng is False, case
+
+
+def test_checkpoint_rejects_missing_or_expected_mismatched_priority_before_rng_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Schema-2 checkpoints without priority have no migration path."""
+    document = _decoded()
+    assert document["family_priority"] == list(COMPATIBILITY.family_priority)
+    parsed_rng = False
+
+    def fail_rng(_value: object) -> object:
+        nonlocal parsed_rng
+        parsed_rng = True
+        raise AssertionError("priority compatibility must precede RNG parsing")
+
+    monkeypatch.setattr(checkpoint, "_parse_rng", fail_rng)
+    missing = dict(document)
+    del missing["family_priority"]
+    with pytest.raises(TrafficlabError, match="checkpoint"):
+        parse_checkpoint(_encoded(missing), COMPATIBILITY)
+    assert parsed_rng is False
+
+    expected = replace(COMPATIBILITY, family_priority=tuple(reversed(COMPATIBILITY.family_priority)))
+    with pytest.raises(TrafficlabError, match="family priority"):
+        parse_checkpoint(_encoded(document), expected)
+    assert parsed_rng is False
+
+
+def test_checkpoint_state_priority_must_match_its_compatibility() -> None:
+    """A decoded state cannot silently substitute another complete priority ordering."""
+    state = replace(VALID_STATE, family_priority=tuple(reversed(VALID_STATE.family_priority)))
+
+    with pytest.raises(TrafficlabError, match="state family_priority"):
+        render_checkpoint(state)
 
 
 @pytest.mark.parametrize(
@@ -1173,13 +1249,89 @@ def test_summarize_generation_uses_stable_identifier_tie_and_rejects_invalid_inp
         )
         for candidate in POPULATION
     )
-    rows = summarize_generation(0, tied, ("mmpp", "poisson_empirical"))
+    rows = summarize_generation(
+        0,
+        tied,
+        ("mmpp", "poisson_empirical"),
+        family_priority=COMPATIBILITY.family_priority,
+    )
     assert rows[-1].best_identifier == CandidateId(0, 0)
     assert rows[-1].valid_count == 0
     with pytest.raises(TrafficlabError, match="empty population"):
-        summarize_generation(0, (), ("mmpp", "poisson_empirical"))
+        summarize_generation(
+            0,
+            (),
+            ("mmpp", "poisson_empirical"),
+            family_priority=COMPATIBILITY.family_priority,
+        )
     with pytest.raises(TrafficlabError, match="unique and lexical"):
-        summarize_generation(0, POPULATION, ("poisson_empirical", "mmpp"))
+        summarize_generation(
+            0,
+            POPULATION,
+            ("poisson_empirical", "mmpp"),
+            family_priority=COMPATIBILITY.family_priority,
+        )
+    with pytest.raises(TrafficlabError, match="family priority"):
+        summarize_generation(
+            0,
+            POPULATION,
+            ("mmpp", "poisson_empirical"),
+            family_priority=("mmpp", "mmpp"),
+        )
+
+
+def test_checkpoint_priority_ties_unify_current_history_and_retained_winners() -> None:
+    """A later higher-priority catch-up and two equal improvers beat lexical IDs everywhere."""
+    priority = ("mmpp", "poisson_empirical")
+    genetic = replace(GENETIC, generation_count=1, early_stopping_generations=1)
+    compatibility = replace(COMPATIBILITY, genetic=genetic, family_priority=priority)
+    prior_mmpp = replace(POPULATION[0], identifier=CandidateId(0, 2))
+    prior_poisson = replace(
+        POPULATION[2],
+        identifier=CandidateId(0, 0),
+        fitness=MMPP_TRIAL.aggregate_score,
+        trials=(MMPP_TRIAL,),
+    )
+    invalid = replace(POPULATION[1], identifier=CandidateId(0, 1))
+    prior_population = (prior_mmpp, invalid, prior_poisson)
+    current_mmpp = replace(
+        prior_mmpp,
+        fitness=POISSON_TRIAL.aggregate_score,
+        trials=(POISSON_TRIAL,),
+    )
+    current_poisson = replace(
+        prior_poisson,
+        fitness=POISSON_TRIAL.aggregate_score,
+        trials=(POISSON_TRIAL,),
+    )
+    current_population = (current_mmpp, invalid, current_poisson)
+    history = summarize_generation(
+        0,
+        prior_population,
+        ("mmpp", "poisson_empirical"),
+        family_priority=priority,
+    ) + summarize_generation(
+        1,
+        current_population,
+        ("mmpp", "poisson_empirical"),
+        family_priority=priority,
+    )
+    state = CheckpointState(
+        compatibility,
+        1,
+        current_population,
+        history,
+        encode_rng_state(Random(73).getstate()),
+        current_mmpp.identifier,
+        current_mmpp.fitness,
+        0,
+        "hard_limit",
+        priority,
+    )
+
+    assert history[2].best_identifier == prior_mmpp.identifier
+    assert history[5].best_identifier == current_mmpp.identifier
+    assert parse_checkpoint(render_checkpoint(state), compatibility) == state
 
 
 def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation() -> None:
@@ -1206,16 +1358,26 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
         for index, score in enumerate(literal_scores)
         for trial in (_trial(7, (score, score, score, score)),)
     )
-    rows = summarize_generation(0, candidates, ("mmpp", "poisson_empirical"))
+    rows = summarize_generation(
+        0,
+        candidates,
+        ("mmpp", "poisson_empirical"),
+        family_priority=COMPATIBILITY.family_priority,
+    )
     direct_mean = math.fsum(candidate.fitness for candidate in candidates) / len(candidates)
     grouped_mean = math.fsum(row.mean_fitness * row.candidate_count for row in rows[:-1]) / len(candidates)
     assert direct_mean != grouped_mean
     assert rows[-1].mean_fitness == grouped_mean
     with pytest.raises(TrafficlabError, match="has no candidate"):
-        summarize_generation(0, candidates[:3], ("mmpp", "poisson_empirical"))
+        summarize_generation(
+            0,
+            candidates[:3],
+            ("mmpp", "poisson_empirical"),
+            family_priority=COMPATIBILITY.family_priority,
+        )
 
     compatibility = replace(COMPATIBILITY, genetic=replace(GENETIC, population_size=7))
-    winner = min(candidates, key=lambda candidate: (-candidate.fitness, candidate.identifier))
+    winner = rank_candidates(candidates, family_priority=compatibility.family_priority)[0]
     state = CheckpointState(
         compatibility,
         0,
@@ -1226,6 +1388,7 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
         winner.fitness,
         0,
         "running",
+        compatibility.family_priority,
     )
     assert parse_checkpoint(render_checkpoint(state), compatibility) == state
 
@@ -1262,6 +1425,11 @@ def test_compatibility_reports_each_scientifically_relevant_difference_specifica
     )
     wider_family = replace(FAMILIES[0], coordinates=(wider_coordinate, *FAMILIES[0].coordinates[1:]))
     changed_operator = replace(FAMILIES[0], mutation_probability=0.4)
+    reordered_family = replace(
+        FAMILIES[0],
+        gene_order=tuple(reversed(FAMILIES[0].gene_order)),
+        coordinates=tuple(reversed(FAMILIES[0].coordinates)),
+    )
     changed_similarity = SIMILARITY.model_copy(update={"iat_diagnostic_quantile": 0.6})
     cases = (
         (replace(COMPATIBILITY, experiment_sha256="d" * 64), "experiment snapshot SHA-256"),
@@ -1269,7 +1437,15 @@ def test_compatibility_reports_each_scientifically_relevant_difference_specifica
         (replace(COMPATIBILITY, capture_sha256="d" * 64), "capture SHA-256"),
         (replace(COMPATIBILITY, observation_window_seconds=3.0), "observation window"),
         (replace(COMPATIBILITY, trial_seeds=(8,)), "trial seeds"),
-        (replace(COMPATIBILITY, families=(FAMILIES[1],)), "family names"),
+        (
+            replace(
+                COMPATIBILITY,
+                families=(FAMILIES[1],),
+                family_priority=("poisson_empirical",),
+            ),
+            "family names",
+        ),
+        (replace(COMPATIBILITY, families=(reordered_family, FAMILIES[1])), "gene order"),
         (replace(COMPATIBILITY, families=(renamed_family, FAMILIES[1])), "gene order"),
         (replace(COMPATIBILITY, families=(wider_family, FAMILIES[1])), "coordinate metadata"),
         (replace(COMPATIBILITY, families=(changed_operator, FAMILIES[1])), "operator values"),

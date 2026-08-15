@@ -133,6 +133,7 @@ def test_checked_fit_artifacts_load_through_every_strict_production_codec() -> N
     best = load_best_model((_FIT_DIRECTORY / "best_model.json").read_bytes(), source=_FIT_DIRECTORY / "best_model.json")
 
     assert tuple(family.name for family in checkpoint.compatibility.families) == _FAMILY_ORDER
+    assert checkpoint.family_priority == checkpoint.compatibility.family_priority
     assert (checkpoint.compatibility.genetic.population_size, checkpoint.generation) == (6, 1)
     assert render_history_csv(checkpoint) == (_FIT_DIRECTORY / "ga_history.csv").read_bytes()
     assert render_best_model(best) == (_FIT_DIRECTORY / "best_model.json").read_bytes()
@@ -378,6 +379,7 @@ def test_interrupt_resume_is_byte_identical_and_operator_tamper_precedes_reprodu
     resumed = fit_experiment(Path("fixture-experiment.toml"), dependencies=_portable_dependencies(resume_directory))
 
     assert resumed.outcome == full.outcome
+    assert resumed.outcome.family_priority == full.outcome.family_priority
     for name in ("checkpoint.json", "ga_history.csv", "best_model.json"):
         assert (resume_directory / name).read_bytes() == (full_directory / name).read_bytes()
 
@@ -403,6 +405,48 @@ def test_interrupt_resume_is_byte_identical_and_operator_tamper_precedes_reprodu
     with pytest.raises(TrafficlabError, match="operator values for family mmpp"):
         fit_experiment(Path("fixture-experiment.toml"), dependencies=_portable_dependencies(tamper_directory))
     assert reproduction_called is False
+
+
+def test_configuration_and_registry_permutations_keep_priority_population_children_and_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Input order must not change any priority-governed search evidence."""
+    import trafficlab.models.registry as model_registry
+
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    first_path, first_directory, first_config = _copy_fixture_experiment(first_root)
+    second_path, second_directory, second_config = _copy_fixture_experiment(second_root)
+    permuted_models = second_config.models.model_copy(update={"enabled": tuple(reversed(second_config.models.enabled))})
+    permuted_config = second_config.model_copy(update={"models": permuted_models})
+    rendered = render_effective_config(permuted_config)
+    second_path.write_bytes(rendered)
+    (second_directory / "experiment.toml").write_bytes(rendered)
+
+    first = fit_experiment(first_path)
+    original_registry = model_registry.REGISTRY
+    monkeypatch.setattr(
+        model_registry,
+        "REGISTRY",
+        {name: original_registry[name] for name in reversed(tuple(original_registry))},
+    )
+    second = fit_experiment(second_path)
+
+    first_state = load_checkpoint(
+        first_directory / "checkpoint.json", _strategy_context(first_config, first_directory).compatibility
+    )
+    second_state = load_checkpoint(
+        second_directory / "checkpoint.json",
+        _strategy_context(permuted_config, second_directory).compatibility,
+    )
+    assert first_state.family_priority == second_state.family_priority
+    assert first.outcome.family_priority == second.outcome.family_priority == first_state.family_priority
+    assert first_state.population == second_state.population
+    assert first_state.history == second_state.history
+    assert first.outcome.winner == second.outcome.winner
 
 
 def test_offline_fit_generate_compare_preserves_one_window_without_docker(

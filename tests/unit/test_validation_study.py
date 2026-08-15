@@ -1238,6 +1238,7 @@ def _terminal_checkpoint_and_best(tmp_path: Path) -> tuple[CheckpointState, Best
         0.9,
         0,
         "hard_limit",
+        context.compatibility.family_priority,
     )
     bounds = config.models.poisson_empirical
     assert bounds is not None

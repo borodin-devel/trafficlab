@@ -411,6 +411,7 @@ def _validate_final_artifacts(
         checkpoint_winner != fit.outcome.winner
         or checkpoint.generation != fit.outcome.generation
         or checkpoint.terminal_reason != fit.outcome.terminal_reason
+        or checkpoint.family_priority != fit.outcome.family_priority
     ):
         raise _final_artifact_error("fit", "checkpoint terminal state does not match the fitting result")
     history_content = _read_final_artifact(run_directory / "ga_history.csv", owner="fit", identities=identities)

@@ -71,7 +71,7 @@ def _fit_outcome(
         None,
         (),
     )
-    return FitOutcome(winner, (_trial(final_seed),), 0, "hard_limit")
+    return FitOutcome(winner, (_trial(final_seed),), 0, "hard_limit", ("poisson_empirical",))
 
 
 def _comparison(window: float = 10.0, *, identities: dict[str, str] | None = None) -> ComparisonResult:
@@ -168,6 +168,7 @@ def _stage_results(
         reference_sha256=identities["reference_pcapng"],
         capture_sha256=identities["capture_json"],
     )
+    fit = replace(fit, outcome=replace(fit.outcome, family_priority=context.compatibility.family_priority))
     family_names = cast(tuple[FamilyName, ...], tuple(family.name for family in context.compatibility.families))
     family_genes = {
         "markov_renewal": (0.2, 0.7, 0.5, 2, 1.0),
@@ -193,7 +194,12 @@ def _stage_results(
     history = tuple(
         row
         for generation_index in range(prepared.config.genetic.generation_count + 1)
-        for row in summarize_generation(generation_index, population_tuple, family_names)
+        for row in summarize_generation(
+            generation_index,
+            population_tuple,
+            family_names,
+            family_priority=context.compatibility.family_priority,
+        )
     )
     checkpoint = CheckpointState(
         context.compatibility,
@@ -205,6 +211,7 @@ def _stage_results(
         fit.outcome.winner.fitness,
         prepared.config.genetic.generation_count,
         "hard_limit",
+        context.compatibility.family_priority,
     )
     (run_directory / "checkpoint.json").write_bytes(render_checkpoint(checkpoint))
     (run_directory / "ga_history.csv").write_bytes(render_history_csv(checkpoint))
@@ -295,6 +302,23 @@ def test_run_experiment_appends_one_exact_completion_record(
             "stage": "run",
         }
     ]
+
+
+def test_final_artifact_validation_rejects_a_fit_result_with_mismatched_priority(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A final coordinator must compare priority as well as winner, generation, and termination."""
+    experiment_path, prepared = _prepared_experiment(valid_config_data, tmp_path)
+    dependencies, (_capture, fit, _generation, _comparison) = _success_dependencies(experiment_path, prepared, [])
+    object.__setattr__(
+        fit, "outcome", replace(fit.outcome, family_priority=tuple(reversed(fit.outcome.family_priority)))
+    )
+
+    with pytest.raises(TrafficlabError, match="checkpoint terminal state"):
+        run_experiment(experiment_path, dependencies=dependencies)
+
+    records = _records(prepared)
+    assert [record for record in records if record.get("event") == "run_completed"] == []
 
 
 @pytest.mark.parametrize(

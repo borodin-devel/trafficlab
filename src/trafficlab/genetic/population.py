@@ -113,16 +113,33 @@ def _evaluated(candidates: Sequence[Candidate]) -> tuple[Candidate, ...]:
     return values
 
 
-def _competition_key(candidate: Candidate, *, priority_positions: Mapping[str, int]) -> tuple[float, int, CandidateId]:
-    return (-candidate.fitness, priority_positions[candidate.family], candidate.identifier)
+def priority_rank_key(
+    fitness: float,
+    family: FamilyName,
+    identifier: CandidateId,
+    *,
+    family_priority: FamilyPriority,
+) -> tuple[float, int, CandidateId]:
+    """Return the one scientific competition key for candidate-like records."""
+    priority = validate_family_priority(family_priority)
+    return (-fitness, priority.index(family), identifier)
 
 
 def rank_candidates(candidates: Sequence[Candidate], *, family_priority: FamilyPriority) -> tuple[Candidate, ...]:
     """Rank by fitness, priority across families, and stable ID inside one family."""
     values = _evaluated(candidates)
     priority = validate_family_priority(family_priority, enabled_families=(candidate.family for candidate in values))
-    positions = {family: index for index, family in enumerate(priority)}
-    return tuple(sorted(values, key=lambda item: _competition_key(item, priority_positions=positions)))
+    return tuple(
+        sorted(
+            values,
+            key=lambda item: priority_rank_key(
+                item.fitness,
+                item.family,
+                item.identifier,
+                family_priority=priority,
+            ),
+        )
+    )
 
 
 def tournament_select(
@@ -137,9 +154,16 @@ def tournament_select(
     if type(tournament_size) is not int or not 2 <= tournament_size <= len(values):
         raise ValueError("tournament size must be an exact integer within the population")
     priority = validate_family_priority(family_priority, enabled_families=(candidate.family for candidate in values))
-    positions = {family: index for index, family in enumerate(priority)}
     selected = tuple(values[rng.randrange(len(values))] for _ in range(tournament_size))
-    return min(selected, key=lambda item: _competition_key(item, priority_positions=positions))
+    return min(
+        selected,
+        key=lambda item: priority_rank_key(
+            item.fitness,
+            item.family,
+            item.identifier,
+            family_priority=priority,
+        ),
+    )
 
 
 def global_elites(

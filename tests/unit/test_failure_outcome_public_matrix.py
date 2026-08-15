@@ -619,7 +619,15 @@ def _fit_success_outcome(config: ExperimentConfig) -> FitOutcome:
         None,
         (),
     )
-    return FitOutcome(winner, (_fit_trial(config.run.final_seed),), 0, "hard_limit")
+    from trafficlab.genetic.population import derive_family_priority
+
+    return FitOutcome(
+        winner,
+        (_fit_trial(config.run.final_seed),),
+        0,
+        "hard_limit",
+        derive_family_priority(config.run.master_seed, config.models.enabled),
+    )
 
 
 def _fit_inputs(config: ExperimentConfig) -> dict[Path, bytes]:
