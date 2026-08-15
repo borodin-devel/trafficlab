@@ -10,6 +10,8 @@ import pytest
 from tests.conftest import DockerTestEnvironment, EndpointDockerCompose
 from tests.docker.support import capture_log, write_docker_experiment
 from trafficlab.capture import capture_prepared_experiment
+from trafficlab.compose import ComposePaths
+from trafficlab.config import ExperimentConfig
 from trafficlab.docker_cli import CommandResult, ServiceState
 from trafficlab.errors import TrafficlabError
 from trafficlab.preflight import run_preflight
@@ -88,18 +90,40 @@ class _RecordingDocker(EndpointDockerCompose):
 def _replace_capture_entrypoint(monkeypatch: pytest.MonkeyPatch, entrypoint: list[str]) -> None:
     import trafficlab.capture as capture_module
 
-    def mutate(content: bytes) -> bytes:
+    def mutate(content: bytes, *, target_image: str, capture_image: str) -> bytes:
         document = cast(dict[str, object], json.loads(content))
         services = cast(dict[str, object], document["services"])
         capture = cast(dict[str, object], services["capture"])
+        target = cast(dict[str, object], services["target"])
+        assert target["image"] == target_image
+        assert capture["image"] == capture_image
         capture["entrypoint"] = entrypoint
         return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
     original_write = capture_module.write_production_compose
 
-    def write(path: Path, config: object, paths: object) -> None:
-        original_write(path, config, paths)  # type: ignore[arg-type]
-        path.write_bytes(mutate(path.read_bytes()))
+    def write(
+        path: Path,
+        config: ExperimentConfig,
+        paths: ComposePaths,
+        *,
+        target_image: str,
+        capture_image: str,
+    ) -> None:
+        original_write(
+            path,
+            config,
+            paths,
+            target_image=target_image,
+            capture_image=capture_image,
+        )
+        path.write_bytes(
+            mutate(
+                path.read_bytes(),
+                target_image=target_image,
+                capture_image=capture_image,
+            )
+        )
 
     monkeypatch.setattr(capture_module, "write_production_compose", write)
 
