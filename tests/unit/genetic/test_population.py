@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
+from trafficlab.genetic import population as population_module
 from trafficlab.genetic.population import (
     family_champions,
     family_quotas,
@@ -89,71 +90,85 @@ POPULATION = (
 )
 
 
-def test_quotas_assign_remainder_in_lexical_family_order() -> None:
-    """Input order must not decide which competing family receives a remainder slot."""
-    assert family_quotas(("poisson_empirical", "mmpp", "markov_renewal"), 8) == {
+@pytest.mark.parametrize(
+    ("master_seed", "expected_priority"),
+    [
+        (4, ("markov_renewal", "mmpp", "poisson_empirical")),
+        (0, ("mmpp", "poisson_empirical", "markov_renewal")),
+        (6, ("poisson_empirical", "markov_renewal", "mmpp")),
+    ],
+)
+def test_derive_family_priority_is_seeded_permutation_invariant_and_separate_from_search_rng(
+    master_seed: int, expected_priority: tuple[FamilyName, ...]
+) -> None:
+    """A temporary priority sampler must not privilege input order or advance search draws."""
+    names = ("poisson_empirical", "mmpp", "markov_renewal")
+    expected = tuple(Random(master_seed).sample(sorted(names), len(names)))
+    search_rng = Random(master_seed)
+
+    assert population_module.derive_family_priority(master_seed, names) == expected_priority == expected
+    assert population_module.derive_family_priority(master_seed, tuple(reversed(names))) == expected_priority
+    assert search_rng.random() == Random(master_seed).random()
+
+
+def test_quotas_assign_remainder_in_family_priority_order() -> None:
+    """The priority leader, rather than lexical spelling, receives the first remainder slot."""
+    priority = ("poisson_empirical", "markov_renewal", "mmpp")
+    assert family_quotas(8, priority) == {
+        "poisson_empirical": 3,
         "markov_renewal": 3,
-        "mmpp": 3,
-        "poisson_empirical": 2,
+        "mmpp": 2,
     }
 
 
 @pytest.mark.parametrize(
-    ("families", "population_size", "message"),
+    ("family_priority", "population_size", "message"),
     [
         ((), 1, "at least one"),
         (("mmpp", "mmpp"), 2, "unique"),
-        (("mmpp", "poisson_empirical"), 1, "covering"),
+        (("mmpp", "foreign_family"), 2, "registered"),
     ],
 )
-def test_quotas_reject_invalid_family_sets_and_population_capacity(
-    families: object, population_size: int, message: str
+def test_quotas_reject_invalid_priorities_and_population_capacity(
+    family_priority: object, population_size: int, message: str
 ) -> None:
-    """Malformed quota inputs cannot create missing or multiply represented family slots."""
+    """Malformed priority inputs cannot create missing or multiply represented family slots."""
     with pytest.raises(ValueError, match=message):
-        family_quotas(cast("tuple[FamilyName, ...]", families), population_size)
+        family_quotas(population_size, cast("tuple[FamilyName, ...]", family_priority))
 
 
-def test_initial_population_uses_contiguous_lexical_slots_and_stable_ids() -> None:
-    """A nonlexical enabled-family tuple must not reorder initial IDs or initializer draws."""
-    rng = ScriptedRandom(
-        random_values=[0.0] * 8 + [0.25] * 4 + [0.5],
-        ranges=[1, 2],
-    )
+def test_priority_helpers_reject_mutable_nonstring_invalid_seed_and_insufficient_population() -> None:
+    """Priority validation rejects malformed inputs before it can decide any family slot or tie."""
+    with pytest.raises(TypeError, match="immutable"):
+        family_quotas(2, cast("tuple[FamilyName, ...]", ["mmpp", "poisson_empirical"]))
+    with pytest.raises(ValueError, match="registered"):
+        family_quotas(2, cast("tuple[FamilyName, ...]", ("mmpp", 7)))
+    with pytest.raises(ValueError, match="master seed"):
+        population_module.derive_family_priority(-1, ("mmpp",))
+    with pytest.raises(ValueError, match="population size"):
+        family_quotas(1, ("mmpp", "poisson_empirical"))
+
+
+def test_initial_population_uses_contiguous_priority_slots_and_stable_ids() -> None:
+    """Priority order fixes remainder recipients, initial family slots, and their creation IDs."""
+    priority = ("poisson_empirical", "markov_renewal", "mmpp")
 
     population = initial_population(
-        ("poisson_empirical", "mmpp", "markov_renewal"),
+        priority,
         population_size=4,
         bounds=BOUNDS,
         reference=REFERENCE,
-        rng=cast(Random, rng),
+        rng=Random(17),
     )
 
     assert tuple(item.family for item in population) == (
-        "markov_renewal",
+        "poisson_empirical",
+        "poisson_empirical",
         "markov_renewal",
         "mmpp",
-        "poisson_empirical",
     )
     assert tuple(item.identifier for item in population) == tuple(CandidateId(0, index) for index in range(4))
     assert all(item.status == "pending" and item.fitness == 0.0 for item in population)
-    assert rng.calls == [
-        ("random",),
-        ("random",),
-        ("random",),
-        ("randrange", 1, 6),
-        ("random",),
-        ("random",),
-        ("random",),
-        ("random",),
-        ("randrange", 1, 6),
-        ("random",),
-        ("random",),
-        ("random",),
-        ("random",),
-        ("random",),
-        ("random",),
-    ]
 
 
 def test_initial_population_classifies_registered_initializer_repair_failure() -> None:
@@ -181,7 +196,7 @@ def test_initial_population_classifies_registered_initializer_repair_failure() -
 def test_initial_population_requires_exact_enabled_bounds() -> None:
     """A missing family table must fail before any initializer draw."""
     rng = ScriptedRandom(random_values=[0.5])
-    with pytest.raises(ValueError, match="exactly match"):
+    with pytest.raises(ValueError, match="family priority"):
         initial_population(
             ("poisson_empirical",),
             population_size=1,
@@ -192,33 +207,54 @@ def test_initial_population_requires_exact_enabled_bounds() -> None:
     assert rng.calls == []
 
 
-def test_ranking_global_elites_and_missing_champions_are_stable() -> None:
-    """Fitness ties and family retention must use IDs and lexical family order, never input accidents."""
-    tied = POPULATION + (candidate(5, "mmpp", 0.9),)
+def test_ranking_retention_and_champions_use_priority_across_families_and_ids_within_one_family() -> None:
+    """Cross-family ties follow priority while same-family ties retain the smaller stable ID."""
+    priority = ("poisson_empirical", "markov_renewal", "mmpp")
+    tied = POPULATION + (
+        candidate(5, "poisson_empirical", 0.9),
+        candidate(6, "markov_renewal", 0.9),
+        candidate(7, "poisson_empirical", 0.9),
+    )
 
-    assert tuple(item.identifier for item in rank_candidates(tied)[:3]) == (
-        CandidateId(0, 1),
+    assert tuple(item.identifier for item in rank_candidates(tied, family_priority=priority)[:5]) == (
         CandidateId(0, 5),
-        CandidateId(0, 0),
-    )
-    assert tuple(item.identifier for item in global_elites(POPULATION, elite_count=2)) == (
+        CandidateId(0, 7),
+        CandidateId(0, 6),
         CandidateId(0, 1),
         CandidateId(0, 0),
     )
-    assert tuple(item.identifier for item in family_champions(POPULATION)) == (
-        CandidateId(0, 0),
-        CandidateId(0, 1),
-        CandidateId(0, 4),
+    assert tuple(item.identifier for item in global_elites(tied, elite_count=2, family_priority=priority)) == (
+        CandidateId(0, 5),
+        CandidateId(0, 7),
     )
-    assert tuple(item.identifier for item in retained_population(POPULATION, elite_count=2)) == (
+    assert tuple(item.identifier for item in family_champions(tied, family_priority=priority)) == (
+        CandidateId(0, 5),
+        CandidateId(0, 6),
         CandidateId(0, 1),
-        CandidateId(0, 0),
-        CandidateId(0, 4),
+    )
+    assert tuple(item.identifier for item in retained_population(tied, elite_count=2, family_priority=priority)) == (
+        CandidateId(0, 5),
+        CandidateId(0, 7),
+        CandidateId(0, 6),
+        CandidateId(0, 1),
     )
 
+    symmetric_invalids = (
+        candidate(8, "markov_renewal", 0.0, status="invalid"),
+        candidate(9, "mmpp", 0.0, status="invalid"),
+        candidate(10, "poisson_empirical", 0.0, status="invalid"),
+    )
+    assert tuple(
+        item.identifier
+        for item in rank_candidates(
+            symmetric_invalids,
+            family_priority=("poisson_empirical", "mmpp", "markov_renewal"),
+        )
+    ) == (CandidateId(0, 10), CandidateId(0, 9), CandidateId(0, 8))
 
-def test_tournament_uses_replacement_and_stable_id_for_equal_fitness() -> None:
-    """Sampling without replacement or retaining sample order would choose the wrong tied parent."""
+
+def test_tournament_uses_replacement_and_family_priority_for_cross_family_ties() -> None:
+    """Sampling with replacement must still apply the retained cross-family competition rule."""
     tied = (
         candidate(0, "markov_renewal", 0.8),
         candidate(1, "mmpp", 0.8),
@@ -226,8 +262,24 @@ def test_tournament_uses_replacement_and_stable_id_for_equal_fitness() -> None:
     )
     rng = ScriptedRandom(ranges=[1, 0, 1])
 
-    assert tournament_select(tied, tournament_size=3, rng=cast(Random, rng)).identifier == CandidateId(0, 0)
+    assert tournament_select(
+        tied,
+        tournament_size=3,
+        rng=cast(Random, rng),
+        family_priority=("mmpp", "markov_renewal", "poisson_empirical"),
+    ).identifier == CandidateId(0, 1)
     assert rng.calls == [("randrange", 3, None), ("randrange", 3, None), ("randrange", 3, None)]
+
+
+def test_priority_validation_rejects_duplicate_missing_and_foreign_names() -> None:
+    """Every comparison boundary knows and validates the complete enabled-family priority."""
+    for priority in (
+        ("mmpp", "mmpp", "poisson_empirical"),
+        ("mmpp", "poisson_empirical"),
+        ("mmpp", "markov_renewal", "foreign_family"),
+    ):
+        with pytest.raises(ValueError, match="priority"):
+            rank_candidates(POPULATION, family_priority=cast("tuple[FamilyName, ...]", priority))
 
 
 def test_pending_candidates_cannot_enter_ranking_or_selection() -> None:
@@ -235,27 +287,45 @@ def test_pending_candidates_cannot_enter_ranking_or_selection() -> None:
     pending = (candidate(0, "poisson_empirical", 0.0, status="pending"),)
 
     with pytest.raises(ValueError, match="evaluated"):
-        rank_candidates(pending)
+        rank_candidates(pending, family_priority=("poisson_empirical",))
     with pytest.raises(ValueError, match="evaluated"):
-        tournament_select(pending, tournament_size=1, rng=Random(1))
+        tournament_select(
+            pending,
+            tournament_size=1,
+            rng=Random(1),
+            family_priority=("poisson_empirical",),
+        )
 
 
 def test_empty_population_and_invalid_elite_count_are_rejected() -> None:
     """Ranking and retention need at least one evaluated candidate and a real elite slot."""
     with pytest.raises(ValueError, match="must not be empty"):
-        rank_candidates(())
+        rank_candidates((), family_priority=())
     with pytest.raises(ValueError, match="elite count"):
-        global_elites(POPULATION, elite_count=0)
+        global_elites(
+            POPULATION,
+            elite_count=0,
+            family_priority=("markov_renewal", "mmpp", "poisson_empirical"),
+        )
 
 
 @pytest.mark.parametrize("tournament_size", [1, len(POPULATION) + 1, True])
 def test_tournament_requires_architecture_bounds_and_exact_integer(tournament_size: object) -> None:
     """A one-candidate tournament would silently violate the configured selection contract."""
     with pytest.raises(ValueError, match="tournament size"):
-        tournament_select(POPULATION, tournament_size=cast(int, tournament_size), rng=Random(1))
+        tournament_select(
+            POPULATION,
+            tournament_size=cast(int, tournament_size),
+            rng=Random(1),
+            family_priority=("markov_renewal", "mmpp", "poisson_empirical"),
+        )
 
 
 def test_retention_validates_reserved_population_capacity() -> None:
     """Elites plus one champion per family must fit before any child slots are allocated."""
     with pytest.raises(ValueError, match="elites and each enabled family"):
-        retained_population(POPULATION, elite_count=3)
+        retained_population(
+            POPULATION,
+            elite_count=3,
+            family_priority=("markov_renewal", "mmpp", "poisson_empirical"),
+        )

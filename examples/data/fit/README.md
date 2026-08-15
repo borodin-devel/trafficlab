@@ -5,11 +5,11 @@ stage. Regenerate it with `uv run --locked python scripts/generate_fit_fixtures.
 byte with `uv run --locked python scripts/generate_fit_fixtures.py --check`.
 
 The reference contains 21 Ethernet events from timestamp 20.0 through 30.0, so the one normalized observation
-window is exactly `W = 10.0` seconds. Genetic order is lexical:
-`markov_renewal`, `mmpp`, `poisson_empirical`. Population size is 6, with quota 2 per family, elite count 1,
-generation count 1 (evaluated generations 0 and 1), tournament size 2, duplicate mutation attempts 1, master seed
-73, selection seeds `[17]`, and the distinct final-validation seed 97. Resume is enabled and early stopping is
-disabled.
+window is exactly `W = 10.0` seconds. Registry metadata remains lexical for display, while master seed 73 derives
+the neutral family priority `mmpp`, `markov_renewal`, `poisson_empirical` before any search draw. Population size is
+6, with quota 2 per family, elite count 1, generation count 1 (evaluated generations 0 and 1), tournament size 2,
+duplicate mutation attempts 1, selection seeds `[17]`, and the distinct final-validation seed 97. Resume is enabled
+and early stopping is disabled.
 
 Every family deliberately uses nondefault operators:
 

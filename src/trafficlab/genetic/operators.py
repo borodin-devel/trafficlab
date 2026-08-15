@@ -17,8 +17,13 @@ from trafficlab.genetic.coordinates import (
     family_coordinates,
     mutate_coordinate,
 )
-from trafficlab.genetic.population import retained_population, tournament_select
-from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, DuplicateDiagnostic
+from trafficlab.genetic.population import (
+    rank_candidates,
+    retained_population,
+    tournament_select,
+    validate_family_priority,
+)
+from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, DuplicateDiagnostic, FamilyPriority
 from trafficlab.models.common import FamilyBounds, Gene, Genes
 from trafficlab.models.registry import get_family
 from trafficlab.trace import TraceEvent
@@ -30,6 +35,7 @@ class ReproductionContext:
 
     reference: tuple[TraceEvent, ...]
     family_bounds: Mapping[FamilyName, FamilyBounds]
+    family_priority: FamilyPriority
     duplicate_mutation_attempts: int
     existing_candidates: tuple[Candidate, ...]
 
@@ -38,6 +44,7 @@ class ReproductionContext:
         *,
         reference: Sequence[TraceEvent],
         family_bounds: Mapping[FamilyName, FamilyBounds],
+        family_priority: FamilyPriority,
         duplicate_mutation_attempts: int,
         existing_candidates: Sequence[Candidate] = (),
     ) -> None:
@@ -55,6 +62,11 @@ class ReproductionContext:
             raise TypeError("existing candidates must be Candidate values")
         object.__setattr__(self, "reference", tuple(reference))
         object.__setattr__(self, "family_bounds", MappingProxyType(copied_bounds))
+        object.__setattr__(
+            self,
+            "family_priority",
+            validate_family_priority(family_priority, enabled_families=copied_bounds),
+        )
         object.__setattr__(self, "duplicate_mutation_attempts", duplicate_mutation_attempts)
         object.__setattr__(self, "existing_candidates", candidates)
 
@@ -74,15 +86,18 @@ class ReproductionContext:
         return ReproductionContext(
             reference=self.reference,
             family_bounds=self.family_bounds,
+            family_priority=self.family_priority,
             duplicate_mutation_attempts=self.duplicate_mutation_attempts,
             existing_candidates=candidates,
         )
 
 
-def _fitter(parent_a: Candidate, parent_b: Candidate) -> Candidate:
+def _fitter(parent_a: Candidate, parent_b: Candidate, *, family_priority: FamilyPriority) -> Candidate:
     if parent_a.status == "pending" or parent_b.status == "pending":
         raise ValueError("parents must be evaluated before reproduction")
-    return min((parent_a, parent_b), key=lambda candidate: (-candidate.fitness, candidate.identifier))
+    parent_families = {parent_a.family, parent_b.family}
+    parent_priority = tuple(family for family in family_priority if family in parent_families)
+    return rank_candidates((parent_a, parent_b), family_priority=parent_priority)[0]
 
 
 def _parent_genes(candidate: Candidate, *, coordinate_count: int) -> Genes:
@@ -294,7 +309,7 @@ def reproduce_child(
     rng: Random,
 ) -> Candidate:
     """Reproduce one child with the architecture's exact conditional draw sequence."""
-    source = _fitter(parent_a, parent_b)
+    source = _fitter(parent_a, parent_b, family_priority=context.family_priority)
     child_family = source.family
     coordinates = family_coordinates(child_family, context.bounds_for(child_family))
     cross_family = parent_a.family != parent_b.family
@@ -344,12 +359,22 @@ def fill_next_population(
         raise ValueError("population size must exactly match the evaluated current population")
     if type(generation) is not int or generation <= 0:
         raise ValueError("reproduced generation must be a positive exact integer")
-    retained = retained_population(current, elite_count=elite_count)
+    retained = retained_population(current, elite_count=elite_count, family_priority=context.family_priority)
     next_population = list(retained)
     birth_index = 0
     while len(next_population) < population_size:
-        parent_a = tournament_select(current, tournament_size=tournament_size, rng=rng)
-        parent_b = tournament_select(current, tournament_size=tournament_size, rng=rng)
+        parent_a = tournament_select(
+            current,
+            tournament_size=tournament_size,
+            rng=rng,
+            family_priority=context.family_priority,
+        )
+        parent_b = tournament_select(
+            current,
+            tournament_size=tournament_size,
+            rng=rng,
+            family_priority=context.family_priority,
+        )
         child = reproduce_child(
             parent_a,
             parent_b,

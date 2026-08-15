@@ -225,7 +225,9 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
     real_bernoulli = genetic_operators.bernoulli
     real_mutate = genetic_operators._mutate_genes  # pyright: ignore[reportPrivateUsage]
 
-    def scripted_select(candidates: Sequence[Candidate], *, tournament_size: int, rng: Random) -> Candidate:
+    def scripted_select(
+        candidates: Sequence[Candidate], *, tournament_size: int, rng: Random, family_priority: tuple[FamilyName, ...]
+    ) -> Candidate:
         del tournament_size, rng
         nonlocal selection_call
         pair, side = divmod(selection_call, 2)
@@ -237,7 +239,7 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
             )
             return choices[side]
         if pair == 1:
-            ranked = rank_candidates(candidates)
+            ranked = rank_candidates(candidates, family_priority=family_priority)
             source = ranked[0]
             other = next(candidate for candidate in reversed(ranked) if candidate.family != source.family)
             return (source, other)[side]

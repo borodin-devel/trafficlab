@@ -539,6 +539,7 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
         context=ReproductionContext(
             reference=reference,
             family_bounds={"mmpp": bounds},
+            family_priority=("mmpp",),
             duplicate_mutation_attempts=1,
         ),
         identifier=CandidateId(1, 0),

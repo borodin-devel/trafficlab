@@ -34,8 +34,8 @@ from trafficlab.genetic.evaluation import (
     validate_evaluation_context,
 )
 from trafficlab.genetic.operators import ReproductionContext, fill_next_population
-from trafficlab.genetic.population import initial_population, rank_candidates
-from trafficlab.genetic.types import Candidate, CandidateId, TerminalReason, TrialResult
+from trafficlab.genetic.population import derive_family_priority, initial_population, rank_candidates
+from trafficlab.genetic.types import Candidate, CandidateId, FamilyPriority, TerminalReason, TrialResult
 from trafficlab.models.common import FamilyBounds, ModelFamily
 from trafficlab.models.registry import get_family
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
@@ -235,6 +235,7 @@ def _finish_evaluated_generation(
     previous: CheckpointState | None,
     context: StrategyContext,
     evaluation: ValidatedEvaluationContext,
+    family_priority: FamilyPriority,
 ) -> CheckpointState:
     evaluated = _evaluate_population(population, evaluation)
     family_names = cast(tuple[FamilyName, ...], tuple(family.name for family in context.compatibility.families))
@@ -243,7 +244,7 @@ def _finish_evaluated_generation(
         evaluated,
         family_names,
     )
-    generation_best = rank_candidates(evaluated)[0]
+    generation_best = rank_candidates(evaluated, family_priority=family_priority)[0]
     if previous is None:
         best_identifier = generation_best.identifier
         best_fitness = generation_best.fitness
@@ -286,6 +287,7 @@ def _reproduce_then_evaluate(
     context: StrategyContext,
     evaluation: ValidatedEvaluationContext,
     rng: Random,
+    family_priority: FamilyPriority,
 ) -> CheckpointState:
     genetic = context.compatibility.genetic
     generation = state.generation + 1
@@ -298,6 +300,7 @@ def _reproduce_then_evaluate(
         context=ReproductionContext(
             reference=context.evaluation.reference,
             family_bounds=context.evaluation.bounds,
+            family_priority=family_priority,
             duplicate_mutation_attempts=genetic.duplicate_mutation_attempts,
         ),
         rng=rng,
@@ -309,6 +312,7 @@ def _reproduce_then_evaluate(
         previous=state,
         context=context,
         evaluation=evaluation,
+        family_priority=family_priority,
     )
 
 
@@ -322,12 +326,16 @@ def _candidate_by_id(population: Sequence[Candidate], identifier: CandidateId) -
 def run_strategy(context: StrategyContext) -> FitOutcome:
     """Run or exactly resume the bounded GA and freshly validate its stored winner."""
     evaluation = validate_evaluation_context(context.evaluation)
+    family_priority = derive_family_priority(
+        context.compatibility.genetic.master_seed,
+        tuple(family.name for family in context.compatibility.families),
+    )
     state = initialize_or_resume(context)
     rng: Random | None = None
     if state is None:
         rng = Random(context.compatibility.genetic.master_seed)
         population = initial_population(
-            tuple(family.name for family in context.compatibility.families),
+            family_priority,
             population_size=context.compatibility.genetic.population_size,
             bounds=context.evaluation.bounds,
             reference=context.evaluation.reference,
@@ -340,13 +348,14 @@ def run_strategy(context: StrategyContext) -> FitOutcome:
             previous=None,
             context=context,
             evaluation=evaluation,
+            family_priority=family_priority,
         )
         publish_generation(context.run_directory, state)
     while state.terminal_reason == "running":
         if rng is None:
             rng = Random()
             rng.setstate(decode_rng_state(state.rng_state))
-        state = _reproduce_then_evaluate(state, context, evaluation, rng)
+        state = _reproduce_then_evaluate(state, context, evaluation, rng, family_priority)
         publish_generation(context.run_directory, state)
     winner = _candidate_by_id(state.population, state.best_identifier)
     final_trials = evaluate_final(winner, evaluation, context.compatibility.genetic.final_seed)

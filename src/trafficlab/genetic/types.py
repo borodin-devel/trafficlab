@@ -18,6 +18,7 @@ from trafficlab.models.common import (
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
 
 type CandidateStatus = Literal["pending", "valid", "invalid"]
+type FamilyPriority = tuple[str, ...]
 type MethodName = Literal["autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate"]
 type CandidateFailureKind = Literal[
     "repair", "fit", "generation", "incomplete_generation", "similarity_precondition", "nonfinite_score"

@@ -2,49 +2,72 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from random import Random
+from typing import cast
 
 from trafficlab.config import FamilyName
+from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.coordinates import CandidateEvaluationError, initialize_candidate
-from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId
+from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
 from trafficlab.models.common import FamilyBounds
 from trafficlab.models.registry import get_family
 from trafficlab.trace import TraceEvent
 
 
-def _lexical_families(families: Sequence[FamilyName]) -> tuple[FamilyName, ...]:
-    names = tuple(families)
+def validate_family_priority(
+    family_priority: FamilyPriority,
+    *,
+    enabled_families: Iterable[str] | None = None,
+) -> FamilyPriority:
+    """Return one immutable priority containing each known enabled family exactly once."""
+    if type(family_priority) is not tuple:
+        raise TypeError("family priority must be an immutable tuple")
+    names = family_priority
     if not names:
-        raise ValueError("at least one enabled family is required")
+        raise ValueError("family priority requires at least one enabled family")
     if len(names) != len(set(names)):
-        raise ValueError("enabled families must be unique")
+        raise ValueError("family priority families must be unique")
     for name in names:
-        get_family(name)
-    return tuple(sorted(names))
+        if type(name) is not str:
+            raise ValueError("family priority names must be registered families")
+        try:
+            get_family(name)
+        except TrafficlabError as error:
+            raise ValueError("family priority names must be registered families") from error
+    if enabled_families is not None and set(names) != set(enabled_families):
+        raise ValueError("family priority must contain every enabled family exactly once")
+    return names
 
 
-def family_quotas(families: Sequence[FamilyName], population_size: int) -> dict[FamilyName, int]:
-    """Allocate equal family quotas and assign remainders in lexical family order."""
-    names = _lexical_families(families)
+def derive_family_priority(master_seed: int, family_names: Iterable[FamilyName]) -> FamilyPriority:
+    """Derive the one neutral family order without touching the dedicated search RNG."""
+    if type(master_seed) is not int or master_seed < 0:
+        raise ValueError("master seed must be a nonnegative exact integer")
+    names = validate_family_priority(tuple(family_names))
+    return tuple(Random(master_seed).sample(sorted(names), len(names)))
+
+
+def family_quotas(population_size: int, family_priority: FamilyPriority) -> dict[FamilyName, int]:
+    """Allocate equal family quotas and assign remainders in retained priority order."""
+    names = validate_family_priority(family_priority)
     if type(population_size) is not int or population_size < len(names):
         raise ValueError("population size must be an exact integer covering every enabled family")
     base, remainder = divmod(population_size, len(names))
-    return {name: base + (index < remainder) for index, name in enumerate(names)}
+    return {cast(FamilyName, name): base + (index < remainder) for index, name in enumerate(names)}
 
 
 def initial_population(
-    families: Sequence[FamilyName],
+    family_priority: FamilyPriority,
     *,
     population_size: int,
     bounds: Mapping[FamilyName, FamilyBounds],
     reference: Sequence[TraceEvent],
     rng: Random,
 ) -> tuple[Candidate, ...]:
-    """Initialize contiguous lexical family slots with stable generation-zero IDs."""
-    quotas = family_quotas(families, population_size)
-    if set(bounds) != set(quotas):
-        raise ValueError("family bounds must exactly match the enabled families")
+    """Initialize contiguous priority family slots with stable generation-zero IDs."""
+    priority = validate_family_priority(family_priority, enabled_families=bounds)
+    quotas = family_quotas(population_size, priority)
     materialized_reference = tuple(reference)
     population: list[Candidate] = []
     for family_name, quota in quotas.items():
@@ -90,45 +113,66 @@ def _evaluated(candidates: Sequence[Candidate]) -> tuple[Candidate, ...]:
     return values
 
 
-def rank_candidates(candidates: Sequence[Candidate]) -> tuple[Candidate, ...]:
-    """Rank an evaluated population by descending fitness then stable candidate ID."""
+def _competition_key(candidate: Candidate, *, priority_positions: Mapping[str, int]) -> tuple[float, int, CandidateId]:
+    return (-candidate.fitness, priority_positions[candidate.family], candidate.identifier)
+
+
+def rank_candidates(candidates: Sequence[Candidate], *, family_priority: FamilyPriority) -> tuple[Candidate, ...]:
+    """Rank by fitness, priority across families, and stable ID inside one family."""
     values = _evaluated(candidates)
-    return tuple(sorted(values, key=lambda item: (-item.fitness, item.identifier)))
+    priority = validate_family_priority(family_priority, enabled_families=(candidate.family for candidate in values))
+    positions = {family: index for index, family in enumerate(priority)}
+    return tuple(sorted(values, key=lambda item: _competition_key(item, priority_positions=positions)))
 
 
-def tournament_select(candidates: Sequence[Candidate], *, tournament_size: int, rng: Random) -> Candidate:
-    """Sample with replacement and return the stable best tournament member."""
+def tournament_select(
+    candidates: Sequence[Candidate],
+    *,
+    tournament_size: int,
+    rng: Random,
+    family_priority: FamilyPriority,
+) -> Candidate:
+    """Sample with replacement and return the priority-ranked tournament member."""
     values = _evaluated(candidates)
     if type(tournament_size) is not int or not 2 <= tournament_size <= len(values):
         raise ValueError("tournament size must be an exact integer within the population")
+    priority = validate_family_priority(family_priority, enabled_families=(candidate.family for candidate in values))
+    positions = {family: index for index, family in enumerate(priority)}
     selected = tuple(values[rng.randrange(len(values))] for _ in range(tournament_size))
-    return rank_candidates(selected)[0]
+    return min(selected, key=lambda item: _competition_key(item, priority_positions=positions))
 
 
-def global_elites(candidates: Sequence[Candidate], *, elite_count: int) -> tuple[Candidate, ...]:
+def global_elites(
+    candidates: Sequence[Candidate], *, elite_count: int, family_priority: FamilyPriority
+) -> tuple[Candidate, ...]:
     """Return the configured leading global candidates without changing their IDs."""
-    ranked = rank_candidates(candidates)
+    ranked = rank_candidates(candidates, family_priority=family_priority)
     if type(elite_count) is not int or not 1 <= elite_count < len(ranked):
         raise ValueError("elite count must be an exact positive integer below population size")
     return ranked[:elite_count]
 
 
-def family_champions(candidates: Sequence[Candidate]) -> tuple[Candidate, ...]:
-    """Return the best evaluated candidate of each represented family in lexical order."""
-    ranked = rank_candidates(candidates)
-    return tuple(
-        next(candidate for candidate in ranked if candidate.family == family)
-        for family in sorted({candidate.family for candidate in ranked})
-    )
+def family_champions(candidates: Sequence[Candidate], *, family_priority: FamilyPriority) -> tuple[Candidate, ...]:
+    """Return the best evaluated candidate of each represented family in priority order."""
+    ranked = rank_candidates(candidates, family_priority=family_priority)
+    priority = validate_family_priority(family_priority, enabled_families=(candidate.family for candidate in ranked))
+    return tuple(next(candidate for candidate in ranked if candidate.family == family) for family in priority)
 
 
-def retained_population(candidates: Sequence[Candidate], *, elite_count: int) -> tuple[Candidate, ...]:
-    """Return global elites followed by only the missing lexical family champions."""
+def retained_population(
+    candidates: Sequence[Candidate], *, elite_count: int, family_priority: FamilyPriority
+) -> tuple[Candidate, ...]:
+    """Return global elites followed by only missing priority-ordered family champions."""
     values = tuple(candidates)
+    priority = validate_family_priority(family_priority, enabled_families=(candidate.family for candidate in values))
     family_count = len({candidate.family for candidate in values})
     if len(values) < elite_count + family_count:
         raise ValueError("population size must include elites and each enabled family")
-    retained = list(global_elites(values, elite_count=elite_count))
+    retained = list(global_elites(values, elite_count=elite_count, family_priority=priority))
     retained_ids = {candidate.identifier for candidate in retained}
-    retained.extend(champion for champion in family_champions(values) if champion.identifier not in retained_ids)
+    retained.extend(
+        champion
+        for champion in family_champions(values, family_priority=priority)
+        if champion.identifier not in retained_ids
+    )
     return tuple(retained)

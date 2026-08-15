@@ -126,11 +126,13 @@ def context(
     *configs: tuple[FamilyName, FamilyBounds],
     attempts: int = 0,
     existing: tuple[Candidate, ...] = (),
+    family_priority: tuple[FamilyName, ...] | None = None,
 ) -> ReproductionContext:
     """Build the immutable operator context from exact registered family configs."""
     return ReproductionContext(
         reference=REFERENCE,
         family_bounds=dict(configs),
+        family_priority=family_priority if family_priority is not None else tuple(name for name, _ in configs),
         duplicate_mutation_attempts=attempts,
         existing_candidates=existing,
     )
@@ -348,6 +350,64 @@ def test_cross_family_clone_forces_mutation_when_no_gene_is_selected() -> None:
     assert child.genes == pytest.approx((1.148698354997035,))
     assert child.duplicate_diagnostics == ()
     assert rng.calls == [("random",), ("randrange", 1), ("normalvariate", 0.0, 0.1)]
+
+
+def test_cross_family_priority_tie_selects_the_priority_source_and_retains_zero_retry_diagnostic() -> None:
+    """Equal cross-family parents never fall back to their IDs when choosing a source chromosome."""
+    poisson = evaluated(0, 0, "poisson_empirical", (1.0,), 0.5)
+    mmpp = evaluated(0, 1, "mmpp", (0.2, 0.3, 0.4, 3.0), 0.5)
+    rng = ScriptedRandom(random_values=[0.9] * 4, ranges=[0], normal_values=[0.0])
+
+    child = reproduce_child(
+        poisson,
+        mmpp,
+        context=context(
+            ("poisson_empirical", POISSON_NO_MUTATION),
+            ("mmpp", MMPP_CROSSOVER),
+            family_priority=("mmpp", "poisson_empirical"),
+        ),
+        identifier=CandidateId(1, 0),
+        rng=cast(Random, rng),
+    )
+
+    assert child.family == "mmpp"
+    assert child.genes == mmpp.genes
+    assert child.duplicate_diagnostics == (DuplicateDiagnostic(0, "exhausted", "source-equal child"),)
+    assert rng.calls == [("random",)] * 4 + [("randrange", 4), ("normalvariate", 0.0, 0.1)]
+
+
+def test_reproduction_context_rejects_duplicate_missing_and_foreign_priority_names() -> None:
+    """A reproduction boundary requires one exact priority for its configured families."""
+    for priority in (
+        ("mmpp", "mmpp"),
+        ("mmpp",),
+        ("mmpp", "foreign_family"),
+    ):
+        with pytest.raises(ValueError, match="priority"):
+            context(
+                ("poisson_empirical", POISSON_NO_MUTATION),
+                ("mmpp", MMPP_CROSSOVER),
+                family_priority=cast("tuple[FamilyName, ...]", priority),
+            )
+
+
+def test_reproduction_context_rejects_wrong_bounds_and_noncandidate_existing_values() -> None:
+    """Priority validation must not weaken the pre-existing context value contracts."""
+    with pytest.raises(ValueError, match="invalid poisson_empirical"):
+        ReproductionContext(
+            reference=REFERENCE,
+            family_bounds={"poisson_empirical": MARKOV_NO_MUTATION},
+            family_priority=("poisson_empirical",),
+            duplicate_mutation_attempts=0,
+        )
+    with pytest.raises(TypeError, match="existing candidates"):
+        ReproductionContext(
+            reference=REFERENCE,
+            family_bounds={"poisson_empirical": POISSON_NO_MUTATION},
+            family_priority=("poisson_empirical",),
+            duplicate_mutation_attempts=0,
+            existing_candidates=cast("tuple[Candidate, ...]", (object(),)),
+        )
 
 
 def test_cross_family_clone_ignores_missing_nonsource_parent_genes() -> None:
@@ -695,6 +755,38 @@ def test_fill_next_population_retains_without_draws_then_assigns_children_in_cre
     ]
 
 
+def test_fill_next_population_places_missing_family_champions_in_priority_order() -> None:
+    """The retained prefix stays priority-neutral before the first child receives its creation ID."""
+    population = (
+        evaluated(0, 0, "poisson_empirical", (0.75,), 0.9),
+        evaluated(0, 1, "mmpp", (0.2, 0.3, 0.4, 3.0), 0.8),
+        evaluated(0, 2, "markov_renewal", (0.2, 0.7, 1.0, 3, 1.0), 0.7),
+        evaluated(0, 3, "poisson_empirical", (1.0,), 0.6),
+    )
+
+    next_population = fill_next_population(
+        population,
+        generation=1,
+        population_size=4,
+        elite_count=1,
+        tournament_size=2,
+        context=context(
+            ("poisson_empirical", POISSON_NO_MUTATION),
+            ("mmpp", MMPP_CROSSOVER),
+            ("markov_renewal", MARKOV_NO_MUTATION),
+            family_priority=("mmpp", "markov_renewal", "poisson_empirical"),
+        ),
+        rng=Random(11),
+    )
+
+    assert tuple(item.identifier for item in next_population[:3]) == (
+        CandidateId(0, 0),
+        CandidateId(0, 1),
+        CandidateId(0, 2),
+    )
+    assert next_population[3].identifier == CandidateId(1, 0)
+
+
 def test_all_invalid_initialized_population_fills_generation_with_only_tournament_draws() -> None:
     """Repeated selection of initialization failures must preserve size and deterministic child identities."""
     rng = ScriptedRandom(random_values=[0.0] * 12, ranges=[1, 1, 1] + [0] * 8)
@@ -715,6 +807,7 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
         context=ReproductionContext(
             reference=INVALID_MARKOV_REFERENCE,
             family_bounds={"markov_renewal": MARKOV_NO_MUTATION},
+            family_priority=("markov_renewal",),
             duplicate_mutation_attempts=0,
         ),
         rng=cast(Random, rng),
@@ -764,7 +857,7 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
 
 def test_mixed_initialized_population_selected_invalid_parents_fill_without_operator_draws() -> None:
     """Uniform tournaments may select invalid initial candidates without filtering or generation failure."""
-    rng = ScriptedRandom(random_values=[0.0] * 10, ranges=[1, 1] + [0] * 8)
+    rng = ScriptedRandom(random_values=[0.0] * 10, ranges=[1, 1] + [2] * 8)
     initialized = initial_population(
         ("poisson_empirical", "markov_renewal"),
         population_size=4,
@@ -785,6 +878,7 @@ def test_mixed_initialized_population_selected_invalid_parents_fill_without_oper
         context=ReproductionContext(
             reference=INVALID_MARKOV_REFERENCE,
             family_bounds={"markov_renewal": MARKOV_NO_MUTATION, "poisson_empirical": POISSON_NO_MUTATION},
+            family_priority=("poisson_empirical", "markov_renewal"),
             duplicate_mutation_attempts=0,
         ),
         rng=cast(Random, rng),
@@ -798,7 +892,7 @@ def test_mixed_initialized_population_selected_invalid_parents_fill_without_oper
     )
     assert tuple(item.family for item in next_population[2:]) == ("markov_renewal", "markov_renewal")
     assert all(item.status == "invalid" and item.genes is None for item in next_population[2:])
-    initializer_calls = [
+    initializer_calls = [("random",), ("random",)] + [
         call
         for _ in range(2)
         for call in (
@@ -808,7 +902,7 @@ def test_mixed_initialized_population_selected_invalid_parents_fill_without_oper
             ("randrange", 1, 6),
             ("random",),
         )
-    ] + [("random",), ("random",)]
+    ]
     assert rng.calls == initializer_calls + [("randrange", 4)] * 8
 
 
@@ -841,10 +935,13 @@ def test_reproduction_context_and_parent_validation_fail_before_draws() -> None:
     """Missing family settings, invalid retries, and unfit parents must not consume master RNG state."""
     with pytest.raises(ValueError, match="attempts"):
         ReproductionContext(
-            reference=REFERENCE, family_bounds={"poisson_empirical": POISSON}, duplicate_mutation_attempts=-1
+            reference=REFERENCE,
+            family_bounds={"poisson_empirical": POISSON},
+            family_priority=("poisson_empirical",),
+            duplicate_mutation_attempts=-1,
         )
     with pytest.raises(ValueError, match="at least one"):
-        ReproductionContext(reference=REFERENCE, family_bounds={}, duplicate_mutation_attempts=0)
+        ReproductionContext(reference=REFERENCE, family_bounds={}, family_priority=(), duplicate_mutation_attempts=0)
 
     configured = context(("poisson_empirical", POISSON_NO_MUTATION))
     with pytest.raises(ValueError, match="missing"):

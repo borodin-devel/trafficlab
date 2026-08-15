@@ -30,7 +30,7 @@ from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
 from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state
 from trafficlab.genetic.evaluation import ValidatedEvaluationContext, evaluate_candidate, validate_evaluation_context
-from trafficlab.genetic.population import initial_population
+from trafficlab.genetic.population import derive_family_priority, initial_population
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult
@@ -2040,7 +2040,7 @@ def test_validation_study_mmpp_bounds_retain_a_valid_candidate_for_a_short_obser
     )
     validated = validate_evaluation_context(context.evaluation)
     pending = initial_population(
-        tuple(sorted(config.models.enabled)),
+        derive_family_priority(config.run.master_seed, config.models.enabled),
         population_size=config.genetic.population_size,
         bounds=validated.bounds,
         reference=validated.reference,
