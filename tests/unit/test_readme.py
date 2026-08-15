@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -76,3 +77,21 @@ def test_every_relative_readme_link_resolves() -> None:
         assert target.is_file(), link
         if separator:
             assert anchor in _heading_anchors(target.read_text(encoding="utf-8")), link
+
+
+def _git_ignores(relative_path: str) -> bool:
+    result = subprocess.run(
+        ("git", "check-ignore", "--no-index", "--quiet", relative_path),
+        cwd=REPOSITORY_ROOT,
+        check=False,
+    )
+    assert result.returncode in {0, 1}
+    return result.returncode == 0
+
+
+def test_only_completed_accepted_evidence_is_trackable() -> None:
+    assert _git_ignores("runs/scratch/result.json")
+    assert _git_ignores("examples/validation_study/.study-work/candidate/manifest.json")
+    assert _git_ignores("examples/validation_study/evidence/.candidates/study-1/manifest.json")
+    assert _git_ignores("examples/validation_study/evidence/.study-1.random.tmp/manifest.json")
+    assert not _git_ignores("examples/validation_study/evidence/study-1/manifest.json")
