@@ -257,6 +257,72 @@ def _assert_serialized_outcomes(record: dict[str, object], case: _BoundaryCase) 
     assert record.get("secondary_outcomes", []) == [outcome.as_dict() for outcome in case.outcomes[1:]]
 
 
+type _LogSnapshot = tuple[bool, bytes]
+type _LogMark = tuple[str, str | None]
+
+
+def _log_snapshot(run_directory: Path) -> _LogSnapshot:
+    log_path = run_directory / "run.log"
+    return log_path.exists(), log_path.read_bytes() if log_path.exists() else b""
+
+
+def _reject_duplicate_log_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise AssertionError(f"run.log record contains duplicate key {key!r}")
+        document[key] = value
+    return document
+
+
+def _strict_canonical_log_rows(content: bytes) -> tuple[dict[str, object], ...]:
+    if not content:
+        return ()
+    lines = content.splitlines(keepends=True)
+    assert b"".join(lines) == content
+    records: list[dict[str, object]] = []
+    for line in lines:
+        assert line.endswith(b"\n") and line != b"\n"
+        value = json.loads(line, object_pairs_hook=_reject_duplicate_log_keys)
+        assert type(value) is dict
+        record = cast(dict[str, object], value)
+        canonical = (json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+        assert line == canonical
+        records.append(record)
+    return tuple(records)
+
+
+def _log_mark(record: dict[str, object]) -> _LogMark:
+    event = record.get("event")
+    name = record.get("name")
+    assert type(event) is str
+    assert name is None or type(name) is str
+    return event, name
+
+
+def _assert_failure_log_suffix(
+    run_directory: Path,
+    before: _LogSnapshot,
+    *,
+    expected_marks: tuple[_LogMark, ...],
+    case: _BoundaryCase,
+) -> None:
+    before_exists, before_bytes = before
+    after_exists, after_bytes = _log_snapshot(run_directory)
+    assert after_exists
+    assert after_bytes[: len(before_bytes)] == before_bytes
+    assert before_exists or before_bytes == b""
+    records = _strict_canonical_log_rows(after_bytes[len(before_bytes) :])
+    assert tuple(_log_mark(record) for record in records) == expected_marks
+    failure_records = tuple(record for record in records if "failure_outcome" in record)
+    assert len(failure_records) == 1
+    _assert_serialized_outcomes(failure_records[0], case)
+
+
+def _assert_log_unchanged(run_directory: Path, before: _LogSnapshot) -> None:
+    assert _log_snapshot(run_directory) == before
+
+
 class _CompletedHandle:
     def __init__(self, *, timeout: bool = False) -> None:
         self.timeout = timeout
@@ -396,6 +462,104 @@ class _PreflightDocker:
         return ProjectInventory(())
 
 
+_PREFLIGHT_LOG_FINDINGS: dict[_Scenario, tuple[str, ...]] = {
+    "docker_unavailable": ("capture_image_lock", "docker_daemon"),
+    "compose_incompatible": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+    ),
+    "target_image_unavailable": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+    ),
+    "capture_image_incompatible": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+        "capture_image",
+    ),
+    "dumpcap_unavailable": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+        "capture_image",
+        "compose_config",
+        "network_probe",
+        "probe_cleanup",
+    ),
+    "dumpcap_incompatible": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+        "capture_image",
+        "compose_config",
+        "network_probe",
+        "probe_cleanup",
+    ),
+    "mount_source_unavailable": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+        "capture_image",
+        "mounts",
+    ),
+    "mount_target_incompatible": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+        "capture_image",
+        "compose_config",
+    ),
+    "prerequisite_unavailable": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+        "capture_image",
+        "compose_config",
+        "network_probe",
+        "probe_cleanup",
+    ),
+    "prerequisite_incompatible": (
+        "capture_image_lock",
+        "docker_daemon",
+        "capture_platform",
+        "docker_compose",
+        "target_image",
+        "capture_image",
+        "compose_config",
+        "network_probe",
+        "probe_cleanup",
+    ),
+}
+_PREFLIGHT_ENVIRONMENT_LOG_SCENARIOS = frozenset(
+    {
+        "dumpcap_unavailable",
+        "dumpcap_incompatible",
+        "mount_source_unavailable",
+        "mount_target_incompatible",
+        "prerequisite_unavailable",
+        "prerequisite_incompatible",
+    }
+)
+
+
 def _run_preflight_case(
     case: _BoundaryCase,
     tmp_path: Path,
@@ -430,6 +594,7 @@ def _run_preflight_case(
         )
     source_before = experiment_path.read_bytes()
     inventory_before = _scientific_inventory(run_directory)
+    log_before = _log_snapshot(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
@@ -440,10 +605,13 @@ def _run_preflight_case(
         )
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    if (run_directory / "run.log").exists():
-        records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
-        failure_records = [record for record in records if "failure_outcome" in record]
-        _assert_serialized_outcomes(failure_records[-1], case)
+    if case.scenario == "config_invalid":
+        _assert_log_unchanged(run_directory, log_before)
+    else:
+        expected_marks = tuple(("preflight_check", name) for name in _PREFLIGHT_LOG_FINDINGS[case.scenario])
+        if case.scenario in _PREFLIGHT_ENVIRONMENT_LOG_SCENARIOS:
+            expected_marks += (("capture_environment_identity", None),)
+        _assert_failure_log_suffix(run_directory, log_before, expected_marks=expected_marks, case=case)
     assert experiment_path.read_bytes() == source_before
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
@@ -478,6 +646,7 @@ _CAPTURE_DIAGNOSTIC_SCENARIOS = frozenset(
         "workload_timeout_target_137",
     }
 )
+_CAPTURE_LOG_SCENARIOS = frozenset({"capture_exit_42_active", "capture_exit_42_after_target_0"})
 
 
 class _CaptureDocker:
@@ -663,6 +832,7 @@ def _run_capture_boundary_case(
     run_directory, prepared = _capture_prepared(valid_config_data, tmp_path)
     docker = _CaptureDocker(case.scenario)
     inventory_before = _scientific_inventory(run_directory)
+    log_before = _log_snapshot(run_directory)
 
     def fixed_deadline(_clock: Callable[[], float], _seconds: float, *, stage: str) -> float:
         if case.scenario == "target_23_capture_42_total_timeout" and stage == "workload":
@@ -680,8 +850,14 @@ def _run_capture_boundary_case(
         )
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
-    _assert_serialized_outcomes(records[-1], case)
+    expected_marks: tuple[_LogMark, ...] = (
+        ("capture_project_created", None),
+        ("capture_ready", None),
+    )
+    if case.scenario in _CAPTURE_LOG_SCENARIOS:
+        expected_marks += (("capture_logs", None),)
+    expected_marks += (("capture_failed", None),)
+    _assert_failure_log_suffix(run_directory, log_before, expected_marks=expected_marks, case=case)
     expected_new: dict[str, _TreeValue] = {}
     if case.scenario in _CAPTURE_DIAGNOSTIC_SCENARIOS:
         assert docker.created_metadata is not None
@@ -732,7 +908,7 @@ def _run_capture_stale_boundary_case(
         project_name="matrix",
         reused=False,
     )
-    log_before = (run_directory / "run.log").read_bytes()
+    log_before = _log_snapshot(run_directory)
     changed_reference = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 65),), metadata)
     reference_path.write_bytes(changed_reference)
     inventory_before = _scientific_inventory(run_directory)
@@ -752,7 +928,7 @@ def _run_capture_stale_boundary_case(
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     assert metadata_path.read_bytes() == metadata_content
     assert reference_path.read_bytes() == changed_reference
-    assert (run_directory / "run.log").read_bytes() == log_before
+    _assert_log_unchanged(run_directory, log_before)
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
@@ -801,7 +977,7 @@ def _run_capture_mounted_input_boundary_case(
         project_name="matrix",
         reused=False,
     )
-    log_before = (run_directory / "run.log").read_bytes()
+    log_before = _log_snapshot(run_directory)
     inventory_before = _scientific_inventory(run_directory)
     mutation = "remove" if case.scenario == "mounted_input_unavailable" else "change"
     real_run_preflight = capture.run_preflight
@@ -850,7 +1026,7 @@ def _run_capture_mounted_input_boundary_case(
     assert caught.value.failure_outcome == case.primary
     assert metadata_path.read_bytes() == metadata_content
     assert reference_path.read_bytes() == reference_content
-    assert (run_directory / "run.log").read_bytes() == log_before
+    _assert_log_unchanged(run_directory, log_before)
     assert docker_calls == []
     assert {path.name for path in run_directory.iterdir()} == {
         "capture.json",
@@ -1028,13 +1204,17 @@ def _run_fit_boundary_case(
     else:
         raise AssertionError(f"unsupported primitive fit scenario {case.scenario!r}")
     inventory_before = _scientific_inventory(run_directory)
+    log_before = _log_snapshot(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         fitting.fit_experiment(experiment_path, dependencies=dependencies)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
-    _assert_serialized_outcomes(records[-1], case)
+    expected_marks: tuple[_LogMark, ...] = (("fit_started", None),)
+    if case.scenario in {"best_model_collision", "reference_changed"}:
+        expected_marks += (("checkpoint_ready", None), ("final_validation_succeeded", None))
+    expected_marks += (("stage_failed", None),)
+    _assert_failure_log_suffix(run_directory, log_before, expected_marks=expected_marks, case=case)
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
@@ -1122,13 +1302,18 @@ def _run_generation_boundary_case(
         model_path = run_directory / "best_model.json"
         model_path.write_bytes(best_content)
     inventory_before = _scientific_inventory(run_directory)
+    log_before = _log_snapshot(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         generation.generate_experiment(prepared.source, clock=lambda: 0.0)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
-    records = [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
-    _assert_serialized_outcomes(records[-1], case)
+    _assert_failure_log_suffix(
+        run_directory,
+        log_before,
+        expected_marks=(("stage_failed", None),),
+        case=case,
+    )
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
@@ -1361,12 +1546,15 @@ def _run_comparison_boundary_case(
     else:
         raise AssertionError(f"unsupported primitive comparison scenario {case.scenario!r}")
     inventory_before = _scientific_inventory(run_directory)
+    log_before = _log_snapshot(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison.compare_experiment(experiment_path)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
+    assert len(records) == 1
     _assert_serialized_outcomes(records[-1], case)
+    _assert_log_unchanged(run_directory, log_before)
     _assert_adverse_inventory_unchanged(run_directory, inventory_before)
 
 
@@ -1382,15 +1570,31 @@ def _run_study_publication_case(case: _BoundaryCase, tmp_path: Path) -> None:
     retained.write_bytes(b"accepted evidence\n")
     candidate_before = _tree_inventory(candidate)
     evidence_before = _tree_inventory(evidence_root)
+    log_before = _log_snapshot(candidate)
 
     with pytest.raises(TrafficlabError) as caught:
         study_evidence.publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
+    _assert_log_unchanged(candidate, log_before)
     assert _tree_inventory(candidate) == candidate_before
     assert _tree_inventory(evidence_root) == evidence_before
     assert tuple(evidence_root.glob(".study-1.*.tmp")) == ()
     assert _temporary_residue(evidence_root) == ()
+
+
+@pytest.mark.parametrize(
+    "content",
+    (
+        pytest.param(b'{"event":"first","event":"second"}\n', id="duplicate-key"),
+        pytest.param(b'{"stage":"fit","event":"stage_failed"}\n', id="unsorted-keys"),
+        pytest.param(b'{"event": "stage_failed"}\n', id="noncanonical-whitespace"),
+        pytest.param(b'{"event":"stage_failed"}', id="missing-newline"),
+    ),
+)
+def test_public_matrix_log_oracle_rejects_noncanonical_jsonl(content: bytes) -> None:
+    with pytest.raises(AssertionError):
+        _strict_canonical_log_rows(content)
 
 
 def test_public_boundary_case_registry_covers_each_authoritative_fixture_row_once() -> None:
