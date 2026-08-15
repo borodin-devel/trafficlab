@@ -9,7 +9,12 @@ from typing import Literal
 
 from trafficlab.config import FamilyName
 from trafficlab.errors import EvidenceState, FailureAuthority
-from trafficlab.models.common import Genes, ModelDiagnostics, freeze_model_diagnostics
+from trafficlab.models.common import (
+    MARKOV_MODEL_DIAGNOSTIC_KEYS,
+    Genes,
+    ModelDiagnostics,
+    freeze_model_diagnostics,
+)
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
 
 type CandidateStatus = Literal["pending", "valid", "invalid"]
@@ -30,10 +35,24 @@ _FAILURE_AUTHORITIES = frozenset(("primary", "secondary"))
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _CANDIDATE_STATUSES = frozenset(("pending", "valid", "invalid"))
 _FAMILY_NAMES = frozenset(("poisson_empirical", "markov_renewal", "mmpp"))
+_MARKOV_MODEL_DIAGNOSTIC_NAMES = frozenset(MARKOV_MODEL_DIAGNOSTIC_KEYS)
 
 
 def _empty_model_diagnostics() -> dict[str, int]:
     return {}
+
+
+def _validate_model_diagnostic_shape(diagnostics: ModelDiagnostics) -> None:
+    names = frozenset(diagnostics)
+    if names and names != _MARKOV_MODEL_DIAGNOSTIC_NAMES:
+        raise ValueError("model diagnostics must be empty or contain exactly the four canonical Markov counters")
+
+
+def validate_model_diagnostics_for_family(family: FamilyName, diagnostics: ModelDiagnostics) -> None:
+    """Require the one diagnostics namespace owned by a candidate family."""
+    expected: frozenset[str] = _MARKOV_MODEL_DIAGNOSTIC_NAMES if family == "markov_renewal" else frozenset()
+    if frozenset(diagnostics) != expected:
+        raise ValueError(f"model diagnostics for family {family} do not match its canonical counter namespace")
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -97,7 +116,9 @@ class TrialResult:
             raise TypeError("trial methods must be MethodTrialResult values")
         if tuple(method.name for method in self.methods) != METHOD_ORDER:
             raise ValueError("trial methods must contain every published method in published order")
-        object.__setattr__(self, "model_diagnostics", freeze_model_diagnostics(self.model_diagnostics))
+        diagnostics = freeze_model_diagnostics(self.model_diagnostics)
+        _validate_model_diagnostic_shape(diagnostics)
+        object.__setattr__(self, "model_diagnostics", diagnostics)
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +193,8 @@ class Candidate:
         _finite_score(self.fitness, name="candidate fitness")
         if type(self.trials) is not tuple or any(type(trial) is not TrialResult for trial in self.trials):
             raise TypeError("candidate trials must be a tuple of TrialResult values")
+        for trial in self.trials:
+            validate_model_diagnostics_for_family(self.family, trial.model_diagnostics)
         if self.invalid is not None and type(self.invalid) is not CandidateFailure:
             raise TypeError("candidate invalid value must be a CandidateFailure or None")
         if type(self.duplicate_diagnostics) is not tuple or any(

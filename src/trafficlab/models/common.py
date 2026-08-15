@@ -19,6 +19,13 @@ type IncompleteReason = Literal["max_packets", "max_output_bytes", "max_wall_sec
 type FamilyBounds = PoissonConfig | MarkovRenewalConfig | MmppConfig
 type ModelDiagnostics = Mapping[str, int]
 
+MARKOV_MODEL_DIAGNOSTIC_KEYS = (
+    "timing_tier_transition_count",
+    "timing_tier_source_count",
+    "timing_tier_global_count",
+    "uniform_unobserved_row_count",
+)
+
 _MINIMUM_FRAME_LENGTH = 14
 _MAXIMUM_FRAME_LENGTH = 2**32 - 1
 _INCOMPLETE_REASONS = frozenset(("max_packets", "max_output_bytes", "max_wall_seconds"))

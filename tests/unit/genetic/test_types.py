@@ -20,6 +20,13 @@ from trafficlab.genetic.types import (
     validate_candidate_id,
 )
 
+_MARKOV_MODEL_DIAGNOSTICS = {
+    "timing_tier_transition_count": 1,
+    "timing_tier_source_count": 2,
+    "timing_tier_global_count": 3,
+    "uniform_unobserved_row_count": 1,
+}
+
 
 def test_method_trial_diagnostics_are_recursively_frozen_and_ordered() -> None:
     """A mutable nested diagnostic must not leak across the evaluator boundary."""
@@ -75,15 +82,43 @@ def test_trial_result_requires_each_method_once_in_published_order() -> None:
 
 def test_trial_result_freezes_model_diagnostic_counts() -> None:
     """Per-seed model diagnostics must remain immutable checkpoint evidence."""
-    trial = TrialResult(3, 0.5, _methods(), {"timing_tier_global_count": 2})
+    trial = TrialResult(3, 0.5, _methods(), _MARKOV_MODEL_DIAGNOSTICS)
 
-    assert dict(trial.model_diagnostics) == {"timing_tier_global_count": 2}
+    assert dict(trial.model_diagnostics) == _MARKOV_MODEL_DIAGNOSTICS
     with pytest.raises(TypeError):
         trial.model_diagnostics["timing_tier_global_count"] = 3  # type: ignore[index]
 
-    for diagnostics in ({"": 1}, {"counter": -1}, {"counter": True}, {1: 1}):
+    for diagnostics in (
+        {"": 1},
+        {"counter": -1},
+        {"counter": True},
+        {1: 1},
+        {"invented": 1},
+        {"timing_tier_transition_count": 1},
+        {**_MARKOV_MODEL_DIAGNOSTICS, "invented": 1},
+    ):
         with pytest.raises((TypeError, ValueError), match="diagnostic"):
             TrialResult(3, 0.5, _methods(), diagnostics)  # type: ignore[arg-type]
+
+
+def test_candidate_requires_model_diagnostics_owned_by_its_family() -> None:
+    """A complete Markov namespace remains invalid evidence for another family."""
+    trial = TrialResult(3, 0.5, _methods(), _MARKOV_MODEL_DIAGNOSTICS)
+    markov = Candidate(
+        CandidateId(0, 0),
+        "markov_renewal",
+        (0.2, 0.7, 0.5, 2, 1.0),
+        "valid",
+        0.5,
+        (trial,),
+        None,
+        (),
+    )
+
+    assert dict(markov.trials[0].model_diagnostics) == _MARKOV_MODEL_DIAGNOSTICS
+    for family in ("poisson_empirical", "mmpp"):
+        with pytest.raises(ValueError, match=f"model diagnostics.*{family}"):
+            Candidate(CandidateId(0, 1), family, (1.0,), "valid", 0.5, (trial,), None, ())
 
 
 @pytest.mark.parametrize(

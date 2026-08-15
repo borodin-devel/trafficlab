@@ -13,6 +13,7 @@ from typing import Literal, Protocol, cast
 from trafficlab.config import FamilyName, FloatBounds, GenerationLimits, IntegerBounds, MarkovRenewalConfig
 from trafficlab.errors import TrafficlabError
 from trafficlab.models.common import (
+    MARKOV_MODEL_DIAGNOSTIC_KEYS,
     FamilyBounds,
     FittedModel,
     Gene,
@@ -30,12 +31,6 @@ _MAXIMUM_FRAME_LENGTH = 2**32 - 1
 type TimingTier = Literal["transition", "source", "global"]
 
 _TIMING_TIERS = frozenset(("transition", "source", "global"))
-_TIMING_DIAGNOSTIC_KEYS = (
-    "timing_tier_transition_count",
-    "timing_tier_source_count",
-    "timing_tier_global_count",
-    "uniform_unobserved_row_count",
-)
 
 
 def _invalid(detail: str, *, corrective_action: str) -> TrafficlabError:
@@ -659,7 +654,7 @@ def _generate_with_rng(
     guard = GenerationGuard.start(limits, clock=clock)
     events: list[TraceEvent] = []
     output_bytes = 0
-    timing_counts: dict[str, int] = {name: 0 for name in _TIMING_DIAGNOSTIC_KEYS}
+    timing_counts: dict[str, int] = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS}
 
     def generation_result(
         *,

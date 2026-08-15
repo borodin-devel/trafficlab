@@ -35,6 +35,7 @@ from trafficlab.genetic.checkpoint import (
 )
 from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
 from trafficlab.models.registry import POISSON_FAMILY, make_best_model, render_best_model
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
@@ -48,9 +49,10 @@ def _prepared_experiment(valid_config_data: dict[str, object], tmp_path: Path) -
     return experiment_path, open_or_prepare_experiment(experiment_path)
 
 
-def _trial(seed: int, score: float = 0.8) -> TrialResult:
+def _trial(seed: int, score: float = 0.8, *, family: FamilyName = "poisson_empirical") -> TrialResult:
     methods = tuple(MethodTrialResult(name, score, {"literal": score}) for name in METHOD_ORDER)
-    return TrialResult(seed, score, cast(Any, methods))
+    diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
+    return TrialResult(seed, score, cast(Any, methods), diagnostics)
 
 
 def _fit_outcome(
@@ -182,7 +184,7 @@ def _stage_results(
                 cast(Any, family_genes[family]),
                 "valid",
                 0.7,
-                tuple(_trial(seed, 0.7) for seed in prepared.config.genetic.trial_seeds),
+                tuple(_trial(seed, 0.7, family=family) for seed in prepared.config.genetic.trial_seeds),
                 None,
                 (),
             )

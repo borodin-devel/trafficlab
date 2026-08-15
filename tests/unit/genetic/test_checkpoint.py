@@ -53,6 +53,13 @@ from trafficlab.models.common import Genes
 from trafficlab.models.registry import MMPP_FAMILY
 from trafficlab.trace import Direction, TraceEvent
 
+MARKOV_MODEL_DIAGNOSTICS = {
+    "timing_tier_transition_count": 1,
+    "timing_tier_source_count": 2,
+    "timing_tier_global_count": 3,
+    "uniform_unobserved_row_count": 1,
+}
+
 SIMILARITY = SimilarityConfig(
     iat_diagnostic_quantile=0.5,
     acf_lags=(1,),
@@ -375,7 +382,11 @@ def _markov_state(genes: tuple[float, float, float, int, float]) -> CheckpointSt
         0.2,
     )
     compatibility = replace(COMPATIBILITY, families=(markov, FAMILIES[1]))
-    population = (replace(POPULATION[0], family="markov_renewal", genes=genes), *POPULATION[1:])
+    markov_trial = replace(MMPP_TRIAL, model_diagnostics=MARKOV_MODEL_DIAGNOSTICS)
+    population = (
+        replace(POPULATION[0], family="markov_renewal", genes=genes, trials=(markov_trial,)),
+        *POPULATION[1:],
+    )
     markov_row = replace(MMPP_ROW, family="markov_renewal")
     return replace(
         VALID_STATE,
@@ -422,15 +433,7 @@ def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnost
 
 def test_checkpoint_round_trip_retains_exact_model_diagnostic_counts() -> None:
     """Checkpoint evidence must preserve owner-derived per-seed model counters."""
-    diagnostics = {
-        "timing_tier_transition_count": 1,
-        "timing_tier_source_count": 2,
-        "timing_tier_global_count": 3,
-        "uniform_unobserved_row_count": 1,
-    }
-    trial = replace(MMPP_TRIAL, model_diagnostics=diagnostics)
-    candidate = replace(POPULATION[0], trials=(trial,))
-    state = replace(VALID_STATE, population=(candidate, *POPULATION[1:]))
+    state = _markov_state((0.2, 0.7, 0.5, 2, 1.0))
 
     content = render_checkpoint(state)
     document = _decoded(content)
@@ -438,14 +441,26 @@ def test_checkpoint_round_trip_retains_exact_model_diagnostic_counts() -> None:
         dict[str, object],
         cast(list[object], cast(dict[str, object], cast(list[object], document["population"])[0])["trials"])[0],
     )
-    assert stored_trial["model_diagnostics"] == diagnostics
+    assert stored_trial["model_diagnostics"] == MARKOV_MODEL_DIAGNOSTICS
     loaded = parse_checkpoint(content, state.compatibility)
-    assert dict(loaded.population[0].trials[0].model_diagnostics) == diagnostics
+    assert dict(loaded.population[0].trials[0].model_diagnostics) == MARKOV_MODEL_DIAGNOSTICS
     with pytest.raises(TypeError):
         loaded.population[0].trials[0].model_diagnostics["timing_tier_global_count"] = 4  # type: ignore[index]
 
 
-@pytest.mark.parametrize("diagnostics", [[], {"counter": True}, {"counter": -1}, {"": 1}])
+@pytest.mark.parametrize(
+    "diagnostics",
+    [
+        [],
+        {"counter": True},
+        {"counter": -1},
+        {"": 1},
+        {"invented": 1},
+        {"timing_tier_transition_count": 1},
+        MARKOV_MODEL_DIAGNOSTICS,
+    ],
+    ids=("array", "boolean", "negative", "empty-name", "unknown", "partial", "cross-family"),
+)
 def test_checkpoint_rejects_malformed_model_diagnostic_counts(diagnostics: object) -> None:
     """Loose counter JSON must not enter authoritative candidate evidence."""
     document = _decoded()
@@ -456,6 +471,29 @@ def test_checkpoint_rejects_malformed_model_diagnostic_counts(diagnostics: objec
 
     with pytest.raises(TrafficlabError, match="model diagnostics"):
         parse_checkpoint(_encoded(document), COMPATIBILITY)
+
+
+@pytest.mark.parametrize(
+    "diagnostics",
+    [
+        {},
+        {"timing_tier_transition_count": 1},
+        {**MARKOV_MODEL_DIAGNOSTICS, "invented": 1},
+    ],
+    ids=("missing", "partial", "extra-unknown"),
+)
+def test_checkpoint_rejects_incomplete_or_extended_markov_diagnostic_namespaces(
+    diagnostics: dict[str, int],
+) -> None:
+    state = _markov_state((0.2, 0.7, 0.5, 2, 1.0))
+    document = _decoded(render_checkpoint(state))
+    population = cast(list[object], document["population"])
+    candidate = cast(dict[str, object], population[0])
+    trials = cast(list[object], candidate["trials"])
+    cast(dict[str, object], trials[0])["model_diagnostics"] = diagnostics
+
+    with pytest.raises(TrafficlabError, match="model diagnostics"):
+        parse_checkpoint(_encoded(document), state.compatibility)
 
 
 def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
@@ -720,6 +758,10 @@ def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
     """Older scientific semantics must fail before malformed RNG state can be reconstructed."""
     document = _decoded()
     document["rng"] = {"deliberately": "unreadable"}
+    population = cast(list[object], document["population"])
+    candidate = cast(dict[str, object], population[0])
+    trials = cast(list[object], candidate["trials"])
+    cast(dict[str, object], trials[0])["model_diagnostics"] = {"invented": 1}
     if present:
         document["scientific_artifact_schema"] = value
     else:
@@ -1326,7 +1368,17 @@ def test_render_rejects_population_and_best_state_inconsistencies() -> None:
         replace(VALID_STATE, population=cast(Any, [])),
         replace(VALID_STATE, population=POPULATION[:-1]),
         replace(VALID_STATE, population=(cast(Any, None), *POPULATION[1:])),
-        replace(VALID_STATE, population=(replace(candidate, family="markov_renewal"), *POPULATION[1:])),
+        replace(
+            VALID_STATE,
+            population=(
+                replace(
+                    candidate,
+                    family="markov_renewal",
+                    trials=(replace(MMPP_TRIAL, model_diagnostics=MARKOV_MODEL_DIAGNOSTICS),),
+                ),
+                *POPULATION[1:],
+            ),
+        ),
         replace(
             VALID_STATE,
             population=(replace(candidate, identifier=CandidateId(1, 0)), *POPULATION[1:]),

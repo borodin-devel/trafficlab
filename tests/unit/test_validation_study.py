@@ -33,7 +33,7 @@ from trafficlab.genetic.evaluation import ValidatedEvaluationContext, evaluate_c
 from trafficlab.genetic.population import initial_population
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import Candidate, CandidateId, MethodTrialResult, TrialResult
-from trafficlab.models.common import FittedModel, GenerationResult
+from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult
 from trafficlab.models.registry import BestModel, get_family, make_best_model
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
@@ -1180,7 +1180,11 @@ def _evaluated_candidate(
     first_score: float,
     second_score: float,
 ) -> Candidate:
-    trials = (_trial_result(17, first_score), _trial_result(29, second_score))
+    diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
+    trials = (
+        replace(_trial_result(17, first_score), model_diagnostics=diagnostics),
+        replace(_trial_result(29, second_score), model_diagnostics=diagnostics),
+    )
     return Candidate(
         identifier,
         family,

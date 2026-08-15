@@ -30,6 +30,7 @@ from trafficlab.genetic.types import (
     MethodTrialResult,
     TerminalReason,
     TrialResult,
+    validate_model_diagnostics_for_family,
 )
 from trafficlab.models.common import ModelDiagnostics, freeze_model_diagnostics
 from trafficlab.models.registry import get_family
@@ -743,7 +744,7 @@ def _parse_method(value: object, *, expected_name: MethodName) -> MethodTrialRes
     )
 
 
-def _parse_trial(value: object) -> TrialResult:
+def _parse_trial(value: object, *, family: FamilyName) -> TrialResult:
     document = _exact_object(
         value,
         ("seed", "aggregate_score", "methods", "model_diagnostics"),
@@ -757,6 +758,7 @@ def _parse_trial(value: object) -> TrialResult:
     )
     try:
         model_diagnostics: ModelDiagnostics = freeze_model_diagnostics(document["model_diagnostics"])
+        validate_model_diagnostics_for_family(family, model_diagnostics)
     except (TypeError, ValueError) as error:
         raise ValueError(f"candidate trial model diagnostics are invalid: {error}") from error
     return TrialResult(
@@ -876,7 +878,7 @@ def _parse_candidate(value: object, *, families: Mapping[FamilyName, FamilyCheck
         genes,
         cast(Literal["valid", "invalid"], status),
         _float(document["fitness"], name="candidate fitness", bounded=True),
-        tuple(_parse_trial(item) for item in _array(document["trials"], name="candidate trials")),
+        tuple(_parse_trial(item, family=family) for item in _array(document["trials"], name="candidate trials")),
         invalid,
         tuple(
             _parse_duplicate(item)

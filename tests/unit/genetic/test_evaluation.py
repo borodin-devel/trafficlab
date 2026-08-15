@@ -199,8 +199,8 @@ def test_evaluation_fits_once_and_gives_each_trial_the_same_window_and_limits(
         cast(dict[str, object], evaluated.trials[0].methods[0].diagnostics)["changed"] = True
 
 
-def test_evaluation_retains_generation_owner_diagnostics_per_trial(family: RecordingFamily) -> None:
-    """Candidate evaluation must not discard the model owner's seeded usage counters."""
+def test_evaluation_rejects_generation_diagnostics_from_the_wrong_family(family: RecordingFamily) -> None:
+    """A Poisson candidate cannot persist counters from the Markov generation owner."""
     diagnostics = {
         "timing_tier_transition_count": 1,
         "timing_tier_source_count": 2,
@@ -209,10 +209,8 @@ def test_evaluation_retains_generation_owner_diagnostics_per_trial(family: Recor
     }
     family.results[7] = GenerationResult(True, GENERATED, model_diagnostics=diagnostics)
 
-    evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
-
-    assert dict(evaluated.trials[0].model_diagnostics) == diagnostics
-    assert dict(evaluated.trials[1].model_diagnostics) == {}
+    with pytest.raises(ValueError, match="model diagnostics.*poisson_empirical"):
+        evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
 
 
 def test_common_metric_precondition_failure_aborts_before_candidate_loop(family: RecordingFamily) -> None:
