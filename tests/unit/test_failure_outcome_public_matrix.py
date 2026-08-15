@@ -46,8 +46,6 @@ _PREFLIGHT_FINDING_NAMES = {
     "dumpcap version is incompatible": "capture_tool",
     "mount source fixture-data is unavailable": "mounts",
     "mount target /work/data is incompatible": "mounts",
-    "mounted input request.txt is unavailable": "mounts",
-    "mounted input request.txt is incompatible": "mounts",
     "capture prerequisite is unavailable": "network_probe",
     "capture prerequisite is incompatible": "network_probe",
 }
@@ -482,6 +480,115 @@ def _run_capture_stale_boundary_case(
     assert reference_path.read_bytes() == changed_reference
     assert (run_directory / "run.log").read_bytes() == log_before
     assert list(run_directory.glob(".capture-*")) == []
+
+
+_MOUNTED_INPUT_DETAILS = {
+    "mounted input request.txt is unavailable": "remove",
+    "mounted input request.txt is incompatible": "change",
+}
+
+
+def _run_capture_mounted_input_boundary_case(
+    case: _BoundaryCase,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    valid_config_data: dict[str, object],
+) -> None:
+    """Drive mounted-input failure through public pair reuse without Docker."""
+    run_directory = tmp_path / "run"
+    mounted = tmp_path / "request.txt"
+    mounted.write_bytes(b"request-v1")
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    cast(dict[str, object], data["target"])["mounts"] = [
+        {"source": str(mounted), "target": "/work/request.txt", "read_only": True},
+    ]
+    config = ExperimentConfig.model_validate(data)
+    experiment_path = tmp_path / "experiment.toml"
+    experiment_path.write_bytes(render_effective_config(config))
+    prepared = preflight.open_or_prepare_experiment(experiment_path)
+    mounted_inputs = capture._identify_mounted_inputs(prepared.config)  # pyright: ignore[reportPrivateUsage]
+    environment = preflight.CaptureEnvironmentIdentity(
+        host_architecture="linux/amd64",
+        target_reference=prepared.config.target.image,
+        target_content_id="sha256:" + ("c" * 64),
+        capture_reference=prepared.config.capture.image,
+        capture_content_id="sha256:" + ("d" * 64),
+        capture_tool_version="4.0.17",
+        mounted_inputs=mounted_inputs,
+    )
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    metadata_path = run_directory / "capture.json"
+    reference_path = run_directory / "reference.pcapng"
+    metadata_content = render_capture_metadata(metadata)
+    reference_content = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
+    metadata_path.write_bytes(metadata_content)
+    reference_path.write_bytes(reference_content)
+    capture._append_event(  # pyright: ignore[reportPrivateUsage]
+        run_directory,
+        "capture_published",
+        **capture._capture_lineage(run_directory, environment),  # pyright: ignore[reportPrivateUsage]
+        packet_count=1,
+        path=str(reference_path),
+        project_name="matrix",
+        reused=False,
+    )
+    log_before = (run_directory / "run.log").read_bytes()
+    mutation = _MOUNTED_INPUT_DETAILS[case.primary.detail]
+    real_run_preflight = capture.run_preflight
+    mutated = False
+
+    def mutate_after_local_preflight(
+        path: Path,
+        *,
+        config_only: bool,
+        docker: preflight.DockerPreflight | None,
+        clock: Callable[[], float],
+    ) -> preflight.PreparedExperiment:
+        nonlocal mutated
+        result = real_run_preflight(
+            path,
+            config_only=config_only,
+            docker=docker,
+            clock=clock,
+        )
+        if config_only and not mutated:
+            if mutation == "remove":
+                mounted.unlink()
+            else:
+                mounted.write_bytes(b"request-v2")
+            mutated = True
+        return result
+
+    monkeypatch.setattr(capture, "run_preflight", mutate_after_local_preflight)
+
+    docker_calls: list[str] = []
+
+    class NoDocker:
+        def __getattr__(self, name: str) -> object:
+            docker_calls.append(name)
+            raise AssertionError(f"mounted-input public reuse touched Docker operation {name}")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture.capture_experiment(
+            experiment_path,
+            docker=cast(capture.CaptureDocker, NoDocker()),
+            clock=lambda: 100.0,
+            interruption=lambda: False,
+        )
+
+    assert tuple(caught.value.failure_outcomes) == case.outcomes
+    assert caught.value.failure_outcome == case.primary
+    assert metadata_path.read_bytes() == metadata_content
+    assert reference_path.read_bytes() == reference_content
+    assert (run_directory / "run.log").read_bytes() == log_before
+    assert docker_calls == []
+    assert {path.name for path in run_directory.iterdir()} == {
+        "capture.json",
+        "experiment.toml",
+        "reference.pcapng",
+        "run.log",
+    }
 
 
 _FIT_METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
@@ -1076,7 +1183,9 @@ def test_public_boundaries_serialize_the_authoritative_failure_matrix(
     valid_config_data: dict[str, object],
 ) -> None:
     """A wrong owner, action, authority, state, or publication side effect breaks this matrix."""
-    if case.injection_stage == "preflight":
+    if case.primary.detail in _MOUNTED_INPUT_DETAILS:
+        _run_capture_mounted_input_boundary_case(case, monkeypatch, tmp_path, valid_config_data)
+    elif case.injection_stage == "preflight":
         _run_preflight_case(case, monkeypatch, tmp_path)
     elif case.primary.stage == "capture":
         if case.primary.kind == "artifact_stale":

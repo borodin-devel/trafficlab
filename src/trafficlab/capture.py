@@ -185,7 +185,12 @@ def _identify_mounted_inputs(config: ExperimentConfig) -> tuple[MountedInputIden
         try:
             identity = identify_file(mount.source)
         except TrafficlabError as error:
-            unavailable = not mount.source.exists()
+            try:
+                current = mount.source.stat(follow_symlinks=False)
+            except OSError:
+                unavailable = True
+            else:
+                unavailable = stat.S_ISREG(current.st_mode) and isinstance(error.__cause__, OSError)
             raise _mounted_input_error(mount.target, unavailable=unavailable) from error
         identities.append(
             MountedInputIdentity(
@@ -357,6 +362,8 @@ def _require_matching_capture_lineage(
             expected_environment = replace(environment_identity, mounted_inputs=current_mounted_inputs)
         expected = _capture_lineage(run_directory, expected_environment)
         require_compatible(expected, actual)
+    except (_MountedInputUnavailableError, _MountedInputIncompatibleError):
+        raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, TrafficlabError, TypeError, ValueError) as error:
         raise _capture_pair_stale_error() from error
 

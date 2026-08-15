@@ -1266,13 +1266,13 @@ def test_public_capture_reuse_reidentifies_mounted_file_bytes_before_docker(
     outcome = caught.value.failure_outcome
     assert outcome is not None
     assert outcome.as_dict() == {
-        "affected_evidence": "capture pair",
+        "affected_evidence": "capture evidence",
         "authority": "primary",
-        "corrective_action": "select its matching run or a new run directory",
-        "detail": "capture pair has another identity",
-        "evidence_state": "preserved",
-        "kind": "artifact_stale",
-        "stage": "capture",
+        "corrective_action": "restore the declared mounted-input content identity",
+        "detail": "mounted input request.txt is incompatible",
+        "evidence_state": "not_published",
+        "kind": "docker_preflight_failed",
+        "stage": "preflight",
     }
 
 
@@ -1308,13 +1308,13 @@ def test_prepared_capture_reuse_reidentifies_an_unavailable_mounted_file(
 
     assert caught.value.failure_outcome is not None
     assert caught.value.failure_outcome.as_dict() == {
-        "affected_evidence": "capture pair",
+        "affected_evidence": "capture evidence",
         "authority": "primary",
-        "corrective_action": "select its matching run or a new run directory",
-        "detail": "capture pair has another identity",
-        "evidence_state": "preserved",
-        "kind": "artifact_stale",
-        "stage": "capture",
+        "corrective_action": "restore the named mounted input bytes",
+        "detail": "mounted input request.txt is unavailable",
+        "evidence_state": "not_published",
+        "kind": "docker_preflight_failed",
+        "stage": "preflight",
     }
     assert (prepared.run_directory / "capture.json").exists()
     assert (prepared.run_directory / "reference.pcapng").exists()
@@ -1562,6 +1562,51 @@ def test_mounted_input_identification_classifies_a_race_at_the_stable_file_bound
     expected = "unavailable" if replacement == "missing" else "incompatible"
     with pytest.raises(TrafficlabError, match=expected):
         cast(Any, capture_module)._identify_mounted_inputs(config)
+
+
+def test_mounted_input_identification_classifies_a_regular_file_read_error_as_unavailable(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    del experiment_path
+    mounted = tmp_path / "unreadable-request.txt"
+    mounted.write_bytes(b"request-v1")
+    mount = MountConfig(source=mounted, target="/work/request.txt", read_only=True)
+    config = prepared.config.model_copy(
+        update={"target": prepared.config.target.model_copy(update={"mounts": (mount,)})}
+    )
+    real_open = Path.open
+
+    def fail_mounted_open(
+        path: Path,
+        mode: str = "r",
+        buffering: int = -1,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> Any:
+        if path == mounted:
+            raise PermissionError("injected mounted-input read failure")
+        return real_open(path, mode, buffering, encoding, errors, newline)
+
+    monkeypatch.setattr(Path, "open", fail_mounted_open)
+
+    with pytest.raises(TrafficlabError, match="mounted input request.txt is unavailable") as caught:
+        cast(Any, capture_module)._identify_mounted_inputs(config)
+
+    assert caught.value.failure_outcome is not None
+    assert caught.value.failure_outcome.as_dict() == {
+        "affected_evidence": "capture evidence",
+        "authority": "primary",
+        "corrective_action": "restore the named mounted input bytes",
+        "detail": "mounted input request.txt is unavailable",
+        "evidence_state": "not_published",
+        "kind": "docker_preflight_failed",
+        "stage": "preflight",
+    }
+    identity_error = caught.value.__cause__
+    assert isinstance(identity_error, TrafficlabError)
+    assert isinstance(identity_error.__cause__, PermissionError)
 
 
 def test_mounted_input_comparison_names_a_new_regular_file_at_the_same_declared_target(
