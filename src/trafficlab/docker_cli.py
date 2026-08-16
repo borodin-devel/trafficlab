@@ -58,7 +58,7 @@ CAPTURE_PLATFORM: Final[CapturePlatform] = "linux/amd64"
 _CAPTURE_HOST_ARCHITECTURES = frozenset({"amd64", "x86_64", CAPTURE_PLATFORM})
 
 
-def cold_capture_build_argv(tag: str, iidfile: Path) -> tuple[str, ...]:
+def cold_capture_build_argv(tag: object, iidfile: object) -> tuple[str, ...]:
     """Return the one reproducible, cold capture-image build invocation.
 
     The caller supplies a project-scoped tag and an exclusive IID destination;
