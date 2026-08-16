@@ -222,3 +222,93 @@ public parsers and stage boundaries remain the owners of scientific validation.
 The repository-wide `ruff format --check .` remains non-green only for six
 pre-existing unrelated files under `docs/superpowers/plans/` and failure,
 preflight, and study test modules; they were deliberately left untouched.
+
+## Task 13 final review fix round 3
+
+### RED and resolution
+
+The new supplied-identity regression first failed through the public fixture
+owner:
+
+```bash
+scripts/run_bounded.sh --memory-high 1G --memory-max 2G --swap-max 256M \
+  --wall-time 5m --kill-after 10s -- \
+  uv run --locked pytest -q -n 0 \
+  tests/unit/test_validation_study.py::test_validation_fixture_generator_check_honors_explicit_source_identities \
+  tests/unit/test_validation_study.py::test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_and_all_inventories \
+  tests/integration/test_validation_study_pipeline.py::test_clean_checkout_reconstructs_unmodified_candidate_and_checks_owned_fixture
+```
+
+```text
+2 failed, 1 passed in 7.87s
+```
+
+The required RED was that `main()` returned `0` for `--check` with a different
+valid source commit. It discarded both supplied values and reloaded the
+fixture-recorded identities. The other RED exposed only two-commit test setup:
+a clone at the cited source commit contains its earlier fixture commit, not the
+copied candidate. The test now installs the copied candidate at the temporary
+clone-owned fixture path before running its clone-owned check.
+
+`main()` now uses a complete supplied commit/tree pair before falling back to
+recorded values only for bare `--check`; partial pairs and non-check calls
+without both values reject with the existing typed error. The final focused
+GREEN command was:
+
+```bash
+scripts/run_bounded.sh --memory-high 1G --memory-max 2G --swap-max 256M \
+  --wall-time 5m --kill-after 10s -- \
+  uv run --locked pytest -q -n 0 \
+  tests/unit/test_validation_study.py::test_validation_fixture_generator_check_rebuilds_the_retained_bytes \
+  tests/unit/test_validation_study.py::test_validation_fixture_generator_check_honors_explicit_source_identities \
+  tests/unit/test_validation_study.py::test_validation_fixture_generator_main_requires_complete_ids_and_writes_to_its_owned_path \
+  tests/unit/test_validation_study.py::test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_and_all_inventories \
+  tests/integration/test_validation_study_pipeline.py::test_clean_checkout_reconstructs_unmodified_candidate_and_checks_owned_fixture \
+  --cov=scripts.generate_validation_study_fixture --cov-branch --cov-fail-under=0 \
+  --cov-report=json:/tmp/task13-round3-generator-final-774608.json
+```
+
+```text
+5 passed in 7.99s
+```
+
+`/tmp/task13-round3-generator-final-774608.json` reports `main:662` at
+`17/17` executable lines and `10/10` branches.
+
+### Clone and inventory evidence
+
+- The positive clean-clone integration uses `git clone --no-hardlinks`, checks
+  out the cited source commit, and runs clone-owned audit and generator
+  scripts through `uv run --locked --offline`.
+- Its inner guard blocks sockets, Docker, all non-Git subprocesses, and reads
+  under the original worktree. It allows only `git rev-parse HEAD`,
+  `git rev-parse HEAD^{tree}`, and `git show <source-commit>:uv.lock`.
+- The clone-owned audit exits `0` and prints its acceptance report. The
+  clone-owned generator runs `--check` with explicit IDs, exits `0`, and its
+  complete 155-file regular-byte tree equals the copied candidate.
+- The compound missing/corrupt/foreign/substituted test snapshots exact typed
+  inventories for candidate, evidence root, and repository before publication.
+  Inventories include directories, regular bytes, other modes, and symlink
+  targets. A retained `inventory-sentinel -> candidate` link proves symlink
+  target preservation; every post-failure inventory is exactly equal.
+
+### Final verification and provenance
+
+| Command | Result |
+| --- | --- |
+| Explicit generator write and `--check` with source `0864f6f6e11dedce951e2dffac61248c9c5458af` and tree `566f7ab6afddc423fb942b7c6516e5084640ffab` | Wrote then exactly checked 155 deterministic retained files. |
+| Bounded validation unit/integration target with JUnit | `297` tests, `0` failures, `0` errors, `0` skips. |
+| `uv run --locked ruff check . && uv run --locked pyright` | `All checks passed!`; `0 errors, 0 warnings, 0 informations`. |
+| `scripts/run_bounded.sh --memory-high 3G --memory-max 4G --swap-max 512M --wall-time 10m --kill-after 10s -- uv run --locked pytest -q -n 4 --dist worksteal -m 'not docker and not internet' --junitxml=/tmp/task13-round3-full-776346.xml` | `2955 passed in 28.79s`. |
+
+- Source commit: `0864f6f6e11dedce951e2dffac61248c9c5458af`.
+- Source tree: `566f7ab6afddc423fb942b7c6516e5084640ffab`.
+- Fixture provenance commit: `5820db5`.
+- Files: `scripts/generate_validation_study_fixture.py`,
+  `tests/unit/test_validation_study.py`,
+  `tests/integration/test_validation_study_pipeline.py`, and generated fixture
+  paths.
+
+No Docker, Internet, external collection, or Task14 behavior was invoked. The
+pre-existing repository-wide Ruff-format caveat remains unchanged; all
+round-three files are Ruff formatted, lint-clean, and strictly typed.
