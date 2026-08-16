@@ -6620,6 +6620,48 @@ def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("current-capability", "capability argv"),
+        ("current-workload", "short workload definition"),
+        ("all-current", "capability argv"),
+        ("wrong-study-id", "historic schema-1 protocol identity"),
+        ("wrong-url", "historic schema-1 protocol identity"),
+    ),
+)
+def test_historic_schema_one_protocol_is_one_atomic_identity(mutation: str, message: str) -> None:
+    """The sole legacy result cannot combine independent current and historic command projections."""
+    content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
+    document = copy.deepcopy(cast(dict[str, object], json.loads(content)))
+    protocol = cast(dict[str, object], document["protocol"])
+    study_id = cast(str, protocol["study_id"])
+    url = cast(str, protocol["url"])
+    capability = cast(dict[str, object], protocol["capability"])
+    workloads = cast(list[dict[str, object]], protocol["workloads"])
+    current_capability = study._expected_capability_argv(  # pyright: ignore[reportPrivateUsage]
+        study_id,
+        url,
+    )
+    current_workloads = study.workload_specs(url)
+
+    if mutation in {"current-capability", "all-current"}:
+        capability["argv"] = list(current_capability)
+    if mutation in {"current-workload", "all-current"}:
+        workloads[0]["argv"] = list(current_workloads[0].argv)
+    if mutation == "all-current":
+        for workload, current in zip(workloads, current_workloads, strict=True):
+            workload["argv"] = list(current.argv)
+    if mutation == "wrong-study-id":
+        protocol["study_id"] = "legacy-study"
+    if mutation == "wrong-url":
+        protocol["url"] = "https://downloads.example.test/other.bin"
+
+    invalid = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    with pytest.raises(ValueError, match=message):
+        study.parse_study_results(invalid, repository_root=_ROOT)
+
+
 def test_current_protocol_rejects_a_capability_projection_without_the_package_user_agent() -> None:
     content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
     current = cast(dict[str, object], json.loads(content))

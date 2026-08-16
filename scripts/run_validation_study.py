@@ -3531,14 +3531,13 @@ def _validate_capability(
 ) -> JsonObject:
     document = _exact_object(value, CAPABILITY_KEYS, name="capability")
     argv = _string_array(document["argv"], name="capability argv", nonempty=True)
-    historic_projection = (
-        historic_schema_one_result
-        and study_id == _HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID
-        and url == _HISTORIC_SCHEMA_ONE_RESULT_URL
-        and argv == _historic_schema_one_capability_argv()
+    expected_argv = (
+        _historic_schema_one_capability_argv()
+        if historic_schema_one_result
+        else _expected_capability_argv(study_id, url)
     )
     _require(
-        argv == _expected_capability_argv(study_id, url) or historic_projection,
+        argv == expected_argv,
         "capability argv must equal the exact repository-relative Docker/curl projection",
     )
     started = _utc_timestamp(document["started_utc"], name="capability start")
@@ -4640,10 +4639,10 @@ def _validate_workloads(
 ) -> list[JsonValue]:
     items = _strict_list(value, name="workload definitions")
     expected_specs = workload_specs(url)
-    historic_argvs = (
+    expected_argvs = (
         _historic_schema_one_workload_argvs()
-        if historic_schema_one_result and url == _HISTORIC_SCHEMA_ONE_RESULT_URL
-        else ()
+        if historic_schema_one_result
+        else tuple(spec.argv for spec in expected_specs)
     )
     _require(len(items) == 3, "workload definitions must contain short, streaming, and bursty")
     keys = ("name", "argv", "workload_timeout_seconds", "total_timeout_seconds", "multiscale_widths_seconds")
@@ -4660,23 +4659,13 @@ def _validate_workloads(
         )
         actual = (argv, workload_timeout, total_timeout, widths)
         oracle = (
-            expected.argv,
+            expected_argvs[index],
             expected.workload_timeout_seconds,
             expected.total_timeout_seconds,
             expected.multiscale_widths_seconds,
         )
         _require(
-            actual == oracle
-            or (
-                bool(historic_argvs)
-                and actual
-                == (
-                    historic_argvs[index],
-                    expected.workload_timeout_seconds,
-                    expected.total_timeout_seconds,
-                    expected.multiscale_widths_seconds,
-                )
-            ),
+            actual == oracle,
             f"{name} workload definition must equal the exact workload oracle",
         )
     return cast(list[JsonValue], items)
@@ -4691,6 +4680,11 @@ def _validate_protocol(
     document = _exact_object(value, PROTOCOL_KEYS, name="protocol")
     study_id = validate_study_id(_strict_string(document["study_id"], name="protocol study ID"))
     url = validate_endpoint_url(_strict_string(document["url"], name="protocol URL"))
+    if historic_schema_one_result:
+        _require(
+            study_id == _HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID and url == _HISTORIC_SCHEMA_ONE_RESULT_URL,
+            "historic schema-1 protocol identity must equal the sole retained study ID and URL",
+        )
     _validate_capability(
         document["capability"],
         repository_root=repository_root,
