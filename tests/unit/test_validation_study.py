@@ -6848,6 +6848,25 @@ def test_cold_capture_build_argv_freezes_task9_reproducibility_controls(tmp_path
 
 
 @pytest.mark.parametrize(
+    ("tag", "iidfile", "error", "message"),
+    (
+        (object(), Path("capture.iid"), ValueError, "capture image tag must be a nonempty string"),
+        ("trafficlab-validation-study-1:capture", object(), TypeError, "iidfile must be a pathlib.Path"),
+    ),
+)
+def test_cold_capture_build_argv_rejects_invalid_boundary_types(
+    tag: object,
+    iidfile: object,
+    error: type[Exception],
+    message: str,
+) -> None:
+    """The public cold-build boundary retains deterministic runtime validation."""
+
+    with pytest.raises(error, match=message):
+        study.cold_capture_build_argv(tag, iidfile)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
     ("case", "expected_kind", "expected_path"),
     (
         ("document", "artifact_corrupt", "prerequisites.json"),
