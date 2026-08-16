@@ -7371,15 +7371,8 @@ def _candidate_winner_family(training: _CandidateTraining) -> FamilyName:
     return winner.family
 
 
-def _candidate_natural_variation(
-    training: Sequence[_CandidateTraining],
-    *,
-    window: float,
-) -> JsonObject:
+def _candidate_natural_variation(training: Sequence[_CandidateTraining]) -> JsonObject:
     _require(len(training) == 3, "natural variation requires exactly three training records")
-    _require(
-        type(window) is float and math.isfinite(window) and window > 0.0, "natural variation window must be finite"
-    )
     settings = similarity_settings_identity(training[0].config.similarity)
     _require(
         all(similarity_settings_identity(item.config.similarity) == settings for item in training),
@@ -7390,10 +7383,24 @@ def _candidate_natural_variation(
         for right_index in range(left_index + 1, 3):
             left = training[left_index]
             right = training[right_index]
-            left_reference = align_generated(left.reference, window)
-            right_reference = align_generated(right.reference, window)
-            forward = _candidate_score(compare_traces(left_reference, right_reference, window, left.config.similarity))
-            reverse = _candidate_score(compare_traces(right_reference, left_reference, window, right.config.similarity))
+            left_reference, forward_window = normalize_reference(left.reference)
+            right_reference, reverse_window = normalize_reference(right.reference)
+            forward = _candidate_score(
+                compare_traces(
+                    left_reference,
+                    align_generated(right.reference, forward_window),
+                    forward_window,
+                    left.config.similarity,
+                )
+            )
+            reverse = _candidate_score(
+                compare_traces(
+                    right_reference,
+                    align_generated(left.reference, reverse_window),
+                    reverse_window,
+                    left.config.similarity,
+                )
+            )
             pairs.append(
                 cast(
                     JsonObject,
@@ -7512,24 +7519,9 @@ def _candidate_invalid_chromosome_diagnostics(training: Sequence[_CandidateTrain
     return rows
 
 
-def _frozen_natural_variation_windows(configs: Mapping[WorkloadName, ExperimentConfig]) -> dict[WorkloadName, float]:
-    """Derive the one common, pre-capture comparison horizon per workload."""
-
-    _require(set(configs) == {"short", "streaming", "bursty"}, "natural variation requires all workload configs")
-    windows: dict[WorkloadName, float] = {}
-    for workload in ("short", "streaming", "bursty"):
-        widths = configs[workload].similarity.multiscale_widths_seconds
-        window = max(widths)
-        _require(math.isfinite(window) and window > 0.0, "natural variation window must be finite")
-        windows[workload] = window
-    return windows
-
-
 def _candidate_report_inputs(
     training: Sequence[_CandidateTraining],
     held_out: Mapping[WorkloadName, HeldOutEvaluation],
-    *,
-    natural_variation_windows: Mapping[WorkloadName, float],
 ) -> JsonObject:
     fresh_simulation: list[JsonValue] = []
     held_out_scores: list[JsonValue] = []
@@ -7571,7 +7563,7 @@ def _candidate_report_inputs(
                 },
             )
         )
-        natural_variation.append(_candidate_natural_variation(group, window=natural_variation_windows[workload]))
+        natural_variation.append(_candidate_natural_variation(group))
         held_out_scores.append(
             cast(
                 JsonObject,
@@ -7627,7 +7619,6 @@ def _begin_candidate_collection(
             f"Validation Study collection already began for {study_id}; use a new study ID",
             corrective_action="preserve the failed attempt and restart with a new study ID",
         )
-    natural_variation_windows = _frozen_natural_variation_windows(configs)
     controls = {
         "base_config_identities": {
             workload: identify_bytes(render_effective_config(configs[workload])).as_dict()
@@ -7635,7 +7626,6 @@ def _begin_candidate_collection(
         },
         "environment_identity": identify_bytes(_canonical_json(cast(JsonObject, dict(environment)))).as_dict(),
         "prerequisites_identity": identify_bytes(retained_prerequisites).as_dict(),
-        "natural_variation_windows": natural_variation_windows,
         "study_id": study_id,
         "url": url,
     }
@@ -8344,7 +8334,6 @@ def collect_validation_candidate(
             fresh.append(fresh_record)
 
         selected = _select_candidate_training(training)
-        natural_variation_windows = _frozen_natural_variation_windows(configs)
         protocol = cast(
             JsonObject,
             {
@@ -8358,9 +8347,8 @@ def collect_validation_candidate(
                         "selected": [cast(JsonValue, record) for record in selected],
                     },
                 ),
-                "natural_variation_windows": cast(JsonObject, natural_variation_windows),
                 "prerequisite_path": "examples/validation_study/prerequisites.json",
-                "schema_version": 2,
+                "schema_version": 3,
                 "selection_seeds": list(configs["short"].genetic.trial_seeds),
                 "study_id": checked_study_id,
                 "training_repetitions": 3,
@@ -8391,11 +8379,7 @@ def collect_validation_candidate(
             )
             held_rows.append(held_record)
             held_evaluations[workload_name] = evaluation
-        report_inputs = _candidate_report_inputs(
-            training,
-            held_evaluations,
-            natural_variation_windows=natural_variation_windows,
-        )
+        report_inputs = _candidate_report_inputs(training, held_evaluations)
         _write_candidate_bytes(candidate / "report_inputs.json", _canonical_json(report_inputs))
         _write_candidate_bytes(
             candidate / "report.json",

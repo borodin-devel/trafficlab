@@ -1,8 +1,7 @@
-"""Focused retained-window checks for Validation Study natural variation."""
+"""Focused reference-window checks for Validation Study natural variation."""
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -27,11 +26,10 @@ def _config() -> ExperimentConfig:
 
 
 def _training(config: ExperimentConfig) -> tuple[auditor._Training, ...]:  # pyright: ignore[reportPrivateUsage]
-    frozen_window = max(config.similarity.multiscale_widths_seconds)
     records: list[auditor._Training] = []  # pyright: ignore[reportPrivateUsage]
     for workload in _WORKLOADS:
         for repeat in (1, 2, 3):
-            raw_window = frozen_window + (repeat - 1) * 0.25
+            raw_window = 0.05 + (repeat - 1) * 0.25
             records.append(
                 auditor._Training(  # pyright: ignore[reportPrivateUsage]
                     workload=workload,
@@ -51,11 +49,6 @@ def _training(config: ExperimentConfig) -> tuple[auditor._Training, ...]:  # pyr
                 )
             )
     return tuple(records)
-
-
-def _frozen_windows(config: ExperimentConfig) -> dict[str, object]:
-    frozen_window = max(config.similarity.multiscale_widths_seconds)
-    return {workload: frozen_window for workload in _WORKLOADS}
 
 
 def _held() -> dict[str, HeldOutEvaluation]:
@@ -105,67 +98,22 @@ def _patch_nonvariation_report_dependencies(
     monkeypatch.setattr(auditor, "compare_traces", capture_comparison)
 
 
-def test_report_inputs_crops_unequal_raw_windows_at_the_frozen_config_width(
+def test_report_inputs_derives_each_directional_reference_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config()
     training = _training(config)
-    frozen_windows = _frozen_windows(config)
     captured: list[tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], float]] = []
     _patch_nonvariation_report_dependencies(monkeypatch, captured)
     report = auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
         training,
         _held(),
-        natural_variation_windows=frozen_windows,
     )
 
-    frozen_window = max(config.similarity.multiscale_widths_seconds)
     assert report["natural_variation"]
     assert len(captured) == 18
-    assert {window for _reference, _generated, window in captured} == {frozen_window}
+    assert {window for _reference, _generated, window in captured} == {0.05, 0.3, 0.55}
     assert all(
-        event.timestamp <= window
+        reference[-1].timestamp == window and generated[-1].timestamp <= window
         for reference, generated, window in captured
-        for trace in (reference, generated)
-        for event in trace
     )
-    assert any(len(trace) == 1 for reference, generated, _window in captured for trace in (reference, generated))
-
-
-def test_report_inputs_rejects_a_forged_frozen_protocol_window(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = _config()
-    frozen_windows = _frozen_windows(config)
-    frozen_windows["short"] = max(config.similarity.multiscale_widths_seconds) + 0.25
-    comparisons: list[tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], float]] = []
-    _patch_nonvariation_report_dependencies(monkeypatch, comparisons)
-
-    with pytest.raises(auditor._Issue) as captured:  # pyright: ignore[reportPrivateUsage]
-        auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
-            _training(config),
-            _held(),
-            natural_variation_windows=frozen_windows,
-        )
-
-    assert captured.value.kind == "scientific_semantics_incompatible"
-    assert captured.value.affected == "protocol.json"
-
-
-def test_report_inputs_rejects_a_raw_window_shorter_than_the_frozen_window(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    config = _config()
-    frozen_window = max(config.similarity.multiscale_widths_seconds)
-    training = _training(config)
-    shortened = (replace(training[0], window=frozen_window - 0.25), *training[1:])
-    comparisons: list[tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], float]] = []
-    _patch_nonvariation_report_dependencies(monkeypatch, comparisons)
-
-    with pytest.raises(auditor._Issue) as captured:  # pyright: ignore[reportPrivateUsage]
-        auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
-            shortened,
-            _held(),
-            natural_variation_windows=_frozen_windows(config),
-        )
-
-    assert captured.value.kind == "scientific_semantics_incompatible"
-    assert captured.value.affected == "training/short/r1"

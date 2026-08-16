@@ -176,18 +176,6 @@ def _selected_training_records(
     return tuple(selected)
 
 
-def _natural_variation(
-    group: Sequence[tuple[study.ComparisonResult, tuple[TraceEvent, ...], float]],
-    config: ExperimentConfig,
-    *,
-    window: float | None = None,
-) -> None:
-    """Require every retained raw observation to reach the frozen variation window."""
-    frozen_window = max(config.similarity.multiscale_widths_seconds) if window is None else window
-    if frozen_window <= 0.0 or any(raw_window < frozen_window for _comparison, _reference, raw_window in group):
-        raise ValueError("fixture natural variation requires references reaching the frozen observation window")
-
-
 def _runtime_seconds(workload: str, repeat: int) -> float:
     return float(WORKLOADS.index(workload) * len(REPEATS) + repeat)
 
@@ -417,7 +405,7 @@ def validate_source_identities(source_commit: str, source_tree: str) -> None:
 
 
 def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, bytes]:
-    """Build one complete, credential-free schema-2 candidate through public scientific owners."""
+    """Build one complete, credential-free schema-3 candidate through public scientific owners."""
     validate_source_identities(source_commit, source_tree)
     configs: dict[study.WorkloadName, ExperimentConfig] = {}
     for workload in WORKLOADS:
@@ -430,14 +418,11 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
         training: list[dict[str, object]] = []
         fresh: list[dict[str, object]] = []
         training_files: dict[tuple[str, int], dict[str, bytes]] = {}
-        natural_variation_groups: dict[
-            study.WorkloadName, list[tuple[study.ComparisonResult, tuple[TraceEvent, ...], float]]
-        ] = {workload: [] for workload in WORKLOADS}
         variant = 1
         for workload in WORKLOADS:
             config = configs[workload]
             for repeat in REPEATS:
-                record, files, comparison, reference, window = _write_training_tree(
+                record, files, _comparison, _reference, _window = _write_training_tree(
                     root,
                     config=config,
                     metadata=metadata,
@@ -448,7 +433,6 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 variant += 1
                 training.append(record)
                 training_files[(workload, repeat)] = files
-                natural_variation_groups[workload].append((comparison, reference, window))
                 fresh_record = {
                     "comparison_identity": identify_bytes(files["similarity.json"]).as_dict(),
                     "generated_identity": identify_bytes(files["generated.pcapng"]).as_dict(),
@@ -464,8 +448,6 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(_canonical(fresh_record))
                 fresh.append(fresh_record)
-        for workload, natural_variation_group in natural_variation_groups.items():
-            _natural_variation(natural_variation_group, configs[workload])
         selections = _selected_training_records(training, training_files, configs=configs, metadata=metadata)
         selected_training = {
             cast(str, item["workload"]): next(
@@ -501,11 +483,8 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 "rule": "highest_best_fitness_then_lowest_repeat",
                 "selected": list(selections),
             },
-            "natural_variation_windows": {
-                workload: max(configs[workload].similarity.multiscale_widths_seconds) for workload in WORKLOADS
-            },
             "prerequisite_path": "examples/validation_study/prerequisites.json",
-            "schema_version": 2,
+            "schema_version": 3,
             "selection_seeds": list(configs["short"].genetic.trial_seeds),
             "study_id": _STUDY_ID,
             "training_repetitions": 3,
@@ -623,14 +602,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             for workload in WORKLOADS
             for repeat in REPEATS
         )
-        natural_variation_windows: dict[study.WorkloadName, float] = {
-            workload: max(configs[workload].similarity.multiscale_widths_seconds) for workload in WORKLOADS
-        }
-        report_inputs = study._candidate_report_inputs(  # pyright: ignore[reportPrivateUsage]
-            candidate_training,
-            held_evaluations,
-            natural_variation_windows=natural_variation_windows,
-        )
+        report_inputs = study._candidate_report_inputs(candidate_training, held_evaluations)  # pyright: ignore[reportPrivateUsage]
         (root / "report_inputs.json").write_bytes(_canonical(report_inputs))
         (root / "report.json").write_bytes(
             _canonical(

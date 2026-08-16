@@ -7179,7 +7179,7 @@ def test_offline_bundle_audit_covers_training_record_and_reconstruction_boundari
     )
 
 
-@pytest.mark.parametrize("field", ("runtime", "winner", "weights", "invalid_chromosome"))
+@pytest.mark.parametrize("field", ("runtime", "winner", "weights", "invalid_chromosome", "natural_variation"))
 def test_offline_bundle_audit_recomputes_each_report_input_family(tmp_path: Path, field: str) -> None:
     """Report inputs are independently reconstructed rather than trusted as producer output."""
 
@@ -7197,10 +7197,15 @@ def test_offline_bundle_audit_recomputes_each_report_input_family(tmp_path: Path
     elif field == "weights":
         records = cast(list[dict[str, object]], document["controlled_weight_analysis"])
         records[0]["alternative_aggregate"] = cast(float, records[0]["alternative_aggregate"]) + 1.0
-    else:
+    elif field == "invalid_chromosome":
         records = cast(list[dict[str, object]], document["invalid_chromosome_diagnostics"])
         limits = cast(dict[str, object], records[0]["trial_limits"])
         limits["max_packets"] = cast(int, limits["max_packets"]) + 1
+    else:
+        records = cast(list[dict[str, object]], document["natural_variation"])
+        pairs = cast(list[dict[str, object]], records[0]["pairs"])
+        forward = cast(dict[str, object], pairs[0]["forward"])
+        forward["aggregate"] = cast(float, forward["aggregate"]) + 1.0
     _write_canonical_json(path, document)
     _rewrite_candidate_manifest(candidate)
 
@@ -8130,6 +8135,8 @@ def test_complete_fixture_freezes_training_model_selection_and_bidirectional_var
     report_inputs = cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text(encoding="utf-8")))
 
     selection = cast(dict[str, object], protocol["model_selection"])
+    assert protocol["schema_version"] == 3
+    assert "natural_variation_windows" not in protocol
     assert selection["rule"] == "highest_best_fitness_then_lowest_repeat"
     assert {cast(dict[str, object], value)["workload"] for value in cast(list[object], selection["selected"])} == {
         "short",
@@ -10464,43 +10471,80 @@ def test_offline_auditor_reconstructs_all_training_model_selection_rejections(
     ) == (expected_kind, "publication", "protocol", "not_published", "primary")
 
 
-def test_offline_auditor_rejects_natural_variation_below_the_frozen_window(tmp_path: Path) -> None:
-    """Independent report arithmetic rejects a retained reference below its frozen protocol window."""
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
-    index = _candidate_index(candidate)
-    environment = auditor._environment(  # pyright: ignore[reportPrivateUsage]
-        (candidate / "environment.json").read_bytes(), repository=repository
+def test_candidate_natural_variation_derives_each_directional_reference_window(tmp_path: Path) -> None:
+    """Natural variation compares repeated captures at each reference-derived W, not a metric bin width."""
+    base_config = load_configuration_pair(_FIT_FIXTURE / "experiment.toml").realized
+    config = base_config.model_copy(
+        update={
+            "similarity": base_config.similarity.model_copy(
+                update={"max_direction_bin_cells": 2_000, "multiscale_widths_seconds": (0.001, 0.01)}
+            )
+        }
     )
-    protocol = auditor._protocol((candidate / "protocol.json").read_bytes())  # pyright: ignore[reportPrivateUsage]
-    training = tuple(
-        auditor._training(  # pyright: ignore[reportPrivateUsage]
-            candidate,
-            value,
-            protocol=protocol,
-            environment=environment,
-            url=fixture_generator._URL,  # pyright: ignore[reportPrivateUsage]
-        )
-        for value in cast(list[object], index["training"])
-    )
-    mismatched = (replace(training[0], window=0.0), *training[1:])
+    frozen_bin_width = max(config.similarity.multiscale_widths_seconds)
+    assert frozen_bin_width == 0.01
 
-    with pytest.raises(auditor._Issue, match="shorter than the frozen protocol window"):  # pyright: ignore[reportPrivateUsage]
-        auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
-            mismatched,
-            {},
-            natural_variation_windows=cast(dict[str, object], protocol["natural_variation_windows"]),
+    def trace(spacing: float) -> tuple[TraceEvent, ...]:
+        return tuple(
+            TraceEvent(
+                timestamp=index * spacing,
+                direction=Direction.OUTBOUND if index % 2 == 0 else Direction.INBOUND,
+                frame_length=128 + index,
+            )
+            for index in range(20)
         )
 
+    metadata = parse_capture_metadata(_CAPTURE_BYTES, source=_FIT_FIXTURE / "capture.json")
 
-def test_fixture_generator_rejects_natural_variation_below_its_frozen_window() -> None:
-    """The deterministic fixture owner rejects references that cannot reach frozen W."""
-    config = load_configuration_pair(_FIT_FIXTURE / "experiment.toml").realized
-    with pytest.raises(ValueError, match="references reaching the frozen observation window"):
-        fixture_generator._natural_variation(  # pyright: ignore[reportPrivateUsage]
-            (
-                (cast(ComparisonResult, object()), (), 1.0),
-                (cast(ComparisonResult, object()), (), 2.0),
-            ),
-            config,
-            window=3.0,
+    def training(repeat: int, raw_reference: tuple[TraceEvent, ...]) -> study._CandidateTraining:  # pyright: ignore[reportPrivateUsage]
+        reference, window = normalize_reference(raw_reference)
+        return study._CandidateTraining(  # pyright: ignore[reportPrivateUsage]
+            workload="short",
+            repeat=repeat,
+            directory=tmp_path / f"r{repeat}",
+            config=config,
+            contents={},
+            metadata=metadata,
+            reference=reference,
+            observation_window_seconds=window,
+            runtime_seconds=0.0,
+            checkpoint=cast(CheckpointState, object()),
+            comparison=cast(ComparisonResult, object()),
+        )
+
+    records = (training(1, trace(0.005)), training(2, trace(0.03)), training(3, trace(0.025)))
+    with pytest.raises(TrafficlabError, match="invalid generated trace: at least two events"):
+        compare_traces(
+            align_generated(records[0].reference, frozen_bin_width),
+            align_generated(records[1].reference, frozen_bin_width),
+            frozen_bin_width,
+            config.similarity,
+        )
+
+    first_reference, forward_window = normalize_reference(records[0].reference)
+    second_reference, reverse_window = normalize_reference(records[1].reference)
+    forward = compare_traces(
+        first_reference,
+        align_generated(records[1].reference, forward_window),
+        forward_window,
+        config.similarity,
+    )
+    reverse = compare_traces(
+        second_reference,
+        align_generated(records[0].reference, reverse_window),
+        reverse_window,
+        config.similarity,
+    )
+
+    result = study._candidate_natural_variation(records)  # pyright: ignore[reportPrivateUsage]
+    first_pair = cast(dict[str, object], cast(list[object], result["pairs"])[0])
+    forward_score = cast(dict[str, object], first_pair["forward"])
+    reverse_score = cast(dict[str, object], first_pair["reverse"])
+    symmetric = cast(dict[str, object], first_pair["symmetric_mean"])
+    assert forward_score == study._candidate_score(forward)  # pyright: ignore[reportPrivateUsage]
+    assert reverse_score == study._candidate_score(reverse)  # pyright: ignore[reportPrivateUsage]
+    assert symmetric["aggregate"] == fmean((forward.aggregate_score, reverse.aggregate_score))
+    for method in ("frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate"):
+        assert cast(dict[str, float], symmetric["methods"])[method] == fmean(
+            (forward.methods[method].score, reverse.methods[method].score)
         )

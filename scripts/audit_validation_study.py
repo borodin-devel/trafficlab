@@ -803,7 +803,6 @@ def _protocol(content: bytes) -> dict[str, object]:
             "destination_id",
             "final_seed",
             "model_selection",
-            "natural_variation_windows",
             "prerequisite_path",
             "schema_version",
             "selection_seeds",
@@ -813,11 +812,11 @@ def _protocol(content: bytes) -> dict[str, object]:
         ),
         name="protocol.json",
     )
-    if document["schema_version"] != 2 or _integer(document["final_seed"], name="protocol final seed") != 97:
+    if document["schema_version"] != 3 or _integer(document["final_seed"], name="protocol final seed") != 97:
         _fail(
             "scientific_semantics_incompatible",
             "protocol",
-            "protocol must freeze schema 2 and final seed 97",
+            "protocol must freeze schema 3 and final seed 97",
             "restore frozen protocol",
         )
     if _integer(document["training_repetitions"], name="protocol training repetitions") != 3:
@@ -862,23 +861,6 @@ def _protocol(content: bytes) -> dict[str, object]:
             "protocol prerequisite path must be the canonical checked prerequisite path",
             "restore the canonical prerequisite path",
         )
-    windows = document["natural_variation_windows"]
-    if type(windows) is not dict or set(cast(dict[str, object], windows)) != set(_WORKLOADS):
-        _fail(
-            "artifact_corrupt",
-            "protocol.json",
-            "protocol natural variation windows must name each workload exactly once",
-            "restore frozen natural variation controls",
-        )
-    for workload in _WORKLOADS:
-        value = cast(dict[str, object], windows)[workload]
-        if type(value) is not float or not math.isfinite(value) or value <= 0.0:
-            _fail(
-                "scientific_semantics_incompatible",
-                "protocol.json",
-                "protocol natural variation windows must be finite positive floats",
-                "restore frozen natural variation controls",
-            )
     return document
 
 
@@ -1744,8 +1726,6 @@ def _invalid_chromosome_diagnostics(training: Sequence[_Training]) -> list[dict[
 def _report_inputs(
     training: Sequence[_Training],
     held: Mapping[str, HeldOutEvaluation],
-    *,
-    natural_variation_windows: Mapping[str, object],
 ) -> dict[str, object]:
     fresh_rows: list[dict[str, object]] = []
     training_rows: list[dict[str, object]] = []
@@ -1753,31 +1733,6 @@ def _report_inputs(
     held_rows: list[dict[str, object]] = []
     for workload in _WORKLOADS:
         group = tuple(item for item in training if item.workload == workload)
-        window_value = natural_variation_windows[workload]
-        if type(window_value) is not float or not math.isfinite(window_value) or window_value <= 0.0:
-            _fail(
-                "scientific_semantics_incompatible",
-                "report_inputs.json",
-                "natural variation requires a finite frozen protocol window",
-                "restore frozen natural variation controls",
-            )
-        window = window_value
-        for item in group:
-            configured_window = max(item.config.similarity.multiscale_widths_seconds)
-            if window != configured_window:
-                _fail(
-                    "scientific_semantics_incompatible",
-                    "protocol.json",
-                    "protocol natural variation window does not match the retained configuration maximum multiscale width",
-                    "restore the configuration-derived frozen natural variation controls",
-                )
-            if item.window < window:
-                _fail(
-                    "scientific_semantics_incompatible",
-                    f"training/{item.workload}/r{item.repeat}",
-                    "natural variation reference window is shorter than the frozen protocol window",
-                    "restore a retained reference that covers the frozen natural variation window",
-                )
         fresh_rows.append({"score": _mean([_score(item.comparison) for item in group]), "workload": workload})
         training_rows.append(
             {
@@ -1811,20 +1766,22 @@ def _report_inputs(
                     "natural variation requires common similarity settings",
                     "restore common protocol controls before comparing natural variation",
                 )
+            left_reference, forward_window = normalize_reference(left.reference)
+            right_reference, reverse_window = normalize_reference(right.reference)
             forward = _score(
                 compare_traces(
-                    align_generated(left.reference, window),
-                    align_generated(right.reference, window),
-                    window,
+                    left_reference,
+                    align_generated(right.reference, forward_window),
+                    forward_window,
                     left.config.similarity,
                 )
             )
             reverse = _score(
                 compare_traces(
-                    align_generated(right.reference, window),
-                    align_generated(left.reference, window),
-                    window,
-                    right.config.similarity,
+                    right_reference,
+                    align_generated(left.reference, reverse_window),
+                    reverse_window,
+                    left.config.similarity,
                 )
             )
             pairs.append(
@@ -2161,11 +2118,7 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
         )
     inputs_path = _relative(index["report_inputs"], name="index report inputs")
     report_inputs = _json(_read_regular(bundle / inputs_path, affected=inputs_path), name=inputs_path)
-    expected_inputs = _report_inputs(
-        ordered_training,
-        held_evaluations,
-        natural_variation_windows=cast(dict[str, object], protocol["natural_variation_windows"]),
-    )
+    expected_inputs = _report_inputs(ordered_training, held_evaluations)
     if report_inputs != expected_inputs:
         _fail(
             "artifact_foreign",

@@ -392,7 +392,8 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text()))
     assert protocol["study_id"] == protocol["candidate_id"] == protocol["destination_id"] == "study-1"
     assert protocol["prerequisite_path"] == "examples/validation_study/prerequisites.json"
-    assert protocol["natural_variation_windows"] == {"bursty": 0.01, "short": 0.01, "streaming": 1.0}
+    assert protocol["schema_version"] == 3
+    assert "natural_variation_windows" not in protocol
     published = study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
     assert published == repository / "examples" / "validation_study" / "evidence" / "study-1"
     with pytest.raises(TrafficlabError, match="already exists"):
