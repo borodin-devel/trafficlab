@@ -6731,6 +6731,7 @@ def _commit_prerequisite_rotation(
     prepared: list[_PrerequisiteRotationTarget] = []
     journal: Path | None = None
     cleanup_staging = False
+    strict_cleanup_complete = False
     retain_recovery = False
     try:
         for kind, destination, content, validate, must_be_absent in targets:
@@ -6763,6 +6764,7 @@ def _commit_prerequisite_rotation(
             target.stage = _stage_prerequisite_rotation_file(destination, content, validate=validate)
 
         journal = _publish_prerequisite_rotation_journal(root, study_id=study_id, targets=prepared)
+        cleanup_staging = False
         committed: list[_PrerequisiteRotationTarget] = []
         try:
             for target in prepared[:-1]:
@@ -6784,13 +6786,29 @@ def _commit_prerequisite_rotation(
                     f"prerequisite rotation rollback failed after {error}; retained recovery journal "
                     f"{journal}: {'; '.join(rollback_failures)}"
                 ) from error
+            cleanup_failures = _cleanup_prerequisite_rotation_staging(prepared, strict=True)
+            if cleanup_failures:
+                retain_recovery = True
+                raise ValueError(
+                    f"prerequisite rotation rollback cleanup failed after {error}; retained recovery journal "
+                    f"{journal}: {'; '.join(cleanup_failures)}"
+                ) from error
+            strict_cleanup_complete = True
             _clear_prerequisite_rotation_journal(journal)
-            cleanup_staging = True
+            journal = None
             raise
+        cleanup_failures = _cleanup_prerequisite_rotation_staging(prepared, strict=True)
+        if cleanup_failures:
+            retain_recovery = True
+            raise ValueError(
+                f"prerequisite rotation postcommit cleanup failed; retained recovery journal "
+                f"{journal}: {'; '.join(cleanup_failures)}"
+            )
+        strict_cleanup_complete = True
         _clear_prerequisite_rotation_journal(journal)
-        cleanup_staging = True
+        journal = None
     except (OSError, TypeError, ValueError, TrafficlabError):
-        if not retain_recovery:
+        if journal is None and not retain_recovery and not strict_cleanup_complete:
             cleanup_staging = True
         raise
     finally:

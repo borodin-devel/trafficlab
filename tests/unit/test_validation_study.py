@@ -7519,11 +7519,11 @@ def test_prerequisite_rotation_preserves_primary_when_rollback_fails(
         )
 
 
-def test_prerequisite_rotation_ignores_postcommit_staging_cleanup_errors(
+def test_prerequisite_rotation_retains_its_journal_when_rollback_cleanup_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Postcommit cleanup cannot invalidate the success marker after a durable publication."""
+    """A cleanup fault after a restored primary target leaves the journal for a later public recovery."""
 
     repository = tmp_path / "repository"
     _write_prerequisite_repository_inputs(repository)
@@ -7535,35 +7535,208 @@ def test_prerequisite_rotation_ignores_postcommit_staging_cleanup_errors(
         runner=r4,
         utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
     )
+    study_root = repository / "examples" / "validation_study"
+    canonical = study_root / "prerequisites.json"
     r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    original_commit_fsync = study._commit_prerequisite_fsync  # pyright: ignore[reportPrivateUsage]
     original_unlink = Path.unlink
+    failed_primary = False
 
-    def fail_staging_cleanup(path: Path, *, missing_ok: bool = False) -> None:
-        if path.name.endswith((".tmp", ".bak")):
-            raise OSError("simulated staging cleanup failure")
+    def fail_canonical_commit(destination: Path) -> None:
+        nonlocal failed_primary
+        if destination == canonical and not failed_primary:
+            failed_primary = True
+            raise OSError("simulated primary canonical commit failure")
+        original_commit_fsync(destination)
+
+    def fail_marker_stage_cleanup(path: Path, *, missing_ok: bool = False) -> None:
+        if path.name.startswith(".prerequisites-success.json.") and path.name.endswith(".tmp"):
+            raise OSError("simulated rollback cleanup unlink failure")
         original_unlink(path, missing_ok=missing_ok)
 
-    monkeypatch.setattr(Path, "unlink", fail_staging_cleanup)
-    result = study.run_prerequisites(
-        r5.url,
-        r5.study_id,
-        repository_root=repository,
-        runner=r5,
-        utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
-    )
+    monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_canonical_commit)
+    monkeypatch.setattr(Path, "unlink", fail_marker_stage_cleanup)
+    with pytest.raises(TrafficlabError, match="rollback cleanup failed after") as raised:
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
 
-    marker = (
-        repository
-        / "examples"
-        / "validation_study"
-        / ".study-work"
-        / "attempts"
-        / r5.study_id
-        / "prerequisites-success.json"
+    journal = study_root / ".study-work" / "attempts" / r5.study_id / "prerequisites-rotation.json"
+    assert journal.is_file()
+    assert "retained recovery journal" in str(raised.value)
+    assert tuple(study_root.rglob(".prerequisites-success.json.*.tmp"))
+
+
+@pytest.mark.parametrize(
+    ("boundary", "owned_prefix", "owned_suffix"),
+    (
+        ("archive stage", ".prerequisites.raw.json.", ".tmp"),
+        ("short backup", ".short.toml.", ".bak"),
+        ("streaming backup", ".streaming.toml.", ".bak"),
+        ("bursty backup", ".bursty.toml.", ".bak"),
+        ("root backup", ".prerequisites.json.", ".bak"),
+        ("marker stage", ".prerequisites-success.json.", ".tmp"),
+    ),
+)
+@pytest.mark.parametrize("failure_kind", ("unlink", "fsync", "baseexception"))
+def test_prerequisite_rotation_recovers_success_cleanup_failures_before_a_new_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    boundary: str,
+    owned_prefix: str,
+    owned_suffix: str,
+    failure_kind: str,
+) -> None:
+    """A durable journal survives every post-marker cleanup fault until public recovery succeeds."""
+
+    class SimulatedCleanupCrash(BaseException):
+        pass
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
     )
-    assert marker.is_file()
-    assert result.study_id == r5.study_id
-    assert tuple((repository / "examples" / "validation_study").rglob(".*.bak"))
+    study_root = repository / "examples" / "validation_study"
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    cleanup_started = False
+    enabled = True
+    original_after_commit = study._after_prerequisite_rotation_commit  # pyright: ignore[reportPrivateUsage]
+    original_unlink = Path.unlink
+    original_fsync = study._fsync_prerequisite_rotation_directory  # pyright: ignore[reportPrivateUsage]
+
+    def matches_owned_cleanup_path(path: Path) -> bool:
+        return enabled and cleanup_started and path.name.startswith(owned_prefix) and path.name.endswith(owned_suffix)
+
+    def mark_successful_marker_commit(destination: Path) -> None:
+        nonlocal cleanup_started
+        original_after_commit(destination)
+        if destination.name == "prerequisites-success.json":
+            cleanup_started = True
+
+    def fail_selected_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        if matches_owned_cleanup_path(path):
+            if failure_kind == "baseexception":
+                raise SimulatedCleanupCrash(f"simulated {boundary} cleanup crash")
+            if failure_kind == "unlink":
+                raise OSError(f"simulated {boundary} cleanup unlink failure")
+        original_unlink(path, missing_ok=missing_ok)
+
+    def fail_selected_directory_fsync(path: Path) -> None:
+        if matches_owned_cleanup_path(path) and failure_kind == "fsync":
+            raise OSError(f"simulated {boundary} cleanup fsync failure")
+        original_fsync(path)
+
+    monkeypatch.setattr(study, "_after_prerequisite_rotation_commit", mark_successful_marker_commit)
+    monkeypatch.setattr(Path, "unlink", fail_selected_unlink)
+    monkeypatch.setattr(study, "_fsync_prerequisite_rotation_directory", fail_selected_directory_fsync)
+
+    if failure_kind == "baseexception":
+        with pytest.raises(SimulatedCleanupCrash, match=f"{boundary} cleanup crash"):
+            study.run_prerequisites(
+                r5.url,
+                r5.study_id,
+                repository_root=repository,
+                runner=r5,
+                utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+            )
+    else:
+        with pytest.raises(TrafficlabError, match="retained recovery journal"):
+            study.run_prerequisites(
+                r5.url,
+                r5.study_id,
+                repository_root=repository,
+                runner=r5,
+                utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+            )
+
+    r5_attempt = study_root / ".study-work" / "attempts" / r5.study_id
+    journal = r5_attempt / "prerequisites-rotation.json"
+    assert journal.is_file()
+    canonical = study_root / "prerequisites.json"
+    assert study.parse_prerequisite_results(canonical.read_bytes(), repository_root=repository).study_id == r5.study_id
+    expected_r5_inventory = {
+        ".": ("directory",),
+        **{
+            name: _tree_inventory(r5_attempt)[name]
+            for name in ("prerequisites.json", "prerequisites.raw.json", "prerequisites-success.json")
+        },
+    }
+
+    enabled = False
+    r6 = _ScriptedPrerequisiteRunner(repository, study_id="study-r6")
+    original_begin = study._begin_phase_attempt  # pyright: ignore[reportPrivateUsage]
+
+    def assert_recovered_before_begin(
+        root: Path,
+        *,
+        study_id: str,
+        url: str,
+        phase: Literal["prerequisites", "collection"],
+    ) -> Path:
+        if study_id == r6.study_id:
+            assert not journal.exists()
+            assert _tree_inventory(r5_attempt) == expected_r5_inventory
+            assert not tuple(study_root.rglob(".*.tmp"))
+            assert not tuple(study_root.rglob(".*.bak"))
+            raise ValueError("success cleanup recovery inspection complete")
+        return original_begin(root, study_id=study_id, url=url, phase=phase)
+
+    monkeypatch.setattr(study, "_begin_phase_attempt", assert_recovered_before_begin)
+    with pytest.raises(TrafficlabError, match="success cleanup recovery inspection complete"):
+        study.run_prerequisites(
+            r6.url,
+            r6.study_id,
+            repository_root=repository,
+            runner=r6,
+            utc_now=lambda: datetime(2026, 8, 18, tzinfo=UTC),
+        )
+
+
+def test_prerequisite_rotation_nonstrict_prestage_cleanup_preserves_its_primary_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only pre-journal cleanup may suppress a secondary staging-unlink error."""
+
+    destination = tmp_path / "prerequisites.json"
+    staged = tmp_path / ".prerequisites.json.primary.tmp"
+    content = b"canonical prerequisite bytes\n"
+    staged.write_bytes(content)
+    target = study._PrerequisiteRotationTarget(  # pyright: ignore[reportPrivateUsage]
+        kind="archive",
+        destination=destination,
+        stage=staged,
+        backup=None,
+        before_identity=None,
+        target_identity=cast(study.JsonObject, identify_bytes(content).as_dict()),
+        must_be_absent=True,
+    )
+    original_unlink = Path.unlink
+
+    def fail_staged_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        if path == staged:
+            raise OSError("simulated pre-journal cleanup unlink failure")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fail_staged_unlink)
+    assert (
+        study._cleanup_prerequisite_rotation_staging(  # pyright: ignore[reportPrivateUsage]
+            (target,),
+            strict=False,
+        )
+        == []
+    )
+    assert staged.read_bytes() == content
 
 
 @pytest.mark.parametrize("entry_kind", ("symlink", "fifo"))
