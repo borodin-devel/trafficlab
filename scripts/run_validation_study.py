@@ -2663,6 +2663,29 @@ def _run_prerequisite_test(
     }
 
 
+def _remove_owned_prerequisite_capture_image(
+    capture_tag: str,
+    *,
+    repository_root: Path,
+    runner: CommandRunner,
+) -> None:
+    """Remove the runner-owned shared image without granting fixture ownership of it."""
+
+    completed = runner(
+        ("docker", "image", "rm", "--force", capture_tag),
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        shell=False,
+        timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+    )
+    _require(
+        completed.returncode == 0,
+        f"could not remove owned prerequisite capture image: "
+        f"{_command_detail(completed, operation='capture image cleanup')}",
+    )
+
+
 def _timeout_bytes(value: bytes | str | None) -> bytes:
     if value is None:
         return b""
@@ -2943,13 +2966,24 @@ def _prepare_capability(
 
 def _expected_prerequisite_command(kind: PrerequisiteCommandKind, *, study_id: str, url: str) -> tuple[str, ...]:
     evidence = f"examples/validation_study/.study-work/evidence/{study_id}/00-prerequisites"
+    capture_tag = f"trafficlab-validation-{study_id}:capture"
     pytest_prefix = ("uv", "run", "--locked", "pytest", "-vv", "-n", "0", "-m")
     if kind == "docker_matrix":
-        return (*_guard_prefix("20m"), *pytest_prefix, "docker", "--junitxml", f"{evidence}/docker.xml")
+        return (
+            *_guard_prefix("20m"),
+            *pytest_prefix,
+            "docker",
+            "--capture-image",
+            capture_tag,
+            "--junitxml",
+            f"{evidence}/docker.xml",
+        )
     return (
         *_guard_prefix("10m"),
         *pytest_prefix,
         "internet",
+        "--capture-image",
+        capture_tag,
         "--internet-url",
         url,
         "--junitxml",
@@ -3610,6 +3644,7 @@ def run_prerequisites(
     utc_now: Callable[[], datetime],
 ) -> PrerequisiteResults:
     root = repository_root.resolve()
+    owned_capture_tag: str | None = None
     try:
         _require(root.is_dir(), f"repository root must be an existing directory: {root}")
         url = validate_endpoint_url(url)
@@ -3733,6 +3768,7 @@ def run_prerequisites(
         iid_path = evidence_directory / "capture.iid"
         _require(not _path_entry_exists(iid_path), "capture IID path must be absent before build")
         capture_tag = f"trafficlab-validation-{study_id}:capture"
+        owned_capture_tag = capture_tag
         build = runner(
             cold_capture_build_argv(capture_tag, iid_path),
             cwd=root,
@@ -3788,6 +3824,13 @@ def run_prerequisites(
             evidence_directory=evidence_directory,
             runner=runner,
             utc_now=utc_now,
+        )
+        tag_to_remove = owned_capture_tag
+        owned_capture_tag = None
+        _remove_owned_prerequisite_capture_image(
+            tag_to_remove,
+            repository_root=root,
+            runner=runner,
         )
 
         config_hashes: JsonObject = {}
@@ -3845,6 +3888,18 @@ def run_prerequisites(
             f"Validation Study prerequisite validation failed: {error}",
             corrective_action="preserve the ignored evidence, correct the prerequisite, and restart with a new study ID",
         ) from error
+    finally:
+        if owned_capture_tag is not None:
+            tag_to_remove = owned_capture_tag
+            owned_capture_tag = None
+            try:
+                _remove_owned_prerequisite_capture_image(
+                    tag_to_remove,
+                    repository_root=root,
+                    runner=runner,
+                )
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
 
 
 def _validate_run_key(value: object, *, name: str = "run key") -> JsonObject:

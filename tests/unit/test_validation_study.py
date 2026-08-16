@@ -126,6 +126,8 @@ class _ScriptedPrerequisiteRunner:
             return self._inspect_target(command)
         if command[:2] == ("docker", "build"):
             return self._build_capture(command)
+        if command == ("docker", "image", "rm", "--force", f"trafficlab-validation-{self.study_id}:capture"):
+            return self._remove_capture_image(command)
         if command[:3] == ("docker", "container", "inspect"):
             return self._inspect_container(command)
         if command[:4] == ("docker", "container", "ls", "-a"):
@@ -166,6 +168,11 @@ class _ScriptedPrerequisiteRunner:
         if self.mutation == "preexisting-cid":
             (self.evidence / "capability.cid").write_text(f"{self.container_id}\n", encoding="ascii")
         return subprocess.CompletedProcess(command, 0, stdout=b"built\n", stderr=b"")
+
+    def _remove_capture_image(self, command: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
+        if self.mutation in {"capture-image-cleanup-failed", "docker-matrix-failed-cleanup-failed"}:
+            return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"cleanup failed\n")
+        return subprocess.CompletedProcess(command, 0, stdout=b"removed\n", stderr=b"")
 
     def _inspect_container(self, command: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
         identifier = command[-1]
@@ -288,7 +295,7 @@ class _ScriptedPrerequisiteRunner:
         return f"status=206\nsize=1\nurl={self.final_url}\nredirects=1\n".encode()
 
     def _run_test_scope(self, command: tuple[str, ...], kind: str) -> subprocess.CompletedProcess[bytes]:
-        if kind == "docker" and self.mutation == "docker-matrix-failed":
+        if kind == "docker" and self.mutation in {"docker-matrix-failed", "docker-matrix-failed-cleanup-failed"}:
             Path(command[-1]).write_bytes(
                 b'<testsuites><testsuite tests="7" failures="1" errors="0" skipped="0"/></testsuites>'
             )
@@ -350,6 +357,8 @@ def _valid_prerequisite() -> study.PrerequisiteResults:
         "0",
         "-m",
         "docker",
+        "--capture-image",
+        f"trafficlab-validation-{study_id}:capture",
         "--junitxml",
         f"{evidence_root}/docker.xml",
     ]
@@ -369,6 +378,8 @@ def _valid_prerequisite() -> study.PrerequisiteResults:
         "0",
         "-m",
         "internet",
+        "--capture-image",
+        f"trafficlab-validation-{study_id}:capture",
         "--internet-url",
         url,
         "--junitxml",
@@ -2782,6 +2793,8 @@ def test_prerequisite_commands_are_exact_guarded_serial_argv_with_relative_proje
         "0",
         "-m",
         "docker",
+        "--capture-image",
+        f"trafficlab-validation-{study_id}:capture",
         "--junitxml",
         f"{evidence}/docker.xml",
     )
@@ -2807,6 +2820,8 @@ def test_prerequisite_commands_are_exact_guarded_serial_argv_with_relative_proje
         "0",
         "-m",
         "internet",
+        "--capture-image",
+        f"trafficlab-validation-{study_id}:capture",
         "--internet-url",
         url,
         "--junitxml",
@@ -2966,6 +2981,7 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         ),
         docker_live,
         internet_live,
+        ("docker", "image", "rm", "--force", f"trafficlab-validation-{runner.study_id}:capture"),
     ]
     assert [timeout for _command, timeout in runner.calls] == [
         20.0,
@@ -2981,6 +2997,7 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         20.0,
         1230.0,
         630.0,
+        300.0,
     ]
     for command, prefix, stdout, stderr in (
         (result.commands[0], "docker", b"docker pass\n", b""),
@@ -2998,6 +3015,73 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         config_path = repository_root / "examples" / "validation_study" / "configs" / f"{name}.toml"
         assert hashlib.sha256(config_path.read_bytes()).hexdigest() == content_hash
         assert study.load_experiment(config_path).capture.image == runner.capture_id
+
+
+def test_prerequisites_remove_the_shared_capture_tag_after_a_guarded_test_failure(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    runner = _ScriptedPrerequisiteRunner(repository_root, "docker-matrix-failed")
+
+    with pytest.raises(TrafficlabError, match="docker_matrix guarded pytest failed"):
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+        )
+
+    commands = [command for command, _timeout in runner.calls]
+    shared_tag = f"trafficlab-validation-{runner.study_id}:capture"
+    assert commands.count(study.cold_capture_build_argv(shared_tag, runner.evidence / "capture.iid")) == 1  # pyright: ignore[reportPrivateUsage]
+    assert commands[-1] == ("docker", "image", "rm", "--force", shared_tag)
+
+
+def test_prerequisite_cleanup_does_not_replace_its_guarded_test_failure(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    runner = _ScriptedPrerequisiteRunner(repository_root, "docker-matrix-failed-cleanup-failed")
+
+    with pytest.raises(TrafficlabError, match="docker_matrix guarded pytest failed"):
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+        )
+
+    assert [command for command, _timeout in runner.calls][-1] == (
+        "docker",
+        "image",
+        "rm",
+        "--force",
+        f"trafficlab-validation-{runner.study_id}:capture",
+    )
+
+
+def test_prerequisites_do_not_publish_success_when_shared_capture_cleanup_fails(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    runner = _ScriptedPrerequisiteRunner(repository_root, "capture-image-cleanup-failed")
+
+    with pytest.raises(TrafficlabError, match="remove owned prerequisite capture image"):
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+        )
+
+    assert not (repository_root / "examples" / "validation_study" / "prerequisites.json").exists()
+    assert [command for command, _timeout in runner.calls][-1] == (
+        "docker",
+        "image",
+        "rm",
+        "--force",
+        f"trafficlab-validation-{runner.study_id}:capture",
+    )
 
 
 @pytest.mark.parametrize(

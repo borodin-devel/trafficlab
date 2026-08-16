@@ -17,6 +17,26 @@ from trafficlab.artifacts import append_run_log
 _CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
 
 
+def _capture_inspect(
+    reference: str,
+    *,
+    content_id: str = _CAPTURE_IMAGE_ID,
+    operating_system: str = "linux",
+    architecture: str = "amd64",
+) -> str:
+    return json.dumps(
+        [
+            {
+                "Id": content_id,
+                "Architecture": architecture,
+                "Os": operating_system,
+                "RepoDigests": [],
+                "RepoTags": [reference],
+            }
+        ]
+    )
+
+
 def test_capture_fixture_identity_uses_injected_inspect_result() -> None:
     reference = "trafficlab-capture:phase3-test"
     calls: list[tuple[str, ...]] = []
@@ -145,9 +165,9 @@ def test_docker_environment_owns_a_unique_capture_tag_and_removes_it(
         option = SimpleNamespace(numprocesses=0)
         invocation_params = SimpleNamespace(args=("tests/docker",))
 
-        def getoption(self, name: str) -> str:
-            assert name == "markexpr"
-            return "docker"
+        def getoption(self, name: str) -> str | None:
+            values = {"markexpr": "docker", "capture_image": None}
+            return values[name]
 
     monkeypatch.setattr(conftest, "run_external_command", command)
     fixture = cast(
@@ -161,6 +181,159 @@ def test_docker_environment_owns_a_unique_capture_tag_and_removes_it(
     assert environment.capture_image != conftest.CAPTURE_IMAGE
     iterator.close()
     assert calls[-1] == ("docker", "image", "rm", "--force", environment.capture_image)
+
+
+@pytest.mark.parametrize("marker", ("docker", "internet"))
+def test_docker_environment_reuses_a_checked_prerequisite_image_without_building_or_removing_it(
+    monkeypatch: pytest.MonkeyPatch,
+    marker: str,
+) -> None:
+    reference = "trafficlab-validation-study-1:capture"
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        actual = tuple(argv)
+        calls.append(actual)
+        if actual == ("docker", "image", "inspect", reference):
+            return subprocess.CompletedProcess(argv, 0, _capture_inspect(reference), "")
+        if actual == ("docker", "run", "--rm", "--entrypoint", "dumpcap", reference, "--version"):
+            return subprocess.CompletedProcess(argv, 0, "Dumpcap (Wireshark) 4.0.17\n", "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    class _SelectedDockerConfig:
+        option = SimpleNamespace(numprocesses=0)
+        invocation_params = SimpleNamespace(args=(f"tests/{marker}",))
+
+        def getoption(self, name: str) -> str:
+            values = {"markexpr": marker, "capture_image": reference}
+            return values[name]
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+    fixture = cast(
+        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
+        cast(Any, conftest.docker_test_environment).__wrapped__,
+    )
+    iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
+    environment = next(iterator)
+    iterator.close()
+
+    assert environment.capture_image == reference
+    assert ("docker", "image", "inspect", reference) in calls
+    assert ("docker", "run", "--rm", "--entrypoint", "dumpcap", reference, "--version") in calls
+    assert not any(command[:2] == ("docker", "build") and reference in command for command in calls)
+    assert ("docker", "image", "rm", "--force", reference) not in calls
+
+
+def test_docker_environment_rejects_an_empty_borrowed_capture_image_before_image_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        calls.append(tuple(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    class _SelectedDockerConfig:
+        option = SimpleNamespace(numprocesses=0)
+        invocation_params = SimpleNamespace(args=("tests/docker",))
+
+        def getoption(self, name: str) -> str:
+            values = {"markexpr": "docker", "capture_image": ""}
+            return values[name]
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+    fixture = cast(
+        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
+        cast(Any, conftest.docker_test_environment).__wrapped__,
+    )
+
+    with pytest.raises(pytest.UsageError, match="nonempty"):
+        next(fixture(cast(pytest.Config, _SelectedDockerConfig())))
+
+    assert calls == [
+        ("docker", "info"),
+        ("docker", "compose", "version", "--format", "json"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("content_id", "operating_system", "architecture", "tool_output", "diagnostic"),
+    (
+        ("sha256:" + ("d" * 64), "linux", "amd64", "Dumpcap (Wireshark) 4.0.17\n", "content ID"),
+        (_CAPTURE_IMAGE_ID, "linux", "arm64", "Dumpcap (Wireshark) 4.0.17\n", "platform"),
+        (_CAPTURE_IMAGE_ID, "linux", "amd64", "Dumpcap (Wireshark) 9.9.9\n", "capture tool"),
+    ),
+)
+def test_docker_environment_rejects_an_unchecked_borrowed_capture_image_before_other_builds(
+    monkeypatch: pytest.MonkeyPatch,
+    content_id: str,
+    operating_system: str,
+    architecture: str,
+    tool_output: str,
+    diagnostic: str,
+) -> None:
+    reference = "trafficlab-validation-study-1:capture"
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        actual = tuple(argv)
+        calls.append(actual)
+        if actual == ("docker", "image", "inspect", reference):
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                _capture_inspect(
+                    reference,
+                    content_id=content_id,
+                    operating_system=operating_system,
+                    architecture=architecture,
+                ),
+                "",
+            )
+        if actual == ("docker", "run", "--rm", "--entrypoint", "dumpcap", reference, "--version"):
+            return subprocess.CompletedProcess(argv, 0, tool_output, "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    class _SelectedDockerConfig:
+        option = SimpleNamespace(numprocesses=0)
+        invocation_params = SimpleNamespace(args=("tests/docker",))
+
+        def getoption(self, name: str) -> str:
+            values = {"markexpr": "docker", "capture_image": reference}
+            return values[name]
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+    fixture = cast(
+        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
+        cast(Any, conftest.docker_test_environment).__wrapped__,
+    )
+
+    with pytest.raises(pytest.UsageError, match=diagnostic):
+        next(fixture(cast(pytest.Config, _SelectedDockerConfig())))
+
+    assert not any(command[:2] == ("docker", "build") for command in calls)
+    assert ("docker", "image", "rm", "--force", reference) not in calls
 
 
 @pytest.mark.parametrize(

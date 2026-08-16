@@ -15,7 +15,14 @@ import pytest
 
 from trafficlab.compose import ComposePaths
 from trafficlab.config import ExperimentConfig
-from trafficlab.docker_cli import CommandResult, DockerCompose
+from trafficlab.docker_cli import (
+    CaptureImageLockError,
+    CommandResult,
+    DockerCompose,
+    load_capture_image_lock,
+    parse_image_inspect,
+    validate_capture_platform,
+)
 
 REPOSITORY_ROOT = Path(__file__).parents[1].resolve()
 DOCKER_FIXTURE_ROOT = REPOSITORY_ROOT / "tests" / "docker"
@@ -25,6 +32,7 @@ CLIENT_IMAGE = "trafficlab-client:phase3-test"
 NO_SHELL_IMAGE = "trafficlab-no-shell:phase3-test"
 _EXTERNAL_MARKERS = frozenset({"docker", "internet"})
 _MARK_EXPRESSION_TOKEN = re.compile(r"\b(?:not|and|or|[A-Za-z_][A-Za-z0-9_]*)\b|[()]")
+_DUMPCAP_VERSION = re.compile(r"^Dumpcap \(Wireshark\) ([0-9]+(?:\.[0-9]+){2})(?:\s|$)")
 _TEST_BODY_FAILURE = pytest.StashKey[BaseException]()
 
 
@@ -38,6 +46,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         help="explicit HTTPS endpoint used only by the opt-in Internet capture smoke test",
+    )
+    parser.addoption(
+        "--capture-image",
+        action="store",
+        default=None,
+        help="checked prebuilt capture image used only by a validation-study prerequisite test sequence",
     )
 
 
@@ -204,6 +218,45 @@ def build_test_image(
     run_external_command(argv, purpose=f"build required test image {tag}", timeout=300.0)
 
 
+def require_checked_prebuilt_capture_image(reference: str) -> str:
+    """Require a borrowed capture image to match the checked ID, platform, and tool contract."""
+
+    if not reference:
+        raise pytest.UsageError("--capture-image must name one nonempty checked capture image")
+    try:
+        inspected = run_external_command(
+            ("docker", "image", "inspect", reference),
+            purpose=f"inspect provided capture image {reference}",
+            timeout=20.0,
+        )
+        identity = parse_image_inspect(reference, inspected.stdout)
+        lock = load_capture_image_lock(REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json")
+        validate_capture_platform(
+            identity.operating_system,
+            identity.architecture,
+            source="provided capture test image",
+        )
+    except CaptureImageLockError as error:
+        raise pytest.UsageError(f"provided --capture-image is incompatible: {error}") from error
+    if identity.content_id != lock.expected_capture_image_id:
+        raise pytest.UsageError(
+            "provided --capture-image content ID does not match the checked lock: "
+            f"expected {lock.expected_capture_image_id}, resolved {identity.content_id}"
+        )
+    tool = run_external_command(
+        ("docker", "run", "--rm", "--entrypoint", "dumpcap", reference, "--version"),
+        purpose=f"verify provided capture image {reference} capture tool version",
+        timeout=20.0,
+    )
+    match = _DUMPCAP_VERSION.match(tool.stdout)
+    if match is None or match.group(1) != lock.capture_tool_version:
+        raise pytest.UsageError(
+            "provided --capture-image capture tool version does not match the checked lock: "
+            f"expected {lock.capture_tool_version}"
+        )
+    return reference
+
+
 @pytest.fixture(scope="session")
 def docker_test_environment(pytestconfig: pytest.Config) -> Iterator[DockerTestEnvironment]:
     """Require and build the real-Docker test environment; never skip explicit selection."""
@@ -216,15 +269,23 @@ def docker_test_environment(pytestconfig: pytest.Config) -> Iterator[DockerTestE
         purpose="verify the Docker Compose plugin",
         timeout=20.0,
     )
-    environment = DockerTestEnvironment(capture_image=f"{CAPTURE_IMAGE}-{uuid.uuid4().hex}")
+    supplied_capture_image = cast(str | None, pytestconfig.getoption("capture_image"))
+    environment = DockerTestEnvironment(
+        capture_image=(
+            require_checked_prebuilt_capture_image(supplied_capture_image)
+            if supplied_capture_image is not None
+            else f"{CAPTURE_IMAGE}-{uuid.uuid4().hex}"
+        )
+    )
     capture_built = False
     try:
-        build_test_image(
-            environment.capture_image,
-            REPOSITORY_ROOT / "docker" / "capture",
-            reproducible_capture=True,
-        )
-        capture_built = True
+        if supplied_capture_image is None:
+            build_test_image(
+                environment.capture_image,
+                REPOSITORY_ROOT / "docker" / "capture",
+                reproducible_capture=True,
+            )
+            capture_built = True
         build_test_image(environment.client_image, environment.fixture_root / "images" / "client")
         if external_tests_requested(pytestconfig, "docker"):
             build_test_image(environment.endpoint_image, environment.fixture_root / "images" / "endpoint")
