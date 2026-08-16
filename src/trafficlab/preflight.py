@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _CAPTURE_IMAGE_LOCK_PATH = _REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
 _CAPTURE_DOCKERFILE_PATH = _REPOSITORY_ROOT / "docker" / "capture" / "Dockerfile"
+_COMPOSE_PLUGIN_VERSION = re.compile(r"v[25]\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?\Z")
 
 
 class SupportsFree(Protocol):
@@ -341,7 +343,7 @@ def _failure(name: str, error: TrafficlabError) -> PreflightFinding:
 
 
 def _parse_compose_plugin_version(result: DockerResult) -> str:
-    """Validate the machine-readable version response without imposing a Compose-major policy."""
+    """Validate a supported Compose v2/v5 machine-readable version response."""
     if result.returncode != 0:
         raise TrafficlabError(
             "Docker Compose version is incompatible",
@@ -361,12 +363,12 @@ def _parse_compose_plugin_version(result: DockerResult) -> str:
         )
     typed_document = cast(dict[str, object], document)
     version = typed_document.get("version")
-    if not isinstance(version, str) or not version.strip():
+    if not isinstance(version, str) or _COMPOSE_PLUGIN_VERSION.fullmatch(version) is None:
         raise TrafficlabError(
             "Docker Compose version is incompatible",
             corrective_action="provide the named required Docker and Compose features",
         )
-    return version.strip()
+    return version
 
 
 def _preflight_failure_outcome(finding: PreflightFinding, *, authority: FailureAuthority = "primary") -> FailureOutcome:

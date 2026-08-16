@@ -369,7 +369,7 @@ class _PreflightDocker:
 
     def compose_version(self, *, deadline: float) -> CommandResult:
         del deadline
-        version = '{"version":""}' if self.scenario == "compose_incompatible" else '{"version":"v5.4.0"}'
+        version = '{"version":"v1.29.2"}' if self.scenario == "compose_incompatible" else '{"version":"v5.4.0"}'
         return self._result(stdout=version)
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:

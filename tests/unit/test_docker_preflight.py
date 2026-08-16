@@ -286,12 +286,13 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     assert docker.cleanup.waits == [59.0]
 
 
-def test_full_docker_preflight_accepts_compose_v5_json_and_reaches_live_feature_probe(
-    valid_config_data: dict[str, object], tmp_path: Path
+@pytest.mark.parametrize("version", ["v2.29.0", "v5.4.0"])
+def test_full_docker_preflight_accepts_supported_compose_version_json_and_reaches_live_feature_probe(
+    valid_config_data: dict[str, object], tmp_path: Path, version: str
 ) -> None:
-    """A supported Compose v5 plugin must be judged by the required live probes, not its major string."""
+    """Supported Compose v2/v5 plugins must reach the required live feature probes."""
     config = _config(valid_config_data, tmp_path)
-    docker = _Docker(compose_version_stdout='{"version":"v5.4.0"}')
+    docker = _Docker(compose_version_stdout=f'{{"version":"{version}"}}')
 
     report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
 
@@ -325,9 +326,14 @@ def test_full_docker_preflight_accepts_compose_v5_json_and_reaches_live_feature_
         ('{"version":""}', 0),
         ('{"version":false}', 0),
         ('{"version":"v5.4.0"}', 1),
+        ('{"version":"v1.29.2"}', 0),
+        ('{"version":"v3.0.0"}', 0),
+        ('{"version":"v4.0.0"}', 0),
+        ('{"version":"v6.0.0"}', 0),
+        ('{"version":"not-a-version"}', 0),
     ],
 )
-def test_full_docker_preflight_rejects_malformed_compose_version_json_before_feature_probe(
+def test_full_docker_preflight_rejects_malformed_or_unsupported_compose_version_before_feature_probe(
     valid_config_data: dict[str, object], tmp_path: Path, stdout: str, returncode: int
 ) -> None:
     config = _config(valid_config_data, tmp_path)
