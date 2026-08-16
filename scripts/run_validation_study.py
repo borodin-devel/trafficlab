@@ -805,7 +805,62 @@ def _portable_base_config(
     return config.model_copy(update={"run": run, "target": target})
 
 
-def _write_new_config(destination: Path, content: bytes) -> None:
+def _replace_existing_regular_file(
+    destination: Path,
+    content: bytes,
+    *,
+    validate: Callable[[bytes], None],
+    target_name: str,
+) -> None:
+    """Atomically replace one regular ignored support file after validating staged bytes."""
+
+    if _path_entry_exists(destination):
+        try:
+            mode = destination.lstat().st_mode
+        except OSError as error:
+            raise ValueError(f"could not inspect {target_name} target {destination}: {error}") from error
+        if not stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+            raise TrafficlabError(
+                f"{target_name} target must be a regular file: {destination}",
+                corrective_action="preserve the existing path and use a regular canonical target",
+            )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+    temporary = Path(temporary_name)
+    descriptor_open = True
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor_open = False
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        persisted = temporary.read_bytes()
+        _require(persisted == content, f"temporary {target_name} bytes changed before publication")
+        validate(persisted)
+        os.replace(temporary, destination)
+        directory_descriptor = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+        published = destination.read_bytes()
+        _require(published == content, f"published {target_name} bytes changed")
+        validate(published)
+    finally:
+        if descriptor_open:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
+def _write_new_config(destination: Path, content: bytes, *, replace_existing: bool = False) -> None:
+    if replace_existing:
+        _replace_existing_regular_file(
+            destination,
+            content,
+            validate=lambda _persisted: None,
+            target_name="checked config",
+        )
+        return
     _require(not _path_entry_exists(destination), f"config target already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -815,14 +870,20 @@ def _write_new_config(destination: Path, content: bytes) -> None:
         raise ValueError(f"config target already exists: {destination}") from error
 
 
-def render_checked_base_config(config: ExperimentConfig, destination: Path, repository_root: Path) -> bytes:
+def render_checked_base_config(
+    config: ExperimentConfig,
+    destination: Path,
+    repository_root: Path,
+    *,
+    replace_existing: bool = False,
+) -> bytes:
     root = repository_root.resolve()
     workload = _workload_for_config(config)
     expected_destination = root / "examples" / "validation_study" / "configs" / f"{workload.name}.toml"
     _require(destination.resolve() == expected_destination, "checked config must use its exact profile path")
     portable = _portable_base_config(config, repository_root=root, workload=workload)
     content = render_effective_config(portable)
-    _write_new_config(destination, content)
+    _write_new_config(destination, content, replace_existing=replace_existing)
     _require(load_experiment(destination) == config, "checked config must reload to its exact absolute oracle")
     return content
 
@@ -3445,8 +3506,17 @@ def _publish_support_json(
     content: bytes,
     *,
     validate: Callable[[bytes], None],
+    replace_existing: bool = False,
 ) -> None:
     if _path_entry_exists(path):
+        if replace_existing:
+            _replace_existing_regular_file(
+                path,
+                content,
+                validate=validate,
+                target_name="official Validation Study publication",
+            )
+            return
         raise TrafficlabError(
             f"official Validation Study publication target already exists: {path}",
             corrective_action="preserve the existing official file and restart with a new study ID",
@@ -3624,6 +3694,7 @@ def _publish_prerequisites(  # pyright: ignore[reportUnusedFunction]
     value: PrerequisiteResults,
     *,
     repository_root: Path,
+    replace_existing: bool = False,
 ) -> None:
     content = render_prerequisite_results(value)
 
@@ -3632,7 +3703,7 @@ def _publish_prerequisites(  # pyright: ignore[reportUnusedFunction]
         if render_prerequisite_results(parsed) != content:
             raise ValueError("persisted prerequisite JSON is not canonical")
 
-    _publish_support_json(path, content, validate=validate)
+    _publish_support_json(path, content, validate=validate, replace_existing=replace_existing)
 
 
 def run_prerequisites(
@@ -3655,10 +3726,6 @@ def run_prerequisites(
             name: root / "examples" / "validation_study" / "configs" / f"{name}.toml"
             for name in ("short", "streaming", "bursty")
         }
-        _require(not _path_entry_exists(prerequisite_path), f"prerequisite target already exists: {prerequisite_path}")
-        for name, path in config_paths.items():
-            _require(not _path_entry_exists(path), f"checked {name} config target already exists: {path}")
-
         commit_result = runner(
             ("git", "rev-parse", "HEAD"),
             cwd=root,
@@ -3842,7 +3909,12 @@ def run_prerequisites(
                 url=url,
                 capture_image_id=capture_image_id,
             )
-            content = render_checked_base_config(config, config_paths[workload.name], root)
+            content = render_checked_base_config(
+                config,
+                config_paths[workload.name],
+                root,
+                replace_existing=True,
+            )
             config_hashes[workload.name] = hashlib.sha256(content).hexdigest()
         result = PrerequisiteResults(
             schema_version=1,
@@ -3870,12 +3942,19 @@ def run_prerequisites(
             commands=(_freeze_object(docker_command), _freeze_object(internet_command)),
         )
         prerequisite_path.parent.mkdir(parents=True, exist_ok=True)
-        _publish_prerequisites(prerequisite_path, result, repository_root=root)
+        prerequisite_content = render_prerequisite_results(result)
+        _archive_prerequisite_raw_document(root, study_id=study_id, content=prerequisite_content)
+        _publish_prerequisites(
+            prerequisite_path,
+            result,
+            repository_root=root,
+            replace_existing=True,
+        )
         _complete_prerequisite_attempt(
             root,
             study_id=study_id,
             url=url,
-            prerequisite_content=prerequisite_path.read_bytes(),
+            prerequisite_content=prerequisite_content,
         )
         return result
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
@@ -5775,6 +5854,33 @@ def _collection_attempt_root(repository_root: Path, study_id: str) -> Path:
     return repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / study_id
 
 
+def _prerequisite_raw_archive_path(repository_root: Path, study_id: str) -> Path:
+    return _collection_attempt_root(repository_root, study_id) / "prerequisites.raw.json"
+
+
+def _archive_prerequisite_raw_document(repository_root: Path, *, study_id: str, content: bytes) -> bytes:
+    """Persist the byte-exact canonical prerequisite document beside its irreversible attempt."""
+
+    archive = _prerequisite_raw_archive_path(repository_root, study_id)
+    if _path_entry_exists(archive):
+        try:
+            mode = archive.lstat().st_mode
+        except OSError as error:
+            raise ValueError(f"could not inspect archived prerequisite document {archive}: {error}") from error
+        _require(
+            stat.S_ISREG(mode) and not stat.S_ISLNK(mode),
+            "archived prerequisite document must be a regular file",
+        )
+    else:
+        _write_candidate_bytes(archive, content)
+    try:
+        persisted = archive.read_bytes()
+    except OSError as error:
+        raise ValueError(f"could not read archived prerequisite document {archive}: {error}") from error
+    _require(persisted == content, "archived prerequisite document must equal the canonical publication bytes")
+    return persisted
+
+
 def _begin_phase_attempt(
     repository_root: Path, *, study_id: str, url: str, phase: Literal["prerequisites", "collection"]
 ) -> Path:
@@ -5803,6 +5909,11 @@ def _complete_prerequisite_attempt(
 ) -> None:
     """Record a prerequisite success only after its canonical publication succeeds."""
 
+    archived = _archive_prerequisite_raw_document(
+        repository_root,
+        study_id=study_id,
+        content=prerequisite_content,
+    )
     marker = _collection_attempt_root(repository_root, study_id) / "prerequisites-success.json"
     _write_candidate_bytes(
         marker,
@@ -5811,7 +5922,7 @@ def _complete_prerequisite_attempt(
                 JsonObject,
                 {
                     "phase": "prerequisites",
-                    "prerequisites_identity": _candidate_identity(prerequisite_content),
+                    "prerequisites_identity": _candidate_identity(archived),
                     "study_id": study_id,
                     "url": url,
                 },
@@ -5847,6 +5958,12 @@ def _require_successful_prerequisite_attempt(
         _require(
             _retained_identity(document["prerequisites_identity"], name="successful prerequisite marker identity")
             == _candidate_identity(prerequisite_content),
+            "collection requires a matching successful prerequisite marker",
+        )
+        archived = _prerequisite_raw_archive_path(repository_root, study_id).read_bytes()
+        _require(
+            _candidate_identity(archived)
+            == _retained_identity(document["prerequisites_identity"], name="successful prerequisite marker identity"),
             "collection requires a matching successful prerequisite marker",
         )
     except (OSError, TypeError, ValueError) as error:
