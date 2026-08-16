@@ -852,6 +852,67 @@ def _replace_existing_regular_file(
         temporary.unlink(missing_ok=True)
 
 
+def _read_regular_prerequisite_rotation_target(destination: Path, *, name: str) -> bytes:
+    """Read one existing rotation target without following a symlink."""
+
+    try:
+        mode = destination.lstat().st_mode
+    except OSError as error:
+        raise ValueError(f"could not inspect {name} {destination}: {error}") from error
+    _require(stat.S_ISREG(mode) and not stat.S_ISLNK(mode), f"{name} must be a regular file")
+    try:
+        return destination.read_bytes()
+    except OSError as error:
+        raise ValueError(f"could not read {name} {destination}: {error}") from error
+
+
+def _stage_prerequisite_rotation_file(
+    destination: Path,
+    content: bytes,
+    *,
+    validate: Callable[[Path, bytes], None],
+    suffix: str = ".tmp",
+) -> Path:
+    """Write, fsync, reread, and validate a private prerequisite-publication staging file."""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor: int | None = None
+    temporary: Path | None = None
+    try:
+        descriptor, raw_temporary = tempfile.mkstemp(
+            prefix=f".{destination.name}.", suffix=suffix, dir=destination.parent
+        )
+        temporary = Path(raw_temporary)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = None
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        persisted = temporary.read_bytes()
+        _require(persisted == content, "staged prerequisite publication bytes changed before validation")
+        validate(temporary, persisted)
+        return temporary
+    except BaseException:
+        if descriptor is not None:
+            os.close(descriptor)
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
+def _commit_prerequisite_fsync(destination: Path) -> None:
+    """Durably record one committed prerequisite-publication directory entry."""
+
+    descriptor = os.open(destination.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _write_new_config(destination: Path, content: bytes, *, replace_existing: bool = False) -> None:
     if replace_existing:
         _replace_existing_regular_file(
@@ -870,6 +931,15 @@ def _write_new_config(destination: Path, content: bytes, *, replace_existing: bo
         raise ValueError(f"config target already exists: {destination}") from error
 
 
+def _render_checked_base_config_content(config: ExperimentConfig, repository_root: Path) -> bytes:
+    """Render the portable configuration that must reload to the supplied absolute oracle."""
+
+    root = repository_root.resolve()
+    workload = _workload_for_config(config)
+    portable = _portable_base_config(config, repository_root=root, workload=workload)
+    return render_effective_config(portable)
+
+
 def render_checked_base_config(
     config: ExperimentConfig,
     destination: Path,
@@ -881,8 +951,7 @@ def render_checked_base_config(
     workload = _workload_for_config(config)
     expected_destination = root / "examples" / "validation_study" / "configs" / f"{workload.name}.toml"
     _require(destination.resolve() == expected_destination, "checked config must use its exact profile path")
-    portable = _portable_base_config(config, repository_root=root, workload=workload)
-    content = render_effective_config(portable)
+    content = _render_checked_base_config_content(config, root)
     _write_new_config(destination, content, replace_existing=replace_existing)
     _require(load_experiment(destination) == config, "checked config must reload to its exact absolute oracle")
     return content
@@ -3901,6 +3970,7 @@ def run_prerequisites(
         )
 
         config_hashes: JsonObject = {}
+        config_payloads: list[tuple[ExperimentConfig, Path, bytes]] = []
         for workload in workload_specs(url):
             config = build_base_config(
                 workload,
@@ -3909,13 +3979,9 @@ def run_prerequisites(
                 url=url,
                 capture_image_id=capture_image_id,
             )
-            content = render_checked_base_config(
-                config,
-                config_paths[workload.name],
-                root,
-                replace_existing=True,
-            )
+            content = _render_checked_base_config_content(config, root)
             config_hashes[workload.name] = hashlib.sha256(content).hexdigest()
+            config_payloads.append((config, config_paths[workload.name], content))
         result = PrerequisiteResults(
             schema_version=1,
             created_utc=_timestamp_now(utc_now),
@@ -3941,20 +4007,13 @@ def run_prerequisites(
             config_sha256=_freeze_object(config_hashes),
             commands=(_freeze_object(docker_command), _freeze_object(internet_command)),
         )
-        prerequisite_path.parent.mkdir(parents=True, exist_ok=True)
-        prerequisite_content = render_prerequisite_results(result)
-        _archive_prerequisite_raw_document(root, study_id=study_id, content=prerequisite_content)
-        _publish_prerequisites(
-            prerequisite_path,
-            result,
-            repository_root=root,
-            replace_existing=True,
-        )
-        _complete_prerequisite_attempt(
+        _commit_prerequisite_rotation(
             root,
+            prerequisite_path=prerequisite_path,
+            configs=tuple(config_payloads),
+            result=result,
             study_id=study_id,
             url=url,
-            prerequisite_content=prerequisite_content,
         )
         return result
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
@@ -5900,7 +5959,71 @@ def _begin_phase_attempt(
     return attempt
 
 
-def _complete_prerequisite_attempt(
+def _render_successful_prerequisite_marker(
+    *,
+    study_id: str,
+    url: str,
+    prerequisite_content: bytes,
+) -> bytes:
+    """Render the sole success-visible record for one canonical prerequisite document."""
+
+    return _canonical_json(
+        cast(
+            JsonObject,
+            {
+                "phase": "prerequisites",
+                "prerequisites_identity": _candidate_identity(prerequisite_content),
+                "study_id": study_id,
+                "url": url,
+            },
+        )
+    )
+
+
+def _require_successful_prerequisite_marker_content(
+    content: bytes,
+    *,
+    study_id: str,
+    url: str,
+    prerequisite_content: bytes,
+) -> None:
+    """Validate an in-memory success marker against the exact prerequisite bytes it authorizes."""
+
+    document = _exact_object(
+        _load_json(content),
+        ("phase", "prerequisites_identity", "study_id", "url"),
+        name="successful prerequisite marker",
+    )
+    _require(_canonical_json(cast(JsonObject, document)) == content, "successful prerequisite marker must be canonical")
+    _require(
+        document["phase"] == "prerequisites" and document["study_id"] == study_id and document["url"] == url,
+        "collection requires a matching successful prerequisite marker",
+    )
+    _require(
+        _retained_identity(document["prerequisites_identity"], name="successful prerequisite marker identity")
+        == _candidate_identity(prerequisite_content),
+        "collection requires a matching successful prerequisite marker",
+    )
+
+
+def _bootstrap_current_prerequisite_archive(repository_root: Path, prerequisite_path: Path) -> None:
+    """Preserve a schema-1 canonical root that predates per-attempt raw archives."""
+
+    if not _path_entry_exists(prerequisite_path):
+        return
+    content = _read_regular_prerequisite_rotation_target(prerequisite_path, name="canonical prerequisite target")
+    prior = parse_prerequisite_results(content, repository_root=repository_root)
+    _require_successful_prerequisite_attempt(
+        repository_root,
+        study_id=prior.study_id,
+        url=prior.url,
+        prerequisite_content=content,
+        require_archive=False,
+    )
+    _archive_prerequisite_raw_document(repository_root, study_id=prior.study_id, content=content)
+
+
+def _complete_prerequisite_attempt(  # pyright: ignore[reportUnusedFunction]
     repository_root: Path,
     *,
     study_id: str,
@@ -5917,16 +6040,10 @@ def _complete_prerequisite_attempt(
     marker = _collection_attempt_root(repository_root, study_id) / "prerequisites-success.json"
     _write_candidate_bytes(
         marker,
-        _canonical_json(
-            cast(
-                JsonObject,
-                {
-                    "phase": "prerequisites",
-                    "prerequisites_identity": _candidate_identity(archived),
-                    "study_id": study_id,
-                    "url": url,
-                },
-            )
+        _render_successful_prerequisite_marker(
+            study_id=study_id,
+            url=url,
+            prerequisite_content=archived,
         ),
     )
 
@@ -5937,40 +6054,173 @@ def _require_successful_prerequisite_attempt(
     study_id: str,
     url: str,
     prerequisite_content: bytes,
+    require_archive: bool = True,
 ) -> None:
     """Refuse collection unless the matching prerequisite phase completed successfully."""
 
     marker = _collection_attempt_root(repository_root, study_id) / "prerequisites-success.json"
     try:
         content = marker.read_bytes()
-        document = _exact_object(
-            _load_json(content),
-            ("phase", "prerequisites_identity", "study_id", "url"),
-            name="successful prerequisite marker",
+        _require_successful_prerequisite_marker_content(
+            content,
+            study_id=study_id,
+            url=url,
+            prerequisite_content=prerequisite_content,
         )
-        _require(
-            _canonical_json(cast(JsonObject, document)) == content, "successful prerequisite marker must be canonical"
-        )
-        _require(
-            document["phase"] == "prerequisites" and document["study_id"] == study_id and document["url"] == url,
-            "collection requires a matching successful prerequisite marker",
-        )
-        _require(
-            _retained_identity(document["prerequisites_identity"], name="successful prerequisite marker identity")
-            == _candidate_identity(prerequisite_content),
-            "collection requires a matching successful prerequisite marker",
-        )
-        archived = _prerequisite_raw_archive_path(repository_root, study_id).read_bytes()
-        _require(
-            _candidate_identity(archived)
-            == _retained_identity(document["prerequisites_identity"], name="successful prerequisite marker identity"),
-            "collection requires a matching successful prerequisite marker",
-        )
+        if require_archive:
+            archived = _read_regular_prerequisite_rotation_target(
+                _prerequisite_raw_archive_path(repository_root, study_id),
+                name="archived prerequisite document",
+            )
+            _require(
+                _candidate_identity(archived) == _candidate_identity(prerequisite_content),
+                "collection requires a matching successful prerequisite marker",
+            )
     except (OSError, TypeError, ValueError) as error:
         raise TrafficlabError(
             "Validation Study collection requires a matching successful prerequisite marker",
             corrective_action="complete the same-study prerequisite phase before collection",
         ) from error
+
+
+def _rollback_prerequisite_rotation(committed: list[tuple[Path, Path | None]]) -> list[str]:
+    """Restore committed prerequisite targets in reverse order after a controlled failure."""
+
+    failures: list[str] = []
+    for destination, backup in reversed(committed):
+        try:
+            if backup is None:
+                destination.unlink(missing_ok=True)
+            else:
+                os.replace(backup, destination)
+            _commit_prerequisite_fsync(destination)
+        except OSError as error:
+            failures.append(f"{destination}: {error}")
+    return failures
+
+
+def _commit_prerequisite_rotation(
+    repository_root: Path,
+    *,
+    prerequisite_path: Path,
+    configs: Sequence[tuple[ExperimentConfig, Path, bytes]],
+    result: PrerequisiteResults,
+    study_id: str,
+    url: str,
+) -> None:
+    """Publish the coupled prerequisite artifacts as one marker-last rollback transaction."""
+
+    root = repository_root.resolve()
+    _bootstrap_current_prerequisite_archive(root, prerequisite_path)
+    prerequisite_content = render_prerequisite_results(result)
+    archive = _prerequisite_raw_archive_path(root, study_id)
+    marker = _collection_attempt_root(root, study_id) / "prerequisites-success.json"
+    marker_content = _render_successful_prerequisite_marker(
+        study_id=study_id,
+        url=url,
+        prerequisite_content=prerequisite_content,
+    )
+
+    targets: list[tuple[Path, bytes, Callable[[Path, bytes], None], bool]] = []
+
+    def validate_archive(_stage: Path, persisted: bytes) -> None:
+        parsed = parse_prerequisite_results(persisted, repository_root=root)
+        _require(
+            render_prerequisite_results(parsed) == prerequisite_content, "staged prerequisite archive is not canonical"
+        )
+
+    targets.append((archive, prerequisite_content, validate_archive, True))
+    for config, destination, content in configs:
+
+        def validate_config(
+            stage: Path,
+            persisted: bytes,
+            *,
+            expected: ExperimentConfig = config,
+            expected_content: bytes = content,
+        ) -> None:
+            _require(persisted == expected_content, "staged checked config bytes changed before validation")
+            _require(
+                load_experiment(stage) == expected, "staged checked config must reload to its exact absolute oracle"
+            )
+
+        targets.append((destination, content, validate_config, False))
+
+    def validate_prerequisite(_stage: Path, persisted: bytes) -> None:
+        parsed = parse_prerequisite_results(persisted, repository_root=root)
+        _require(
+            render_prerequisite_results(parsed) == prerequisite_content, "staged prerequisite JSON is not canonical"
+        )
+
+    def validate_marker(_stage: Path, persisted: bytes) -> None:
+        _require_successful_prerequisite_marker_content(
+            persisted,
+            study_id=study_id,
+            url=url,
+            prerequisite_content=prerequisite_content,
+        )
+
+    targets.extend(
+        (
+            (prerequisite_path, prerequisite_content, validate_prerequisite, False),
+            (marker, marker_content, validate_marker, True),
+        )
+    )
+
+    prepared: list[tuple[Path, Path, Path | None]] = []
+    try:
+        for destination, content, validate, must_be_absent in targets:
+            previous = (
+                _read_regular_prerequisite_rotation_target(destination, name="prerequisite rotation target")
+                if _path_entry_exists(destination)
+                else None
+            )
+            if must_be_absent:
+                _require(previous is None, f"prerequisite rotation target must be absent: {destination}")
+            backup = (
+                _stage_prerequisite_rotation_file(
+                    destination,
+                    previous,
+                    validate=lambda _stage, persisted, expected=previous: _require(
+                        persisted == expected, "staged prerequisite rollback bytes changed before validation"
+                    ),
+                    suffix=".bak",
+                )
+                if previous is not None
+                else None
+            )
+            stage = _stage_prerequisite_rotation_file(destination, content, validate=validate)
+            prepared.append((destination, stage, backup))
+
+        committed: list[tuple[Path, Path | None]] = []
+        try:
+            for destination, stage, backup in prepared[:-1]:
+                os.replace(stage, destination)
+                committed.append((destination, backup))
+                _commit_prerequisite_fsync(destination)
+            validate_base_configs(root, result)
+            destination, stage, backup = prepared[-1]
+            os.replace(stage, destination)
+            committed.append((destination, backup))
+            _commit_prerequisite_fsync(destination)
+        except (OSError, TypeError, ValueError, TrafficlabError) as error:
+            rollback_failures = _rollback_prerequisite_rotation(committed)
+            if rollback_failures:
+                raise ValueError(
+                    f"prerequisite rotation rollback failed after {error}: {'; '.join(rollback_failures)}"
+                ) from error
+            raise
+    finally:
+        for _destination, stage, backup in prepared:
+            try:
+                stage.unlink(missing_ok=True)
+            except OSError:
+                pass
+            if backup is not None:
+                try:
+                    backup.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def _write_candidate_bytes(path: Path, content: bytes) -> None:

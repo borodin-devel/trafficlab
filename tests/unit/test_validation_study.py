@@ -324,8 +324,7 @@ def _contains_none(value: object) -> bool:
     return value is None
 
 
-def _valid_prerequisite() -> study.PrerequisiteResults:
-    study_id = "study-1"
+def _valid_prerequisite(*, study_id: str = "study-1") -> study.PrerequisiteResults:
     url = "https://downloads.example.test/object.bin"
     started = "2026-08-13T12:00:00Z"
     completed = "2026-08-13T12:01:00Z"
@@ -1576,21 +1575,17 @@ def _install_prerequisite_failure(
     if mutation == "wrong-python":
         monkeypatch.setattr(study.platform, "python_version", lambda: "3.12.4")
     if mutation == "config-publication-failed":
-        original_render = study.render_checked_base_config
+        original_fsync = study._commit_prerequisite_fsync  # pyright: ignore[reportPrivateUsage]
         calls = 0
 
-        def fail_second_config(
-            config: study.ExperimentConfig,
-            destination: Path,
-            root: Path,
-        ) -> bytes:
+        def fail_second_config(destination: Path) -> None:
             nonlocal calls
             calls += 1
-            if calls == 2:
+            if calls == 3:
                 raise OSError("simulated config publication failure")
-            return original_render(config, destination, root)
+            original_fsync(destination)
 
-        monkeypatch.setattr(study, "render_checked_base_config", fail_second_config)
+        monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_second_config)
 
 
 @pytest.mark.parametrize(
@@ -3132,8 +3127,7 @@ def test_prerequisites_stop_at_first_failure_preserve_primary_and_publish_no_val
     prerequisite_path = repository_root / "examples" / "validation_study" / "prerequisites.json"
     assert not prerequisite_path.exists()
     config_directory = repository_root / "examples" / "validation_study" / "configs"
-    if mutation != "config-publication-failed":
-        assert not config_directory.exists() or not tuple(config_directory.glob("*.toml"))
+    assert not config_directory.exists() or not tuple(config_directory.glob("*.toml"))
     commands = [command for command, _timeout in runner.calls]
     docker_guard = study._live_argv(  # pyright: ignore[reportPrivateUsage]
         "docker_matrix",
@@ -6972,6 +6966,143 @@ def test_successful_prerequisite_marker_binds_the_published_prerequisite_bytes(t
     }
 
 
+def _write_legacy_prerequisite_root(
+    repository: Path,
+    *,
+    study_id: str = "study-r4",
+) -> tuple[Path, bytes]:
+    """Create the schema-1 root and markers published before raw archives existed."""
+
+    prerequisite = _valid_prerequisite(study_id=study_id)
+    content = study.render_prerequisite_results(prerequisite)
+    root = repository / "examples" / "validation_study" / "prerequisites.json"
+    root.parent.mkdir(parents=True, exist_ok=True)
+    root.write_bytes(content)
+    attempt = root.parent / ".study-work" / "attempts" / study_id
+    attempt.mkdir(parents=True)
+    (attempt / "prerequisites.json").write_bytes(
+        study._canonical_json(  # pyright: ignore[reportPrivateUsage]
+            cast(
+                study.JsonObject,
+                {"phase": "prerequisites", "study_id": study_id, "url": prerequisite.url},
+            )
+        )
+    )
+    (attempt / "prerequisites-success.json").write_bytes(
+        study._canonical_json(  # pyright: ignore[reportPrivateUsage]
+            cast(
+                study.JsonObject,
+                {
+                    "phase": "prerequisites",
+                    "prerequisites_identity": identify_bytes(content).as_dict(),
+                    "study_id": study_id,
+                    "url": prerequisite.url,
+                },
+            )
+        )
+    )
+    assert not (attempt / "prerequisites.raw.json").exists()
+    return root, content
+
+
+def test_rotation_bootstraps_a_matching_legacy_raw_archive_before_replacement(tmp_path: Path) -> None:
+    """A schema-1 root and success marker gain a forensic archive before r5 overwrites them."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    root, r4_bytes = _write_legacy_prerequisite_root(repository)
+    r4_archive = root.parent / ".study-work" / "attempts" / "study-r4" / "prerequisites.raw.json"
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+
+    study.run_prerequisites(
+        r5.url,
+        r5.study_id,
+        repository_root=repository,
+        runner=r5,
+        utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+    )
+
+    assert r4_archive.read_bytes() == r4_bytes
+    assert root.read_bytes() != r4_bytes
+
+
+def test_rotation_rejects_a_legacy_marker_identity_mismatch_before_replacement(
+    tmp_path: Path,
+) -> None:
+    """A legacy archive is never inferred from root bytes that disagree with its successful marker."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    root, r4_bytes = _write_legacy_prerequisite_root(repository)
+    marker = root.parent / ".study-work" / "attempts" / "study-r4" / "prerequisites-success.json"
+    marker_value = json.loads(marker.read_text(encoding="utf-8"))
+    marker_value["prerequisites_identity"] = identify_bytes(b"wrong legacy identity\n").as_dict()
+    marker.write_bytes(study._canonical_json(cast(study.JsonObject, marker_value)))  # pyright: ignore[reportPrivateUsage]
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+
+    with pytest.raises(TrafficlabError, match="matching successful prerequisite marker"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    assert root.read_bytes() == r4_bytes
+    assert not (root.parent / ".study-work" / "attempts" / "study-r4" / "prerequisites.raw.json").exists()
+
+
+def test_rotation_rejects_a_conflicting_legacy_raw_archive_before_replacement(
+    tmp_path: Path,
+) -> None:
+    """A prior archive collision is preserved rather than silently replaced during rotation."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    root, r4_bytes = _write_legacy_prerequisite_root(repository)
+    r4_archive = root.parent / ".study-work" / "attempts" / "study-r4" / "prerequisites.raw.json"
+    r4_archive.write_bytes(b"conflicting legacy archive\n")
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+
+    with pytest.raises(TrafficlabError, match="archived prerequisite"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    assert root.read_bytes() == r4_bytes
+    assert r4_archive.read_bytes() == b"conflicting legacy archive\n"
+
+
+def test_rotation_rejects_a_nonregular_legacy_raw_archive_before_replacement(
+    tmp_path: Path,
+) -> None:
+    """A legacy archive directory is never replaced while preserving the current canonical root."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    root, r4_bytes = _write_legacy_prerequisite_root(repository)
+    r4_archive = root.parent / ".study-work" / "attempts" / "study-r4" / "prerequisites.raw.json"
+    r4_archive.mkdir()
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+
+    with pytest.raises(TrafficlabError, match="archived prerequisite document must be a regular file"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    assert root.read_bytes() == r4_bytes
+    assert r4_archive.is_dir()
+
+
 def test_failed_prerequisite_rotation_preserves_current_raw_document_and_old_archive(tmp_path: Path) -> None:
     """A fresh failed ID cannot alter the prior canonical prerequisite publication."""
 
@@ -7076,6 +7207,351 @@ def test_successful_prerequisite_rotation_replaces_current_raw_and_preserves_old
         )
         for name, workload in ((workload.name, workload) for workload in study.workload_specs(r5.url))
     }
+
+
+@pytest.mark.parametrize("failure_index", (1, 2, 3, 4, 5, 6))
+def test_prerequisite_rotation_rolls_back_every_replacement_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_index: int,
+) -> None:
+    """Every staged config/root/archive/marker replacement restores the complete r4 state."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    study_root = repository / "examples" / "validation_study"
+    canonical_before = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    r4_archive = study_root / ".study-work" / "attempts" / r4.study_id / "prerequisites.raw.json"
+    r4_archive_before = r4_archive.read_bytes()
+    r4_attempt = r4_archive.parent
+    r4_attempt_before = _tree_inventory(r4_attempt)
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    original_replace = study.os.replace
+    replacements = 0
+
+    def fail_nth_replacement(source: str | Path, target: str | Path) -> None:
+        nonlocal replacements
+        replacements += 1
+        if replacements == failure_index:
+            raise OSError(f"simulated replacement {failure_index}")
+        original_replace(source, target)
+
+    monkeypatch.setattr(study.os, "replace", fail_nth_replacement)
+    with pytest.raises(TrafficlabError, match=f"replacement {failure_index}"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    canonical_after = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    assert canonical_after == canonical_before
+    assert r4_archive.read_bytes() == r4_archive_before
+    assert _tree_inventory(r4_attempt) == r4_attempt_before
+    r5_attempt = study_root / ".study-work" / "attempts" / r5.study_id
+    assert (r5_attempt / "prerequisites.json").is_file()
+    assert not (r5_attempt / "prerequisites.raw.json").exists()
+    assert not (r5_attempt / "prerequisites-success.json").exists()
+    assert not tuple(study_root.rglob(".*.tmp"))
+    assert not tuple(study_root.rglob(".*.bak"))
+
+
+@pytest.mark.parametrize("failure_index", (1, 2, 3, 4, 5, 6))
+def test_prerequisite_rotation_rolls_back_every_commit_fsync_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_index: int,
+) -> None:
+    """A post-replacement fsync failure removes every partially committed r5 publication."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    study_root = repository / "examples" / "validation_study"
+    canonical_before = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    r4_archive = study_root / ".study-work" / "attempts" / r4.study_id / "prerequisites.raw.json"
+    r4_archive_before = r4_archive.read_bytes()
+    r4_attempt = r4_archive.parent
+    r4_attempt_before = _tree_inventory(r4_attempt)
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    fsyncs = 0
+
+    def fail_nth_commit_fsync(_destination: Path) -> None:
+        nonlocal fsyncs
+        fsyncs += 1
+        if fsyncs == failure_index:
+            raise OSError(f"simulated commit fsync {failure_index}")
+
+    monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_nth_commit_fsync, raising=False)
+    with pytest.raises(TrafficlabError, match=f"commit fsync {failure_index}"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    canonical_after = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    assert canonical_after == canonical_before
+    assert r4_archive.read_bytes() == r4_archive_before
+    assert _tree_inventory(r4_attempt) == r4_attempt_before
+    r5_attempt = study_root / ".study-work" / "attempts" / r5.study_id
+    assert (r5_attempt / "prerequisites.json").is_file()
+    assert not (r5_attempt / "prerequisites.raw.json").exists()
+    assert not (r5_attempt / "prerequisites-success.json").exists()
+    assert not tuple(study_root.rglob(".*.tmp"))
+    assert not tuple(study_root.rglob(".*.bak"))
+
+
+def test_prerequisite_rotation_target_reports_lstat_and_read_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Target inspection distinguishes an unreadable entry from a read failure without following it."""
+
+    destination = tmp_path / "prerequisites.json"
+    destination.write_bytes(b"canonical\n")
+    original_lstat = Path.lstat
+
+    def fail_target_lstat(path: Path) -> os.stat_result:
+        if path == destination:
+            raise OSError("simulated target lstat failure")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", fail_target_lstat)
+    with pytest.raises(ValueError, match="could not inspect rotation target"):
+        study._read_regular_prerequisite_rotation_target(  # pyright: ignore[reportPrivateUsage]
+            destination,
+            name="rotation target",
+        )
+
+    monkeypatch.undo()
+    original_read_bytes = Path.read_bytes
+
+    def fail_target_read(path: Path) -> bytes:
+        if path == destination:
+            raise OSError("simulated target read failure")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_target_read)
+    with pytest.raises(ValueError, match="could not read rotation target"):
+        study._read_regular_prerequisite_rotation_target(  # pyright: ignore[reportPrivateUsage]
+            destination,
+            name="rotation target",
+        )
+
+
+def test_prerequisite_rotation_stage_cleans_validator_and_descriptor_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A private staging file never survives validation or descriptor-wrapper failure."""
+
+    destination = tmp_path / "prerequisites.json"
+
+    def reject_stage(_stage: Path, _content: bytes) -> None:
+        raise ValueError("simulated staged validation failure")
+
+    with pytest.raises(ValueError, match="staged validation"):
+        study._stage_prerequisite_rotation_file(  # pyright: ignore[reportPrivateUsage]
+            destination,
+            b"canonical\n",
+            validate=reject_stage,
+        )
+    assert not tuple(tmp_path.glob(".*.tmp"))
+
+    closed: list[int] = []
+    original_close = study.os.close
+
+    def fail_fdopen(_descriptor: int, _mode: str) -> None:
+        raise OSError("simulated staging fdopen failure")
+
+    def record_close(descriptor: int) -> None:
+        closed.append(descriptor)
+        original_close(descriptor)
+
+    monkeypatch.setattr(study.os, "fdopen", fail_fdopen)
+    monkeypatch.setattr(study.os, "close", record_close)
+    with pytest.raises(OSError, match="staging fdopen failure"):
+        study._stage_prerequisite_rotation_file(  # pyright: ignore[reportPrivateUsage]
+            destination,
+            b"canonical\n",
+            validate=lambda _stage, _content: None,
+        )
+    assert closed
+    assert not tuple(tmp_path.glob(".*.tmp"))
+
+    monkeypatch.undo()
+
+    def fail_mkstemp(*_args: object, **_kwargs: object) -> tuple[int, str]:
+        raise OSError("simulated staging mkstemp failure")
+
+    monkeypatch.setattr(study.tempfile, "mkstemp", fail_mkstemp)
+    with pytest.raises(OSError, match="staging mkstemp failure"):
+        study._stage_prerequisite_rotation_file(  # pyright: ignore[reportPrivateUsage]
+            destination,
+            b"canonical\n",
+            validate=lambda _stage, _content: None,
+        )
+
+    monkeypatch.undo()
+    original_unlink = Path.unlink
+
+    def fail_staged_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        if path.name.endswith(".tmp"):
+            raise OSError("simulated staging unlink failure")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fail_staged_unlink)
+    with pytest.raises(ValueError, match="staged validation failure"):
+        study._stage_prerequisite_rotation_file(  # pyright: ignore[reportPrivateUsage]
+            destination,
+            b"canonical\n",
+            validate=reject_stage,
+        )
+    monkeypatch.undo()
+    for temporary in tmp_path.glob(".*.tmp"):
+        temporary.unlink()
+
+
+def test_prerequisite_rotation_rollback_reports_a_durability_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rollback retains its failure diagnostic if its own directory fsync cannot complete."""
+
+    destination = tmp_path / "prerequisites.json"
+    destination.write_bytes(b"partially committed\n")
+
+    def fail_fsync(_destination: Path) -> None:
+        raise OSError("simulated rollback fsync failure")
+
+    monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_fsync)
+    failures = study._rollback_prerequisite_rotation([(destination, None)])  # pyright: ignore[reportPrivateUsage]
+
+    assert failures == [f"{destination}: simulated rollback fsync failure"]
+    assert not destination.exists()
+
+
+def test_prerequisite_rotation_preserves_primary_when_rollback_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A primary publication error remains visible with an ordered rollback durability diagnostic."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+
+    def fail_commit(_destination: Path) -> None:
+        raise OSError("simulated primary commit failure")
+
+    def simulated_rollback_failure(_committed: list[tuple[Path, Path | None]]) -> list[str]:
+        return ["simulated rollback durability failure"]
+
+    monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_commit)
+    monkeypatch.setattr(
+        study,
+        "_rollback_prerequisite_rotation",
+        simulated_rollback_failure,
+    )
+    with pytest.raises(TrafficlabError, match="rollback failed after simulated primary commit failure"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+
+def test_prerequisite_rotation_ignores_postcommit_staging_cleanup_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Postcommit cleanup cannot invalidate the success marker after a durable publication."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    original_unlink = Path.unlink
+
+    def fail_staging_cleanup(path: Path, *, missing_ok: bool = False) -> None:
+        if path.name.endswith((".tmp", ".bak")):
+            raise OSError("simulated staging cleanup failure")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", fail_staging_cleanup)
+    result = study.run_prerequisites(
+        r5.url,
+        r5.study_id,
+        repository_root=repository,
+        runner=r5,
+        utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+    )
+
+    marker = (
+        repository
+        / "examples"
+        / "validation_study"
+        / ".study-work"
+        / "attempts"
+        / r5.study_id
+        / "prerequisites-success.json"
+    )
+    assert marker.is_file()
+    assert result.study_id == r5.study_id
+    assert tuple((repository / "examples" / "validation_study").rglob(".*.bak"))
 
 
 def test_collection_rejects_old_id_after_prerequisite_rotation_but_keeps_its_raw_archive(tmp_path: Path) -> None:
