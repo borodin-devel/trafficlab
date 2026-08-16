@@ -30,12 +30,12 @@ from scripts.run_validation_study import (
     TARGET_REFERENCE,
     HeldOutEvaluation,
     _parse_transfer_header,  # pyright: ignore[reportPrivateUsage]
-    evaluate_study_held_out,
     parse_retained_prerequisites,
     prerequisite_junit_counts,
     retained_prerequisite_paths,
     workload_specs,
 )
+from trafficlab.artifacts import quantize_generated_events
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import (
     ComparisonResult,
@@ -52,8 +52,8 @@ from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.models.registry import BestModel, load_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model
+from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.trace import TraceEvent, align_generated, normalize_reference, parse_capture_metadata
 
 _MANIFEST = "manifest.json"
@@ -673,14 +673,66 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
         "kernel_release",
     ):
         _string(document[field], name=f"environment {field}")
-    source_commit = _git_identity(repository, ("rev-parse", "HEAD"), name="relocated Git HEAD")
-    source_tree = _git_identity(repository, ("rev-parse", "HEAD^{tree}"), name="relocated Git tree")
-    if (source_commit, source_tree) != (document["source_commit"], document["source_tree"]):
+    source_commit = _string(document["source_commit"], name="environment source_commit")
+    source_tree = _string(document["source_tree"], name="environment source_tree")
+    current_head = _git_identity(repository, ("rev-parse", "HEAD"), name="relocated Git HEAD")
+    recorded_tree = _git_identity(
+        repository,
+        ("rev-parse", f"{source_commit}^{{tree}}"),
+        name="recorded source tree",
+    )
+    if recorded_tree != source_tree:
         _fail(
             "artifact_foreign",
             "environment",
-            "environment source commit or tree does not match the relocated Git checkout",
+            "environment source commit does not resolve to its retained source tree",
             "audit from the recorded source revision",
+        )
+    try:
+        ancestor = subprocess.run(
+            ("git", "merge-base", "--is-ancestor", source_commit, current_head),
+            cwd=repository,
+            check=False,
+            capture_output=True,
+        )
+    except OSError as error:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            f"could not inspect source ancestry: {error}",
+            "repair the relocated checkout",
+        )
+    if ancestor.returncode != 0:
+        _fail(
+            "artifact_foreign",
+            "environment",
+            "environment source commit is not an ancestor of the relocated Git checkout",
+            "audit from a descendant of the recorded source revision",
+        )
+    changed = _git_bytes(
+        repository,
+        ("diff", "--name-only", "-z", "--no-renames", f"{source_commit}..{current_head}"),
+        name="post-source changed paths",
+    )
+    try:
+        changed_paths = tuple(path.decode("utf-8") for path in changed.split(b"\0") if path)
+    except UnicodeDecodeError as error:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            f"post-source path is not UTF-8: {error}",
+            "repair the relocated checkout",
+        )
+    permitted_paths = {"examples/validation_study/REPORT.md", "examples/validation_study/README.md"}
+    if any(
+        path not in permitted_paths and not path.startswith("examples/validation_study/evidence/")
+        for path in changed_paths
+    ):
+        _fail(
+            "artifact_foreign",
+            "environment",
+            "relocated checkout contains non-evidence changes after the recorded source revision",
+            "audit a descendant containing only accepted evidence and report changes",
         )
     committed_lock = _git_bytes(repository, ("show", f"{source_commit}:uv.lock"), name="recorded uv.lock")
     current_lock = _read_regular(repository / "uv.lock", affected="uv.lock")
@@ -691,13 +743,23 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             "relocated uv.lock bytes do not match the recorded source commit",
             "restore the exact locked source checkout",
         )
+    image_lock_content = _read_regular(
+        repository / "docker" / "capture" / "image-lock.json", affected="docker/capture/image-lock.json"
+    )
+    committed_image_lock = _git_bytes(
+        repository,
+        ("show", f"{source_commit}:docker/capture/image-lock.json"),
+        name="recorded capture image lock",
+    )
+    if image_lock_content != committed_image_lock:
+        _fail(
+            "artifact_foreign",
+            "environment",
+            "relocated capture image-lock bytes do not match the recorded source commit",
+            "restore the exact checked image lock",
+        )
     image_lock = _exact(
-        _json(
-            _read_regular(
-                repository / "docker" / "capture" / "image-lock.json", affected="docker/capture/image-lock.json"
-            ),
-            name="docker/capture/image-lock.json",
-        ),
+        _json(image_lock_content, name="docker/capture/image-lock.json"),
         (
             "base_digest",
             "base_reference",
@@ -1375,6 +1437,57 @@ def _selected_training(protocol: Mapping[str, object], training: Sequence[_Train
     return selected
 
 
+def _rebuild_held_out(
+    training: _Training,
+    *,
+    config: ExperimentConfig,
+    capture_content: bytes,
+    capture_source: Path,
+    reference_content: bytes,
+    reference_source: Path,
+) -> HeldOutEvaluation:
+    """Independently reproduce a fixed training model at the held-out horizon."""
+
+    metadata = parse_capture_metadata(capture_content, source=capture_source)
+    reference, W = normalize_reference(parse_pcapng_bytes(reference_content, metadata, source=reference_source))
+    model = training.best_model
+    raw_generated = (
+        get_family(model.family)
+        .generate(
+            model.fitted,
+            model.final_seed,
+            W,
+            model.final_limits,
+        )
+        .require_complete()
+    )
+    generated = quantize_generated_events(raw_generated, W)
+    generated_pcapng = encode_pcapng(generated, metadata)
+    settings_identity = similarity_settings_identity(config.similarity)
+    comparison = compare_traces(reference, align_generated(generated, W), W, config.similarity).with_input_identities(
+        {
+            "capture_json": identify_bytes(capture_content),
+            "generated_pcapng": identify_bytes(generated_pcapng),
+            "reference_pcapng": identify_bytes(reference_content),
+            "similarity_settings": settings_identity,
+        }
+    )
+    comparison_json = render_comparison_result(comparison)
+    return HeldOutEvaluation(
+        training_model=model,
+        training_model_identity=identify_bytes(training.contents["best_model.json"]),
+        capture_identity=identify_bytes(capture_content),
+        reference_identity=identify_bytes(reference_content),
+        generated_identity=identify_bytes(generated_pcapng),
+        similarity_settings_identity=settings_identity,
+        generated_pcapng=generated_pcapng,
+        comparison=comparison,
+        comparison_json=comparison_json,
+        seed=model.final_seed,
+        observation_window_seconds=W,
+    )
+
+
 def _held_out(
     bundle: Path,
     value: object,
@@ -1383,7 +1496,7 @@ def _held_out(
     final_seed: int,
     training_references: set[str],
     environment: Mapping[str, object],
-) -> tuple[str, set[str]]:
+) -> tuple[str, set[str], HeldOutEvaluation]:
     document = _exact(
         value, ("capture_lineage", "directory", "training_directory", "workload"), name="held-out index record"
     )
@@ -1425,9 +1538,8 @@ def _held_out(
             "capture a new held-out reference",
         )
     try:
-        evaluation: HeldOutEvaluation = evaluate_study_held_out(
-            model_content=training.contents["best_model.json"],
-            model_source=training.directory / "best_model.json",
+        evaluation = _rebuild_held_out(
+            training,
             config=config,
             capture_content=contents["capture.json"],
             capture_source=directory / "capture.json",
@@ -1467,6 +1579,7 @@ def _held_out(
             "capture_lineage",
             "comparison_identity",
             "generated_identity",
+            "observation_window_seconds",
             "reference_identity",
             "seed",
             "training_directory",
@@ -1480,6 +1593,7 @@ def _held_out(
         "capture_lineage": _capture_lineage(contents["capture.json"], environment),
         "comparison_identity": _identity(contents["similarity.json"]),
         "generated_identity": evaluation.generated_identity.as_dict(),
+        "observation_window_seconds": evaluation.observation_window_seconds,
         "reference_identity": evaluation.reference_identity.as_dict(),
         "seed": final_seed,
         "training_directory": f"training/{training.workload}/r{training.repeat}",
@@ -1493,7 +1607,7 @@ def _held_out(
             "held-out record does not match reconstructed evidence",
             "restore matching held-out record",
         )
-    return directory_relative, config_paths | {f"{directory_relative}/{name}" for name in names}
+    return directory_relative, config_paths | {f"{directory_relative}/{name}" for name in names}, evaluation
 
 
 def _mean(scores: Sequence[dict[str, object]]) -> dict[str, object]:
@@ -1707,7 +1821,13 @@ def _report_inputs(
                 "workload": workload,
             }
         )
-        held_rows.append({"score": _score(held[workload].comparison), "workload": workload})
+        held_rows.append(
+            {
+                "observation_window_seconds": held[workload].observation_window_seconds,
+                "score": _score(held[workload].comparison),
+                "workload": workload,
+            }
+        )
     return {
         "controlled_weight_analysis": _controlled_weight_analysis(training),
         "formula": "arithmetic_mean",
@@ -1982,25 +2102,13 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
                 "held-out records must bind each workload once",
                 "restore complete held-out evidence",
             )
-        directory_relative, paths = _held_out(
+        _directory_relative, paths, evaluation = _held_out(
             bundle,
             value,
             selected[workload],
             final_seed=cast(int, protocol["final_seed"]),
             training_references=training_references,
             environment=environment,
-        )
-        directory = bundle / directory_relative
-        evaluation = evaluate_study_held_out(
-            model_content=selected[workload].contents["best_model.json"],
-            model_source=selected[workload].directory / "best_model.json",
-            config=load_configuration_pair(directory / "portable.toml").realized,
-            capture_content=_read_regular(directory / "capture.json", affected=f"{directory_relative}/capture.json"),
-            capture_source=directory / "capture.json",
-            reference_content=_read_regular(
-                directory / "reference.pcapng", affected=f"{directory_relative}/reference.pcapng"
-            ),
-            reference_source=directory / "reference.pcapng",
         )
         held_evaluations[workload] = evaluation
         held_paths.update(paths)

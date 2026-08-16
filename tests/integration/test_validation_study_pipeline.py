@@ -56,6 +56,51 @@ def _copy_audit_fixture_to_clean_checkout(tmp_path: Path) -> tuple[Path, Path]:
     return repository, candidate
 
 
+def _copy_audit_fixture_to_committed_destination(tmp_path: Path) -> tuple[Path, Path]:
+    """Place the candidate in its real accepted path and commit only that evidence."""
+
+    source_environment = cast(
+        dict[str, object], json.loads((_AUDIT_FIXTURE / "environment.json").read_text(encoding="utf-8"))
+    )
+    repository = tmp_path / "relocated-repository"
+    subprocess.run(
+        ("git", "clone", "--no-hardlinks", "--no-checkout", str(_ROOT), str(repository)),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ("git", "checkout", "--detach", cast(str, source_environment["source_commit"])),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    destination = repository / "examples" / "validation_study" / "evidence" / "fixture-study"
+    shutil.copytree(_AUDIT_FIXTURE, destination)
+    subprocess.run(
+        ("git", "add", "-f", destination.relative_to(repository).as_posix()),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.email=validation-study@example.test",
+            "-c",
+            "user.name=Validation Study",
+            "commit",
+            "--quiet",
+            "-m",
+            "evidence: retain fixture study",
+        ),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    return repository, destination
+
+
 def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
@@ -416,3 +461,96 @@ else:
     }
     assert len(candidate_bytes) == 231
     assert candidate_bytes == fixture_bytes
+
+
+def test_clean_checkout_audits_a_committed_destination_and_rejects_later_science_changes(tmp_path: Path) -> None:
+    """A checked evidence-only descendant is auditable, but scientific-code drift is not."""
+
+    repository, destination = _copy_audit_fixture_to_committed_destination(tmp_path)
+    candidate_argument = destination.relative_to(repository).as_posix()
+    wrapper = f"""
+import os
+import runpy
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+checkout = Path.cwd().resolve()
+original = Path(os.environ["TRAFFICLAB_ORIGINAL_ROOT"]).resolve()
+import scripts.audit_validation_study as audit
+import trafficlab
+assert Path(audit.__file__).resolve().is_relative_to(checkout)
+assert Path(trafficlab.__file__).resolve().is_relative_to(checkout)
+original_read_bytes = Path.read_bytes
+original_read_text = Path.read_text
+def checked_read_bytes(path, *args, **kwargs):
+    if path.resolve().is_relative_to(original):
+        raise AssertionError("audit read the original worktree")
+    return original_read_bytes(path, *args, **kwargs)
+def checked_read_text(path, *args, **kwargs):
+    if path.resolve().is_relative_to(original):
+        raise AssertionError("audit read the original worktree")
+    return original_read_text(path, *args, **kwargs)
+Path.read_bytes = checked_read_bytes
+Path.read_text = checked_read_text
+def blocked_network(*args, **kwargs):
+    raise AssertionError("audit attempted network access")
+socket.socket = blocked_network
+socket.create_connection = blocked_network
+original_run = subprocess.run
+def local_git_only(argv, *args, **kwargs):
+    if tuple(argv[:2]) in {{("git", "rev-parse"), ("git", "merge-base"), ("git", "diff"), ("git", "show")}}:
+        return original_run(argv, *args, **kwargs)
+    raise AssertionError("audit attempted Docker or a non-local-Git subprocess")
+subprocess.run = local_git_only
+sys.argv = ["scripts/audit_validation_study.py", "{candidate_argument}", "--repository", str(checkout)]
+runpy.run_path(str(checkout / "scripts" / "audit_validation_study.py"), run_name="__main__")
+"""
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = ""
+    environment["TRAFFICLAB_ORIGINAL_ROOT"] = str(_ROOT)
+    accepted = subprocess.run(
+        ("uv", "run", "--locked", "--offline", "python", "-c", wrapper),
+        cwd=repository,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+    assert "validation-study-audit: accepted " in accepted.stdout
+
+    science_path = repository / "src" / "trafficlab" / "__init__.py"
+    science_path.write_text(
+        science_path.read_text(encoding="utf-8") + "\n# post-evidence science drift\n", encoding="utf-8"
+    )
+    subprocess.run(
+        ("git", "add", science_path.relative_to(repository).as_posix()), cwd=repository, check=True, capture_output=True
+    )
+    subprocess.run(
+        (
+            "git",
+            "-c",
+            "user.email=validation-study@example.test",
+            "-c",
+            "user.name=Validation Study",
+            "commit",
+            "--quiet",
+            "-m",
+            "test: mutate science source",
+        ),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    rejected = subprocess.run(
+        ("uv", "run", "--locked", "--offline", "python", "-c", wrapper),
+        cwd=repository,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode == 2
+    assert "non-evidence" in rejected.stderr

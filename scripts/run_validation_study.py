@@ -47,7 +47,6 @@ from trafficlab.config import ExperimentConfig, FamilyName, SimilarityConfig
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.docker_cli import cold_capture_build_argv, load_capture_image_lock, validate_capture_dockerfile
 from trafficlab.errors import TrafficlabError
-from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.genetic.evaluation import evaluate_final, validate_evaluation_context
 from trafficlab.genetic.strategy import StrategyContext, make_strategy_context
@@ -141,26 +140,26 @@ def evaluate_study_held_out(
         {
             "final seed": model.final_seed,
             "final generation limits": model.final_limits,
-            "training observation window": model.observation_window_seconds,
         },
         {
             "final seed": config.run.final_seed,
             "final generation limits": config.generation.final,
-            "training observation window": model.observation_window_seconds,
         },
     )
     metadata = parse_capture_metadata(capture_content, source=capture_source)
-    reference, raw_window = normalize_reference(
-        parse_pcapng_bytes(reference_content, metadata, source=reference_source)
-    )
-    W = model.observation_window_seconds
-    if raw_window < W:
-        raise TrafficlabError(
-            "study held-out reference window must reach the frozen training model window",
-            corrective_action="retain a held-out capture at least as long as the frozen training observation window",
+    reference, W = normalize_reference(parse_pcapng_bytes(reference_content, metadata, source=reference_source))
+    raw_generated = (
+        get_family(model.family)
+        .generate(
+            model.fitted,
+            model.final_seed,
+            W,
+            model.final_limits,
         )
-    reference = align_generated(reference, W)
-    _, generated, generated_pcapng = reproduce_generated_pcapng(model, metadata)
+        .require_complete()
+    )
+    generated = quantize_generated_events(raw_generated, W)
+    generated_pcapng = encode_pcapng(generated, metadata)
     aligned = align_generated(generated, W)
     settings_identity = similarity_settings_identity(config.similarity)
     comparison = compare_traces(reference, aligned, W, config.similarity).with_input_identities(
@@ -6201,7 +6200,11 @@ def _candidate_report_inputs(
         held_out_scores.append(
             cast(
                 JsonObject,
-                {"score": _candidate_score(held_out[workload].comparison), "workload": workload},
+                {
+                    "observation_window_seconds": held_out[workload].observation_window_seconds,
+                    "score": _candidate_score(held_out[workload].comparison),
+                    "workload": workload,
+                },
             )
         )
     return {
@@ -6219,6 +6222,7 @@ def _candidate_report_inputs(
 def _begin_candidate_collection(
     repository_root: Path,
     *,
+    attempt: Path,
     study_id: str,
     url: str,
     environment: Mapping[str, object],
@@ -6227,19 +6231,20 @@ def _begin_candidate_collection(
     object_size_bytes: int,
 ) -> tuple[Path, Path]:
     candidate = _candidate_root(repository_root, study_id)
-    attempt = _begin_phase_attempt(repository_root, study_id=study_id, url=url, phase="collection")
+    _require(
+        attempt == _collection_attempt_root(repository_root, study_id),
+        "collection attempt must use its exact study attempt path",
+    )
+    _require(
+        (attempt / "collection.json").is_file(),
+        "collection attempt marker must exist before collection validation",
+    )
     _require(set(configs) == {"short", "streaming", "bursty"}, "collection requires exactly three workload configs")
     _require(4 * 1024 * 1024 <= object_size_bytes <= 16 * 1024 * 1024, "collection object size is out of range")
     document = parse_retained_prerequisites(retained_prerequisites)
     _require(
         document["study_id"] == study_id and document["url"] == url,
         "retained prerequisite study ID and URL must equal the collection request",
-    )
-    _require_successful_prerequisite_attempt(
-        repository_root,
-        study_id=study_id,
-        url=url,
-        prerequisite_content=retained_prerequisites,
     )
     marker = attempt / "frozen-protocol.json"
     if _path_entry_exists(marker) or _path_entry_exists(candidate):
@@ -6450,6 +6455,7 @@ def _collect_held_out(
             "capture_lineage": _candidate_capture_lineage(capture_content, environment),
             "comparison_identity": _candidate_identity(evaluation.comparison_json),
             "generated_identity": cast(JsonObject, evaluation.generated_identity.as_dict()),
+            "observation_window_seconds": evaluation.observation_window_seconds,
             "reference_identity": cast(JsonObject, evaluation.reference_identity.as_dict()),
             "seed": evaluation.seed,
             "training_directory": f"training/{training.workload}/r{training.repeat}",
@@ -6479,11 +6485,19 @@ def _collection_inputs_from_prerequisites(
     study_id: str,
     url: str,
     runner: CommandRunner,
+    require_successful_prerequisite: bool = False,
 ) -> CollectionInputs:
     """Derive immutable candidate inputs from retained same-revision prerequisite evidence."""
     root = repository_root.resolve()
     try:
         content = prerequisite_path.read_bytes()
+        if require_successful_prerequisite:
+            _require_successful_prerequisite_attempt(
+                root,
+                study_id=study_id,
+                url=url,
+                prerequisite_content=content,
+            )
         prerequisites = parse_prerequisite_results(content, repository_root=root)
         _require(
             (prerequisites.study_id, prerequisites.url) == (study_id, url),
@@ -6738,6 +6752,7 @@ def collect_validation_candidate(
     repository_root: Path,
     study_id: str,
     url: str,
+    attempt: Path,
     environment: Mapping[str, object],
     retained_prerequisites: bytes,
     prerequisite_files: Mapping[str, bytes],
@@ -6754,6 +6769,7 @@ def collect_validation_candidate(
     try:
         candidate, attempt = _begin_candidate_collection(
             root,
+            attempt=attempt,
             study_id=checked_study_id,
             url=checked_url,
             environment=environment,
@@ -7040,6 +7056,12 @@ def main(
                 corrective_action="supply the exact repository-relative checked prerequisite path",
             ) from error
         if parsed.command == "collect":
+            attempt = _begin_phase_attempt(
+                repository_root.resolve(),
+                study_id=study_id,
+                url=url,
+                phase="collection",
+            )
             environment, retained_prerequisites, prerequisite_files, configs, object_size_bytes = (
                 _collection_inputs_from_prerequisites(
                     repository_root,
@@ -7047,12 +7069,14 @@ def main(
                     study_id=study_id,
                     url=url,
                     runner=runner,
+                    require_successful_prerequisite=True,
                 )
             )
             candidate = collect_validation_candidate(
                 repository_root=repository_root,
                 study_id=study_id,
                 url=url,
+                attempt=attempt,
                 environment=environment,
                 retained_prerequisites=retained_prerequisites,
                 prerequisite_files=prerequisite_files,

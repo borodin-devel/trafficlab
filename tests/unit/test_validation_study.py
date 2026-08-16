@@ -4882,72 +4882,15 @@ def test_collection_inputs_rejects_each_live_environment_mismatch_before_candida
     assert not (repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1").exists()
 
 
-@pytest.mark.parametrize("case", ("missing", "identity", "study_id", "url", "noncanonical"))
-def test_collection_requires_a_matching_successful_prerequisite_marker_before_candidate_creation(
-    tmp_path: Path,
-    case: str,
-) -> None:
-    """The collection marker is durable, but only the exact successful prerequisite may unlock capture."""
-
+def test_collection_binds_retained_prerequisite_before_creating_a_candidate(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     prerequisite_path = _write_collection_compatible_inputs(repository_root)
-    environment, retained, files, configs, object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
-        repository_root,
-        prerequisite_path,
-        study_id="study-1",
-        url="https://downloads.example.test/object.bin",
-        runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
-    )
     study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
         repository_root,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
-        prerequisite_content=retained,
+        prerequisite_content=prerequisite_path.read_bytes(),
     )
-    attempt = repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1"
-    success = attempt / "prerequisites-success.json"
-    if case == "missing":
-        success.unlink()
-    elif case == "noncanonical":
-        success.write_bytes(success.read_bytes().replace(b"{", b"{ ", 1))
-    else:
-        marker = cast(dict[str, object], json.loads(success.read_text(encoding="utf-8")))
-        if case == "identity":
-            identity = cast(dict[str, object], marker["prerequisites_identity"])
-            identity["sha256"] = "0" * 64
-        elif case == "study_id":
-            marker["study_id"] = "other-study"
-        else:
-            marker["url"] = "https://other.example.test/object.bin"
-        _write_canonical_json(success, marker)
-
-    calls: list[Path] = []
-
-    def should_not_run(path: Path) -> RunResult:
-        calls.append(path)
-        raise AssertionError("collection must stop before the first capture")
-
-    with pytest.raises(TrafficlabError, match="matching successful prerequisite marker"):
-        study.collect_validation_candidate(
-            repository_root=repository_root,
-            study_id="study-1",
-            url="https://downloads.example.test/object.bin",
-            environment=environment,
-            retained_prerequisites=retained,
-            prerequisite_files=files,
-            configs=configs,
-            run=should_not_run,
-            object_size_bytes=object_size_bytes,
-        )
-
-    assert calls == []
-    assert not (repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1").exists()
-    assert (attempt / "collection.json").is_file()
-
-
-def test_collection_binds_retained_prerequisite_before_creating_a_candidate(tmp_path: Path) -> None:
-    repository_root = tmp_path / "repository"
-    prerequisite_path = _write_collection_compatible_inputs(repository_root)
     environment, retained, files, configs, object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
         repository_root,
         prerequisite_path,
@@ -4970,11 +4913,11 @@ def test_collection_binds_retained_prerequisite_before_creating_a_candidate(tmp_
             json.dumps({"argv": argv}, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
         ).as_dict()
     mismatched_content = study.render_retained_prerequisites(mismatched)
-    study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
         repository_root,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
-        prerequisite_content=mismatched_content,
+        phase="collection",
     )
     calls: list[Path] = []
 
@@ -4988,6 +4931,7 @@ def test_collection_binds_retained_prerequisite_before_creating_a_candidate(tmp_
             repository_root=repository_root,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
+            attempt=attempt,
             environment=environment,
             retained_prerequisites=mismatched_content,
             prerequisite_files=files,
@@ -5006,6 +4950,12 @@ def test_collection_binds_retained_prerequisite_before_creating_a_candidate(tmp_
 def test_collection_persists_its_phase_marker_before_later_object_validation(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     prerequisite_path = _write_collection_compatible_inputs(repository_root)
+    study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        prerequisite_content=prerequisite_path.read_bytes(),
+    )
     environment, retained, files, configs, _object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
         repository_root,
         prerequisite_path,
@@ -5013,11 +4963,11 @@ def test_collection_persists_its_phase_marker_before_later_object_validation(tmp
         url="https://downloads.example.test/object.bin",
         runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
     )
-    study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
         repository_root,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
-        prerequisite_content=retained,
+        phase="collection",
     )
     candidate = repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
     marker = (
@@ -5029,6 +4979,7 @@ def test_collection_persists_its_phase_marker_before_later_object_validation(tmp
             repository_root=repository_root,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
+            attempt=attempt,
             environment=environment,
             retained_prerequisites=retained,
             prerequisite_files=files,
@@ -5291,6 +5242,20 @@ def _candidate_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file() and not path.is_symlink()
     }
+
+
+def test_offline_audit_reconstructs_held_out_without_calling_the_producer_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The auditor derives the independent held-out horizon from retained public bytes."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+
+    def producer_boundary_must_not_run(**_kwargs: object) -> study.HeldOutEvaluation:
+        raise AssertionError("auditor delegated held-out reconstruction to the producer boundary")
+
+    monkeypatch.setattr(auditor, "evaluate_study_held_out", producer_boundary_must_not_run, raising=False)
+    assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
 
 
 def _tree_inventory(root: Path) -> dict[str, tuple[object, ...]]:
@@ -6437,7 +6402,7 @@ def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
     assert study.render_study_results(result) == content
 
 
-def test_study_held_out_evaluator_requires_an_independent_reference_and_uses_the_fixed_training_model() -> None:
+def test_study_held_out_evaluator_uses_the_independent_window_with_the_fixed_training_model() -> None:
     """The study-only boundary evaluates a frozen training model without weakening ordinary stage lineage checks."""
     fixture = _FIT_FIXTURE
     config = load_configuration_pair(fixture / "experiment.toml").realized
@@ -6499,36 +6464,32 @@ def test_study_held_out_evaluator_requires_an_independent_reference_and_uses_the
             reference_source=Path("held_out/reference.pcapng"),
         )
 
-    different_window = tuple(
+    longer_window = tuple(
         TraceEvent(
             event.timestamp + (1.0 if index == len(independent) - 1 else 0.0), event.direction, event.frame_length
         )
         for index, event in enumerate(independent)
     )
-    longer = study.evaluate_study_held_out(
-        model_content=(fixture / "best_model.json").read_bytes(),
-        model_source=fixture / "best_model.json",
-        config=config,
-        capture_content=_CAPTURE_BYTES,
-        capture_source=fixture / "capture.json",
-        reference_content=encode_pcapng(different_window, metadata),
-        reference_source=Path("held_out/different-window.pcapng"),
-    )
-    assert longer.observation_window_seconds == result.observation_window_seconds
-
     shorter_window = tuple(
-        TraceEvent(event.timestamp * 0.1, event.direction, event.frame_length) for event in independent
+        TraceEvent(event.timestamp * 0.8, event.direction, event.frame_length) for event in independent
     )
-    with pytest.raises(TrafficlabError, match="reference window"):
-        study.evaluate_study_held_out(
+    for name, events in (("short", shorter_window), ("long", longer_window)):
+        _normalized, held_out_window = normalize_reference(events)
+        evaluation = study.evaluate_study_held_out(
             model_content=(fixture / "best_model.json").read_bytes(),
             model_source=fixture / "best_model.json",
             config=config,
             capture_content=_CAPTURE_BYTES,
             capture_source=fixture / "capture.json",
-            reference_content=encode_pcapng(shorter_window, metadata),
-            reference_source=Path("held_out/short-window.pcapng"),
+            reference_content=encode_pcapng(events, metadata),
+            reference_source=Path(f"held_out/{name}-window.pcapng"),
         )
+        assert held_out_window != result.training_model.observation_window_seconds
+        assert evaluation.observation_window_seconds == held_out_window
+        assert evaluation.training_model == result.training_model
+        assert evaluation.training_model_identity == result.training_model_identity
+        assert evaluation.seed == result.training_model.final_seed
+        assert evaluation.training_model.final_limits == result.training_model.final_limits
 
 
 def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregates_production_junit() -> None:
@@ -6821,6 +6782,111 @@ def test_successful_prerequisite_marker_binds_the_published_prerequisite_bytes(t
         "study_id": runner.study_id,
         "url": runner.url,
     }
+
+
+def test_collect_cli_freezes_its_attempt_before_any_input_bridge_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every post-syntax collection failure consumes the study ID before bridge validation."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    marker = repository / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1" / "collection.json"
+    candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
+    calls = 0
+
+    def reject_bridge(*_args: object, **_kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        assert marker.is_file()
+        raise TrafficlabError("synthetic input bridge failure", corrective_action="preserve the attempt")
+
+    monkeypatch.setattr(study, "_collection_inputs_from_prerequisites", reject_bridge)
+    argv = (
+        "collect",
+        "--url",
+        "https://downloads.example.test/object.bin",
+        "--study-id",
+        "study-1",
+        "--prerequisites",
+        "examples/validation_study/prerequisites.json",
+    )
+
+    assert study.main(argv, repository_root=repository) == 2
+    assert marker.is_file()
+    assert not candidate.exists()
+    assert study.main(argv, repository_root=repository) == 2
+    assert calls == 1
+
+
+def test_public_prerequisites_then_collect_binds_the_raw_published_marker_before_transformation(tmp_path: Path) -> None:
+    """The public phase transition checks schema-1 publication bytes before schema-3 retention."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    scripted = _ScriptedPrerequisiteRunner(repository)
+    now = datetime(2026, 8, 16, tzinfo=UTC)
+    assert (
+        study.main(
+            ("prerequisites", "--url", scripted.url, "--study-id", scripted.study_id),
+            repository_root=repository,
+            runner=scripted,
+            utc_now=lambda: now,
+        )
+        == 0
+    )
+
+    def collection_runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+    ) -> subprocess.CompletedProcess[bytes]:
+        command = tuple(argv)
+        if command == ("git", "rev-parse", "HEAD^{tree}"):
+            return subprocess.CompletedProcess(command, 0, stdout=b"d" * 40 + b"\n", stderr=b"")
+        if command == ("docker", "image", "inspect", scripted.capture_id, "--format", "{{.Id}}"):
+            return subprocess.CompletedProcess(command, 0, stdout=f"{scripted.capture_id}\n".encode(), stderr=b"")
+        return scripted(argv, cwd=cwd, check=check, capture_output=capture_output, shell=shell, timeout=timeout)
+
+    training_calls: list[Path] = []
+
+    def stop_at_training(path: Path) -> RunResult:
+        training_calls.append(path)
+        raise ValueError("training callback reached")
+
+    argv = (
+        "collect",
+        "--url",
+        scripted.url,
+        "--study-id",
+        scripted.study_id,
+        "--prerequisites",
+        "examples/validation_study/prerequisites.json",
+    )
+    with pytest.raises(ValueError, match="training callback reached"):
+        study.main(
+            argv,
+            repository_root=repository,
+            runner=collection_runner,
+            run=stop_at_training,
+            capture=lambda _path: pytest.fail("held-out capture must not begin"),
+        )
+
+    prerequisite = repository / "examples" / "validation_study" / "prerequisites.json"
+    attempt = repository / "examples" / "validation_study" / ".study-work" / "attempts" / scripted.study_id
+    candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / scripted.study_id
+    success = cast(dict[str, object], json.loads((attempt / "prerequisites-success.json").read_text(encoding="utf-8")))
+    assert success["prerequisites_identity"] == identify_bytes(prerequisite.read_bytes()).as_dict()
+    assert (candidate / "prerequisites.json").read_bytes() != prerequisite.read_bytes()
+    assert (attempt / "collection.json").is_file()
+    assert (attempt / "frozen-protocol.json").is_file()
+    assert len(training_calls) == 1
+    assert study.main(argv, repository_root=repository, runner=collection_runner) == 2
+    assert len(training_calls) == 1
 
 
 def test_cold_capture_build_argv_freezes_task9_reproducibility_controls(tmp_path: Path) -> None:

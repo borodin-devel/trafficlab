@@ -87,6 +87,15 @@ def _variant_events(events: Sequence[TraceEvent], *, variant: int) -> tuple[Trac
     return tuple(result)
 
 
+def _held_out_events(events: Sequence[TraceEvent], *, variant: int, window_scale: float) -> tuple[TraceEvent, ...]:
+    """Make one independent held-out trace with its own valid comparison horizon."""
+
+    return tuple(
+        TraceEvent(event.timestamp * window_scale, event.direction, event.frame_length)
+        for event in _variant_events(events, variant=variant)
+    )
+
+
 def _prepared(config: ExperimentConfig, run_directory: Path) -> PreparedExperiment:
     return PreparedExperiment(
         source=Path("fixture-validation-study.toml"),
@@ -363,6 +372,7 @@ def _write_held_out(
         "capture_lineage": _capture_lineage(capture),
         "comparison_identity": identify_bytes(evaluation.comparison_json).as_dict(),
         "generated_identity": identify_bytes(evaluation.generated_pcapng).as_dict(),
+        "observation_window_seconds": evaluation.observation_window_seconds,
         "reference_identity": identify_bytes(reference).as_dict(),
         "seed": 97,
         "training_directory": training["directory"],
@@ -457,13 +467,18 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
         }
         held: list[dict[str, object]] = []
         held_evaluations: dict[study.WorkloadName, study.HeldOutEvaluation] = {}
+        held_window_scales = {"short": 0.5, "streaming": 1.2, "bursty": 0.8}
         for number, workload in enumerate(WORKLOADS, start=20):
             selected = selected_training[workload]
             record, evaluation = _write_held_out(
                 root,
                 config=config,
                 metadata=metadata,
-                events=_variant_events(base_events, variant=number),
+                events=_held_out_events(
+                    base_events,
+                    variant=number,
+                    window_scale=held_window_scales[workload],
+                ),
                 workload=workload,
                 training=selected,
                 training_files=training_files[(workload, cast(int, selected["repeat"]))],

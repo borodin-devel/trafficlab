@@ -220,11 +220,17 @@ def _offline_stage_runners(
     sequence = count(1)
     calls: list[str] = []
 
-    def publish_capture(prepared: PreparedExperiment, *, number: int, label: str) -> CaptureResult:
+    def publish_capture(
+        prepared: PreparedExperiment, *, number: int, label: str, window_scale: float = 1.0
+    ) -> CaptureResult:
         capture_path = prepared.run_directory / "capture.json"
         reference_path = prepared.run_directory / "reference.pcapng"
         capture_path.write_bytes(_CAPTURE_BYTES)
-        reference_path.write_bytes(encode_pcapng(_variant(base_events, number=number), metadata))
+        events = tuple(
+            TraceEvent(event.timestamp * window_scale, event.direction, event.frame_length)
+            for event in _variant(base_events, number=number)
+        )
+        reference_path.write_bytes(encode_pcapng(events, metadata))
         inspection = validate_capture_pair(capture_path, reference_path, deadline=None)
         append_run_log(
             prepared.run_directory,
@@ -271,7 +277,12 @@ def _offline_stage_runners(
         assert protocol.exists(), "held-out capture started before training selection was frozen"
         calls.append(f"held-out:{workload.name}")
         prepared = open_or_prepare_experiment(path)
-        result = publish_capture(prepared, number=100 + next(sequence), label=workload.name)
+        result = publish_capture(
+            prepared,
+            number=100 + next(sequence),
+            label=workload.name,
+            window_scale={"short": 0.5, "streaming": 1.2, "bursty": 0.8}[workload.name],
+        )
         for start, end, filename in workload.transfers:
             header = (
                 f"HTTP/1.1 206 Partial Content\r\nContent-Length: {end - start + 1}\r\n"
@@ -289,11 +300,18 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
     candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
     run_training, capture_held_out, calls = _offline_stage_runners(repository, candidate=candidate)
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        phase="collection",
+    )
 
     collected = study.collect_validation_candidate(
         repository_root=repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
+        attempt=attempt,
         environment=environment,
         retained_prerequisites=prerequisite,
         prerequisite_files=prerequisite_files,
@@ -334,7 +352,8 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     assert {
         path.relative_to(candidate).as_posix() for path in candidate.glob("observations/**/*.json")
     } == expected_observations
-    assert set(cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text()))) == {
+    report_inputs = cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text()))
+    assert set(report_inputs) == {
         "controlled_weight_analysis",
         "formula",
         "fresh_simulation",
@@ -344,6 +363,18 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         "runtime_winner_variance",
         "training",
     }
+    held_rows = cast(list[dict[str, object]], report_inputs["held_out"])
+    held_records = {
+        workload: cast(dict[str, object], json.loads((candidate / "held_out" / workload / "record.json").read_text()))
+        for workload in ("short", "streaming", "bursty")
+    }
+    assert {row["workload"] for row in held_rows} == {"short", "streaming", "bursty"}
+    assert {row["workload"]: row["observation_window_seconds"] for row in held_rows} == {
+        workload: record["observation_window_seconds"] for workload, record in held_records.items()
+    }
+    assert cast(float, held_records["short"]["observation_window_seconds"]) < cast(
+        float, held_records["streaming"]["observation_window_seconds"]
+    )
     assert calls[:9] == [
         "training:short",
         "training:streaming",
@@ -373,6 +404,12 @@ def test_collection_failure_locks_the_study_id_to_a_new_attempt(tmp_path: Path) 
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
     calls = 0
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        phase="collection",
+    )
 
     def fail_training(_path: Path) -> RunResult:
         nonlocal calls
@@ -387,6 +424,7 @@ def test_collection_failure_locks_the_study_id_to_a_new_attempt(tmp_path: Path) 
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
+            attempt=attempt,
             environment=environment,
             retained_prerequisites=prerequisite,
             prerequisite_files=prerequisite_files,
@@ -413,6 +451,12 @@ def test_collection_preserves_unexpected_programming_errors_after_freezing_the_a
     repository = tmp_path / "repository"
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        phase="collection",
+    )
 
     def broken_training(_path: Path) -> RunResult:
         raise ValueError("offline programming defect")
@@ -422,6 +466,7 @@ def test_collection_preserves_unexpected_programming_errors_after_freezing_the_a
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
+            attempt=attempt,
             environment=environment,
             retained_prerequisites=prerequisite,
             prerequisite_files=prerequisite_files,
@@ -439,6 +484,12 @@ def test_collection_wraps_operational_os_errors_after_freezing_the_attempt(tmp_p
     repository = tmp_path / "repository"
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        phase="collection",
+    )
 
     def inaccessible_training(_path: Path) -> RunResult:
         raise OSError("offline filesystem failure")
@@ -448,6 +499,7 @@ def test_collection_wraps_operational_os_errors_after_freezing_the_attempt(tmp_p
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
+            attempt=attempt,
             environment=environment,
             retained_prerequisites=prerequisite,
             prerequisite_files=prerequisite_files,
