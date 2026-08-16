@@ -15,7 +15,7 @@ mounts = []
 [target.environment]
 
 [capture]
-image = "trafficlab-capture@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+image = "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
 network_probe_url = "https://example.invalid/"
 readiness_timeout_seconds = 2.0
 workload_timeout_seconds = 5.0

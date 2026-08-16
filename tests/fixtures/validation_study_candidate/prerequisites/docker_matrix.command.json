@@ -1,1 +1,1 @@
-{"argv":["fixture","docker_matrix"]}
+{"argv":["scripts/run_bounded.sh","--memory-high","2G","--memory-max","3G","--swap-max","512M","--wall-time","20m","--kill-after","10s","--","uv","run","--locked","pytest","-vv","-n","0","-m","docker","--junitxml","examples/validation_study/.study-work/evidence/fixture-study/00-prerequisites/docker.xml"]}
