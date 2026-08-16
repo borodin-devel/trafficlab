@@ -10,6 +10,8 @@ import sys
 import time
 import urllib.request
 
+_USER_AGENT = "Trafficlab/0.1.0 (+https://github.com/borodin-devel/trafficlab)"
+
 
 def _traffic(host: str, tcp_count: int, udp_count: int, inter_request_seconds: float = 0.0) -> None:
     for index in range(tcp_count):
@@ -52,7 +54,8 @@ def _traffic(host: str, tcp_count: int, udp_count: int, inter_request_seconds: f
 
 
 def _https(url: str) -> None:
-    with urllib.request.urlopen(url, timeout=15.0) as response:  # noqa: S310 - operator-supplied HTTPS only
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(request, timeout=15.0) as response:  # noqa: S310 - operator-supplied HTTPS only
         if not 200 <= response.status < 400:
             raise RuntimeError(f"HTTPS endpoint returned status {response.status}")
         response.read(4096)

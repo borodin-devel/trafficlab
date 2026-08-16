@@ -274,8 +274,22 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     probe_capture = cast(dict[str, object], probe_services["capture"])
     assert probe_capture["image"] == _CAPTURE_IMAGE_ID
     entrypoint = cast(list[object], probe_target["entrypoint"])
-    assert entrypoint[-1] == config.capture.network_probe_url
-    assert entrypoint[0] == "curl"
+    assert entrypoint == [
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--connect-timeout",
+        "60",
+        "--max-time",
+        "60",
+        "--range",
+        "0-0",
+        "--output",
+        "/dev/null",
+        config.capture.network_probe_url,
+    ]
     assert probe_target["command"] == []
     assert probe_target["network_mode"] == "service:capture"
     assert probe_target["init"] is True
