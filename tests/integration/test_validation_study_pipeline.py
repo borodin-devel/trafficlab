@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
@@ -32,6 +33,25 @@ _FIT_FIXTURE = _ROOT / "examples" / "data" / "fit"
 _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
 _AUDIT_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_candidate"
+
+
+def _copy_audit_fixture_to_clean_checkout(tmp_path: Path) -> tuple[Path, Path]:
+    source_environment = cast(dict[str, object], json.loads((_AUDIT_FIXTURE / "environment.json").read_text(encoding="utf-8")))
+    repository = tmp_path / "relocated-repository"
+    subprocess.run(
+        ("git", "clone", "--no-hardlinks", "--no-checkout", str(_ROOT), str(repository)),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ("git", "checkout", "--detach", cast(str, source_environment["source_commit"])),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    candidate = repository / "candidate"
+    shutil.copytree(_AUDIT_FIXTURE, candidate)
+    return repository, candidate
 
 
 def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
@@ -151,18 +171,21 @@ def test_audit_cli_accepts_only_a_reconstructed_offline_candidate(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    repository = tmp_path / "relocated-repository"
-    repository.mkdir()
-    shutil.copy2(_ROOT / "uv.lock", repository / "uv.lock")
-    candidate = repository / "candidate"
-    shutil.copytree(_AUDIT_FIXTURE, candidate)
+    repository, candidate = _copy_audit_fixture_to_clean_checkout(tmp_path)
 
     def reject_external(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("offline audit attempted an external operation")
 
     monkeypatch.setattr(socket, "socket", reject_external)
     monkeypatch.setattr(socket, "create_connection", reject_external)
-    monkeypatch.setattr(subprocess, "run", reject_external)
+    original_run = subprocess.run
+
+    def local_git_only(argv: Sequence[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if tuple(argv[:1]) == ("git",):
+            return original_run(argv, *args, **kwargs)  # type: ignore[call-overload]
+        raise AssertionError("offline audit attempted a non-Git subprocess")
+
+    monkeypatch.setattr(subprocess, "run", local_git_only)
     monkeypatch.setattr(study, "run_experiment", reject_external)
 
     assert auditor.main([str(candidate), "--repository", str(repository)]) == 0
@@ -174,11 +197,7 @@ def test_audit_script_main_reconstructs_a_relocated_fixture_without_a_subprocess
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    repository = tmp_path / "relocated-repository"
-    repository.mkdir()
-    shutil.copy2(_ROOT / "uv.lock", repository / "uv.lock")
-    candidate = repository / "candidate"
-    shutil.copytree(_AUDIT_FIXTURE, candidate)
+    repository, candidate = _copy_audit_fixture_to_clean_checkout(tmp_path)
     monkeypatch.setattr(
         sys,
         "argv",

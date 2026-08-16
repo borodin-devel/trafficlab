@@ -963,13 +963,6 @@ def _training(
         artifact: _read_regular(directory / artifact, affected=f"{directory_relative}/{artifact}")
         for artifact in ARTIFACT_NAMES
     }
-    if document["capture_lineage"] != _capture_lineage(contents["capture.json"], environment):
-        _fail(
-            "artifact_foreign",
-            directory_relative,
-            "training capture lineage does not match retained capture bytes and environment",
-            "restore matching training capture lineage",
-        )
     try:
         pair = load_configuration_pair(directory / "experiment.toml")
     except TrafficlabError as error:
@@ -1014,6 +1007,13 @@ def _training(
             directory_relative,
             f"training artifact reconstruction failed: {error}",
             "restore matching retained training artifacts",
+        )
+    if document["capture_lineage"] != _capture_lineage(contents["capture.json"], environment):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "training capture lineage does not match retained capture bytes and environment",
+            "restore matching training capture lineage",
         )
     if (
         inspection.packet_count != len(reference)
@@ -1257,13 +1257,6 @@ def _held_out(
         )
     names = ("capture.json", "reference.pcapng", "generated.pcapng", "similarity.json", "record.json", "run.log")
     contents = {name: _read_regular(directory / name, affected=f"{directory_relative}/{name}") for name in names}
-    if document["capture_lineage"] != _capture_lineage(contents["capture.json"], environment):
-        _fail(
-            "artifact_foreign",
-            directory_relative,
-            "held-out capture lineage does not match retained capture bytes and environment",
-            "restore matching held-out capture lineage",
-        )
     _canonical_jsonl(contents["run.log"], name=f"{directory_relative}/run.log")
     reference_identity = identify_bytes(contents["reference.pcapng"])
     if reference_identity.sha256 in training_references:
@@ -1290,6 +1283,13 @@ def _held_out(
             directory_relative,
             f"held-out reconstruction failed: {error}",
             "restore matching held-out evidence",
+        )
+    if document["capture_lineage"] != _capture_lineage(contents["capture.json"], environment):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "held-out capture lineage does not match retained capture bytes and environment",
+            "restore matching held-out capture lineage",
         )
     if (
         evaluation.generated_pcapng != contents["generated.pcapng"]

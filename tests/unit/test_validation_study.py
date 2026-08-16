@@ -4752,7 +4752,14 @@ def test_offline_bundle_audit_reconstructs_relocated_complete_fixture_without_ex
 
     monkeypatch.setattr(socket, "socket", reject_external)
     monkeypatch.setattr(socket, "create_connection", reject_external)
-    monkeypatch.setattr(subprocess, "run", reject_external)
+    original_run = subprocess.run
+
+    def local_git_only(argv: Sequence[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if tuple(argv[:1]) == ("git",):
+            return original_run(argv, *args, **kwargs)  # type: ignore[call-overload]
+        raise AssertionError("offline audit attempted a non-Git subprocess")
+
+    monkeypatch.setattr(subprocess, "run", local_git_only)
     monkeypatch.setattr(study, "run_experiment", reject_external)
 
     result = auditor.audit_bundle(candidate, repository=repository)
