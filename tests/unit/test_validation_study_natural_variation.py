@@ -60,7 +60,10 @@ def _frozen_windows(config: ExperimentConfig) -> dict[str, object]:
 
 def _held() -> dict[str, HeldOutEvaluation]:
     return {
-        workload: cast(HeldOutEvaluation, SimpleNamespace(comparison=cast(ComparisonResult, object())))
+        workload: cast(
+            HeldOutEvaluation,
+            SimpleNamespace(comparison=cast(ComparisonResult, object()), observation_window_seconds=1.0),
+        )
         for workload in _WORKLOADS
     }
 
