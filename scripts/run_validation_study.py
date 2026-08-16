@@ -3496,15 +3496,21 @@ def _expected_capability_argv(study_id: str, url: str) -> tuple[str, ...]:
     )
 
 
+def _pre_user_agent_capability_argv(study_id: str, url: str) -> tuple[str, ...]:
+    """Return the immediately preceding capability projection for rotation-only compatibility."""
+
+    current = _expected_capability_argv(study_id, url)
+    user_agent = current.index("--user-agent")
+    return current[:user_agent] + current[user_agent + 2 :]
+
+
 def _historic_schema_one_capability_argv() -> tuple[str, ...]:
     """Return the sole pre-User-Agent command retained in checked schema-1 evidence."""
 
-    current = _expected_capability_argv(
+    return _pre_user_agent_capability_argv(
         _HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID,
         _HISTORIC_SCHEMA_ONE_RESULT_URL,
     )
-    user_agent = current.index("--user-agent")
-    return current[:user_agent] + current[user_agent + 2 :]
 
 
 def _historic_schema_one_workload_argvs() -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
@@ -3528,6 +3534,7 @@ def _validate_capability(
     study_id: str,
     url: str,
     historic_schema_one_result: bool = False,
+    allow_pre_user_agent_capability: bool = False,
 ) -> JsonObject:
     document = _exact_object(value, CAPABILITY_KEYS, name="capability")
     argv = _string_array(document["argv"], name="capability argv", nonempty=True)
@@ -3536,8 +3543,13 @@ def _validate_capability(
         if historic_schema_one_result
         else _expected_capability_argv(study_id, url)
     )
+    pre_user_agent_projection = (
+        allow_pre_user_agent_capability
+        and not historic_schema_one_result
+        and argv == _pre_user_agent_capability_argv(study_id, url)
+    )
     _require(
-        argv == expected_argv,
+        argv == expected_argv or pre_user_agent_projection,
         "capability argv must equal the exact repository-relative Docker/curl projection",
     )
     started = _utc_timestamp(document["started_utc"], name="capability start")
@@ -3618,6 +3630,7 @@ def _validate_prerequisite_document(
     document: JsonObject,
     *,
     repository_root: Path,
+    allow_pre_user_agent_capability: bool = False,
 ) -> PrerequisiteResults:
     root = _exact_object(document, PREREQUISITE_ROOT_KEYS, name="prerequisite root")
     schema_version = _strict_int(root["schema_version"], name="prerequisite schema version")
@@ -3630,7 +3643,13 @@ def _validate_prerequisite_document(
     url = validate_endpoint_url(_strict_string(root["url"], name="operator URL"))
     tools = _validate_tools(root["tools"])
     images = _validate_images(root["images"])
-    capability = _validate_capability(root["capability"], repository_root=repository_root, study_id=study_id, url=url)
+    capability = _validate_capability(
+        root["capability"],
+        repository_root=repository_root,
+        study_id=study_id,
+        url=url,
+        allow_pre_user_agent_capability=allow_pre_user_agent_capability,
+    )
     hashes = _profile_hashes(root["config_sha256"])
     commands = _strict_list(root["commands"], name="prerequisite commands")
     _require(len(commands) == 2, "prerequisite commands must contain docker_matrix then internet_smoke")
@@ -3666,6 +3685,20 @@ def parse_prerequisite_results(content: bytes, *, repository_root: Path) -> Prer
     document = _load_json(content)
     result = _validate_prerequisite_document(document, repository_root=repository_root)
     if _canonical_json(_prerequisite_document(result)) != content:
+        raise ValueError("prerequisite JSON must use canonical sorted compact encoding with one trailing newline")
+    return result
+
+
+def _parse_prior_prerequisite_results_for_rotation(content: bytes, *, repository_root: Path) -> PrerequisiteResults:
+    """Validate an already-published immediate predecessor without relaxing the public codec."""
+
+    document = _load_json(content)
+    result = _validate_prerequisite_document(
+        document,
+        repository_root=repository_root,
+        allow_pre_user_agent_capability=True,
+    )
+    if _canonical_json(document) != content:
         raise ValueError("prerequisite JSON must use canonical sorted compact encoding with one trailing newline")
     return result
 
@@ -6059,14 +6092,23 @@ def _prerequisite_rotation_journal_path(repository_root: Path, study_id: str) ->
     return _collection_attempt_root(repository_root, study_id) / "prerequisites-rotation.json"
 
 
-def _archive_prerequisite_raw_document(repository_root: Path, *, study_id: str, content: bytes) -> bytes:
+def _archive_prerequisite_raw_document(
+    repository_root: Path,
+    *,
+    study_id: str,
+    content: bytes,
+    allow_pre_user_agent_capability: bool = False,
+) -> bytes:
     """Persist the byte-exact canonical prerequisite document beside its irreversible attempt."""
 
     archive = _prerequisite_raw_archive_path(repository_root, study_id)
 
     def validate(persisted: bytes) -> None:
-        parsed = parse_prerequisite_results(persisted, repository_root=repository_root)
-        _require(render_prerequisite_results(parsed) == content, "archived prerequisite document is not canonical")
+        if allow_pre_user_agent_capability:
+            _parse_prior_prerequisite_results_for_rotation(persisted, repository_root=repository_root)
+        else:
+            parsed = parse_prerequisite_results(persisted, repository_root=repository_root)
+            _require(render_prerequisite_results(parsed) == content, "archived prerequisite document is not canonical")
 
     if _path_entry_exists(archive):
         persisted = _read_regular_prerequisite_rotation_target(
@@ -6626,7 +6668,7 @@ def _bootstrap_current_prerequisite_archive(repository_root: Path, prerequisite_
     if not _path_entry_exists(prerequisite_path):
         return
     content = _read_regular_prerequisite_rotation_target(prerequisite_path, name="canonical prerequisite target")
-    prior = parse_prerequisite_results(content, repository_root=repository_root)
+    prior = _parse_prior_prerequisite_results_for_rotation(content, repository_root=repository_root)
     _require_successful_prerequisite_attempt(
         repository_root,
         study_id=prior.study_id,
@@ -6634,7 +6676,12 @@ def _bootstrap_current_prerequisite_archive(repository_root: Path, prerequisite_
         prerequisite_content=content,
         require_archive=False,
     )
-    _archive_prerequisite_raw_document(repository_root, study_id=prior.study_id, content=content)
+    _archive_prerequisite_raw_document(
+        repository_root,
+        study_id=prior.study_id,
+        content=content,
+        allow_pre_user_agent_capability=True,
+    )
 
 
 def _complete_prerequisite_attempt(  # pyright: ignore[reportUnusedFunction]

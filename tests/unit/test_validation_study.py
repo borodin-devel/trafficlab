@@ -3022,6 +3022,68 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         assert study.load_experiment(config_path).capture.image == runner.capture_id
 
 
+def test_prerequisite_rotation_preserves_a_pre_user_agent_root_and_round_trips_the_fresh_captured_argv(
+    tmp_path: Path,
+) -> None:
+    """A current producer can rotate the immediately preceding schema-1 prerequisite publication."""
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    prior_runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r6")
+    study.run_prerequisites(
+        prior_runner.url,
+        prior_runner.study_id,
+        repository_root=repository_root,
+        runner=prior_runner,
+        utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+    )
+
+    study_root = repository_root / "examples" / "validation_study"
+    canonical = study_root / "prerequisites.json"
+    prior_archive = study_root / ".study-work" / "attempts" / prior_runner.study_id / "prerequisites.raw.json"
+    prior_marker = prior_archive.with_name("prerequisites-success.json")
+    legacy = cast(dict[str, object], json.loads(canonical.read_text(encoding="utf-8")))
+    capability = cast(dict[str, object], legacy["capability"])
+    argv = cast(list[str], capability["argv"])
+    user_agent = argv.index("--user-agent")
+    del argv[user_agent : user_agent + 2]
+    legacy_content = json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    canonical.write_bytes(legacy_content)
+    prior_archive.write_bytes(legacy_content)
+    marker = cast(dict[str, object], json.loads(prior_marker.read_text(encoding="utf-8")))
+    marker["prerequisites_identity"] = study.identify_bytes(legacy_content).as_dict()
+    prior_marker.write_bytes(json.dumps(marker, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n")
+    with pytest.raises(ValueError, match="capability argv"):
+        study.parse_prerequisite_results(legacy_content, repository_root=repository_root)
+    with pytest.raises(ValueError, match="canonical"):
+        study._parse_prior_prerequisite_results_for_rotation(  # pyright: ignore[reportPrivateUsage]
+            legacy_content[:-1],
+            repository_root=repository_root,
+        )
+
+    runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r7")
+    result = study.run_prerequisites(
+        runner.url,
+        runner.study_id,
+        repository_root=repository_root,
+        runner=runner,
+        utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+    )
+
+    published = canonical.read_bytes()
+    parsed = study.parse_prerequisite_results(published, repository_root=repository_root)
+    captured_live_argv = next(
+        command
+        for command, _timeout in runner.calls
+        if command[:2] == ("docker", "run") and f"trafficlab-validation-study-capability-{runner.study_id}" in command
+    )
+    projected_argv = list(captured_live_argv)
+    projected_argv[8] = str((runner.evidence / "capability.cid").relative_to(repository_root))
+    projected_argv[12] = f"type=bind,src={runner.mount.relative_to(repository_root)},dst=/trafficlab-study"
+
+    assert parsed == result
+    assert cast(tuple[str, ...], parsed.capability["argv"]) == tuple(projected_argv)
+
+
 def test_prerequisites_remove_the_shared_capture_tag_after_a_guarded_test_failure(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     _write_prerequisite_repository_inputs(repository_root)
