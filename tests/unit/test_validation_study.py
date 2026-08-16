@@ -25,6 +25,7 @@ import tomli_w
 from scripts import audit_validation_study as auditor
 from scripts import generate_validation_study_fixture as fixture_generator
 from scripts import run_validation_study as study
+from trafficlab import USER_AGENT
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
@@ -421,6 +422,8 @@ def _valid_prerequisite(*, study_id: str = "study-1") -> study.PrerequisiteResul
         "--proto-redir",
         "=https",
         "--http1.1",
+        "--user-agent",
+        USER_AGENT,
         "--connect-timeout",
         "15",
         "--max-time",
@@ -1937,6 +1940,8 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     url = "https://downloads.example.test/object.bin"
+    metadata = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert USER_AGENT == f"{metadata['name']}/{metadata['version']} (+{metadata['urls']['Repository']})"
     common = (
         "--fail",
         "--silent",
@@ -1949,6 +1954,8 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
         "--proto-redir",
         "=https",
         "--http1.1",
+        "--user-agent",
+        USER_AGENT,
         "--connect-timeout",
         "15",
     )
@@ -2037,6 +2044,9 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
     assert specs[2].argv.count("--next") == 7
     assert specs[2].argv[-1] == url
     assert all("sh" not in spec.argv and "-c" not in spec.argv for spec in specs)
+    capability_argv = study._expected_capability_argv("study-1", url)  # pyright: ignore[reportPrivateUsage]
+    capability_user_agent = capability_argv.index("--user-agent")
+    assert capability_argv[capability_user_agent : capability_user_agent + 2] == ("--user-agent", USER_AGENT)
 
     monkeypatch.setattr(study, "CURL_COMMON", (*common[:-1], "--proto-redir", "=http"))
     with pytest.raises(ValueError, match="exact HTTPS-only curl profile"):
@@ -6577,11 +6587,54 @@ def test_validation_fixture_retains_the_complete_231_file_evidence_inventory() -
 
 def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
     content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
+    document = cast(dict[str, object], json.loads(content))
+    capability = cast(dict[str, object], cast(dict[str, object], document["protocol"])["capability"])
+    argv = cast(list[str], capability["argv"])
+    assert "--user-agent" not in argv
     result = study.parse_study_results(content, repository_root=_ROOT)
 
     assert b'"fresh_simulation"' in content
     assert b'"held_out"' not in content
     assert study.render_study_results(result) == content
+
+    near_miss = copy.deepcopy(document)
+    near_miss_capability = cast(dict[str, object], cast(dict[str, object], near_miss["protocol"])["capability"])
+    near_miss_argv = cast(list[str], near_miss_capability["argv"])
+    near_miss_argv[near_miss_argv.index("--max-time") + 1] = "31"
+    with pytest.raises(ValueError, match="capability argv"):
+        study.parse_study_results(
+            json.dumps(near_miss, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n",
+            repository_root=_ROOT,
+        )
+
+    workload_near_miss = copy.deepcopy(document)
+    first_workload = cast(
+        dict[str, object], cast(list[object], cast(dict[str, object], workload_near_miss["protocol"])["workloads"])[0]
+    )
+    workload_argv = cast(list[str], first_workload["argv"])
+    workload_argv[workload_argv.index("--max-time") + 1] = "31"
+    with pytest.raises(ValueError, match="short workload definition"):
+        study.parse_study_results(
+            json.dumps(workload_near_miss, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n",
+            repository_root=_ROOT,
+        )
+
+
+def test_current_protocol_rejects_a_capability_projection_without_the_package_user_agent() -> None:
+    content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
+    current = cast(dict[str, object], json.loads(content))
+    environment = cast(dict[str, object], current["environment"])
+    environment["git_commit"] = "c" * 40
+
+    capability = cast(dict[str, object], cast(dict[str, object], current["protocol"])["capability"])
+    argv = cast(list[str], capability["argv"])
+    assert "--user-agent" not in argv
+
+    with pytest.raises(ValueError, match="capability argv"):
+        study.parse_study_results(
+            json.dumps(current, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n",
+            repository_root=_ROOT,
+        )
 
 
 def test_study_held_out_evaluator_uses_the_independent_window_with_the_fixed_training_model() -> None:
@@ -8984,6 +9037,32 @@ def test_offline_auditor_rejects_training_configuration_with_foreign_image_lock_
     ) == ("artifact_foreign", "publication", "training/short/r1", "not_published", "primary")
 
 
+def test_offline_auditor_rejects_training_configuration_without_the_frozen_curl_argv(tmp_path: Path) -> None:
+    """A candidate cannot replace the frozen workload command while retaining the image lock."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
+    for name in ("configs/training-short-r1.portable.toml", "configs/training-short-r1.realized.toml"):
+        path = candidate / name
+        content = path.read_bytes()
+        assert USER_AGENT.encode("ascii") in content
+        path.write_bytes(content.replace(USER_AGENT.encode("ascii"), b"trafficlab/0.0 (+https://invalid.example)", 1))
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", "training/short/r1", "not_published", "primary")
+
+
 @pytest.mark.parametrize(
     ("section", "expected_directory"),
     (("training", "training/short/r1"), ("held_out", "held_out/short")),
@@ -9078,6 +9157,7 @@ def test_offline_auditor_rejects_natural_variation_below_the_frozen_window(tmp_p
             value,
             protocol=protocol,
             environment=environment,
+            url=fixture_generator._URL,  # pyright: ignore[reportPrivateUsage]
         )
         for value in cast(list[object], index["training"])
     )

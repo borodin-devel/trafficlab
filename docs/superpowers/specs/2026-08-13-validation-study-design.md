@@ -122,7 +122,7 @@ docker run --rm
 --mount type=bind,src=MOUNT_ABS,dst=/trafficlab-study
 curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b
 --fail --silent --show-error --location --max-redirs 3
---proto =https --proto-redir =https --http1.1
+--proto =https --proto-redir =https --http1.1 --user-agent "trafficlab/<package-version> (+https://github.com/borodin-devel/trafficlab)"
 --connect-timeout 15 --max-time 30
 --range 0-0 --max-filesize 1
 --dump-header /trafficlab-study/.capability.headers
@@ -258,7 +258,7 @@ avoids a near-zero observation window on a fast endpoint.
 
 ```text
 --fail --silent --show-error --location --max-redirs 3
---proto =https --proto-redir =https --http1.1
+--proto =https --proto-redir =https --http1.1 --user-agent "trafficlab/<package-version> (+https://github.com/borodin-devel/trafficlab)"
 --connect-timeout 15 --max-time 30 --limit-rate 4M
 --range 0-262143 --max-filesize 262144
 --dump-header /trafficlab-study/short.headers
@@ -277,7 +277,7 @@ call this rate-limited traffic rather than claim exact wire pacing.
 
 ```text
 --fail --silent --show-error --location --max-redirs 3
---proto =https --proto-redir =https --http1.1
+--proto =https --proto-redir =https --http1.1 --user-agent "trafficlab/<package-version> (+https://github.com/borodin-devel/trafficlab)"
 --connect-timeout 15 --max-time 40 --limit-rate 256K
 --range 0-4194303 --max-filesize 4194304
 --dump-header /trafficlab-study/streaming.headers
@@ -305,7 +305,7 @@ It then contains eight transfer groups separated by `--next`. Each group is:
 
 ```text
 --fail --silent --show-error --location --max-redirs 3
---proto =https --proto-redir =https --http1.1
+--proto =https --proto-redir =https --http1.1 --user-agent "trafficlab/<package-version> (+https://github.com/borodin-devel/trafficlab)"
 --connect-timeout 15 --max-time 30
 --range START-(START+32767) --max-filesize 32768
 --dump-header /trafficlab-study/bursty-INDEX.headers

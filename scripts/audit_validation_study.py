@@ -1111,8 +1111,24 @@ def _require_config_images(config: ExperimentConfig, environment: Mapping[str, o
         )
 
 
+def _require_config_workload_argv(config: ExperimentConfig, *, workload: str, url: str, affected: str) -> None:
+    expected = next(spec.argv for spec in workload_specs(url) if spec.name == workload)
+    if config.target.argv != expected:
+        _fail(
+            "artifact_foreign",
+            affected,
+            "configuration target argv does not match the frozen workload profile",
+            "restore the exact frozen curl workload configuration",
+        )
+
+
 def _training(
-    bundle: Path, value: object, *, protocol: dict[str, object], environment: Mapping[str, object]
+    bundle: Path,
+    value: object,
+    *,
+    protocol: dict[str, object],
+    environment: Mapping[str, object],
+    url: str,
 ) -> _Training:
     document = _exact(
         value,
@@ -1155,6 +1171,12 @@ def _training(
         )
     config, _ = _config_pair(bundle, portable, realized, directory=directory, name=directory_relative)
     _require_config_images(config, environment, affected=directory_relative)
+    _require_config_workload_argv(
+        config,
+        workload=workload,
+        url=url,
+        affected=directory_relative,
+    )
     if config.run.final_seed != protocol["final_seed"] or tuple(config.genetic.trial_seeds) != tuple(
         cast(list[int], protocol["selection_seeds"])
     ):
@@ -2031,7 +2053,16 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
         _fail(
             "artifact_corrupt", _INDEX, "index must retain nine training run records", "restore all training evidence"
         )
-    training = tuple(_training(bundle, value, protocol=protocol, environment=environment) for value in training_items)
+    training = tuple(
+        _training(
+            bundle,
+            value,
+            protocol=protocol,
+            environment=environment,
+            url=cast(str, prerequisites["url"]),
+        )
+        for value in training_items
+    )
     expected_keys = {(workload, repeat) for workload in _WORKLOADS for repeat in _REPEATS}
     if {(item.workload, item.repeat) for item in training} != expected_keys:
         _fail(

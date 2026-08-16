@@ -35,7 +35,7 @@ from trafficlab.trace import CaptureMetadata, TraceEvent, align_generated, norma
 REPOSITORY = Path(__file__).resolve().parents[1]
 FIXTURE = REPOSITORY / "tests" / "fixtures" / "validation_study_candidate"
 FIT_FIXTURE = REPOSITORY / "examples" / "data" / "fit"
-WORKLOADS = ("short", "streaming", "bursty")
+WORKLOADS: tuple[study.WorkloadName, ...] = ("short", "streaming", "bursty")
 REPEATS = (1, 2, 3)
 _IMAGE_LOCK = cast(dict[str, object], json.loads((REPOSITORY / "docker" / "capture" / "image-lock.json").read_text()))
 CAPTURE_ID = cast(str, _IMAGE_LOCK["expected_capture_image_id"])
@@ -55,11 +55,12 @@ def _canonical(value: object) -> bytes:
     )
 
 
-def _base_config() -> ExperimentConfig:
+def _base_config(workload: study.WorkloadName) -> ExperimentConfig:
     config = load_configuration_pair(FIT_FIXTURE / "experiment.toml").portable
+    profile = next(spec for spec in study.workload_specs(_URL) if spec.name == workload)
     return config.model_copy(
         update={
-            "target": config.target.model_copy(update={"image": study.TARGET_REFERENCE}),
+            "target": config.target.model_copy(update={"argv": profile.argv, "image": study.TARGET_REFERENCE}),
             "capture": config.capture.model_copy(update={"image": CAPTURE_REFERENCE}),
         }
     )
@@ -145,7 +146,7 @@ def _selected_training_records(
     training: Sequence[dict[str, object]],
     training_files: Mapping[tuple[str, int], Mapping[str, bytes]],
     *,
-    config: ExperimentConfig,
+    configs: Mapping[study.WorkloadName, ExperimentConfig],
     metadata: CaptureMetadata,
 ) -> tuple[dict[str, object], ...]:
     selected: list[dict[str, object]] = []
@@ -154,7 +155,11 @@ def _selected_training_records(
         winner = min(
             candidates,
             key=lambda item: (
-                -_checkpoint_fitness(training_files[(workload, cast(int, item["repeat"]))], config, metadata),
+                -_checkpoint_fitness(
+                    training_files[(workload, cast(int, item["repeat"]))],
+                    configs[cast(study.WorkloadName, workload)],
+                    metadata,
+                ),
                 cast(int, item["repeat"]),
             ),
         )
@@ -414,7 +419,9 @@ def validate_source_identities(source_commit: str, source_tree: str) -> None:
 def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, bytes]:
     """Build one complete, credential-free schema-2 candidate through public scientific owners."""
     validate_source_identities(source_commit, source_tree)
-    config = _base_config()
+    configs: dict[study.WorkloadName, ExperimentConfig] = {}
+    for workload in WORKLOADS:
+        configs[workload] = _base_config(workload)
     metadata = _metadata()
     base_events = _base_events(metadata)
     with tempfile.TemporaryDirectory(prefix="trafficlab-validation-study-candidate-") as temporary:
@@ -428,6 +435,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
         ] = {workload: [] for workload in WORKLOADS}
         variant = 1
         for workload in WORKLOADS:
+            config = configs[workload]
             for repeat in REPEATS:
                 record, files, comparison, reference, window = _write_training_tree(
                     root,
@@ -456,9 +464,9 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(_canonical(fresh_record))
                 fresh.append(fresh_record)
-        for natural_variation_group in natural_variation_groups.values():
-            _natural_variation(natural_variation_group, config)
-        selections = _selected_training_records(training, training_files, config=config, metadata=metadata)
+        for workload, natural_variation_group in natural_variation_groups.items():
+            _natural_variation(natural_variation_group, configs[workload])
+        selections = _selected_training_records(training, training_files, configs=configs, metadata=metadata)
         selected_training = {
             cast(str, item["workload"]): next(
                 record for record in training if record["directory"] == item["training_directory"]
@@ -472,7 +480,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             selected = selected_training[workload]
             record, evaluation = _write_held_out(
                 root,
-                config=config,
+                config=configs[workload],
                 metadata=metadata,
                 events=_held_out_events(
                     base_events,
@@ -494,11 +502,11 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 "selected": list(selections),
             },
             "natural_variation_windows": {
-                workload: max(config.similarity.multiscale_widths_seconds) for workload in WORKLOADS
+                workload: max(configs[workload].similarity.multiscale_widths_seconds) for workload in WORKLOADS
             },
             "prerequisite_path": "examples/validation_study/prerequisites.json",
             "schema_version": 2,
-            "selection_seeds": list(config.genetic.trial_seeds),
+            "selection_seeds": list(configs["short"].genetic.trial_seeds),
             "study_id": _STUDY_ID,
             "training_repetitions": 3,
             "workloads": list(WORKLOADS),
@@ -609,14 +617,14 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 root / "training" / workload / f"r{repeat}",
                 workload=workload,
                 repeat=repeat,
-                config=config,
+                config=configs[workload],
                 runtime_seconds=_runtime_seconds(workload, repeat),
             )
             for workload in WORKLOADS
             for repeat in REPEATS
         )
         natural_variation_windows: dict[study.WorkloadName, float] = {
-            workload: max(config.similarity.multiscale_widths_seconds) for workload in WORKLOADS
+            workload: max(configs[workload].similarity.multiscale_widths_seconds) for workload in WORKLOADS
         }
         report_inputs = study._candidate_report_inputs(  # pyright: ignore[reportPrivateUsage]
             candidate_training,

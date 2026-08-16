@@ -514,6 +514,8 @@ CURL_COMMON = (
     "--proto-redir",
     "=https",
     "--http1.1",
+    "--user-agent",
+    USER_AGENT,
     "--connect-timeout",
     "15",
 )
@@ -560,7 +562,9 @@ bursty_starts = (0, 524288, 1048576, 1572864, 2097152, 2621440, 3145728, 3670016
 bursty = ("--parallel", "--parallel-max", "4", "--fail-early", *fully_expanded_groups)
 ```
 
-Each bursty group uses `CURL_COMMON`, `--max-time 30`, its exact 32 KiB range, `--max-filesize 32768`,
+`USER_AGENT` is the package-owned metadata-derived value
+`trafficlab/<package-version> (+https://github.com/borodin-devel/trafficlab)` and is retained in every
+capability and workload command. Each bursty group uses `CURL_COMMON`, `--max-time 30`, its exact 32 KiB range, `--max-filesize 32768`,
 `/trafficlab-study/bursty-INDEX.headers`, `/dev/null`, and the URL. Insert `--next` between groups, never after the
 eighth. Short expects `(0, 262143, "short.headers")`; streaming expects
 `(0, 4194303, "streaming.headers")`; bursty expects the eight start/end/header triples in index order.
@@ -1689,6 +1693,8 @@ capability_argv = (
     "--proto-redir",
     "=https",
     "--http1.1",
+    "--user-agent",
+    USER_AGENT,
     "--connect-timeout",
     "15",
     "--max-time",

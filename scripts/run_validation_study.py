@@ -25,7 +25,7 @@ from types import MappingProxyType
 from typing import Literal, Protocol, cast
 from urllib.parse import urljoin, urlsplit
 
-from trafficlab import __version__
+from trafficlab import USER_AGENT, __version__
 from trafficlab.artifacts import (
     FileIdentity,
     _file_identity,  # pyright: ignore[reportPrivateUsage]
@@ -234,11 +234,16 @@ CURL_COMMON = (
     "--proto-redir",
     "=https",
     "--http1.1",
+    "--user-agent",
+    USER_AGENT,
     "--connect-timeout",
     "15",
 )
 _LOCKED_CURL_COMMON = CURL_COMMON
 _ORACLE_URL = "https://validation-study.example/object"
+_HISTORIC_SCHEMA_ONE_RESULT_COMMIT = "976dcd6ba8bfb4df4894e79263fb8b75dc426ad0"
+_HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID = "validation-study-20260814-ovh-r3"
+_HISTORIC_SCHEMA_ONE_RESULT_URL = "https://sbg.proof.ovh.net/files/10Mb.dat"
 
 PREREQUISITE_ROOT_KEYS = (
     "schema_version",
@@ -3470,6 +3475,8 @@ def _expected_capability_argv(study_id: str, url: str) -> tuple[str, ...]:
         "--proto-redir",
         "=https",
         "--http1.1",
+        "--user-agent",
+        USER_AGENT,
         "--connect-timeout",
         "15",
         "--max-time",
@@ -3489,17 +3496,49 @@ def _expected_capability_argv(study_id: str, url: str) -> tuple[str, ...]:
     )
 
 
+def _historic_schema_one_capability_argv() -> tuple[str, ...]:
+    """Return the sole pre-User-Agent command retained in checked schema-1 evidence."""
+
+    current = _expected_capability_argv(
+        _HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID,
+        _HISTORIC_SCHEMA_ONE_RESULT_URL,
+    )
+    user_agent = current.index("--user-agent")
+    return current[:user_agent] + current[user_agent + 2 :]
+
+
+def _historic_schema_one_workload_argvs() -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Return the sole pre-User-Agent workload projections retained in checked schema-1 evidence."""
+
+    projections = tuple(
+        tuple(
+            token
+            for index, token in enumerate(spec.argv)
+            if token != "--user-agent" and (index == 0 or spec.argv[index - 1] != "--user-agent")
+        )
+        for spec in workload_specs(_HISTORIC_SCHEMA_ONE_RESULT_URL)
+    )
+    return cast(tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]], projections)
+
+
 def _validate_capability(
     value: object,
     *,
     repository_root: Path,
     study_id: str,
     url: str,
+    historic_schema_one_result: bool = False,
 ) -> JsonObject:
     document = _exact_object(value, CAPABILITY_KEYS, name="capability")
     argv = _string_array(document["argv"], name="capability argv", nonempty=True)
+    historic_projection = (
+        historic_schema_one_result
+        and study_id == _HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID
+        and url == _HISTORIC_SCHEMA_ONE_RESULT_URL
+        and argv == _historic_schema_one_capability_argv()
+    )
     _require(
-        argv == _expected_capability_argv(study_id, url),
+        argv == _expected_capability_argv(study_id, url) or historic_projection,
         "capability argv must equal the exact repository-relative Docker/curl projection",
     )
     started = _utc_timestamp(document["started_utc"], name="capability start")
@@ -4593,12 +4632,22 @@ def _validate_seeds(value: object) -> JsonObject:
     return cast(JsonObject, document)
 
 
-def _validate_workloads(value: object, *, url: str) -> list[JsonValue]:
+def _validate_workloads(
+    value: object,
+    *,
+    url: str,
+    historic_schema_one_result: bool = False,
+) -> list[JsonValue]:
     items = _strict_list(value, name="workload definitions")
     expected_specs = workload_specs(url)
+    historic_argvs = (
+        _historic_schema_one_workload_argvs()
+        if historic_schema_one_result and url == _HISTORIC_SCHEMA_ONE_RESULT_URL
+        else ()
+    )
     _require(len(items) == 3, "workload definitions must contain short, streaming, and bursty")
     keys = ("name", "argv", "workload_timeout_seconds", "total_timeout_seconds", "multiscale_widths_seconds")
-    for item, expected in zip(items, expected_specs, strict=True):
+    for index, (item, expected) in enumerate(zip(items, expected_specs, strict=True)):
         document = _exact_object(item, keys, name="workload definition")
         name = _strict_string(document["name"], name="workload name")
         _require(name == expected.name, "workload definitions must be ordered short, streaming, bursty")
@@ -4616,15 +4665,39 @@ def _validate_workloads(value: object, *, url: str) -> list[JsonValue]:
             expected.total_timeout_seconds,
             expected.multiscale_widths_seconds,
         )
-        _require(actual == oracle, f"{name} workload definition must equal the exact workload oracle")
+        _require(
+            actual == oracle
+            or (
+                bool(historic_argvs)
+                and actual
+                == (
+                    historic_argvs[index],
+                    expected.workload_timeout_seconds,
+                    expected.total_timeout_seconds,
+                    expected.multiscale_widths_seconds,
+                )
+            ),
+            f"{name} workload definition must equal the exact workload oracle",
+        )
     return cast(list[JsonValue], items)
 
 
-def _validate_protocol(value: object, *, repository_root: Path) -> JsonObject:
+def _validate_protocol(
+    value: object,
+    *,
+    repository_root: Path,
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
     document = _exact_object(value, PROTOCOL_KEYS, name="protocol")
     study_id = validate_study_id(_strict_string(document["study_id"], name="protocol study ID"))
     url = validate_endpoint_url(_strict_string(document["url"], name="protocol URL"))
-    _validate_capability(document["capability"], repository_root=repository_root, study_id=study_id, url=url)
+    _validate_capability(
+        document["capability"],
+        repository_root=repository_root,
+        study_id=study_id,
+        url=url,
+        historic_schema_one_result=historic_schema_one_result,
+    )
     target_reference = _strict_string(document["target_reference"], name="protocol target reference")
     _require(
         target_reference == TARGET_REFERENCE,
@@ -4659,7 +4732,11 @@ def _validate_protocol(value: object, *, repository_root: Path) -> JsonObject:
     _sha256(document["prerequisites_sha256"], name="prerequisite file SHA-256")
     _profile_hashes(document["base_config_sha256"])
     _validate_seeds(document["seeds"])
-    _validate_workloads(document["workloads"], url=url)
+    _validate_workloads(
+        document["workloads"],
+        url=url,
+        historic_schema_one_result=historic_schema_one_result,
+    )
     return cast(JsonObject, document)
 
 
@@ -5015,7 +5092,11 @@ def _validate_study_document(document: JsonObject, *, repository_root: Path) -> 
     schema_version = _strict_int(root["schema_version"], name="result schema version")
     _require(schema_version == 1, "result schema version must be exactly 1")
     environment = _validate_environment(root["environment"])
-    protocol = _validate_protocol(root["protocol"], repository_root=repository_root)
+    protocol = _validate_protocol(
+        root["protocol"],
+        repository_root=repository_root,
+        historic_schema_one_result=cast(str, environment["git_commit"]) == _HISTORIC_SCHEMA_ONE_RESULT_COMMIT,
+    )
     _require(
         environment["capture_image_id"] == protocol["capture_image_id"],
         "environment and protocol capture image IDs must match",
