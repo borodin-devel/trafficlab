@@ -58,6 +58,7 @@ _CAPTURE_DOCKERFILE = (_ROOT / "docker" / "capture" / "Dockerfile").read_bytes()
 _CAPTURE_SCRIPT = (_ROOT / "docker" / "capture" / "capture.sh").read_bytes()
 _CAPTURE_IMAGE_LOCK = json.loads((_ROOT / "docker" / "capture" / "image-lock.json").read_text(encoding="utf-8"))
 _CAPTURE_IMAGE_ID = cast(str, _CAPTURE_IMAGE_LOCK["expected_capture_image_id"])
+_PRE_USER_AGENT_R6_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_pre_user_agent_r6"
 
 
 def _write_prerequisite_repository_inputs(repository_root: Path) -> None:
@@ -66,6 +67,27 @@ def _write_prerequisite_repository_inputs(repository_root: Path) -> None:
     for name in ("Dockerfile", "capture.sh", "image-lock.json"):
         shutil.copy2(_ROOT / "docker" / "capture" / name, capture_root / name)
     shutil.copy2(_ROOT / "uv.lock", repository_root / "uv.lock")
+
+
+def _install_pre_user_agent_r6_predecessor(repository_root: Path) -> tuple[Path, bytes, dict[str, str]]:
+    """Install the one retained pre-User-Agent prerequisite publication verbatim."""
+
+    fixture = _PRE_USER_AGENT_R6_FIXTURE
+    content = (fixture / "prerequisites.raw.json").read_bytes()
+    source = cast(dict[str, str], json.loads((fixture / "source.json").read_text(encoding="utf-8")))
+    document = cast(dict[str, str], json.loads(content))
+    source["study_id"] = document["study_id"]
+    source["url"] = document["url"]
+    root = repository_root / "examples" / "validation_study" / "prerequisites.json"
+    attempt = root.parent / ".study-work" / "attempts" / source["study_id"]
+    evidence = root.parent / ".study-work" / "evidence" / source["study_id"] / "00-prerequisites"
+    root.parent.mkdir(parents=True, exist_ok=True)
+    root.write_bytes(content)
+    attempt.mkdir(parents=True)
+    shutil.copy2(fixture / "prerequisites.raw.json", attempt / "prerequisites.raw.json")
+    shutil.copy2(fixture / "prerequisites-success.json", attempt / "prerequisites-success.json")
+    shutil.copytree(fixture / "evidence", evidence)
+    return root, content, source
 
 
 class _ScriptedPrerequisiteRunner:
@@ -90,6 +112,7 @@ class _ScriptedPrerequisiteRunner:
         )
         self.mount = self.root / "examples" / "validation_study" / ".study-work" / "mount" / self.study_id
         self.calls: list[tuple[tuple[str, ...], float]] = []
+        self.git_trees: dict[str, bytes] = {}
         self.container_running = False
         self.capability_finished = False
 
@@ -120,6 +143,8 @@ class _ScriptedPrerequisiteRunner:
             ("docker", "compose", "version", "--short"): (0, b"2.29.0\n", b""),
             ("docker", "image", "pull", study.TARGET_REFERENCE): (0, b"pulled\n", b""),
         }
+        if command[:2] == ("git", "rev-parse") and len(command) == 3 and command[2] in self.git_trees:
+            return subprocess.CompletedProcess(command, 0, stdout=self.git_trees[command[2]], stderr=b"")
         if command in identities:
             status, stdout, stderr = identities[command]
             return subprocess.CompletedProcess(command, status, stdout=stdout, stderr=stderr)
@@ -3022,45 +3047,23 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         assert study.load_experiment(config_path).capture.image == runner.capture_id
 
 
-def test_prerequisite_rotation_preserves_a_pre_user_agent_root_and_round_trips_the_fresh_captured_argv(
+def test_prerequisite_rotation_preserves_the_one_checked_pre_user_agent_r6_predecessor(
     tmp_path: Path,
 ) -> None:
-    """A current producer can rotate the immediately preceding schema-1 prerequisite publication."""
+    """Only the retained r6 raw evidence can bridge the short-lived no-User-Agent format."""
+
     repository_root = tmp_path / "repository"
     _write_prerequisite_repository_inputs(repository_root)
-    prior_runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r6")
-    study.run_prerequisites(
-        prior_runner.url,
-        prior_runner.study_id,
-        repository_root=repository_root,
-        runner=prior_runner,
-        utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
-    )
-
-    study_root = repository_root / "examples" / "validation_study"
-    canonical = study_root / "prerequisites.json"
-    prior_archive = study_root / ".study-work" / "attempts" / prior_runner.study_id / "prerequisites.raw.json"
-    prior_marker = prior_archive.with_name("prerequisites-success.json")
-    legacy = cast(dict[str, object], json.loads(canonical.read_text(encoding="utf-8")))
-    capability = cast(dict[str, object], legacy["capability"])
-    argv = cast(list[str], capability["argv"])
-    user_agent = argv.index("--user-agent")
-    del argv[user_agent : user_agent + 2]
-    legacy_content = json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
-    canonical.write_bytes(legacy_content)
-    prior_archive.write_bytes(legacy_content)
-    marker = cast(dict[str, object], json.loads(prior_marker.read_text(encoding="utf-8")))
-    marker["prerequisites_identity"] = study.identify_bytes(legacy_content).as_dict()
-    prior_marker.write_bytes(json.dumps(marker, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n")
+    canonical, predecessor_content, source = _install_pre_user_agent_r6_predecessor(repository_root)
+    assert identify_bytes(predecessor_content).as_dict() == {
+        "sha256": "a6cb727911ad19333c2faffa09e7f8e246750c8524b04c8cac13f3402672d275",
+        "size": 5662,
+    }
     with pytest.raises(ValueError, match="capability argv"):
-        study.parse_prerequisite_results(legacy_content, repository_root=repository_root)
-    with pytest.raises(ValueError, match="canonical"):
-        study._parse_prior_prerequisite_results_for_rotation(  # pyright: ignore[reportPrivateUsage]
-            legacy_content[:-1],
-            repository_root=repository_root,
-        )
+        study.parse_prerequisite_results(predecessor_content, repository_root=repository_root)
 
     runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r7")
+    runner.git_trees[f"{source['git_commit']}^{{tree}}"] = f"{source['git_tree']}\n".encode("ascii")
     result = study.run_prerequisites(
         runner.url,
         runner.study_id,
@@ -3082,6 +3085,152 @@ def test_prerequisite_rotation_preserves_a_pre_user_agent_root_and_round_trips_t
 
     assert parsed == result
     assert cast(tuple[str, ...], parsed.capability["argv"]) == tuple(projected_argv)
+
+
+def test_prerequisite_rotation_recreates_the_checked_r6_archive_when_the_legacy_root_lacks_one(
+    tmp_path: Path,
+) -> None:
+    """The exact predecessor remains recoverable when its original raw archive was not yet retained."""
+
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    canonical, predecessor_content, source = _install_pre_user_agent_r6_predecessor(repository_root)
+    archive = canonical.parent / ".study-work" / "attempts" / source["study_id"] / "prerequisites.raw.json"
+    archive.unlink()
+    runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r7")
+    runner.git_trees[f"{source['git_commit']}^{{tree}}"] = f"{source['git_tree']}\n".encode("ascii")
+
+    study.run_prerequisites(
+        runner.url,
+        runner.study_id,
+        repository_root=repository_root,
+        runner=runner,
+        utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+    )
+
+    assert archive.read_bytes() == predecessor_content
+
+
+def test_prerequisite_rotation_rejects_an_arbitrary_pre_user_agent_schema_one_predecessor(tmp_path: Path) -> None:
+    """A synthetic schema-1 projection cannot opt in to the r6-only rotation exception."""
+
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    prior_runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r6")
+    study.run_prerequisites(
+        prior_runner.url,
+        prior_runner.study_id,
+        repository_root=repository_root,
+        runner=prior_runner,
+        utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+    )
+    study_root = repository_root / "examples" / "validation_study"
+    canonical = study_root / "prerequisites.json"
+    prior_archive = study_root / ".study-work" / "attempts" / prior_runner.study_id / "prerequisites.raw.json"
+    prior_marker = prior_archive.with_name("prerequisites-success.json")
+    legacy = cast(dict[str, object], json.loads(canonical.read_text(encoding="utf-8")))
+    capability = cast(dict[str, object], legacy["capability"])
+    argv = cast(list[str], capability["argv"])
+    user_agent = argv.index("--user-agent")
+    del argv[user_agent : user_agent + 2]
+    legacy_content = json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    canonical.write_bytes(legacy_content)
+    prior_archive.write_bytes(legacy_content)
+    marker = cast(dict[str, object], json.loads(prior_marker.read_text(encoding="utf-8")))
+    marker["prerequisites_identity"] = study.identify_bytes(legacy_content).as_dict()
+    prior_marker.write_bytes(json.dumps(marker, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n")
+
+    runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r7")
+    with pytest.raises(TrafficlabError, match="preserved pre-User-Agent r6 predecessor"):
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+        )
+
+    assert canonical.read_bytes() == legacy_content
+
+
+def test_prerequisite_rotation_rejects_an_unreadable_retained_r6_evidence_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """I/O failures while pinning the fixed retained evidence remain a canonical rotation rejection."""
+
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    canonical, _predecessor_content, source = _install_pre_user_agent_r6_predecessor(repository_root)
+    evidence = canonical.parent / ".study-work" / "evidence" / source["study_id"] / "00-prerequisites"
+    runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r7")
+    runner.git_trees[f"{source['git_commit']}^{{tree}}"] = f"{source['git_tree']}\n".encode("ascii")
+    original_iterdir = Path.iterdir
+
+    def fail_preserved_evidence_iterdir(path: Path) -> Any:
+        if path == evidence:
+            raise OSError("simulated retained evidence read failure")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", fail_preserved_evidence_iterdir)
+    before = canonical.read_bytes()
+    with pytest.raises(TrafficlabError, match="preserved pre-User-Agent r6 predecessor"):
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+        )
+
+    assert canonical.read_bytes() == before
+
+
+@pytest.mark.parametrize("mutation", ("study_id", "url", "source", "tree", "raw", "marker", "evidence"))
+def test_prerequisite_rotation_rejects_each_mutation_of_the_preserved_r6_predecessor(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    """Every identity component of the exact compatibility bridge remains independently pinned."""
+
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    canonical, predecessor_content, source = _install_pre_user_agent_r6_predecessor(repository_root)
+    attempt = canonical.parent / ".study-work" / "attempts" / source["study_id"]
+    evidence = canonical.parent / ".study-work" / "evidence" / source["study_id"] / "00-prerequisites"
+    runner = _ScriptedPrerequisiteRunner(repository_root, study_id="study-r7")
+    runner.git_trees[f"{source['git_commit']}^{{tree}}"] = f"{source['git_tree']}\n".encode("ascii")
+
+    if mutation in {"study_id", "url", "source"}:
+        document = cast(dict[str, object], json.loads(predecessor_content))
+        document[mutation if mutation != "source" else "git_commit"] = (
+            "study-r6"
+            if mutation == "study_id"
+            else "https://example.test/other.bin"
+            if mutation == "url"
+            else "0" * 40
+        )
+        canonical.write_bytes(json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n")
+    elif mutation == "tree":
+        runner.git_trees[f"{source['git_commit']}^{{tree}}"] = b"0" * 40 + b"\n"
+    elif mutation == "raw":
+        canonical.write_bytes(predecessor_content + b" ")
+    elif mutation == "marker":
+        (attempt / "prerequisites-success.json").write_bytes(b"{}\n")
+    else:
+        (evidence / "capability.headers").write_bytes(b"mutated retained evidence\n")
+
+    before = canonical.read_bytes()
+    with pytest.raises(TrafficlabError, match="preserved pre-User-Agent r6 predecessor"):
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+        )
+
+    assert canonical.read_bytes() == before
 
 
 def test_prerequisites_remove_the_shared_capture_tag_after_a_guarded_test_failure(tmp_path: Path) -> None:

@@ -244,6 +244,34 @@ _ORACLE_URL = "https://validation-study.example/object"
 _HISTORIC_SCHEMA_ONE_RESULT_COMMIT = "976dcd6ba8bfb4df4894e79263fb8b75dc426ad0"
 _HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID = "validation-study-20260814-ovh-r3"
 _HISTORIC_SCHEMA_ONE_RESULT_URL = "https://sbg.proof.ovh.net/files/10Mb.dat"
+_PRESERVED_PRE_USER_AGENT_R6_COMMIT = "6ea60c35922855264b574c03bee2ab64e622d183"
+_PRESERVED_PRE_USER_AGENT_R6_TREE = "210b52105df20da973bd507c1b2f832398035c65"
+_PRESERVED_PRE_USER_AGENT_R6_STUDY_ID = "2026-08-16-research-fitness-r6"
+_PRESERVED_PRE_USER_AGENT_R6_URL = (
+    "https://upload.wikimedia.org/wikipedia/commons/5/5b/"
+    "SPACE_ELECTRIC_ROCKET_TEST%2C_SERT_II_IN_TANK_5_%28GRC-1968-C-03031%29.jpg"
+)
+_PRESERVED_PRE_USER_AGENT_R6_RAW_IDENTITY = {
+    "sha256": "a6cb727911ad19333c2faffa09e7f8e246750c8524b04c8cac13f3402672d275",
+    "size": 5662,
+}
+_PRESERVED_PRE_USER_AGENT_R6_MARKER_IDENTITY = {
+    "sha256": "c450ec554562c364dd2dcd824fa2f4edccfa2c9d936136efc0c72739da8550e6",
+    "size": 320,
+}
+_PRESERVED_PRE_USER_AGENT_R6_EVIDENCE_IDENTITIES: tuple[tuple[str, int, str], ...] = (
+    ("capability.cid", 64, "2e9d83a41fd783fcd00c394ebb3d5aef2c7ccd259b812aa4921c17be8962c3a1"),
+    ("capability.headers", 2066, "c271e6e5e909db84e54bb7231936eb680d145df8c4daff4a5239056aeb1613de"),
+    ("capability.stderr", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+    ("capability.stdout", 161, "807fe709e0c95382a0cdd878bf71e77f525dc0ec58b0142d3636f49bcedb7d97"),
+    ("capture.iid", 71, "10d7ebabfa8724f6e70b02ef48d2e96b31320b9bf60306b8030d1377f4326dcd"),
+    ("docker.stderr", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+    ("docker.stdout", 3124, "4bb15010ceebbe53ec7487d6d68b195afd08d4b7c3bda6f00020d2d7e92cf4fe"),
+    ("docker.xml", 3113, "f6e61b41be3b5659d0a1e198e946a566ef2c5438c35eec9a2f016865050fa47c"),
+    ("internet.stderr", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+    ("internet.stdout", 900, "b15c52b90ad5d364a678e90821530a751d43bcb8ad110d4ad41ef827492316f3"),
+    ("internet.xml", 403, "5a3d2d9e02961e08fe898d0c5654cc921d645b5756cdc0eb7db03a892c22a01f"),
+)
 
 PREREQUISITE_ROOT_KEYS = (
     "schema_version",
@@ -3534,22 +3562,17 @@ def _validate_capability(
     study_id: str,
     url: str,
     historic_schema_one_result: bool = False,
-    allow_pre_user_agent_capability: bool = False,
+    expected_capability_argv: tuple[str, ...] | None = None,
 ) -> JsonObject:
     document = _exact_object(value, CAPABILITY_KEYS, name="capability")
     argv = _string_array(document["argv"], name="capability argv", nonempty=True)
-    expected_argv = (
+    expected_argv = expected_capability_argv or (
         _historic_schema_one_capability_argv()
         if historic_schema_one_result
         else _expected_capability_argv(study_id, url)
     )
-    pre_user_agent_projection = (
-        allow_pre_user_agent_capability
-        and not historic_schema_one_result
-        and argv == _pre_user_agent_capability_argv(study_id, url)
-    )
     _require(
-        argv == expected_argv or pre_user_agent_projection,
+        argv == expected_argv,
         "capability argv must equal the exact repository-relative Docker/curl projection",
     )
     started = _utc_timestamp(document["started_utc"], name="capability start")
@@ -3630,7 +3653,7 @@ def _validate_prerequisite_document(
     document: JsonObject,
     *,
     repository_root: Path,
-    allow_pre_user_agent_capability: bool = False,
+    expected_capability_argv: tuple[str, ...] | None = None,
 ) -> PrerequisiteResults:
     root = _exact_object(document, PREREQUISITE_ROOT_KEYS, name="prerequisite root")
     schema_version = _strict_int(root["schema_version"], name="prerequisite schema version")
@@ -3648,7 +3671,7 @@ def _validate_prerequisite_document(
         repository_root=repository_root,
         study_id=study_id,
         url=url,
-        allow_pre_user_agent_capability=allow_pre_user_agent_capability,
+        expected_capability_argv=expected_capability_argv,
     )
     hashes = _profile_hashes(root["config_sha256"])
     commands = _strict_list(root["commands"], name="prerequisite commands")
@@ -3689,18 +3712,96 @@ def parse_prerequisite_results(content: bytes, *, repository_root: Path) -> Prer
     return result
 
 
-def _parse_prior_prerequisite_results_for_rotation(content: bytes, *, repository_root: Path) -> PrerequisiteResults:
-    """Validate an already-published immediate predecessor without relaxing the public codec."""
+def _parse_preserved_pre_user_agent_r6_predecessor(
+    content: bytes,
+    *,
+    repository_root: Path,
+    runner: CommandRunner,
+) -> PrerequisiteResults:
+    """Validate the one retained raw r6 document without relaxing the public prerequisite codec."""
 
-    document = _load_json(content)
-    result = _validate_prerequisite_document(
-        document,
-        repository_root=repository_root,
-        allow_pre_user_agent_capability=True,
-    )
-    if _canonical_json(document) != content:
-        raise ValueError("prerequisite JSON must use canonical sorted compact encoding with one trailing newline")
-    return result
+    try:
+        _require(
+            identify_bytes(content).as_dict() == _PRESERVED_PRE_USER_AGENT_R6_RAW_IDENTITY,
+            "preserved pre-User-Agent r6 predecessor must equal its exact raw canonical identity",
+        )
+        document = _load_json(content)
+        result = _validate_prerequisite_document(
+            document,
+            repository_root=repository_root,
+            expected_capability_argv=_pre_user_agent_capability_argv(
+                _PRESERVED_PRE_USER_AGENT_R6_STUDY_ID,
+                _PRESERVED_PRE_USER_AGENT_R6_URL,
+            ),
+        )
+        _require(
+            _canonical_json(document) == content,
+            "preserved pre-User-Agent r6 predecessor must use canonical JSON",
+        )
+        _require(
+            result.study_id == _PRESERVED_PRE_USER_AGENT_R6_STUDY_ID
+            and result.url == _PRESERVED_PRE_USER_AGENT_R6_URL
+            and result.git_commit == _PRESERVED_PRE_USER_AGENT_R6_COMMIT
+            and result.git_tree_clean,
+            "preserved pre-User-Agent r6 predecessor must match its retained study identity and source commit",
+        )
+        tree_result = runner(
+            ("git", "rev-parse", f"{_PRESERVED_PRE_USER_AGENT_R6_COMMIT}^{{tree}}"),
+            cwd=repository_root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["git_or_version"],
+        )
+        _require(tree_result.returncode == 0, "preserved pre-User-Agent r6 source tree could not be resolved")
+        _require(
+            tree_result.stdout.decode("ascii", errors="strict").strip() == _PRESERVED_PRE_USER_AGENT_R6_TREE,
+            "preserved pre-User-Agent r6 source tree must match its retained commit tree",
+        )
+        marker = _collection_attempt_root(repository_root, result.study_id) / "prerequisites-success.json"
+        marker_content = _read_regular_prerequisite_rotation_target(marker, name="successful prerequisite marker")
+        _require(
+            identify_bytes(marker_content).as_dict() == _PRESERVED_PRE_USER_AGENT_R6_MARKER_IDENTITY,
+            "preserved pre-User-Agent r6 predecessor must match its exact success-marker identity",
+        )
+        _require_successful_prerequisite_marker_content(
+            marker_content,
+            study_id=result.study_id,
+            url=result.url,
+            prerequisite_content=content,
+        )
+        evidence = (
+            repository_root
+            / "examples"
+            / "validation_study"
+            / ".study-work"
+            / "evidence"
+            / result.study_id
+            / "00-prerequisites"
+        )
+        try:
+            mode = evidence.lstat().st_mode
+            _require(
+                stat.S_ISDIR(mode) and not stat.S_ISLNK(mode),
+                "preserved pre-User-Agent r6 evidence directory must be a regular directory",
+            )
+            names = tuple(sorted(path.name for path in evidence.iterdir()))
+        except OSError as error:
+            raise ValueError(f"could not inspect preserved pre-User-Agent r6 evidence {evidence}: {error}") from error
+        expected_names = tuple(name for name, _size, _sha256 in _PRESERVED_PRE_USER_AGENT_R6_EVIDENCE_IDENTITIES)
+        _require(names == expected_names, "preserved pre-User-Agent r6 evidence inventory must match exactly")
+        for name, size, sha256 in _PRESERVED_PRE_USER_AGENT_R6_EVIDENCE_IDENTITIES:
+            retained = _read_regular_prerequisite_rotation_target(
+                evidence / name,
+                name=f"preserved pre-User-Agent r6 evidence {name}",
+            )
+            _require(
+                identify_bytes(retained).as_dict() == {"sha256": sha256, "size": size},
+                f"preserved pre-User-Agent r6 evidence {name} must match its retained identity",
+            )
+        return result
+    except (OSError, TypeError, UnicodeError, ValueError) as error:
+        raise ValueError("preserved pre-User-Agent r6 predecessor is not the exact retained evidence") from error
 
 
 def _publish_support_json(
@@ -4148,6 +4249,7 @@ def run_prerequisites(
             result=result,
             study_id=study_id,
             url=url,
+            runner=runner,
         )
         return result
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
@@ -6097,18 +6199,14 @@ def _archive_prerequisite_raw_document(
     *,
     study_id: str,
     content: bytes,
-    allow_pre_user_agent_capability: bool = False,
 ) -> bytes:
     """Persist the byte-exact canonical prerequisite document beside its irreversible attempt."""
 
     archive = _prerequisite_raw_archive_path(repository_root, study_id)
 
     def validate(persisted: bytes) -> None:
-        if allow_pre_user_agent_capability:
-            _parse_prior_prerequisite_results_for_rotation(persisted, repository_root=repository_root)
-        else:
-            parsed = parse_prerequisite_results(persisted, repository_root=repository_root)
-            _require(render_prerequisite_results(parsed) == content, "archived prerequisite document is not canonical")
+        parsed = parse_prerequisite_results(persisted, repository_root=repository_root)
+        _require(render_prerequisite_results(parsed) == content, "archived prerequisite document is not canonical")
 
     if _path_entry_exists(archive):
         persisted = _read_regular_prerequisite_rotation_target(
@@ -6127,6 +6225,44 @@ def _archive_prerequisite_raw_document(
             name="archived prerequisite document",
         )
     _require(persisted == content, "archived prerequisite document must equal the canonical publication bytes")
+    validate(persisted)
+    return persisted
+
+
+def _archive_preserved_pre_user_agent_r6_predecessor(
+    repository_root: Path,
+    *,
+    content: bytes,
+    runner: CommandRunner,
+) -> bytes:
+    """Persist the exact retained r6 predecessor without exposing a general legacy codec."""
+
+    archive = _prerequisite_raw_archive_path(repository_root, _PRESERVED_PRE_USER_AGENT_R6_STUDY_ID)
+
+    def validate(persisted: bytes) -> None:
+        _parse_preserved_pre_user_agent_r6_predecessor(
+            persisted,
+            repository_root=repository_root,
+            runner=runner,
+        )
+
+    if _path_entry_exists(archive):
+        persisted = _read_regular_prerequisite_rotation_target(
+            archive,
+            name="archived preserved pre-User-Agent r6 prerequisite document",
+        )
+    else:
+        _publish_prerequisite_rotation_exclusive_file(
+            archive,
+            content,
+            validate=validate,
+            name="archived preserved pre-User-Agent r6 prerequisite document",
+        )
+        persisted = _read_regular_prerequisite_rotation_target(
+            archive,
+            name="archived preserved pre-User-Agent r6 prerequisite document",
+        )
+    _require(persisted == content, "archived preserved pre-User-Agent r6 document must equal canonical root bytes")
     validate(persisted)
     return persisted
 
@@ -6662,13 +6798,38 @@ def _recover_incomplete_prerequisite_rotations(repository_root: Path) -> None:
             _recover_prerequisite_rotation_journal(repository_root, journal)
 
 
-def _bootstrap_current_prerequisite_archive(repository_root: Path, prerequisite_path: Path) -> None:
+def _bootstrap_current_prerequisite_archive(
+    repository_root: Path,
+    prerequisite_path: Path,
+    *,
+    runner: CommandRunner,
+) -> None:
     """Preserve a schema-1 canonical root that predates per-attempt raw archives."""
 
     if not _path_entry_exists(prerequisite_path):
         return
     content = _read_regular_prerequisite_rotation_target(prerequisite_path, name="canonical prerequisite target")
-    prior = _parse_prior_prerequisite_results_for_rotation(content, repository_root=repository_root)
+    try:
+        prior = parse_prerequisite_results(content, repository_root=repository_root)
+    except ValueError:
+        prior = _parse_preserved_pre_user_agent_r6_predecessor(
+            content,
+            repository_root=repository_root,
+            runner=runner,
+        )
+        _require_successful_prerequisite_attempt(
+            repository_root,
+            study_id=prior.study_id,
+            url=prior.url,
+            prerequisite_content=content,
+            require_archive=False,
+        )
+        _archive_preserved_pre_user_agent_r6_predecessor(
+            repository_root,
+            content=content,
+            runner=runner,
+        )
+        return
     _require_successful_prerequisite_attempt(
         repository_root,
         study_id=prior.study_id,
@@ -6680,7 +6841,6 @@ def _bootstrap_current_prerequisite_archive(repository_root: Path, prerequisite_
         repository_root,
         study_id=prior.study_id,
         content=content,
-        allow_pre_user_agent_capability=True,
     )
 
 
@@ -6775,11 +6935,12 @@ def _commit_prerequisite_rotation(
     result: PrerequisiteResults,
     study_id: str,
     url: str,
+    runner: CommandRunner,
 ) -> None:
     """Publish the coupled prerequisite artifacts as one marker-last rollback transaction."""
 
     root = repository_root.resolve()
-    _bootstrap_current_prerequisite_archive(root, prerequisite_path)
+    _bootstrap_current_prerequisite_archive(root, prerequisite_path, runner=runner)
     prerequisite_content = render_prerequisite_results(result)
     archive = _prerequisite_raw_archive_path(root, study_id)
     marker = _collection_attempt_root(root, study_id) / "prerequisites-success.json"
