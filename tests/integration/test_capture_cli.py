@@ -106,7 +106,7 @@ if [ "$1" = image ]; then
     exit 0
 fi
 if [ "$1" = compose ] && [ "$2" = version ]; then
-    printf 'Docker Compose version v2\\n'
+    printf '{"version":"v5.4.0"}\\n'
     exit 0
 fi
 compose_file=

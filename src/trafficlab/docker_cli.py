@@ -775,8 +775,13 @@ class DockerCompose:
         )
 
     def compose_version(self, *, timeout: float | None = None, deadline: float | None = None) -> CommandResult:
-        """Check Docker Compose v2 availability."""
-        return self._run(("docker", "compose", "version"), "Docker Compose version", timeout=timeout, deadline=deadline)
+        """Read the Docker Compose plugin version in its machine-readable form."""
+        return self._run(
+            ("docker", "compose", "version", "--format", "json"),
+            "Docker Compose version",
+            timeout=timeout,
+            deadline=deadline,
+        )
 
     def image_inspect(
         self,

@@ -48,7 +48,7 @@ must match for a fresh compatible capture environment:
   mounted-input content hashes
 
 recorded external variation permitted after successful feature preflight:
-  Docker Engine/Compose patch versions, kernel release, checkout/run/mount-source
+  Docker Engine/Compose versions (including supported Compose v2/v5 plugins), kernel release, checkout/run/mount-source
   absolute paths
 ```
 
@@ -150,7 +150,7 @@ scripts/run_bounded.sh \
 External tests are opt-in. Ordinary collection deselects `docker` and
 `internet` tests unless their marker or test directory is explicitly selected.
 An explicit Docker or Internet selection requires `-n 0`; unavailable Docker
-Engine, Compose v2, or image-build capability is a failing session setup with an
+Engine, a supported Docker Compose plugin, or image-build capability is a failing session setup with an
 actionable message, never a skip. The Docker session fixture builds the capture,
 controlled endpoint, direct client, and shell-free workload images from the
 checked-in Dockerfiles. Each test uses unique Compose projects and verifies by

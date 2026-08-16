@@ -80,7 +80,7 @@ def test_external_command_absence_is_actionable(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(conftest.subprocess, "run", missing)
 
-    with pytest.raises(pytest.UsageError, match="Docker CLI was not found.*install Docker Engine.*Compose v2"):
+    with pytest.raises(pytest.UsageError, match="Docker CLI was not found.*install Docker Engine.*Compose plugin"):
         conftest.run_external_command(("docker", "info"), purpose="check Docker Engine", timeout=10.0)
 
 

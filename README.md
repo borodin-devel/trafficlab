@@ -63,7 +63,8 @@ The authoritative system overview is [System Design](architecture/SYSTEM.md).
   the exact `3.12.3` version pinned in [.python-version](.python-version).
 - **Python tooling:** [uv](https://docs.astral.sh/uv/) is the only supported
   dependency, environment, lock, and command interface.
-- **Containers:** Docker Engine and Docker Compose v2 are required for full
+- **Containers:** Docker Engine and a supported Docker Compose plugin (v2 or v5)
+  are required for full
   preflight, capture, `run`, Docker integration tests, and Internet validation.
   The current user must be able to run Docker directly; Trafficlab does not use
   `sudo` or manage Docker permissions.
@@ -180,7 +181,7 @@ docker build --tag trafficlab-capture:local docker/capture
 uv run --locked trafficlab preflight examples/configs/local.toml
 ```
 
-Full preflight verifies Docker Engine, Compose v2, images, mounts, DNS,
+Full preflight verifies Docker Engine, the Compose plugin, images, mounts, DNS,
 capture readiness, and the configured network probe. Its temporary Compose
 project is removed before the command returns.
 

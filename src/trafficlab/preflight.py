@@ -340,6 +340,35 @@ def _failure(name: str, error: TrafficlabError) -> PreflightFinding:
     return PreflightFinding(name, False, str(error), error.corrective_action)
 
 
+def _parse_compose_plugin_version(result: DockerResult) -> str:
+    """Validate the machine-readable version response without imposing a Compose-major policy."""
+    if result.returncode != 0:
+        raise TrafficlabError(
+            "Docker Compose version is incompatible",
+            corrective_action="provide the named required Docker and Compose features",
+        )
+    try:
+        document = cast(object, json.loads(result.stdout))
+    except json.JSONDecodeError as error:
+        raise TrafficlabError(
+            "Docker Compose version is incompatible",
+            corrective_action="provide the named required Docker and Compose features",
+        ) from error
+    if not isinstance(document, dict):
+        raise TrafficlabError(
+            "Docker Compose version is incompatible",
+            corrective_action="provide the named required Docker and Compose features",
+        )
+    typed_document = cast(dict[str, object], document)
+    version = typed_document.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise TrafficlabError(
+            "Docker Compose version is incompatible",
+            corrective_action="provide the named required Docker and Compose features",
+        )
+    return version.strip()
+
+
 def _preflight_failure_outcome(finding: PreflightFinding, *, authority: FailureAuthority = "primary") -> FailureOutcome:
     """Render a direct preflight finding without changing its existing error path."""
     docker_findings = {
@@ -647,7 +676,6 @@ def check_docker(
     from trafficlab.cleanup import cleanup_project
     from trafficlab.docker_cli import (
         CaptureImageLockError,
-        CommandResult,
         ProjectInventory,
         load_capture_image_lock,
         parse_docker_info_platform,
@@ -717,7 +745,7 @@ def check_docker(
     capture_identity: ImageIdentity | None = None
 
     for name, success_detail, action in (
-        ("docker_compose", "Docker Compose v2 is available", lambda: compose.compose_version(deadline=deadline)),
+        ("docker_compose", "Docker Compose plugin is available", lambda: compose.compose_version(deadline=deadline)),
         (
             "target_image",
             "target image is locally available",
@@ -749,12 +777,7 @@ def check_docker(
         try:
             result = action()
             if name == "docker_compose":
-                compose_result = cast(CommandResult, result)
-                if compose_result.returncode != 0 or "Docker Compose version v2" not in compose_result.stdout:
-                    raise TrafficlabError(
-                        "Docker Compose version is incompatible",
-                        corrective_action="provide the named required Docker and Compose features",
-                    )
+                _parse_compose_plugin_version(cast(DockerResult, result))
         except TrafficlabError as source_error:
             error = source_error
             if name == "docker_compose":

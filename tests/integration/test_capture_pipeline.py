@@ -52,7 +52,7 @@ class _HappyDocker:
         return CommandResult(0, json.dumps({"Architecture": "x86_64", "OSType": "linux"}), "")
 
     def compose_version(self, *, deadline: float) -> CommandResult:
-        return CommandResult(0, "Docker Compose version v2", "")
+        return CommandResult(0, json.dumps({"version": "v5.4.0"}), "")
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
         content_id = (

@@ -116,7 +116,7 @@ def test_command_values_are_immutable() -> None:
     ("operation", "expected"),
     [
         ("info", ("docker", "info", "--format", "{{json .}}")),
-        ("compose_version", ("docker", "compose", "version")),
+        ("compose_version", ("docker", "compose", "version", "--format", "json")),
         (
             "image_inspect",
             ("docker", "image", "inspect", "registry.example/target:1"),

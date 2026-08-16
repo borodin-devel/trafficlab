@@ -54,7 +54,7 @@ class _Docker:
         return CommandResult(0, "ready", "")
 
     def compose_version(self, *, deadline: float) -> CommandResult:
-        return CommandResult(0, "Docker Compose version v2", "")
+        return CommandResult(0, json.dumps({"version": "v5.4.0"}), "")
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
         return CommandResult(0, "[]", "")

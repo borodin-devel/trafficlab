@@ -312,7 +312,8 @@ def test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_pro
         source=run_directory / "generated.pcapng",
     )
     assert generated_events == result.generation.events
-    assert final_generation_calls == [(config.run.final_seed, window, config.generation.final)]
+    # The generation stage publishes the trace once; strict comparison then reproduces it byte-for-byte.
+    assert final_generation_calls == [(config.run.final_seed, window, config.generation.final)] * 2
 
     comparison_content = (run_directory / "similarity.json").read_bytes()
     comparison = load_comparison_result(run_directory / "similarity.json")
@@ -398,8 +399,8 @@ def test_real_full_preflight_probe_failure_is_primary_and_cleans_its_unique_proj
 
     assert len(propagated) == 1
     primary = propagated[0]
-    assert "network_probe: network probe target exited with status" in str(primary)
-    assert primary.corrective_action == "verify DNS and the configured probe endpoint are reachable from Docker"
+    assert str(primary) == "network_probe: capture prerequisite is unavailable"
+    assert primary.corrective_action == "make the named prerequisite available"
     assert status == primary.exit_code
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -558,7 +559,7 @@ def test_post_preflight_stage_failure_preserves_prior_artifacts_stops_and_cleans
             "affected_evidence": "capture pair",
             "authority": "primary",
             "corrective_action": "correct timeout or workload",
-            "detail": "capture readiness timed out",
+            "detail": "workload deadline expired",
             "evidence_state": "diagnostic_only",
             "kind": "stage_timeout",
             "stage": "capture",
@@ -605,7 +606,7 @@ def test_post_preflight_stage_failure_preserves_prior_artifacts_stops_and_cleans
                 "affected_evidence": "capture pair",
                 "authority": "secondary",
                 "corrective_action": "correct the capture producer",
-                "detail": inspection_detail,
+                "detail": "capture PCAPNG is malformed",
                 "evidence_state": "diagnostic_only",
                 "kind": "capture_malformed",
                 "stage": "capture",

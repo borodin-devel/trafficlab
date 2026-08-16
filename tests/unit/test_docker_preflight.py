@@ -55,6 +55,10 @@ class _Docker:
         image_os: str = "linux",
         image_architecture: str = "amd64",
         image_platforms: dict[str, tuple[str, str]] | None = None,
+        compose_version_stdout: str = '{"version":"v5.4.0"}',
+        compose_version_returncode: int = 0,
+        info_returncode: int = 0,
+        config_returncode: int = 0,
     ) -> None:
         self.missing_images = set(missing_images or ())
         self.failure = failure
@@ -67,6 +71,10 @@ class _Docker:
         self.image_os = image_os
         self.image_architecture = image_architecture
         self.image_platforms = dict(image_platforms or {})
+        self.compose_version_stdout = compose_version_stdout
+        self.compose_version_returncode = compose_version_returncode
+        self.info_returncode = info_returncode
+        self.config_returncode = config_returncode
         self.calls: list[tuple[str, tuple[object, ...], float]] = []
         self.documents: list[dict[str, object]] = []
         self.capture_signalled = False
@@ -79,14 +87,14 @@ class _Docker:
     def info(self, *, deadline: float) -> CommandResult:
         self._record("info", deadline=deadline)
         return CommandResult(
-            0,
+            self.info_returncode,
             json.dumps({"Architecture": self.daemon_architecture, "OSType": self.daemon_os}),
             "",
         )
 
     def compose_version(self, *, deadline: float) -> CommandResult:
         self._record("compose_version", deadline=deadline)
-        return CommandResult(0, "Docker Compose version v2", "")
+        return CommandResult(self.compose_version_returncode, self.compose_version_stdout, "")
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
         self._record("image_inspect", image, deadline=deadline)
@@ -121,7 +129,7 @@ class _Docker:
     def config(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
         self._record("config", compose_path, project_name, deadline=deadline)
         self.documents.append(cast(dict[str, object], json.loads(compose_path.read_bytes())))
-        return CommandResult(0, "{}", "")
+        return CommandResult(self.config_returncode, "{}", "")
 
     def create_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult:
         self._record("create_capture", compose_path, project_name, deadline=deadline)
@@ -276,6 +284,110 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
     assert project_names[0] != project_names[1]
     assert project_names[1].startswith("trafficlab-preflight-")
     assert docker.cleanup.waits == [59.0]
+
+
+def test_full_docker_preflight_accepts_compose_v5_json_and_reaches_live_feature_probe(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A supported Compose v5 plugin must be judged by the required live probes, not its major string."""
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker(compose_version_stdout='{"version":"v5.4.0"}')
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert all(finding.ok for finding in report.findings)
+    assert docker.calls[1] == ("compose_version", (), 160.0)
+    assert _names(docker) == [
+        "info",
+        "compose_version",
+        "image_inspect",
+        "image_inspect",
+        "config",
+        "config",
+        "create_capture",
+        "start_capture",
+        "service_state",
+        "start_target",
+        "service_state",
+        "service_state",
+        "signal_capture",
+        "service_state",
+        "start_down",
+        "project_inventory",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("stdout", "returncode"),
+    [
+        ("not JSON", 0),
+        ("[]", 0),
+        ('{"version":""}', 0),
+        ('{"version":false}', 0),
+        ('{"version":"v5.4.0"}', 1),
+    ],
+)
+def test_full_docker_preflight_rejects_malformed_compose_version_json_before_feature_probe(
+    valid_config_data: dict[str, object], tmp_path: Path, stdout: str, returncode: int
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker(compose_version_stdout=stdout, compose_version_returncode=returncode)
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.findings[-1].name == "docker_compose"
+    assert report.findings[-1].detail == "Docker Compose version is incompatible"
+    assert _names(docker) == ["info", "compose_version"]
+
+
+def test_full_docker_preflight_rejects_a_nonzero_docker_info_result(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker(info_returncode=1)
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.findings[-1].name == "docker_daemon"
+    assert report.findings[-1].detail == "Docker Engine is unavailable"
+    assert _names(docker) == ["info"]
+
+
+def test_full_docker_preflight_stops_before_compose_for_an_unavailable_mount(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    missing_source = tmp_path / "missing-input"
+    config = _config(
+        valid_config_data,
+        tmp_path,
+        mounts=[{"source": str(missing_source), "target": "/work/input", "read_only": True}],
+    )
+    docker = _Docker()
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.findings[-1].name == "mounts"
+    assert not report.findings[-1].ok
+    assert _names(docker) == ["info", "compose_version", "image_inspect", "image_inspect"]
+
+
+def test_full_docker_preflight_attributes_a_nonzero_compose_config_to_the_mount(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    mount_source = tmp_path / "input"
+    mount_source.write_bytes(b"input")
+    config = _config(
+        valid_config_data,
+        tmp_path,
+        mounts=[{"source": str(mount_source), "target": "/work/input", "read_only": True}],
+    )
+    docker = _Docker(config_returncode=1)
+
+    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
+
+    assert report.findings[-1].name == "compose_config"
+    assert report.findings[-1].detail == "mount target /work/input is incompatible"
+    assert _names(docker) == ["info", "compose_version", "image_inspect", "image_inspect", "config"]
 
 
 def test_capture_image_identity_mismatch_stops_before_compose_probe(

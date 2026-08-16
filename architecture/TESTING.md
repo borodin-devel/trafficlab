@@ -355,8 +355,8 @@ These tests join real modules without Docker:
     realize one portable configuration after feature preflight. Require every
     scientific/workload value, source commit/tree, `uv.lock`, CPython patch,
     scientific schema, image content identity, container mount target/mode, and
-    mounted-input identity to match. Only Docker Engine and Compose patch
-    versions, kernel release, checkout path, run-directory path, and host
+    mounted-input identity to match. Only Docker Engine and Compose versions
+    (including supported Compose v2/v5 plugins), kernel release, checkout path, run-directory path, and host
     mount-source absolute paths may differ.
 13. Independently change host architecture, target content ID, expected capture
     image ID, resolved capture image ID, capture-tool version, mounted-input

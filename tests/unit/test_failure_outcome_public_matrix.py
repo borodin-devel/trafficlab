@@ -369,11 +369,7 @@ class _PreflightDocker:
 
     def compose_version(self, *, deadline: float) -> CommandResult:
         del deadline
-        version = (
-            "Docker Compose version v1.29.2"
-            if self.scenario == "compose_incompatible"
-            else "Docker Compose version v2.29.0"
-        )
+        version = '{"version":""}' if self.scenario == "compose_incompatible" else '{"version":"v5.4.0"}'
         return self._result(stdout=version)
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
@@ -555,7 +551,7 @@ _PREFLIGHT_SUCCESS_DETAILS = {
     "capture_image_lock": "capture base, Debian snapshot, packages, tool, and expected image ID are locked",
     "docker_daemon": "Docker daemon is reachable",
     "capture_platform": "Docker daemon executes the supported capture platform linux/amd64",
-    "docker_compose": "Docker Compose v2 is available",
+    "docker_compose": "Docker Compose plugin is available",
     "target_image": "target image is locally available",
     "capture_image": "capture image is locally available",
     "compose_config": "production Compose configuration is valid",

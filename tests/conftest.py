@@ -146,7 +146,7 @@ def run_external_command(
         )
     except FileNotFoundError as error:
         raise pytest.UsageError(
-            f"Docker CLI was not found while attempting to {purpose}; install Docker Engine with Compose v2 "
+            f"Docker CLI was not found while attempting to {purpose}; install Docker Engine with a supported Compose plugin "
             "and ensure docker is available without sudo"
         ) from error
     except subprocess.TimeoutExpired as error:
@@ -212,8 +212,8 @@ def docker_test_environment(pytestconfig: pytest.Config) -> Iterator[DockerTestE
     require_serial_external_tests(pytestconfig)
     run_external_command(("docker", "info"), purpose="reach a functioning Docker Engine", timeout=20.0)
     run_external_command(
-        ("docker", "compose", "version"),
-        purpose="verify the Docker Compose v2 plugin",
+        ("docker", "compose", "version", "--format", "json"),
+        purpose="verify the Docker Compose plugin",
         timeout=20.0,
     )
     environment = DockerTestEnvironment(capture_image=f"{CAPTURE_IMAGE}-{uuid.uuid4().hex}")
