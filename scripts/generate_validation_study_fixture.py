@@ -465,29 +465,45 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
         (root / "environment.json").write_bytes(_canonical(environment))
         prerequisite_commands: list[dict[str, object]] = []
         for kind in ("docker_matrix", "internet_smoke"):
+            argv = list(
+                study.prerequisite_command_argv(
+                    kind, study_id="fixture-study", url="https://downloads.example.test/object.bin"
+                )
+            )
+            tests = study.prerequisite_junit_counts(
+                b'<testsuite errors="0" failures="0" name="fixture" skipped="0" tests="1"/>\n'
+            )
             outputs = {
+                "command": _canonical({"argv": argv}),
                 "junit": b'<testsuite errors="0" failures="0" name="fixture" skipped="0" tests="1"/>\n',
+                "status": _canonical({"exit_status": 0, "tests": tests}),
                 "stderr": f"{kind} fixture stderr\n".encode(),
                 "stdout": f"{kind} fixture stdout\n".encode(),
             }
             for field, content in outputs.items():
-                suffix = "junit.xml" if field == "junit" else field
+                suffix = {"command": "command.json", "junit": "junit.xml", "status": "status.json"}.get(
+                    field, field
+                )
                 path = root / "prerequisites" / f"{kind}.{suffix}"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
             prerequisite_commands.append(
                 {
-                    "argv": list(
-                        study.prerequisite_command_argv(
-                            kind, study_id="fixture-study", url="https://downloads.example.test/object.bin"
-                        )
-                    ),
+                    "argv": argv,
+                    "command": {
+                        "identity": identify_bytes(outputs["command"]).as_dict(),
+                        "path": f"prerequisites/{kind}.command.json",
+                    },
                     "exit_status": 0,
                     "junit": {
                         "identity": identify_bytes(outputs["junit"]).as_dict(),
                         "path": f"prerequisites/{kind}.junit.xml",
                     },
                     "kind": kind,
+                    "status": {
+                        "identity": identify_bytes(outputs["status"]).as_dict(),
+                        "path": f"prerequisites/{kind}.status.json",
+                    },
                     "stderr": {
                         "identity": identify_bytes(outputs["stderr"]).as_dict(),
                         "path": f"prerequisites/{kind}.stderr",
@@ -496,7 +512,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                         "identity": identify_bytes(outputs["stdout"]).as_dict(),
                         "path": f"prerequisites/{kind}.stdout",
                     },
-                    "tests": study.prerequisite_junit_counts(outputs["junit"]),
+                    "tests": tests,
                 }
             )
         prerequisite_environment = {

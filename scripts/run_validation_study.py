@@ -3086,7 +3086,7 @@ def _retained_prerequisite_document(value: object) -> dict[str, object]:
     for value, expected_kind in zip(values, ("docker_matrix", "internet_smoke"), strict=True):
         document = _exact_object(
             value,
-            ("argv", "exit_status", "junit", "kind", "stderr", "stdout", "tests"),
+            ("argv", "command", "exit_status", "junit", "kind", "status", "stderr", "stdout", "tests"),
             name=f"retained {expected_kind} command",
         )
         kind = _strict_string(document["kind"], name="retained prerequisite command kind")
@@ -3103,11 +3103,21 @@ def _retained_prerequisite_document(value: object) -> dict[str, object]:
         commands.append(
             {
                 "argv": list(argv),
+                "command": _retained_output(
+                    document["command"],
+                    name=f"retained {kind} command",
+                    expected_path=f"prerequisites/{kind}.command.json",
+                ),
                 "exit_status": 0,
                 "junit": _retained_output(
                     document["junit"], name=f"retained {kind} JUnit", expected_path=f"prerequisites/{kind}.junit.xml"
                 ),
                 "kind": kind,
+                "status": _retained_output(
+                    document["status"],
+                    name=f"retained {kind} status",
+                    expected_path=f"prerequisites/{kind}.status.json",
+                ),
                 "stderr": _retained_output(
                     document["stderr"], name=f"retained {kind} stderr", expected_path=f"prerequisites/{kind}.stderr"
                 ),
@@ -3145,7 +3155,7 @@ def retained_prerequisite_paths(value: object) -> tuple[str, ...]:
     paths = [
         cast(str, cast(JsonObject, command[field])["path"])
         for command in cast(list[JsonObject], document["commands"])
-        for field in ("stdout", "stderr", "junit")
+        for field in ("command", "status", "stdout", "stderr", "junit")
     ]
     return tuple(paths)
 

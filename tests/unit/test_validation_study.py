@@ -5682,6 +5682,10 @@ def test_validation_fixture_generator_check_rebuilds_the_retained_bytes() -> Non
     assert fixture_generator.main(["--check"]) == 0
 
 
+def test_validation_fixture_retains_the_complete_155_file_evidence_inventory() -> None:
+    assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 155
+
+
 def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
     content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
     result = study.parse_study_results(content, repository_root=_ROOT)
@@ -5790,15 +5794,32 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
     commands: list[dict[str, object]] = []
     for kind in ("docker_matrix", "internet_smoke"):
         values = outputs[kind]
+        argv = list(study.prerequisite_command_argv(kind, study_id=study_id, url=url))
+        tests = study.prerequisite_junit_counts(values["junit"])
         commands.append(
             {
-                "argv": list(study.prerequisite_command_argv(kind, study_id=study_id, url=url)),
+                "argv": argv,
+                "command": {
+                    "identity": identify_bytes(
+                        json.dumps({"argv": argv}, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+                    ).as_dict(),
+                    "path": f"prerequisites/{kind}.command.json",
+                },
                 "exit_status": 0,
                 "junit": {
                         "identity": identify_bytes(values["junit"]).as_dict(),
                     "path": f"prerequisites/{kind}.junit.xml",
                 },
                 "kind": kind,
+                "status": {
+                    "identity": identify_bytes(
+                        json.dumps({"exit_status": 0, "tests": tests}, sort_keys=True, separators=(",", ":")).encode(
+                            "utf-8"
+                        )
+                        + b"\n"
+                    ).as_dict(),
+                    "path": f"prerequisites/{kind}.status.json",
+                },
                 "stderr": {
                         "identity": identify_bytes(values["stderr"]).as_dict(),
                     "path": f"prerequisites/{kind}.stderr",
@@ -5807,7 +5828,7 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
                         "identity": identify_bytes(values["stdout"]).as_dict(),
                     "path": f"prerequisites/{kind}.stdout",
                 },
-                    "tests": study.prerequisite_junit_counts(values["junit"]),
+                "tests": tests,
             }
         )
     document = {

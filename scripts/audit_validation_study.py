@@ -751,7 +751,7 @@ def _prerequisites(
     required = {relative, *retained_prerequisite_paths(document)}
     for command in cast(list[object], document["commands"]):
         record = cast(dict[str, object], command)
-        for field in ("stdout", "stderr", "junit"):
+        for field in ("command", "status", "stdout", "stderr", "junit"):
             output = cast(dict[str, object], record[field])
             path = cast(str, output["path"])
             content = _read_regular(bundle / path, affected=path)
@@ -762,7 +762,23 @@ def _prerequisites(
                     "prerequisite output does not match its retained content identity",
                     "restore exact prerequisite output bytes",
                 )
-            if field in ("stdout", "stderr"):
+            if field == "command":
+                if _json(content, name=path) != {"argv": record["argv"]}:
+                    _fail(
+                        "artifact_foreign",
+                        path,
+                        "prerequisite command copy does not match the frozen argv",
+                        "restore matching prerequisite command evidence",
+                    )
+            elif field == "status":
+                if _json(content, name=path) != {"exit_status": record["exit_status"], "tests": record["tests"]}:
+                    _fail(
+                        "artifact_foreign",
+                        path,
+                        "prerequisite status copy does not match the frozen command result",
+                        "restore matching prerequisite status evidence",
+                    )
+            elif field in ("stdout", "stderr"):
                 try:
                     content.decode("utf-8")
                 except UnicodeDecodeError as error:
