@@ -4735,6 +4735,25 @@ def _candidate_bytes(root: Path) -> dict[str, bytes]:
     }
 
 
+def _tree_inventory(root: Path) -> dict[str, tuple[object, ...]]:
+    """Capture exact entry kinds, symlink targets, and regular bytes without following links."""
+    if not root.exists() and not root.is_symlink():
+        return {".": ("missing",)}
+    inventory: dict[str, tuple[object, ...]] = {}
+    for path in sorted((root, *root.rglob("*")), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root).as_posix()
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            inventory[relative] = ("symlink", os.readlink(path))
+        elif stat.S_ISREG(mode):
+            inventory[relative] = ("regular", path.read_bytes())
+        elif stat.S_ISDIR(mode):
+            inventory[relative] = ("directory",)
+        else:
+            inventory[relative] = ("other", mode)
+    return inventory
+
+
 def _rewrite_candidate_manifest(candidate: Path) -> None:
     index = cast(dict[str, object], json.loads((candidate / "index.json").read_text(encoding="utf-8")))
     auditor.write_manifest(
@@ -5708,6 +5727,49 @@ def test_validation_fixture_generator_check_rebuilds_the_retained_bytes() -> Non
     assert fixture_generator.main(["--check"]) == 0
 
 
+def test_validation_fixture_generator_check_honors_explicit_source_identities() -> None:
+    environment = cast(
+        dict[str, object],
+        json.loads((_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text()),
+    )
+    source_commit = cast(str, environment["source_commit"])
+    alternate_commit = "a" * 40 if source_commit != "a" * 40 else "b" * 40
+
+    assert (
+        fixture_generator.main(
+            [
+                "--check",
+                "--source-commit",
+                alternate_commit,
+                "--source-tree",
+                cast(str, environment["source_tree"]),
+            ]
+        )
+        == 1
+    )
+
+
+def test_validation_fixture_generator_main_requires_complete_ids_and_writes_to_its_owned_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = cast(
+        dict[str, object],
+        json.loads((_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text()),
+    )
+    source_commit = cast(str, environment["source_commit"])
+    source_tree = cast(str, environment["source_tree"])
+    with pytest.raises(TrafficlabError, match="requires explicit source"):
+        fixture_generator.main([])
+    with pytest.raises(TrafficlabError, match="requires explicit source"):
+        fixture_generator.main(["--check", "--source-commit", source_commit])
+
+    output = tmp_path / "owned-fixture"
+    monkeypatch.setattr(fixture_generator, "FIXTURE", output)
+    assert fixture_generator.main(["--source-commit", source_commit, "--source-tree", source_tree]) == 0
+    assert len(_candidate_bytes(output)) == 155
+
+
 def test_validation_fixture_retains_the_complete_155_file_evidence_inventory() -> None:
     assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 155
 
@@ -5943,8 +6005,13 @@ def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_an
     (candidate / "training" / "short" / "r1" / "generated.pcapng").write_bytes(
         (candidate / "training" / "short" / "r2" / "generated.pcapng").read_bytes()
     )
-    candidate_before = _candidate_bytes(candidate)
-    destination = repository / "examples" / "validation_study" / "evidence" / "simultaneous"
+    evidence_root = repository / "examples" / "validation_study" / "evidence"
+    destination = evidence_root / "simultaneous"
+    (repository / "inventory-sentinel").symlink_to("candidate")
+    candidate_before = _tree_inventory(candidate)
+    evidence_before = _tree_inventory(evidence_root)
+    repository_before = _tree_inventory(repository)
+    assert repository_before["inventory-sentinel"] == ("symlink", "candidate")
 
     with pytest.raises(TrafficlabError) as error:
         study.publish_audited_bundle(candidate, "simultaneous", repository_root=repository)
@@ -5968,9 +6035,10 @@ def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_an
         "restore the exact retained artifact",
         "primary",
     )
-    assert _candidate_bytes(candidate) == candidate_before
+    assert _tree_inventory(candidate) == candidate_before
+    assert _tree_inventory(evidence_root) == evidence_before
+    assert _tree_inventory(repository) == repository_before
     assert not destination.exists()
-    assert not tuple(repository.rglob("*.tmp"))
 
 
 def test_retained_prerequisite_codec_rejects_invalid_public_forms() -> None:

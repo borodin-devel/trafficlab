@@ -661,7 +661,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
-    if arguments.check:
+    if arguments.source_commit is None and arguments.source_tree is None:
+        if not arguments.check:
+            raise TrafficlabError(
+                "fixture generation requires explicit source commit and tree identities",
+                corrective_action="commit the implementation, then supply its exact commit and tree identities",
+            )
         source_commit, source_tree = _recorded_source_identities()
     else:
         if arguments.source_commit is None or arguments.source_tree is None:

@@ -307,3 +307,112 @@ runpy.run_path(str(checkout / "scripts" / "audit_validation_study.py"), run_name
 
     assert completed.returncode == 2
     assert "source commit" in completed.stderr
+
+
+def test_clean_checkout_reconstructs_unmodified_candidate_and_checks_owned_fixture(tmp_path: Path) -> None:
+    """A no-hardlink clone owns both the successful audit and supplied-ID fixture check."""
+    repository, candidate = _copy_audit_fixture_to_clean_checkout(tmp_path)
+    environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_text(encoding="utf-8")))
+    source_commit = cast(str, environment["source_commit"])
+    source_tree = cast(str, environment["source_tree"])
+    clone_fixture = repository / "tests" / "fixtures" / "validation_study_candidate"
+    shutil.rmtree(clone_fixture)
+    shutil.copytree(candidate, clone_fixture)
+    wrapper = """
+import os
+import runpy
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+checkout = Path.cwd().resolve()
+original = Path(os.environ["TRAFFICLAB_ORIGINAL_ROOT"]).resolve()
+source_commit = os.environ["TRAFFICLAB_SOURCE_COMMIT"]
+source_tree = os.environ["TRAFFICLAB_SOURCE_TREE"]
+import scripts.audit_validation_study as audit
+import scripts.generate_validation_study_fixture as generator
+import trafficlab
+assert Path(audit.__file__).resolve().is_relative_to(checkout)
+assert Path(generator.__file__).resolve().is_relative_to(checkout)
+assert Path(trafficlab.__file__).resolve().is_relative_to(checkout)
+original_read_bytes = Path.read_bytes
+original_read_text = Path.read_text
+def checked_read_bytes(path, *args, **kwargs):
+    if path.resolve().is_relative_to(original):
+        raise AssertionError("audit read the original worktree")
+    return original_read_bytes(path, *args, **kwargs)
+def checked_read_text(path, *args, **kwargs):
+    if path.resolve().is_relative_to(original):
+        raise AssertionError("audit read the original worktree")
+    return original_read_text(path, *args, **kwargs)
+Path.read_bytes = checked_read_bytes
+Path.read_text = checked_read_text
+def blocked_network(*args, **kwargs):
+    raise AssertionError("audit attempted network access")
+socket.socket = blocked_network
+socket.create_connection = blocked_network
+original_run = subprocess.run
+allowed_git = {
+    ("git", "rev-parse", "HEAD"),
+    ("git", "rev-parse", "HEAD^{tree}"),
+    ("git", "show", f"{source_commit}:uv.lock"),
+}
+def local_git_only(argv, *args, **kwargs):
+    if tuple(argv) in allowed_git:
+        return original_run(argv, *args, **kwargs)
+    raise AssertionError("audit attempted Docker or a non-local-Git subprocess")
+subprocess.run = local_git_only
+sys.argv = ["scripts/audit_validation_study.py", "candidate", "--repository", str(checkout)]
+try:
+    runpy.run_path(str(checkout / "scripts" / "audit_validation_study.py"), run_name="__main__")
+except SystemExit as error:
+    assert error.code == 0
+else:
+    raise AssertionError("audit script did not exit")
+sys.argv = [
+    "scripts/generate_validation_study_fixture.py",
+    "--check",
+    "--source-commit",
+    source_commit,
+    "--source-tree",
+    source_tree,
+]
+try:
+    runpy.run_path(str(checkout / "scripts" / "generate_validation_study_fixture.py"), run_name="__main__")
+except SystemExit as error:
+    assert error.code == 0
+else:
+    raise AssertionError("fixture generator did not exit")
+"""
+    environment_variables = dict(os.environ)
+    environment_variables["PYTHONPATH"] = ""
+    environment_variables["TRAFFICLAB_ORIGINAL_ROOT"] = str(_ROOT)
+    environment_variables["TRAFFICLAB_SOURCE_COMMIT"] = source_commit
+    environment_variables["TRAFFICLAB_SOURCE_TREE"] = source_tree
+    completed = subprocess.run(
+        ("uv", "run", "--locked", "--offline", "python", "-c", wrapper),
+        cwd=repository,
+        env=environment_variables,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "validation-study-audit: accepted " in completed.stdout
+    assert (
+        "validation-study fixture: checked-in paths and bytes match deterministic production output" in completed.stdout
+    )
+    candidate_bytes = {
+        path.relative_to(candidate).as_posix(): path.read_bytes()
+        for path in sorted(candidate.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+    fixture_bytes = {
+        path.relative_to(clone_fixture).as_posix(): path.read_bytes()
+        for path in sorted(clone_fixture.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+    assert len(candidate_bytes) == 155
+    assert candidate_bytes == fixture_bytes
