@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -117,3 +119,45 @@ def test_report_inputs_derives_each_directional_reference_window(
         reference[-1].timestamp == window and generated[-1].timestamp <= window
         for reference, generated, window in captured
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("schema_version", 2),
+        ("training_repetitions", 2),
+        ("selection_seeds", []),
+        ("workloads", ["bursty", "short", "streaming"]),
+        ("candidate_id", "other-study"),
+        ("prerequisite_path", "other/prerequisites.json"),
+    ),
+)
+def test_protocol_rejects_each_noncanonical_schema_three_control(field: str, value: object) -> None:
+    protocol_path = _ROOT / "tests" / "fixtures" / "validation_study_candidate" / "protocol.json"
+    protocol = cast(dict[str, object], json.loads(protocol_path.read_text(encoding="utf-8")))
+    protocol[field] = value
+
+    with pytest.raises(auditor._Issue):  # pyright: ignore[reportPrivateUsage]
+        auditor._protocol(  # pyright: ignore[reportPrivateUsage]
+            (json.dumps(protocol, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        )
+
+
+def test_report_inputs_rejects_mixed_similarity_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = _config()
+    training = _training(config)
+    incompatible = config.model_copy(
+        update={
+            "similarity": config.similarity.model_copy(
+                update={"multiscale_widths_seconds": (0.002, *config.similarity.multiscale_widths_seconds[1:])}
+            )
+        }
+    )
+    captured: list[tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], float]] = []
+    _patch_nonvariation_report_dependencies(monkeypatch, captured)
+
+    with pytest.raises(auditor._Issue, match="common similarity settings"):  # pyright: ignore[reportPrivateUsage]
+        auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
+            (replace(training[0], config=incompatible), *training[1:]),
+            _held(),
+        )
