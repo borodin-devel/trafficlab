@@ -109,6 +109,14 @@ class HeldOutEvaluation:
     observation_window_seconds: float
 
 
+@dataclass(slots=True)
+class _PhaseCaptureImage:
+    """One temporary capture-image tag owned by a public study phase."""
+
+    tag: str
+    build_attempted: bool = False
+
+
 def evaluate_study_held_out(
     *,
     model_content: bytes,
@@ -5373,12 +5381,9 @@ def _study_identity(
     }
 
 
-def _study_image_identity(
-    *,
-    repository_root: Path,
-    capture_image_id: str,
-    runner: CommandRunner,
-) -> tuple[JsonObject, str]:
+def _study_target_image_identity(*, repository_root: Path, runner: CommandRunner) -> JsonObject:
+    """Inspect the target before a study phase creates its owned capture image."""
+
     target_result = runner(
         ("docker", "image", "inspect", TARGET_REFERENCE),
         cwd=repository_root,
@@ -5392,6 +5397,17 @@ def _study_image_identity(
         f"could not inspect live target image: {_command_detail(target_result, operation='target image inspect')}",
     )
     target_stdout, _target_stderr = _completed_output(target_result, operation="target image inspect")
+    return _target_image_record(target_stdout)
+
+
+def _study_capture_image_identity(
+    *,
+    repository_root: Path,
+    capture_image_id: str,
+    runner: CommandRunner,
+) -> str:
+    """Inspect the fresh study-owned capture image after its cold build."""
+
     capture_result = runner(
         ("docker", "image", "inspect", capture_image_id),
         cwd=repository_root,
@@ -5405,7 +5421,7 @@ def _study_image_identity(
         f"could not inspect live capture image: {_command_detail(capture_result, operation='capture image inspect')}",
     )
     capture_stdout, _capture_stderr = _completed_output(capture_result, operation="capture image inspect")
-    return _target_image_record(target_stdout), _inspected_image_id(capture_stdout, name="capture")
+    return _inspected_image_id(capture_stdout, name="capture")
 
 
 def _validated_study_inputs(
@@ -5415,6 +5431,8 @@ def _validated_study_inputs(
     *,
     repository_root: Path,
     runner: CommandRunner,
+    owned_capture_image: _PhaseCaptureImage | None = None,
+    capture_iidfile: Path | None = None,
 ) -> tuple[PrerequisiteResults, dict[WorkloadName, ExperimentConfig], JsonObject, bytes]:
     root = repository_root.resolve()
     expected_path = root / "examples" / "validation_study" / "prerequisites.json"
@@ -5440,22 +5458,51 @@ def _validated_study_inputs(
         and identity["platform"] == tools["platform"],
         "live study commit and tool identities must exactly match prerequisite evidence",
     )
+    configs = validate_base_configs(root, prerequisites)
     images = prerequisites.images
-    capture_image_id = cast(str, images["capture_image_id"])
-    live_target, live_capture_image_id = _study_image_identity(
+    capture_image_id = _image_id(images["capture_image_id"], name="retained capture image ID")
+    capture_lock_image_id = capture_image_id
+    if owned_capture_image is not None:
+        if capture_iidfile is None:
+            raise ValueError("study capture IID file is required for an owned capture image")
+        capture_lock = load_capture_image_lock(root / "docker" / "capture" / "image-lock.json")
+        validate_capture_dockerfile(
+            (root / "docker" / "capture" / "Dockerfile").read_text(encoding="utf-8"),
+            capture_lock,
+        )
+        capture_lock_image_id = capture_lock.expected_capture_image_id
+        _require(
+            capture_image_id == capture_lock_image_id,
+            "study capture image must equal the checked image lock before rebuild",
+        )
+    live_target = _study_target_image_identity(repository_root=root, runner=runner)
+    _require(
+        live_target["target_reference"] == images["target_reference"]
+        and live_target["target_image_id"] == images["target_image_id"]
+        and tuple(cast(list[JsonValue], live_target["target_repo_digests"])) == images["target_repo_digests"]
+        and live_target["target_config_user"] == images["target_config_user"],
+        "study image identities must exactly match approved prerequisite evidence",
+    )
+    if owned_capture_image is not None:
+        assert capture_iidfile is not None
+        _establish_phase_capture_image(
+            root,
+            phase="study",
+            expected_image_id=capture_image_id,
+            capture_lock_image_id=capture_lock_image_id,
+            owned_capture_image=owned_capture_image,
+            iidfile=capture_iidfile,
+            runner=runner,
+        )
+    live_capture_image_id = _study_capture_image_identity(
         repository_root=root,
         capture_image_id=capture_image_id,
         runner=runner,
     )
     _require(
-        live_target["target_reference"] == images["target_reference"]
-        and live_target["target_image_id"] == images["target_image_id"]
-        and tuple(cast(list[JsonValue], live_target["target_repo_digests"])) == images["target_repo_digests"]
-        and live_target["target_config_user"] == images["target_config_user"]
-        and live_capture_image_id == capture_image_id,
+        live_capture_image_id == capture_image_id,
         "study image identities must exactly match approved prerequisite evidence",
     )
-    configs = validate_base_configs(root, prerequisites)
     return prerequisites, configs, identity, prerequisite_content
 
 
@@ -5835,18 +5882,24 @@ def run_study(
     utc_now: Callable[[], datetime],
 ) -> StudyResults:
     root = repository_root.resolve()
+    owned_capture_image = _PhaseCaptureImage(tag="")
+    primary: BaseException | None = None
     try:
         url = validate_endpoint_url(url)
         study_id = validate_study_id(study_id)
+        owned_capture_image.tag = _phase_capture_tag(study_id)
         results_path = root / "examples" / "validation_study" / "results.json"
         _require(not _path_entry_exists(results_path), f"study result target already exists: {results_path}")
-        prerequisites, configs, identity, prerequisite_content = _validated_study_inputs(
-            url,
-            study_id,
-            prerequisite_path,
-            repository_root=root,
-            runner=runner,
-        )
+        with tempfile.TemporaryDirectory(prefix=f"trafficlab-validation-{study_id}-capture-") as temporary_directory:
+            prerequisites, configs, identity, prerequisite_content = _validated_study_inputs(
+                url,
+                study_id,
+                prerequisite_path,
+                repository_root=root,
+                runner=runner,
+                owned_capture_image=owned_capture_image,
+                capture_iidfile=Path(temporary_directory) / "capture.iid",
+            )
         specifications = _primary_run_specs(root, study_id, configs)
         workloads = {spec.name: spec for spec in workload_specs(url)}
         object_size = cast(int, prerequisites.capability["object_size_bytes"])
@@ -5923,13 +5976,37 @@ def run_study(
         results_path.parent.mkdir(parents=True, exist_ok=True)
         _publish_results(results_path, validated, repository_root=root)
         return validated
-    except TrafficlabError:
+    except TrafficlabError as error:
+        primary = error
         raise
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
-        raise TrafficlabError(
+        primary = TrafficlabError(
             f"Validation Study failed validation: {error}",
             corrective_action="preserve the ignored evidence, correct the failure, and restart with a new study ID",
-        ) from error
+        )
+        raise primary from error
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        if owned_capture_image.build_attempted:
+            try:
+                _remove_owned_phase_capture_image(
+                    owned_capture_image,
+                    phase="study",
+                    repository_root=root,
+                    runner=runner,
+                )
+            except BaseException as cleanup_error:
+                if primary is None:
+                    raise TrafficlabError(
+                        f"Validation Study study capture image cleanup failed: {cleanup_error}",
+                        corrective_action=(
+                            "preserve the study evidence, remove the exact owned capture image tag, "
+                            "and restart with a new study ID"
+                        ),
+                    ) from cleanup_error
+                primary.add_note(f"study capture image cleanup failed: {cleanup_error}")
 
 
 def _audit_primary_record(
@@ -7784,6 +7861,7 @@ def _collection_inputs_from_prerequisites(
     url: str,
     runner: CommandRunner,
     require_successful_prerequisite: bool = False,
+    owned_capture_image: _PhaseCaptureImage | None = None,
 ) -> CollectionInputs:
     """Derive immutable candidate inputs from retained same-revision prerequisite evidence."""
     root = repository_root.resolve()
@@ -7911,27 +7989,38 @@ def _collection_inputs_from_prerequisites(
             current_target == retained_target,
             "collection target image must equal the retained prerequisite identity",
         )
-        capture_inspect = runner(
-            ("docker", "image", "inspect", capture_image_id, "--format", "{{.Id}}"),
-            cwd=root,
-            check=False,
-            capture_output=True,
-            shell=False,
-            timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
-        )
-        _require(
-            capture_inspect.returncode == 0
-            and _image_id(
-                _stdout_text(capture_inspect, operation="collection capture image inspect"),
-                name="current capture image ID",
-            )
-            == capture_image_id,
-            "collection capture image must equal the retained prerequisite identity",
-        )
         _require(
             capture_image_id == capture_lock.expected_capture_image_id,
             "cold capture rebuild ID must equal the checked image lock",
         )
+        if owned_capture_image is None:
+            capture_inspect = runner(
+                ("docker", "image", "inspect", capture_image_id, "--format", "{{.Id}}"),
+                cwd=root,
+                check=False,
+                capture_output=True,
+                shell=False,
+                timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+            )
+            _require(
+                capture_inspect.returncode == 0
+                and _image_id(
+                    _stdout_text(capture_inspect, operation="collection capture image inspect"),
+                    name="current capture image ID",
+                )
+                == capture_image_id,
+                "collection capture image must equal the retained prerequisite identity",
+            )
+        else:
+            _establish_phase_capture_image(
+                root,
+                phase="collection",
+                expected_image_id=capture_image_id,
+                capture_lock_image_id=capture_lock.expected_capture_image_id,
+                owned_capture_image=owned_capture_image,
+                iidfile=_collection_attempt_root(root, study_id) / "collection-capture.iid",
+                runner=runner,
+            )
         capture_tool_version = capture_lock.capture_tool_version
         evidence_root = (
             root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / "00-prerequisites"
@@ -8043,6 +8132,122 @@ def _collection_inputs_from_prerequisites(
             f"Validation Study collection inputs are invalid: {error}",
             corrective_action="preserve prerequisite evidence, correct the frozen inputs, and restart with a new study ID",
         ) from error
+
+
+def _phase_capture_tag(study_id: str) -> str:
+    """Return the exclusive capture-image tag for one irreversible public phase."""
+
+    return f"trafficlab-validation-{validate_study_id(study_id)}:capture"
+
+
+def _establish_phase_capture_image(
+    repository_root: Path,
+    *,
+    phase: Literal["collection", "study"],
+    expected_image_id: str,
+    capture_lock_image_id: str,
+    owned_capture_image: _PhaseCaptureImage,
+    iidfile: Path,
+    runner: CommandRunner,
+) -> None:
+    """Cold-build and inspect the image used by every capture in one public phase."""
+
+    _require(not owned_capture_image.build_attempted, f"{phase} capture image must be established exactly once")
+    _require(
+        expected_image_id == capture_lock_image_id,
+        f"{phase} capture image must equal the checked image lock before rebuild",
+    )
+    primary: BaseException | None = None
+    try:
+        existing_tag = runner(
+            ("docker", "image", "inspect", owned_capture_image.tag, "--format", "{{.Id}}"),
+            cwd=repository_root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+        )
+        _require(
+            existing_tag.returncode == 1,
+            (
+                f"{phase} capture image tag already exists and is not owned by this phase"
+                if existing_tag.returncode == 0
+                else f"could not inspect {phase} capture image tag before rebuild: "
+                f"{_command_detail(existing_tag, operation=f'{phase} capture image tag inspect')}"
+            ),
+        )
+        iidfile.parent.mkdir(parents=True, exist_ok=True)
+        owned_capture_image.build_attempted = True
+        completed = runner(
+            cold_capture_build_argv(owned_capture_image.tag, iidfile),
+            cwd=repository_root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+        )
+        _require(
+            completed.returncode == 0,
+            f"could not cold-build {phase} capture image: "
+            f"{_command_detail(completed, operation=f'{phase} capture image build')}",
+        )
+        rebuilt_image_id = _image_id(iidfile.read_text(encoding="ascii").strip(), name=f"{phase} capture image ID")
+        _require(
+            rebuilt_image_id == expected_image_id == capture_lock_image_id,
+            f"cold {phase} capture rebuild ID must equal retained prerequisite and image-lock identities",
+        )
+        inspected = runner(
+            ("docker", "image", "inspect", rebuilt_image_id, "--format", "{{.Id}}"),
+            cwd=repository_root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+        )
+        _require(
+            inspected.returncode == 0
+            and _image_id(
+                _stdout_text(inspected, operation=f"{phase} rebuilt capture image inspect"),
+                name=f"rebuilt {phase} capture image ID",
+            )
+            == rebuilt_image_id,
+            f"{phase} rebuilt capture image must remain the retained prerequisite identity",
+        )
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        try:
+            iidfile.unlink(missing_ok=True)
+        except OSError as error:
+            cleanup_error = ValueError(f"could not remove {phase} capture IID file {iidfile}: {error}")
+            if primary is None:
+                raise cleanup_error from error
+            primary.add_note(f"{phase} capture IID file cleanup failed: {cleanup_error}")
+
+
+def _remove_owned_phase_capture_image(
+    owned_capture_image: _PhaseCaptureImage,
+    *,
+    phase: Literal["collection", "study"],
+    repository_root: Path,
+    runner: CommandRunner,
+) -> None:
+    """Remove only the capture-image tag created for this public phase."""
+
+    completed = runner(
+        ("docker", "image", "rm", "--force", owned_capture_image.tag),
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        shell=False,
+        timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+    )
+    _require(
+        completed.returncode == 0,
+        f"could not remove owned {phase} capture image: "
+        f"{_command_detail(completed, operation=f'{phase} capture image cleanup')}",
+    )
 
 
 def collect_validation_candidate(
@@ -8360,30 +8565,56 @@ def main(
                 url=url,
                 phase="collection",
             )
-            environment, retained_prerequisites, prerequisite_files, configs, object_size_bytes = (
-                _collection_inputs_from_prerequisites(
-                    repository_root,
-                    prerequisite_path,
+            owned_capture_image = _PhaseCaptureImage(tag=_phase_capture_tag(study_id))
+            primary: BaseException | None = None
+            try:
+                environment, retained_prerequisites, prerequisite_files, configs, object_size_bytes = (
+                    _collection_inputs_from_prerequisites(
+                        repository_root,
+                        prerequisite_path,
+                        study_id=study_id,
+                        url=url,
+                        runner=runner,
+                        require_successful_prerequisite=True,
+                        owned_capture_image=owned_capture_image,
+                    )
+                )
+                candidate = collect_validation_candidate(
+                    repository_root=repository_root,
                     study_id=study_id,
                     url=url,
-                    runner=runner,
-                    require_successful_prerequisite=True,
+                    attempt=attempt,
+                    environment=environment,
+                    retained_prerequisites=retained_prerequisites,
+                    prerequisite_files=prerequisite_files,
+                    configs=configs,
+                    run=run,
+                    capture=capture,
+                    object_size_bytes=object_size_bytes,
+                    perf_counter=perf_counter,
                 )
-            )
-            candidate = collect_validation_candidate(
-                repository_root=repository_root,
-                study_id=study_id,
-                url=url,
-                attempt=attempt,
-                environment=environment,
-                retained_prerequisites=retained_prerequisites,
-                prerequisite_files=prerequisite_files,
-                configs=configs,
-                run=run,
-                capture=capture,
-                object_size_bytes=object_size_bytes,
-                perf_counter=perf_counter,
-            )
+            except BaseException as error:
+                primary = error
+                raise
+            finally:
+                if owned_capture_image.build_attempted:
+                    try:
+                        _remove_owned_phase_capture_image(
+                            owned_capture_image,
+                            phase="collection",
+                            repository_root=repository_root.resolve(),
+                            runner=runner,
+                        )
+                    except BaseException as cleanup_error:
+                        if primary is None:
+                            raise TrafficlabError(
+                                f"Validation Study collection capture image cleanup failed: {cleanup_error}",
+                                corrective_action=(
+                                    "preserve the collection attempt, remove the exact owned capture image tag, "
+                                    "and restart with a new study ID"
+                                ),
+                            ) from cleanup_error
+                        primary.add_note(f"collection capture image cleanup failed: {cleanup_error}")
             print(f"validation-study: candidate collected at {candidate}")
             return 0
         result = run_study(
