@@ -344,7 +344,7 @@ Trafficlab implements one classical
 It provides deterministic family quotas, common evaluation seeds, stable
 tournament selection, global elites and family champions, family-aware
 crossover, coordinate-aware Gaussian mutation, duplicate handling, early
-stopping, strict checkpoints, and final held-out validation.
+stopping, strict checkpoints, and final fresh-simulation validation.
 
 The genetic architecture index is
 [Genetic Models](architecture/genetic_models/README.md).
@@ -420,10 +420,13 @@ tracking, and Internet-test contract are in
 
 ## Validation Study
 
-The Validation Study used three real-Internet workload shapes, three fresh
-primary repeats each, and one fresh saved-run reproduction. The checked
-publication contains canonical prerequisite/config/result records but does not
-track raw Internet PCAPNG files.
+The Validation Study uses three workload shapes with three independent training
+captures each. A complete retained candidate records canonical prerequisites,
+protocol headers and observations, environment compatibility, portable and
+realized configurations, nine training run trees, nine same-reference
+fresh-simulation records, and three independent fixed-model heldout bundles.
+Raw Internet PCAPNG files remain outside Git; the checked credential-free
+fixture proves the offline audit contract.
 
 - [Study instructions and retained-evidence policy](examples/validation_study/README.md)
 - [Study results and interpretation](examples/validation_study/REPORT.md)

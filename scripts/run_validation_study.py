@@ -40,10 +40,11 @@ from trafficlab.comparison import (
     sha256_bytes,
     similarity_settings_identity,
 )
-from trafficlab.compatibility import ContentIdentity, identify_bytes
+from trafficlab.compatibility import ContentIdentity, identify_bytes, require_compatible
 from trafficlab.config import ExperimentConfig, FamilyName, SimilarityConfig
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
+from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.genetic.evaluation import evaluate_final, validate_evaluation_context
 from trafficlab.genetic.strategy import StrategyContext, make_strategy_context
@@ -86,6 +87,96 @@ class CommandRunner(Protocol):
         raise NotImplementedError
 
 
+@dataclass(frozen=True, slots=True)
+class HeldOutEvaluation:
+    """One study-only evaluation of a frozen training model on an independent capture."""
+
+    training_model: BestModel
+    training_model_identity: ContentIdentity
+    capture_identity: ContentIdentity
+    reference_identity: ContentIdentity
+    generated_identity: ContentIdentity
+    similarity_settings_identity: ContentIdentity
+    generated_pcapng: bytes
+    comparison: ComparisonResult
+    comparison_json: bytes
+    seed: int
+    observation_window_seconds: float
+
+
+def evaluate_study_held_out(
+    *,
+    model_content: bytes,
+    model_source: Path,
+    config: ExperimentConfig,
+    capture_content: bytes,
+    capture_source: Path,
+    reference_content: bytes,
+    reference_source: Path,
+) -> HeldOutEvaluation:
+    """Evaluate a retained training model against one independent held-out capture.
+
+    This is intentionally a study-evidence boundary rather than a relaxation of
+    the ordinary generate/compare lineage checks: the retained model keeps its
+    training identities while this result records a separate held-out pair.
+    """
+
+    if type(config) is not ExperimentConfig:
+        raise TypeError("config must be an ExperimentConfig")
+    model = load_best_model(model_content, source=model_source)
+    capture_identity = identify_bytes(capture_content)
+    reference_identity = identify_bytes(reference_content)
+    if reference_identity == model.reference_identity:
+        raise TrafficlabError(
+            "study held-out reference must be an independent held-out reference",
+            corrective_action="capture a new held-out reference after freezing the training model",
+        )
+    require_compatible(
+        {
+            "final seed": model.final_seed,
+            "final generation limits": model.final_limits,
+            "training observation window": model.observation_window_seconds,
+        },
+        {
+            "final seed": config.run.final_seed,
+            "final generation limits": config.generation.final,
+            "training observation window": model.observation_window_seconds,
+        },
+    )
+    metadata = parse_capture_metadata(capture_content, source=capture_source)
+    reference, W = normalize_reference(parse_pcapng_bytes(reference_content, metadata, source=reference_source))
+    if W != model.observation_window_seconds:
+        raise TrafficlabError(
+            "study held-out reference window must equal the frozen training model window",
+            corrective_action="retain a held-out capture with the protocol observation window",
+        )
+    _, generated, generated_pcapng = reproduce_generated_pcapng(model, metadata)
+    aligned = align_generated(generated, W)
+    settings_identity = similarity_settings_identity(config.similarity)
+    comparison = compare_traces(reference, aligned, W, config.similarity).with_input_identities(
+        {
+            "capture_json": capture_identity,
+            "generated_pcapng": identify_bytes(generated_pcapng),
+            "reference_pcapng": reference_identity,
+            "similarity_settings": settings_identity,
+        }
+    )
+    comparison_json = render_comparison_result(comparison)
+    return HeldOutEvaluation(
+        training_model=model,
+        training_model_identity=identify_bytes(model_content),
+        capture_identity=capture_identity,
+        reference_identity=reference_identity,
+        generated_identity=identify_bytes(generated_pcapng),
+        similarity_settings_identity=settings_identity,
+        generated_pcapng=generated_pcapng,
+        comparison=comparison,
+        comparison_json=comparison_json,
+        seed=model.final_seed,
+        observation_window_seconds=W,
+    )
+
+
 TARGET_REFERENCE = "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
 FAMILY_ORDER: tuple[FamilyName, ...] = ("markov_renewal", "mmpp", "poisson_empirical")
 PUBLISHED_METHOD_ORDER = METHOD_ORDER
@@ -117,7 +208,7 @@ REPORT_HEADINGS = (
     "## Question, scope, environment, and protocol",
     "## Natural variation",
     "## Family champions",
-    "## Held-out, published, and runtime",
+    "## Fresh simulation, published, and runtime",
     "## Trace diagnostics",
     "## Saved-run reproduction",
     "## Limitations and next work",
@@ -232,7 +323,7 @@ RAW_SEQUENCE_KEYS = (
     "trial_event_count",
     "final_event_count",
     "raw_events_equal",
-    "held_out_score_reproduced",
+    "fresh_simulation_score_reproduced",
     "reparsed_event_count",
     "reparsed_matches_quantized",
 )
@@ -241,7 +332,7 @@ WORKLOAD_SUMMARY_KEYS = (
     "runtime",
     "family_champions",
     "winner_selection_fitness",
-    "held_out",
+    "fresh_simulation",
     "published",
     "reference_descriptors",
     "winner_counts",
@@ -250,7 +341,7 @@ REPRODUCTION_COMPARISON_KEYS = (
     "winner_family_equal",
     "winner_genes_equal",
     "winner_selection_fitness_delta",
-    "held_out_delta",
+    "fresh_simulation_delta",
     "published_delta",
     "reference_similarity",
 )
@@ -279,7 +370,7 @@ _STUDY_RUN_KEYS = (
     "generated",
     "family_champions",
     "winner",
-    "held_out",
+    "fresh_simulation",
     "published",
     "raw_sequence",
 )
@@ -307,7 +398,7 @@ _REPRODUCTION_KEYS = (
     "generated",
     "family_champions",
     "winner",
-    "held_out",
+    "fresh_simulation",
     "published",
     "raw_sequence",
     "comparison_to_source",
@@ -1059,7 +1150,7 @@ class StudyRunRecord:
     generated: FrozenJsonObject
     family_champions: tuple[FrozenJsonObject, FrozenJsonObject, FrozenJsonObject]
     winner: FrozenJsonObject
-    held_out: FrozenJsonObject
+    fresh_simulation: FrozenJsonObject
     published: FrozenJsonObject
     raw_sequence: FrozenJsonObject
 
@@ -1071,7 +1162,7 @@ class StudyRunRecord:
             "reference",
             "generated",
             "winner",
-            "held_out",
+            "fresh_simulation",
             "published",
             "raw_sequence",
         ):
@@ -1788,10 +1879,10 @@ def _sole_final_trial(trials: Sequence[TrialResult]) -> TrialResult:
     values = cast(tuple[object, ...], trials)
     _require(
         type(trials) is tuple and len(values) == 1 and type(values[0]) is TrialResult,
-        "fresh held-out evaluation must return exactly one TrialResult",
+        "fresh simulation evaluation must return exactly one TrialResult",
     )
     trial = cast(TrialResult, values[0])
-    _require(trial.seed == 97, "fresh held-out evaluation must use exact final seed 97")
+    _require(trial.seed == 97, "fresh simulation evaluation must use exact final seed 97")
     return trial
 
 
@@ -1815,7 +1906,7 @@ def _require_published_lineage(
 
 @dataclass(frozen=True, slots=True)
 class _ReconstructedScience:
-    held_out: TrialResult
+    fresh_simulation: TrialResult
     raw_events: tuple[TraceEvent, ...]
     reparsed_events: tuple[TraceEvent, ...]
     aligned_events: tuple[TraceEvent, ...]
@@ -1824,7 +1915,7 @@ class _ReconstructedScience:
 
 def _reconstruct_science(
     evidence: _LoadedRunEvidence,
-    held_out: TrialResult,
+    fresh_simulation: TrialResult,
     *,
     generated_path: Path,
 ) -> _ReconstructedScience:
@@ -1839,8 +1930,8 @@ def _reconstruct_science(
     _require(raw_trial == raw_final, "trial and final guards must produce one exact raw seed-97 sequence")
     raw_comparison = compare_traces(evidence.reference, raw_trial, window, evidence.config.similarity)
     _require(
-        _comparison_equals_trial(raw_comparison, held_out),
-        "raw seed-97 comparison must equal the sole direct held-out evaluation",
+        _comparison_equals_trial(raw_comparison, fresh_simulation),
+        "raw seed-97 comparison must equal the sole direct fresh simulation evaluation",
     )
     quantized = quantize_generated_events(raw_trial, window)
     rendered = encode_pcapng(quantized, evidence.metadata)
@@ -1860,7 +1951,7 @@ def _reconstruct_science(
         }
     )
     _require_published_lineage(published, evidence.comparison, evidence.contents, settings_identity)
-    return _ReconstructedScience(held_out, raw_trial, reparsed, aligned, published)
+    return _ReconstructedScience(fresh_simulation, raw_trial, reparsed, aligned, published)
 
 
 def _repository_path_record(path: Path, *, repository_root: Path, name: str) -> str:
@@ -1947,8 +2038,10 @@ def extract_primary_record(
     _fresh_run_log_proofs(evidence.log_records)
 
     validate_evaluation_context(evidence.context.evaluation)
-    held_out_trial = _sole_final_trial(result.fit.outcome.final_trials)
-    science = _reconstruct_science(evidence, held_out_trial, generated_path=spec.run_directory / "generated.pcapng")
+    fresh_simulation_trial = _sole_final_trial(result.fit.outcome.final_trials)
+    science = _reconstruct_science(
+        evidence, fresh_simulation_trial, generated_path=spec.run_directory / "generated.pcapng"
+    )
     _require(
         science.reparsed_events == result.generation.events and science.published == result.comparison,
         "run result must equal the reconstructed generated artifact and published comparison",
@@ -1983,7 +2076,11 @@ def extract_primary_record(
         "generated": _trace_summary(science.aligned_events, science.published, role="generated"),
         "family_champions": list(_family_champions(evidence.checkpoint)),
         "winner": _winner(evidence.checkpoint, evidence.best_model),
-        "held_out": {"seed": 97, "score": _score_from_trial(science.held_out), "source": "run_experiment_fit_outcome"},
+        "fresh_simulation": {
+            "seed": 97,
+            "score": _score_from_trial(science.fresh_simulation),
+            "source": "run_experiment_fit_outcome",
+        },
         "published": {"seed": 97, "score": _score_from_comparison(science.published)},
         "raw_sequence": {
             "seed": 97,
@@ -1991,7 +2088,7 @@ def extract_primary_record(
             "trial_event_count": len(science.raw_events),
             "final_event_count": len(science.raw_events),
             "raw_events_equal": True,
-            "held_out_score_reproduced": True,
+            "fresh_simulation_score_reproduced": True,
             "reparsed_event_count": len(science.reparsed_events),
             "reparsed_matches_quantized": True,
         },
@@ -2002,7 +2099,7 @@ def extract_primary_record(
         workload=spec.workload,
         evidence_directory=evidence_directory,
         object_size=object_size,
-        held_out_source="run_experiment_fit_outcome",
+        fresh_simulation_source="run_experiment_fit_outcome",
     )
     return _run_record_from_document(document)
 
@@ -2122,7 +2219,7 @@ def workload_summaries(
                 },
             }
         winners = [cast(JsonObject, run["winner"]) for run in runs]
-        held_out = [cast(JsonObject, cast(JsonObject, run["held_out"])["score"]) for run in runs]
+        fresh_simulation = [cast(JsonObject, cast(JsonObject, run["fresh_simulation"])["score"]) for run in runs]
         published = [cast(JsonObject, cast(JsonObject, run["published"])["score"]) for run in runs]
         results.append(
             {
@@ -2132,7 +2229,7 @@ def workload_summaries(
                 "winner_selection_fitness": descriptive_statistics(
                     [cast(float, winner["selection_fitness"]) for winner in winners]
                 ),
-                "held_out": _summarize_scores(held_out),
+                "fresh_simulation": _summarize_scores(fresh_simulation),
                 "published": _summarize_scores(published),
                 "reference_descriptors": _reference_descriptions(runs),
                 "winner_counts": {
@@ -3801,15 +3898,15 @@ def _validate_winner(value: object, *, champions: Sequence[JsonValue]) -> JsonOb
     return cast(JsonObject, document)
 
 
-def _validate_held_out(value: object, *, expected_source: str) -> JsonObject:
-    document = _exact_object(value, ("seed", "score", "source"), name="held-out record")
-    seed = _strict_int(document["seed"], name="held-out seed")
-    source = _strict_string(document["source"], name="held-out source")
+def _validate_fresh_simulation(value: object, *, expected_source: str) -> JsonObject:
+    document = _exact_object(value, ("seed", "score", "source"), name="fresh simulation record")
+    seed = _strict_int(document["seed"], name="fresh simulation seed")
+    source = _strict_string(document["source"], name="fresh simulation source")
     _require(
         seed == 97 and source == expected_source,
-        f"held-out evidence must use seed 97 and source {expected_source}",
+        f"fresh simulation evidence must use seed 97 and source {expected_source}",
     )
-    _validate_score(document["score"], name="held-out score")
+    _validate_score(document["score"], name="fresh simulation score")
     return cast(JsonObject, document)
 
 
@@ -3829,7 +3926,9 @@ def _validate_raw_sequence(value: object, *, reference: JsonObject, generated: J
     final_count = _strict_int(document["final_event_count"], name="final event count", minimum=1)
     reparsed_count = _strict_int(document["reparsed_event_count"], name="reparsed event count", minimum=1)
     raw_equal = _strict_bool(document["raw_events_equal"], name="raw event equality")
-    score_reproduced = _strict_bool(document["held_out_score_reproduced"], name="held-out score reproduction")
+    score_reproduced = _strict_bool(
+        document["fresh_simulation_score_reproduced"], name="fresh simulation score reproduction"
+    )
     reparsed_equal = _strict_bool(document["reparsed_matches_quantized"], name="reparsed generated equality")
     _require(
         seed == 97 and window == reference["observation_window_seconds"] == generated["observation_window_seconds"],
@@ -3872,7 +3971,7 @@ def _validate_run_evidence(
     workload: WorkloadName,
     evidence_directory: str,
     object_size: int,
-    held_out_source: str,
+    fresh_simulation_source: str,
 ) -> None:
     elapsed = _strict_float(document["elapsed_seconds"], name="run elapsed seconds", lower=0.0)
     _require(elapsed > 0.0, "run elapsed seconds must be positive")
@@ -3891,7 +3990,7 @@ def _validate_run_evidence(
     )
     _validate_artifact_hashes(document["artifact_sha256"])
     _validate_winner(document["winner"], champions=champions)
-    _validate_held_out(document["held_out"], expected_source=held_out_source)
+    _validate_fresh_simulation(document["fresh_simulation"], expected_source=fresh_simulation_source)
     _validate_published(document["published"])
     _validate_raw_sequence(document["raw_sequence"], reference=reference, generated=generated)
 
@@ -3942,7 +4041,7 @@ def _validate_run_document(
         workload=cast(WorkloadName, workload),
         evidence_directory=evidence_directory,
         object_size=object_size,
-        held_out_source="run_experiment_fit_outcome",
+        fresh_simulation_source="run_experiment_fit_outcome",
     )
     return cast(JsonObject, document)
 
@@ -3971,7 +4070,7 @@ def _validate_seeds(value: object) -> JsonObject:
     )
     _require(
         (master, final, selection) == (73, 97, (17, 29)),
-        "study seeds must be master 73, final 97, selection [17, 29], with final held out",
+        "study seeds must be master 73, final 97, selection [17, 29], with final fresh simulation",
     )
     return cast(JsonObject, document)
 
@@ -4149,7 +4248,7 @@ def _validate_workload_summary(value: object, *, workload: str, runs: Sequence[J
         for family, champion in zip(FAMILY_ORDER, champions, strict=True):
             champions_by_family[family].append(cast(JsonObject, champion))
     winners = [cast(dict[str, JsonValue], run["winner"]) for run in runs]
-    held_scores = [cast(JsonObject, cast(dict[str, JsonValue], run["held_out"])["score"]) for run in runs]
+    held_scores = [cast(JsonObject, cast(dict[str, JsonValue], run["fresh_simulation"])["score"]) for run in runs]
     published_scores = [cast(JsonObject, cast(dict[str, JsonValue], run["published"])["score"]) for run in runs]
     counts_document = _exact_object(document["winner_counts"], FAMILY_ORDER, name="winner counts")
     counts = {
@@ -4173,7 +4272,7 @@ def _validate_workload_summary(value: object, *, workload: str, runs: Sequence[J
         name=f"{name} winner selection fitness",
         observations=[cast(float, winner["selection_fitness"]) for winner in winners],
     )
-    _validate_score_summary(document["held_out"], name=f"{name} held out", observations=held_scores)
+    _validate_score_summary(document["fresh_simulation"], name=f"{name} fresh simulation", observations=held_scores)
     _validate_score_summary(document["published"], name=f"{name} published", observations=published_scores)
     _validate_descriptors(document["reference_descriptors"], name=f"{name} reference descriptors", runs=runs)
     return cast(JsonObject, document)
@@ -4231,12 +4330,15 @@ def _validate_reproduction_comparison(
         fitness_delta == expected_fitness_delta,
         "winner selection fitness delta must recompute from reproduction minus source",
     )
-    reproduction_held = cast(JsonObject, cast(dict[str, JsonValue], reproduction["held_out"])["score"])
-    source_held = cast(JsonObject, cast(dict[str, JsonValue], source["held_out"])["score"])
+    reproduction_held = cast(JsonObject, cast(dict[str, JsonValue], reproduction["fresh_simulation"])["score"])
+    source_held = cast(JsonObject, cast(dict[str, JsonValue], source["fresh_simulation"])["score"])
     reproduction_published = cast(JsonObject, cast(dict[str, JsonValue], reproduction["published"])["score"])
     source_published = cast(JsonObject, cast(dict[str, JsonValue], source["published"])["score"])
     _validate_delta_score(
-        document["held_out_delta"], name="held-out delta", reproduction=reproduction_held, source=source_held
+        document["fresh_simulation_delta"],
+        name="fresh simulation delta",
+        reproduction=reproduction_held,
+        source=source_held,
     )
     _validate_delta_score(
         document["published_delta"],
@@ -4312,7 +4414,7 @@ def _validate_reproduction(
         workload="streaming",
         evidence_directory=evidence_directory,
         object_size=object_size,
-        held_out_source="post_cli_evaluate_final",
+        fresh_simulation_source="post_cli_evaluate_final",
     )
     _validate_reproduction_comparison(
         document["comparison_to_source"], reproduction=cast(JsonObject, document), source=source
@@ -4338,7 +4440,7 @@ def _study_run_document(value: StudyRunRecord) -> JsonObject:
         "generated": _thaw_json(value.generated),
         "family_champions": [_thaw_json(item) for item in value.family_champions],
         "winner": _thaw_json(value.winner),
-        "held_out": _thaw_json(value.held_out),
+        "fresh_simulation": _thaw_json(value.fresh_simulation),
         "published": _thaw_json(value.published),
         "raw_sequence": _thaw_json(value.raw_sequence),
     }
@@ -4384,7 +4486,7 @@ def _run_record_from_document(document: JsonObject) -> StudyRunRecord:
         generated=_freeze_object(cast(JsonObject, document["generated"])),
         family_champions=cast(tuple[FrozenJsonObject, FrozenJsonObject, FrozenJsonObject], champions),
         winner=_freeze_object(cast(JsonObject, document["winner"])),
-        held_out=_freeze_object(cast(JsonObject, document["held_out"])),
+        fresh_simulation=_freeze_object(cast(JsonObject, document["fresh_simulation"])),
         published=_freeze_object(cast(JsonObject, document["published"])),
         raw_sequence=_freeze_object(cast(JsonObject, document["raw_sequence"])),
     )
@@ -4906,8 +5008,8 @@ def reconstruct_reproduction(
     _fresh_run_log_proofs(evidence.log_records)
     candidate = _checkpoint_winner(evidence)
     validated_context = validate_evaluation_context(evidence.context.evaluation)
-    held_out = _sole_final_trial(evaluate_final(candidate, validated_context, 97))
-    science = _reconstruct_science(evidence, held_out, generated_path=spec.run_directory / "generated.pcapng")
+    fresh_simulation = _sole_final_trial(evaluate_final(candidate, validated_context, 97))
+    science = _reconstruct_science(evidence, fresh_simulation, generated_path=spec.run_directory / "generated.pcapng")
     window = evidence.best_model.observation_window_seconds
 
     config_path = _repository_path_record(spec.config_path, repository_root=root, name="reproduction config path")
@@ -4925,11 +5027,11 @@ def reconstruct_reproduction(
     )
     _require(object_size >= 4 * 1024 * 1024, "reproduction transfer must retain the prerequisite object size")
     winner = _winner(evidence.checkpoint, evidence.best_model)
-    held_out_score = _score_from_trial(science.held_out)
+    fresh_simulation_score = _score_from_trial(science.fresh_simulation)
     published_score = _score_from_comparison(science.published)
     source_document = _study_run_document(source)
     source_winner = cast(JsonObject, source_document["winner"])
-    source_held_out = cast(JsonObject, cast(JsonObject, source_document["held_out"])["score"])
+    source_fresh_simulation = cast(JsonObject, cast(JsonObject, source_document["fresh_simulation"])["score"])
     source_published = cast(JsonObject, cast(JsonObject, source_document["published"])["score"])
     source_reference = _load_reference_trace(root / source.run_directory)
     stdout, stderr = _completed_output(completed, operation="reproduction guard")
@@ -4957,7 +5059,7 @@ def reconstruct_reproduction(
         "generated": _trace_summary(science.aligned_events, science.published, role="generated"),
         "family_champions": list(_family_champions(evidence.checkpoint)),
         "winner": winner,
-        "held_out": {"seed": 97, "score": held_out_score, "source": "post_cli_evaluate_final"},
+        "fresh_simulation": {"seed": 97, "score": fresh_simulation_score, "source": "post_cli_evaluate_final"},
         "published": {"seed": 97, "score": published_score},
         "raw_sequence": {
             "seed": 97,
@@ -4965,7 +5067,7 @@ def reconstruct_reproduction(
             "trial_event_count": len(science.raw_events),
             "final_event_count": len(science.raw_events),
             "raw_events_equal": True,
-            "held_out_score_reproduced": True,
+            "fresh_simulation_score_reproduced": True,
             "reparsed_event_count": len(science.reparsed_events),
             "reparsed_matches_quantized": True,
         },
@@ -4974,7 +5076,7 @@ def reconstruct_reproduction(
             "winner_genes_equal": winner["genes"] == source_winner["genes"],
             "winner_selection_fitness_delta": cast(float, winner["selection_fitness"])
             - cast(float, source_winner["selection_fitness"]),
-            "held_out_delta": _score_delta(held_out_score, source_held_out),
+            "fresh_simulation_delta": _score_delta(fresh_simulation_score, source_fresh_simulation),
             "published_delta": _score_delta(published_score, source_published),
             "reference_similarity": _symmetric_reference_score(
                 source_reference, evidence.reference, evidence.config.similarity
@@ -4987,7 +5089,7 @@ def reconstruct_reproduction(
         workload="streaming",
         evidence_directory=evidence_directory,
         object_size=object_size,
-        held_out_source="post_cli_evaluate_final",
+        fresh_simulation_source="post_cli_evaluate_final",
     )
     _validate_reproduction_comparison(document["comparison_to_source"], reproduction=document, source=source_document)
     return ReproductionRecord(_freeze_object(document))
@@ -5132,17 +5234,21 @@ def _audit_primary_record(
     _require(observed_size == object_size_bytes, "primary transfer object size must match prerequisite capability")
 
     candidate = _checkpoint_winner(evidence)
-    held_out = _sole_final_trial(
+    fresh_simulation = _sole_final_trial(
         evaluate_final(candidate, validate_evaluation_context(evidence.context.evaluation), 97)
     )
-    science = _reconstruct_science(evidence, held_out, generated_path=spec.run_directory / "generated.pcapng")
+    science = _reconstruct_science(evidence, fresh_simulation, generated_path=spec.run_directory / "generated.pcapng")
     window = evidence.best_model.observation_window_seconds
     expected = {
         "reference": _trace_summary(evidence.reference, science.published, role="reference"),
         "generated": _trace_summary(science.aligned_events, science.published, role="generated"),
         "family_champions": list(_family_champions(evidence.checkpoint)),
         "winner": _winner(evidence.checkpoint, evidence.best_model),
-        "held_out": {"seed": 97, "score": _score_from_trial(science.held_out), "source": "run_experiment_fit_outcome"},
+        "fresh_simulation": {
+            "seed": 97,
+            "score": _score_from_trial(science.fresh_simulation),
+            "source": "run_experiment_fit_outcome",
+        },
         "published": {"seed": 97, "score": _score_from_comparison(science.published)},
         "raw_sequence": {
             "seed": 97,
@@ -5150,7 +5256,7 @@ def _audit_primary_record(
             "trial_event_count": len(science.raw_events),
             "final_event_count": len(science.raw_events),
             "raw_events_equal": True,
-            "held_out_score_reproduced": True,
+            "fresh_simulation_score_reproduced": True,
             "reparsed_event_count": len(science.reparsed_events),
             "reparsed_matches_quantized": True,
         },
@@ -5309,11 +5415,15 @@ def publish_audited_bundle(candidate: Path, study_id: str, *, repository_root: P
     from scripts.audit_validation_study import audit_bundle
 
     root = repository_root.resolve()
+
+    def audit(candidate_root: Path) -> None:
+        audit_bundle(candidate_root, repository=root)
+
     return publish_accepted_bundle(
         candidate,
         root / "examples" / "validation_study" / "evidence",
         study_id,
-        lambda bundle: audit_bundle(bundle, repository=root),
+        audit,
     )
 
 

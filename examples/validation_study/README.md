@@ -156,13 +156,18 @@ audit evidence.
 ## Accepted evidence bundle audit
 
 An accepted bundle lives at `examples/validation_study/evidence/<study-id>/`.
-It contains three complete nine-artifact run trees, canonical `index.json`, and
-canonical `manifest.json`. The manifest lists every other retained regular file
-with its relative path, byte size, SHA-256, logical owner, and lineage relation;
-it does not recursively hash itself.
+It contains three workloads times three independent training repeats, nine
+same-reference `fresh_simulation` records, and three independent fixed-model
+`held_out` capture/model-output/comparison bundles, plus prerequisite command,
+stdout, stderr, status, and JUnit evidence; protocol headers and observations;
+portable and realized configurations; canonical `index.json`; and canonical
+`manifest.json`. The manifest lists every other retained regular file with its
+relative path, byte size, SHA-256, logical owner, and lineage relation; it does
+not recursively hash itself.
 
 The audit is read-only: it does not start Docker, access the network, invoke a
-high-level run, or regenerate artifacts.
+high-level run, mutate retained artifacts, or publish evidence. It reconstructs
+the required scientific bytes in memory through the existing public owners.
 
 ```bash
 scripts/run_bounded.sh --memory-high 6G --memory-max 8G --swap-max 1G \
@@ -181,6 +186,13 @@ uv run --locked python scripts/run_validation_study.py publish \
 
 An occupied study ID remains byte-for-byte preserved; choose a new ID rather
 than replacing or merging accepted evidence.
+
+The credential-free checked fixture is generated only through its production
+owners and can be verified without Docker or network access:
+
+```bash
+uv run --locked python scripts/generate_validation_study_fixture.py --check
+```
 
 Retain ignored audit evidence by default. Only after accepting the report and
 deciding that local audit evidence is no longer needed may the operator

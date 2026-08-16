@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit one retained Validation Study bundle without Docker, network, or mutation."""
+"""Audit a retained Validation Study bundle without Docker, network, or mutation."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ import re
 import stat
 import sys
 import tomllib
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path, PurePosixPath
 from statistics import fmean
 from typing import NoReturn, cast
@@ -20,23 +22,37 @@ from typing import NoReturn, cast
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts import run_validation_study as study
+from scripts.run_validation_study import (
+    ARTIFACT_NAMES,
+    PUBLISHED_METHOD_ORDER,
+    HeldOutEvaluation,
+    evaluate_study_held_out,
+)
 from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import ComparisonResult, parse_comparison_result, render_comparison_result
-from trafficlab.compatibility import ContentIdentity
+from trafficlab.comparison import (
+    ComparisonResult,
+    compare_traces,
+    parse_comparison_result,
+    render_comparison_result,
+    similarity_settings_identity,
+)
+from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_configuration_pair, render_effective_config
 from trafficlab.errors import FailureOutcome, TrafficlabError
+from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
-from trafficlab.genetic.evaluation import evaluate_final, validate_evaluation_context
-from trafficlab.genetic.strategy import StrategyContext, make_strategy_context
+from trafficlab.genetic.population import rank_candidates
+from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.models.registry import BestModel, load_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes
-from trafficlab.trace import CaptureMetadata, TraceEvent, normalize_reference, parse_capture_metadata
+from trafficlab.trace import TraceEvent, align_generated, normalize_reference, parse_capture_metadata
 
 _MANIFEST = "manifest.json"
 _INDEX = "index.json"
-_SCHEMA = 1
+_SCHEMA = 2
+_WORKLOADS = ("short", "streaming", "bursty")
+_REPEATS = (1, 2, 3)
 _HEX40 = re.compile(r"[0-9a-f]{40}", flags=re.ASCII)
 _HEX64 = re.compile(r"[0-9a-f]{64}", flags=re.ASCII)
 _TEMP_SUFFIXES = (".tmp", ".partial", ".swp")
@@ -57,6 +73,20 @@ class _Entry:
     sha256: str
     owner: str
     lineage: object
+
+
+@dataclass(frozen=True, slots=True)
+class _Training:
+    workload: str
+    repeat: int
+    directory: Path
+    contents: Mapping[str, bytes]
+    config: ExperimentConfig
+    reference: tuple[TraceEvent, ...]
+    window: float
+    checkpoint: CheckpointState
+    best_model: BestModel
+    comparison: ComparisonResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,16 +117,18 @@ def _object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
+def _path_key(value: str) -> bytes:
+    try:
+        return value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        _fail("artifact_foreign", value, "bundle path is not strict UTF-8", "restore a strict UTF-8 retained path")
+
+
 def _read_regular(path: Path, *, affected: str) -> bytes:
     try:
         mode = path.lstat().st_mode
     except FileNotFoundError:
-        _fail(
-            "artifact_missing",
-            affected,
-            f"{affected} is missing",
-            "restore the exact retained artifact before publication",
-        )
+        _fail("artifact_missing", affected, f"{affected} is missing", "restore the exact retained artifact")
     except OSError as error:
         _fail("artifact_corrupt", affected, f"could not inspect {affected}: {error}", "repair the retained artifact")
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
@@ -109,7 +141,7 @@ def _read_regular(path: Path, *, affected: str) -> bytes:
         _fail("artifact_corrupt", affected, f"could not read {affected}: {error}", "repair the retained artifact")
 
 
-def _json(content: bytes, *, name: str, canonical: bool) -> dict[str, object]:
+def _json(content: bytes, *, name: str, canonical: bool = True) -> dict[str, object]:
     try:
         parsed = json.loads(content.decode("utf-8"), object_pairs_hook=_object)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
@@ -124,43 +156,40 @@ def _json(content: bytes, *, name: str, canonical: bool) -> dict[str, object]:
 
 def _exact(value: object, keys: tuple[str, ...], *, name: str) -> dict[str, object]:
     if type(value) is not dict or set(cast(dict[str, object], value)) != set(keys):
-        _fail(
-            "artifact_corrupt",
-            name,
-            f"{name} must contain exactly {', '.join(keys)}",
-            "restore the canonical evidence index",
-        )
+        _fail("artifact_corrupt", name, f"{name} must contain exactly {', '.join(keys)}", "restore canonical evidence")
     return cast(dict[str, object], value)
 
 
 def _string(value: object, *, name: str) -> str:
-    if type(value) is not str or not cast(str, value).strip():
-        _fail("artifact_corrupt", name, f"{name} must be a nonempty string", "restore the canonical evidence index")
-    return cast(str, value)
+    if type(value) is not str or not value.strip():
+        _fail("artifact_corrupt", name, f"{name} must be a nonempty string", "restore canonical evidence")
+    return value
 
 
 def _integer(value: object, *, name: str, minimum: int = 0) -> int:
-    if type(value) is not int or cast(int, value) < minimum:
-        _fail(
-            "artifact_corrupt",
-            name,
-            f"{name} must be an integer at least {minimum}",
-            "restore the canonical evidence index",
-        )
-    return cast(int, value)
+    if type(value) is not int or value < minimum:
+        _fail("artifact_corrupt", name, f"{name} must be an integer at least {minimum}", "restore canonical evidence")
+    return value
 
 
 def _relative(value: object, *, name: str) -> str:
     text = _string(value, name=name)
     path = PurePosixPath(text)
-    if path.is_absolute() or "\\" in text or not path.parts or any(part in ("", ".", "..") for part in path.parts):
+    if (
+        path.is_absolute()
+        or "\\" in text
+        or not path.parts
+        or any(part in ("", ".", "..") for part in path.parts)
+        or path.as_posix() != text
+    ):
         _fail(
             "artifact_foreign",
             name,
-            f"{name} must be a safe bundle-relative POSIX path",
-            "restore the canonical evidence index",
+            f"{name} must be a normalized bundle-relative POSIX path",
+            "restore canonical evidence",
         )
-    return path.as_posix()
+    _path_key(text)
+    return text
 
 
 def _directory(value: object, *, name: str) -> Path:
@@ -179,141 +208,110 @@ def _directory(value: object, *, name: str) -> Path:
     return value.resolve()
 
 
-def _inside(path: Path, root: Path, *, name: str) -> None:
+def files_for_candidate(root: Path, *, include_manifest: bool) -> dict[str, Path]:
+    discovered: dict[str, Path] = {}
     try:
-        path.relative_to(root)
-    except ValueError:
+        paths = tuple(root.rglob("*"))
+    except OSError as error:
         _fail(
-            "artifact_foreign",
-            name,
-            f"{name} must remain within the selected repository",
-            "audit only a retained local candidate",
+            "artifact_corrupt", "bundle", f"could not enumerate retained bundle: {error}", "repair the retained bundle"
         )
-
-
-def _temporary(relative: str) -> bool:
-    return any(part.startswith(".") or part.endswith(_TEMP_SUFFIXES) for part in PurePosixPath(relative).parts)
-
-
-def _files(root: Path, *, include_manifest: bool) -> dict[str, Path]:
-    found: dict[str, Path] = {}
-
-    def visit(directory: Path) -> None:
-        try:
-            children = tuple(sorted(directory.iterdir(), key=lambda item: item.name))
-        except OSError as error:
+    for path in sorted(paths, key=lambda item: _path_key(item.relative_to(root).as_posix())):
+        relative = path.relative_to(root).as_posix()
+        if any(part.startswith(".") or part.endswith(_TEMP_SUFFIXES) for part in PurePosixPath(relative).parts):
             _fail(
-                "artifact_corrupt",
-                "candidate accepted evidence bundle",
-                f"could not enumerate evidence: {error}",
-                "repair the candidate",
+                "artifact_foreign",
+                relative,
+                f"{relative} is a temporary or hidden retained entry",
+                "remove temporary residue",
             )
-        for child in children:
-            relative = child.relative_to(root).as_posix()
-            try:
-                mode = child.lstat().st_mode
-            except OSError as error:
-                _fail("artifact_corrupt", relative, f"could not inspect {relative}: {error}", "repair the candidate")
-            if stat.S_ISLNK(mode):
-                _fail(
-                    "artifact_foreign",
-                    relative,
-                    f"{relative} must not be a symlink",
-                    "replace the symlink with retained evidence",
-                )
-            if stat.S_ISDIR(mode):
-                if _temporary(relative):
-                    _fail(
-                        "artifact_foreign",
-                        relative,
-                        f"temporary directory {relative} is not accepted",
-                        "remove the temporary entry",
-                    )
-                visit(child)
-            elif stat.S_ISREG(mode):
-                if _temporary(relative):
-                    _fail(
-                        "artifact_foreign",
-                        relative,
-                        f"temporary file {relative} is not accepted",
-                        "remove the temporary entry",
-                    )
-                if include_manifest or relative != _MANIFEST:
-                    found[relative] = child
-            else:
-                _fail(
-                    "artifact_foreign",
-                    relative,
-                    f"{relative} must be a regular file",
-                    "replace the foreign filesystem entry",
-                )
-
-    visit(root)
-    return found
+        try:
+            mode = path.lstat().st_mode
+        except OSError as error:
+            _fail("artifact_corrupt", relative, f"could not inspect {relative}: {error}", "repair the retained bundle")
+        if stat.S_ISLNK(mode):
+            _fail(
+                "artifact_foreign",
+                relative,
+                f"{relative} must not be a symlink",
+                "replace the symlink with retained bytes",
+            )
+        if stat.S_ISDIR(mode):
+            continue
+        if not stat.S_ISREG(mode):
+            _fail(
+                "artifact_foreign",
+                relative,
+                f"{relative} must be a regular file",
+                "remove the foreign filesystem entry",
+            )
+        if relative == _MANIFEST and not include_manifest:
+            continue
+        discovered[relative] = path
+    return discovered
 
 
 def _entries(content: bytes) -> tuple[_Entry, ...]:
-    document = _exact(_json(content, name=_MANIFEST, canonical=True), ("files", "schema_version"), name=_MANIFEST)
-    if _integer(document["schema_version"], name="manifest schema_version", minimum=1) != _SCHEMA:
+    document = _exact(_json(content, name=_MANIFEST), ("files", "schema_version"), name=_MANIFEST)
+    if document["schema_version"] != _SCHEMA or type(document["files"]) is not list:
         _fail(
-            "scientific_semantics_incompatible",
+            "artifact_corrupt",
             _MANIFEST,
-            "manifest schema is incompatible",
-            "rebuild the candidate with the current auditor",
+            "manifest must use schema version 2 and a file list",
+            "restore canonical manifest",
         )
-    values = document["files"]
-    if type(values) is not list:
-        _fail("artifact_corrupt", _MANIFEST, "manifest files must be an array", "restore the canonical manifest")
     parsed: list[_Entry] = []
     seen: set[str] = set()
-    for value in cast(list[object], values):
-        entry = _exact(value, ("lineage", "owner", "path", "sha256", "size"), name="manifest file entry")
-        relative = _relative(entry["path"], name="manifest file path")
+    for item in cast(list[object], document["files"]):
+        entry = _exact(item, ("lineage", "owner", "path", "sha256", "size"), name="manifest file entry")
+        relative = _relative(entry["path"], name="manifest path")
         if relative == _MANIFEST or relative in seen:
             _fail(
-                "artifact_corrupt",
+                "artifact_foreign",
                 _MANIFEST,
-                f"manifest path {relative!r} is duplicated or recursive",
-                "restore the canonical manifest",
+                "manifest paths must be unique and exclude manifest.json",
+                "restore canonical manifest",
             )
         seen.add(relative)
-        sha256 = _string(entry["sha256"], name=f"manifest SHA-256 for {relative}")
-        if _HEX64.fullmatch(sha256) is None:
+        digest = _string(entry["sha256"], name=f"manifest SHA-256 for {relative}")
+        if _HEX64.fullmatch(digest) is None:
             _fail(
                 "artifact_corrupt",
                 _MANIFEST,
                 f"manifest SHA-256 for {relative} is invalid",
-                "restore the canonical manifest",
+                "restore canonical manifest",
             )
         parsed.append(
             _Entry(
                 relative,
                 _integer(entry["size"], name=f"manifest size for {relative}"),
-                sha256,
+                digest,
                 _string(entry["owner"], name=f"manifest owner for {relative}"),
                 entry["lineage"],
             )
         )
-    if tuple(entry.path for entry in parsed) != tuple(sorted(seen)):
+    if tuple(entry.path for entry in parsed) != tuple(sorted(seen, key=_path_key)):
         _fail(
-            "artifact_corrupt", _MANIFEST, "manifest file entries must be path-sorted", "restore the canonical manifest"
+            "artifact_corrupt",
+            _MANIFEST,
+            "manifest file entries must be UTF-8-byte sorted",
+            "restore canonical manifest",
         )
     return tuple(parsed)
 
 
 def write_manifest(candidate: Path, ownership: Mapping[str, str], lineage: Mapping[str, object]) -> Path:
-    """Write the canonical manifest for a completed local candidate tree."""
-
+    """Write the canonical schema-2 manifest for a completed local candidate tree."""
     root = _directory(candidate, name="candidate")
-    files = _files(root, include_manifest=False)
+    files = files_for_candidate(root, include_manifest=False)
     if set(ownership) != set(files) or set(lineage) != set(files):
         raise ValueError("ownership and lineage keys must equal the regular-file inventory")
     entries: list[dict[str, object]] = []
-    for relative, path in sorted(files.items()):
+    for relative in sorted(files, key=_path_key):
         owner = ownership[relative]
         if type(owner) is not str or not owner.strip():
             raise ValueError(f"manifest owner for {relative} must be a nonempty string")
-        content = _read_regular(path, affected=relative)
+        content = _read_regular(files[relative], affected=relative)
         entries.append(
             {
                 "lineage": lineage[relative],
@@ -330,9 +328,9 @@ def write_manifest(candidate: Path, ownership: Mapping[str, str], lineage: Mappi
 
 def _verify_inventory(root: Path, manifest: bytes) -> tuple[_Entry, ...]:
     entries = _entries(manifest)
-    actual = _files(root, include_manifest=False)
+    actual = files_for_candidate(root, include_manifest=False)
     expected = {entry.path: entry for entry in entries}
-    for relative in sorted(expected):
+    for relative in sorted(expected, key=_path_key):
         if relative not in actual:
             _fail(
                 "artifact_missing",
@@ -340,15 +338,16 @@ def _verify_inventory(root: Path, manifest: bytes) -> tuple[_Entry, ...]:
                 f"{relative} is missing from the retained bundle",
                 "restore the exact retained artifact",
             )
-    for relative in sorted(set(actual) - set(expected)):
+    for relative in sorted(set(actual) - set(expected), key=_path_key):
         _fail(
             "artifact_foreign",
             relative,
             f"{relative} is not listed by the manifest",
             "remove the unlisted artifact and rebuild the manifest",
         )
-    for relative, entry in sorted(expected.items()):
+    for relative in sorted(expected, key=_path_key):
         content = _read_regular(actual[relative], affected=relative)
+        entry = expected[relative]
         if len(content) != entry.size or hashlib.sha256(content).hexdigest() != entry.sha256:
             _fail(
                 "artifact_corrupt",
@@ -359,21 +358,111 @@ def _verify_inventory(root: Path, manifest: bytes) -> tuple[_Entry, ...]:
     return entries
 
 
-def _owner(relative: str) -> str:
+def _workload(value: object, *, name: str) -> str:
+    result = _string(value, name=name)
+    if result not in _WORKLOADS:
+        _fail(
+            "artifact_corrupt", name, "workload must be short, streaming, or bursty", "restore frozen protocol evidence"
+        )
+    return result
+
+
+def _repeat(value: object, *, name: str) -> int:
+    result = _integer(value, name=name, minimum=1)
+    if result not in _REPEATS:
+        _fail("artifact_corrupt", name, "repeat must be one, two, or three", "restore frozen protocol evidence")
+    return result
+
+
+def owner_for_path(relative: str) -> str:
     parts = PurePosixPath(relative).parts
     if relative == _INDEX:
         return "study-index"
-    if len(parts) == 3 and parts[0] == "runs" and parts[2] in study.ARTIFACT_NAMES:
-        return f"run:{parts[1]}"
+    if relative == "protocol.json":
+        return "study-protocol"
+    if relative == "environment.json":
+        return "study-environment"
+    if relative == "prerequisites.json":
+        return "study-prerequisites"
+    if relative == "report_inputs.json":
+        return "study-report-inputs"
+    if relative == "report.json":
+        return "study-report"
+    if len(parts) == 2 and parts[0] == "prerequisites":
+        kind, _, suffix = parts[1].partition(".")
+        if kind in ("docker_matrix", "internet_smoke") and suffix in (
+            "command.json",
+            "stdout",
+            "stderr",
+            "status.json",
+            "junit.xml",
+        ):
+            return f"prerequisite:{kind}:{suffix}"
+    if len(parts) == 2 and parts[0] == "headers" and parts[1] == f"{parts[1].split('.')[0]}.headers":
+        workload = parts[1].removesuffix(".headers")
+        if workload in _WORKLOADS:
+            return f"transfer-header:{workload}"
+    if len(parts) == 2 and parts[0] == "observations" and parts[1].endswith(".json"):
+        workload = parts[1].removesuffix(".json")
+        if workload in _WORKLOADS:
+            return f"external-observation:{workload}"
+    if len(parts) == 2 and parts[0] == "configs" and parts[1].endswith(".toml"):
+        return f"configuration:{parts[1].removesuffix('.toml')}"
+    if (
+        len(parts) == 4
+        and parts[0] == "training"
+        and parts[1] in _WORKLOADS
+        and parts[2] in ("r1", "r2", "r3")
+        and parts[3] in ARTIFACT_NAMES
+    ):
+        return f"training:{parts[1]}:{parts[2]}"
+    if (
+        len(parts) == 3
+        and parts[0] == "fresh_simulation"
+        and parts[1] in _WORKLOADS
+        and parts[2] in ("r1.json", "r2.json", "r3.json")
+    ):
+        return f"fresh-simulation:{parts[1]}:{parts[2].removesuffix('.json')}"
+    if (
+        len(parts) == 3
+        and parts[0] == "held_out"
+        and parts[1] in _WORKLOADS
+        and parts[2]
+        in {
+            "capture.json",
+            "reference.pcapng",
+            "portable.toml",
+            "realized.toml",
+            "generated.pcapng",
+            "similarity.json",
+            "record.json",
+            "run.log",
+        }
+    ):
+        return f"held-out:{parts[1]}"
     _fail("artifact_foreign", relative, f"{relative} has no documented owner", "rebuild the candidate inventory")
 
 
-def _lineage(relative: str) -> dict[str, str]:
+def lineage_for_path(relative: str) -> dict[str, object]:
     parts = PurePosixPath(relative).parts
     if relative == _INDEX:
         return {"relation": "study-index"}
-    if len(parts) == 3 and parts[0] == "runs" and parts[2] in study.ARTIFACT_NAMES:
-        return {"relation": parts[2], "run": parts[1]}
+    if relative in {"protocol.json", "environment.json", "prerequisites.json", "report_inputs.json", "report.json"}:
+        return {"relation": relative.removesuffix(".json")}
+    if len(parts) == 2 and parts[0] == "prerequisites":
+        return {"relation": "prerequisite", "record": parts[1]}
+    if len(parts) == 2 and parts[0] == "headers":
+        return {"relation": "transfer-header", "workload": parts[1].removesuffix(".headers")}
+    if len(parts) == 2 and parts[0] == "observations":
+        return {"relation": "external-observation", "workload": parts[1].removesuffix(".json")}
+    if len(parts) == 2 and parts[0] == "configs":
+        return {"relation": "configuration", "name": parts[1].removesuffix(".toml")}
+    if len(parts) == 4 and parts[0] == "training":
+        return {"relation": parts[3], "repeat": int(parts[2][1:]), "workload": parts[1]}
+    if len(parts) == 3 and parts[0] == "fresh_simulation":
+        return {"relation": "fresh_simulation", "repeat": int(parts[2][1]), "workload": parts[1]}
+    if len(parts) == 3 and parts[0] == "held_out":
+        return {"relation": parts[2], "workload": parts[1]}
     _fail("artifact_foreign", relative, f"{relative} has no documented lineage", "rebuild the candidate inventory")
 
 
@@ -382,10 +471,7 @@ def _metadata(index: dict[str, object], entries: tuple[_Entry, ...]) -> None:
     lineage = index["lineage"]
     if type(ownership) is not dict or type(lineage) is not dict:
         _fail(
-            "artifact_corrupt",
-            _INDEX,
-            "ownership and lineage must be JSON objects",
-            "restore the canonical evidence index",
+            "artifact_corrupt", _INDEX, "ownership and lineage must be JSON objects", "restore canonical evidence index"
         )
     expected_owners = {entry.path: entry.owner for entry in entries}
     expected_lineage = {entry.path: entry.lineage for entry in entries}
@@ -396,8 +482,10 @@ def _metadata(index: dict[str, object], entries: tuple[_Entry, ...]) -> None:
             "index ownership or lineage does not match the manifest",
             "restore matching manifest and index",
         )
-    for relative, owner in expected_owners.items():
-        if owner != _owner(relative) or expected_lineage[relative] != _lineage(relative):
+    for relative in sorted(expected_owners, key=_path_key):
+        if expected_owners[relative] != owner_for_path(relative) or expected_lineage[relative] != lineage_for_path(
+            relative
+        ):
             _fail(
                 "artifact_foreign",
                 relative,
@@ -407,440 +495,1015 @@ def _metadata(index: dict[str, object], entries: tuple[_Entry, ...]) -> None:
 
 
 def _identity(content: bytes) -> dict[str, object]:
-    return {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+    result: dict[str, object] = dict(identify_bytes(content).as_dict())
+    return result
 
 
-def _mean(scores: Sequence[dict[str, object]]) -> dict[str, object]:
-    if not scores:
-        _fail("artifact_corrupt", _INDEX, "report arithmetic requires scores", "restore the canonical evidence index")
-    methods = [cast(dict[str, object], score["methods"]) for score in scores]
-    return {
-        "aggregate": fmean(cast(float, score["aggregate"]) for score in scores),
-        "methods": {
-            method: fmean(cast(float, values[method]) for values in methods) for method in study.PUBLISHED_METHOD_ORDER
-        },
-    }
-
-
-@dataclass(frozen=True, slots=True)
-class _Evidence:
-    config: ExperimentConfig
-    context: StrategyContext
-    metadata: CaptureMetadata
-    contents: Mapping[str, bytes]
-    reference: tuple[TraceEvent, ...]
-    generated: tuple[TraceEvent, ...]
-    checkpoint: CheckpointState
-    best_model: BestModel
-    comparison: ComparisonResult
-
-
-@dataclass(frozen=True, slots=True)
-class _Run:
-    name: str
-    directory: Path
-    evidence: _Evidence
-    winner: dict[str, object]
-    held_out: dict[str, object]
-    published: dict[str, object]
-    training: float
-
-
-def _strict_artifacts(contents: Mapping[str, bytes], *, name: str) -> None:
-    try:
-        tomllib.loads(contents["experiment.toml"].decode("utf-8"))
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-        _fail(
-            "artifact_corrupt",
-            f"{name}/experiment.toml",
-            f"experiment.toml is not strict TOML: {error}",
-            "restore canonical configuration",
-        )
-    for artifact, canonical in (
-        ("capture.json", False),
-        ("checkpoint.json", True),
-        ("best_model.json", True),
-        ("similarity.json", True),
-    ):
-        _json(contents[artifact], name=f"{name}/{artifact}", canonical=canonical)
-    try:
-        lines = contents["run.log"].decode("utf-8").splitlines()
-    except UnicodeDecodeError as error:
-        _fail(
-            "artifact_corrupt", f"{name}/run.log", f"run.log must be UTF-8 JSONL: {error}", "restore canonical run log"
-        )
-    if not lines or not contents["run.log"].endswith(b"\n"):
-        _fail(
-            "artifact_corrupt",
-            f"{name}/run.log",
-            "run.log must have newline-terminated records",
-            "restore canonical run log",
-        )
-    for line in lines:
-        _json(line.encode("utf-8"), name=f"{name}/run.log", canonical=False)
-
-
-def _load_relocated_evidence(directory: Path, *, name: str) -> _Evidence:
-    try:
-        entries = tuple(directory.iterdir())
-    except OSError as error:
-        _fail(
-            "artifact_corrupt",
-            f"run {name}",
-            f"could not enumerate run artifacts: {error}",
-            "repair retained run evidence",
-        )
-    if {entry.name for entry in entries} != set(study.ARTIFACT_NAMES):
-        _fail(
-            "artifact_foreign",
-            f"run {name}",
-            "run must retain exactly the documented nine artifacts",
-            "restore the complete retained run",
-        )
-    contents = {
-        artifact: _read_regular(directory / artifact, affected=f"{name}/{artifact}")
-        for artifact in study.ARTIFACT_NAMES
-    }
-    pair = load_configuration_pair(directory / "experiment.toml")
-    if contents["experiment.toml"] != render_effective_config(pair.portable):
-        _fail(
-            "artifact_corrupt",
-            f"{name}/experiment.toml",
-            "portable configuration is not canonical",
-            "restore the canonical portable configuration",
-        )
-    config = pair.realized
-    capture_path = directory / "capture.json"
-    reference_path = directory / "reference.pcapng"
-    inspection = validate_capture_pair(capture_path, reference_path, deadline=None)
-    metadata = parse_capture_metadata(contents["capture.json"], source=capture_path)
-    captured = parse_pcapng_bytes(contents["reference.pcapng"], metadata, source=reference_path)
-    reference, window = normalize_reference(captured)
-    if inspection.packet_count != len(captured):
-        _fail(
-            "artifact_corrupt",
-            f"run {name}",
-            "capture packet count differs from parsed reference evidence",
-            "restore the matching capture pair",
-        )
-    context = make_strategy_context(
-        config,
-        reference,
-        window,
-        directory,
-        experiment_identity=ContentIdentity(
-            size=len(contents["experiment.toml"]), sha256=hashlib.sha256(contents["experiment.toml"]).hexdigest()
-        ),
-        reference_identity=ContentIdentity(
-            size=len(contents["reference.pcapng"]), sha256=hashlib.sha256(contents["reference.pcapng"]).hexdigest()
-        ),
-        capture_identity=ContentIdentity(
-            size=len(contents["capture.json"]), sha256=hashlib.sha256(contents["capture.json"]).hexdigest()
-        ),
-    )
-    checkpoint = parse_checkpoint(contents["checkpoint.json"], context.compatibility)
-    if contents["ga_history.csv"] != render_history_csv(checkpoint):
-        _fail(
-            "artifact_corrupt",
-            f"{name}/ga_history.csv",
-            "history is not the exact checkpoint projection",
-            "restore matching checkpoint and history",
-        )
-    best = load_best_model(contents["best_model.json"], source=directory / "best_model.json")
-    if contents["best_model.json"] != render_best_model(best):
-        _fail(
-            "artifact_corrupt",
-            f"{name}/best_model.json",
-            "best model is not canonical",
-            "restore canonical best-model evidence",
-        )
-    generated = parse_pcapng_bytes(contents["generated.pcapng"], metadata, source=directory / "generated.pcapng")
-    comparison = parse_comparison_result(contents["similarity.json"])
-    if contents["similarity.json"] != render_comparison_result(comparison):
-        _fail(
-            "artifact_corrupt",
-            f"{name}/similarity.json",
-            "similarity result is not canonical",
-            "restore canonical comparison evidence",
-        )
-    return _Evidence(config, context, metadata, contents, reference, generated, checkpoint, best, comparison)
-
-
-def _run(bundle: Path, value: object, *, environment: dict[str, object]) -> _Run:
+def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
     document = _exact(
-        value,
-        ("artifact_identities", "directory", "evaluation_window", "final", "name", "repeat", "winner"),
-        name="run index record",
-    )
-    name = _string(document["name"], name="run name")
-    relative = _relative(document["directory"], name=f"run directory for {name}")
-    parts = PurePosixPath(relative).parts
-    if len(parts) != 2 or parts != ("runs", name):
-        _fail(
-            "artifact_foreign",
-            f"run {name}",
-            "run directory must be runs/<name>",
-            "restore the canonical evidence index",
-        )
-    directory = bundle.joinpath(*parts)
-    _directory(directory, name=f"run {name}")
-    _integer(document["repeat"], name=f"repeat for {name}", minimum=1)
-    try:
-        evidence = _load_relocated_evidence(directory, name=name)
-        _strict_artifacts(evidence.contents, name=name)
-        checkpoint = _json(evidence.contents["checkpoint.json"], name=f"{name}/checkpoint.json", canonical=True)
-        best = _json(evidence.contents["best_model.json"], name=f"{name}/best_model.json", canonical=True)
-        if checkpoint.get("scientific_artifact_schema") != 2 or best.get("scientific_artifact_schema") != 2:
-            _fail(
-                "scientific_semantics_incompatible",
-                f"run {name}",
-                "checkpoint and best model must use schema 2",
-                "recreate the retained run under schema 2",
-            )
-        config = evidence.config
-        if config.run.directory != directory:
-            _fail(
-                "artifact_foreign",
-                f"run {name}",
-                "effective run directory does not resolve to retained evidence",
-                "restore its config pair",
-            )
-        if config.target.image != environment["target_image"] or config.capture.image != environment["capture_image"]:
-            _fail(
-                "artifact_foreign",
-                f"run {name}",
-                "configuration image controls disagree with environment",
-                "restore matching retained environment evidence",
-            )
-        loaded = cast(study._LoadedRunEvidence, evidence)  # pyright: ignore[reportPrivateUsage]
-        candidate = study._checkpoint_winner(loaded)  # pyright: ignore[reportPrivateUsage]
-        final_seed = config.run.final_seed
-        if final_seed != 97:
-            _fail(
-                "scientific_semantics_incompatible",
-                f"run {name}",
-                "final seed must equal 97",
-                "recreate the retained run under frozen controls",
-            )
-        held_trial = study._sole_final_trial(  # pyright: ignore[reportPrivateUsage]
-            evaluate_final(candidate, validate_evaluation_context(evidence.context.evaluation), final_seed)
-        )
-        science = study._reconstruct_science(  # pyright: ignore[reportPrivateUsage]
-            loaded, held_trial, generated_path=directory / "generated.pcapng"
-        )
-        winner = cast(dict[str, object], study._winner(evidence.checkpoint, evidence.best_model))  # pyright: ignore[reportPrivateUsage]
-        held = cast(dict[str, object], study._score_from_trial(science.held_out))  # pyright: ignore[reportPrivateUsage]
-        published = cast(dict[str, object], study._score_from_comparison(science.published))  # pyright: ignore[reportPrivateUsage]
-    except _Issue:
-        raise
-    except TrafficlabError:
-        raise
-    except (OSError, TypeError, ValueError) as error:
-        _fail(
-            "artifact_foreign",
-            f"run {name}",
-            f"run reconstruction failed: {error}",
-            "restore matching retained artifacts and lineage",
-        )
-    identities = {artifact: _identity(evidence.contents[artifact]) for artifact in study.ARTIFACT_NAMES}
-    final = {"held_out": held, "published": published, "seed": final_seed}
-    if (
-        document["artifact_identities"] != identities
-        or document["evaluation_window"] != config.genetic.population_size * len(config.genetic.trial_seeds)
-        or document["winner"] != winner
-        or document["final"] != final
-    ):
-        _fail(
-            "artifact_foreign",
-            f"run {name}",
-            "index does not match reconstructed run artifacts or final controls",
-            "restore matching retained index evidence",
-        )
-    return _Run(name, directory, evidence, winner, held, published, cast(float, winner["selection_fitness"]))
-
-
-def _environment(value: object, *, repository: Path) -> dict[str, object]:
-    document = _exact(
-        value,
+        _json(content, name="environment.json"),
         (
-            "capture_image",
+            "capture_image_id",
+            "capture_image_reference",
+            "capture_tool_version",
+            "compatibility_decision",
+            "docker_compose_version",
+            "docker_engine_version",
+            "host_architecture",
+            "kernel_release",
             "python_implementation",
             "python_version",
             "scientific_artifact_schema",
             "source_commit",
             "source_tree",
-            "target_image",
+            "target_image_id",
+            "target_image_reference",
             "uv_lock_sha256",
         ),
-        name="environment",
+        name="environment.json",
     )
     if document["scientific_artifact_schema"] != 2:
         _fail(
             "scientific_semantics_incompatible",
             "environment",
-            "environment must record artifact schema 2",
-            "rebuild under current scientific semantics",
+            "environment must record scientific schema 2",
+            "recreate evidence under schema 2",
         )
     if document["python_implementation"] != "CPython" or document["python_version"] != platform.python_version():
         _fail(
             "scientific_semantics_incompatible",
             "environment",
-            "environment CPython patch differs from this audit",
-            "audit with the recorded CPython patch",
+            "environment Python runtime does not match the locked auditor",
+            "audit with the retained CPython patch",
         )
-    for field, pattern in (("source_commit", _HEX40), ("source_tree", _HEX64), ("uv_lock_sha256", _HEX64)):
-        if pattern.fullmatch(_string(document[field], name=f"environment {field}")) is None:
+    for field, width in (("source_commit", 40), ("source_tree", 40), ("uv_lock_sha256", 64)):
+        value = _string(document[field], name=f"environment {field}")
+        if (
+            (width == 40 and _HEX40.fullmatch(value) is None)
+            or (width == 64 and _HEX64.fullmatch(value) is None)
+            or set(value) == {"0"}
+        ):
             _fail(
                 "artifact_corrupt",
                 "environment",
-                f"environment {field} is not canonical hexadecimal evidence",
-                "restore the environment record",
+                f"environment {field} must be a nonzero lowercase identity",
+                "restore frozen source identity",
             )
-    _string(document["target_image"], name="environment target_image")
-    _string(document["capture_image"], name="environment capture_image")
+    for field in ("target_image_reference", "capture_image_reference"):
+        value = _string(document[field], name=f"environment {field}")
+        if "@sha256:" not in value or _HEX64.fullmatch(value.rsplit("@sha256:", 1)[-1]) is None:
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                f"environment {field} must be an immutable digest reference",
+                "restore image lock evidence",
+            )
+    for field in ("target_image_id", "capture_image_id"):
+        value = _string(document[field], name=f"environment {field}")
+        if not value.startswith("sha256:") or _HEX64.fullmatch(value.removeprefix("sha256:")) is None:
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                f"environment {field} must be an immutable image ID",
+                "restore image identity evidence",
+            )
+    decision = _exact(
+        document["compatibility_decision"], ("reason", "status"), name="environment compatibility decision"
+    )
+    if decision["status"] != "compatible":
+        _fail(
+            "scientific_semantics_incompatible",
+            "environment",
+            "environment compatibility decision is not compatible",
+            "use the recorded compatible environment",
+        )
+    _string(decision["reason"], name="environment compatibility reason")
+    for field in (
+        "capture_tool_version",
+        "docker_compose_version",
+        "docker_engine_version",
+        "host_architecture",
+        "kernel_release",
+    ):
+        _string(document[field], name=f"environment {field}")
     lock = _read_regular(repository / "uv.lock", affected="uv.lock")
     if hashlib.sha256(lock).hexdigest() != document["uv_lock_sha256"]:
         _fail(
             "artifact_foreign",
             "environment",
-            "environment uv.lock identity differs from the relocated repository",
-            "audit with the matching locked repository",
+            "environment uv.lock identity does not match the relocated repository",
+            "use the exact locked repository",
         )
     return document
 
 
-def _report(index: dict[str, object], runs: tuple[_Run, ...]) -> None:
-    natural = _exact(index["natural_variation"], ("mean", "pairs"), name="natural variation")
-    summary = _exact(index["summary"], ("held_out_mean", "published_mean", "training_mean"), name="report summary")
-    pairs: list[dict[str, object]] = []
-    scores: list[dict[str, object]] = []
-    for left_index, left in enumerate(runs):
-        for right in runs[left_index + 1 :]:
+def _protocol(content: bytes) -> dict[str, object]:
+    document = _exact(
+        _json(content, name="protocol.json"),
+        ("final_seed", "schema_version", "selection_seeds", "training_repetitions", "workloads"),
+        name="protocol.json",
+    )
+    if document["schema_version"] != 2 or _integer(document["final_seed"], name="protocol final seed") != 97:
+        _fail(
+            "scientific_semantics_incompatible",
+            "protocol",
+            "protocol must freeze schema 2 and final seed 97",
+            "restore frozen protocol",
+        )
+    if _integer(document["training_repetitions"], name="protocol training repetitions") != 3:
+        _fail(
+            "artifact_corrupt",
+            "protocol",
+            "protocol must retain exactly three training repetitions",
+            "restore full protocol",
+        )
+    seeds = document["selection_seeds"]
+    if (
+        type(seeds) is not list
+        or not seeds
+        or any(type(seed) is not int or seed < 0 for seed in cast(list[object], seeds))
+    ):
+        _fail(
+            "artifact_corrupt",
+            "protocol",
+            "protocol selection seeds must be nonempty nonnegative integers",
+            "restore frozen protocol",
+        )
+    workloads = document["workloads"]
+    if type(workloads) is not list or tuple(cast(list[object], workloads)) != _WORKLOADS:
+        _fail(
+            "artifact_corrupt",
+            "protocol",
+            "protocol workloads must be short, streaming, bursty in order",
+            "restore frozen protocol",
+        )
+    return document
+
+
+def _prerequisites(bundle: Path, relative: str) -> tuple[dict[str, object], set[str]]:
+    document = _exact(
+        _json(_read_regular(bundle / relative, affected=relative), name=relative),
+        ("docker_matrix", "internet_smoke", "schema_version"),
+        name=relative,
+    )
+    if document["schema_version"] != 2:
+        _fail(
+            "artifact_corrupt",
+            relative,
+            "prerequisites must use schema version 2",
+            "restore canonical prerequisite record",
+        )
+    required = {relative}
+    for kind in ("docker_matrix", "internet_smoke"):
+        record = _exact(
+            document[kind], ("command", "junit", "status", "stderr", "stdout"), name=f"prerequisites {kind}"
+        )
+        expected = {
+            "command": f"prerequisites/{kind}.command.json",
+            "junit": f"prerequisites/{kind}.junit.xml",
+            "status": f"prerequisites/{kind}.status.json",
+            "stderr": f"prerequisites/{kind}.stderr",
+            "stdout": f"prerequisites/{kind}.stdout",
+        }
+        if record != expected:
+            _fail(
+                "artifact_foreign",
+                relative,
+                f"prerequisite {kind} paths are not canonical",
+                "restore matching prerequisite evidence",
+            )
+        required.update(expected.values())
+        command = _json(
+            _read_regular(bundle / expected["command"], affected=expected["command"]), name=expected["command"]
+        )
+        if type(command.get("argv")) is not list or not all(
+            type(item) is str for item in cast(list[object], command["argv"])
+        ):
+            _fail(
+                "artifact_corrupt",
+                expected["command"],
+                "prerequisite command must retain argv strings",
+                "restore prerequisite command evidence",
+            )
+        status = _exact(
+            _json(_read_regular(bundle / expected["status"], affected=expected["status"]), name=expected["status"]),
+            ("exit_status",),
+            name=expected["status"],
+        )
+        if status["exit_status"] != 0:
+            _fail(
+                "artifact_foreign",
+                expected["status"],
+                "prerequisite status must be successful",
+                "restart the study after passing prerequisites",
+            )
+        for field in ("stdout", "stderr"):
             try:
-                score = cast(
-                    dict[str, object],
-                    study._symmetric_reference_score(  # pyright: ignore[reportPrivateUsage]
-                        left.evidence.reference, right.evidence.reference, left.evidence.config.similarity
-                    ),
-                )
-            except (TrafficlabError, TypeError, ValueError) as error:
+                _read_regular(bundle / expected[field], affected=expected[field]).decode("utf-8")
+            except UnicodeDecodeError as error:
                 _fail(
-                    "metric_infeasible",
-                    "natural variation",
-                    f"natural variation reconstruction failed: {error}",
-                    "restore compatible references and settings",
+                    "artifact_corrupt",
+                    expected[field],
+                    f"prerequisite output is not UTF-8: {error}",
+                    "restore retained prerequisite output",
                 )
-            pairs.append({"left": left.name, "right": right.name, "score": score})
-            scores.append(score)
-    expected_summary = {
-        "held_out_mean": _mean([run.held_out for run in runs]),
-        "published_mean": _mean([run.published for run in runs]),
-        "training_mean": fmean(run.training for run in runs),
-    }
-    if natural["pairs"] != pairs or natural["mean"] != _mean(scores) or summary != expected_summary:
+        try:
+            root = ET.fromstring(_read_regular(bundle / expected["junit"], affected=expected["junit"]))
+        except ET.ParseError as error:
+            _fail(
+                "artifact_corrupt",
+                expected["junit"],
+                f"prerequisite JUnit is invalid XML: {error}",
+                "restore retained JUnit evidence",
+            )
+        if root.tag != "testsuite" or root.attrib.get("failures") != "0" or root.attrib.get("errors") != "0":
+            _fail(
+                "artifact_foreign",
+                expected["junit"],
+                "prerequisite JUnit must record zero errors and failures",
+                "restart after passing prerequisites",
+            )
+    return document, required
+
+
+def _canonical_jsonl(content: bytes, *, name: str) -> None:
+    if not content or not content.endswith(b"\n"):
+        _fail(
+            "artifact_corrupt",
+            name,
+            "run log must be nonempty canonical JSONL with a terminal newline",
+            "restore canonical run log",
+        )
+    for line_number, raw in enumerate(content.splitlines(keepends=True), start=1):
+        if not raw.endswith(b"\n"):
+            _fail("artifact_corrupt", name, "run log must use LF-terminated records", "restore canonical run log")
+        record = _json(raw, name=f"{name}:{line_number}", canonical=False)
+        if _canonical(record) != raw:
+            _fail("artifact_corrupt", name, "run log record is not canonical JSONL", "restore canonical run log")
+
+
+def _config_semantics(config: ExperimentConfig) -> dict[str, object]:
+    document = cast(dict[str, object], config.model_dump(mode="json", exclude_none=True))
+    run = cast(dict[str, object], document["run"])
+    run["directory"] = "<operational>"
+    return document
+
+
+def _config_pair(
+    bundle: Path, portable: str, realized: str, *, directory: Path, name: str
+) -> tuple[ExperimentConfig, set[str]]:
+    portable_path = bundle / portable
+    portable_content = _read_regular(portable_path, affected=portable)
+    try:
+        pair = load_configuration_pair(portable_path)
+    except TrafficlabError as error:
+        _fail(
+            "artifact_corrupt",
+            portable,
+            f"portable configuration is invalid: {error}",
+            "restore canonical portable configuration",
+        )
+    if render_effective_config(pair.portable) != portable_content or pair.realized.run.directory != directory:
         _fail(
             "artifact_foreign",
-            "report arithmetic",
-            "natural variation or train/held-out report arithmetic does not reconstruct",
-            "restore the report index from retained evidence",
+            portable,
+            "portable configuration does not realize to its retained directory",
+            "restore matching configuration pair",
         )
+    realized_content = _read_regular(bundle / realized, affected=realized)
+    try:
+        realized_document = tomllib.loads(realized_content.decode("utf-8"))
+        realized_config = ExperimentConfig.model_validate(realized_document)
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError, ValueError) as error:
+        _fail(
+            "artifact_corrupt",
+            realized,
+            f"realized configuration is invalid: {error}",
+            "restore canonical realized configuration",
+        )
+    if render_effective_config(realized_config) != realized_content or _config_semantics(
+        realized_config
+    ) != _config_semantics(pair.portable):
+        _fail(
+            "artifact_foreign",
+            realized,
+            "realized configuration does not match its portable configuration",
+            "restore matching configuration pair",
+        )
+    return pair.realized, {portable, realized}
+
+
+def _score(result: ComparisonResult) -> dict[str, object]:
+    return {
+        "aggregate": result.aggregate_score,
+        "methods": {name: result.methods[name].score for name in PUBLISHED_METHOD_ORDER},
+    }
+
+
+def _training(bundle: Path, value: object, *, protocol: dict[str, object]) -> _Training:
+    document = _exact(
+        value,
+        (
+            "directory",
+            "portable_config",
+            "portable_config_identity",
+            "realized_config",
+            "realized_config_identity",
+            "reference_identity",
+            "repeat",
+            "run_config_identity",
+            "workload",
+        ),
+        name="training record",
+    )
+    workload = _workload(document["workload"], name="training workload")
+    repeat = _repeat(document["repeat"], name="training repeat")
+    directory_relative = _relative(document["directory"], name="training directory")
+    expected_directory = f"training/{workload}/r{repeat}"
+    if directory_relative != expected_directory:
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "training directory does not match its workload and repeat",
+            "restore canonical index",
+        )
+    directory = _directory(bundle / directory_relative, name=directory_relative)
+    portable = _relative(document["portable_config"], name="training portable configuration")
+    realized = _relative(document["realized_config"], name="training realized configuration")
+    expected_portable = f"configs/training-{workload}-r{repeat}.portable.toml"
+    expected_realized = f"configs/training-{workload}-r{repeat}.realized.toml"
+    if (portable, realized) != (expected_portable, expected_realized):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "training configuration paths are not canonical",
+            "restore matching configuration paths",
+        )
+    config, _ = _config_pair(bundle, portable, realized, directory=directory, name=directory_relative)
+    if config.run.final_seed != protocol["final_seed"] or tuple(config.genetic.trial_seeds) != tuple(
+        cast(list[int], protocol["selection_seeds"])
+    ):
+        _fail(
+            "scientific_semantics_incompatible",
+            directory_relative,
+            "training configuration does not match frozen seeds",
+            "restore frozen configuration",
+        )
+    contents = {
+        artifact: _read_regular(directory / artifact, affected=f"{directory_relative}/{artifact}")
+        for artifact in ARTIFACT_NAMES
+    }
+    try:
+        pair = load_configuration_pair(directory / "experiment.toml")
+    except TrafficlabError as error:
+        _fail(
+            "artifact_corrupt",
+            f"{directory_relative}/experiment.toml",
+            f"run configuration is invalid: {error}",
+            "restore canonical run configuration",
+        )
+    if render_effective_config(pair.portable) != contents["experiment.toml"] or pair.realized != config:
+        _fail(
+            "artifact_foreign",
+            f"{directory_relative}/experiment.toml",
+            "run configuration does not match retained configuration pair",
+            "restore matching run configuration",
+        )
+    _canonical_jsonl(contents["run.log"], name=f"{directory_relative}/run.log")
+    try:
+        inspection = validate_capture_pair(directory / "capture.json", directory / "reference.pcapng", deadline=None)
+        metadata = parse_capture_metadata(contents["capture.json"], source=directory / "capture.json")
+        reference, window = normalize_reference(
+            parse_pcapng_bytes(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
+        )
+        context = make_strategy_context(
+            config,
+            reference,
+            window,
+            directory,
+            experiment_identity=identify_bytes(contents["experiment.toml"]),
+            reference_identity=identify_bytes(contents["reference.pcapng"]),
+            capture_identity=identify_bytes(contents["capture.json"]),
+        )
+        checkpoint = parse_checkpoint(contents["checkpoint.json"], context.compatibility)
+        best = load_best_model(contents["best_model.json"], source=directory / "best_model.json")
+        _, generated, generated_bytes = reproduce_generated_pcapng(best, metadata)
+        parsed_generated = parse_pcapng_bytes(
+            contents["generated.pcapng"], metadata, source=directory / "generated.pcapng"
+        )
+    except TrafficlabError as error:
+        _fail(
+            "artifact_corrupt",
+            directory_relative,
+            f"training artifact reconstruction failed: {error}",
+            "restore matching retained training artifacts",
+        )
+    if (
+        inspection.packet_count != len(reference)
+        or render_history_csv(checkpoint) != contents["ga_history.csv"]
+        or render_best_model(best) != contents["best_model.json"]
+    ):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "training artifacts are not their canonical projections",
+            "restore canonical training artifacts",
+        )
+    candidate = rank_candidates(checkpoint.population, family_priority=checkpoint.family_priority)[0]
+    if (
+        (candidate.family, candidate.genes) != (best.family, best.genes)
+        or best.reference_identity != identify_bytes(contents["reference.pcapng"])
+        or best.capture_identity != identify_bytes(contents["capture.json"])
+    ):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "checkpoint winner and retained best model disagree",
+            "restore matching checkpoint and best model",
+        )
+    if (
+        best.final_seed != config.run.final_seed
+        or best.final_limits != config.generation.final
+        or best.observation_window_seconds != window
+    ):
+        _fail(
+            "scientific_semantics_incompatible",
+            directory_relative,
+            "best model final controls do not match normalized training reference",
+            "restore frozen training evidence",
+        )
+    if generated_bytes != contents["generated.pcapng"] or parsed_generated != generated:
+        _fail(
+            "artifact_foreign",
+            f"{directory_relative}/generated.pcapng",
+            "generated trace does not reproduce from the retained model",
+            "restore matching generated trace",
+        )
+    settings_identity = similarity_settings_identity(config.similarity)
+    expected_comparison = compare_traces(
+        reference, align_generated(generated, window), window, config.similarity
+    ).with_input_identities(
+        {
+            "capture_json": identify_bytes(contents["capture.json"]),
+            "generated_pcapng": identify_bytes(contents["generated.pcapng"]),
+            "reference_pcapng": identify_bytes(contents["reference.pcapng"]),
+            "similarity_settings": settings_identity,
+        }
+    )
+    try:
+        persisted_comparison = parse_comparison_result(contents["similarity.json"])
+    except (TrafficlabError, ValueError) as error:
+        _fail(
+            "artifact_corrupt",
+            f"{directory_relative}/similarity.json",
+            f"comparison is invalid: {error}",
+            "restore canonical comparison",
+        )
+    if (
+        render_comparison_result(persisted_comparison) != contents["similarity.json"]
+        or persisted_comparison != expected_comparison
+    ):
+        _fail(
+            "artifact_foreign",
+            f"{directory_relative}/similarity.json",
+            "comparison does not match reconstructed inputs",
+            "restore matching comparison evidence",
+        )
+    identities = {
+        "portable_config_identity": _identity(_read_regular(bundle / portable, affected=portable)),
+        "realized_config_identity": _identity(_read_regular(bundle / realized, affected=realized)),
+        "reference_identity": _identity(contents["reference.pcapng"]),
+        "run_config_identity": _identity(contents["experiment.toml"]),
+    }
+    if any(document[name] != identity for name, identity in identities.items()):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "training index identities do not match retained bytes",
+            "restore matching index identities",
+        )
+    return _Training(
+        workload, repeat, directory, contents, config, reference, window, checkpoint, best, persisted_comparison
+    )
+
+
+def _fresh(bundle: Path, value: object, training: _Training, *, final_seed: int) -> str:
+    document = _exact(
+        value,
+        (
+            "comparison_identity",
+            "generated_identity",
+            "path",
+            "reference_identity",
+            "seed",
+            "training_directory",
+            "training_model_identity",
+            "workload",
+            "repeat",
+        ),
+        name="fresh simulation record",
+    )
+    workload = _workload(document["workload"], name="fresh simulation workload")
+    repeat = _repeat(document["repeat"], name="fresh simulation repeat")
+    expected_path = f"fresh_simulation/{workload}/r{repeat}.json"
+    path = _relative(document["path"], name="fresh simulation path")
+    if (workload, repeat, path, document["training_directory"], document["seed"]) != (
+        training.workload,
+        training.repeat,
+        expected_path,
+        f"training/{training.workload}/r{training.repeat}",
+        final_seed,
+    ):
+        _fail(
+            "artifact_foreign",
+            path,
+            "fresh simulation record does not bind its training run",
+            "restore matching fresh simulation evidence",
+        )
+    stored = _json(_read_regular(bundle / path, affected=path), name=path)
+    if stored != document:
+        _fail(
+            "artifact_foreign",
+            path,
+            "fresh simulation record differs from index",
+            "restore matching fresh simulation record",
+        )
+    expected = {
+        "comparison_identity": _identity(training.contents["similarity.json"]),
+        "generated_identity": _identity(training.contents["generated.pcapng"]),
+        "reference_identity": _identity(training.contents["reference.pcapng"]),
+        "training_model_identity": _identity(training.contents["best_model.json"]),
+    }
+    if any(document[name] != item for name, item in expected.items()):
+        _fail(
+            "artifact_foreign",
+            path,
+            "fresh simulation identities do not match the training run",
+            "restore matching fresh simulation evidence",
+        )
+    return path
+
+
+def _held_out(
+    bundle: Path, value: object, training: _Training, *, final_seed: int, training_references: set[str]
+) -> tuple[str, set[str]]:
+    document = _exact(value, ("directory", "training_directory", "workload"), name="held-out index record")
+    workload = _workload(document["workload"], name="held-out workload")
+    directory_relative = _relative(document["directory"], name="held-out directory")
+    expected_directory = f"held_out/{workload}"
+    if (workload, directory_relative, document["training_directory"]) != (
+        training.workload,
+        expected_directory,
+        f"training/{training.workload}/r{training.repeat}",
+    ):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "held-out record does not bind its frozen training model",
+            "restore matching held-out evidence",
+        )
+    directory = _directory(bundle / directory_relative, name=directory_relative)
+    portable = f"{directory_relative}/portable.toml"
+    realized = f"{directory_relative}/realized.toml"
+    config, config_paths = _config_pair(bundle, portable, realized, directory=directory, name=directory_relative)
+    if _config_semantics(config) != _config_semantics(training.config) or config.run.final_seed != final_seed:
+        _fail(
+            "scientific_semantics_incompatible",
+            directory_relative,
+            "held-out configuration does not match frozen training controls",
+            "restore matching held-out configuration",
+        )
+    names = ("capture.json", "reference.pcapng", "generated.pcapng", "similarity.json", "record.json", "run.log")
+    contents = {name: _read_regular(directory / name, affected=f"{directory_relative}/{name}") for name in names}
+    _canonical_jsonl(contents["run.log"], name=f"{directory_relative}/run.log")
+    reference_identity = identify_bytes(contents["reference.pcapng"])
+    if reference_identity.sha256 in training_references:
+        _fail(
+            "artifact_foreign",
+            f"{directory_relative}/reference.pcapng",
+            "held-out reference is not independent from training captures",
+            "capture a new held-out reference",
+        )
+    try:
+        evaluation: HeldOutEvaluation = evaluate_study_held_out(
+            model_content=training.contents["best_model.json"],
+            model_source=training.directory / "best_model.json",
+            config=config,
+            capture_content=contents["capture.json"],
+            capture_source=directory / "capture.json",
+            reference_content=contents["reference.pcapng"],
+            reference_source=directory / "reference.pcapng",
+        )
+        persisted = parse_comparison_result(contents["similarity.json"])
+    except TrafficlabError as error:
+        _fail(
+            "artifact_corrupt",
+            directory_relative,
+            f"held-out reconstruction failed: {error}",
+            "restore matching held-out evidence",
+        )
+    if (
+        evaluation.generated_pcapng != contents["generated.pcapng"]
+        or evaluation.comparison_json != contents["similarity.json"]
+        or persisted != evaluation.comparison
+    ):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "held-out outputs do not reproduce from the frozen training model",
+            "restore matching held-out outputs",
+        )
+    record = _exact(
+        _json(contents["record.json"], name=f"{directory_relative}/record.json"),
+        (
+            "capture_identity",
+            "comparison_identity",
+            "generated_identity",
+            "reference_identity",
+            "seed",
+            "training_directory",
+            "training_model_identity",
+            "workload",
+        ),
+        name=f"{directory_relative}/record.json",
+    )
+    expected = {
+        "capture_identity": evaluation.capture_identity.as_dict(),
+        "comparison_identity": _identity(contents["similarity.json"]),
+        "generated_identity": evaluation.generated_identity.as_dict(),
+        "reference_identity": evaluation.reference_identity.as_dict(),
+        "seed": final_seed,
+        "training_directory": f"training/{training.workload}/r{training.repeat}",
+        "training_model_identity": evaluation.training_model_identity.as_dict(),
+        "workload": workload,
+    }
+    if record != expected:
+        _fail(
+            "artifact_foreign",
+            f"{directory_relative}/record.json",
+            "held-out record does not match reconstructed evidence",
+            "restore matching held-out record",
+        )
+    return directory_relative, config_paths | {f"{directory_relative}/{name}" for name in names}
+
+
+def _mean(scores: Sequence[dict[str, object]]) -> dict[str, object]:
+    if not scores:
+        _fail("artifact_corrupt", "report_inputs.json", "report arithmetic requires scores", "restore report inputs")
+    methods = [cast(dict[str, object], score["methods"]) for score in scores]
+    return {
+        "aggregate": fmean(cast(float, score["aggregate"]) for score in scores),
+        "methods": {name: fmean(cast(float, item[name]) for item in methods) for name in PUBLISHED_METHOD_ORDER},
+    }
+
+
+def _report_inputs(training: Sequence[_Training], held: Mapping[str, HeldOutEvaluation]) -> dict[str, object]:
+    fresh_rows: list[dict[str, object]] = []
+    training_rows: list[dict[str, object]] = []
+    variation_rows: list[dict[str, object]] = []
+    held_rows: list[dict[str, object]] = []
+    for workload in _WORKLOADS:
+        group = tuple(item for item in training if item.workload == workload)
+        fresh_rows.append({"score": _mean([_score(item.comparison) for item in group]), "workload": workload})
+        training_rows.append(
+            {"selection_fitness": fmean(item.checkpoint.best_fitness for item in group), "workload": workload}
+        )
+        pair_scores = [
+            _score(compare_traces(left.reference, right.reference, left.window, left.config.similarity))
+            for left, right in combinations(group, 2)
+        ]
+        variation_rows.append({"pairs": len(pair_scores), "score": _mean(pair_scores), "workload": workload})
+        held_rows.append({"score": _score(held[workload].comparison), "workload": workload})
+    return {
+        "formula": "arithmetic_mean",
+        "fresh_simulation": fresh_rows,
+        "held_out": held_rows,
+        "natural_variation": variation_rows,
+        "training": training_rows,
+    }
+
+
+def _expected_paths(
+    index: dict[str, object],
+    protocol: dict[str, object],
+    prerequisite_paths: set[str],
+    training: Sequence[_Training],
+    fresh_paths: set[str],
+    held_paths: set[str],
+) -> set[str]:
+    paths = {
+        _INDEX,
+        _relative(index["environment"], name="index environment"),
+        _relative(index["protocol"], name="index protocol"),
+        _relative(index["prerequisites"], name="index prerequisites"),
+        _relative(index["report_inputs"], name="index report inputs"),
+        _relative(index["report"], name="index report"),
+        *prerequisite_paths,
+        *fresh_paths,
+        *held_paths,
+    }
+    for workload in _WORKLOADS:
+        paths.add(f"headers/{workload}.headers")
+        paths.add(f"observations/{workload}.json")
+    for item in training:
+        relative = f"training/{item.workload}/r{item.repeat}"
+        paths.update(f"{relative}/{name}" for name in ARTIFACT_NAMES)
+        paths.add(f"configs/training-{item.workload}-r{item.repeat}.portable.toml")
+        paths.add(f"configs/training-{item.workload}-r{item.repeat}.realized.toml")
+    return paths
+
+
+def _headers_and_observations(bundle: Path) -> set[str]:
+    paths: set[str] = set()
+    for workload in _WORKLOADS:
+        header = f"headers/{workload}.headers"
+        observation = f"observations/{workload}.json"
+        content = _read_regular(bundle / header, affected=header)
+        if not content.startswith(b"HTTP/") or b"\r\n\r\n" not in content:
+            _fail(
+                "artifact_corrupt",
+                header,
+                "protocol header is not a retained HTTP header block",
+                "restore protocol-used headers",
+            )
+        document = _exact(
+            _json(_read_regular(bundle / observation, affected=observation), name=observation),
+            ("header_identity", "status", "workload"),
+            name=observation,
+        )
+        if (
+            document["workload"] != workload
+            or document["status"] != 206
+            or document["header_identity"] != _identity(content)
+        ):
+            _fail(
+                "artifact_foreign",
+                observation,
+                "external observation does not match retained protocol header",
+                "restore matching observation",
+            )
+        paths.update((header, observation))
+    return paths
+
+
+def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> AuditResult:
+    index = _exact(
+        _json(_read_regular(bundle / _INDEX, affected=_INDEX), name=_INDEX),
+        (
+            "environment",
+            "fresh_simulation",
+            "held_out",
+            "lineage",
+            "ownership",
+            "prerequisites",
+            "protocol",
+            "report",
+            "report_inputs",
+            "schema_version",
+            "training",
+        ),
+        name=_INDEX,
+    )
+    if index["schema_version"] != _SCHEMA:
+        _fail(
+            "scientific_semantics_incompatible",
+            _INDEX,
+            "evidence index must use schema version 2",
+            "rebuild retained evidence under schema 2",
+        )
+    _metadata(index, entries)
+    environment_path = _relative(index["environment"], name="index environment")
+    protocol_path = _relative(index["protocol"], name="index protocol")
+    prerequisites_path = _relative(index["prerequisites"], name="index prerequisites")
+    if (
+        environment_path,
+        protocol_path,
+        prerequisites_path,
+        _relative(index["report_inputs"], name="index report inputs"),
+        _relative(index["report"], name="index report"),
+    ) != (
+        "environment.json",
+        "protocol.json",
+        "prerequisites.json",
+        "report_inputs.json",
+        "report.json",
+    ):
+        _fail(
+            "artifact_foreign",
+            _INDEX,
+            "index root evidence paths are not canonical",
+            "restore canonical evidence index",
+        )
+    _environment(_read_regular(bundle / environment_path, affected=environment_path), repository=repository)
+    protocol = _protocol(_read_regular(bundle / protocol_path, affected=protocol_path))
+    _, prerequisite_paths = _prerequisites(bundle, prerequisites_path)
+    _headers_and_observations(bundle)
+    training_values = index["training"]
+    if type(training_values) is not list:
+        _fail(
+            "artifact_corrupt", _INDEX, "index must retain nine training run records", "restore all training evidence"
+        )
+    training_items = cast(list[object], training_values)
+    if len(training_items) != 9:
+        _fail(
+            "artifact_corrupt", _INDEX, "index must retain nine training run records", "restore all training evidence"
+        )
+    training = tuple(_training(bundle, value, protocol=protocol) for value in training_items)
+    expected_keys = {(workload, repeat) for workload in _WORKLOADS for repeat in _REPEATS}
+    if {(item.workload, item.repeat) for item in training} != expected_keys:
+        _fail(
+            "artifact_foreign",
+            _INDEX,
+            "training records must contain each workload and repeat exactly once",
+            "restore complete training evidence",
+        )
+    ordered_training = tuple(sorted(training, key=lambda item: (_WORKLOADS.index(item.workload), item.repeat)))
+    fresh_values = index["fresh_simulation"]
+    if type(fresh_values) is not list:
+        _fail(
+            "artifact_corrupt",
+            _INDEX,
+            "index must retain nine fresh_simulation records",
+            "restore fresh simulation evidence",
+        )
+    fresh_items = cast(list[object], fresh_values)
+    if len(fresh_items) != 9:
+        _fail(
+            "artifact_corrupt",
+            _INDEX,
+            "index must retain nine fresh_simulation records",
+            "restore fresh simulation evidence",
+        )
+    fresh_paths = {
+        _fresh(bundle, value, item, final_seed=cast(int, protocol["final_seed"]))
+        for value, item in zip(fresh_items, ordered_training, strict=True)
+    }
+    if len(fresh_paths) != 9:
+        _fail(
+            "artifact_foreign",
+            _INDEX,
+            "fresh_simulation records must be unique",
+            "restore complete fresh simulation evidence",
+        )
+    held_values = index["held_out"]
+    if type(held_values) is not list:
+        _fail(
+            "artifact_corrupt",
+            _INDEX,
+            "index must retain three independent held-out records",
+            "restore held-out evidence",
+        )
+    held_items = cast(list[object], held_values)
+    if len(held_items) != 3:
+        _fail(
+            "artifact_corrupt",
+            _INDEX,
+            "index must retain three independent held-out records",
+            "restore held-out evidence",
+        )
+    selected = {item.workload: item for item in ordered_training if item.repeat == 1}
+    training_references = {identify_bytes(item.contents["reference.pcapng"]).sha256 for item in ordered_training}
+    held_evaluations: dict[str, HeldOutEvaluation] = {}
+    held_paths: set[str] = set()
+    for value in held_items:
+        record = _exact(value, ("directory", "training_directory", "workload"), name="held-out index record")
+        workload = _workload(record["workload"], name="held-out workload")
+        if workload in held_evaluations or workload not in selected:
+            _fail(
+                "artifact_foreign",
+                _INDEX,
+                "held-out records must bind each workload once",
+                "restore complete held-out evidence",
+            )
+        directory_relative, paths = _held_out(
+            bundle,
+            value,
+            selected[workload],
+            final_seed=cast(int, protocol["final_seed"]),
+            training_references=training_references,
+        )
+        directory = bundle / directory_relative
+        evaluation = evaluate_study_held_out(
+            model_content=selected[workload].contents["best_model.json"],
+            model_source=selected[workload].directory / "best_model.json",
+            config=load_configuration_pair(directory / "portable.toml").realized,
+            capture_content=_read_regular(directory / "capture.json", affected=f"{directory_relative}/capture.json"),
+            capture_source=directory / "capture.json",
+            reference_content=_read_regular(
+                directory / "reference.pcapng", affected=f"{directory_relative}/reference.pcapng"
+            ),
+            reference_source=directory / "reference.pcapng",
+        )
+        held_evaluations[workload] = evaluation
+        held_paths.update(paths)
+    expected_paths = _expected_paths(index, protocol, prerequisite_paths, ordered_training, fresh_paths, held_paths)
+    actual_paths = {entry.path for entry in entries}
+    for relative in sorted(expected_paths - actual_paths, key=_path_key):
+        _fail(
+            "artifact_missing",
+            relative,
+            f"{relative} is required by the complete evidence schema",
+            "restore complete retained evidence",
+        )
+    for relative in sorted(actual_paths - expected_paths, key=_path_key):
+        _fail(
+            "artifact_foreign",
+            relative,
+            f"{relative} is not part of the complete evidence schema",
+            "remove foreign retained evidence",
+        )
+    inputs_path = _relative(index["report_inputs"], name="index report inputs")
+    report_inputs = _json(_read_regular(bundle / inputs_path, affected=inputs_path), name=inputs_path)
+    expected_inputs = _report_inputs(ordered_training, held_evaluations)
+    if report_inputs != expected_inputs:
+        _fail(
+            "artifact_foreign",
+            inputs_path,
+            "report inputs do not match reconstructed evidence arithmetic",
+            "restore matching report inputs",
+        )
+    report_path = _relative(index["report"], name="index report")
+    report = _exact(
+        _json(_read_regular(bundle / report_path, affected=report_path), name=report_path),
+        ("formula", "report_inputs_identity", "summary"),
+        name=report_path,
+    )
+    if (
+        report["formula"] != "arithmetic_mean"
+        or report["report_inputs_identity"] != _identity(_read_regular(bundle / inputs_path, affected=inputs_path))
+        or report["summary"] != expected_inputs
+    ):
+        _fail(
+            "artifact_foreign",
+            report_path,
+            "report does not match retained report inputs and arithmetic",
+            "restore matching report",
+        )
+    return AuditResult(
+        bundle,
+        ordered_training[0].directory,
+        hashlib.sha256(_read_regular(bundle / _MANIFEST, affected=_MANIFEST)).hexdigest(),
+        len(entries),
+    )
 
 
 def audit_bundle(bundle: Path, *, repository: Path) -> AuditResult:
-    """Read-only exact-inventory audit of a candidate accepted evidence bundle."""
-
+    """Strictly audit one complete candidate before exclusive accepted publication."""
     try:
-        root = _directory(bundle, name="candidate bundle")
+        root = _directory(bundle, name="bundle")
         repository_root = _directory(repository, name="repository")
-        _inside(root, repository_root, name="candidate bundle")
-        manifest = _read_regular(root / _MANIFEST, affected=_MANIFEST)
-        entries = _verify_inventory(root, manifest)
-        index = _exact(
-            _json(_read_regular(root / _INDEX, affected=_INDEX), name=_INDEX, canonical=True),
-            ("environment", "lineage", "natural_variation", "ownership", "runs", "schema_version", "summary"),
-            name=_INDEX,
-        )
-        if _integer(index["schema_version"], name="index schema_version", minimum=1) != _SCHEMA:
-            _fail(
-                "scientific_semantics_incompatible",
-                _INDEX,
-                "evidence index schema is incompatible",
-                "rebuild the candidate with the current auditor",
-            )
-        _metadata(index, entries)
-        environment = _environment(index["environment"], repository=repository_root)
-        values = index["runs"]
-        if type(values) is not list or len(values) != 3:
-            _fail(
-                "artifact_corrupt",
-                _INDEX,
-                "index must retain exactly three natural-variation runs",
-                "restore the canonical evidence index",
-            )
-        runs = tuple(_run(root, value, environment=environment) for value in cast(list[object], values))
-        if tuple(run.name for run in runs) != ("short-r1", "short-r2", "short-r3"):
+        try:
+            root.relative_to(repository_root)
+        except ValueError:
             _fail(
                 "artifact_foreign",
-                _INDEX,
-                "runs must be ordered short-r1 through short-r3",
-                "restore the canonical evidence index",
+                "bundle",
+                "bundle must remain beneath the relocated repository",
+                "use a retained candidate beneath the repository",
             )
-        _report(index, runs)
-        return AuditResult(root, runs[0].directory, hashlib.sha256(manifest).hexdigest(), len(entries))
+        manifest = _read_regular(root / _MANIFEST, affected=_MANIFEST)
+        entries = _verify_inventory(root, manifest)
+        return _audit(root, repository_root, entries)
     except _Issue as issue:
-        raise TrafficlabError(
-            f"Validation Study bundle audit failed: {issue.detail}",
+        outcome = FailureOutcome(
+            kind=issue.kind,
+            stage="publication",
+            detail=issue.detail,
+            affected_evidence=issue.affected,
+            evidence_state="not_published",
             corrective_action=issue.action,
-            failure_outcome=FailureOutcome(
-                issue.kind, "publication", issue.detail, issue.affected, "not_published", issue.action, "primary"
-            ),
-        ) from issue
+            authority="primary",
+        )
+        error = TrafficlabError(issue.detail, corrective_action=issue.action)
+        error.failure_outcomes = (outcome,)
+        error.failure_outcome = outcome
+        raise error from issue
     except TrafficlabError as error:
         if error.failure_outcome is not None:
             raise
-        action = "preserve the candidate and restore matching retained scientific evidence"
-        raise TrafficlabError(
-            f"Validation Study bundle audit failed: {error}",
-            corrective_action=action,
-            failure_outcome=FailureOutcome(
-                "artifact_foreign",
-                "publication",
-                str(error),
-                "candidate accepted evidence bundle",
-                "not_published",
-                action,
-                "primary",
-            ),
-        ) from error
-    except (OSError, TypeError, UnicodeDecodeError, ValueError, tomllib.TOMLDecodeError) as error:
-        action = "preserve the candidate and restore canonical retained evidence"
-        raise TrafficlabError(
-            f"Validation Study bundle audit failed: {error}",
-            corrective_action=action,
-            failure_outcome=FailureOutcome(
-                "artifact_corrupt",
-                "publication",
-                str(error),
-                "candidate accepted evidence bundle",
-                "not_published",
-                action,
-                "primary",
-            ),
-        ) from error
+        outcome = FailureOutcome(
+            kind="artifact_corrupt",
+            stage="publication",
+            detail=str(error),
+            affected_evidence="candidate evidence",
+            evidence_state="not_published",
+            corrective_action=error.corrective_action,
+            authority="primary",
+        )
+        error.failure_outcomes = (outcome,)
+        error.failure_outcome = outcome
+        raise
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="audit_validation_study.py", description=__doc__)
     parser.add_argument("bundle", type=Path)
-    parser.add_argument("--repository", required=True, type=Path)
+    parser.add_argument("--repository", type=Path, default=Path.cwd())
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    try:
-        parsed = build_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
-    except SystemExit as error:
-        return int(error.code) if error.code is not None else 0
+    parsed = build_parser().parse_args(argv)
     try:
         result = audit_bundle(parsed.bundle, repository=parsed.repository)
     except TrafficlabError as error:

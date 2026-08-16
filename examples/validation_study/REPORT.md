@@ -20,7 +20,7 @@ Internet 1/1, and clean container removal. The prerequisite SHA-256 is
 
 The balanced order was short, streaming, bursty; streaming, bursty, short; bursty, short, streaming. The streaming
 transfer was rate-limited to `256K`; it was not exactly paced. Every run used population 6, generation 2, master
-seed 73, selection seeds 17 and 29, and fresh held-out seed 97. The ten fresh run IDs were:
+seed 73, selection seeds 17 and 29, and fresh-simulation seed 97. The ten fresh run IDs were:
 
 - `01-short-r1`, `02-streaming-r1`, `03-bursty-r1`;
 - `04-streaming-r2`, `05-bursty-r2`, `06-short-r2`;
@@ -61,7 +61,7 @@ short and bursty local-rate placement is intrinsically unstable in this three-re
 
 ## Family champions
 
-These are selection results, not held-out generalization. Each cell gives the three-run mean; `SD` is the sample
+These are selection results, not independent held-out generalization. Each cell gives the three-run mean; `SD` is the sample
 standard deviation of selection fitness. Component order is ACF, frame-size KS, IAT KS, multiscale rate.
 
 | Workload | Family | Fitness | SD | Component means |
@@ -80,18 +80,18 @@ Markov Renewal won all three repeats of every workload: nine wins, versus zero f
 Its selection-fitness ranges were 0.029594 for short, 0.015164 for streaming, and 0.031464 for bursty. The winner
 was therefore stable by family and comparatively stable by selection score, especially on streaming.
 
-## Held-out, published, and runtime
+## Fresh simulation, published, and runtime
 
-Held-out values use fresh seed 97. Published scores reparse the stored PCAPNG; their tiny difference from held-out
+Fresh-simulation values use seed 97 against the training reference. Published scores reparse the stored PCAPNG; their tiny difference from fresh-simulation
 values is the expected timestamp quantization boundary, not a different random sequence.
 
-| Workload | Held-out mean ± SD | Published mean ± SD | Published component means | Runtime mean (range), s |
+| Workload | Fresh-simulation mean ± SD | Published mean ± SD | Published component means | Runtime mean (range), s |
 |---|---:|---:|---|---:|
 | short | 0.649461 ± 0.013059 | 0.649461 ± 0.013059 | 0.933862, 0.923114, 0.665335, 0.075531 | 8.653 (1.025) |
 | streaming | 0.813904 ± 0.007108 | 0.813904 ± 0.007108 | 0.982618, 0.977085, 0.820740, 0.475174 | 24.983 (1.702) |
 | bursty | 0.677180 ± 0.025891 | 0.677180 ± 0.025891 | 0.890196, 0.964964, 0.726031, 0.127529 | 9.685 (1.186) |
 
-| Run | Winner | Selection | Held-out | Published | Runtime, s |
+| Run | Winner | Selection | Fresh simulation | Published | Runtime, s |
 |---|---|---:|---:|---:|---:|
 | `01-short-r1` | Markov Renewal | 0.678889 | 0.663327 | 0.663327 | 9.118 |
 | `02-streaming-r1` | Markov Renewal | 0.827178 | 0.816018 | 0.816018 | 25.319 |
@@ -129,7 +129,7 @@ scores vary from near zero to 0.405195 and 0.247448 respectively, so those workl
 cleanly.
 
 All nine raw checks prove trial events equal final events, seed 97 is retained, the observation window is exact,
-the held-out score recomputes, and reparsed events equal the defined quantized sequence.
+the fresh-simulation score recomputes, and reparsed events equal the defined quantized sequence.
 
 ## Saved-run reproduction
 
@@ -138,21 +138,21 @@ Only `run.directory` changed, no artifact was seeded, the exact 20-minute guard 
 false, and cleanup succeeded. Its runtime was 25.503171746997396 seconds.
 
 The reproduction again chose Markov Renewal. Its genes differed, as expected after a fresh capture, and selection
-fitness increased by 0.07922758085838422. The fresh held-out aggregate was 0.8982635038655866 and the published
-aggregate was 0.8982635039237588. Relative to source repeat 2, the held-out aggregate delta was
+fitness increased by 0.07922758085838422. The fresh-simulation aggregate was 0.8982635038655866 and the published
+aggregate was 0.8982635039237588. Relative to source repeat 2, the fresh-simulation aggregate delta was
 +0.09228442601729903; component deltas were ACF -0.03742625827528312, frame-size KS -0.009959983298520325, IAT KS
 +0.09674703785675864, and multiscale rate +0.31977690778624124. The two fresh references had aggregate similarity
 0.8405749723408512, confirming that this is reproducibility of the locked procedure rather than byte-identical
 traffic.
 
 Post-CLI reconstruction independently proved exact raw trial/final equality, 1406 events before and after
-quantized PCAPNG reparse, the same `W = 14.687379598617554`, and exact recomputation of held-out and published
+quantized PCAPNG reparse, the same `W = 14.687379598617554`, and exact recomputation of fresh-simulation and published
 scores.
 
 ## Limitations and next work
 
 This pilot has only three repeats per workload, one public endpoint, one host, small genetic settings, and one
-held-out seed. Public-network behavior is visibly variable: the CacheFly prerequisite attempt
+fresh-simulation seed; it does not establish independent held-out generalization. Public-network behavior is visibly variable: the CacheFly prerequisite attempt
 `validation-study-20260814` was rejected after inconsistent capability behavior, and corrected attempt
 `validation-study-20260814-ovh-r2` was rejected after one of eight parallel ranges timed out. Both remain ignored and retained;
 neither contributed a score or selected run to this report.

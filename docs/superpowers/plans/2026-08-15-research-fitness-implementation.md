@@ -783,11 +783,14 @@ collecting external evidence.
 **Files:**
 
 - Create: `scripts/audit_validation_study.py`
+- Create: `scripts/generate_validation_study_fixture.py`
 - Modify: `scripts/run_validation_study.py`
 - Modify: `tests/unit/test_validation_study.py`
 - Modify: `tests/integration/test_validation_study_pipeline.py`
 - Create fixture tree: `tests/fixtures/validation_study_candidate/`
+- Modify: `README.md`
 - Modify: `examples/validation_study/README.md`
+- Modify: `examples/validation_study/REPORT.md`
 
 **Interfaces:**
 
@@ -800,11 +803,12 @@ The script exits `0` only after full reconstruction and nonzero with one canonic
 
 - [ ] **Step 1: Write clean relocated audit RED tests**
 
-Copy the small candidate fixture to a temporary relocated repository. Block socket creation, Docker subprocesses,
-network clients, high-level `trafficlab run`, and reads outside the clone/bundle. Require exact inventory and hashes,
-strict parsing of TOML/JSON/CSV/PCAPNG, independent `W`, checkpoint/history/winner consistency, deterministic trace
-regeneration, all four component and aggregate scores, natural variation, training/held-out summaries, report
-arithmetic, and every lineage edge.
+Copy the complete credential-free candidate fixture to a temporary relocated repository. Block socket creation,
+Docker subprocesses, network clients, high-level `trafficlab run`, and reads outside the clone/bundle. Require exact
+inventory and hashes, strict parsing of TOML/JSON/CSV/PCAPNG and canonical JSONL, independent normalized `W`,
+checkpoint/history/winner consistency, deterministic trace regeneration, all four component and aggregate scores,
+nine training and fresh-simulation records, three independent fixed-model heldout bundles, report arithmetic, and
+every lineage edge.
 
 - [ ] **Step 2: Add representative rejection and collision tests**
 
@@ -823,9 +827,11 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 - [ ] **Step 4: Implement manifest, reconstruction, and publisher integration**
 
-The canonical manifest lists each relative regular-file path, byte size, SHA-256, logical owner, and lineage relation.
-Reuse strict production parsers/public scientific functions where they own the public format, but recompute report
-values rather than trusting them. Call Task 3 publication only with `audit_bundle` as its audit callback.
+The canonical manifest lists each relative regular-file path, byte size, SHA-256, logical owner, and lineage relation
+in strict UTF-8-byte order. Reuse strict production parsers/public scientific functions where they own the public
+format, but recompute report values rather than trusting them. Generate the credential-free fixture through owning
+production APIs, with immutable image identities and nonzero source commit/tree identities; `--check` must reproduce
+its exact bytes. Call Task 3 publication only with `audit_bundle` as its audit callback.
 
 - [ ] **Step 5: Run GREEN/static checks and commit**
 
@@ -838,8 +844,9 @@ uv run --locked ruff check scripts/audit_validation_study.py scripts/run_validat
   tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py
 uv run --locked pyright
 git add scripts/audit_validation_study.py scripts/run_validation_study.py tests/unit/test_validation_study.py \
-  tests/integration/test_validation_study_pipeline.py tests/fixtures/validation_study_candidate \
-  examples/validation_study/README.md
+  scripts/generate_validation_study_fixture.py tests/integration/test_validation_study_pipeline.py \
+  tests/fixtures/validation_study_candidate README.md examples/validation_study/README.md \
+  examples/validation_study/REPORT.md
 git commit -m "feat: audit retained study evidence"
 ```
 

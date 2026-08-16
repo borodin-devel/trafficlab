@@ -22,14 +22,16 @@ import pytest
 import tomli_w
 
 from scripts import audit_validation_study as auditor
+from scripts import generate_validation_study_fixture as fixture_generator
 from scripts import run_validation_study as study
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import ComparisonResult, compare_experiment, compare_traces
+from trafficlab.comparison import ComparisonResult, compare_experiment, compare_traces, parse_comparison_result
 from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import GenerationLimits, SimilarityConfig
-from trafficlab.errors import TrafficlabError
+from trafficlab.config_io import load_configuration_pair
+from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
 from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state
@@ -38,10 +40,11 @@ from trafficlab.genetic.population import derive_family_priority, initial_popula
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult
-from trafficlab.models.registry import BestModel, get_family, make_best_model
+from trafficlab.models.registry import BestModel, get_family, load_best_model, make_best_model, render_best_model
+from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.trace import Direction, TraceEvent, align_generated, normalize_reference
+from trafficlab.trace import Direction, TraceEvent, align_generated, normalize_reference, parse_capture_metadata
 
 _HASH = "a" * 64
 _IMAGE_ID = f"sha256:{'b' * 64}"
@@ -841,7 +844,7 @@ def _run_document(
 ) -> dict[str, object]:
     champions = _champions(repeat)
     winner = champions[2]
-    held_out_value = 0.70 + 0.01 * repeat
+    fresh_simulation_value = 0.70 + 0.01 * repeat
     published_value = 0.65 + 0.01 * repeat
     event_count = repeat + 4
     return {
@@ -865,7 +868,11 @@ def _run_document(
             "genes": winner["genes"],
             "selection_fitness": winner["selection_fitness"],
         },
-        "held_out": {"seed": 97, "score": _score(held_out_value), "source": "run_experiment_fit_outcome"},
+        "fresh_simulation": {
+            "seed": 97,
+            "score": _score(fresh_simulation_value),
+            "source": "run_experiment_fit_outcome",
+        },
         "published": {"seed": 97, "score": _score(published_value)},
         "raw_sequence": {
             "seed": 97,
@@ -873,7 +880,7 @@ def _run_document(
             "trial_event_count": event_count,
             "final_event_count": event_count,
             "raw_events_equal": True,
-            "held_out_score_reproduced": True,
+            "fresh_simulation_score_reproduced": True,
             "reparsed_event_count": event_count,
             "reparsed_matches_quantized": True,
         },
@@ -950,7 +957,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
         winners = [cast(dict[str, object], run["winner"]) for run in workload_runs]
         winner_values = [cast(float, winner["selection_fitness"]) for winner in winners]
         held_values = [
-            cast(float, cast(dict[str, object], cast(dict[str, object], run["held_out"])["score"])["aggregate"])
+            cast(float, cast(dict[str, object], cast(dict[str, object], run["fresh_simulation"])["score"])["aggregate"])
             for run in workload_runs
         ]
         published_values = [
@@ -963,7 +970,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
                 "runtime": _descriptive([cast(float, run["elapsed_seconds"]) for run in workload_runs]),
                 "family_champions": champion_summaries,
                 "winner_selection_fitness": _descriptive(winner_values),
-                "held_out": _score_summary(held_values),
+                "fresh_simulation": _score_summary(held_values),
                 "published": _score_summary(published_values),
                 "reference_descriptors": copy.deepcopy(descriptors),
                 "winner_counts": {
@@ -981,7 +988,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
     reproduction_held = 0.73
     reproduction_published = 0.68
     source_winner = cast(dict[str, object], source["winner"])
-    source_held_score = cast(dict[str, object], cast(dict[str, object], source["held_out"])["score"])
+    source_held_score = cast(dict[str, object], cast(dict[str, object], source["fresh_simulation"])["score"])
     source_published_score = cast(dict[str, object], cast(dict[str, object], source["published"])["score"])
     config_path = f"runs/validation_study/{study_id}/realized-configs/reproduction.toml"
     command = ["uv", "run", "--locked", "trafficlab", "run", config_path]
@@ -1031,7 +1038,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
             "genes": reproduction_winner["genes"],
             "selection_fitness": reproduction_winner["selection_fitness"],
         },
-        "held_out": {
+        "fresh_simulation": {
             "seed": 97,
             "score": _score(reproduction_held),
             "source": "post_cli_evaluate_final",
@@ -1043,7 +1050,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
             "trial_event_count": 6,
             "final_event_count": 6,
             "raw_events_equal": True,
-            "held_out_score_reproduced": True,
+            "fresh_simulation_score_reproduced": True,
             "reparsed_event_count": 6,
             "reparsed_matches_quantized": True,
         },
@@ -1053,7 +1060,7 @@ def _valid_result_document(repository_root: Path) -> dict[str, object]:
             "winner_selection_fitness_delta": (
                 cast(float, reproduction_winner["selection_fitness"]) - cast(float, source_winner["selection_fitness"])
             ),
-            "held_out_delta": {
+            "fresh_simulation_delta": {
                 "aggregate": reproduction_held - cast(float, source_held_score["aggregate"]),
                 "methods": {
                     name: reproduction_held - cast(float, cast(dict[str, object], source_held_score["methods"])[name])
@@ -1143,7 +1150,7 @@ def _result_value(document: dict[str, object]) -> study.StudyResults:
                     tuple[study.FrozenJsonObject, study.FrozenJsonObject, study.FrozenJsonObject], champions
                 ),
                 winner=_frozen(cast(study.JsonObject, item["winner"])),
-                held_out=_frozen(cast(study.JsonObject, item["held_out"])),
+                fresh_simulation=_frozen(cast(study.JsonObject, item["fresh_simulation"])),
                 published=_frozen(cast(study.JsonObject, item["published"])),
                 raw_sequence=_frozen(cast(study.JsonObject, item["raw_sequence"])),
             )
@@ -1278,12 +1285,12 @@ def test_family_champions_use_terminal_valid_candidates_stable_ids_and_selection
     assert champions[2]["selection_fitness"] == 0.9
 
 
-def test_winner_held_out_and_published_records_remain_distinct(tmp_path: Path) -> None:
+def test_winner_fresh_simulation_and_published_records_remain_distinct(tmp_path: Path) -> None:
     state, best, comparison = _terminal_checkpoint_and_best(tmp_path)
     final_trial = _trial_result(97, 0.75)
 
     winner = study._winner(state, best)  # pyright: ignore[reportPrivateUsage]
-    held_out = {
+    fresh_simulation = {
         "seed": final_trial.seed,
         "score": study._score_from_trial(final_trial),  # pyright: ignore[reportPrivateUsage]
         "source": "run_experiment_fit_outcome",
@@ -1299,13 +1306,13 @@ def test_winner_held_out_and_published_records_remain_distinct(tmp_path: Path) -
         "genes": [1.0],
         "selection_fitness": 0.9,
     }
-    assert held_out == {
+    assert fresh_simulation == {
         "seed": 97,
         "score": {"aggregate": 0.75, "methods": {name: 0.75 for name in study.PUBLISHED_METHOD_ORDER}},
         "source": "run_experiment_fit_outcome",
     }
     assert published["score"] == {"aggregate": 1.0, "methods": {name: 1.0 for name in study.PUBLISHED_METHOD_ORDER}}
-    assert held_out != published
+    assert fresh_simulation != published
 
 
 def _offline_capture(_path: Path, prepared: PreparedExperiment) -> CaptureResult:
@@ -1492,12 +1499,12 @@ def test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_line
 
     def reconstruct(
         evidence: object,
-        held_out: TrialResult,
+        fresh_simulation: TrialResult,
         *,
         generated_path: Path,
     ) -> object:
-        observed_trials.append(held_out)
-        return real_reconstruct(evidence, held_out, generated_path=generated_path)  # type: ignore[arg-type]
+        observed_trials.append(fresh_simulation)
+        return real_reconstruct(evidence, fresh_simulation, generated_path=generated_path)  # type: ignore[arg-type]
 
     monkeypatch.setattr(study, "_reconstruct_science", reconstruct)
 
@@ -1523,7 +1530,7 @@ def test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_line
     assert record.reuse == {"capture": False, "best_model": False, "generated": False, "similarity": False}
     assert record.cleanup_verified is True
     assert set(record.artifact_sha256) == set(study.ARTIFACT_NAMES)
-    assert record.held_out["source"] == "run_experiment_fit_outcome"
+    assert record.fresh_simulation["source"] == "run_experiment_fit_outcome"
     assert observed_trials == [authoritative_trial]
     assert observed_trials[0] is authoritative_trial
     assert record.raw_sequence == {
@@ -1532,7 +1539,7 @@ def test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_line
         "trial_event_count": len(result.fit.outcome.final_trials) and len(result.generation.events),
         "final_event_count": len(result.generation.events),
         "raw_events_equal": True,
-        "held_out_score_reproduced": True,
+        "fresh_simulation_score_reproduced": True,
         "reparsed_event_count": len(result.generation.events),
         "reparsed_matches_quantized": True,
     }
@@ -3555,8 +3562,8 @@ def test_result_codec_rejects_scalar_path_gene_trace_and_artifact_violations(
     elif mutation == "escaping-path":
         run["config_path"] = "../escape.toml"
     elif mutation == "score-over-one":
-        held_out = cast(dict[str, object], run["held_out"])
-        cast(dict[str, object], held_out["score"])["aggregate"] = 1.1
+        fresh_simulation = cast(dict[str, object], run["fresh_simulation"])
+        cast(dict[str, object], fresh_simulation["score"])["aggregate"] = 1.1
     elif mutation == "wrong-trace-count":
         reference = cast(dict[str, object], run["reference"])
         cast(dict[str, object], reference["packet_totals"])["outbound"] = 99
@@ -4155,7 +4162,7 @@ def test_best_effort_archive_returns_secondary_diagnostics(tmp_path: Path) -> No
     assert nonregular == "streaming.headers: scratch is not a regular file"
 
 
-def test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_deltas(
+def test_cli_reproduction_reconstructs_fresh_fresh_simulation_lineage_and_honest_source_deltas(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4261,7 +4268,7 @@ def test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_
 
     document = cast(study.JsonObject, study._thaw_json(reproduction.document))  # pyright: ignore[reportPrivateUsage]
     assert evaluate_calls == 1
-    assert document["held_out"]["source"] == "post_cli_evaluate_final"  # type: ignore[index]
+    assert document["fresh_simulation"]["source"] == "post_cli_evaluate_final"  # type: ignore[index]
     assert document["seeded_artifact_count"] == 0
     assert document["reuse"] == {"capture": False, "best_model": False, "generated": False, "similarity": False}
     assert document["raw_sequence"] == {
@@ -4270,7 +4277,7 @@ def test_cli_reproduction_reconstructs_fresh_held_out_lineage_and_honest_source_
         "trial_event_count": cast(dict[str, object], document["generated"])["packet_count"],
         "final_event_count": cast(dict[str, object], document["generated"])["packet_count"],
         "raw_events_equal": True,
-        "held_out_score_reproduced": True,
+        "fresh_simulation_score_reproduced": True,
         "reparsed_event_count": cast(dict[str, object], document["generated"])["packet_count"],
         "reparsed_matches_quantized": True,
     }
@@ -4682,6 +4689,30 @@ def _candidate_bytes(root: Path) -> dict[str, bytes]:
     }
 
 
+def _rewrite_candidate_manifest(candidate: Path) -> None:
+    index = cast(dict[str, object], json.loads((candidate / "index.json").read_text(encoding="utf-8")))
+    auditor.write_manifest(
+        candidate,
+        ownership=cast(dict[str, str], index["ownership"]),
+        lineage=cast(dict[str, object], index["lineage"]),
+    )
+
+
+def _write_canonical_json(path: Path, document: object) -> None:
+    path.write_bytes(
+        json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _candidate_index(candidate: Path) -> dict[str, object]:
+    return cast(dict[str, object], json.loads((candidate / "index.json").read_text(encoding="utf-8")))
+
+
+def _write_candidate_index(candidate: Path, index: dict[str, object]) -> None:
+    _write_canonical_json(candidate / "index.json", index)
+
+
 def test_offline_bundle_audit_reconstructs_relocated_complete_fixture_without_external_calls(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -4700,7 +4731,7 @@ def test_offline_bundle_audit_reconstructs_relocated_complete_fixture_without_ex
     result = auditor.audit_bundle(candidate, repository=repository)
 
     assert result.bundle == candidate
-    assert result.run_directory == candidate / "runs" / "short-r1"
+    assert result.run_directory == candidate / "training" / "short" / "r1"
     assert result.file_count == len(before) - 1
     assert result.manifest_sha256 == hashlib.sha256(before["manifest.json"]).hexdigest()
     assert _candidate_bytes(candidate) == before
@@ -4725,34 +4756,34 @@ def test_offline_bundle_audit_rejects_first_manifest_or_artifact_mismatch(
     expected_kind: str,
 ) -> None:
     repository, candidate = _copy_validation_study_candidate(tmp_path)
-    manifest_path = candidate / "manifest.json"
 
     if mutation == "missing":
-        (candidate / "runs" / "short-r1" / "best_model.json").unlink()
+        (candidate / "training" / "short" / "r1" / "best_model.json").unlink()
     elif mutation == "corrupt":
-        path = candidate / "runs" / "short-r1" / "checkpoint.json"
+        path = candidate / "training" / "short" / "r1" / "checkpoint.json"
         path.write_bytes(path.read_bytes() + b" ")
     elif mutation == "foreign":
-        target = candidate / "runs" / "short-r1" / "generated.pcapng"
-        target.write_bytes((candidate / "runs" / "short-r1" / "reference.pcapng").read_bytes())
-        document = json.loads(manifest_path.read_text(encoding="utf-8"))
-        ownership = {entry["path"]: entry["owner"] for entry in document["files"]}
-        lineage = {entry["path"]: entry["lineage"] for entry in document["files"]}
-        auditor.write_manifest(candidate, ownership=ownership, lineage=lineage)
+        target = candidate / "training" / "short" / "r1" / "generated.pcapng"
+        target.write_bytes((candidate / "training" / "short" / "r1" / "reference.pcapng").read_bytes())
+        _rewrite_candidate_manifest(candidate)
     elif mutation == "extra":
         (candidate / "unexpected.bin").write_bytes(b"unexpected")
     elif mutation == "symlink":
-        (candidate / "runs" / "short-r1" / "unexpected-link").symlink_to("generated.pcapng")
+        (candidate / "training" / "short" / "r1" / "unexpected-link").symlink_to("generated.pcapng")
     elif mutation == "temporary":
-        (candidate / "runs" / "short-r1" / ".generated.tmp").write_bytes(b"temporary")
+        (candidate / "training" / "short" / "r1" / ".generated.tmp").write_bytes(b"temporary")
     else:
-        document = json.loads(manifest_path.read_text(encoding="utf-8"))
-        entry = next(item for item in document["files"] if item["path"] == "runs/short-r1/generated.pcapng")
-        entry[mutation] = f"changed-{mutation}"
-        manifest_path.write_text(
-            json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        index_path = candidate / "index.json"
+        index = cast(dict[str, object], json.loads(index_path.read_text(encoding="utf-8")))
+        relative = "training/short/r1/generated.pcapng"
+        mapping_name = "ownership" if mutation == "owner" else "lineage"
+        mapping = cast(dict[str, object], index[mapping_name])
+        mapping[relative] = f"changed-{mutation}"
+        index_path.write_text(
+            json.dumps(index, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
         )
+        _rewrite_candidate_manifest(candidate)
 
     with pytest.raises(TrafficlabError) as error:
         auditor.audit_bundle(candidate, repository=repository)
@@ -4764,6 +4795,24 @@ def test_offline_bundle_audit_rejects_first_manifest_or_artifact_mismatch(
     assert outcome.evidence_state == "not_published"
     assert outcome.authority == "primary"
     assert error.value.failure_outcomes == (outcome,)
+    if mutation == "missing":
+        assert (
+            outcome.kind,
+            outcome.stage,
+            outcome.detail,
+            outcome.affected_evidence,
+            outcome.evidence_state,
+            outcome.corrective_action,
+            outcome.authority,
+        ) == (
+            "artifact_missing",
+            "publication",
+            "training/short/r1/best_model.json is missing from the retained bundle",
+            "training/short/r1/best_model.json",
+            "not_published",
+            "restore the exact retained artifact",
+            "primary",
+        )
 
 
 def test_audited_bundle_publication_rechecks_candidate_and_preserves_an_occupied_destination(tmp_path: Path) -> None:
@@ -4772,6 +4821,7 @@ def test_audited_bundle_publication_rechecks_candidate_and_preserves_an_occupied
 
     destination = study.publish_audited_bundle(candidate, "fixture-study", repository_root=repository)
     before = _candidate_bytes(destination)
+    root_before = _candidate_bytes(repository)
 
     with pytest.raises(TrafficlabError) as error:
         study.publish_audited_bundle(candidate, "fixture-study", repository_root=repository)
@@ -4782,6 +4832,44 @@ def test_audited_bundle_publication_rechecks_candidate_and_preserves_an_occupied
     assert outcome.stage == "publication"
     assert destination == evidence_root / "fixture-study"
     assert _candidate_bytes(destination) == before
+    assert _candidate_bytes(repository) == root_before
+    assert not tuple(repository.rglob("*.tmp"))
+
+
+def test_audited_bundle_rejects_the_first_primary_without_publication_residue(tmp_path: Path) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    before = _candidate_bytes(candidate)
+    missing = "protocol.json"
+    (candidate / missing).unlink()
+    expected_candidate = dict(before)
+    del expected_candidate[missing]
+
+    with pytest.raises(TrafficlabError) as error:
+        study.publish_audited_bundle(candidate, "rejected-study", repository_root=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.corrective_action,
+        outcome.authority,
+    ) == (
+        "artifact_missing",
+        "publication",
+        "protocol.json is missing from the retained bundle",
+        "protocol.json",
+        "not_published",
+        "restore the exact retained artifact",
+        "primary",
+    )
+    assert error.value.failure_outcomes == (outcome,)
+    assert _candidate_bytes(candidate) == expected_candidate
+    assert not (repository / "examples" / "validation_study" / "evidence").exists()
+    assert not tuple(repository.rglob("*.tmp"))
 
 
 @pytest.mark.parametrize("target", ("manifest", "run-log"))
@@ -4791,14 +4879,11 @@ def test_offline_bundle_audit_rejects_duplicate_json_keys_at_the_owned_boundary(
 ) -> None:
     repository, candidate = _copy_validation_study_candidate(tmp_path)
     if target == "manifest":
-        (candidate / "manifest.json").write_bytes(b'{"files":[],"files":[],"schema_version":1}\n')
+        (candidate / "manifest.json").write_bytes(b'{"files":[],"files":[],"schema_version":2}\n')
     else:
-        log_path = candidate / "runs" / "short-r1" / "run.log"
+        log_path = candidate / "training" / "short" / "r1" / "run.log"
         log_path.write_bytes(b'{"event":"fixture","event":"duplicate","stage":"fit"}\n')
-        document = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
-        ownership = {entry["path"]: entry["owner"] for entry in document["files"]}
-        lineage = {entry["path"]: entry["lineage"] for entry in document["files"]}
-        auditor.write_manifest(candidate, ownership=ownership, lineage=lineage)
+        _rewrite_candidate_manifest(candidate)
 
     with pytest.raises(TrafficlabError) as error:
         auditor.audit_bundle(candidate, repository=repository)
@@ -4821,15 +4906,12 @@ def test_offline_bundle_audit_reconstructs_environment_and_final_controls(
     if mutation == "environment":
         (repository / "uv.lock").write_bytes(b"different lock\n")
     else:
-        index["runs"][0]["final"]["seed"] = 98
+        cast(list[dict[str, object]], index["fresh_simulation"])[0]["seed"] = 98
         index_path.write_text(
             json.dumps(index, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
         )
-        document = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
-        ownership = {entry["path"]: entry["owner"] for entry in document["files"]}
-        lineage = {entry["path"]: entry["lineage"] for entry in document["files"]}
-        auditor.write_manifest(candidate, ownership=ownership, lineage=lineage)
+        _rewrite_candidate_manifest(candidate)
 
     with pytest.raises(TrafficlabError) as error:
         auditor.audit_bundle(candidate, repository=repository)
@@ -4837,27 +4919,826 @@ def test_offline_bundle_audit_reconstructs_environment_and_final_controls(
     outcome = error.value.failure_outcome
     assert outcome is not None
     assert outcome.kind == "artifact_foreign"
-    assert outcome.affected_evidence in {"environment", "run short-r1"}
+    assert outcome.affected_evidence in {"environment", "fresh_simulation/short/r1.json"}
+
+
+def test_offline_bundle_audit_derives_w_from_the_normalized_reference(tmp_path: Path) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    model_path = candidate / "training" / "short" / "r1" / "best_model.json"
+    model = load_best_model(model_path.read_bytes(), source=model_path)
+    model_path.write_bytes(
+        render_best_model(replace(model, observation_window_seconds=model.observation_window_seconds + 1.0))
+    )
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.corrective_action,
+        outcome.authority,
+    ) == (
+        "scientific_semantics_incompatible",
+        "publication",
+        "best model final controls do not match normalized training reference",
+        "training/short/r1",
+        "not_published",
+        "restore frozen training evidence",
+        "primary",
+    )
 
 
 @pytest.mark.parametrize(
-    ("artifact", "content"),
+    ("relative", "content"),
     (
-        ("experiment.toml", b"[run\n"),
-        ("run.log", b"\xff\n"),
-        ("run.log", b""),
-        ("run.log", b'{"event":"fixture"}'),
+        ("training/short/r1/experiment.toml", b"[run\n"),
+        ("training/short/r1/run.log", b"\xff\n"),
+        ("training/short/r1/run.log", b'{"event": "fixture"}\n'),
     ),
 )
-def test_offline_bundle_audit_strict_artifact_parser_covers_toml_and_log_failure_boundaries(
-    artifact: str,
+def test_offline_bundle_audit_rejects_noncanonical_owned_artifact_boundaries(
+    tmp_path: Path,
+    relative: str,
     content: bytes,
 ) -> None:
-    fixture_run = _ROOT / "tests" / "fixtures" / "validation_study_candidate" / "runs" / "short-r1"
-    contents = {name: (fixture_run / name).read_bytes() for name in study.ARTIFACT_NAMES}
-    contents[artifact] = content
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    (candidate / relative).write_bytes(content)
+    _rewrite_candidate_manifest(candidate)
 
-    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
-        auditor._strict_artifacts(contents, name="short-r1")  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
 
-    assert error.value.kind == "artifact_corrupt"
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == "artifact_corrupt"
+    assert outcome.stage == "publication"
+    assert outcome.evidence_state == "not_published"
+
+
+def test_offline_bundle_audit_reports_the_canonical_jsonl_owner_diagnostic(tmp_path: Path) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    log_path = candidate / "training" / "short" / "r1" / "run.log"
+    log_path.write_bytes(b'{"event": "fixture"}\n')
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.corrective_action,
+    ) == (
+        "artifact_corrupt",
+        "run log record is not canonical JSONL",
+        "training/short/r1/run.log",
+        "restore canonical run log",
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "detail"),
+    (
+        (b"", "run log must be nonempty canonical JSONL with a terminal newline"),
+        (b'{}\r{"event":"fixture"}\n', "run log must use LF-terminated records"),
+    ),
+)
+def test_offline_bundle_audit_covers_the_remaining_canonical_jsonl_boundaries(
+    tmp_path: Path,
+    content: bytes,
+    detail: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    (candidate / "training" / "short" / "r1" / "run.log").write_bytes(content)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.detail, outcome.affected_evidence) == (
+        "artifact_corrupt",
+        detail,
+        "training/short/r1/run.log",
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_kind"),
+    (
+        ("scientific_artifact_schema", 1, "scientific_semantics_incompatible"),
+        ("python_implementation", "PyPy", "scientific_semantics_incompatible"),
+        ("source_commit", "z" * 40, "artifact_corrupt"),
+        ("target_image_reference", "trafficlab-target:latest", "artifact_corrupt"),
+        ("target_image_id", "sha256:bad", "artifact_corrupt"),
+        (
+            "compatibility_decision",
+            {"reason": "fixture", "status": "incompatible"},
+            "scientific_semantics_incompatible",
+        ),
+    ),
+)
+def test_offline_bundle_audit_validates_every_environment_lock_boundary(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    expected_kind: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    environment_path = candidate / "environment.json"
+    environment = cast(dict[str, object], json.loads(environment_path.read_text(encoding="utf-8")))
+    environment[field] = value
+    _write_canonical_json(environment_path, environment)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state, outcome.authority) == (
+        expected_kind,
+        "publication",
+        "environment",
+        "not_published",
+        "primary",
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind"),
+    (
+        ("directory", "artifact_foreign"),
+        ("configuration_path", "artifact_foreign"),
+        ("seeds", "scientific_semantics_incompatible"),
+        ("run_configuration", "artifact_foreign"),
+        ("reconstruction", "artifact_corrupt"),
+        ("history", "artifact_foreign"),
+        ("winner", "artifact_foreign"),
+        ("comparison_parse", "artifact_corrupt"),
+        ("comparison", "artifact_foreign"),
+        ("index_identity", "artifact_foreign"),
+    ),
+)
+def test_offline_bundle_audit_covers_training_record_and_reconstruction_boundaries(
+    tmp_path: Path,
+    case: str,
+    expected_kind: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    index = _candidate_index(candidate)
+    training = cast(list[dict[str, object]], index["training"])
+    record = training[0]
+    run = candidate / "training" / "short" / "r1"
+
+    if case == "directory":
+        record["directory"] = "training/short/r2"
+        _write_candidate_index(candidate, index)
+    elif case == "configuration_path":
+        record["portable_config"] = "configs/training-short-r1.realized.toml"
+        _write_candidate_index(candidate, index)
+    elif case == "seeds":
+        protocol_path = candidate / "protocol.json"
+        protocol = cast(dict[str, object], json.loads(protocol_path.read_text(encoding="utf-8")))
+        protocol["selection_seeds"] = [18, 30]
+        _write_canonical_json(protocol_path, protocol)
+    elif case == "run_configuration":
+        (run / "experiment.toml").write_bytes((candidate / "configs" / "training-short-r1.realized.toml").read_bytes())
+    elif case == "reconstruction":
+        (run / "capture.json").write_bytes(b"{}\n")
+    elif case == "history":
+        (run / "ga_history.csv").write_bytes(b"unexpected-history\n")
+    elif case == "winner":
+        (run / "best_model.json").write_bytes(
+            (candidate / "training" / "short" / "r2" / "best_model.json").read_bytes()
+        )
+    elif case == "comparison_parse":
+        (run / "similarity.json").write_bytes(b"{}\n")
+    elif case == "comparison":
+        (run / "similarity.json").write_bytes(
+            (candidate / "training" / "short" / "r2" / "similarity.json").read_bytes()
+        )
+    else:
+        identity = cast(dict[str, object], record["reference_identity"])
+        identity["sha256"] = "0" * 64
+        _write_candidate_index(candidate, index)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.evidence_state, outcome.authority) == (
+        expected_kind,
+        "publication",
+        "not_published",
+        "primary",
+    )
+
+
+@pytest.mark.parametrize("case", ("stored_record", "identity"))
+def test_offline_bundle_audit_covers_fresh_simulation_record_boundaries(tmp_path: Path, case: str) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    index = _candidate_index(candidate)
+    record = cast(list[dict[str, object]], index["fresh_simulation"])[0]
+    path = candidate / cast(str, record["path"])
+    if case == "stored_record":
+        stored = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        stored["seed"] = 98
+        _write_canonical_json(path, stored)
+    else:
+        identity = cast(dict[str, object], record["reference_identity"])
+        identity["sha256"] = "0" * 64
+        _write_canonical_json(path, record)
+        _write_candidate_index(candidate, index)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", cast(str, record["path"]))
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind"),
+    (
+        ("binding", "artifact_foreign"),
+        ("configuration", "scientific_semantics_incompatible"),
+        ("training_reference", "artifact_foreign"),
+        ("reconstruction", "artifact_corrupt"),
+        ("outputs", "artifact_foreign"),
+        ("record", "artifact_foreign"),
+    ),
+)
+def test_offline_bundle_audit_covers_independent_held_out_boundaries(
+    tmp_path: Path,
+    case: str,
+    expected_kind: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    index = _candidate_index(candidate)
+    held = cast(list[dict[str, object]], index["held_out"])[0]
+    directory = candidate / cast(str, held["directory"])
+    if case == "binding":
+        held["training_directory"] = "training/short/r2"
+        _write_candidate_index(candidate, index)
+    elif case == "configuration":
+        for name in ("portable.toml", "realized.toml"):
+            path = directory / name
+            path.write_bytes(path.read_bytes().replace(b"final_seed = 97", b"final_seed = 98"))
+    elif case == "training_reference":
+        (directory / "reference.pcapng").write_bytes(
+            (candidate / "training" / "short" / "r1" / "reference.pcapng").read_bytes()
+        )
+    elif case == "reconstruction":
+        (directory / "capture.json").write_bytes(b"{}\n")
+    elif case == "outputs":
+        (directory / "generated.pcapng").write_bytes(
+            (candidate / "held_out" / "streaming" / "generated.pcapng").read_bytes()
+        )
+    else:
+        record_path = directory / "record.json"
+        record = cast(dict[str, object], json.loads(record_path.read_text(encoding="utf-8")))
+        record["seed"] = 98
+        _write_canonical_json(record_path, record)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.evidence_state, outcome.authority) == (
+        expected_kind,
+        "publication",
+        "not_published",
+        "primary",
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind"),
+    (
+        ("schema", "scientific_semantics_incompatible"),
+        ("root_path", "artifact_foreign"),
+        ("training_type", "artifact_corrupt"),
+        ("training_count", "artifact_corrupt"),
+        ("training_duplicate", "artifact_foreign"),
+        ("fresh_type", "artifact_corrupt"),
+        ("fresh_count", "artifact_corrupt"),
+        ("held_type", "artifact_corrupt"),
+        ("held_count", "artifact_corrupt"),
+        ("held_duplicate", "artifact_foreign"),
+        ("report_inputs", "artifact_foreign"),
+        ("report", "artifact_foreign"),
+    ),
+)
+def test_offline_bundle_audit_covers_complete_index_schema_boundaries(
+    tmp_path: Path,
+    case: str,
+    expected_kind: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    index = _candidate_index(candidate)
+    if case == "schema":
+        index["schema_version"] = 1
+        _write_candidate_index(candidate, index)
+    elif case == "root_path":
+        index["report"] = "other-report.json"
+        _write_candidate_index(candidate, index)
+    elif case == "training_type":
+        index["training"] = {}
+        _write_candidate_index(candidate, index)
+    elif case == "training_count":
+        index["training"] = cast(list[object], index["training"])[:-1]
+        _write_candidate_index(candidate, index)
+    elif case == "training_duplicate":
+        training = cast(list[dict[str, object]], index["training"])
+        training[-1] = copy.deepcopy(training[0])
+        _write_candidate_index(candidate, index)
+    elif case == "fresh_type":
+        index["fresh_simulation"] = {}
+        _write_candidate_index(candidate, index)
+    elif case == "fresh_count":
+        index["fresh_simulation"] = cast(list[object], index["fresh_simulation"])[:-1]
+        _write_candidate_index(candidate, index)
+    elif case == "held_type":
+        index["held_out"] = {}
+        _write_candidate_index(candidate, index)
+    elif case == "held_count":
+        index["held_out"] = cast(list[object], index["held_out"])[:-1]
+        _write_candidate_index(candidate, index)
+    elif case == "held_duplicate":
+        held = cast(list[dict[str, object]], index["held_out"])
+        held[1] = copy.deepcopy(held[0])
+        _write_candidate_index(candidate, index)
+    elif case == "report_inputs":
+        path = candidate / "report_inputs.json"
+        document = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        document["formula"] = "not-arithmetic"
+        _write_canonical_json(path, document)
+    else:
+        path = candidate / "report.json"
+        document = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        document["formula"] = "not-arithmetic"
+        _write_canonical_json(path, document)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.evidence_state, outcome.authority) == (
+        expected_kind,
+        "publication",
+        "not_published",
+        "primary",
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind"),
+    (("wrong_type", "artifact_corrupt"), ("manifest_disagreement", "artifact_foreign")),
+)
+def test_offline_bundle_audit_validates_index_metadata_before_scientific_reconstruction(
+    tmp_path: Path,
+    case: str,
+    expected_kind: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    index = _candidate_index(candidate)
+    ownership = copy.deepcopy(cast(dict[str, str], index["ownership"]))
+    lineage = copy.deepcopy(cast(dict[str, object], index["lineage"]))
+    if case == "wrong_type":
+        index["ownership"] = []
+    else:
+        cast(dict[str, object], index["ownership"])["training/short/r1/generated.pcapng"] = "wrong-owner"
+    _write_candidate_index(candidate, index)
+    auditor.write_manifest(candidate, ownership=ownership, lineage=lineage)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == (expected_kind, "index.json")
+
+
+@pytest.mark.parametrize(
+    ("relative", "owner", "relation"),
+    (
+        (
+            "prerequisites/docker_matrix.command.json",
+            "prerequisite:docker_matrix:command.json",
+            {"relation": "prerequisite", "record": "docker_matrix.command.json"},
+        ),
+        ("headers/short.headers", "transfer-header:short", {"relation": "transfer-header", "workload": "short"}),
+        (
+            "observations/streaming.json",
+            "external-observation:streaming",
+            {"relation": "external-observation", "workload": "streaming"},
+        ),
+        (
+            "configs/training-short-r1.portable.toml",
+            "configuration:training-short-r1.portable",
+            {"relation": "configuration", "name": "training-short-r1.portable"},
+        ),
+        (
+            "training/bursty/r2/run.log",
+            "training:bursty:r2",
+            {"relation": "run.log", "repeat": 2, "workload": "bursty"},
+        ),
+        (
+            "fresh_simulation/short/r3.json",
+            "fresh-simulation:short:r3",
+            {"relation": "fresh_simulation", "repeat": 3, "workload": "short"},
+        ),
+        ("held_out/bursty/reference.pcapng", "held-out:bursty", {"relation": "reference.pcapng", "workload": "bursty"}),
+    ),
+)
+def test_schema_owner_and_lineage_mapping_cover_every_retained_evidence_family(
+    relative: str,
+    owner: str,
+    relation: dict[str, object],
+) -> None:
+    assert auditor.owner_for_path(relative) == owner
+    assert auditor.lineage_for_path(relative) == relation
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        "prerequisites/unknown.command.json",
+        "headers/unknown.headers",
+        "observations/unknown.json",
+        "not-documented.bin",
+    ),
+)
+def test_schema_owner_mapping_rejects_partial_or_unknown_paths(relative: str) -> None:
+    with pytest.raises(Exception, match="documented owner"):
+        auditor.owner_for_path(relative)
+
+
+def test_schema_lineage_mapping_rejects_unknown_path_family() -> None:
+    with pytest.raises(Exception, match="documented lineage"):
+        auditor.lineage_for_path("not-documented.bin")
+
+
+def test_schema_file_inventory_reports_enumeration_lstat_and_nonregular_boundaries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+
+    def unavailable_rglob(_path: Path, _pattern: str) -> Any:
+        raise OSError("enumeration unavailable")
+
+    monkeypatch.setattr(Path, "rglob", unavailable_rglob)
+    with pytest.raises(Exception, match="could not enumerate retained bundle"):
+        auditor.files_for_candidate(candidate, include_manifest=False)
+    monkeypatch.undo()
+
+    regular = candidate / "regular.bin"
+    regular.write_bytes(b"regular")
+    original_lstat = Path.lstat
+
+    def unavailable_lstat(path: Path) -> os.stat_result:
+        if path == regular:
+            raise OSError("inspection unavailable")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", unavailable_lstat)
+    with pytest.raises(Exception, match="could not inspect regular.bin"):
+        auditor.files_for_candidate(candidate, include_manifest=False)
+    monkeypatch.undo()
+
+    fifo = candidate / "foreign.fifo"
+    os.mkfifo(fifo)
+    with pytest.raises(Exception, match="must be a regular file"):
+        auditor.files_for_candidate(candidate, include_manifest=False)
+
+
+def test_schema_manifest_writer_rejects_incomplete_keys_and_empty_owner(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    (candidate / "retained.bin").write_bytes(b"retained")
+
+    with pytest.raises(ValueError, match="keys must equal"):
+        auditor.write_manifest(candidate, ownership={}, lineage={})
+    with pytest.raises(ValueError, match="nonempty string"):
+        auditor.write_manifest(candidate, ownership={"retained.bin": ""}, lineage={"retained.bin": {}})
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind"),
+    (
+        ("duplicate_fresh", "artifact_foreign"),
+        ("missing_schema_path", "artifact_missing"),
+        ("unlisted_schema_path", "artifact_foreign"),
+    ),
+)
+def test_offline_bundle_audit_covers_internal_complete_schema_invariants(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_kind: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    if case == "duplicate_fresh":
+
+        def duplicate_fresh(*_args: object, **_kwargs: object) -> str:
+            return "fresh_simulation/short/r1.json"
+
+        monkeypatch.setattr(auditor, "_fresh", duplicate_fresh)
+    else:
+        original = auditor._expected_paths  # pyright: ignore[reportPrivateUsage]
+
+        def altered_expected(
+            index: dict[str, object],
+            protocol: dict[str, object],
+            prerequisite_paths: set[str],
+            training: Sequence[Any],
+            fresh_paths: set[str],
+            held_paths: set[str],
+        ) -> set[str]:
+            result = original(index, protocol, prerequisite_paths, training, fresh_paths, held_paths)
+            if case == "missing_schema_path":
+                return result | {"missing-schema-path.json"}
+            return result - {"report.json"}
+
+        monkeypatch.setattr(auditor, "_expected_paths", altered_expected)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.evidence_state, outcome.authority) == (
+        expected_kind,
+        "publication",
+        "not_published",
+        "primary",
+    )
+
+
+def test_audit_bundle_rejects_a_candidate_outside_the_relocated_repository(tmp_path: Path) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    outside = tmp_path / "outside-candidate"
+    shutil.copytree(candidate, outside)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(outside, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.corrective_action,
+    ) == (
+        "artifact_foreign",
+        "bundle must remain beneath the relocated repository",
+        "bundle",
+        "use a retained candidate beneath the repository",
+    )
+
+
+def test_audit_bundle_wraps_an_unclassified_owner_error_and_preserves_a_classified_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    unclassified = TrafficlabError("unclassified owner error", corrective_action="repair source evidence")
+
+    def raise_unclassified(*_args: object, **_kwargs: object) -> object:
+        raise unclassified
+
+    monkeypatch.setattr(auditor, "_audit", raise_unclassified)
+    with pytest.raises(TrafficlabError) as first:
+        auditor.audit_bundle(candidate, repository=repository)
+    first_outcome = first.value.failure_outcome
+    assert first.value is unclassified
+    assert first_outcome is not None
+    assert (
+        first_outcome.kind,
+        first_outcome.affected_evidence,
+        first_outcome.corrective_action,
+        first_outcome.authority,
+    ) == ("artifact_corrupt", "candidate evidence", "repair source evidence", "primary")
+
+    classified_outcome = FailureOutcome(
+        kind="artifact_missing",
+        stage="fit",
+        detail="classified owner error",
+        affected_evidence="best_model.json",
+        evidence_state="not_published",
+        corrective_action="restore best model",
+        authority="primary",
+    )
+    classified = TrafficlabError("classified owner error", corrective_action="restore best model")
+    classified.failure_outcomes = (classified_outcome,)
+    classified.failure_outcome = classified_outcome
+
+    def raise_classified(*_args: object, **_kwargs: object) -> object:
+        raise classified
+
+    monkeypatch.setattr(auditor, "_audit", raise_classified)
+    with pytest.raises(TrafficlabError) as second:
+        auditor.audit_bundle(candidate, repository=repository)
+    assert second.value is classified
+    assert second.value.failure_outcomes == (classified_outcome,)
+
+
+def test_offline_bundle_fixture_carries_complete_phase7_evidence_and_reconstructs_it(tmp_path: Path) -> None:
+    """A retained candidate distinguishes training, fresh simulation, and independent held-out evidence."""
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    before = _candidate_bytes(candidate)
+    index = json.loads((candidate / "index.json").read_text(encoding="utf-8"))
+
+    assert index["schema_version"] == 2
+    assert set(index) == {
+        "environment",
+        "fresh_simulation",
+        "held_out",
+        "lineage",
+        "ownership",
+        "prerequisites",
+        "protocol",
+        "report",
+        "report_inputs",
+        "schema_version",
+        "training",
+    }
+    expected_training = {(workload, repeat) for workload in ("short", "streaming", "bursty") for repeat in (1, 2, 3)}
+    training = index["training"]
+    assert {(item["workload"], item["repeat"]) for item in training} == expected_training
+    assert {(item["workload"], item["repeat"]) for item in index["fresh_simulation"]} == expected_training
+    assert {item["workload"] for item in index["held_out"]} == {"short", "streaming", "bursty"}
+
+    training_reference_identities = {item["reference_identity"]["sha256"] for item in training}
+    assert len(training_reference_identities) == len(expected_training)
+    assert all(
+        json.loads((candidate / item["directory"] / "record.json").read_text(encoding="utf-8"))["reference_identity"][
+            "sha256"
+        ]
+        not in training_reference_identities
+        for item in index["held_out"]
+    )
+    for item in training:
+        directory = candidate / item["directory"]
+        lines = (directory / "run.log").read_bytes().splitlines(keepends=True)
+        assert lines
+        assert all(
+            line
+            == json.dumps(
+                json.loads(line.decode("utf-8")),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+            + b"\n"
+            for line in lines
+        )
+
+    result = auditor.audit_bundle(candidate, repository=repository)
+
+    assert result.file_count == len(before) - 1
+    assert _candidate_bytes(candidate) == before
+
+
+def test_validation_fixture_generator_rejects_nonhex_source_identities() -> None:
+    with pytest.raises(ValueError, match="source identities"):
+        fixture_generator.generate_fixture_tree(source_commit="z" * 40, source_tree="f" * 40)
+
+
+@pytest.mark.parametrize(
+    ("source_commit", "source_tree", "accepted"),
+    (
+        ("a" * 40, "b" * 40, True),
+        ("z" * 40, "b" * 40, False),
+        ("a" * 40, "z" * 40, False),
+        ("0" * 40, "b" * 40, False),
+        ("a" * 40, "0" * 40, False),
+    ),
+)
+def test_validation_fixture_source_identity_guard_has_exact_acceptance_boundaries(
+    source_commit: str,
+    source_tree: str,
+    accepted: bool,
+) -> None:
+    if accepted:
+        fixture_generator.validate_source_identities(source_commit, source_tree)
+    else:
+        with pytest.raises(ValueError, match="source identities"):
+            fixture_generator.validate_source_identities(source_commit, source_tree)
+
+
+def test_validation_fixture_generator_check_rebuilds_the_retained_bytes() -> None:
+    assert fixture_generator.main(["--check"]) == 0
+
+
+def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
+    content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
+    result = study.parse_study_results(content, repository_root=_ROOT)
+
+    assert b'"fresh_simulation"' in content
+    assert b'"held_out"' not in content
+    assert study.render_study_results(result) == content
+
+
+def test_study_held_out_evaluator_requires_an_independent_reference_and_uses_the_fixed_training_model() -> None:
+    """The study-only boundary evaluates a frozen training model without weakening ordinary stage lineage checks."""
+    fixture = _FIT_FIXTURE
+    config = load_configuration_pair(fixture / "experiment.toml").realized
+    metadata = parse_capture_metadata(_CAPTURE_BYTES, source=fixture / "capture.json")
+    original = parse_pcapng_bytes(_REFERENCE_BYTES, metadata, source=fixture / "reference.pcapng")
+    independent = tuple(
+        TraceEvent(event.timestamp, event.direction, event.frame_length + (1 if index == 1 else 0))
+        for index, event in enumerate(original)
+    )
+    independent_bytes = encode_pcapng(independent, metadata)
+
+    result = study.evaluate_study_held_out(
+        model_content=(fixture / "best_model.json").read_bytes(),
+        model_source=fixture / "best_model.json",
+        config=config,
+        capture_content=_CAPTURE_BYTES,
+        capture_source=fixture / "capture.json",
+        reference_content=independent_bytes,
+        reference_source=Path("held_out/reference.pcapng"),
+    )
+
+    comparison = parse_comparison_result(result.comparison_json)
+    assert result.seed == 97
+    assert result.reference_identity.sha256 != result.training_model.reference_identity.sha256
+    assert comparison.input_identities is not None
+    assert result.generated_identity == comparison.input_identities["generated_pcapng"]
+    assert tuple(comparison.methods) == study.PUBLISHED_METHOD_ORDER
+
+    with pytest.raises(TrafficlabError, match="independent held-out reference"):
+        study.evaluate_study_held_out(
+            model_content=(fixture / "best_model.json").read_bytes(),
+            model_source=fixture / "best_model.json",
+            config=config,
+            capture_content=_CAPTURE_BYTES,
+            capture_source=fixture / "capture.json",
+            reference_content=_REFERENCE_BYTES,
+            reference_source=fixture / "reference.pcapng",
+        )
+
+    with pytest.raises(TypeError, match="ExperimentConfig"):
+        study.evaluate_study_held_out(
+            model_content=(fixture / "best_model.json").read_bytes(),
+            model_source=fixture / "best_model.json",
+            config=cast(Any, object()),
+            capture_content=_CAPTURE_BYTES,
+            capture_source=fixture / "capture.json",
+            reference_content=independent_bytes,
+            reference_source=Path("held_out/reference.pcapng"),
+        )
+
+    with pytest.raises(TrafficlabError, match="final seed"):
+        study.evaluate_study_held_out(
+            model_content=(fixture / "best_model.json").read_bytes(),
+            model_source=fixture / "best_model.json",
+            config=config.model_copy(update={"run": config.run.model_copy(update={"final_seed": 98})}),
+            capture_content=_CAPTURE_BYTES,
+            capture_source=fixture / "capture.json",
+            reference_content=independent_bytes,
+            reference_source=Path("held_out/reference.pcapng"),
+        )
+
+    different_window = tuple(
+        TraceEvent(
+            event.timestamp + (1.0 if index == len(independent) - 1 else 0.0), event.direction, event.frame_length
+        )
+        for index, event in enumerate(independent)
+    )
+    with pytest.raises(TrafficlabError, match="reference window"):
+        study.evaluate_study_held_out(
+            model_content=(fixture / "best_model.json").read_bytes(),
+            model_source=fixture / "best_model.json",
+            config=config,
+            capture_content=_CAPTURE_BYTES,
+            capture_source=fixture / "capture.json",
+            reference_content=encode_pcapng(different_window, metadata),
+            reference_source=Path("held_out/different-window.pcapng"),
+        )

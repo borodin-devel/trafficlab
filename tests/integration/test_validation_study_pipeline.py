@@ -127,16 +127,16 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
         "poisson_empirical",
     )
     assert all(item["selection_seeds"] == (17, 29) for item in record.family_champions)
-    held_out = cast(study.JsonObject, study._thaw_json(record.held_out))  # pyright: ignore[reportPrivateUsage]
-    held_out_score = cast(study.JsonObject, held_out["score"])
-    methods = cast(study.JsonObject, held_out_score["methods"])
+    fresh_simulation = cast(study.JsonObject, study._thaw_json(record.fresh_simulation))  # pyright: ignore[reportPrivateUsage]
+    fresh_simulation_score = cast(study.JsonObject, fresh_simulation["score"])
+    methods = cast(study.JsonObject, fresh_simulation_score["methods"])
     artifact_sha256 = cast(
         study.JsonObject,
         study._thaw_json(record.artifact_sha256),  # pyright: ignore[reportPrivateUsage]
     )
     input_sha256 = result.comparison.input_sha256
     assert input_sha256 is not None
-    assert held_out["seed"] == 97
+    assert fresh_simulation["seed"] == 97
     assert tuple(methods) == METHOD_ORDER
     assert artifact_sha256["capture.json"] == input_sha256["capture_json"]
     assert artifact_sha256["reference.pcapng"] == input_sha256["reference_pcapng"]
