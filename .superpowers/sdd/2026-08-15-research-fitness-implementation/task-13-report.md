@@ -123,3 +123,102 @@ added. The checked fixture is credential-free deterministic evidence, not a
 substitute for Task 14 real-program collection/publication. Fixture provenance
 is finalized in a second commit so its source IDs bind to the immutable first
 implementation commit without self-reference.
+
+## Task 13 review fix round 2
+
+### Scope and mapping
+
+| Review requirement | Final owner and evidence |
+| --- | --- |
+| Frozen prerequisites | `run_validation_study.py` owns one retained prerequisite codec for exact guarded argv, stdout, stderr, status, JUnit identities, and positive all-passed JUnit counts. The runner, fixture owner, and auditor all use it. |
+| Relocated environment | `audit_validation_study.py` binds the recorded commit/tree and `uv.lock` to the actual relocated Git checkout, then binds image refs, image IDs, and tool version to `docker/capture/image-lock.json`. |
+| Clean checkout | `test_validation_study_pipeline.py` uses a local `git clone --no-hardlinks --no-checkout`, checks out the cited source, blocks sockets and non-Git subprocesses, and proves imports and reads stay inside the clone. Unit audit setup uses detached Git worktrees so repeated verification does not duplicate repository objects. |
+| Training selection | Protocol records freeze `highest_best_fitness_then_lowest_repeat`; the auditor reconstructs the selected model from completed training before validating held-out bindings. |
+| Natural variation | The fixture owner and auditor independently calculate both comparison directions and the symmetric mean under a common normalized window and settings identity. |
+| First mismatch | The public publisher keeps the complete first canonical primary outcome while malformed, missing, foreign, and substituted candidate evidence leaves candidate, destination, and temporary inventories unchanged. |
+
+### RED and GREEN evidence
+
+The initial review-focused command recorded `4 failed, 1 passed`: the public
+prerequisite codec was absent, the auditor accepted source/image mismatch,
+the fixture did not freeze selection or bidirectional variation, and the clean
+clone accepted a source mismatch. The passing node was the simultaneous
+first-mismatch inventory characterization. Those failures produced the source
+commits listed below.
+
+```bash
+scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 3m --kill-after 10s -- \
+  uv run --locked pytest -q -n 0 \
+  tests/unit/test_validation_study.py::test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregates_production_junit \
+  tests/unit/test_validation_study.py::test_offline_auditor_binds_the_environment_to_the_relocated_git_and_image_locks \
+  tests/unit/test_validation_study.py::test_complete_fixture_freezes_training_model_selection_and_bidirectional_variation \
+  tests/integration/test_validation_study_pipeline.py::test_clean_checkout_auditor_rejects_a_candidate_bound_to_a_different_source_revision \
+  tests/unit/test_validation_study.py::test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_and_all_inventories
+```
+
+```text
+4 failed, 1 passed in 3.35s
+```
+
+The added rejection-coverage matrix initially produced one harness RED:
+
+```text
+1 failed, 20 passed, 269 deselected
+test_offline_auditor_reconstructs_all_training_model_selection_rejections[
+    mismatch-artifact_foreign]
+```
+
+The fixture's selected record already used repeat `3`, so the test mutation was
+a no-op. The test now changes it to a different repeat. This was not a product
+defect. The exact GREEN command was:
+
+```bash
+scripts/run_bounded.sh --memory-high 1G --memory-max 2G --swap-max 256M \
+  --wall-time 5m --kill-after 10s -- \
+  uv run --locked pytest -q -n 0 tests/unit/test_validation_study.py \
+  -k 'retained_prerequisite_codec_rejects_invalid_public_forms or retained_prerequisite_rejection_branches or environment_binding_after_the_first_identity_check or foreign_image_lock_binding or capture_lineage_that_disagrees or training_model_selection_rejections or natural_variation_without_common_controls or fixture_generator_rejects_natural_variation_with_mismatched_windows'
+```
+
+```text
+21 passed, 269 deselected in 20.83s
+```
+
+| Command | Result |
+| --- | --- |
+| `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 10m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py --junitxml=/tmp/task13-round2-postfixture-766986.xml` | `294` tests, `0` failures, `0` errors, `0` skips after final fixture regeneration. |
+| Same validation target with `--cov=scripts.run_validation_study --cov=scripts.audit_validation_study --cov=scripts.generate_validation_study_fixture --cov-branch --cov-fail-under=0 --cov-report=json:/tmp/task13-round2-finalcore-765076.json` | `294` tests, `0` failures/errors/skips; every listed core function below has no missing executable line or branch exit. |
+| `uv run --locked python scripts/generate_validation_study_fixture.py --check --source-commit 23125d4c03898910f3643ca4492851a381a9bf06 --source-tree 706ffb8bca2b19457f5b30a9972eed85463f78d5` | `checked-in paths and bytes match deterministic production output`; `155` retained regular files. |
+| Scoped `ruff format --check`, `ruff check`, and strict `pyright` across the five Task13 scripts/tests | `5 files already formatted`; `All checks passed!`; `0 errors, 0 warnings, 0 informations`. |
+| `uv run --locked ruff check . && uv run --locked pyright` | `All checks passed!`; `0 errors, 0 warnings, 0 informations`. |
+| `scripts/run_bounded.sh --memory-high 3G --memory-max 4G --swap-max 512M --wall-time 10m --kill-after 10s -- uv run --locked pytest -q -n 4 --dist worksteal -m 'not docker and not internet' --junitxml=/tmp/task13-round2-full-768355.xml` | `2952 passed in 28.61s`. |
+
+### Literal round-two core coverage
+
+`/tmp/task13-round2-finalcore-765076.json` reports 100% executable-line and
+branch coverage for every review-affected core function:
+
+- `scripts/run_validation_study.py`: `prerequisite_junit_counts:2432`, `prerequisite_command_argv:2945`, `validate_frozen_prerequisite_command:2957`, `render_retained_prerequisites:3139`, `parse_retained_prerequisites:3144`, `retained_prerequisite_paths:3152`, and `publish_audited_bundle:5600`.
+- `scripts/audit_validation_study.py`: `_environment:533`, `_prerequisites:719`, `_capture_lineage:885`, `_require_config_images:896`, `_training:909`, `_selected_training:1164`, `_held_out:1222`, `_report_inputs:1351`, `_audit:1468`, and `audit_bundle:1674`.
+- `scripts/generate_validation_study_fixture.py`: `_capture_lineage:119`, `_selected_training_records:149`, `_natural_variation:181`, `validate_source_identities:354`, and `generate_fixture_tree:365`.
+
+The combined scoped report is 94% branch-aware because unrelated CLI and
+defensive branches remain outside this review's defect set. The named core
+functions are each 100% lines and branches.
+
+### Provenance and files
+
+- Final source-tree commit: `23125d4c03898910f3643ca4492851a381a9bf06`.
+- Final source tree: `706ffb8bca2b19457f5b30a9972eed85463f78d5`.
+- Fixture regeneration commit: `56dfae7`.
+- Earlier round-two source commits retained in history: `828939b`, `32b2ab5`, and `8111039`.
+- Review-fix files: `scripts/run_validation_study.py`, `scripts/audit_validation_study.py`, `scripts/generate_validation_study_fixture.py`, `tests/unit/test_validation_study.py`, `tests/integration/test_validation_study_pipeline.py`, and `tests/fixtures/validation_study_candidate/`.
+
+### Self-review and concern
+
+No external action, Docker invocation, network access, workflow engine,
+database, or producer-private reconstruction helper was introduced. Existing
+public parsers and stage boundaries remain the owners of scientific validation.
+The repository-wide `ruff format --check .` remains non-green only for six
+pre-existing unrelated files under `docs/superpowers/plans/` and failure,
+preflight, and study test modules; they were deliberately left untouched.
