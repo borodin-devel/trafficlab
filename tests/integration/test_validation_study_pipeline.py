@@ -36,7 +36,9 @@ _AUDIT_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_candidate"
 
 
 def _copy_audit_fixture_to_clean_checkout(tmp_path: Path) -> tuple[Path, Path]:
-    source_environment = cast(dict[str, object], json.loads((_AUDIT_FIXTURE / "environment.json").read_text(encoding="utf-8")))
+    source_environment = cast(
+        dict[str, object], json.loads((_AUDIT_FIXTURE / "environment.json").read_text(encoding="utf-8"))
+    )
     repository = tmp_path / "relocated-repository"
     subprocess.run(
         ("git", "clone", "--no-hardlinks", "--no-checkout", str(_ROOT), str(repository)),

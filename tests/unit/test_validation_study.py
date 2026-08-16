@@ -4685,13 +4685,8 @@ def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False)
     source_commit = cast(str, source_environment["source_commit"])
     source_tree = cast(str, source_environment["source_tree"])
     subprocess.run(
-        ("git", "clone", "--no-hardlinks", "--no-checkout", str(_ROOT), str(repository)),
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ("git", "checkout", "--detach", source_commit),
-        cwd=repository,
+        ("git", "worktree", "add", "--detach", str(repository), source_commit),
+        cwd=_ROOT,
         check=True,
         capture_output=True,
     )
@@ -4706,6 +4701,30 @@ def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False)
     else:
         shutil.copytree(_ROOT / "tests" / "fixtures" / "validation_study_candidate", candidate)
     return repository, candidate
+
+
+def test_relocated_audit_candidate_uses_a_detached_git_worktree(tmp_path: Path) -> None:
+    """Repeated unit audits use a real checkout without duplicating repository objects."""
+    repository, _candidate = _copy_validation_study_candidate(tmp_path)
+    source_environment = cast(
+        dict[str, object],
+        json.loads(
+            (_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    assert (repository / ".git").is_file()
+    assert (
+        subprocess.run(
+            ("git", "rev-parse", "HEAD"),
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        == source_environment["source_commit"]
+    )
 
 
 def _candidate_bytes(root: Path) -> dict[str, bytes]:
@@ -5814,7 +5833,7 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
                 },
                 "exit_status": 0,
                 "junit": {
-                        "identity": identify_bytes(values["junit"]).as_dict(),
+                    "identity": identify_bytes(values["junit"]).as_dict(),
                     "path": f"prerequisites/{kind}.junit.xml",
                 },
                 "kind": kind,
@@ -5828,11 +5847,11 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
                     "path": f"prerequisites/{kind}.status.json",
                 },
                 "stderr": {
-                        "identity": identify_bytes(values["stderr"]).as_dict(),
+                    "identity": identify_bytes(values["stderr"]).as_dict(),
                     "path": f"prerequisites/{kind}.stderr",
                 },
                 "stdout": {
-                        "identity": identify_bytes(values["stdout"]).as_dict(),
+                    "identity": identify_bytes(values["stdout"]).as_dict(),
                     "path": f"prerequisites/{kind}.stdout",
                 },
                 "tests": tests,
@@ -5889,9 +5908,7 @@ def test_offline_auditor_binds_the_environment_to_the_relocated_git_and_image_lo
 def test_complete_fixture_freezes_training_model_selection_and_bidirectional_variation(tmp_path: Path) -> None:
     repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
     protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text(encoding="utf-8")))
-    report_inputs = cast(
-        dict[str, object], json.loads((candidate / "report_inputs.json").read_text(encoding="utf-8"))
-    )
+    report_inputs = cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text(encoding="utf-8")))
 
     selection = cast(dict[str, object], protocol["model_selection"])
     assert selection["rule"] == "highest_best_fitness_then_lowest_repeat"
@@ -5954,3 +5971,276 @@ def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_an
     assert _candidate_bytes(candidate) == candidate_before
     assert not destination.exists()
     assert not tuple(repository.rglob("*.tmp"))
+
+
+def test_retained_prerequisite_codec_rejects_invalid_public_forms() -> None:
+    """The public retained codec rejects unsupported roots, kinds, and noncanonical bytes."""
+    content = (_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "prerequisites.json").read_bytes()
+    noncanonical = content.replace(b"{", b"{ ", 1)
+    assert noncanonical != content
+
+    with pytest.raises(ValueError, match="root must be testsuite or testsuites"):
+        study.prerequisite_junit_counts(b"<unexpected/>")
+    with pytest.raises(ValueError, match="prerequisite kind"):
+        study.prerequisite_command_argv(
+            "unsupported", study_id="fixture-study", url="https://downloads.example.test/object.bin"
+        )
+    with pytest.raises(ValueError, match="prerequisite kind"):
+        study.validate_frozen_prerequisite_command(
+            "unsupported",
+            (),
+            0,
+            {},
+            study_id="fixture-study",
+            url="https://downloads.example.test/object.bin",
+        )
+    with pytest.raises(ValueError, match="canonical sorted compact"):
+        study.parse_retained_prerequisites(noncanonical)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind", "expected_path"),
+    (
+        ("document", "artifact_corrupt", "prerequisites.json"),
+        ("environment", "artifact_foreign", "prerequisites.json"),
+        ("output_identity", "artifact_foreign", "prerequisites/docker_matrix.stdout"),
+        ("command", "artifact_foreign", "prerequisites/docker_matrix.command.json"),
+        ("status", "artifact_foreign", "prerequisites/docker_matrix.status.json"),
+        ("utf8", "artifact_corrupt", "prerequisites/docker_matrix.stdout"),
+        ("junit_invalid", "artifact_corrupt", "prerequisites/docker_matrix.junit.xml"),
+        ("junit_counts", "artifact_foreign", "prerequisites/docker_matrix.junit.xml"),
+    ),
+)
+def test_offline_auditor_covers_retained_prerequisite_rejection_branches(
+    tmp_path: Path,
+    case: str,
+    expected_kind: str,
+    expected_path: str,
+) -> None:
+    """Retained prerequisite output evidence is independently checked through the public audit boundary."""
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    prerequisite_path = candidate / "prerequisites.json"
+    document = study.parse_retained_prerequisites(prerequisite_path.read_bytes())
+    command = next(
+        item for item in cast(list[dict[str, object]], document["commands"]) if item["kind"] == "docker_matrix"
+    )
+
+    def replace_output(field: str, content: bytes) -> None:
+        output = cast(dict[str, object], command[field])
+        path = candidate / cast(str, output["path"])
+        path.write_bytes(content)
+        output["identity"] = identify_bytes(content).as_dict()
+
+    render_document = True
+    if case == "document":
+        prerequisite_path.write_bytes(b"{}\n")
+        render_document = False
+    elif case == "environment":
+        cast(dict[str, object], document["environment"])["source_tree"] = "c" * 40
+    elif case == "output_identity":
+        output = cast(dict[str, object], command["stdout"])
+        (candidate / cast(str, output["path"])).write_bytes(b"changed stdout\n")
+        render_document = False
+    elif case == "command":
+        replace_output("command", b'{"argv":[]}\n')
+    elif case == "status":
+        replace_output(
+            "status",
+            b'{"exit_status":0,"tests":{"errors":0,"failed":0,"passed":999,"skipped":0,"total":999}}\n',
+        )
+    elif case == "utf8":
+        replace_output("stdout", b"\xff")
+    elif case == "junit_invalid":
+        replace_output("junit", b"<unexpected/>")
+    else:
+        replace_output("junit", b'<testsuite tests="2" failures="0" errors="0" skipped="0"/>')
+    if render_document:
+        prerequisite_path.write_bytes(study.render_retained_prerequisites(document))
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == (expected_kind, "publication", expected_path, "not_published", "primary")
+
+
+@pytest.mark.parametrize("case", ("recorded_lock", "image_lock"))
+def test_offline_auditor_rejects_environment_binding_after_the_first_identity_check(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    """The auditor separately binds current lock bytes and image-lock identities."""
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    environment_path = candidate / "environment.json"
+    environment = cast(dict[str, object], json.loads(environment_path.read_text(encoding="utf-8")))
+    if case == "recorded_lock":
+        changed_lock = b"different committed lock\n"
+        (repository / "uv.lock").write_bytes(changed_lock)
+        environment["uv_lock_identity"] = identify_bytes(changed_lock).as_dict()
+    else:
+        environment["capture_image_id"] = f"sha256:{'e' * 64}"
+    _write_canonical_json(environment_path, environment)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", "environment", "not_published", "primary")
+
+
+def test_offline_auditor_rejects_training_configuration_with_foreign_image_lock_binding(tmp_path: Path) -> None:
+    """Every retained training configuration is bound to the prerequisite image references."""
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    target_reference = study.TARGET_REFERENCE.encode("ascii")
+    foreign_reference = b"curlimages/curl@sha256:" + b"1" * 64
+    for name in ("configs/training-short-r1.portable.toml", "configs/training-short-r1.realized.toml"):
+        path = candidate / name
+        content = path.read_bytes()
+        assert target_reference in content
+        path.write_bytes(content.replace(target_reference, foreign_reference))
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", "training/short/r1", "not_published", "primary")
+
+
+@pytest.mark.parametrize(
+    ("section", "expected_directory"),
+    (("training", "training/short/r1"), ("held_out", "held_out/short")),
+)
+def test_offline_auditor_rejects_capture_lineage_that_disagrees_with_retained_bytes(
+    tmp_path: Path,
+    section: str,
+    expected_directory: str,
+) -> None:
+    """Training and held-out capture provenance cannot be substituted after capture validation."""
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    index = _candidate_index(candidate)
+    record = cast(list[dict[str, object]], index[section])[0]
+    cast(dict[str, object], record["capture_lineage"])["capture_tool_version"] = "tampered"
+    _write_candidate_index(candidate, index)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", expected_directory, "not_published", "primary")
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind"),
+    (
+        ("rule", "scientific_semantics_incompatible"),
+        ("count", "artifact_corrupt"),
+        ("duplicate", "artifact_foreign"),
+        ("mismatch", "artifact_foreign"),
+        ("order", "artifact_foreign"),
+    ),
+)
+def test_offline_auditor_reconstructs_all_training_model_selection_rejections(
+    tmp_path: Path,
+    case: str,
+    expected_kind: str,
+) -> None:
+    """The protocol's retained training-only selection is recomputed before held-out evaluation."""
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    protocol_path = candidate / "protocol.json"
+    protocol = cast(dict[str, object], json.loads(protocol_path.read_text(encoding="utf-8")))
+    selection = cast(dict[str, object], protocol["model_selection"])
+    selected = cast(list[dict[str, object]], selection["selected"])
+    if case == "rule":
+        selection["rule"] = "first_training_record"
+    elif case == "count":
+        selection["selected"] = []
+    elif case == "duplicate":
+        selected[1] = copy.deepcopy(selected[0])
+    elif case == "mismatch":
+        selected_repeat = cast(int, selected[0]["repeat"])
+        selected[0]["repeat"] = 1 if selected_repeat != 1 else 2
+    else:
+        selection["selected"] = list(reversed(selected))
+    _write_canonical_json(protocol_path, protocol)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == (expected_kind, "publication", "protocol", "not_published", "primary")
+
+
+def test_offline_auditor_rejects_natural_variation_without_common_controls(tmp_path: Path) -> None:
+    """Independent report arithmetic rejects a mismatch before any held-out score can be reused."""
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    index = _candidate_index(candidate)
+    environment = auditor._environment(  # pyright: ignore[reportPrivateUsage]
+        (candidate / "environment.json").read_bytes(), repository=repository
+    )
+    protocol = auditor._protocol((candidate / "protocol.json").read_bytes())  # pyright: ignore[reportPrivateUsage]
+    training = tuple(
+        auditor._training(  # pyright: ignore[reportPrivateUsage]
+            candidate,
+            value,
+            protocol=protocol,
+            environment=environment,
+        )
+        for value in cast(list[object], index["training"])
+    )
+    mismatched = (replace(training[0], window=training[0].window + 1.0), *training[1:])
+
+    with pytest.raises(auditor._Issue, match="natural variation requires a common normalized window"):  # pyright: ignore[reportPrivateUsage]
+        auditor._report_inputs(mismatched, {})  # pyright: ignore[reportPrivateUsage]
+
+
+def test_fixture_generator_rejects_natural_variation_with_mismatched_windows() -> None:
+    """The deterministic fixture owner has the same common-window guard as the auditor."""
+    config = load_configuration_pair(_FIT_FIXTURE / "experiment.toml").realized
+    with pytest.raises(ValueError, match="common normalized observation window"):
+        fixture_generator._natural_variation(  # pyright: ignore[reportPrivateUsage]
+            (
+                (cast(ComparisonResult, object()), (), 1.0),
+                (cast(ComparisonResult, object()), (), 2.0),
+            ),
+            config,
+        )

@@ -159,9 +159,7 @@ def _selected_training_records(
         winner = min(
             candidates,
             key=lambda item: (
-                -_checkpoint_fitness(
-                    training_files[(workload, cast(int, item["repeat"]))], config, metadata
-                ),
+                -_checkpoint_fitness(training_files[(workload, cast(int, item["repeat"]))], config, metadata),
                 cast(int, item["repeat"]),
             ),
         )
@@ -408,9 +406,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
         selections = _selected_training_records(training, training_files, config=config, metadata=metadata)
         selected_training = {
             cast(str, item["workload"]): next(
-                record
-                for record in training
-                if record["directory"] == item["training_directory"]
+                record for record in training if record["directory"] == item["training_directory"]
             )
             for item in selections
         }
@@ -481,9 +477,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 "stdout": f"{kind} fixture stdout\n".encode(),
             }
             for field, content in outputs.items():
-                suffix = {"command": "command.json", "junit": "junit.xml", "status": "status.json"}.get(
-                    field, field
-                )
+                suffix = {"command": "command.json", "junit": "junit.xml", "status": "status.json"}.get(field, field)
                 path = root / "prerequisites" / f"{kind}.{suffix}"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)

@@ -505,9 +505,7 @@ def _identity(content: bytes) -> dict[str, object]:
 
 def _git_bytes(repository: Path, argv: tuple[str, ...], *, name: str) -> bytes:
     try:
-        completed = subprocess.run(
-            ("git", *argv), cwd=repository, check=False, capture_output=True
-        )
+        completed = subprocess.run(("git", *argv), cwd=repository, check=False, capture_output=True)
     except OSError as error:
         _fail("artifact_corrupt", "environment", f"could not inspect {name}: {error}", "repair the relocated checkout")
     if completed.returncode != 0:
@@ -569,19 +567,14 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
         )
     for field, width in (("source_commit", 40), ("source_tree", 40)):
         value = _string(document[field], name=f"environment {field}")
-        if (
-            (width == 40 and _HEX40.fullmatch(value) is None)
-            or set(value) == {"0"}
-        ):
+        if (width == 40 and _HEX40.fullmatch(value) is None) or set(value) == {"0"}:
             _fail(
                 "artifact_corrupt",
                 "environment",
                 f"environment {field} must be a nonzero lowercase identity",
                 "restore frozen source identity",
             )
-    if document["uv_lock_identity"] != _identity(
-        _read_regular(repository / "uv.lock", affected="uv.lock")
-    ):
+    if document["uv_lock_identity"] != _identity(_read_regular(repository / "uv.lock", affected="uv.lock")):
         _fail(
             "artifact_foreign",
             "environment",
@@ -606,7 +599,9 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
                 f"environment {field} must be an immutable image ID",
                 "restore image identity evidence",
             )
-    decision = _exact(document["compatibility_decision"], ("reason", "status"), name="environment compatibility decision")
+    decision = _exact(
+        document["compatibility_decision"], ("reason", "status"), name="environment compatibility decision"
+    )
     for field in (
         "capture_tool_version",
         "docker_compose_version",
@@ -635,7 +630,9 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
         )
     image_lock = _exact(
         _json(
-            _read_regular(repository / "docker" / "capture" / "image-lock.json", affected="docker/capture/image-lock.json"),
+            _read_regular(
+                repository / "docker" / "capture" / "image-lock.json", affected="docker/capture/image-lock.json"
+            ),
             name="docker/capture/image-lock.json",
         ),
         (
@@ -788,7 +785,7 @@ def _prerequisites(
                         f"prerequisite output is not UTF-8: {error}",
                         "restore retained prerequisite output",
                     )
-            elif field == "junit":
+            else:
                 try:
                     counts = prerequisite_junit_counts(content)
                 except ValueError as error:
@@ -1228,7 +1225,9 @@ def _held_out(
     training_references: set[str],
     environment: Mapping[str, object],
 ) -> tuple[str, set[str]]:
-    document = _exact(value, ("capture_lineage", "directory", "training_directory", "workload"), name="held-out index record")
+    document = _exact(
+        value, ("capture_lineage", "directory", "training_directory", "workload"), name="held-out index record"
+    )
     workload = _workload(document["workload"], name="held-out workload")
     directory_relative = _relative(document["directory"], name="held-out directory")
     expected_directory = f"held_out/{workload}"
@@ -1361,11 +1360,9 @@ def _report_inputs(training: Sequence[_Training], held: Mapping[str, HeldOutEval
         )
         pairs: list[dict[str, object]] = []
         for left, right in combinations(group, 2):
-            if (
-                left.window != right.window
-                or similarity_settings_identity(left.config.similarity)
-                != similarity_settings_identity(right.config.similarity)
-            ):
+            if left.window != right.window or similarity_settings_identity(
+                left.config.similarity
+            ) != similarity_settings_identity(right.config.similarity):
                 _fail(
                     "scientific_semantics_incompatible",
                     "report_inputs.json",
@@ -1386,9 +1383,7 @@ def _report_inputs(training: Sequence[_Training], held: Mapping[str, HeldOutEval
         variation_rows.append(
             {
                 "pairs": pairs,
-                "symmetric_mean": _mean(
-                    [cast(dict[str, object], pair["symmetric_mean"]) for pair in pairs]
-                ),
+                "symmetric_mean": _mean([cast(dict[str, object], pair["symmetric_mean"]) for pair in pairs]),
                 "workload": workload,
             }
         )
@@ -1513,7 +1508,9 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
             "index root evidence paths are not canonical",
             "restore canonical evidence index",
         )
-    environment = _environment(_read_regular(bundle / environment_path, affected=environment_path), repository=repository)
+    environment = _environment(
+        _read_regular(bundle / environment_path, affected=environment_path), repository=repository
+    )
     protocol = _protocol(_read_regular(bundle / protocol_path, affected=protocol_path))
     _, prerequisite_paths = _prerequisites(bundle, prerequisites_path, environment=environment)
     _headers_and_observations(bundle)
