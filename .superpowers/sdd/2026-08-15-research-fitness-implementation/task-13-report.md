@@ -66,11 +66,11 @@ SHA-256 for every retained file except itself.
 | --- | --- |
 | `uv run --locked pytest -q tests/unit/test_validation_study.py -k 'study_held_out_evaluator_requires_an_independent_reference_and_uses_the_fixed_training_model'` | `1 passed, 257 deselected`; valid, same-reference, wrong-type, wrong-seed, and wrong-window evaluator paths. |
 | `uv run --locked pytest -q tests/unit/test_validation_study.py -k 'offline_bundle_audit_covers_complete_index_schema_boundaries'` | `12 passed, 251 deselected`. |
-| Bounded Task13 unit/in-process target | Final exact result appended after fixture provenance regeneration. |
+| `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 4m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_validation_study.py tests/integration/test_validation_study_pipeline.py` | `266 passed in 22.52s` after fixture provenance regeneration. |
 | Same target with `--cov=scripts.audit_validation_study --cov=scripts.generate_validation_study_fixture --cov=scripts.run_validation_study --cov-branch --cov-fail-under=0 --cov-report=json:.coverage-task13-core-final-02.json` | No missing executable lines or branch exits in every core function listed below. |
 | `uv run --locked python scripts/generate_validation_study_fixture.py --check` | Checked-in candidate bytes equal deterministic owner output. |
 | `uv run --locked ruff check . && uv run --locked pyright` | `All checks passed!`; `0 errors, 0 warnings, 0 informations`. |
-| Bounded `pytest -q -n 4 --dist worksteal -m 'not docker and not internet'` | Final exact result appended after fixture provenance regeneration. |
+| `scripts/run_bounded.sh --memory-high 3G --memory-max 4G --swap-max 512M --wall-time 10m --kill-after 10s -- uv run --locked pytest -q -n 4 --dist worksteal -m 'not docker and not internet'` | `2924 passed in 15.84s`. |
 
 ## Literal core-function branch coverage
 
@@ -88,6 +88,18 @@ The current branch-aware JSON has no missing executable lines or branch exits:
   `publish_audited_bundle:5412-5427`.
 
 Module aggregates remain lower only on unrelated CLI/defensive error paths.
+
+## Fixture provenance
+
+The second commit regenerates the retained tree through
+`scripts/generate_validation_study_fixture.py` with the immutable source
+identity from the first implementation commit:
+
+- Source commit: `a1a9466cc1afb915d69dde53ec8f870c1d452107`
+- Source tree: `9b80a999711f74ac8113e7a6ac94868aea117f31`
+
+The generator reported `wrote 155 deterministic retained files`, and its
+subsequent `--check` reported byte-for-byte agreement.
 
 ## Files
 
