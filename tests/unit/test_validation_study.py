@@ -4597,6 +4597,7 @@ def test_collect_cli_uses_only_frozen_prerequisite_inputs_and_the_candidate_owne
             "repository_root": repository_root,
             "study_id": "study-1",
             "url": "https://downloads.example.test/object.bin",
+            "attempt": repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1",
             "environment": inputs[0],
             "retained_prerequisites": inputs[1],
             "prerequisite_files": inputs[2],
@@ -5256,6 +5257,109 @@ def test_offline_audit_reconstructs_held_out_without_calling_the_producer_bounda
 
     monkeypatch.setattr(auditor, "evaluate_study_held_out", producer_boundary_must_not_run, raising=False)
     assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        ("recorded_tree", "does not resolve"),
+        ("non_ancestor", "is not an ancestor"),
+        ("ancestry_oserror", "could not inspect source ancestry"),
+        ("non_utf8_path", "post-source path is not UTF-8"),
+        ("non_evidence_path", "non-evidence changes"),
+        ("changed_image_lock", "capture image-lock bytes"),
+    ),
+)
+def test_offline_auditor_covers_environment_source_binding_failure_branches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected: str,
+) -> None:
+    """Supplemental coverage exercises every local Git/source binding rejection."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    content = (candidate / "environment.json").read_bytes()
+    if case == "recorded_tree":
+        original_identity = auditor._git_identity  # pyright: ignore[reportPrivateUsage]
+
+        def mismatched_recorded_tree(repository: Path, argv: tuple[str, ...], *, name: str) -> str:
+            if name == "recorded source tree":
+                return "0" * 39 + "1"
+            return original_identity(repository, argv, name=name)
+
+        monkeypatch.setattr(auditor, "_git_identity", mismatched_recorded_tree)
+    elif case in {"non_ancestor", "ancestry_oserror"}:
+        original_run = auditor.subprocess.run
+
+        def source_binding_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+            command = tuple(cast(Sequence[str], args[0]))
+            if command[:3] == ("git", "merge-base", "--is-ancestor"):
+                if case == "ancestry_oserror":
+                    raise OSError("synthetic Git failure")
+                return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"")
+            return cast(Any, original_run)(*args, **kwargs)
+
+        monkeypatch.setattr(auditor.subprocess, "run", source_binding_run)
+    else:
+        original_git_bytes = auditor._git_bytes  # pyright: ignore[reportPrivateUsage]
+
+        def source_binding_bytes(repository: Path, argv: tuple[str, ...], *, name: str) -> bytes:
+            if case == "non_utf8_path" and name == "post-source changed paths":
+                return b"\xff\0"
+            if case == "non_evidence_path" and name == "post-source changed paths":
+                return b"src/trafficlab/__init__.py\0"
+            if case == "changed_image_lock" and name == "recorded capture image lock":
+                return b"different checked image lock\n"
+            return original_git_bytes(repository, argv, name=name)
+
+        monkeypatch.setattr(auditor, "_git_bytes", source_binding_bytes)
+
+    with pytest.raises(auditor._Issue, match=expected):  # pyright: ignore[reportPrivateUsage]
+        auditor._environment(content, repository=repository)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("mismatch", ("protocol", "prerequisites"))
+def test_offline_auditor_covers_root_study_identity_rejections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mismatch: str,
+) -> None:
+    """The public bundle checker rejects conflicting candidate, protocol, and prerequisite IDs first."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    entries = auditor._verify_inventory(  # pyright: ignore[reportPrivateUsage]
+        candidate,
+        (candidate / "manifest.json").read_bytes(),
+    )
+
+    def empty_environment(_content: bytes, *, repository: Path) -> dict[str, object]:
+        return {}
+
+    def mismatched_prerequisites(*_args: object, **_kwargs: object) -> tuple[dict[str, object], set[str]]:
+        return {"study_id": "fixture-study"}, set()
+
+    def wrong_protocol(_content: bytes) -> dict[str, object]:
+        return {"study_id": "other-study"}
+
+    def matching_protocol(_content: bytes) -> dict[str, object]:
+        return {"study_id": "fixture-study"}
+
+    def wrong_prerequisites(*_args: object, **_kwargs: object) -> tuple[dict[str, object], set[str]]:
+        return {"study_id": "other-study"}, set()
+
+    monkeypatch.setattr(auditor, "_environment", empty_environment)
+    if mismatch == "protocol":
+        monkeypatch.setattr(auditor, "_protocol", wrong_protocol)
+        monkeypatch.setattr(auditor, "_prerequisites", mismatched_prerequisites)
+        expected = "protocol destination ID"
+    else:
+        monkeypatch.setattr(auditor, "_protocol", matching_protocol)
+        monkeypatch.setattr(auditor, "_prerequisites", wrong_prerequisites)
+        expected = "retained prerequisites must bind"
+
+    with pytest.raises(auditor._Issue, match=expected):  # pyright: ignore[reportPrivateUsage]
+        auditor._audit(candidate, repository, entries)  # pyright: ignore[reportPrivateUsage]
 
 
 def _tree_inventory(root: Path) -> dict[str, tuple[object, ...]]:

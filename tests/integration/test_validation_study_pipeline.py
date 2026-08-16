@@ -401,7 +401,11 @@ original_run = subprocess.run
 allowed_git = {
     ("git", "rev-parse", "HEAD"),
     ("git", "rev-parse", "HEAD^{tree}"),
+    ("git", "rev-parse", f"{source_commit}^{{tree}}"),
+    ("git", "merge-base", "--is-ancestor", source_commit, source_commit),
+    ("git", "diff", "--name-only", "-z", "--no-renames", f"{source_commit}..{source_commit}"),
     ("git", "show", f"{source_commit}:uv.lock"),
+    ("git", "show", f"{source_commit}:docker/capture/image-lock.json"),
 }
 def local_git_only(argv, *args, **kwargs):
     if tuple(argv) in allowed_git:
