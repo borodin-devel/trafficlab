@@ -2429,30 +2429,30 @@ def _project_command_argv(
     return projected
 
 
-def _parse_junit_counts(content: bytes) -> JsonObject:
+def prerequisite_junit_counts(content: bytes) -> JsonObject:
+    """Parse one retained pytest JUnit document into its strict all-passed counts."""
     try:
         root = ET.fromstring(content)
     except ET.ParseError as error:
         raise ValueError(f"JUnit evidence must be valid XML: {error}") from error
     if root.tag == "testsuite":
-        suite = root
+        suites = (root,)
     elif root.tag == "testsuites":
         suites = tuple(child for child in root if child.tag == "testsuite")
-        _require(len(suites) == 1, "JUnit evidence must contain exactly one pytest test suite")
-        suite = suites[0]
+        _require(bool(suites), "JUnit evidence must contain at least one pytest test suite")
     else:
         raise ValueError("JUnit evidence root must be testsuite or testsuites")
 
-    def count(name: str) -> int:
+    def count(suite: ET.Element[str], name: str) -> int:
         raw = suite.get(name)
         if raw is None or re.fullmatch(r"[0-9]+", raw) is None:
             raise ValueError(f"JUnit {name} must be an integer")
         return int(raw)
 
-    total = count("tests")
-    failed = count("failures")
-    errors = count("errors")
-    skipped = count("skipped")
+    total = sum(count(suite, "tests") for suite in suites)
+    failed = sum(count(suite, "failures") for suite in suites)
+    errors = sum(count(suite, "errors") for suite in suites)
+    skipped = sum(count(suite, "skipped") for suite in suites)
     counts: JsonObject = {
         "total": total,
         "passed": total - failed - errors - skipped,
@@ -2461,6 +2461,11 @@ def _parse_junit_counts(content: bytes) -> JsonObject:
         "skipped": skipped,
     }
     return _validate_test_counts(counts)
+
+
+def _parse_junit_counts(content: bytes) -> JsonObject:
+    """Backward-compatible private spelling used by the live prerequisite runner."""
+    return prerequisite_junit_counts(content)
 
 
 def _timestamp_now(utc_now: Callable[[], datetime]) -> str:
@@ -2937,6 +2942,42 @@ def _expected_prerequisite_command(kind: PrerequisiteCommandKind, *, study_id: s
     )
 
 
+def prerequisite_command_argv(kind: str, *, study_id: str, url: str) -> tuple[str, ...]:
+    """Return the one frozen, repository-relative prerequisite command for a retained study."""
+    if kind not in ("docker_matrix", "internet_smoke"):
+        raise ValueError("prerequisite kind must be docker_matrix or internet_smoke")
+    checked_kind = kind
+    return _expected_prerequisite_command(
+        checked_kind,
+        study_id=validate_study_id(study_id),
+        url=validate_endpoint_url(url),
+    )
+
+
+def validate_frozen_prerequisite_command(
+    kind: str,
+    argv: Sequence[str],
+    exit_status: object,
+    tests: object,
+    *,
+    study_id: str,
+    url: str,
+) -> tuple[str, ...]:
+    """Validate the command/count core shared by live and retained prerequisite evidence."""
+    if kind not in ("docker_matrix", "internet_smoke"):
+        raise ValueError("prerequisite kind must be docker_matrix or internet_smoke")
+    checked_kind = kind
+    checked_argv = tuple(_strict_string(item, name=f"{kind} argv item") for item in argv)
+    _require(bool(checked_argv), f"{kind} argv must be nonempty")
+    _require(
+        checked_argv == prerequisite_command_argv(checked_kind, study_id=study_id, url=url),
+        f"{kind} argv must equal the exact guarded study command",
+    )
+    _require(_strict_int(exit_status, name=f"{kind} exit status") == 0, f"{kind} exit status must be zero")
+    _validate_test_counts(tests)
+    return checked_argv
+
+
 def _validate_command(value: object, *, expected_kind: PrerequisiteCommandKind, study_id: str, url: str) -> JsonObject:
     keys = (
         "kind",
@@ -2956,20 +2997,157 @@ def _validate_command(value: object, *, expected_kind: PrerequisiteCommandKind, 
         f"prerequisite commands must be ordered docker_matrix then internet_smoke; got {kind}",
     )
     argv = _string_array(document["argv"], name=f"{kind} argv", nonempty=True)
-    _require(
-        argv == _expected_prerequisite_command(expected_kind, study_id=study_id, url=url),
-        f"{kind} argv must equal the exact guarded study command",
-    )
     started = _utc_timestamp(document["started_utc"], name=f"{kind} start")
     completed = _utc_timestamp(document["completed_utc"], name=f"{kind} completion")
     _require_timestamp_order(started, completed, name=kind)
-    exit_status = _strict_int(document["exit_status"], name=f"{kind} exit status")
-    _require(exit_status == 0, f"{kind} exit status must be zero")
-    _validate_test_counts(document["tests"])
+    validate_frozen_prerequisite_command(
+        kind,
+        argv,
+        document["exit_status"],
+        document["tests"],
+        study_id=study_id,
+        url=url,
+    )
     _sha256(document["stdout_sha256"], name=f"{kind} stdout SHA-256")
     _sha256(document["stderr_sha256"], name=f"{kind} stderr SHA-256")
     _sha256(document["junit_sha256"], name=f"{kind} JUnit SHA-256")
     return cast(JsonObject, document)
+
+
+_RETAINED_PREREQUISITE_ENVIRONMENT_KEYS = (
+    "capture_image_id",
+    "capture_image_reference",
+    "capture_tool_version",
+    "source_commit",
+    "source_tree",
+    "target_image_id",
+    "target_image_reference",
+    "uv_lock_identity",
+)
+
+
+def _retained_identity(value: object, *, name: str) -> JsonObject:
+    try:
+        identity = ContentIdentity.from_dict(value, name=name)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a content identity: {error}") from error
+    return cast(JsonObject, identity.as_dict())
+
+
+def _retained_output(value: object, *, name: str, expected_path: str) -> JsonObject:
+    document = _exact_object(value, ("identity", "path"), name=name)
+    path = _strict_string(document["path"], name=f"{name} path")
+    _require(path == expected_path, f"{name} path must be exactly {expected_path}")
+    return {"identity": _retained_identity(document["identity"], name=name), "path": path}
+
+
+def _retained_prerequisite_environment(value: object) -> JsonObject:
+    document = _exact_object(value, _RETAINED_PREREQUISITE_ENVIRONMENT_KEYS, name="retained prerequisite environment")
+    source_commit = _git_commit(document["source_commit"])
+    source_tree = _git_commit(document["source_tree"])
+    target_reference = _strict_string(document["target_image_reference"], name="retained target image reference")
+    _require(
+        target_reference == TARGET_REFERENCE,
+        "retained target image reference must equal the approved digest-pinned target",
+    )
+    capture_reference = _strict_string(document["capture_image_reference"], name="retained capture image reference")
+    _require(
+        "@sha256:" in capture_reference
+        and re.fullmatch(r"[0-9a-f]{64}", capture_reference.rsplit("@sha256:", 1)[-1]) is not None,
+        "retained capture image reference must be an immutable digest reference",
+    )
+    return {
+        "capture_image_id": _image_id(document["capture_image_id"], name="retained capture image ID"),
+        "capture_image_reference": capture_reference,
+        "capture_tool_version": _strict_string(document["capture_tool_version"], name="retained capture tool version"),
+        "source_commit": source_commit,
+        "source_tree": source_tree,
+        "target_image_id": _image_id(document["target_image_id"], name="retained target image ID"),
+        "target_image_reference": target_reference,
+        "uv_lock_identity": _retained_identity(document["uv_lock_identity"], name="retained uv.lock"),
+    }
+
+
+def _retained_prerequisite_document(value: object) -> dict[str, object]:
+    root = _exact_object(
+        value,
+        ("commands", "environment", "schema_version", "study_id", "url"),
+        name="retained prerequisite evidence",
+    )
+    _require(
+        _strict_int(root["schema_version"], name="retained prerequisite schema version") == 3,
+        "retained prerequisite schema version must be exactly 3",
+    )
+    study_id = validate_study_id(_strict_string(root["study_id"], name="retained prerequisite study ID"))
+    url = validate_endpoint_url(_strict_string(root["url"], name="retained prerequisite URL"))
+    values = _strict_list(root["commands"], name="retained prerequisite commands")
+    _require(len(values) == 2, "retained prerequisite commands must contain docker_matrix then internet_smoke")
+    commands: list[JsonObject] = []
+    for value, expected_kind in zip(values, ("docker_matrix", "internet_smoke"), strict=True):
+        document = _exact_object(
+            value,
+            ("argv", "exit_status", "junit", "kind", "stderr", "stdout", "tests"),
+            name=f"retained {expected_kind} command",
+        )
+        kind = _strict_string(document["kind"], name="retained prerequisite command kind")
+        _require(kind == expected_kind, "retained prerequisite commands must use the fixed kind order")
+        argv = _string_array(document["argv"], name=f"retained {kind} argv", nonempty=True)
+        validate_frozen_prerequisite_command(
+            kind,
+            argv,
+            document["exit_status"],
+            document["tests"],
+            study_id=study_id,
+            url=url,
+        )
+        commands.append(
+            {
+                "argv": list(argv),
+                "exit_status": 0,
+                "junit": _retained_output(
+                    document["junit"], name=f"retained {kind} JUnit", expected_path=f"prerequisites/{kind}.junit.xml"
+                ),
+                "kind": kind,
+                "stderr": _retained_output(
+                    document["stderr"], name=f"retained {kind} stderr", expected_path=f"prerequisites/{kind}.stderr"
+                ),
+                "stdout": _retained_output(
+                    document["stdout"], name=f"retained {kind} stdout", expected_path=f"prerequisites/{kind}.stdout"
+                ),
+                "tests": _validate_test_counts(document["tests"]),
+            }
+        )
+    return {
+        "commands": commands,
+        "environment": _retained_prerequisite_environment(root["environment"]),
+        "schema_version": 3,
+        "study_id": study_id,
+        "url": url,
+    }
+
+
+def render_retained_prerequisites(value: object) -> bytes:
+    """Render one canonical, complete retained prerequisite evidence document."""
+    return _canonical_json(cast(JsonObject, _retained_prerequisite_document(value)))
+
+
+def parse_retained_prerequisites(content: bytes) -> dict[str, object]:
+    """Strictly parse a canonical retained prerequisite document without executing it."""
+    document = _retained_prerequisite_document(_load_json(content))
+    if _canonical_json(cast(JsonObject, document)) != content:
+        raise ValueError("retained prerequisite JSON must use canonical sorted compact encoding with one trailing newline")
+    return document
+
+
+def retained_prerequisite_paths(value: object) -> tuple[str, ...]:
+    """Return the three retained output paths for each validated prerequisite command."""
+    document = _retained_prerequisite_document(value)
+    paths = [
+        cast(str, cast(JsonObject, command[field])["path"])
+        for command in cast(list[JsonObject], document["commands"])
+        for field in ("stdout", "stderr", "junit")
+    ]
+    return tuple(paths)
 
 
 def _expected_capability_argv(study_id: str, url: str) -> tuple[str, ...]:

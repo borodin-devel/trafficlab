@@ -28,7 +28,7 @@ from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import ComparisonResult, compare_experiment, compare_traces, parse_comparison_result
-from trafficlab.compatibility import ContentIdentity
+from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import GenerationLimits, SimilarityConfig
 from trafficlab.config_io import load_configuration_pair
 from trafficlab.errors import FailureOutcome, TrafficlabError
@@ -4672,12 +4672,39 @@ def test_local_audit_revalidates_report_checkpoint_artifacts_and_lineage_without
     checkpoint_path.write_bytes(checkpoint_content)
 
 
-def _copy_validation_study_candidate(tmp_path: Path) -> tuple[Path, Path]:
+def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False) -> tuple[Path, Path]:
     repository = tmp_path / "relocated-repository"
-    repository.mkdir()
-    shutil.copy2(_ROOT / "uv.lock", repository / "uv.lock")
+    source_environment = cast(
+        dict[str, object],
+        json.loads(
+            (_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    source_commit = cast(str, source_environment["source_commit"])
+    source_tree = cast(str, source_environment["source_tree"])
+    subprocess.run(
+        ("git", "clone", "--no-hardlinks", "--no-checkout", str(_ROOT), str(repository)),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ("git", "checkout", "--detach", source_commit),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
     candidate = repository / "candidate"
-    shutil.copytree(_ROOT / "tests" / "fixtures" / "validation_study_candidate", candidate)
+    if generated:
+        for relative, content in fixture_generator.generate_fixture_tree(
+            source_commit=source_commit, source_tree=source_tree
+        ).items():
+            path = candidate / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+    else:
+        shutil.copytree(_ROOT / "tests" / "fixtures" / "validation_study_candidate", candidate)
     return repository, candidate
 
 
@@ -5742,3 +5769,160 @@ def test_study_held_out_evaluator_requires_an_independent_reference_and_uses_the
             reference_content=encode_pcapng(different_window, metadata),
             reference_source=Path("held_out/different-window.pcapng"),
         )
+
+
+def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregates_production_junit() -> None:
+    """Runner, generator, and auditor share one exact retained prerequisite contract."""
+    url = "https://downloads.example.test/object.bin"
+    study_id = "fixture-study"
+    outputs = {
+        "docker_matrix": {
+            "stdout": b"docker passed\n",
+            "stderr": b"",
+            "junit": b'<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0"/><testsuite tests="2" failures="0" errors="0" skipped="0"/></testsuites>',
+        },
+        "internet_smoke": {
+            "stdout": b"internet passed\n",
+            "stderr": b"",
+            "junit": b'<testsuite tests="1" failures="0" errors="0" skipped="0"/>',
+        },
+    }
+    commands: list[dict[str, object]] = []
+    for kind in ("docker_matrix", "internet_smoke"):
+        values = outputs[kind]
+        commands.append(
+            {
+                "argv": list(study.prerequisite_command_argv(kind, study_id=study_id, url=url)),
+                "exit_status": 0,
+                "junit": {
+                        "identity": identify_bytes(values["junit"]).as_dict(),
+                    "path": f"prerequisites/{kind}.junit.xml",
+                },
+                "kind": kind,
+                "stderr": {
+                        "identity": identify_bytes(values["stderr"]).as_dict(),
+                    "path": f"prerequisites/{kind}.stderr",
+                },
+                "stdout": {
+                        "identity": identify_bytes(values["stdout"]).as_dict(),
+                    "path": f"prerequisites/{kind}.stdout",
+                },
+                    "tests": study.prerequisite_junit_counts(values["junit"]),
+            }
+        )
+    document = {
+        "commands": commands,
+        "environment": {
+            "capture_image_id": f"sha256:{'d' * 64}",
+            "capture_image_reference": f"trafficlab-capture@sha256:{'c' * 64}",
+            "capture_tool_version": "4.0.17",
+            "source_commit": "a" * 40,
+            "source_tree": "b" * 40,
+            "target_image_id": f"sha256:{study.TARGET_REFERENCE.rsplit(':', 1)[-1]}",
+            "target_image_reference": study.TARGET_REFERENCE,
+            "uv_lock_identity": identify_bytes(b"locked\n").as_dict(),
+        },
+        "schema_version": 3,
+        "study_id": study_id,
+        "url": url,
+    }
+
+    rendered = study.render_retained_prerequisites(document)
+    parsed = study.parse_retained_prerequisites(rendered)
+
+    assert study.render_retained_prerequisites(parsed) == rendered
+    commands = cast(list[dict[str, object]], parsed["commands"])
+    assert commands[0]["tests"] == {"errors": 0, "failed": 0, "passed": 3, "skipped": 0, "total": 3}
+
+
+def test_offline_auditor_binds_the_environment_to_the_relocated_git_and_image_locks(tmp_path: Path) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    environment_path = candidate / "environment.json"
+    environment = cast(dict[str, object], json.loads(environment_path.read_text(encoding="utf-8")))
+    environment["source_commit"] = "b" * 40
+    environment["capture_image_id"] = f"sha256:{'e' * 64}"
+    _write_canonical_json(environment_path, environment)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", "environment", "not_published", "primary")
+
+
+def test_complete_fixture_freezes_training_model_selection_and_bidirectional_variation(tmp_path: Path) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text(encoding="utf-8")))
+    report_inputs = cast(
+        dict[str, object], json.loads((candidate / "report_inputs.json").read_text(encoding="utf-8"))
+    )
+
+    selection = cast(dict[str, object], protocol["model_selection"])
+    assert selection["rule"] == "highest_best_fitness_then_lowest_repeat"
+    assert {cast(dict[str, object], value)["workload"] for value in cast(list[object], selection["selected"])} == {
+        "short",
+        "streaming",
+        "bursty",
+    }
+    for row in cast(list[object], report_inputs["natural_variation"]):
+        document = cast(dict[str, object], row)
+        assert set(document) == {"pairs", "symmetric_mean", "workload"}
+        for pair in cast(list[object], document["pairs"]):
+            assert set(cast(dict[str, object], pair)) == {
+                "forward",
+                "left_repeat",
+                "reverse",
+                "right_repeat",
+                "symmetric_mean",
+            }
+
+    assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
+
+
+def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_and_all_inventories(
+    tmp_path: Path,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    missing = candidate / "training" / "short" / "r1" / "best_model.json"
+    missing.unlink()
+    (candidate / "training" / "short" / "r1" / "checkpoint.json").write_bytes(b"corrupt\n")
+    (candidate / "foreign.bin").write_bytes(b"foreign\n")
+    (candidate / "training" / "short" / "r1" / "generated.pcapng").write_bytes(
+        (candidate / "training" / "short" / "r2" / "generated.pcapng").read_bytes()
+    )
+    candidate_before = _candidate_bytes(candidate)
+    destination = repository / "examples" / "validation_study" / "evidence" / "simultaneous"
+
+    with pytest.raises(TrafficlabError) as error:
+        study.publish_audited_bundle(candidate, "simultaneous", repository_root=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.corrective_action,
+        outcome.authority,
+    ) == (
+        "artifact_missing",
+        "publication",
+        "training/short/r1/best_model.json is missing from the retained bundle",
+        "training/short/r1/best_model.json",
+        "not_published",
+        "restore the exact retained artifact",
+        "primary",
+    )
+    assert _candidate_bytes(candidate) == candidate_before
+    assert not destination.exists()
+    assert not tuple(repository.rglob("*.tmp"))

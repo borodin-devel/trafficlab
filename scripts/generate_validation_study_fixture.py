@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import shutil
@@ -39,8 +38,11 @@ FIXTURE = REPOSITORY / "tests" / "fixtures" / "validation_study_candidate"
 FIT_FIXTURE = REPOSITORY / "examples" / "data" / "fit"
 WORKLOADS = ("short", "streaming", "bursty")
 REPEATS = (1, 2, 3)
-CAPTURE_REFERENCE = f"trafficlab-capture@sha256:{'c' * 64}"
-CAPTURE_ID = f"sha256:{'d' * 64}"
+_IMAGE_LOCK = cast(dict[str, object], json.loads((REPOSITORY / "docker" / "capture" / "image-lock.json").read_text()))
+CAPTURE_ID = cast(str, _IMAGE_LOCK["expected_capture_image_id"])
+CAPTURE_REFERENCE = f"trafficlab-capture@{CAPTURE_ID}"
+CAPTURE_TOOL_VERSION = cast(str, _IMAGE_LOCK["capture_tool_version"])
+TARGET_ID = f"sha256:{study.TARGET_REFERENCE.rsplit(':', 1)[-1]}"
 _HEX40 = re.compile(r"[0-9a-f]{40}", flags=re.ASCII)
 
 
@@ -114,6 +116,95 @@ def _config_bytes(config: ExperimentConfig, run_directory: str) -> bytes:
     )
 
 
+def _capture_lineage(capture: bytes) -> dict[str, object]:
+    return {
+        "capture_identity": identify_bytes(capture).as_dict(),
+        "capture_image_id": CAPTURE_ID,
+        "capture_image_reference": CAPTURE_REFERENCE,
+        "capture_tool_version": CAPTURE_TOOL_VERSION,
+        "target_image_id": TARGET_ID,
+        "target_image_reference": study.TARGET_REFERENCE,
+    }
+
+
+def _checkpoint_fitness(files: Mapping[str, bytes], config: ExperimentConfig, metadata: CaptureMetadata) -> float:
+    reference, window = normalize_reference(
+        parse_pcapng_bytes(files["reference.pcapng"], metadata, source=Path("reference.pcapng"))
+    )
+    checkpoint = study.parse_checkpoint(  # pyright: ignore[reportPrivateUsage]
+        files["checkpoint.json"],
+        study.make_strategy_context(  # pyright: ignore[reportPrivateUsage]
+            config,
+            reference,
+            window,
+            Path("fixture"),
+            experiment_identity=identify_bytes(files["experiment.toml"]),
+            reference_identity=identify_bytes(files["reference.pcapng"]),
+            capture_identity=identify_bytes(files["capture.json"]),
+        ).compatibility,
+    )
+    return checkpoint.best_fitness
+
+
+def _selected_training_records(
+    training: Sequence[dict[str, object]],
+    training_files: Mapping[tuple[str, int], Mapping[str, bytes]],
+    *,
+    config: ExperimentConfig,
+    metadata: CaptureMetadata,
+) -> tuple[dict[str, object], ...]:
+    selected: list[dict[str, object]] = []
+    for workload in WORKLOADS:
+        candidates = [item for item in training if item["workload"] == workload]
+        winner = min(
+            candidates,
+            key=lambda item: (
+                -_checkpoint_fitness(
+                    training_files[(workload, cast(int, item["repeat"]))], config, metadata
+                ),
+                cast(int, item["repeat"]),
+            ),
+        )
+        repeat = cast(int, winner["repeat"])
+        files = training_files[(workload, repeat)]
+        selected.append(
+            {
+                "best_model_identity": identify_bytes(files["best_model.json"]).as_dict(),
+                "repeat": repeat,
+                "training_directory": winner["directory"],
+                "workload": workload,
+            }
+        )
+    return tuple(selected)
+
+
+def _natural_variation(
+    group: Sequence[tuple[study.ComparisonResult, tuple[TraceEvent, ...], float]], config: ExperimentConfig
+) -> dict[str, object]:
+    pairs: list[dict[str, object]] = []
+    for left_number, right_number in combinations(range(len(group)), 2):
+        left = group[left_number]
+        right = group[right_number]
+        if left[2] != right[2]:
+            raise ValueError("fixture natural variation requires a common normalized observation window")
+        forward = _score(compare_traces(left[1], right[1], left[2], config.similarity))
+        reverse = _score(compare_traces(right[1], left[1], right[2], config.similarity))
+        pairs.append(
+            {
+                "forward": forward,
+                "left_repeat": left_number + 1,
+                "reverse": reverse,
+                "right_repeat": right_number + 1,
+                "symmetric_mean": _mean((forward, reverse)),
+            }
+        )
+    return {
+        "pairs": pairs,
+        "symmetric_mean": _mean([cast(dict[str, object], pair["symmetric_mean"]) for pair in pairs]),
+        "workload": "",
+    }
+
+
 def _write_training_tree(
     root: Path,
     *,
@@ -181,6 +272,7 @@ def _write_training_tree(
     (root / portable_relative).write_bytes(portable)
     (root / realized_relative).write_bytes(realized)
     record: dict[str, object] = {
+        "capture_lineage": _capture_lineage(capture),
         "directory": directory_relative,
         "portable_config": portable_relative,
         "portable_config_identity": identify_bytes(portable).as_dict(),
@@ -229,6 +321,7 @@ def _write_held_out(
     )
     record = {
         "capture_identity": identify_bytes(capture).as_dict(),
+        "capture_lineage": _capture_lineage(capture),
         "comparison_identity": identify_bytes(evaluation.comparison_json).as_dict(),
         "generated_identity": identify_bytes(evaluation.generated_pcapng).as_dict(),
         "reference_identity": identify_bytes(reference).as_dict(),
@@ -251,6 +344,7 @@ def _write_held_out(
     (directory / "run.log").write_bytes(b"")
     append_run_log(directory, {"event": "held_out_evaluated", "stage": "compare", "workload": workload})
     return {
+        "capture_lineage": _capture_lineage(capture),
         "directory": directory_relative,
         "training_directory": training["directory"],
         "workload": workload,
@@ -311,22 +405,36 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(_canonical(fresh_record))
                 fresh.append(fresh_record)
+        selections = _selected_training_records(training, training_files, config=config, metadata=metadata)
+        selected_training = {
+            cast(str, item["workload"]): next(
+                record
+                for record in training
+                if record["directory"] == item["training_directory"]
+            )
+            for item in selections
+        }
         held: list[dict[str, object]] = []
         held_evaluations: dict[str, study.HeldOutEvaluation] = {}
         for number, workload in enumerate(WORKLOADS, start=20):
+            selected = selected_training[workload]
             record, evaluation = _write_held_out(
                 root,
                 config=config,
                 metadata=metadata,
                 events=_variant_events(base_events, variant=number),
                 workload=workload,
-                training=next(item for item in training if item["workload"] == workload and item["repeat"] == 1),
-                training_files=training_files[(workload, 1)],
+                training=selected,
+                training_files=training_files[(workload, cast(int, selected["repeat"]))],
             )
             held.append(record)
             held_evaluations[workload] = evaluation
         protocol = {
             "final_seed": 97,
+            "model_selection": {
+                "rule": "highest_best_fitness_then_lowest_repeat",
+                "selected": list(selections),
+            },
             "schema_version": 2,
             "selection_seeds": list(config.genetic.trial_seeds),
             "training_repetitions": 3,
@@ -335,9 +443,9 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
         environment = {
             "capture_image_id": CAPTURE_ID,
             "capture_image_reference": CAPTURE_REFERENCE,
-            "capture_tool_version": "fixture-dumpcap-1.0",
+            "capture_tool_version": CAPTURE_TOOL_VERSION,
             "compatibility_decision": {
-                "reason": "credential-free deterministic offline fixture",
+                "reason": "source, lock, and image-lock identities are compatible",
                 "status": "compatible",
             },
             "docker_compose_version": "fixture-compose-2.0",
@@ -349,34 +457,72 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             "scientific_artifact_schema": 2,
             "source_commit": source_commit,
             "source_tree": source_tree,
-            "target_image_id": f"sha256:{study.TARGET_REFERENCE.rsplit(':', 1)[-1]}",
+            "target_image_id": TARGET_ID,
             "target_image_reference": study.TARGET_REFERENCE,
-            "uv_lock_sha256": hashlib.sha256((REPOSITORY / "uv.lock").read_bytes()).hexdigest(),
+            "uv_lock_identity": identify_bytes((REPOSITORY / "uv.lock").read_bytes()).as_dict(),
         }
         (root / "protocol.json").write_bytes(_canonical(protocol))
         (root / "environment.json").write_bytes(_canonical(environment))
-        prerequisite_paths: dict[str, dict[str, str]] = {}
+        prerequisite_commands: list[dict[str, object]] = []
         for kind in ("docker_matrix", "internet_smoke"):
-            record = {
-                "command": f"prerequisites/{kind}.command.json",
-                "junit": f"prerequisites/{kind}.junit.xml",
-                "status": f"prerequisites/{kind}.status.json",
-                "stderr": f"prerequisites/{kind}.stderr",
-                "stdout": f"prerequisites/{kind}.stdout",
+            outputs = {
+                "junit": b'<testsuite errors="0" failures="0" name="fixture" skipped="0" tests="1"/>\n',
+                "stderr": f"{kind} fixture stderr\n".encode(),
+                "stdout": f"{kind} fixture stdout\n".encode(),
             }
-            prerequisite_paths[kind] = record
-            for field, relative in record.items():
-                path = root / relative
+            for field, content in outputs.items():
+                suffix = "junit.xml" if field == "junit" else field
+                path = root / "prerequisites" / f"{kind}.{suffix}"
                 path.parent.mkdir(parents=True, exist_ok=True)
-                if field == "command":
-                    path.write_bytes(_canonical({"argv": ["fixture", kind]}))
-                elif field == "status":
-                    path.write_bytes(_canonical({"exit_status": 0}))
-                elif field == "junit":
-                    path.write_bytes(b'<testsuite errors="0" failures="0" name="fixture" tests="1"/>\n')
-                else:
-                    path.write_bytes(f"{kind} fixture {field}\n".encode())
-        (root / "prerequisites.json").write_bytes(_canonical({**prerequisite_paths, "schema_version": 2}))
+                path.write_bytes(content)
+            prerequisite_commands.append(
+                {
+                    "argv": list(
+                        study.prerequisite_command_argv(
+                            kind, study_id="fixture-study", url="https://downloads.example.test/object.bin"
+                        )
+                    ),
+                    "exit_status": 0,
+                    "junit": {
+                        "identity": identify_bytes(outputs["junit"]).as_dict(),
+                        "path": f"prerequisites/{kind}.junit.xml",
+                    },
+                    "kind": kind,
+                    "stderr": {
+                        "identity": identify_bytes(outputs["stderr"]).as_dict(),
+                        "path": f"prerequisites/{kind}.stderr",
+                    },
+                    "stdout": {
+                        "identity": identify_bytes(outputs["stdout"]).as_dict(),
+                        "path": f"prerequisites/{kind}.stdout",
+                    },
+                    "tests": study.prerequisite_junit_counts(outputs["junit"]),
+                }
+            )
+        prerequisite_environment = {
+            key: environment[key]
+            for key in (
+                "capture_image_id",
+                "capture_image_reference",
+                "capture_tool_version",
+                "source_commit",
+                "source_tree",
+                "target_image_id",
+                "target_image_reference",
+                "uv_lock_identity",
+            )
+        }
+        (root / "prerequisites.json").write_bytes(
+            study.render_retained_prerequisites(
+                {
+                    "commands": prerequisite_commands,
+                    "environment": prerequisite_environment,
+                    "schema_version": 3,
+                    "study_id": "fixture-study",
+                    "url": "https://downloads.example.test/object.bin",
+                }
+            )
+        )
         for workload in WORKLOADS:
             header = b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-262143/4194304\r\n\r\n"
             header_path = root / "headers" / f"{workload}.headers"
@@ -412,11 +558,9 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 )
                 fitnesses.append(checkpoint.best_fitness)
             training_rows.append({"selection_fitness": fmean(fitnesses), "workload": workload})
-            pair_scores = [
-                _score(compare_traces(left[1], right[1], left[2], config.similarity))
-                for left, right in combinations(group, 2)
-            ]
-            variation_rows.append({"pairs": len(pair_scores), "score": _mean(pair_scores), "workload": workload})
+            variation = _natural_variation(group, config)
+            variation["workload"] = workload
+            variation_rows.append(variation)
             held_rows.append({"score": _score(held_evaluations[workload].comparison), "workload": workload})
         report_inputs = {
             "formula": "arithmetic_mean",

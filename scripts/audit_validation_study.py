@@ -9,9 +9,9 @@ import json
 import platform
 import re
 import stat
+import subprocess
 import sys
 import tomllib
-import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
@@ -25,8 +25,12 @@ if __package__ in (None, ""):
 from scripts.run_validation_study import (
     ARTIFACT_NAMES,
     PUBLISHED_METHOD_ORDER,
+    TARGET_REFERENCE,
     HeldOutEvaluation,
     evaluate_study_held_out,
+    parse_retained_prerequisites,
+    prerequisite_junit_counts,
+    retained_prerequisite_paths,
 )
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import (
@@ -499,6 +503,33 @@ def _identity(content: bytes) -> dict[str, object]:
     return result
 
 
+def _git_bytes(repository: Path, argv: tuple[str, ...], *, name: str) -> bytes:
+    try:
+        completed = subprocess.run(
+            ("git", *argv), cwd=repository, check=False, capture_output=True
+        )
+    except OSError as error:
+        _fail("artifact_corrupt", "environment", f"could not inspect {name}: {error}", "repair the relocated checkout")
+    if completed.returncode != 0:
+        _fail(
+            "artifact_foreign",
+            "environment",
+            f"could not resolve {name} from the relocated Git checkout",
+            "audit from the recorded clean source checkout",
+        )
+    return completed.stdout
+
+
+def _git_identity(repository: Path, argv: tuple[str, ...], *, name: str) -> str:
+    try:
+        value = _git_bytes(repository, argv, name=name).decode("ascii").strip()
+    except UnicodeDecodeError as error:
+        _fail("artifact_corrupt", "environment", f"{name} is not ASCII: {error}", "repair the relocated checkout")
+    if _HEX40.fullmatch(value) is None:
+        _fail("artifact_corrupt", "environment", f"{name} is not a Git identity", "repair the relocated checkout")
+    return value
+
+
 def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
     document = _exact(
         _json(content, name="environment.json"),
@@ -518,7 +549,7 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             "source_tree",
             "target_image_id",
             "target_image_reference",
-            "uv_lock_sha256",
+            "uv_lock_identity",
         ),
         name="environment.json",
     )
@@ -536,11 +567,10 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             "environment Python runtime does not match the locked auditor",
             "audit with the retained CPython patch",
         )
-    for field, width in (("source_commit", 40), ("source_tree", 40), ("uv_lock_sha256", 64)):
+    for field, width in (("source_commit", 40), ("source_tree", 40)):
         value = _string(document[field], name=f"environment {field}")
         if (
             (width == 40 and _HEX40.fullmatch(value) is None)
-            or (width == 64 and _HEX64.fullmatch(value) is None)
             or set(value) == {"0"}
         ):
             _fail(
@@ -549,6 +579,15 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
                 f"environment {field} must be a nonzero lowercase identity",
                 "restore frozen source identity",
             )
+    if document["uv_lock_identity"] != _identity(
+        _read_regular(repository / "uv.lock", affected="uv.lock")
+    ):
+        _fail(
+            "artifact_foreign",
+            "environment",
+            "environment uv.lock identity does not match the relocated repository",
+            "use the exact locked repository",
+        )
     for field in ("target_image_reference", "capture_image_reference"):
         value = _string(document[field], name=f"environment {field}")
         if "@sha256:" not in value or _HEX64.fullmatch(value.rsplit("@sha256:", 1)[-1]) is None:
@@ -567,17 +606,7 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
                 f"environment {field} must be an immutable image ID",
                 "restore image identity evidence",
             )
-    decision = _exact(
-        document["compatibility_decision"], ("reason", "status"), name="environment compatibility decision"
-    )
-    if decision["status"] != "compatible":
-        _fail(
-            "scientific_semantics_incompatible",
-            "environment",
-            "environment compatibility decision is not compatible",
-            "use the recorded compatible environment",
-        )
-    _string(decision["reason"], name="environment compatibility reason")
+    decision = _exact(document["compatibility_decision"], ("reason", "status"), name="environment compatibility decision")
     for field in (
         "capture_tool_version",
         "docker_compose_version",
@@ -586,13 +615,60 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
         "kernel_release",
     ):
         _string(document[field], name=f"environment {field}")
-    lock = _read_regular(repository / "uv.lock", affected="uv.lock")
-    if hashlib.sha256(lock).hexdigest() != document["uv_lock_sha256"]:
+    source_commit = _git_identity(repository, ("rev-parse", "HEAD"), name="relocated Git HEAD")
+    source_tree = _git_identity(repository, ("rev-parse", "HEAD^{tree}"), name="relocated Git tree")
+    if (source_commit, source_tree) != (document["source_commit"], document["source_tree"]):
         _fail(
             "artifact_foreign",
             "environment",
-            "environment uv.lock identity does not match the relocated repository",
-            "use the exact locked repository",
+            "environment source commit or tree does not match the relocated Git checkout",
+            "audit from the recorded source revision",
+        )
+    committed_lock = _git_bytes(repository, ("show", f"{source_commit}:uv.lock"), name="recorded uv.lock")
+    current_lock = _read_regular(repository / "uv.lock", affected="uv.lock")
+    if current_lock != committed_lock:
+        _fail(
+            "artifact_foreign",
+            "environment",
+            "relocated uv.lock bytes do not match the recorded source commit",
+            "restore the exact locked source checkout",
+        )
+    image_lock = _exact(
+        _json(
+            _read_regular(repository / "docker" / "capture" / "image-lock.json", affected="docker/capture/image-lock.json"),
+            name="docker/capture/image-lock.json",
+        ),
+        (
+            "base_digest",
+            "base_reference",
+            "capture_tool_version",
+            "debian_snapshot",
+            "direct_packages",
+            "expected_capture_image_id",
+        ),
+        name="docker/capture/image-lock.json",
+    )
+    if (
+        document["target_image_reference"] != TARGET_REFERENCE
+        or document["capture_image_id"] != image_lock["expected_capture_image_id"]
+        or document["capture_tool_version"] != image_lock["capture_tool_version"]
+    ):
+        _fail(
+            "artifact_foreign",
+            "environment",
+            "environment image identities do not match the checked image locks",
+            "restore image-lock-bound environment evidence",
+        )
+    expected_decision = {
+        "reason": "source, lock, and image-lock identities are compatible",
+        "status": "compatible",
+    }
+    if decision != expected_decision:
+        _fail(
+            "scientific_semantics_incompatible",
+            "environment",
+            "environment compatibility decision does not match recomputed locked compatibility",
+            "restore the recomputed compatible environment decision",
         )
     return document
 
@@ -600,7 +676,7 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
 def _protocol(content: bytes) -> dict[str, object]:
     document = _exact(
         _json(content, name="protocol.json"),
-        ("final_seed", "schema_version", "selection_seeds", "training_repetitions", "workloads"),
+        ("final_seed", "model_selection", "schema_version", "selection_seeds", "training_repetitions", "workloads"),
         name="protocol.json",
     )
     if document["schema_version"] != 2 or _integer(document["final_seed"], name="protocol final seed") != 97:
@@ -640,89 +716,79 @@ def _protocol(content: bytes) -> dict[str, object]:
     return document
 
 
-def _prerequisites(bundle: Path, relative: str) -> tuple[dict[str, object], set[str]]:
-    document = _exact(
-        _json(_read_regular(bundle / relative, affected=relative), name=relative),
-        ("docker_matrix", "internet_smoke", "schema_version"),
-        name=relative,
-    )
-    if document["schema_version"] != 2:
+def _prerequisites(
+    bundle: Path, relative: str, *, environment: Mapping[str, object]
+) -> tuple[Mapping[str, object], set[str]]:
+    try:
+        document = parse_retained_prerequisites(_read_regular(bundle / relative, affected=relative))
+    except (TypeError, ValueError) as error:
         _fail(
             "artifact_corrupt",
             relative,
-            "prerequisites must use schema version 2",
-            "restore canonical prerequisite record",
+            f"retained prerequisite evidence is invalid: {error}",
+            "restore canonical prerequisite evidence",
         )
-    required = {relative}
-    for kind in ("docker_matrix", "internet_smoke"):
-        record = _exact(
-            document[kind], ("command", "junit", "status", "stderr", "stdout"), name=f"prerequisites {kind}"
+    expected_environment = {
+        field: environment[field]
+        for field in (
+            "capture_image_id",
+            "capture_image_reference",
+            "capture_tool_version",
+            "source_commit",
+            "source_tree",
+            "target_image_id",
+            "target_image_reference",
+            "uv_lock_identity",
         )
-        expected = {
-            "command": f"prerequisites/{kind}.command.json",
-            "junit": f"prerequisites/{kind}.junit.xml",
-            "status": f"prerequisites/{kind}.status.json",
-            "stderr": f"prerequisites/{kind}.stderr",
-            "stdout": f"prerequisites/{kind}.stdout",
-        }
-        if record != expected:
-            _fail(
-                "artifact_foreign",
-                relative,
-                f"prerequisite {kind} paths are not canonical",
-                "restore matching prerequisite evidence",
-            )
-        required.update(expected.values())
-        command = _json(
-            _read_regular(bundle / expected["command"], affected=expected["command"]), name=expected["command"]
+    }
+    if document["environment"] != expected_environment:
+        _fail(
+            "artifact_foreign",
+            relative,
+            "prerequisite environment does not bind the frozen source and image identities",
+            "restore matching prerequisite environment evidence",
         )
-        if type(command.get("argv")) is not list or not all(
-            type(item) is str for item in cast(list[object], command["argv"])
-        ):
-            _fail(
-                "artifact_corrupt",
-                expected["command"],
-                "prerequisite command must retain argv strings",
-                "restore prerequisite command evidence",
-            )
-        status = _exact(
-            _json(_read_regular(bundle / expected["status"], affected=expected["status"]), name=expected["status"]),
-            ("exit_status",),
-            name=expected["status"],
-        )
-        if status["exit_status"] != 0:
-            _fail(
-                "artifact_foreign",
-                expected["status"],
-                "prerequisite status must be successful",
-                "restart the study after passing prerequisites",
-            )
-        for field in ("stdout", "stderr"):
-            try:
-                _read_regular(bundle / expected[field], affected=expected[field]).decode("utf-8")
-            except UnicodeDecodeError as error:
+    required = {relative, *retained_prerequisite_paths(document)}
+    for command in cast(list[object], document["commands"]):
+        record = cast(dict[str, object], command)
+        for field in ("stdout", "stderr", "junit"):
+            output = cast(dict[str, object], record[field])
+            path = cast(str, output["path"])
+            content = _read_regular(bundle / path, affected=path)
+            if _identity(content) != output["identity"]:
                 _fail(
-                    "artifact_corrupt",
-                    expected[field],
-                    f"prerequisite output is not UTF-8: {error}",
-                    "restore retained prerequisite output",
+                    "artifact_foreign",
+                    path,
+                    "prerequisite output does not match its retained content identity",
+                    "restore exact prerequisite output bytes",
                 )
-        try:
-            root = ET.fromstring(_read_regular(bundle / expected["junit"], affected=expected["junit"]))
-        except ET.ParseError as error:
-            _fail(
-                "artifact_corrupt",
-                expected["junit"],
-                f"prerequisite JUnit is invalid XML: {error}",
-                "restore retained JUnit evidence",
-            )
-        if root.tag != "testsuite" or root.attrib.get("failures") != "0" or root.attrib.get("errors") != "0":
-            _fail(
-                "artifact_foreign",
-                expected["junit"],
-                "prerequisite JUnit must record zero errors and failures",
-                "restart after passing prerequisites",
-            )
+            if field in ("stdout", "stderr"):
+                try:
+                    content.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    _fail(
+                        "artifact_corrupt",
+                        path,
+                        f"prerequisite output is not UTF-8: {error}",
+                        "restore retained prerequisite output",
+                    )
+            elif field == "junit":
+                try:
+                    counts = prerequisite_junit_counts(content)
+                except ValueError as error:
+                    _fail(
+                        "artifact_corrupt",
+                        path,
+                        f"prerequisite JUnit is invalid: {error}",
+                        "restore retained JUnit evidence",
+                    )
+                if counts != record["tests"]:
+                    _fail(
+                        "artifact_foreign",
+                        path,
+                        "prerequisite JUnit counts do not match the frozen command result",
+                        "restart after passing prerequisites",
+                    )
     return document, required
 
 
@@ -800,11 +866,38 @@ def _score(result: ComparisonResult) -> dict[str, object]:
     }
 
 
-def _training(bundle: Path, value: object, *, protocol: dict[str, object]) -> _Training:
+def _capture_lineage(content: bytes, environment: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "capture_identity": _identity(content),
+        "capture_image_id": environment["capture_image_id"],
+        "capture_image_reference": environment["capture_image_reference"],
+        "capture_tool_version": environment["capture_tool_version"],
+        "target_image_id": environment["target_image_id"],
+        "target_image_reference": environment["target_image_reference"],
+    }
+
+
+def _require_config_images(config: ExperimentConfig, environment: Mapping[str, object], *, affected: str) -> None:
+    if (
+        config.target.image != environment["target_image_reference"]
+        or config.capture.image != environment["capture_image_reference"]
+    ):
+        _fail(
+            "artifact_foreign",
+            affected,
+            "configuration image references do not match the frozen prerequisite environment",
+            "restore image-lock-bound configuration evidence",
+        )
+
+
+def _training(
+    bundle: Path, value: object, *, protocol: dict[str, object], environment: Mapping[str, object]
+) -> _Training:
     document = _exact(
         value,
         (
             "directory",
+            "capture_lineage",
             "portable_config",
             "portable_config_identity",
             "realized_config",
@@ -840,6 +933,7 @@ def _training(bundle: Path, value: object, *, protocol: dict[str, object]) -> _T
             "restore matching configuration paths",
         )
     config, _ = _config_pair(bundle, portable, realized, directory=directory, name=directory_relative)
+    _require_config_images(config, environment, affected=directory_relative)
     if config.run.final_seed != protocol["final_seed"] or tuple(config.genetic.trial_seeds) != tuple(
         cast(list[int], protocol["selection_seeds"])
     ):
@@ -853,6 +947,13 @@ def _training(bundle: Path, value: object, *, protocol: dict[str, object]) -> _T
         artifact: _read_regular(directory / artifact, affected=f"{directory_relative}/{artifact}")
         for artifact in ARTIFACT_NAMES
     }
+    if document["capture_lineage"] != _capture_lineage(contents["capture.json"], environment):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "training capture lineage does not match retained capture bytes and environment",
+            "restore matching training capture lineage",
+        )
     try:
         pair = load_configuration_pair(directory / "experiment.toml")
     except TrafficlabError as error:
@@ -1044,10 +1145,74 @@ def _fresh(bundle: Path, value: object, training: _Training, *, final_seed: int)
     return path
 
 
+def _selected_training(protocol: Mapping[str, object], training: Sequence[_Training]) -> dict[str, _Training]:
+    selection = _exact(protocol["model_selection"], ("rule", "selected"), name="protocol model selection")
+    if selection["rule"] != "highest_best_fitness_then_lowest_repeat":
+        _fail(
+            "scientific_semantics_incompatible",
+            "protocol",
+            "protocol must freeze the training-only highest-best-fitness selection rule",
+            "restore the frozen training-only model-selection protocol",
+        )
+    values = selection["selected"]
+    if type(values) is not list or len(cast(list[object], values)) != len(_WORKLOADS):
+        _fail(
+            "artifact_corrupt",
+            "protocol",
+            "protocol must retain one selected training model for each workload",
+            "restore complete model-selection evidence",
+        )
+    selected: dict[str, _Training] = {}
+    for value in cast(list[object], values):
+        record = _exact(
+            value,
+            ("best_model_identity", "repeat", "training_directory", "workload"),
+            name="protocol selected training model",
+        )
+        workload = _workload(record["workload"], name="protocol selected workload")
+        if workload in selected:
+            _fail(
+                "artifact_foreign",
+                "protocol",
+                "protocol selected training models must be unique by workload",
+                "restore complete model-selection evidence",
+            )
+        group = tuple(item for item in training if item.workload == workload)
+        winner = min(group, key=lambda item: (-item.checkpoint.best_fitness, item.repeat))
+        expected = {
+            "best_model_identity": _identity(winner.contents["best_model.json"]),
+            "repeat": winner.repeat,
+            "training_directory": f"training/{winner.workload}/r{winner.repeat}",
+            "workload": winner.workload,
+        }
+        if record != expected:
+            _fail(
+                "artifact_foreign",
+                "protocol",
+                "protocol selected model does not match the reconstructed training-only rule",
+                "restore matching model-selection evidence",
+            )
+        selected[workload] = winner
+    if tuple(selected) != _WORKLOADS:
+        _fail(
+            "artifact_foreign",
+            "protocol",
+            "protocol selected model records must use workload order",
+            "restore ordered model-selection evidence",
+        )
+    return selected
+
+
 def _held_out(
-    bundle: Path, value: object, training: _Training, *, final_seed: int, training_references: set[str]
+    bundle: Path,
+    value: object,
+    training: _Training,
+    *,
+    final_seed: int,
+    training_references: set[str],
+    environment: Mapping[str, object],
 ) -> tuple[str, set[str]]:
-    document = _exact(value, ("directory", "training_directory", "workload"), name="held-out index record")
+    document = _exact(value, ("capture_lineage", "directory", "training_directory", "workload"), name="held-out index record")
     workload = _workload(document["workload"], name="held-out workload")
     directory_relative = _relative(document["directory"], name="held-out directory")
     expected_directory = f"held_out/{workload}"
@@ -1066,6 +1231,7 @@ def _held_out(
     portable = f"{directory_relative}/portable.toml"
     realized = f"{directory_relative}/realized.toml"
     config, config_paths = _config_pair(bundle, portable, realized, directory=directory, name=directory_relative)
+    _require_config_images(config, environment, affected=directory_relative)
     if _config_semantics(config) != _config_semantics(training.config) or config.run.final_seed != final_seed:
         _fail(
             "scientific_semantics_incompatible",
@@ -1075,6 +1241,13 @@ def _held_out(
         )
     names = ("capture.json", "reference.pcapng", "generated.pcapng", "similarity.json", "record.json", "run.log")
     contents = {name: _read_regular(directory / name, affected=f"{directory_relative}/{name}") for name in names}
+    if document["capture_lineage"] != _capture_lineage(contents["capture.json"], environment):
+        _fail(
+            "artifact_foreign",
+            directory_relative,
+            "held-out capture lineage does not match retained capture bytes and environment",
+            "restore matching held-out capture lineage",
+        )
     _canonical_jsonl(contents["run.log"], name=f"{directory_relative}/run.log")
     reference_identity = identify_bytes(contents["reference.pcapng"])
     if reference_identity.sha256 in training_references:
@@ -1117,6 +1290,7 @@ def _held_out(
         _json(contents["record.json"], name=f"{directory_relative}/record.json"),
         (
             "capture_identity",
+            "capture_lineage",
             "comparison_identity",
             "generated_identity",
             "reference_identity",
@@ -1129,6 +1303,7 @@ def _held_out(
     )
     expected = {
         "capture_identity": evaluation.capture_identity.as_dict(),
+        "capture_lineage": _capture_lineage(contents["capture.json"], environment),
         "comparison_identity": _identity(contents["similarity.json"]),
         "generated_identity": evaluation.generated_identity.as_dict(),
         "reference_identity": evaluation.reference_identity.as_dict(),
@@ -1168,11 +1343,39 @@ def _report_inputs(training: Sequence[_Training], held: Mapping[str, HeldOutEval
         training_rows.append(
             {"selection_fitness": fmean(item.checkpoint.best_fitness for item in group), "workload": workload}
         )
-        pair_scores = [
-            _score(compare_traces(left.reference, right.reference, left.window, left.config.similarity))
-            for left, right in combinations(group, 2)
-        ]
-        variation_rows.append({"pairs": len(pair_scores), "score": _mean(pair_scores), "workload": workload})
+        pairs: list[dict[str, object]] = []
+        for left, right in combinations(group, 2):
+            if (
+                left.window != right.window
+                or similarity_settings_identity(left.config.similarity)
+                != similarity_settings_identity(right.config.similarity)
+            ):
+                _fail(
+                    "scientific_semantics_incompatible",
+                    "report_inputs.json",
+                    "natural variation requires a common normalized window and similarity settings",
+                    "restore common protocol controls before comparing natural variation",
+                )
+            forward = _score(compare_traces(left.reference, right.reference, left.window, left.config.similarity))
+            reverse = _score(compare_traces(right.reference, left.reference, right.window, right.config.similarity))
+            pairs.append(
+                {
+                    "forward": forward,
+                    "left_repeat": left.repeat,
+                    "reverse": reverse,
+                    "right_repeat": right.repeat,
+                    "symmetric_mean": _mean((forward, reverse)),
+                }
+            )
+        variation_rows.append(
+            {
+                "pairs": pairs,
+                "symmetric_mean": _mean(
+                    [cast(dict[str, object], pair["symmetric_mean"]) for pair in pairs]
+                ),
+                "workload": workload,
+            }
+        )
         held_rows.append({"score": _score(held[workload].comparison), "workload": workload})
     return {
         "formula": "arithmetic_mean",
@@ -1294,9 +1497,9 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
             "index root evidence paths are not canonical",
             "restore canonical evidence index",
         )
-    _environment(_read_regular(bundle / environment_path, affected=environment_path), repository=repository)
+    environment = _environment(_read_regular(bundle / environment_path, affected=environment_path), repository=repository)
     protocol = _protocol(_read_regular(bundle / protocol_path, affected=protocol_path))
-    _, prerequisite_paths = _prerequisites(bundle, prerequisites_path)
+    _, prerequisite_paths = _prerequisites(bundle, prerequisites_path, environment=environment)
     _headers_and_observations(bundle)
     training_values = index["training"]
     if type(training_values) is not list:
@@ -1308,7 +1511,7 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
         _fail(
             "artifact_corrupt", _INDEX, "index must retain nine training run records", "restore all training evidence"
         )
-    training = tuple(_training(bundle, value, protocol=protocol) for value in training_items)
+    training = tuple(_training(bundle, value, protocol=protocol, environment=environment) for value in training_items)
     expected_keys = {(workload, repeat) for workload in _WORKLOADS for repeat in _REPEATS}
     if {(item.workload, item.repeat) for item in training} != expected_keys:
         _fail(
@@ -1361,12 +1564,16 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
             "index must retain three independent held-out records",
             "restore held-out evidence",
         )
-    selected = {item.workload: item for item in ordered_training if item.repeat == 1}
+    selected = _selected_training(protocol, ordered_training)
     training_references = {identify_bytes(item.contents["reference.pcapng"]).sha256 for item in ordered_training}
     held_evaluations: dict[str, HeldOutEvaluation] = {}
     held_paths: set[str] = set()
     for value in held_items:
-        record = _exact(value, ("directory", "training_directory", "workload"), name="held-out index record")
+        record = _exact(
+            value,
+            ("capture_lineage", "directory", "training_directory", "workload"),
+            name="held-out index record",
+        )
         workload = _workload(record["workload"], name="held-out workload")
         if workload in held_evaluations or workload not in selected:
             _fail(
@@ -1381,6 +1588,7 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
             selected[workload],
             final_seed=cast(int, protocol["final_seed"]),
             training_references=training_references,
+            environment=environment,
         )
         directory = bundle / directory_relative
         evaluation = evaluate_study_held_out(

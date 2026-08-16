@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import runpy
 import shutil
 import socket
@@ -193,3 +195,94 @@ def test_audit_script_main_reconstructs_a_relocated_fixture_without_a_subprocess
 
     assert exit_code.value.code == 0
     assert capsys.readouterr().out.startswith("validation-study-audit: accepted ")
+
+
+def test_clean_checkout_auditor_rejects_a_candidate_bound_to_a_different_source_revision(tmp_path: Path) -> None:
+    """The offline script must execute from a clean local checkout, not this worktree."""
+    source_environment = cast(
+        dict[str, object], json.loads((_AUDIT_FIXTURE / "environment.json").read_text(encoding="utf-8"))
+    )
+    source_commit = cast(str, source_environment["source_commit"])
+    repository = tmp_path / "clean-checkout"
+    subprocess.run(
+        ("git", "clone", "--no-hardlinks", "--no-checkout", str(_ROOT), str(repository)),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ("git", "checkout", "--detach", source_commit),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    candidate = repository / "candidate"
+    shutil.copytree(_AUDIT_FIXTURE, candidate)
+    parent = subprocess.run(
+        ("git", "rev-parse", "HEAD^"), cwd=repository, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    environment_path = candidate / "environment.json"
+    environment = cast(dict[str, object], json.loads(environment_path.read_text(encoding="utf-8")))
+    environment["source_commit"] = parent
+    environment_path.write_text(
+        json.dumps(environment, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+    )
+    index = cast(dict[str, object], json.loads((candidate / "index.json").read_text(encoding="utf-8")))
+    auditor.write_manifest(
+        candidate,
+        ownership=cast(dict[str, str], index["ownership"]),
+        lineage=cast(dict[str, object], index["lineage"]),
+    )
+
+    wrapper = """
+import os
+import runpy
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+checkout = Path.cwd().resolve()
+original = Path(os.environ["TRAFFICLAB_ORIGINAL_ROOT"]).resolve()
+import scripts.audit_validation_study as audit
+import trafficlab
+assert Path(audit.__file__).resolve().is_relative_to(checkout)
+assert Path(trafficlab.__file__).resolve().is_relative_to(checkout)
+original_read_bytes = Path.read_bytes
+original_read_text = Path.read_text
+def checked_read_bytes(path, *args, **kwargs):
+    if path.resolve().is_relative_to(original):
+        raise AssertionError("audit read the original worktree")
+    return original_read_bytes(path, *args, **kwargs)
+def checked_read_text(path, *args, **kwargs):
+    if path.resolve().is_relative_to(original):
+        raise AssertionError("audit read the original worktree")
+    return original_read_text(path, *args, **kwargs)
+Path.read_bytes = checked_read_bytes
+Path.read_text = checked_read_text
+def blocked_network(*args, **kwargs):
+    raise AssertionError("audit attempted network access")
+socket.socket = blocked_network
+socket.create_connection = blocked_network
+original_run = subprocess.run
+def local_git_only(argv, *args, **kwargs):
+    if tuple(argv[:1]) == ("git",):
+        return original_run(argv, *args, **kwargs)
+    raise AssertionError("audit attempted Docker or a subprocess")
+subprocess.run = local_git_only
+sys.argv = ["scripts/audit_validation_study.py", "candidate", "--repository", str(checkout)]
+runpy.run_path(str(checkout / "scripts" / "audit_validation_study.py"), run_name="__main__")
+"""
+    environment_variables = dict(os.environ)
+    environment_variables["PYTHONPATH"] = ""
+    environment_variables["TRAFFICLAB_ORIGINAL_ROOT"] = str(_ROOT)
+    completed = subprocess.run(
+        ("uv", "run", "--locked", "--offline", "python", "-c", wrapper),
+        cwd=repository,
+        env=environment_variables,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "source commit" in completed.stderr
