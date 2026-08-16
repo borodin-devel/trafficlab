@@ -903,14 +903,76 @@ def _stage_prerequisite_rotation_file(
         raise
 
 
-def _commit_prerequisite_fsync(destination: Path) -> None:
-    """Durably record one committed prerequisite-publication directory entry."""
+@dataclass(slots=True)
+class _PrerequisiteRotationTarget:
+    """One owned file in a marker-last prerequisite rotation."""
 
-    descriptor = os.open(destination.parent, os.O_RDONLY)
+    kind: str
+    destination: Path
+    stage: Path | None
+    backup: Path | None
+    before_identity: JsonObject | None
+    target_identity: JsonObject
+    must_be_absent: bool
+
+
+def _fsync_prerequisite_rotation_directory(destination: Path) -> None:
+    """Fsync the parent directory after a rotation-owned entry mutation."""
+
+    descriptor = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _commit_prerequisite_fsync(destination: Path) -> None:
+    """Durably record one committed prerequisite-publication directory entry."""
+
+    _fsync_prerequisite_rotation_directory(destination)
+
+
+def _after_prerequisite_rotation_commit(_destination: Path) -> None:
+    """Private crash-injection seam after one durable rotation boundary."""
+
+
+def _publish_prerequisite_rotation_exclusive_file(
+    destination: Path,
+    content: bytes,
+    *,
+    validate: Callable[[bytes], None],
+    name: str,
+) -> None:
+    """Durably link one previously-absent rotation file without replacement."""
+
+    stage = _stage_prerequisite_rotation_file(
+        destination,
+        content,
+        validate=lambda _stage, persisted: validate(persisted),
+    )
+    published = False
+    try:
+        os.link(stage, destination)
+        published = True
+        _fsync_prerequisite_rotation_directory(destination)
+        persisted = _read_regular_prerequisite_rotation_target(destination, name=name)
+        _require(persisted == content, f"published {name} bytes changed")
+        validate(persisted)
+    except BaseException:
+        if published:
+            try:
+                persisted = _read_regular_prerequisite_rotation_target(destination, name=name)
+                if persisted == content:
+                    destination.unlink()
+                    _fsync_prerequisite_rotation_directory(destination)
+            except OSError:
+                pass
+        raise
+    finally:
+        try:
+            stage.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _write_new_config(destination: Path, content: bytes, *, replace_existing: bool = False) -> None:
@@ -3789,6 +3851,7 @@ def run_prerequisites(
         _require(root.is_dir(), f"repository root must be an existing directory: {root}")
         url = validate_endpoint_url(url)
         study_id = validate_study_id(study_id)
+        _recover_incomplete_prerequisite_rotations(root)
         _begin_phase_attempt(root, study_id=study_id, url=url, phase="prerequisites")
         prerequisite_path = root / "examples" / "validation_study" / "prerequisites.json"
         config_paths = {
@@ -5917,26 +5980,37 @@ def _prerequisite_raw_archive_path(repository_root: Path, study_id: str) -> Path
     return _collection_attempt_root(repository_root, study_id) / "prerequisites.raw.json"
 
 
+def _prerequisite_rotation_journal_path(repository_root: Path, study_id: str) -> Path:
+    return _collection_attempt_root(repository_root, study_id) / "prerequisites-rotation.json"
+
+
 def _archive_prerequisite_raw_document(repository_root: Path, *, study_id: str, content: bytes) -> bytes:
     """Persist the byte-exact canonical prerequisite document beside its irreversible attempt."""
 
     archive = _prerequisite_raw_archive_path(repository_root, study_id)
+
+    def validate(persisted: bytes) -> None:
+        parsed = parse_prerequisite_results(persisted, repository_root=repository_root)
+        _require(render_prerequisite_results(parsed) == content, "archived prerequisite document is not canonical")
+
     if _path_entry_exists(archive):
-        try:
-            mode = archive.lstat().st_mode
-        except OSError as error:
-            raise ValueError(f"could not inspect archived prerequisite document {archive}: {error}") from error
-        _require(
-            stat.S_ISREG(mode) and not stat.S_ISLNK(mode),
-            "archived prerequisite document must be a regular file",
+        persisted = _read_regular_prerequisite_rotation_target(
+            archive,
+            name="archived prerequisite document",
         )
     else:
-        _write_candidate_bytes(archive, content)
-    try:
-        persisted = archive.read_bytes()
-    except OSError as error:
-        raise ValueError(f"could not read archived prerequisite document {archive}: {error}") from error
+        _publish_prerequisite_rotation_exclusive_file(
+            archive,
+            content,
+            validate=validate,
+            name="archived prerequisite document",
+        )
+        persisted = _read_regular_prerequisite_rotation_target(
+            archive,
+            name="archived prerequisite document",
+        )
     _require(persisted == content, "archived prerequisite document must equal the canonical publication bytes")
+    validate(persisted)
     return persisted
 
 
@@ -6006,6 +6080,471 @@ def _require_successful_prerequisite_marker_content(
     )
 
 
+def _prerequisite_rotation_expected_targets(repository_root: Path, study_id: str) -> tuple[tuple[str, Path, bool], ...]:
+    study_root = repository_root / "examples" / "validation_study"
+    attempt = _collection_attempt_root(repository_root, study_id)
+    return (
+        ("archive", attempt / "prerequisites.raw.json", True),
+        ("config-short", study_root / "configs" / "short.toml", False),
+        ("config-streaming", study_root / "configs" / "streaming.toml", False),
+        ("config-bursty", study_root / "configs" / "bursty.toml", False),
+        ("root", study_root / "prerequisites.json", False),
+        ("marker", attempt / "prerequisites-success.json", True),
+    )
+
+
+def _prerequisite_rotation_relative_path(repository_root: Path, path: Path, *, name: str) -> str:
+    try:
+        return path.relative_to(repository_root).as_posix()
+    except ValueError as error:
+        raise ValueError(f"{name} must be beneath the repository root") from error
+
+
+def _prerequisite_rotation_sibling_path(
+    repository_root: Path,
+    value: object,
+    *,
+    destination: Path,
+    suffix: str,
+    name: str,
+) -> Path:
+    relative = _repository_relative_path(value, repository_root=repository_root, name=name)
+    path = repository_root / Path(*PurePosixPath(relative).parts)
+    _require(
+        path.parent == destination.parent
+        and path.name.startswith(f".{destination.name}.")
+        and path.name.endswith(suffix),
+        f"{name} must be an exact prerequisite rotation sibling path",
+    )
+    return path
+
+
+def _render_prerequisite_rotation_journal(
+    repository_root: Path,
+    *,
+    study_id: str,
+    targets: Sequence[_PrerequisiteRotationTarget],
+) -> bytes:
+    entries: list[object] = []
+    for target in targets:
+        stage = target.stage
+        backup = target.backup
+        if stage is None:
+            raise ValueError("prerequisite rotation journal requires every staged target")
+        entries.append(
+            {
+                "backup": (
+                    _prerequisite_rotation_relative_path(repository_root, backup, name="rotation backup")
+                    if backup is not None
+                    else None
+                ),
+                "before_identity": target.before_identity,
+                "destination": _prerequisite_rotation_relative_path(
+                    repository_root,
+                    target.destination,
+                    name="rotation destination",
+                ),
+                "kind": target.kind,
+                "must_be_absent": target.must_be_absent,
+                "stage": _prerequisite_rotation_relative_path(
+                    repository_root,
+                    stage,
+                    name="rotation stage",
+                ),
+                "target_identity": target.target_identity,
+            }
+        )
+    return _canonical_json(
+        cast(
+            JsonObject,
+            {
+                "phase": "prerequisite-rotation",
+                "schema_version": 1,
+                "study_id": study_id,
+                "targets": entries,
+            },
+        )
+    )
+
+
+def _parse_prerequisite_rotation_journal(
+    content: bytes,
+    *,
+    repository_root: Path,
+    journal: Path,
+) -> tuple[str, list[_PrerequisiteRotationTarget]]:
+    document = _exact_object(
+        _load_json(content),
+        ("phase", "schema_version", "study_id", "targets"),
+        name="prerequisite rotation journal",
+    )
+    _require(
+        _canonical_json(cast(JsonObject, document)) == content,
+        "prerequisite rotation journal must be canonical",
+    )
+    _require(document["phase"] == "prerequisite-rotation", "prerequisite rotation journal phase is invalid")
+    _require(
+        _strict_int(document["schema_version"], name="prerequisite rotation journal schema_version") == 1,
+        "prerequisite rotation journal schema_version is unsupported",
+    )
+    study_id = validate_study_id(_strict_string(document["study_id"], name="prerequisite rotation journal study_id"))
+    _require(
+        journal == _prerequisite_rotation_journal_path(repository_root, study_id),
+        "prerequisite rotation journal must use its exact attempt path",
+    )
+    raw_targets_value = document["targets"]
+    _require(type(raw_targets_value) is list, "prerequisite rotation journal targets must be an array")
+    raw_targets = cast(list[object], raw_targets_value)
+    expected = _prerequisite_rotation_expected_targets(repository_root, study_id)
+    _require(
+        len(raw_targets) == len(expected),
+        "prerequisite rotation journal must contain its exact target count",
+    )
+    parsed: list[_PrerequisiteRotationTarget] = []
+    for raw_target, (kind, destination, must_be_absent) in zip(raw_targets, expected, strict=True):
+        target = _exact_object(
+            raw_target,
+            ("backup", "before_identity", "destination", "kind", "must_be_absent", "stage", "target_identity"),
+            name="prerequisite rotation journal target",
+        )
+        _require(target["kind"] == kind, "prerequisite rotation journal target order is invalid")
+        _require(
+            _strict_bool(target["must_be_absent"], name="prerequisite rotation target must_be_absent")
+            == must_be_absent,
+            "prerequisite rotation journal target absence policy is invalid",
+        )
+        destination_relative = _repository_relative_path(
+            target["destination"],
+            repository_root=repository_root,
+            name="prerequisite rotation destination",
+        )
+        _require(
+            destination_relative
+            == _prerequisite_rotation_relative_path(
+                repository_root,
+                destination,
+                name="expected prerequisite rotation destination",
+            ),
+            "prerequisite rotation journal destination is invalid",
+        )
+        stage = _prerequisite_rotation_sibling_path(
+            repository_root,
+            target["stage"],
+            destination=destination,
+            suffix=".tmp",
+            name="prerequisite rotation stage",
+        )
+        before_value = target["before_identity"]
+        backup_value = target["backup"]
+        before_identity = (
+            None
+            if before_value is None
+            else _retained_identity(before_value, name="prerequisite rotation prior identity")
+        )
+        backup = (
+            None
+            if backup_value is None
+            else _prerequisite_rotation_sibling_path(
+                repository_root,
+                backup_value,
+                destination=destination,
+                suffix=".bak",
+                name="prerequisite rotation backup",
+            )
+        )
+        _require(
+            (before_identity is None) == (backup is None),
+            "prerequisite rotation journal backup and prior identity must agree",
+        )
+        if must_be_absent:
+            _require(
+                before_identity is None and backup is None,
+                "prerequisite rotation absent target cannot have prior bytes",
+            )
+        parsed.append(
+            _PrerequisiteRotationTarget(
+                kind=kind,
+                destination=destination,
+                stage=stage,
+                backup=backup,
+                before_identity=before_identity,
+                target_identity=_retained_identity(
+                    target["target_identity"],
+                    name="prerequisite rotation target identity",
+                ),
+                must_be_absent=must_be_absent,
+            )
+        )
+    return study_id, parsed
+
+
+def _publish_prerequisite_rotation_journal(
+    repository_root: Path,
+    *,
+    study_id: str,
+    targets: Sequence[_PrerequisiteRotationTarget],
+) -> Path:
+    journal = _prerequisite_rotation_journal_path(repository_root, study_id)
+    content = _render_prerequisite_rotation_journal(repository_root, study_id=study_id, targets=targets)
+
+    def validate(persisted: bytes) -> None:
+        parsed_study_id, _parsed_targets = _parse_prerequisite_rotation_journal(
+            persisted,
+            repository_root=repository_root,
+            journal=journal,
+        )
+        _require(parsed_study_id == study_id, "prerequisite rotation journal study ID changed")
+
+    _publish_prerequisite_rotation_exclusive_file(
+        journal,
+        content,
+        validate=validate,
+        name="prerequisite rotation journal",
+    )
+    return journal
+
+
+def _read_prerequisite_rotation_target_if_present(destination: Path, *, name: str) -> bytes | None:
+    if not _path_entry_exists(destination):
+        return None
+    return _read_regular_prerequisite_rotation_target(destination, name=name)
+
+
+def _remove_owned_prerequisite_rotation_path(
+    path: Path,
+    *,
+    identity: JsonObject,
+    name: str,
+) -> None:
+    content = _read_prerequisite_rotation_target_if_present(path, name=name)
+    if content is None:
+        return
+    _require(
+        _candidate_identity(content) == identity,
+        f"{name} does not match its transaction-owned identity",
+    )
+    path.unlink()
+    _fsync_prerequisite_rotation_directory(path)
+
+
+def _restore_prerequisite_rotation_target(target: _PrerequisiteRotationTarget) -> None:
+    """Restore one journal-owned target only when each extant byte sequence is expected."""
+
+    destination_content = _read_prerequisite_rotation_target_if_present(
+        target.destination,
+        name=f"prerequisite rotation {target.kind} destination",
+    )
+    stage = target.stage
+    if stage is None:
+        raise ValueError("prerequisite rotation target must retain its staged path")
+    if target.before_identity is None:
+        if destination_content is not None:
+            _require(
+                _candidate_identity(destination_content) == target.target_identity,
+                f"prerequisite rotation {target.kind} destination is not transaction-owned",
+            )
+            target.destination.unlink()
+            _commit_prerequisite_fsync(target.destination)
+    else:
+        backup = target.backup
+        if backup is None:
+            raise ValueError("prerequisite rotation prior bytes require a backup")
+        backup_content = _read_prerequisite_rotation_target_if_present(
+            backup,
+            name=f"prerequisite rotation {target.kind} backup",
+        )
+        if backup_content is not None:
+            _require(
+                _candidate_identity(backup_content) == target.before_identity,
+                f"prerequisite rotation {target.kind} backup bytes changed",
+            )
+        destination_identity = _candidate_identity(destination_content) if destination_content is not None else None
+        if destination_identity != target.before_identity:
+            _require(
+                destination_identity is None or destination_identity == target.target_identity,
+                f"prerequisite rotation {target.kind} destination is not transaction-owned",
+            )
+            _require(backup_content is not None, f"prerequisite rotation {target.kind} backup is unavailable")
+            os.replace(backup, target.destination)
+            _commit_prerequisite_fsync(target.destination)
+        restored = _read_regular_prerequisite_rotation_target(
+            target.destination,
+            name=f"restored prerequisite rotation {target.kind} destination",
+        )
+        _require(
+            _candidate_identity(restored) == target.before_identity,
+            f"prerequisite rotation {target.kind} restore bytes changed",
+        )
+        if backup_content is not None:
+            _remove_owned_prerequisite_rotation_path(
+                backup,
+                identity=target.before_identity,
+                name=f"prerequisite rotation {target.kind} backup",
+            )
+    _remove_owned_prerequisite_rotation_path(
+        stage,
+        identity=target.target_identity,
+        name=f"prerequisite rotation {target.kind} stage",
+    )
+
+
+def _rollback_prerequisite_rotation(
+    committed: Sequence[_PrerequisiteRotationTarget],
+) -> tuple[list[str], list[_PrerequisiteRotationTarget]]:
+    """Restore committed prerequisite targets in reverse order after a controlled failure."""
+
+    failures: list[str] = []
+    failed_targets: list[_PrerequisiteRotationTarget] = []
+    for target in reversed(committed):
+        try:
+            _restore_prerequisite_rotation_target(target)
+        except (OSError, ValueError) as error:
+            failed_targets.append(target)
+            retained = (
+                f"; retained recovery backup: {target.backup}"
+                if target.backup is not None and _path_entry_exists(target.backup)
+                else ""
+            )
+            failures.append(f"{target.destination}: {error}{retained}")
+    return failures, failed_targets
+
+
+def _cleanup_prerequisite_rotation_staging(
+    targets: Sequence[_PrerequisiteRotationTarget],
+    *,
+    strict: bool,
+) -> list[str]:
+    """Discard only journal-owned staging and backup files after restore or success."""
+
+    failures: list[str] = []
+    for target in targets:
+        owned: list[tuple[Path, JsonObject, str]] = []
+        if target.stage is not None:
+            owned.append(
+                (
+                    target.stage,
+                    target.target_identity,
+                    f"prerequisite rotation {target.kind} stage",
+                )
+            )
+        if target.backup is not None and target.before_identity is not None:
+            owned.append(
+                (
+                    target.backup,
+                    target.before_identity,
+                    f"prerequisite rotation {target.kind} backup",
+                )
+            )
+        for path, identity, name in owned:
+            try:
+                _remove_owned_prerequisite_rotation_path(path, identity=identity, name=name)
+            except (OSError, ValueError) as error:
+                if strict:
+                    failures.append(f"{path}: {error}")
+    return failures
+
+
+def _prerequisite_rotation_is_complete(
+    repository_root: Path,
+    *,
+    study_id: str,
+    targets: Sequence[_PrerequisiteRotationTarget],
+) -> bool:
+    try:
+        for target in targets:
+            content = _read_prerequisite_rotation_target_if_present(
+                target.destination,
+                name=f"prerequisite rotation {target.kind} destination",
+            )
+            if content is None or _candidate_identity(content) != target.target_identity:
+                return False
+        root_target = next(target for target in targets if target.kind == "root")
+        marker_target = next(target for target in targets if target.kind == "marker")
+        prerequisite_content = _read_regular_prerequisite_rotation_target(
+            root_target.destination,
+            name="canonical prerequisite target",
+        )
+        prerequisite = parse_prerequisite_results(prerequisite_content, repository_root=repository_root)
+        _require(prerequisite.study_id == study_id, "completed rotation prerequisite study ID is invalid")
+        marker_content = _read_regular_prerequisite_rotation_target(
+            marker_target.destination,
+            name="completed prerequisite success marker",
+        )
+        _require_successful_prerequisite_marker_content(
+            marker_content,
+            study_id=study_id,
+            url=prerequisite.url,
+            prerequisite_content=prerequisite_content,
+        )
+        validate_base_configs(repository_root, prerequisite)
+    except (OSError, TypeError, ValueError, TrafficlabError):
+        return False
+    return True
+
+
+def _clear_prerequisite_rotation_journal(journal: Path) -> None:
+    _read_regular_prerequisite_rotation_target(journal, name="prerequisite rotation journal")
+    journal.unlink()
+    _fsync_prerequisite_rotation_directory(journal)
+
+
+def _recover_prerequisite_rotation_journal(repository_root: Path, journal: Path) -> None:
+    content = _read_regular_prerequisite_rotation_target(journal, name="prerequisite rotation journal")
+    study_id, targets = _parse_prerequisite_rotation_journal(
+        content,
+        repository_root=repository_root,
+        journal=journal,
+    )
+    if _prerequisite_rotation_is_complete(repository_root, study_id=study_id, targets=targets):
+        failures = _cleanup_prerequisite_rotation_staging(targets, strict=True)
+    else:
+        failures, failed_targets = _rollback_prerequisite_rotation(targets)
+        failed_target_ids = {id(target) for target in failed_targets}
+        failures.extend(
+            _cleanup_prerequisite_rotation_staging(
+                [target for target in targets if id(target) not in failed_target_ids],
+                strict=True,
+            )
+        )
+    if failures:
+        raise ValueError(
+            f"could not recover prerequisite rotation journal {journal}; retained recovery paths: {'; '.join(failures)}"
+        )
+    _clear_prerequisite_rotation_journal(journal)
+
+
+def _recover_incomplete_prerequisite_rotations(repository_root: Path) -> None:
+    """Recover each durable incomplete rotation before any new phase marker is consumed."""
+
+    attempts = repository_root / "examples" / "validation_study" / ".study-work" / "attempts"
+    try:
+        mode = attempts.lstat().st_mode
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise ValueError(f"could not inspect prerequisite attempt directory {attempts}: {error}") from error
+    _require(
+        stat.S_ISDIR(mode) and not stat.S_ISLNK(mode),
+        "prerequisite attempt directory must be a regular directory",
+    )
+    try:
+        attempt_paths = sorted(attempts.iterdir(), key=lambda path: path.name)
+    except OSError as error:
+        raise ValueError(f"could not enumerate prerequisite attempts {attempts}: {error}") from error
+    for attempt in attempt_paths:
+        try:
+            mode = attempt.lstat().st_mode
+        except OSError as error:
+            raise ValueError(f"could not inspect prerequisite attempt {attempt}: {error}") from error
+        _require(
+            stat.S_ISDIR(mode) and not stat.S_ISLNK(mode),
+            "prerequisite attempt must be a regular directory",
+        )
+        journal = attempt / "prerequisites-rotation.json"
+        if _path_entry_exists(journal):
+            _recover_prerequisite_rotation_journal(repository_root, journal)
+
+
 def _bootstrap_current_prerequisite_archive(repository_root: Path, prerequisite_path: Path) -> None:
     """Preserve a schema-1 canonical root that predates per-attempt raw archives."""
 
@@ -6038,13 +6577,20 @@ def _complete_prerequisite_attempt(  # pyright: ignore[reportUnusedFunction]
         content=prerequisite_content,
     )
     marker = _collection_attempt_root(repository_root, study_id) / "prerequisites-success.json"
-    _write_candidate_bytes(
+    _publish_prerequisite_rotation_exclusive_file(
         marker,
         _render_successful_prerequisite_marker(
             study_id=study_id,
             url=url,
             prerequisite_content=archived,
         ),
+        validate=lambda persisted: _require_successful_prerequisite_marker_content(
+            persisted,
+            study_id=study_id,
+            url=url,
+            prerequisite_content=archived,
+        ),
+        name="successful prerequisite marker",
     )
 
 
@@ -6060,7 +6606,11 @@ def _require_successful_prerequisite_attempt(
 
     marker = _collection_attempt_root(repository_root, study_id) / "prerequisites-success.json"
     try:
-        content = marker.read_bytes()
+        _require(
+            not _path_entry_exists(_prerequisite_rotation_journal_path(repository_root, study_id)),
+            "collection requires a completed prerequisite rotation",
+        )
+        content = _read_regular_prerequisite_rotation_target(marker, name="successful prerequisite marker")
         _require_successful_prerequisite_marker_content(
             content,
             study_id=study_id,
@@ -6083,20 +6633,16 @@ def _require_successful_prerequisite_attempt(
         ) from error
 
 
-def _rollback_prerequisite_rotation(committed: list[tuple[Path, Path | None]]) -> list[str]:
-    """Restore committed prerequisite targets in reverse order after a controlled failure."""
+def _publish_prerequisite_rotation_target(target: _PrerequisiteRotationTarget) -> None:
+    """Publish one staged target without overwriting an absent-only archive or marker."""
 
-    failures: list[str] = []
-    for destination, backup in reversed(committed):
-        try:
-            if backup is None:
-                destination.unlink(missing_ok=True)
-            else:
-                os.replace(backup, destination)
-            _commit_prerequisite_fsync(destination)
-        except OSError as error:
-            failures.append(f"{destination}: {error}")
-    return failures
+    stage = target.stage
+    if stage is None:
+        raise ValueError("prerequisite rotation target must be staged before publication")
+    if target.must_be_absent:
+        os.link(stage, target.destination)
+    else:
+        os.replace(stage, target.destination)
 
 
 def _commit_prerequisite_rotation(
@@ -6121,7 +6667,7 @@ def _commit_prerequisite_rotation(
         prerequisite_content=prerequisite_content,
     )
 
-    targets: list[tuple[Path, bytes, Callable[[Path, bytes], None], bool]] = []
+    targets: list[tuple[str, Path, bytes, Callable[[Path, bytes], None], bool]] = []
 
     def validate_archive(_stage: Path, persisted: bytes) -> None:
         parsed = parse_prerequisite_results(persisted, repository_root=root)
@@ -6129,8 +6675,18 @@ def _commit_prerequisite_rotation(
             render_prerequisite_results(parsed) == prerequisite_content, "staged prerequisite archive is not canonical"
         )
 
-    targets.append((archive, prerequisite_content, validate_archive, True))
+    targets.append(("archive", archive, prerequisite_content, validate_archive, True))
+    expected = {
+        kind: destination
+        for kind, destination, _must_be_absent in _prerequisite_rotation_expected_targets(root, study_id)
+    }
+    config_kinds: list[str] = []
     for config, destination, content in configs:
+        workload = _workload_for_config(config)
+        kind = f"config-{workload.name}"
+        _require(kind in expected, "prerequisite rotation has an unknown checked config workload")
+        _require(destination == expected[kind], "prerequisite rotation checked config destination is invalid")
+        config_kinds.append(kind)
 
         def validate_config(
             stage: Path,
@@ -6144,7 +6700,12 @@ def _commit_prerequisite_rotation(
                 load_experiment(stage) == expected, "staged checked config must reload to its exact absolute oracle"
             )
 
-        targets.append((destination, content, validate_config, False))
+        targets.append((kind, destination, content, validate_config, False))
+
+    _require(
+        tuple(config_kinds) == ("config-short", "config-streaming", "config-bursty"),
+        "prerequisite rotation must publish its exact checked config order",
+    )
 
     def validate_prerequisite(_stage: Path, persisted: bytes) -> None:
         parsed = parse_prerequisite_results(persisted, repository_root=root)
@@ -6162,14 +6723,17 @@ def _commit_prerequisite_rotation(
 
     targets.extend(
         (
-            (prerequisite_path, prerequisite_content, validate_prerequisite, False),
-            (marker, marker_content, validate_marker, True),
+            ("root", prerequisite_path, prerequisite_content, validate_prerequisite, False),
+            ("marker", marker, marker_content, validate_marker, True),
         )
     )
 
-    prepared: list[tuple[Path, Path, Path | None]] = []
+    prepared: list[_PrerequisiteRotationTarget] = []
+    journal: Path | None = None
+    cleanup_staging = False
+    retain_recovery = False
     try:
-        for destination, content, validate, must_be_absent in targets:
+        for kind, destination, content, validate, must_be_absent in targets:
             previous = (
                 _read_regular_prerequisite_rotation_target(destination, name="prerequisite rotation target")
                 if _path_entry_exists(destination)
@@ -6177,8 +6741,18 @@ def _commit_prerequisite_rotation(
             )
             if must_be_absent:
                 _require(previous is None, f"prerequisite rotation target must be absent: {destination}")
-            backup = (
-                _stage_prerequisite_rotation_file(
+            target = _PrerequisiteRotationTarget(
+                kind=kind,
+                destination=destination,
+                stage=None,
+                backup=None,
+                before_identity=_candidate_identity(previous) if previous is not None else None,
+                target_identity=_candidate_identity(content),
+                must_be_absent=must_be_absent,
+            )
+            prepared.append(target)
+            if previous is not None:
+                target.backup = _stage_prerequisite_rotation_file(
                     destination,
                     previous,
                     validate=lambda _stage, persisted, expected=previous: _require(
@@ -6186,41 +6760,42 @@ def _commit_prerequisite_rotation(
                     ),
                     suffix=".bak",
                 )
-                if previous is not None
-                else None
-            )
-            stage = _stage_prerequisite_rotation_file(destination, content, validate=validate)
-            prepared.append((destination, stage, backup))
+            target.stage = _stage_prerequisite_rotation_file(destination, content, validate=validate)
 
-        committed: list[tuple[Path, Path | None]] = []
+        journal = _publish_prerequisite_rotation_journal(root, study_id=study_id, targets=prepared)
+        committed: list[_PrerequisiteRotationTarget] = []
         try:
-            for destination, stage, backup in prepared[:-1]:
-                os.replace(stage, destination)
-                committed.append((destination, backup))
-                _commit_prerequisite_fsync(destination)
+            for target in prepared[:-1]:
+                _publish_prerequisite_rotation_target(target)
+                committed.append(target)
+                _commit_prerequisite_fsync(target.destination)
+                _after_prerequisite_rotation_commit(target.destination)
             validate_base_configs(root, result)
-            destination, stage, backup = prepared[-1]
-            os.replace(stage, destination)
-            committed.append((destination, backup))
-            _commit_prerequisite_fsync(destination)
+            marker_target = prepared[-1]
+            _publish_prerequisite_rotation_target(marker_target)
+            committed.append(marker_target)
+            _commit_prerequisite_fsync(marker_target.destination)
+            _after_prerequisite_rotation_commit(marker_target.destination)
         except (OSError, TypeError, ValueError, TrafficlabError) as error:
-            rollback_failures = _rollback_prerequisite_rotation(committed)
+            rollback_failures, _failed_targets = _rollback_prerequisite_rotation(committed)
             if rollback_failures:
+                retain_recovery = True
                 raise ValueError(
-                    f"prerequisite rotation rollback failed after {error}: {'; '.join(rollback_failures)}"
+                    f"prerequisite rotation rollback failed after {error}; retained recovery journal "
+                    f"{journal}: {'; '.join(rollback_failures)}"
                 ) from error
+            _clear_prerequisite_rotation_journal(journal)
+            cleanup_staging = True
             raise
+        _clear_prerequisite_rotation_journal(journal)
+        cleanup_staging = True
+    except (OSError, TypeError, ValueError, TrafficlabError):
+        if not retain_recovery:
+            cleanup_staging = True
+        raise
     finally:
-        for _destination, stage, backup in prepared:
-            try:
-                stage.unlink(missing_ok=True)
-            except OSError:
-                pass
-            if backup is not None:
-                try:
-                    backup.unlink(missing_ok=True)
-                except OSError:
-                    pass
+        if cleanup_staging:
+            _cleanup_prerequisite_rotation_staging(prepared, strict=False)
 
 
 def _write_candidate_bytes(path: Path, content: bytes) -> None:

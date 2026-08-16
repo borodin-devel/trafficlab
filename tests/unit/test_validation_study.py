@@ -11,7 +11,7 @@ import socket
 import stat
 import subprocess
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7209,13 +7209,13 @@ def test_successful_prerequisite_rotation_replaces_current_raw_and_preserves_old
     }
 
 
-@pytest.mark.parametrize("failure_index", (1, 2, 3, 4, 5, 6))
+@pytest.mark.parametrize("failure_index", (1, 2, 3, 4))
 def test_prerequisite_rotation_rolls_back_every_replacement_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     failure_index: int,
 ) -> None:
-    """Every staged config/root/archive/marker replacement restores the complete r4 state."""
+    """Every replaceable config/root target restores the complete r4 state."""
 
     repository = tmp_path / "repository"
     _write_prerequisite_repository_inputs(repository)
@@ -7461,9 +7461,19 @@ def test_prerequisite_rotation_rollback_reports_a_durability_failure(
         raise OSError("simulated rollback fsync failure")
 
     monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_fsync)
-    failures = study._rollback_prerequisite_rotation([(destination, None)])  # pyright: ignore[reportPrivateUsage]
+    target = study._PrerequisiteRotationTarget(  # pyright: ignore[reportPrivateUsage]
+        kind="archive",
+        destination=destination,
+        stage=tmp_path / ".prerequisites.json.stage.tmp",
+        backup=None,
+        before_identity=None,
+        target_identity=cast(study.JsonObject, identify_bytes(b"partially committed\n").as_dict()),
+        must_be_absent=True,
+    )
+    failures, failed_targets = study._rollback_prerequisite_rotation([target])  # pyright: ignore[reportPrivateUsage]
 
     assert failures == [f"{destination}: simulated rollback fsync failure"]
+    assert failed_targets == [target]
     assert not destination.exists()
 
 
@@ -7488,8 +7498,10 @@ def test_prerequisite_rotation_preserves_primary_when_rollback_fails(
     def fail_commit(_destination: Path) -> None:
         raise OSError("simulated primary commit failure")
 
-    def simulated_rollback_failure(_committed: list[tuple[Path, Path | None]]) -> list[str]:
-        return ["simulated rollback durability failure"]
+    def simulated_rollback_failure(
+        _committed: Sequence[study._PrerequisiteRotationTarget],  # pyright: ignore[reportPrivateUsage]
+    ) -> tuple[list[str], list[study._PrerequisiteRotationTarget]]:  # pyright: ignore[reportPrivateUsage]
+        return ["simulated rollback durability failure"], []
 
     monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_commit)
     monkeypatch.setattr(
@@ -7552,6 +7564,661 @@ def test_prerequisite_rotation_ignores_postcommit_staging_cleanup_errors(
     assert marker.is_file()
     assert result.study_id == r5.study_id
     assert tuple((repository / "examples" / "validation_study").rglob(".*.bak"))
+
+
+@pytest.mark.parametrize("entry_kind", ("symlink", "fifo"))
+def test_successful_prerequisite_marker_rejects_nonregular_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry_kind: str,
+) -> None:
+    """A matching marker must be a canonical regular file, never an indirection or device."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    runner = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        runner.url,
+        runner.study_id,
+        repository_root=repository,
+        runner=runner,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    prerequisite = repository / "examples" / "validation_study" / "prerequisites.json"
+    marker = (
+        repository
+        / "examples"
+        / "validation_study"
+        / ".study-work"
+        / "attempts"
+        / runner.study_id
+        / "prerequisites-success.json"
+    )
+    marker_bytes = marker.read_bytes()
+    marker.unlink()
+    if entry_kind == "symlink":
+        outside = repository / "outside-marker.json"
+        outside.write_bytes(marker_bytes)
+        marker.symlink_to(outside)
+    else:
+        os.mkfifo(marker)
+        original_read_bytes = Path.read_bytes
+
+        def forbid_fifo_read(path: Path) -> bytes:
+            if path == marker:
+                raise AssertionError("marker reader must reject a FIFO before opening it")
+            return original_read_bytes(path)
+
+        monkeypatch.setattr(Path, "read_bytes", forbid_fifo_read)
+
+    with pytest.raises(TrafficlabError, match="matching successful prerequisite marker"):
+        study._require_successful_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            study_id=runner.study_id,
+            url=runner.url,
+            prerequisite_content=prerequisite.read_bytes(),
+        )
+
+
+def test_successful_prerequisite_marker_and_legacy_archive_use_durable_regular_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The normal marker path and a bootstrap archive both bind regular canonical bytes durably."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    runner = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        runner.url,
+        runner.study_id,
+        repository_root=repository,
+        runner=runner,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    prerequisite = repository / "examples" / "validation_study" / "prerequisites.json"
+    study._require_successful_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id=runner.study_id,
+        url=runner.url,
+        prerequisite_content=prerequisite.read_bytes(),
+    )
+
+    archive = (
+        repository
+        / "examples"
+        / "validation_study"
+        / ".study-work"
+        / "attempts"
+        / runner.study_id
+        / "prerequisites.raw.json"
+    )
+    content = archive.read_bytes()
+    archive.unlink()
+    fsynced: list[Path] = []
+    original_fsync = study._fsync_prerequisite_rotation_directory  # pyright: ignore[reportPrivateUsage]
+
+    def record_fsync(destination: Path) -> None:
+        fsynced.append(destination)
+        original_fsync(destination)
+
+    monkeypatch.setattr(study, "_fsync_prerequisite_rotation_directory", record_fsync)
+    assert (
+        study._archive_prerequisite_raw_document(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            study_id=runner.study_id,
+            content=content,
+        )
+        == content
+    )
+    assert archive in fsynced
+    assert (
+        study._archive_prerequisite_raw_document(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            study_id=runner.study_id,
+            content=content,
+        )
+        == content
+    )
+
+
+def test_prerequisite_rotation_journal_requires_a_stage_for_every_owned_target(tmp_path: Path) -> None:
+    """A journal cannot omit a stage path before it records mutable transaction state."""
+
+    target = study._PrerequisiteRotationTarget(  # pyright: ignore[reportPrivateUsage]
+        kind="archive",
+        destination=tmp_path / "archive.json",
+        stage=None,
+        backup=None,
+        before_identity=None,
+        target_identity=cast(study.JsonObject, identify_bytes(b"incoming\n").as_dict()),
+        must_be_absent=True,
+    )
+
+    with pytest.raises(ValueError, match="requires every staged target"):
+        study._render_prerequisite_rotation_journal(  # pyright: ignore[reportPrivateUsage]
+            tmp_path,
+            study_id="study-r5",
+            targets=(target,),
+        )
+
+
+def test_prerequisite_rotation_recovery_allows_an_absent_attempt_directory(tmp_path: Path) -> None:
+    """Recovery is a no-op before any prerequisite phase has ever allocated an attempt directory."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    study._recover_incomplete_prerequisite_rotations(repository)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("cleanup_mode", ("remove", "read-error", "mismatched", "link-failure"))
+def test_prerequisite_rotation_exclusive_publication_preserves_or_removes_only_its_own_link(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_mode: str,
+) -> None:
+    """A post-link validation failure removes only verified bytes and retains uncertain recovery evidence."""
+
+    destination = tmp_path / "prerequisites.raw.json"
+    content = b"canonical prerequisite bytes\n"
+    validation_calls = 0
+    cleanup_read = False
+    original_read = study._read_regular_prerequisite_rotation_target  # pyright: ignore[reportPrivateUsage]
+    original_link = study.os.link
+
+    def validate(persisted: bytes) -> None:
+        nonlocal cleanup_read, validation_calls
+        validation_calls += 1
+        assert persisted == content
+        if validation_calls == 2:
+            cleanup_read = True
+            raise ValueError("simulated post-link validation failure")
+
+    def maybe_fail_cleanup_read(path: Path, *, name: str) -> bytes:
+        if cleanup_mode == "read-error" and cleanup_read and path == destination:
+            raise OSError("simulated uncertain post-link read")
+        if cleanup_mode == "mismatched" and cleanup_read and path == destination:
+            return b"different retained bytes\n"
+        return original_read(path, name=name)
+
+    def fail_before_link(source: str | Path, target: str | Path) -> None:
+        if cleanup_mode == "link-failure":
+            raise OSError("simulated exclusive publication collision")
+        original_link(source, target)
+
+    monkeypatch.setattr(study, "_read_regular_prerequisite_rotation_target", maybe_fail_cleanup_read)
+    monkeypatch.setattr(study.os, "link", fail_before_link)
+    expected_error = OSError if cleanup_mode == "link-failure" else ValueError
+    expected_message = (
+        "exclusive publication collision" if cleanup_mode == "link-failure" else "post-link validation failure"
+    )
+    with pytest.raises(expected_error, match=expected_message):
+        study._publish_prerequisite_rotation_exclusive_file(  # pyright: ignore[reportPrivateUsage]
+            destination,
+            content,
+            validate=validate,
+            name="test prerequisite archive",
+        )
+
+    assert validation_calls == (1 if cleanup_mode == "link-failure" else 2)
+    if cleanup_mode in {"read-error", "mismatched"}:
+        assert destination.read_bytes() == content
+    else:
+        assert not destination.exists()
+    assert not tuple(tmp_path.glob(".*.tmp"))
+
+
+def test_prerequisite_rotation_target_guard_paths_are_explicit(tmp_path: Path) -> None:
+    """Missing stages/backups cannot silently turn journal recovery into arbitrary deletion."""
+
+    incoming = cast(study.JsonObject, identify_bytes(b"incoming\n").as_dict())
+    prior = cast(study.JsonObject, identify_bytes(b"prior\n").as_dict())
+    destination = tmp_path / "target.json"
+    destination.write_bytes(b"incoming\n")
+    missing_stage = study._PrerequisiteRotationTarget(  # pyright: ignore[reportPrivateUsage]
+        kind="archive",
+        destination=destination,
+        stage=None,
+        backup=None,
+        before_identity=None,
+        target_identity=incoming,
+        must_be_absent=True,
+    )
+    with pytest.raises(ValueError, match="retain its staged path"):
+        study._restore_prerequisite_rotation_target(missing_stage)  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(ValueError, match="staged before publication"):
+        study._publish_prerequisite_rotation_target(missing_stage)  # pyright: ignore[reportPrivateUsage]
+    assert (
+        study._cleanup_prerequisite_rotation_staging(  # pyright: ignore[reportPrivateUsage]
+            (missing_stage,),
+            strict=True,
+        )
+        == []
+    )
+
+    wrong_stage = tmp_path / ".target.json.wrong.tmp"
+    wrong_stage.write_bytes(b"foreign staging bytes\n")
+    wrong_stage_target = study._PrerequisiteRotationTarget(  # pyright: ignore[reportPrivateUsage]
+        kind="archive",
+        destination=destination,
+        stage=wrong_stage,
+        backup=None,
+        before_identity=None,
+        target_identity=incoming,
+        must_be_absent=True,
+    )
+    cleanup_failures = study._cleanup_prerequisite_rotation_staging(  # pyright: ignore[reportPrivateUsage]
+        (wrong_stage_target,),
+        strict=True,
+    )
+    assert cleanup_failures == [
+        f"{wrong_stage}: prerequisite rotation archive stage does not match its transaction-owned identity"
+    ]
+    assert wrong_stage.read_bytes() == b"foreign staging bytes\n"
+
+    prior_target = study._PrerequisiteRotationTarget(  # pyright: ignore[reportPrivateUsage]
+        kind="config-short",
+        destination=destination,
+        stage=tmp_path / ".target.json.stage.tmp",
+        backup=None,
+        before_identity=prior,
+        target_identity=incoming,
+        must_be_absent=False,
+    )
+    with pytest.raises(ValueError, match="prior bytes require a backup"):
+        study._restore_prerequisite_rotation_target(prior_target)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_prerequisite_rotation_completion_rejects_semantically_invalid_target_bytes(tmp_path: Path) -> None:
+    """Matching journal hashes alone never bless malformed prerequisite semantics as a completed rotation."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    targets: list[study._PrerequisiteRotationTarget] = []  # pyright: ignore[reportPrivateUsage]
+    for kind, destination, must_be_absent in study._prerequisite_rotation_expected_targets(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        "study-r5",
+    ):
+        content = b"not canonical prerequisite JSON\n" if kind == "root" else b"placeholder\n"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+        stage = destination.parent / f".{destination.name}.complete.tmp"
+        stage.write_bytes(content)
+        targets.append(
+            study._PrerequisiteRotationTarget(  # pyright: ignore[reportPrivateUsage]
+                kind=kind,
+                destination=destination,
+                stage=stage,
+                backup=None,
+                before_identity=None,
+                target_identity=cast(study.JsonObject, identify_bytes(content).as_dict()),
+                must_be_absent=must_be_absent,
+            )
+        )
+
+    assert not study._prerequisite_rotation_is_complete(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-r5",
+        targets=targets,
+    )
+
+
+@pytest.mark.parametrize("failure", ("attempt-lstat", "attempt-enumeration", "child-lstat"))
+def test_prerequisite_rotation_recovery_reports_attempt_directory_io_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """A recovery scan never skips an unreadable attempt boundary before consuming a new study ID."""
+
+    repository = tmp_path / "repository"
+    attempts = repository / "examples" / "validation_study" / ".study-work" / "attempts"
+    attempts.mkdir(parents=True)
+    child = attempts / "study-r5"
+    child.mkdir()
+    original_lstat = Path.lstat
+    original_iterdir = Path.iterdir
+
+    def fail_selected_lstat(path: Path) -> os.stat_result:
+        if (failure == "attempt-lstat" and path == attempts) or (failure == "child-lstat" and path == child):
+            raise OSError(f"simulated {failure}")
+        return original_lstat(path)
+
+    def fail_selected_iterdir(path: Path) -> list[Path]:
+        if failure == "attempt-enumeration" and path == attempts:
+            raise OSError("simulated attempt enumeration")
+        return list(original_iterdir(path))
+
+    monkeypatch.setattr(Path, "lstat", fail_selected_lstat)
+    monkeypatch.setattr(Path, "iterdir", fail_selected_iterdir)
+    with pytest.raises(ValueError, match="could not (inspect|enumerate) prerequisite attempt"):
+        study._recover_incomplete_prerequisite_rotations(repository)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_prerequisite_rotation_retains_failed_restore_backup_with_its_recovery_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed rollback restore never deletes the only exact prior bytes."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    study_root = repository / "examples" / "validation_study"
+    short_config = study_root / "configs" / "short.toml"
+    short_before = short_config.read_bytes()
+    canonical = study_root / "prerequisites.json"
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    original_fsync = study._commit_prerequisite_fsync  # pyright: ignore[reportPrivateUsage]
+    original_replace = study.os.replace
+    failed_backup: Path | None = None
+
+    def fail_canonical_commit(destination: Path) -> None:
+        if destination == canonical:
+            raise OSError("simulated primary canonical fsync failure")
+        original_fsync(destination)
+
+    def fail_short_restore(source: str | Path, target: str | Path) -> None:
+        nonlocal failed_backup
+        source_path = Path(source)
+        target_path = Path(target)
+        if source_path.suffix == ".bak" and target_path == short_config:
+            failed_backup = source_path
+            raise OSError("simulated short rollback restore failure")
+        original_replace(source, target)
+
+    monkeypatch.setattr(study, "_commit_prerequisite_fsync", fail_canonical_commit)
+    monkeypatch.setattr(study.os, "replace", fail_short_restore)
+    with pytest.raises(TrafficlabError, match="rollback failed after") as raised:
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    assert failed_backup is not None
+    assert str(failed_backup) in str(raised.value)
+    assert failed_backup.read_bytes() == short_before
+    assert _tree_inventory(failed_backup.parent)[failed_backup.name] == ("regular", short_before)
+    journal = study_root / ".study-work" / "attempts" / r5.study_id / "prerequisites-rotation.json"
+    assert journal.is_file()
+
+    r6 = _ScriptedPrerequisiteRunner(repository, study_id="study-r6")
+    with pytest.raises(TrafficlabError, match="retained recovery paths") as recovery:
+        study.run_prerequisites(
+            r6.url,
+            r6.study_id,
+            repository_root=repository,
+            runner=r6,
+            utc_now=lambda: datetime(2026, 8, 18, tzinfo=UTC),
+        )
+    assert str(failed_backup) in str(recovery.value)
+    assert failed_backup.read_bytes() == short_before
+    assert journal.is_file()
+    assert not (study_root / ".study-work" / "attempts" / r6.study_id / "prerequisites.json").exists()
+
+
+@pytest.mark.parametrize("target_name", ("prerequisites.raw.json", "prerequisites-success.json"))
+def test_prerequisite_rotation_rejects_late_absent_target_collisions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_name: str,
+) -> None:
+    """A file created after staging is never overwritten at an absent archive or marker target."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    study_root = repository / "examples" / "validation_study"
+    canonical_before = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    r4_attempt = study_root / ".study-work" / "attempts" / r4.study_id
+    r4_attempt_before = _tree_inventory(r4_attempt)
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    collision = b"late foreign prerequisite collision\n"
+    original_stage = study._stage_prerequisite_rotation_file  # pyright: ignore[reportPrivateUsage]
+
+    def stage_then_collide(
+        destination: Path,
+        content: bytes,
+        *,
+        validate: Callable[[Path, bytes], None],
+        suffix: str = ".tmp",
+    ) -> Path:
+        stage = original_stage(destination, content, validate=validate, suffix=suffix)
+        if destination.name == target_name and suffix == ".tmp":
+            destination.write_bytes(collision)
+        return stage
+
+    monkeypatch.setattr(study, "_stage_prerequisite_rotation_file", stage_then_collide)
+    with pytest.raises(TrafficlabError, match="absent|exists|collision"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    canonical_after = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    assert canonical_after == canonical_before
+    assert _tree_inventory(r4_attempt) == r4_attempt_before
+    target = study_root / ".study-work" / "attempts" / r5.study_id / target_name
+    assert target.read_bytes() == collision
+    assert not tuple(study_root.rglob(".*.tmp"))
+    assert not tuple(study_root.rglob(".*.bak"))
+
+
+def test_prerequisite_rotation_cleans_a_backup_created_before_later_stage_validation_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every backup is transaction-owned before its paired incoming stage can fail."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    study_root = repository / "examples" / "validation_study"
+    canonical_before = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    r4_attempt = study_root / ".study-work" / "attempts" / r4.study_id
+    r4_attempt_before = _tree_inventory(r4_attempt)
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    original_stage = study._stage_prerequisite_rotation_file  # pyright: ignore[reportPrivateUsage]
+    backup: Path | None = None
+
+    def fail_short_incoming_stage(
+        destination: Path,
+        content: bytes,
+        *,
+        validate: Callable[[Path, bytes], None],
+        suffix: str = ".tmp",
+    ) -> Path:
+        nonlocal backup
+        if destination.name == "short.toml" and suffix == ".tmp":
+            raise ValueError("simulated incoming stage validation failure")
+        staged = original_stage(destination, content, validate=validate, suffix=suffix)
+        if destination.name == "short.toml" and suffix == ".bak":
+            backup = staged
+        return staged
+
+    monkeypatch.setattr(study, "_stage_prerequisite_rotation_file", fail_short_incoming_stage)
+    with pytest.raises(TrafficlabError, match="incoming stage validation failure"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    assert backup is not None
+    assert not backup.exists()
+    canonical_after = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    assert canonical_after == canonical_before
+    assert _tree_inventory(r4_attempt) == r4_attempt_before
+    r5_attempt = study_root / ".study-work" / "attempts" / r5.study_id
+    assert set(path.name for path in r5_attempt.iterdir()) == {"prerequisites.json"}
+    assert not tuple(study_root.rglob(".*.tmp"))
+    assert not tuple(study_root.rglob(".*.bak"))
+
+
+@pytest.mark.parametrize("commit_index", (1, 2, 3, 4, 5, 6))
+def test_prerequisite_rotation_recovers_every_baseexception_crash_before_a_new_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    commit_index: int,
+) -> None:
+    """A fresh public prerequisites invocation restores all r4 bytes before it consumes r6."""
+
+    class SimulatedCrash(BaseException):
+        pass
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    r4 = _ScriptedPrerequisiteRunner(repository, study_id="study-r4")
+    study.run_prerequisites(
+        r4.url,
+        r4.study_id,
+        repository_root=repository,
+        runner=r4,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    study_root = repository / "examples" / "validation_study"
+    canonical_before = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts
+    }
+    r4_attempt = study_root / ".study-work" / "attempts" / r4.study_id
+    r4_attempt_before = _tree_inventory(r4_attempt)
+    r5 = _ScriptedPrerequisiteRunner(repository, study_id="study-r5")
+    commits = 0
+
+    def crash_after_commit(_destination: Path) -> None:
+        nonlocal commits
+        commits += 1
+        if commits == commit_index:
+            raise SimulatedCrash(f"simulated crash after commit {commit_index}")
+
+    monkeypatch.setattr(study, "_after_prerequisite_rotation_commit", crash_after_commit, raising=False)
+    with pytest.raises(SimulatedCrash, match=f"commit {commit_index}"):
+        study.run_prerequisites(
+            r5.url,
+            r5.study_id,
+            repository_root=repository,
+            runner=r5,
+            utc_now=lambda: datetime(2026, 8, 17, tzinfo=UTC),
+        )
+
+    r5_attempt = study_root / ".study-work" / "attempts" / r5.study_id
+    r5_canonical_after_crash = {
+        path.relative_to(study_root): path.read_bytes()
+        for path in sorted(study_root.rglob("*"))
+        if path.is_file() and ".study-work" not in path.parts and not path.name.endswith((".tmp", ".bak"))
+    }
+    r5_success_marker = r5_attempt / "prerequisites-success.json"
+    r6 = _ScriptedPrerequisiteRunner(repository, study_id="study-r6")
+    original_begin = study._begin_phase_attempt  # pyright: ignore[reportPrivateUsage]
+
+    def assert_recovered_before_begin(
+        root: Path,
+        *,
+        study_id: str,
+        url: str,
+        phase: Literal["prerequisites", "collection"],
+    ) -> Path:
+        if study_id == r6.study_id:
+            canonical_after = {
+                path.relative_to(study_root): path.read_bytes()
+                for path in sorted(study_root.rglob("*"))
+                if path.is_file() and ".study-work" not in path.parts
+            }
+            assert _tree_inventory(r4_attempt) == r4_attempt_before
+            if commit_index == 6:
+                assert canonical_after == r5_canonical_after_crash
+                assert _tree_inventory(r5_attempt) == {
+                    ".": ("directory",),
+                    "prerequisites.json": (
+                        "regular",
+                        study._canonical_json(  # pyright: ignore[reportPrivateUsage]
+                            cast(
+                                study.JsonObject,
+                                {"phase": "prerequisites", "study_id": r5.study_id, "url": r5.url},
+                            )
+                        ),
+                    ),
+                    "prerequisites-success.json": ("regular", r5_success_marker.read_bytes()),
+                    "prerequisites.raw.json": (
+                        "regular",
+                        (study_root / "prerequisites.json").read_bytes(),
+                    ),
+                }
+            else:
+                assert canonical_after == canonical_before
+                assert _tree_inventory(r5_attempt) == {
+                    ".": ("directory",),
+                    "prerequisites.json": (
+                        "regular",
+                        study._canonical_json(  # pyright: ignore[reportPrivateUsage]
+                            cast(
+                                study.JsonObject,
+                                {"phase": "prerequisites", "study_id": r5.study_id, "url": r5.url},
+                            )
+                        ),
+                    ),
+                }
+            assert not tuple(study_root.rglob(".*.tmp"))
+            assert not tuple(study_root.rglob(".*.bak"))
+            raise ValueError("recovery inspection complete")
+        return original_begin(root, study_id=study_id, url=url, phase=phase)
+
+    monkeypatch.setattr(study, "_begin_phase_attempt", assert_recovered_before_begin)
+    with pytest.raises(TrafficlabError, match="recovery inspection complete"):
+        study.run_prerequisites(
+            r6.url,
+            r6.study_id,
+            repository_root=repository,
+            runner=r6,
+            utc_now=lambda: datetime(2026, 8, 18, tzinfo=UTC),
+        )
 
 
 def test_collection_rejects_old_id_after_prerequisite_rotation_but_keeps_its_raw_archive(tmp_path: Path) -> None:
