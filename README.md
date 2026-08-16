@@ -431,11 +431,12 @@ fixture proves the offline audit contract.
 - [Study instructions and retained-evidence policy](examples/validation_study/README.md)
 - [Study results and interpretation](examples/validation_study/REPORT.md)
 
-The study found Markov Renewal strongest across the measured workloads while
-also identifying repeatable local directional-volume limitations. The report
-records the protocol amendment, failed attempts, natural variation, component
-scores, trace diagnostics, reproducibility evidence, and the scoped next
-research question.
+No replacement study has been collected under the corrected protocol yet. The
+historical Phase 7 material is intentionally not an accepted result: it lacks
+the corrected scientific schema, complete retained run trees, fresh-simulation
+separation, genuine held-out references, and clean-clone reconstruction. The
+operator guide freezes the local collection and audit procedure before any
+external command is authorized.
 
 ## Limitations
 

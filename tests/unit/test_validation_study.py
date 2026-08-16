@@ -149,12 +149,14 @@ class _ScriptedPrerequisiteRunner:
             "docker",
             "build",
             "--pull=false",
+            "--no-cache",
             "--iidfile",
             str(self.evidence / "capture.iid"),
             "docker/capture",
         )
-        iid = "trafficlab-capture:local" if self.mutation == "capture-iid-tag" else self.capture_id
-        (self.evidence / "capture.iid").write_text(f"{iid}\n", encoding="ascii")
+        if self.mutation != "capture-iid-missing":
+            iid = "trafficlab-capture:local" if self.mutation == "capture-iid-tag" else self.capture_id
+            (self.evidence / "capture.iid").write_text(f"{iid}\n", encoding="ascii")
         if self.mutation == "preexisting-cid":
             (self.evidence / "capability.cid").write_text(f"{self.container_id}\n", encoding="ascii")
         return subprocess.CompletedProcess(command, 0, stdout=b"built\n", stderr=b"")
@@ -2920,6 +2922,7 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
             "docker",
             "build",
             "--pull=false",
+            "--no-cache",
             "--iidfile",
             str(runner.evidence / "capture.iid"),
             "docker/capture",
@@ -2998,6 +3001,7 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         "wrong-python",
         "target-digest-absent",
         "capture-iid-tag",
+        "capture-iid-missing",
         "preexisting-name",
         "preexisting-cid",
         "capability-daemon-error",
@@ -3060,6 +3064,7 @@ def test_prerequisites_stop_at_first_failure_preserve_primary_and_publish_no_val
             "wrong-python": (("docker", "version"),),
             "target-digest-absent": (("docker", "build"),),
             "capture-iid-tag": (("docker", "container", "inspect"),),
+            "capture-iid-missing": (("docker", "container", "inspect"),),
             "preexisting-name": (("docker", "run", "--rm"),),
             "preexisting-cid": (("docker", "run", "--rm"),),
         }.get(mutation, ())
@@ -3106,6 +3111,22 @@ def test_prerequisites_stop_at_first_failure_preserve_primary_and_publish_no_val
         archive = evidence / "capability.headers"
         assert archive.read_bytes() == canary.read_bytes()
         assert stat.S_IMODE(archive.stat().st_mode) == 0o600
+
+
+def test_prerequisites_wrap_invalid_study_id_without_attempt_preservation(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+
+    with pytest.raises(TrafficlabError, match="prerequisite validation failed"):
+        study.run_prerequisites(
+            "https://downloads.example.test/object.bin",
+            "INVALID_ID",
+            repository_root=repository_root,
+            runner=_StudyIdentityRunner(repository_root),
+            utc_now=lambda: datetime(2026, 8, 13, 12, 0, tzinfo=UTC),
+        )
+
+    assert not (repository_root / "examples" / "validation_study" / ".study-work").exists()
 
 
 def test_capability_normal_exit_proves_exact_full_id_and_anchored_name_absent(tmp_path: Path) -> None:
@@ -3589,10 +3610,12 @@ class _StudyIdentityRunner:
         *,
         target_image_id: str = _IMAGE_ID,
         capture_image_id: str = f"sha256:{'d' * 64}",
+        dirty: bool = False,
     ) -> None:
         self.root = repository_root
         self.target_image_id = target_image_id
         self.capture_image_id = capture_image_id
+        self.dirty = dirty
         self.calls: list[tuple[str, ...]] = []
 
     def __call__(
@@ -3614,7 +3637,8 @@ class _StudyIdentityRunner:
         self.calls.append(command)
         outputs: dict[tuple[str, ...], bytes] = {
             ("git", "rev-parse", "HEAD"): b"c" * 40 + b"\n",
-            ("git", "status", "--porcelain=v1", "--untracked-files=all"): b"",
+            ("git", "rev-parse", "HEAD^{tree}"): b"e" * 40 + b"\n",
+            ("git", "status", "--porcelain=v1", "--untracked-files=all"): b" M source.py\n" if self.dirty else b"",
             ("docker", "version", "--format", "{{.Server.Version}}"): b"27.0.0\n",
             ("docker", "compose", "version", "--short"): b"2.29.0\n",
             ("docker", "image", "inspect", study.TARGET_REFERENCE): json.dumps(
@@ -4494,6 +4518,130 @@ def test_study_cli_requires_exact_url_id_and_prerequisite_path_and_never_wraps_i
     assert len(calls) == 1
 
 
+def test_collect_cli_uses_only_frozen_prerequisite_inputs_and_the_candidate_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    inputs: study.CollectionInputs = (
+        {"frozen": "environment"},
+        b"frozen prerequisites\n",
+        {},
+        {},
+        4_194_304,
+    )
+    calls: list[dict[str, object]] = []
+
+    def load_inputs(*_args: object, **_kwargs: object) -> study.CollectionInputs:
+        return inputs
+
+    def collect(**kwargs: object) -> Path:
+        calls.append(kwargs)
+        return repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
+
+    monkeypatch.setattr(study, "_collection_inputs_from_prerequisites", load_inputs, raising=False)
+    monkeypatch.setattr(study, "collect_validation_candidate", collect)
+
+    assert (
+        study.main(
+            [
+                "collect",
+                "--url",
+                "https://downloads.example.test/object.bin",
+                "--study-id",
+                "study-1",
+                "--prerequisites",
+                "examples/validation_study/prerequisites.json",
+            ],
+            repository_root=repository_root,
+            runner=_StudyIdentityRunner(repository_root),
+        )
+        == 0
+    )
+    assert calls == [
+        {
+            "repository_root": repository_root,
+            "study_id": "study-1",
+            "url": "https://downloads.example.test/object.bin",
+            "environment": inputs[0],
+            "retained_prerequisites": inputs[1],
+            "prerequisite_files": inputs[2],
+            "configs": inputs[3],
+            "run": run_experiment,
+            "capture": study.capture_experiment,
+            "object_size_bytes": 4_194_304,
+        }
+    ]
+    assert "candidate collected" in capsys.readouterr().out
+
+
+def test_collection_inputs_rebind_legacy_prerequisites_to_current_checked_inputs(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    prerequisite_path, _expected = _write_study_inputs(repository_root)
+    (repository_root / "uv.lock").write_bytes(b"version = 1\n")
+    image_lock = repository_root / "docker" / "capture" / "image-lock.json"
+    image_lock.write_text(
+        json.dumps(
+            {
+                "base_digest": f"sha256:{'a' * 64}",
+                "base_reference": "docker.io/library/debian@sha256:" + "b" * 64,
+                "capture_tool_version": "4.0.17",
+                "debian_snapshot": "20260816T000000Z",
+                "direct_packages": ["tshark"],
+                "expected_capture_image_id": f"sha256:{'d' * 64}",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    environment, retained, files, configs, object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        prerequisite_path,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        runner=_StudyIdentityRunner(repository_root),
+    )
+
+    parsed = cast(study.JsonObject, study.parse_retained_prerequisites(retained))
+    retained_environment = cast(study.JsonObject, parsed["environment"])
+    assert retained_environment["capture_image_id"] == f"sha256:{'d' * 64}"
+    assert environment["source_commit"] == "c" * 40
+    assert environment["source_tree"] == "e" * 40
+    assert set(files) == {
+        "prerequisites/docker_matrix.command.json",
+        "prerequisites/docker_matrix.junit.xml",
+        "prerequisites/docker_matrix.status.json",
+        "prerequisites/docker_matrix.stderr",
+        "prerequisites/docker_matrix.stdout",
+        "prerequisites/internet_smoke.command.json",
+        "prerequisites/internet_smoke.junit.xml",
+        "prerequisites/internet_smoke.status.json",
+        "prerequisites/internet_smoke.stderr",
+        "prerequisites/internet_smoke.stdout",
+    }
+    assert tuple(configs) == ("short", "streaming", "bursty")
+    assert object_size_bytes == 4_194_304
+    with pytest.raises(TrafficlabError, match="collection Git tree must remain exactly clean"):
+        study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+            repository_root,
+            prerequisite_path,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            runner=_StudyIdentityRunner(repository_root, dirty=True),
+        )
+    (repository_root / "uv.lock").unlink()
+    with pytest.raises(TrafficlabError, match="Validation Study collection inputs are invalid"):
+        study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+            repository_root,
+            prerequisite_path,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            runner=_StudyIdentityRunner(repository_root),
+        )
+
+
 def _offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:
     prerequisite_path, _expected = _write_study_inputs(repository_root)
     prerequisites = study.parse_prerequisite_results(prerequisite_path.read_bytes(), repository_root=repository_root)
@@ -5114,6 +5262,7 @@ def test_offline_bundle_audit_covers_the_remaining_canonical_jsonl_boundaries(
         ("source_commit", "z" * 40, "artifact_corrupt"),
         ("target_image_reference", "trafficlab-target:latest", "artifact_corrupt"),
         ("target_image_id", "sha256:bad", "artifact_corrupt"),
+        ("capture_image_reference", "trafficlab-capture:latest", "artifact_corrupt"),
         (
             "compatibility_decision",
             {"reason": "fixture", "status": "incompatible"},

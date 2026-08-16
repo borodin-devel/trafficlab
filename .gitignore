@@ -23,6 +23,9 @@ runs/
 examples/validation_study/.study-work/
 examples/validation_study/evidence/.candidates/
 examples/validation_study/evidence/.*.tmp/
+/examples/validation_study/prerequisites.json
+/examples/validation_study/results.json
+/examples/validation_study/configs/*.toml
 /.superpowers/
 
 TASK.md

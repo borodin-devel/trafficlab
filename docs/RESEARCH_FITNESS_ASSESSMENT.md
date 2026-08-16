@@ -47,11 +47,12 @@ and exit status were not retained. An empty pytest failure cache is not a substi
 
 ### Retained evidence
 
-The committed [prerequisite manifest](../examples/validation_study/prerequisites.json),
-[result manifest](../examples/validation_study/results.json), [study report](../examples/validation_study/REPORT.md), and three
-[base configurations](../examples/validation_study/configs/short.toml) are internally consistent. An independent standard-
-library audit confirmed their schemas, study identifier, config hashes, balanced run order, seeds, family champions,
-winner records, component arithmetic, workload summaries, natural-variation arithmetic, and reproduction deltas.
+The historical prerequisite, result, and base-configuration records were internally
+consistent, but they were retired from the active protocol because their cited run
+trees are absent and their semantics predate the corrected schema. The historical
+bytes remain available in Git history; they are not an accepted evidence bundle.
+The replacement protocol publishes only an audited candidate tree with all cited
+bytes, configurations, lineage, and four evidence classes retained together.
 
 That audit cannot validate the scientific values from raw evidence. `runs/validation_study/` is absent. The nine primary records
 and one reproduction record name absent realized configurations and absent run directories. All 90 named artifact

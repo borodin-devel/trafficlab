@@ -581,15 +581,14 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             "environment uv.lock identity does not match the relocated repository",
             "use the exact locked repository",
         )
-    for field in ("target_image_reference", "capture_image_reference"):
-        value = _string(document[field], name=f"environment {field}")
-        if "@sha256:" not in value or _HEX64.fullmatch(value.rsplit("@sha256:", 1)[-1]) is None:
-            _fail(
-                "artifact_corrupt",
-                "environment",
-                f"environment {field} must be an immutable digest reference",
-                "restore image lock evidence",
-            )
+    target_reference = _string(document["target_image_reference"], name="environment target_image_reference")
+    if "@sha256:" not in target_reference or _HEX64.fullmatch(target_reference.rsplit("@sha256:", 1)[-1]) is None:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "environment target_image_reference must be an immutable digest reference",
+            "restore image lock evidence",
+        )
     for field in ("target_image_id", "capture_image_id"):
         value = _string(document[field], name=f"environment {field}")
         if not value.startswith("sha256:") or _HEX64.fullmatch(value.removeprefix("sha256:")) is None:
@@ -599,6 +598,16 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
                 f"environment {field} must be an immutable image ID",
                 "restore image identity evidence",
             )
+    capture_reference = _string(document["capture_image_reference"], name="environment capture_image_reference")
+    if capture_reference != document["capture_image_id"] and (
+        "@sha256:" not in capture_reference or _HEX64.fullmatch(capture_reference.rsplit("@sha256:", 1)[-1]) is None
+    ):
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "environment capture_image_reference must be its immutable image ID or digest reference",
+            "restore image lock evidence",
+        )
     decision = _exact(
         document["compatibility_decision"], ("reason", "status"), name="environment compatibility decision"
     )
@@ -862,7 +871,7 @@ def _config_pair(
         )
     if render_effective_config(realized_config) != realized_content or _config_semantics(
         realized_config
-    ) != _config_semantics(pair.portable):
+    ) != _config_semantics(pair.realized):
         _fail(
             "artifact_foreign",
             realized,
