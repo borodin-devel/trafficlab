@@ -58,6 +58,35 @@ CAPTURE_PLATFORM: Final[CapturePlatform] = "linux/amd64"
 _CAPTURE_HOST_ARCHITECTURES = frozenset({"amd64", "x86_64", CAPTURE_PLATFORM})
 
 
+def cold_capture_build_argv(tag: str, iidfile: Path) -> tuple[str, ...]:
+    """Return the one reproducible, cold capture-image build invocation.
+
+    The caller supplies a project-scoped tag and an exclusive IID destination;
+    the checked Dockerfile and image lock supply all remaining inputs.
+    """
+
+    if not isinstance(tag, str) or not tag:
+        raise ValueError("capture image tag must be a nonempty string")
+    if not isinstance(iidfile, Path):
+        raise TypeError("iidfile must be a pathlib.Path")
+    return (
+        "docker",
+        "build",
+        "--pull",
+        "--no-cache",
+        "--provenance=false",
+        "--platform",
+        CAPTURE_PLATFORM,
+        "--output",
+        "type=image,rewrite-timestamp=true,unpack=false",
+        "--tag",
+        tag,
+        "--iidfile",
+        str(iidfile),
+        "docker/capture",
+    )
+
+
 def normalize_capture_platform(host_architecture: str) -> CapturePlatform:
     """Map supported host architecture names to the one capture platform."""
 

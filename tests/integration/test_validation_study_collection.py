@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import platform
 import shutil
@@ -70,6 +71,8 @@ def _variant(events: tuple[TraceEvent, ...], *, number: int) -> tuple[TraceEvent
     last = len(events) - 1
     for index, event in enumerate(events):
         timestamp = event.timestamp
+        if index < 3:
+            timestamp = 0.004 * index
         if 0 < index < last:
             timestamp += 0.000000001 * number * index
         varied.append(TraceEvent(timestamp, event.direction, event.frame_length + number * ((index % 3) + 1)))
@@ -114,8 +117,17 @@ def _retained_prerequisites(
                 "tests": tests,
             }
         )
+    capability_header = b"HTTP/1.1 206 Partial Content\r\nContent-Length: 1\r\nContent-Range: bytes 0-0/4194304\r\n\r\n"
+    outputs["headers/prerequisites/00-prerequisites/capability.headers"] = capability_header
     document = study.render_retained_prerequisites(
         {
+            "capability": {
+                "canary_sha256": hashlib.sha256(capability_header).hexdigest(),
+                "content_length": 1,
+                "content_range": "bytes 0-0/4194304",
+                "object_size_bytes": 4_194_304,
+                "status": 206,
+            },
             "commands": commands,
             "environment": {
                 key: environment[key]
@@ -168,6 +180,20 @@ def _collection_inputs(
         "uv_lock_identity": identify_bytes((root / "uv.lock").read_bytes()).as_dict(),
     }
     prerequisite, files = _retained_prerequisites(study_id=study_id, url=url, environment=environment)
+    success_marker = (
+        root / "examples" / "validation_study" / ".study-work" / "attempts" / study_id / "prerequisites-success.json"
+    )
+    success_marker.parent.mkdir(parents=True)
+    success_marker.write_bytes(
+        _canonical(
+            {
+                "phase": "prerequisites",
+                "prerequisites_identity": identify_bytes(prerequisite).as_dict(),
+                "study_id": study_id,
+                "url": url,
+            }
+        )
+    )
     configs: dict[study.WorkloadName, ExperimentConfig] = {}
     for workload in study.workload_specs(url):
         base = study.build_base_config(
@@ -283,11 +309,39 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     assert len(cast(list[object], index["training"])) == 9
     assert len(cast(list[object], index["fresh_simulation"])) == 9
     assert len(cast(list[object], index["held_out"])) == 3
+    expected_headers = (
+        {
+            f"headers/training/{run_id}/{filename}"
+            for _order, run_id, workload, _repeat in study.PRIMARY_ORDER
+            for _start, _end, filename in study.workload_specs("https://downloads.example.test/object.bin")[
+                ("short", "streaming", "bursty").index(workload)
+            ].transfers
+        }
+        | {
+            f"headers/held_out/held-out-{workload.name}/{filename}"
+            for workload in study.workload_specs("https://downloads.example.test/object.bin")
+            for _start, _end, filename in workload.transfers
+        }
+        | {"headers/prerequisites/00-prerequisites/capability.headers"}
+    )
+    expected_observations = {path.replace("headers/", "observations/", 1) + ".json" for path in expected_headers}
+    assert len(expected_headers) == len(expected_observations) == 41
+    assert len({path for path in expected_headers if "/bursty-" in path}) == 32
+    assert "headers/prerequisites/00-prerequisites/capability.headers" in expected_headers
+    assert {
+        path.relative_to(candidate).as_posix() for path in candidate.glob("headers/**/*.headers")
+    } == expected_headers
+    assert {
+        path.relative_to(candidate).as_posix() for path in candidate.glob("observations/**/*.json")
+    } == expected_observations
     assert set(cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text()))) == {
+        "controlled_weight_analysis",
         "formula",
         "fresh_simulation",
         "held_out",
+        "invalid_chromosome_diagnostics",
         "natural_variation",
+        "runtime_winner_variance",
         "training",
     }
     assert calls[:9] == [
@@ -304,6 +358,10 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     assert calls[9:] == ["held-out:short", "held-out:streaming", "held-out:bursty"]
     selected = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text()))["model_selection"]
     assert cast(dict[str, object], selected)["rule"] == "highest_best_fitness_then_lowest_repeat"
+    protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text()))
+    assert protocol["study_id"] == protocol["candidate_id"] == protocol["destination_id"] == "study-1"
+    assert protocol["prerequisite_path"] == "examples/validation_study/prerequisites.json"
+    assert protocol["natural_variation_windows"] == {"bursty": 0.01, "short": 0.01, "streaming": 1.0}
     published = study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
     assert published == repository / "examples" / "validation_study" / "evidence" / "study-1"
     with pytest.raises(TrafficlabError, match="already exists"):
@@ -342,6 +400,12 @@ def test_collection_failure_locks_the_study_id_to_a_new_attempt(tmp_path: Path) 
         collect()
     with pytest.raises(TrafficlabError, match="new study ID"):
         collect()
+    marker = repository / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1" / "collection.json"
+    assert json.loads(marker.read_text()) == {
+        "phase": "collection",
+        "study_id": "study-1",
+        "url": "https://downloads.example.test/object.bin",
+    }
     assert calls == 1
 
 

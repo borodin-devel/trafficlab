@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import platform
 import re
 import stat
@@ -16,7 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path, PurePosixPath
-from statistics import fmean
+from statistics import fmean, variance
 from typing import NoReturn, cast
 
 if __package__ in (None, ""):
@@ -24,13 +25,16 @@ if __package__ in (None, ""):
 
 from scripts.run_validation_study import (
     ARTIFACT_NAMES,
+    PRIMARY_ORDER,
     PUBLISHED_METHOD_ORDER,
     TARGET_REFERENCE,
     HeldOutEvaluation,
+    _parse_transfer_header,  # pyright: ignore[reportPrivateUsage]
     evaluate_study_held_out,
     parse_retained_prerequisites,
     prerequisite_junit_counts,
     retained_prerequisite_paths,
+    workload_specs,
 )
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import (
@@ -60,6 +64,7 @@ _REPEATS = (1, 2, 3)
 _HEX40 = re.compile(r"[0-9a-f]{40}", flags=re.ASCII)
 _HEX64 = re.compile(r"[0-9a-f]{64}", flags=re.ASCII)
 _TEMP_SUFFIXES = (".tmp", ".partial", ".swp")
+_TRANSFER_PROFILE_URL = "https://validation-study.example/object"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +85,17 @@ class _Entry:
 
 
 @dataclass(frozen=True, slots=True)
+class _Transfer:
+    scope: str
+    run_id: str
+    workload: str
+    transfer_index: int
+    requested_start: int
+    requested_end: int
+    filename: str
+
+
+@dataclass(frozen=True, slots=True)
 class _Training:
     workload: str
     repeat: int
@@ -88,6 +104,7 @@ class _Training:
     config: ExperimentConfig
     reference: tuple[TraceEvent, ...]
     window: float
+    runtime_seconds: float
     checkpoint: CheckpointState
     best_model: BestModel
     comparison: ComparisonResult
@@ -99,6 +116,20 @@ class _Issue(Exception):
     affected: str
     detail: str
     action: str
+
+
+_TRANSFER_RUNS = (
+    *(("training", run_id, workload) for _order, run_id, workload, _repeat in PRIMARY_ORDER),
+    *(("held_out", f"held-out-{workload}", workload) for workload in _WORKLOADS),
+)
+_TRANSFER_SPECS = {spec.name: spec.transfers for spec in workload_specs(_TRANSFER_PROFILE_URL)}
+_TRANSFER_BINDINGS = (
+    _Transfer("prerequisites", "00-prerequisites", "prerequisites", 0, 0, 0, "capability.headers"),
+) + tuple(
+    _Transfer(scope, run_id, workload, index, start, end, filename)
+    for scope, run_id, workload in _TRANSFER_RUNS
+    for index, (start, end, filename) in enumerate(_TRANSFER_SPECS[workload])
+)
 
 
 def _fail(kind: str, affected: str, detail: str, action: str) -> NoReturn:
@@ -378,6 +409,23 @@ def _repeat(value: object, *, name: str) -> int:
     return result
 
 
+def _transfer_path(relative: str) -> tuple[str, _Transfer] | None:
+    parts = PurePosixPath(relative).parts
+    if len(parts) != 4 or parts[0] not in ("headers", "observations"):
+        return None
+    kind, scope, run_id, name = parts
+    if kind == "observations":
+        if not name.endswith(".json"):
+            return None
+        filename = name.removesuffix(".json")
+    else:
+        filename = name
+    for binding in _TRANSFER_BINDINGS:
+        if (binding.scope, binding.run_id, binding.filename) == (scope, run_id, filename):
+            return kind, binding
+    return None
+
+
 def owner_for_path(relative: str) -> str:
     parts = PurePosixPath(relative).parts
     if relative == _INDEX:
@@ -402,14 +450,11 @@ def owner_for_path(relative: str) -> str:
             "junit.xml",
         ):
             return f"prerequisite:{kind}:{suffix}"
-    if len(parts) == 2 and parts[0] == "headers" and parts[1] == f"{parts[1].split('.')[0]}.headers":
-        workload = parts[1].removesuffix(".headers")
-        if workload in _WORKLOADS:
-            return f"transfer-header:{workload}"
-    if len(parts) == 2 and parts[0] == "observations" and parts[1].endswith(".json"):
-        workload = parts[1].removesuffix(".json")
-        if workload in _WORKLOADS:
-            return f"external-observation:{workload}"
+    transfer_path = _transfer_path(relative)
+    if transfer_path is not None:
+        kind, binding = transfer_path
+        owner = "transfer-header" if kind == "headers" else "external-observation"
+        return f"{owner}:{binding.scope}:{binding.run_id}:{binding.transfer_index}"
     if len(parts) == 2 and parts[0] == "configs" and parts[1].endswith(".toml"):
         return f"configuration:{parts[1].removesuffix('.toml')}"
     if (
@@ -455,10 +500,19 @@ def lineage_for_path(relative: str) -> dict[str, object]:
         return {"relation": relative.removesuffix(".json")}
     if len(parts) == 2 and parts[0] == "prerequisites":
         return {"relation": "prerequisite", "record": parts[1]}
-    if len(parts) == 2 and parts[0] == "headers":
-        return {"relation": "transfer-header", "workload": parts[1].removesuffix(".headers")}
-    if len(parts) == 2 and parts[0] == "observations":
-        return {"relation": "external-observation", "workload": parts[1].removesuffix(".json")}
+    transfer_path = _transfer_path(relative)
+    if transfer_path is not None:
+        kind, binding = transfer_path
+        return {
+            "filename": binding.filename,
+            "relation": "transfer-header" if kind == "headers" else "external-observation",
+            "requested_end": binding.requested_end,
+            "requested_start": binding.requested_start,
+            "run_id": binding.run_id,
+            "scope": binding.scope,
+            "transfer_index": binding.transfer_index,
+            "workload": binding.workload,
+        }
     if len(parts) == 2 and parts[0] == "configs":
         return {"relation": "configuration", "name": parts[1].removesuffix(".toml")}
     if len(parts) == 4 and parts[0] == "training":
@@ -682,7 +736,19 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
 def _protocol(content: bytes) -> dict[str, object]:
     document = _exact(
         _json(content, name="protocol.json"),
-        ("final_seed", "model_selection", "schema_version", "selection_seeds", "training_repetitions", "workloads"),
+        (
+            "candidate_id",
+            "destination_id",
+            "final_seed",
+            "model_selection",
+            "natural_variation_windows",
+            "prerequisite_path",
+            "schema_version",
+            "selection_seeds",
+            "study_id",
+            "training_repetitions",
+            "workloads",
+        ),
         name="protocol.json",
     )
     if document["schema_version"] != 2 or _integer(document["final_seed"], name="protocol final seed") != 97:
@@ -719,6 +785,38 @@ def _protocol(content: bytes) -> dict[str, object]:
             "protocol workloads must be short, streaming, bursty in order",
             "restore frozen protocol",
         )
+    study_id = _string(document["study_id"], name="protocol study ID")
+    if document["candidate_id"] != study_id or document["destination_id"] != study_id:
+        _fail(
+            "artifact_foreign",
+            "protocol.json",
+            "protocol study, candidate, and destination IDs must be identical",
+            "restore one exact frozen study identity",
+        )
+    if document["prerequisite_path"] != "examples/validation_study/prerequisites.json":
+        _fail(
+            "artifact_foreign",
+            "protocol.json",
+            "protocol prerequisite path must be the canonical checked prerequisite path",
+            "restore the canonical prerequisite path",
+        )
+    windows = document["natural_variation_windows"]
+    if type(windows) is not dict or set(cast(dict[str, object], windows)) != set(_WORKLOADS):
+        _fail(
+            "artifact_corrupt",
+            "protocol.json",
+            "protocol natural variation windows must name each workload exactly once",
+            "restore frozen natural variation controls",
+        )
+    for workload in _WORKLOADS:
+        value = cast(dict[str, object], windows)[workload]
+        if type(value) is not float or not math.isfinite(value) or value <= 0.0:
+            _fail(
+                "scientific_semantics_incompatible",
+                "protocol.json",
+                "protocol natural variation windows must be finite positive floats",
+                "restore frozen natural variation controls",
+            )
     return document
 
 
@@ -828,6 +926,45 @@ def _canonical_jsonl(content: bytes, *, name: str) -> None:
         record = _json(raw, name=f"{name}:{line_number}", canonical=False)
         if _canonical(record) != raw:
             _fail("artifact_corrupt", name, "run log record is not canonical JSONL", "restore canonical run log")
+
+
+def _training_runtime(content: bytes, *, name: str, workload: str, repeat: int) -> float:
+    """Extract the one producer-recorded training runtime from canonical JSONL."""
+
+    matches: list[dict[str, object]] = []
+    for line_number, raw in enumerate(content.splitlines(keepends=True), start=1):
+        record = _json(raw, name=f"{name}:{line_number}", canonical=False)
+        if record.get("event") == "validation_study_training_completed":
+            matches.append(record)
+    if len(matches) != 1:
+        _fail(
+            "artifact_corrupt",
+            name,
+            "training run log must contain exactly one validation study runtime record",
+            "restore canonical training runtime evidence",
+        )
+    record = _exact(
+        matches[0],
+        ("event", "repeat", "runtime_seconds", "stage", "workload"),
+        name=f"{name} training runtime",
+    )
+    value = record["runtime_seconds"]
+    if (
+        record["event"] != "validation_study_training_completed"
+        or record["stage"] != "study"
+        or record["workload"] != workload
+        or record["repeat"] != repeat
+        or type(value) is not float
+        or not math.isfinite(value)
+        or value < 0.0
+    ):
+        _fail(
+            "artifact_foreign",
+            name,
+            "training runtime record does not match the retained run identity",
+            "restore matching training runtime evidence",
+        )
+    return value
 
 
 def _config_semantics(config: ExperimentConfig) -> dict[str, object]:
@@ -986,6 +1123,9 @@ def _training(
             "restore matching run configuration",
         )
     _canonical_jsonl(contents["run.log"], name=f"{directory_relative}/run.log")
+    runtime_seconds = _training_runtime(
+        contents["run.log"], name=f"{directory_relative}/run.log", workload=workload, repeat=repeat
+    )
     try:
         inspection = validate_capture_pair(directory / "capture.json", directory / "reference.pcapng", deadline=None)
         metadata = parse_capture_metadata(contents["capture.json"], source=directory / "capture.json")
@@ -1106,7 +1246,17 @@ def _training(
             "restore matching index identities",
         )
     return _Training(
-        workload, repeat, directory, contents, config, reference, window, checkpoint, best, persisted_comparison
+        workload,
+        repeat,
+        directory,
+        contents,
+        config,
+        reference,
+        window,
+        runtime_seconds,
+        checkpoint,
+        best,
+        persisted_comparison,
     )
 
 
@@ -1356,30 +1506,191 @@ def _mean(scores: Sequence[dict[str, object]]) -> dict[str, object]:
     }
 
 
-def _report_inputs(training: Sequence[_Training], held: Mapping[str, HeldOutEvaluation]) -> dict[str, object]:
+def _sample_summary(values: Sequence[float], *, name: str) -> dict[str, object]:
+    if len(values) < 2 or any(not math.isfinite(value) or value < 0.0 for value in values):
+        _fail("artifact_corrupt", "report_inputs.json", f"{name} requires finite observations", "restore report inputs")
+    return {"mean": fmean(values), "sample_variance": variance(values)}
+
+
+def _winner_family(training: _Training) -> str:
+    candidate = rank_candidates(training.checkpoint.population, family_priority=training.checkpoint.family_priority)[0]
+    return candidate.family
+
+
+def _controlled_weight_analysis(training: Sequence[_Training]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    alternate_weights = {
+        "autocorrelation": 0.2,
+        "frame_size_ks": 0.4,
+        "iat_ks": 0.2,
+        "multiscale_rate": 0.2,
+    }
+    for workload in _WORKLOADS:
+        group = [item for item in training if item.workload == workload]
+        selected = min(group, key=lambda item: (-item.checkpoint.best_fitness, item.repeat))
+        baseline_weights = cast(dict[str, object], selected.config.similarity.method_weights.model_dump(mode="json"))
+        if baseline_weights != {method: 0.25 for method in PUBLISHED_METHOD_ORDER}:
+            _fail(
+                "scientific_semantics_incompatible",
+                "report_inputs.json",
+                "controlled weight analysis requires the frozen equal-weight baseline",
+                "restore frozen similarity controls",
+            )
+        score = _score(selected.comparison)
+        components = cast(dict[str, object], score["methods"])
+        rendered = _json(render_comparison_result(selected.comparison), name="controlled comparison")
+        methods = cast(dict[str, object], rendered["methods"])
+        rows.append(
+            {
+                "alternative_aggregate": math.fsum(
+                    alternate_weights[method] * cast(float, components[method]) for method in PUBLISHED_METHOD_ORDER
+                ),
+                "alternative_weights": alternate_weights,
+                "baseline_aggregate": score["aggregate"],
+                "baseline_weights": baseline_weights,
+                "components": components,
+                "diagnostics": {
+                    method: cast(dict[str, object], methods[method])["diagnostics"] for method in PUBLISHED_METHOD_ORDER
+                },
+                "executed_methods": list(PUBLISHED_METHOD_ORDER),
+                "training_directory": f"training/{selected.workload}/r{selected.repeat}",
+                "workload": workload,
+            }
+        )
+    return rows
+
+
+def _invalid_chromosome_diagnostics(training: Sequence[_Training]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for item in training:
+        invalid: list[object] = []
+        for candidate in item.checkpoint.population:
+            if candidate.status != "invalid":
+                continue
+            failure = candidate.invalid
+            if failure is None:
+                _fail(
+                    "artifact_corrupt",
+                    "report_inputs.json",
+                    "invalid candidate must retain a classified failure",
+                    "restore invalid-chromosome diagnostics",
+                )
+            invalid.append(
+                {
+                    "affected_evidence": failure.affected_evidence,
+                    "authority": failure.authority,
+                    "corrective_action": failure.corrective_action,
+                    "detail": failure.detail,
+                    "evidence_state": failure.evidence_state,
+                    "family": candidate.family,
+                    "genes": list(candidate.genes) if candidate.genes is not None else None,
+                    "identifier": {
+                        "birth_generation": candidate.identifier.birth_generation,
+                        "birth_index": candidate.identifier.birth_index,
+                    },
+                    "kind": failure.kind,
+                    "seed": failure.seed,
+                    "stage": failure.stage,
+                }
+            )
+        rows.append(
+            {
+                "invalid_candidates": invalid,
+                "trial_limits": item.config.generation.trial.model_dump(mode="json"),
+                "training_directory": f"training/{item.workload}/r{item.repeat}",
+                "workload": item.workload,
+                "repeat": item.repeat,
+            }
+        )
+    return rows
+
+
+def _report_inputs(
+    training: Sequence[_Training],
+    held: Mapping[str, HeldOutEvaluation],
+    *,
+    natural_variation_windows: Mapping[str, object],
+) -> dict[str, object]:
     fresh_rows: list[dict[str, object]] = []
     training_rows: list[dict[str, object]] = []
     variation_rows: list[dict[str, object]] = []
     held_rows: list[dict[str, object]] = []
     for workload in _WORKLOADS:
         group = tuple(item for item in training if item.workload == workload)
+        window_value = natural_variation_windows[workload]
+        if type(window_value) is not float or not math.isfinite(window_value) or window_value <= 0.0:
+            _fail(
+                "scientific_semantics_incompatible",
+                "report_inputs.json",
+                "natural variation requires a finite frozen protocol window",
+                "restore frozen natural variation controls",
+            )
+        window = window_value
+        for item in group:
+            configured_window = max(item.config.similarity.multiscale_widths_seconds)
+            if window != configured_window:
+                _fail(
+                    "scientific_semantics_incompatible",
+                    "protocol.json",
+                    "protocol natural variation window does not match the retained configuration maximum multiscale width",
+                    "restore the configuration-derived frozen natural variation controls",
+                )
+            if item.window < window:
+                _fail(
+                    "scientific_semantics_incompatible",
+                    f"training/{item.workload}/r{item.repeat}",
+                    "natural variation reference window is shorter than the frozen protocol window",
+                    "restore a retained reference that covers the frozen natural variation window",
+                )
         fresh_rows.append({"score": _mean([_score(item.comparison) for item in group]), "workload": workload})
         training_rows.append(
-            {"selection_fitness": fmean(item.checkpoint.best_fitness for item in group), "workload": workload}
+            {
+                "runtime_seconds": _sample_summary(
+                    [item.runtime_seconds for item in group], name="training runtime variance"
+                ),
+                "selection_fitness": _sample_summary(
+                    [item.checkpoint.best_fitness for item in group], name="training selection variance"
+                ),
+                "winner_family_count_variance": variance(
+                    [
+                        sum(_winner_family(item) == family for item in group)
+                        for family in ("markov_renewal", "mmpp", "poisson_empirical")
+                    ]
+                ),
+                "winner_family_counts": {
+                    family: sum(_winner_family(item) == family for item in group)
+                    for family in ("markov_renewal", "mmpp", "poisson_empirical")
+                },
+                "workload": workload,
+            }
         )
         pairs: list[dict[str, object]] = []
         for left, right in combinations(group, 2):
-            if left.window != right.window or similarity_settings_identity(
-                left.config.similarity
-            ) != similarity_settings_identity(right.config.similarity):
+            if similarity_settings_identity(left.config.similarity) != similarity_settings_identity(
+                right.config.similarity
+            ):
                 _fail(
                     "scientific_semantics_incompatible",
                     "report_inputs.json",
-                    "natural variation requires a common normalized window and similarity settings",
+                    "natural variation requires common similarity settings",
                     "restore common protocol controls before comparing natural variation",
                 )
-            forward = _score(compare_traces(left.reference, right.reference, left.window, left.config.similarity))
-            reverse = _score(compare_traces(right.reference, left.reference, right.window, right.config.similarity))
+            forward = _score(
+                compare_traces(
+                    align_generated(left.reference, window),
+                    align_generated(right.reference, window),
+                    window,
+                    left.config.similarity,
+                )
+            )
+            reverse = _score(
+                compare_traces(
+                    align_generated(right.reference, window),
+                    align_generated(left.reference, window),
+                    window,
+                    right.config.similarity,
+                )
+            )
             pairs.append(
                 {
                     "forward": forward,
@@ -1398,10 +1709,13 @@ def _report_inputs(training: Sequence[_Training], held: Mapping[str, HeldOutEval
         )
         held_rows.append({"score": _score(held[workload].comparison), "workload": workload})
     return {
+        "controlled_weight_analysis": _controlled_weight_analysis(training),
         "formula": "arithmetic_mean",
         "fresh_simulation": fresh_rows,
         "held_out": held_rows,
+        "invalid_chromosome_diagnostics": _invalid_chromosome_diagnostics(training),
         "natural_variation": variation_rows,
+        "runtime_winner_variance": training_rows,
         "training": training_rows,
     }
 
@@ -1425,9 +1739,9 @@ def _expected_paths(
         *fresh_paths,
         *held_paths,
     }
-    for workload in _WORKLOADS:
-        paths.add(f"headers/{workload}.headers")
-        paths.add(f"observations/{workload}.json")
+    for binding in _TRANSFER_BINDINGS:
+        paths.add(f"headers/{binding.scope}/{binding.run_id}/{binding.filename}")
+        paths.add(f"observations/{binding.scope}/{binding.run_id}/{binding.filename}.json")
     for item in training:
         relative = f"training/{item.workload}/r{item.repeat}"
         paths.update(f"{relative}/{name}" for name in ARTIFACT_NAMES)
@@ -1436,29 +1750,79 @@ def _expected_paths(
     return paths
 
 
-def _headers_and_observations(bundle: Path) -> set[str]:
+def _headers_and_observations(bundle: Path, *, prerequisites: Mapping[str, object]) -> set[str]:
+    capability_value = prerequisites.get("capability")
+    if not isinstance(capability_value, Mapping):
+        _fail(
+            "artifact_corrupt",
+            "prerequisites.json",
+            "prerequisites must retain a capability record",
+            "restore canonical prerequisite evidence",
+        )
+    capability = cast(Mapping[str, object], capability_value)
+    initial_url = _string(prerequisites.get("url"), name="prerequisite URL")
+    object_size = _integer(capability.get("object_size_bytes"), name="prerequisite object size", minimum=1)
     paths: set[str] = set()
-    for workload in _WORKLOADS:
-        header = f"headers/{workload}.headers"
-        observation = f"observations/{workload}.json"
+    for binding in _TRANSFER_BINDINGS:
+        header = f"headers/{binding.scope}/{binding.run_id}/{binding.filename}"
+        observation = f"observations/{binding.scope}/{binding.run_id}/{binding.filename}.json"
         content = _read_regular(bundle / header, affected=header)
-        if not content.startswith(b"HTTP/") or b"\r\n\r\n" not in content:
+        try:
+            status, content_length, content_range = _parse_transfer_header(
+                content,
+                initial_url=initial_url,
+                start=binding.requested_start,
+                end=binding.requested_end,
+                object_size_bytes=object_size,
+            )
+        except ValueError as error:
             _fail(
                 "artifact_corrupt",
                 header,
-                "protocol header is not a retained HTTP header block",
+                f"protocol header is not the retained transfer response: {error}",
                 "restore protocol-used headers",
+            )
+        if binding.scope == "prerequisites" and (
+            capability.get("canary_sha256") != hashlib.sha256(content).hexdigest()
+            or capability.get("content_length") != content_length
+            or capability.get("content_range") != content_range
+            or capability.get("status") != status
+        ):
+            _fail(
+                "artifact_foreign",
+                header,
+                "capability header does not match the retained prerequisite facts",
+                "restore the exact retained capability header",
             )
         document = _exact(
             _json(_read_regular(bundle / observation, affected=observation), name=observation),
-            ("header_identity", "status", "workload"),
+            (
+                "content_length",
+                "content_range",
+                "header_identity",
+                "requested_end",
+                "requested_start",
+                "run_id",
+                "scope",
+                "status",
+                "transfer_index",
+                "workload",
+            ),
             name=observation,
         )
-        if (
-            document["workload"] != workload
-            or document["status"] != 206
-            or document["header_identity"] != _identity(content)
-        ):
+        expected = {
+            "content_length": content_length,
+            "content_range": content_range,
+            "header_identity": _identity(content),
+            "requested_end": binding.requested_end,
+            "requested_start": binding.requested_start,
+            "run_id": binding.run_id,
+            "scope": binding.scope,
+            "status": status,
+            "transfer_index": binding.transfer_index,
+            "workload": binding.workload,
+        }
+        if document != expected:
             _fail(
                 "artifact_foreign",
                 observation,
@@ -1521,8 +1885,22 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
         _read_regular(bundle / environment_path, affected=environment_path), repository=repository
     )
     protocol = _protocol(_read_regular(bundle / protocol_path, affected=protocol_path))
-    _, prerequisite_paths = _prerequisites(bundle, prerequisites_path, environment=environment)
-    _headers_and_observations(bundle)
+    prerequisites, prerequisite_paths = _prerequisites(bundle, prerequisites_path, environment=environment)
+    if protocol["study_id"] != bundle.name:
+        _fail(
+            "artifact_foreign",
+            "protocol.json",
+            "protocol destination ID must equal the candidate directory name",
+            "restore the candidate under its frozen study ID",
+        )
+    if prerequisites["study_id"] != protocol["study_id"]:
+        _fail(
+            "artifact_foreign",
+            "prerequisites.json",
+            "retained prerequisites must bind the frozen study identity",
+            "restore matching prerequisite evidence",
+        )
+    _headers_and_observations(bundle, prerequisites=prerequisites)
     training_values = index["training"]
     if type(training_values) is not list:
         _fail(
@@ -1644,7 +2022,11 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
         )
     inputs_path = _relative(index["report_inputs"], name="index report inputs")
     report_inputs = _json(_read_regular(bundle / inputs_path, affected=inputs_path), name=inputs_path)
-    expected_inputs = _report_inputs(ordered_training, held_evaluations)
+    expected_inputs = _report_inputs(
+        ordered_training,
+        held_evaluations,
+        natural_variation_windows=cast(dict[str, object], protocol["natural_variation_windows"]),
+    )
     if report_inputs != expected_inputs:
         _fail(
             "artifact_foreign",

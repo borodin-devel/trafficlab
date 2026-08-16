@@ -45,6 +45,7 @@ from trafficlab.comparison import (
 from trafficlab.compatibility import ContentIdentity, identify_bytes, require_compatible
 from trafficlab.config import ExperimentConfig, FamilyName, SimilarityConfig
 from trafficlab.config_io import load_experiment, render_effective_config
+from trafficlab.docker_cli import cold_capture_build_argv, load_capture_image_lock, validate_capture_dockerfile
 from trafficlab.errors import TrafficlabError
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
@@ -149,12 +150,16 @@ def evaluate_study_held_out(
         },
     )
     metadata = parse_capture_metadata(capture_content, source=capture_source)
-    reference, W = normalize_reference(parse_pcapng_bytes(reference_content, metadata, source=reference_source))
-    if W != model.observation_window_seconds:
+    reference, raw_window = normalize_reference(
+        parse_pcapng_bytes(reference_content, metadata, source=reference_source)
+    )
+    W = model.observation_window_seconds
+    if raw_window < W:
         raise TrafficlabError(
-            "study held-out reference window must equal the frozen training model window",
-            corrective_action="retain a held-out capture with the protocol observation window",
+            "study held-out reference window must reach the frozen training model window",
+            corrective_action="retain a held-out capture at least as long as the frozen training observation window",
         )
+    reference = align_generated(reference, W)
     _, generated, generated_pcapng = reproduce_generated_pcapng(model, metadata)
     aligned = align_generated(generated, W)
     settings_identity = similarity_settings_identity(config.similarity)
@@ -2297,16 +2302,22 @@ def _profile_hashes(value: object) -> JsonObject:
 
 def _validate_tools(value: object) -> JsonObject:
     keys = (
-        "python_version",
-        "trafficlab_version",
         "docker_engine_version",
         "docker_compose_version",
+        "host_architecture",
+        "kernel_release",
         "platform",
+        "python_implementation",
+        "python_version",
+        "trafficlab_version",
+        "uv_lock_sha256",
     )
     document = _exact_object(value, keys, name="tools")
     for key in keys:
         _strict_string(document[key], name=f"tools.{key}")
     _require(document["python_version"] == "3.12.3", "tools.python_version must be exactly 3.12.3")
+    _require(document["python_implementation"] == "CPython", "tools.python_implementation must be CPython")
+    _sha256(document["uv_lock_sha256"], name="tools uv.lock SHA-256")
     _require(
         document["trafficlab_version"] == __version__,
         f"tools.trafficlab_version must be exactly {__version__}",
@@ -3029,6 +3040,14 @@ _RETAINED_PREREQUISITE_ENVIRONMENT_KEYS = (
     "target_image_reference",
     "uv_lock_identity",
 )
+_RETAINED_PREREQUISITE_CAPABILITY_KEYS = (
+    "canary_sha256",
+    "content_length",
+    "content_range",
+    "object_size_bytes",
+    "status",
+)
+_RETAINED_CAPABILITY_HEADER = "headers/prerequisites/00-prerequisites/capability.headers"
 
 
 def _retained_identity(value: object, *, name: str) -> JsonObject:
@@ -3077,10 +3096,35 @@ def _retained_prerequisite_environment(value: object) -> JsonObject:
     }
 
 
+def _retained_prerequisite_capability(value: object) -> JsonObject:
+    document = _exact_object(value, _RETAINED_PREREQUISITE_CAPABILITY_KEYS, name="retained prerequisite capability")
+    object_size = _strict_int(document["object_size_bytes"], name="retained capability object size", minimum=1)
+    _require(
+        4 * 1024 * 1024 <= object_size <= 16 * 1024 * 1024,
+        "retained capability object size must be from 4 MiB through 16 MiB",
+    )
+    status = _strict_int(document["status"], name="retained capability status")
+    length = _strict_int(document["content_length"], name="retained capability content length")
+    _require((status, length) == (206, 1), "retained capability must record one 206 byte-range response")
+    content_range = _strict_string(document["content_range"], name="retained capability content range")
+    _require(
+        content_range == f"bytes 0-0/{object_size}",
+        "retained capability content range must bind the recorded object size",
+    )
+    canary_sha256 = _sha256(document["canary_sha256"], name="retained capability header SHA-256")
+    return {
+        "canary_sha256": canary_sha256,
+        "content_length": 1,
+        "content_range": content_range,
+        "object_size_bytes": object_size,
+        "status": 206,
+    }
+
+
 def _retained_prerequisite_document(value: object) -> dict[str, object]:
     root = _exact_object(
         value,
-        ("commands", "environment", "schema_version", "study_id", "url"),
+        ("capability", "commands", "environment", "schema_version", "study_id", "url"),
         name="retained prerequisite evidence",
     )
     _require(
@@ -3137,6 +3181,7 @@ def _retained_prerequisite_document(value: object) -> dict[str, object]:
             }
         )
     return {
+        "capability": _retained_prerequisite_capability(root["capability"]),
         "commands": commands,
         "environment": _retained_prerequisite_environment(root["environment"]),
         "schema_version": 3,
@@ -3570,6 +3615,7 @@ def run_prerequisites(
         _require(root.is_dir(), f"repository root must be an existing directory: {root}")
         url = validate_endpoint_url(url)
         study_id = validate_study_id(study_id)
+        _begin_phase_attempt(root, study_id=study_id, url=url, phase="prerequisites")
         prerequisite_path = root / "examples" / "validation_study" / "prerequisites.json"
         config_paths = {
             name: root / "examples" / "validation_study" / "configs" / f"{name}.toml"
@@ -3653,6 +3699,11 @@ def run_prerequisites(
             "capability mount must be a host-owned regular 0755 directory",
         )
 
+        capture_lock = load_capture_image_lock(root / "docker" / "capture" / "image-lock.json")
+        validate_capture_dockerfile(
+            (root / "docker" / "capture" / "Dockerfile").read_text(encoding="utf-8"), capture_lock
+        )
+
         pull = runner(
             ("docker", "image", "pull", TARGET_REFERENCE),
             cwd=root,
@@ -3682,8 +3733,9 @@ def run_prerequisites(
 
         iid_path = evidence_directory / "capture.iid"
         _require(not _path_entry_exists(iid_path), "capture IID path must be absent before build")
+        capture_tag = f"trafficlab-validation-{study_id}:capture"
         build = runner(
-            ("docker", "build", "--pull=false", "--no-cache", "--iidfile", str(iid_path), "docker/capture"),
+            cold_capture_build_argv(capture_tag, iid_path),
             cwd=root,
             check=False,
             capture_output=True,
@@ -3696,6 +3748,10 @@ def run_prerequisites(
         )
         try:
             capture_image_id = _image_id(iid_path.read_text(encoding="ascii").strip(), name="capture image ID")
+            _require(
+                capture_image_id == capture_lock.expected_capture_image_id,
+                "cold capture rebuild ID must equal the checked image lock before capability validation",
+            )
             iid_path.chmod(0o600)
             dockerfile = (root / "docker" / "capture" / "Dockerfile").read_bytes()
             capture_script = (root / "docker" / "capture" / "capture.sh").read_bytes()
@@ -3755,11 +3811,15 @@ def run_prerequisites(
             url=url,
             tools=_freeze_object(
                 {
-                    "python_version": platform.python_version(),
-                    "trafficlab_version": __version__,
                     "docker_engine_version": docker_engine_version,
                     "docker_compose_version": docker_compose_version,
+                    "host_architecture": platform.machine(),
+                    "kernel_release": platform.release(),
                     "platform": platform.platform(),
+                    "python_implementation": platform.python_implementation(),
+                    "python_version": platform.python_version(),
+                    "trafficlab_version": __version__,
+                    "uv_lock_sha256": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
                 }
             ),
             images=_freeze_object(images),
@@ -3769,6 +3829,12 @@ def run_prerequisites(
         )
         prerequisite_path.parent.mkdir(parents=True, exist_ok=True)
         _publish_prerequisites(prerequisite_path, result, repository_root=root)
+        _complete_prerequisite_attempt(
+            root,
+            study_id=study_id,
+            url=url,
+            prerequisite_content=prerequisite_path.read_bytes(),
+        )
         return result
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
         if type(study_id) is str and _STUDY_ID_PATTERN.fullmatch(study_id) is not None:
@@ -5612,6 +5678,14 @@ def publish_audited_bundle(candidate: Path, study_id: str, *, repository_root: P
     from scripts.audit_validation_study import audit_bundle
 
     root = repository_root.resolve()
+    checked_study_id = validate_study_id(study_id)
+    try:
+        _require(candidate.name == checked_study_id, "candidate ID must equal the requested destination ID")
+    except ValueError as error:
+        raise TrafficlabError(
+            f"Validation Study candidate ID is incompatible with the requested destination: {error}",
+            corrective_action="preserve the candidate and publish it only to its frozen study ID",
+        ) from error
 
     def audit(candidate_root: Path) -> None:
         audit_bundle(candidate_root, repository=root)
@@ -5619,7 +5693,7 @@ def publish_audited_bundle(candidate: Path, study_id: str, *, repository_root: P
     return publish_accepted_bundle(
         candidate,
         root / "examples" / "validation_study" / "evidence",
-        study_id,
+        checked_study_id,
         audit,
     )
 
@@ -5634,6 +5708,7 @@ class _CandidateTraining:
     metadata: CaptureMetadata
     reference: tuple[TraceEvent, ...]
     observation_window_seconds: float
+    runtime_seconds: float
     checkpoint: CheckpointState
     comparison: ComparisonResult
 
@@ -5644,6 +5719,87 @@ def _candidate_root(repository_root: Path, study_id: str) -> Path:
 
 def _collection_attempt_root(repository_root: Path, study_id: str) -> Path:
     return repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / study_id
+
+
+def _begin_phase_attempt(
+    repository_root: Path, *, study_id: str, url: str, phase: Literal["prerequisites", "collection"]
+) -> Path:
+    """Persist one irreversible phase marker immediately after input syntax checks."""
+
+    attempt = _collection_attempt_root(repository_root, study_id)
+    marker = attempt / f"{phase}.json"
+    if _path_entry_exists(marker):
+        raise TrafficlabError(
+            f"Validation Study {phase} already began for {study_id}; use a new study ID",
+            corrective_action="preserve the failed attempt and restart with a new study ID",
+        )
+    _write_candidate_bytes(
+        marker,
+        _canonical_json(cast(JsonObject, {"phase": phase, "study_id": study_id, "url": url})),
+    )
+    return attempt
+
+
+def _complete_prerequisite_attempt(
+    repository_root: Path,
+    *,
+    study_id: str,
+    url: str,
+    prerequisite_content: bytes,
+) -> None:
+    """Record a prerequisite success only after its canonical publication succeeds."""
+
+    marker = _collection_attempt_root(repository_root, study_id) / "prerequisites-success.json"
+    _write_candidate_bytes(
+        marker,
+        _canonical_json(
+            cast(
+                JsonObject,
+                {
+                    "phase": "prerequisites",
+                    "prerequisites_identity": _candidate_identity(prerequisite_content),
+                    "study_id": study_id,
+                    "url": url,
+                },
+            )
+        ),
+    )
+
+
+def _require_successful_prerequisite_attempt(
+    repository_root: Path,
+    *,
+    study_id: str,
+    url: str,
+    prerequisite_content: bytes,
+) -> None:
+    """Refuse collection unless the matching prerequisite phase completed successfully."""
+
+    marker = _collection_attempt_root(repository_root, study_id) / "prerequisites-success.json"
+    try:
+        content = marker.read_bytes()
+        document = _exact_object(
+            _load_json(content),
+            ("phase", "prerequisites_identity", "study_id", "url"),
+            name="successful prerequisite marker",
+        )
+        _require(
+            _canonical_json(cast(JsonObject, document)) == content, "successful prerequisite marker must be canonical"
+        )
+        _require(
+            document["phase"] == "prerequisites" and document["study_id"] == study_id and document["url"] == url,
+            "collection requires a matching successful prerequisite marker",
+        )
+        _require(
+            _retained_identity(document["prerequisites_identity"], name="successful prerequisite marker identity")
+            == _candidate_identity(prerequisite_content),
+            "collection requires a matching successful prerequisite marker",
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise TrafficlabError(
+            "Validation Study collection requires a matching successful prerequisite marker",
+            corrective_action="complete the same-study prerequisite phase before collection",
+        ) from error
 
 
 def _write_candidate_bytes(path: Path, content: bytes) -> None:
@@ -5702,6 +5858,7 @@ def _load_candidate_training(
     workload: WorkloadName,
     repeat: int,
     config: ExperimentConfig,
+    runtime_seconds: float,
 ) -> _CandidateTraining:
     contents = _read_exact_artifact_set(directory)
     metadata = parse_capture_metadata(contents["capture.json"], source=directory / "capture.json")
@@ -5731,6 +5888,7 @@ def _load_candidate_training(
         metadata=metadata,
         reference=reference,
         observation_window_seconds=window,
+        runtime_seconds=runtime_seconds,
         checkpoint=checkpoint,
         comparison=parse_comparison_result(contents["similarity.json"]),
     )
@@ -5824,20 +5982,44 @@ def _candidate_score_mean(scores: Sequence[JsonObject]) -> JsonObject:
     )
 
 
-def _candidate_natural_variation(training: Sequence[_CandidateTraining]) -> JsonObject:
+def _candidate_sample_summary(values: Sequence[float], *, name: str) -> JsonObject:
+    _require(len(values) >= 2, f"{name} requires at least two observations")
+    _require(all(math.isfinite(value) and value >= 0.0 for value in values), f"{name} values must be finite")
+    return cast(JsonObject, {"mean": fmean(values), "sample_variance": variance(values)})
+
+
+def _candidate_winner_family(training: _CandidateTraining) -> FamilyName:
+    winner = next(
+        candidate
+        for candidate in training.checkpoint.population
+        if candidate.identifier == training.checkpoint.best_identifier
+    )
+    return winner.family
+
+
+def _candidate_natural_variation(
+    training: Sequence[_CandidateTraining],
+    *,
+    window: float,
+) -> JsonObject:
     _require(len(training) == 3, "natural variation requires exactly three training records")
-    window = training[0].observation_window_seconds
     _require(
-        all(item.observation_window_seconds == window for item in training),
-        "natural variation requires a common normalized observation window",
+        type(window) is float and math.isfinite(window) and window > 0.0, "natural variation window must be finite"
+    )
+    settings = similarity_settings_identity(training[0].config.similarity)
+    _require(
+        all(similarity_settings_identity(item.config.similarity) == settings for item in training),
+        "natural variation requires common frozen similarity settings",
     )
     pairs: list[JsonValue] = []
     for left_index in range(3):
         for right_index in range(left_index + 1, 3):
             left = training[left_index]
             right = training[right_index]
-            forward = _candidate_score(compare_traces(left.reference, right.reference, window, left.config.similarity))
-            reverse = _candidate_score(compare_traces(right.reference, left.reference, window, right.config.similarity))
+            left_reference = align_generated(left.reference, window)
+            right_reference = align_generated(right.reference, window)
+            forward = _candidate_score(compare_traces(left_reference, right_reference, window, left.config.similarity))
+            reverse = _candidate_score(compare_traces(right_reference, left_reference, window, right.config.similarity))
             pairs.append(
                 cast(
                     JsonObject,
@@ -5862,9 +6044,118 @@ def _candidate_natural_variation(training: Sequence[_CandidateTraining]) -> Json
     )
 
 
+def _candidate_controlled_weight_analysis(training: Sequence[_CandidateTraining]) -> list[JsonValue]:
+    """Reweight fixed completed metrics without changing diagnostics or execution."""
+
+    rows: list[JsonValue] = []
+    alternate_weights: JsonObject = {
+        "autocorrelation": 0.2,
+        "frame_size_ks": 0.4,
+        "iat_ks": 0.2,
+        "multiscale_rate": 0.2,
+    }
+    for workload in ("short", "streaming", "bursty"):
+        group = [item for item in training if item.workload == workload]
+        selected = min(group, key=lambda item: (-item.checkpoint.best_fitness, item.repeat))
+        baseline_weights = selected.config.similarity.method_weights.model_dump(mode="json")
+        _require(
+            baseline_weights == {method: 0.25 for method in PUBLISHED_METHOD_ORDER},
+            "controlled weight analysis requires the frozen equal-weight baseline",
+        )
+        scores = _candidate_score(selected.comparison)
+        components = cast(JsonObject, scores["methods"])
+        alternate_aggregate = math.fsum(
+            cast(float, alternate_weights[method]) * cast(float, components[method])
+            for method in PUBLISHED_METHOD_ORDER
+        )
+        rendered_comparison = _load_json(render_comparison_result(selected.comparison))
+        rendered_methods = cast(JsonObject, rendered_comparison["methods"])
+        diagnostics = {
+            method: cast(JsonObject, rendered_methods[method])["diagnostics"] for method in PUBLISHED_METHOD_ORDER
+        }
+        rows.append(
+            cast(
+                JsonObject,
+                {
+                    "alternative_aggregate": alternate_aggregate,
+                    "alternative_weights": alternate_weights,
+                    "baseline_aggregate": scores["aggregate"],
+                    "baseline_weights": baseline_weights,
+                    "components": components,
+                    "diagnostics": diagnostics,
+                    "executed_methods": list(PUBLISHED_METHOD_ORDER),
+                    "training_directory": f"training/{selected.workload}/r{selected.repeat}",
+                    "workload": workload,
+                },
+            )
+        )
+    return rows
+
+
+def _candidate_invalid_chromosome_diagnostics(training: Sequence[_CandidateTraining]) -> list[JsonValue]:
+    """Retain classified infeasibility with its declared genes, settings, and limits."""
+
+    rows: list[JsonValue] = []
+    workload_order: dict[WorkloadName, int] = {"short": 0, "streaming": 1, "bursty": 2}
+    for item in sorted(training, key=lambda item: (workload_order[item.workload], item.repeat)):
+        invalid: list[object] = []
+        for candidate in item.checkpoint.population:
+            if candidate.status != "invalid":
+                continue
+            failure = candidate.invalid
+            _require(failure is not None, "invalid candidate must retain its classified failure")
+            assert failure is not None
+            invalid.append(
+                {
+                    "affected_evidence": failure.affected_evidence,
+                    "authority": failure.authority,
+                    "corrective_action": failure.corrective_action,
+                    "detail": failure.detail,
+                    "evidence_state": failure.evidence_state,
+                    "family": candidate.family,
+                    "genes": list(candidate.genes) if candidate.genes is not None else None,
+                    "identifier": {
+                        "birth_generation": candidate.identifier.birth_generation,
+                        "birth_index": candidate.identifier.birth_index,
+                    },
+                    "kind": failure.kind,
+                    "seed": failure.seed,
+                    "stage": failure.stage,
+                }
+            )
+        rows.append(
+            cast(
+                JsonObject,
+                {
+                    "invalid_candidates": cast(JsonValue, invalid),
+                    "trial_limits": cast(JsonObject, item.config.generation.trial.model_dump(mode="json")),
+                    "training_directory": f"training/{item.workload}/r{item.repeat}",
+                    "workload": item.workload,
+                    "repeat": item.repeat,
+                },
+            )
+        )
+    return rows
+
+
+def _frozen_natural_variation_windows(configs: Mapping[WorkloadName, ExperimentConfig]) -> dict[WorkloadName, float]:
+    """Derive the one common, pre-capture comparison horizon per workload."""
+
+    _require(set(configs) == {"short", "streaming", "bursty"}, "natural variation requires all workload configs")
+    windows: dict[WorkloadName, float] = {}
+    for workload in ("short", "streaming", "bursty"):
+        widths = configs[workload].similarity.multiscale_widths_seconds
+        window = max(widths)
+        _require(math.isfinite(window) and window > 0.0, "natural variation window must be finite")
+        windows[workload] = window
+    return windows
+
+
 def _candidate_report_inputs(
     training: Sequence[_CandidateTraining],
     held_out: Mapping[WorkloadName, HeldOutEvaluation],
+    *,
+    natural_variation_windows: Mapping[WorkloadName, float],
 ) -> JsonObject:
     fresh_simulation: list[JsonValue] = []
     held_out_scores: list[JsonValue] = []
@@ -5885,10 +6176,28 @@ def _candidate_report_inputs(
         training_scores.append(
             cast(
                 JsonObject,
-                {"selection_fitness": fmean(item.checkpoint.best_fitness for item in group), "workload": workload},
+                {
+                    "runtime_seconds": _candidate_sample_summary(
+                        [item.runtime_seconds for item in group], name="training runtime variance"
+                    ),
+                    "selection_fitness": _candidate_sample_summary(
+                        [item.checkpoint.best_fitness for item in group], name="training selection variance"
+                    ),
+                    "winner_family_count_variance": variance(
+                        [sum(_candidate_winner_family(item) == family for item in group) for family in FAMILY_ORDER]
+                    ),
+                    "winner_family_counts": cast(
+                        JsonObject,
+                        {
+                            family: sum(_candidate_winner_family(item) == family for item in group)
+                            for family in FAMILY_ORDER
+                        },
+                    ),
+                    "workload": workload,
+                },
             )
         )
-        natural_variation.append(_candidate_natural_variation(group))
+        natural_variation.append(_candidate_natural_variation(group, window=natural_variation_windows[workload]))
         held_out_scores.append(
             cast(
                 JsonObject,
@@ -5896,10 +6205,13 @@ def _candidate_report_inputs(
             )
         )
     return {
+        "controlled_weight_analysis": _candidate_controlled_weight_analysis(training),
         "formula": "arithmetic_mean",
         "fresh_simulation": fresh_simulation,
         "held_out": held_out_scores,
+        "invalid_chromosome_diagnostics": _candidate_invalid_chromosome_diagnostics(training),
         "natural_variation": natural_variation,
+        "runtime_winner_variance": training_scores,
         "training": training_scores,
     }
 
@@ -5912,15 +6224,30 @@ def _begin_candidate_collection(
     environment: Mapping[str, object],
     retained_prerequisites: bytes,
     configs: Mapping[WorkloadName, ExperimentConfig],
+    object_size_bytes: int,
 ) -> tuple[Path, Path]:
     candidate = _candidate_root(repository_root, study_id)
-    attempt = _collection_attempt_root(repository_root, study_id)
+    attempt = _begin_phase_attempt(repository_root, study_id=study_id, url=url, phase="collection")
+    _require(set(configs) == {"short", "streaming", "bursty"}, "collection requires exactly three workload configs")
+    _require(4 * 1024 * 1024 <= object_size_bytes <= 16 * 1024 * 1024, "collection object size is out of range")
+    document = parse_retained_prerequisites(retained_prerequisites)
+    _require(
+        document["study_id"] == study_id and document["url"] == url,
+        "retained prerequisite study ID and URL must equal the collection request",
+    )
+    _require_successful_prerequisite_attempt(
+        repository_root,
+        study_id=study_id,
+        url=url,
+        prerequisite_content=retained_prerequisites,
+    )
     marker = attempt / "frozen-protocol.json"
     if _path_entry_exists(marker) or _path_entry_exists(candidate):
         raise TrafficlabError(
             f"Validation Study collection already began for {study_id}; use a new study ID",
             corrective_action="preserve the failed attempt and restart with a new study ID",
         )
+    natural_variation_windows = _frozen_natural_variation_windows(configs)
     controls = {
         "base_config_identities": {
             workload: identify_bytes(render_effective_config(configs[workload])).as_dict()
@@ -5928,6 +6255,7 @@ def _begin_candidate_collection(
         },
         "environment_identity": identify_bytes(_canonical_json(cast(JsonObject, dict(environment)))).as_dict(),
         "prerequisites_identity": identify_bytes(retained_prerequisites).as_dict(),
+        "natural_variation_windows": natural_variation_windows,
         "study_id": study_id,
         "url": url,
     }
@@ -5944,7 +6272,10 @@ def _stage_retained_prerequisites(
 ) -> None:
     document = parse_retained_prerequisites(content)
     expected_paths = retained_prerequisite_paths(document)
-    _require(set(files) == set(expected_paths), "retained prerequisite files must exactly match the frozen document")
+    _require(
+        set(files) == {*expected_paths, _RETAINED_CAPABILITY_HEADER},
+        "retained prerequisite files must exactly match the frozen document and capability header",
+    )
     for command in cast(list[JsonObject], document["commands"]):
         for field in ("command", "junit", "status", "stderr", "stdout"):
             record = cast(JsonObject, command[field])
@@ -5952,19 +6283,102 @@ def _stage_retained_prerequisites(
             identity = ContentIdentity.from_dict(record["identity"], name=f"retained prerequisite {relative}")
             _require(identify_bytes(files[relative]) == identity, f"retained prerequisite {relative} has wrong bytes")
             _write_candidate_bytes(candidate / relative, files[relative])
+    capability = cast(JsonObject, document["capability"])
+    capability_header = files[_RETAINED_CAPABILITY_HEADER]
+    _require(
+        hashlib.sha256(capability_header).hexdigest() == capability["canary_sha256"],
+        "retained capability header must match its frozen prerequisite identity",
+    )
+    _write_candidate_bytes(candidate / _RETAINED_CAPABILITY_HEADER, capability_header)
+    _write_candidate_bytes(
+        candidate / "observations/prerequisites/00-prerequisites/capability.headers.json",
+        _canonical_json(
+            cast(
+                JsonObject,
+                {
+                    "content_length": capability["content_length"],
+                    "content_range": capability["content_range"],
+                    "header_identity": _candidate_identity(capability_header),
+                    "requested_end": 0,
+                    "requested_start": 0,
+                    "run_id": "00-prerequisites",
+                    "scope": "prerequisites",
+                    "status": capability["status"],
+                    "transfer_index": 0,
+                    "workload": "prerequisites",
+                },
+            )
+        ),
+    )
     _write_candidate_bytes(candidate / "prerequisites.json", content)
 
 
-def _candidate_header_bytes(repository_root: Path, responses: Sequence[JsonObject], *, workload: WorkloadName) -> bytes:
-    _require(bool(responses), f"{workload} capture must retain at least one transfer header")
-    relative = _repository_relative_path(
-        responses[0]["header_archive_path"], repository_root=repository_root, name=f"{workload} header archive"
+def _stage_candidate_transfer_evidence(
+    repository_root: Path,
+    candidate: Path,
+    responses: Sequence[JsonObject],
+    *,
+    scope: Literal["training", "held_out"],
+    run_id: str,
+    workload: WorkloadSpec,
+) -> None:
+    """Copy every protocol-used response into the immutable candidate by run and transfer."""
+
+    _require(
+        len(responses) == len(workload.transfers),
+        f"{scope} {run_id} must retain every workload transfer response",
     )
-    path = repository_root / Path(*relative.split("/"))
-    try:
-        return path.read_bytes()
-    except OSError as error:
-        raise ValueError(f"could not read retained {workload} protocol header: {error}") from error
+    for transfer_index, (start, end, filename) in enumerate(workload.transfers):
+        response = responses[transfer_index]
+        _require(
+            response["transfer_index"] == transfer_index
+            and response["requested_start"] == start
+            and response["requested_end"] == end
+            and response["status"] == 206,
+            f"{scope} {run_id} transfer {filename} does not match the frozen workload profile",
+        )
+        archive_relative = _repository_relative_path(
+            response["header_archive_path"],
+            repository_root=repository_root,
+            name=f"{scope} {run_id} header archive",
+        )
+        archive = repository_root / Path(*archive_relative.split("/"))
+        try:
+            header = archive.read_bytes()
+        except OSError as error:
+            raise ValueError(f"could not read retained {scope} {run_id} header {filename}: {error}") from error
+        _require(hashlib.sha256(header).hexdigest() == response["header_sha256"], "archived transfer header changed")
+        header_relative = f"headers/{scope}/{run_id}/{filename}"
+        observation_relative = f"observations/{scope}/{run_id}/{filename}.json"
+        _write_candidate_bytes(candidate / header_relative, header)
+        _write_candidate_bytes(
+            candidate / observation_relative,
+            _canonical_json(
+                cast(
+                    JsonObject,
+                    {
+                        "content_length": response["content_length"],
+                        "content_range": response["content_range"],
+                        "header_identity": _candidate_identity(header),
+                        "requested_end": end,
+                        "requested_start": start,
+                        "run_id": run_id,
+                        "scope": scope,
+                        "status": 206,
+                        "transfer_index": transfer_index,
+                        "workload": workload.name,
+                    },
+                )
+            ),
+        )
+
+
+class _CollectionCallbackValueError(Exception):
+    """Carry an unexpected callback ValueError beyond collection normalization."""
+
+    def __init__(self, error: ValueError) -> None:
+        super().__init__(str(error))
+        self.error = error
 
 
 def _collect_held_out(
@@ -5978,14 +6392,17 @@ def _collect_held_out(
     environment: Mapping[str, object],
     capture: HeldOutCaptureRunner,
     object_size_bytes: int,
-) -> tuple[JsonObject, HeldOutEvaluation, bytes]:
+) -> tuple[JsonObject, HeldOutEvaluation]:
     directory = candidate / "held_out" / workload.name
     _require(not _path_entry_exists(directory), f"held-out directory already exists: {directory}")
     config = _config_with_run_directory(training.config, directory)
     source = attempt / f"held-out-{workload.name}.toml"
     _render_realized_config(config, source)
     prepared = prepare_transfer_scratch(repository_root, study_id, f"held-out-{workload.name}", workload)
-    result = capture(source)
+    try:
+        result = capture(source)
+    except ValueError as error:
+        raise _CollectionCallbackValueError(error) from error
     _require(
         result.run_directory == directory and not result.reused,
         "held-out capture must publish one fresh non-reused capture pair",
@@ -5997,6 +6414,14 @@ def _collect_held_out(
         workload,
         prepared,
         object_size_bytes=object_size_bytes,
+    )
+    _stage_candidate_transfer_evidence(
+        repository_root,
+        candidate,
+        responses,
+        scope="held_out",
+        run_id=f"held-out-{workload.name}",
+        workload=workload,
     )
     experiment = directory / "experiment.toml"
     _require(
@@ -6044,7 +6469,6 @@ def _collect_held_out(
             },
         ),
         evaluation,
-        _candidate_header_bytes(repository_root, responses, workload=workload.name),
     )
 
 
@@ -6102,36 +6526,112 @@ def _collection_inputs_from_prerequisites(
             "collection Git commit must equal the retained prerequisite commit",
         )
         image_lock_path = root / "docker" / "capture" / "image-lock.json"
-        image_lock = json.loads(image_lock_path.read_text(encoding="utf-8"))
-        _require(type(image_lock) is dict, "capture image lock must be a JSON object")
-        lock = cast(dict[str, object], image_lock)
-        _require(
-            set(lock)
-            == {
-                "base_digest",
-                "base_reference",
-                "capture_tool_version",
-                "debian_snapshot",
-                "direct_packages",
-                "expected_capture_image_id",
-            },
-            "capture image lock must have its exact checked fields",
+        capture_lock = load_capture_image_lock(image_lock_path)
+        validate_capture_dockerfile(
+            (root / "docker" / "capture" / "Dockerfile").read_text(encoding="utf-8"),
+            capture_lock,
         )
         images = cast(JsonObject, _thaw_json(prerequisites.images))
         tools = cast(JsonObject, _thaw_json(prerequisites.tools))
+        current_host = {
+            "host_architecture": platform.machine(),
+            "kernel_release": platform.release(),
+            "platform": platform.platform(),
+            "python_implementation": platform.python_implementation(),
+            "python_version": platform.python_version(),
+        }
+        _require(
+            all(current_host[field] == tools[field] for field in current_host),
+            "collection host, kernel, and Python must equal the retained prerequisites",
+        )
+        current_uv_lock = (root / "uv.lock").read_bytes()
+        _require(
+            hashlib.sha256(current_uv_lock).hexdigest() == tools["uv_lock_sha256"],
+            "collection uv.lock must equal the retained prerequisite lock",
+        )
+        docker_version = runner(
+            ("docker", "version", "--format", "{{.Server.Version}}"),
+            cwd=root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["git_or_version"],
+        )
+        compose_version = runner(
+            ("docker", "compose", "version", "--short"),
+            cwd=root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["git_or_version"],
+        )
+        _require(
+            docker_version.returncode == 0
+            and _stdout_text(docker_version, operation="collection Docker version") == tools["docker_engine_version"],
+            "collection Docker Engine must equal the retained prerequisites",
+        )
+        _require(
+            compose_version.returncode == 0
+            and _stdout_text(compose_version, operation="collection Docker Compose version")
+            == tools["docker_compose_version"],
+            "collection Docker Compose must equal the retained prerequisites",
+        )
         capture_image_id = _image_id(images["capture_image_id"], name="retained capture image ID")
         target_image_id = _image_id(images["target_image_id"], name="retained target image ID")
         target_reference = _strict_string(images["target_reference"], name="retained target image reference")
         _require(target_reference == TARGET_REFERENCE, "retained target image reference must remain locked")
+        target_inspect = runner(
+            ("docker", "image", "inspect", target_reference),
+            cwd=root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+        )
+        _require(target_inspect.returncode == 0, "could not inspect the retained target image before collection")
+        target_stdout, _target_stderr = _completed_output(target_inspect, operation="collection target image inspect")
+        current_target = _target_image_record(target_stdout)
+        retained_target = {
+            field: images[field]
+            for field in ("target_reference", "target_image_id", "target_repo_digests", "target_config_user")
+        }
         _require(
-            capture_image_id == _image_id(lock["expected_capture_image_id"], name="locked capture image ID"),
+            current_target == retained_target,
+            "collection target image must equal the retained prerequisite identity",
+        )
+        capture_inspect = runner(
+            ("docker", "image", "inspect", capture_image_id, "--format", "{{.Id}}"),
+            cwd=root,
+            check=False,
+            capture_output=True,
+            shell=False,
+            timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+        )
+        _require(
+            capture_inspect.returncode == 0
+            and _image_id(
+                _stdout_text(capture_inspect, operation="collection capture image inspect"),
+                name="current capture image ID",
+            )
+            == capture_image_id,
+            "collection capture image must equal the retained prerequisite identity",
+        )
+        _require(
+            capture_image_id == capture_lock.expected_capture_image_id,
             "cold capture rebuild ID must equal the checked image lock",
         )
-        capture_tool_version = _strict_string(lock["capture_tool_version"], name="locked capture tool version")
+        capture_tool_version = capture_lock.capture_tool_version
         evidence_root = (
             root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / "00-prerequisites"
         )
         files: dict[str, bytes] = {}
+        capability = cast(JsonObject, _thaw_json(prerequisites.capability))
+        capability_header = (evidence_root / "capability.headers").read_bytes()
+        _require(
+            hashlib.sha256(capability_header).hexdigest() == capability["canary_sha256"],
+            "retained capability header must match the prerequisite capability identity",
+        )
+        files[_RETAINED_CAPABILITY_HEADER] = capability_header
         retained_commands: list[JsonValue] = []
         for command, prefix in zip(prerequisites.commands, ("docker", "internet"), strict=True):
             record = cast(JsonObject, _thaw_json(command))
@@ -6169,11 +6669,12 @@ def _collection_inputs_from_prerequisites(
                     },
                 )
             )
-        uv_lock_identity = _candidate_identity((root / "uv.lock").read_bytes())
+        uv_lock_identity = _candidate_identity(current_uv_lock)
         retained_prerequisites = render_retained_prerequisites(
             cast(
                 JsonObject,
                 {
+                    "capability": {field: capability[field] for field in _RETAINED_PREREQUISITE_CAPABILITY_KEYS},
                     "commands": retained_commands,
                     "environment": cast(
                         JsonObject,
@@ -6204,10 +6705,10 @@ def _collection_inputs_from_prerequisites(
             },
             "docker_compose_version": _strict_string(tools["docker_compose_version"], name="retained Compose version"),
             "docker_engine_version": _strict_string(tools["docker_engine_version"], name="retained Docker version"),
-            "host_architecture": platform.machine(),
-            "kernel_release": platform.release(),
-            "python_implementation": platform.python_implementation(),
-            "python_version": platform.python_version(),
+            "host_architecture": current_host["host_architecture"],
+            "kernel_release": current_host["kernel_release"],
+            "python_implementation": current_host["python_implementation"],
+            "python_version": current_host["python_version"],
             "scientific_artifact_schema": 2,
             "source_commit": source_commit,
             "source_tree": source_tree,
@@ -6244,22 +6745,22 @@ def collect_validation_candidate(
     run: TrainingRunner = run_experiment,
     capture: HeldOutCaptureRunner = capture_experiment,
     object_size_bytes: int,
+    perf_counter: Callable[[], float] = time.perf_counter,
 ) -> Path:
     """Collect one immutable, audit-ready Phase 7 candidate through existing stage owners."""
     root = repository_root.resolve()
     checked_study_id = validate_study_id(study_id)
     checked_url = validate_endpoint_url(url)
-    _require(set(configs) == {"short", "streaming", "bursty"}, "collection requires exactly three workload configs")
-    _require(4 * 1024 * 1024 <= object_size_bytes <= 16 * 1024 * 1024, "collection object size is out of range")
-    candidate, attempt = _begin_candidate_collection(
-        root,
-        study_id=checked_study_id,
-        url=checked_url,
-        environment=environment,
-        retained_prerequisites=retained_prerequisites,
-        configs=configs,
-    )
     try:
+        candidate, attempt = _begin_candidate_collection(
+            root,
+            study_id=checked_study_id,
+            url=checked_url,
+            environment=environment,
+            retained_prerequisites=retained_prerequisites,
+            configs=configs,
+            object_size_bytes=object_size_bytes,
+        )
         _write_candidate_bytes(candidate / "environment.json", _canonical_json(cast(JsonObject, dict(environment))))
         _stage_retained_prerequisites(candidate, content=retained_prerequisites, files=prerequisite_files)
         workloads = {item.name: item for item in workload_specs(checked_url)}
@@ -6273,8 +6774,24 @@ def collect_validation_candidate(
             source = attempt / f"training-{workload_name}-r{repeat}.toml"
             _render_realized_config(config, source)
             prepared = prepare_transfer_scratch(root, checked_study_id, run_id, workload)
-            run(source)
-            archive_transfer_evidence(
+            started = perf_counter()
+            try:
+                run(source)
+            except ValueError as error:
+                raise _CollectionCallbackValueError(error) from error
+            runtime_seconds = perf_counter() - started
+            _require(math.isfinite(runtime_seconds) and runtime_seconds >= 0.0, "training runtime must be finite")
+            append_run_log(
+                directory,
+                {
+                    "event": "validation_study_training_completed",
+                    "repeat": repeat,
+                    "runtime_seconds": runtime_seconds,
+                    "stage": "study",
+                    "workload": workload_name,
+                },
+            )
+            responses = archive_transfer_evidence(
                 root,
                 checked_study_id,
                 run_id,
@@ -6282,21 +6799,38 @@ def collect_validation_candidate(
                 prepared,
                 object_size_bytes=object_size_bytes,
             )
+            _stage_candidate_transfer_evidence(
+                root,
+                candidate,
+                responses,
+                scope="training",
+                run_id=run_id,
+                workload=workload,
+            )
             _write_candidate_config_pair(
                 config,
                 candidate / "configs" / f"training-{workload_name}-r{repeat}.portable.toml",
                 candidate / "configs" / f"training-{workload_name}-r{repeat}.realized.toml",
             )
-            loaded = _load_candidate_training(directory, workload=workload_name, repeat=repeat, config=config)
+            loaded = _load_candidate_training(
+                directory,
+                workload=workload_name,
+                repeat=repeat,
+                config=config,
+                runtime_seconds=runtime_seconds,
+            )
             training.append(loaded)
             fresh_path, fresh_record = _candidate_fresh_record(loaded)
             _write_candidate_bytes(candidate / fresh_path, _canonical_json(fresh_record))
             fresh.append(fresh_record)
 
         selected = _select_candidate_training(training)
+        natural_variation_windows = _frozen_natural_variation_windows(configs)
         protocol = cast(
             JsonObject,
             {
+                "candidate_id": checked_study_id,
+                "destination_id": checked_study_id,
                 "final_seed": 97,
                 "model_selection": cast(
                     JsonObject,
@@ -6305,8 +6839,11 @@ def collect_validation_candidate(
                         "selected": [cast(JsonValue, record) for record in selected],
                     },
                 ),
+                "natural_variation_windows": cast(JsonObject, natural_variation_windows),
+                "prerequisite_path": "examples/validation_study/prerequisites.json",
                 "schema_version": 2,
                 "selection_seeds": list(configs["short"].genetic.trial_seeds),
+                "study_id": checked_study_id,
                 "training_repetitions": 3,
                 "workloads": ["short", "streaming", "bursty"],
             },
@@ -6321,9 +6858,8 @@ def collect_validation_candidate(
             )
         held_rows: list[JsonObject] = []
         held_evaluations: dict[WorkloadName, HeldOutEvaluation] = {}
-        headers: dict[WorkloadName, bytes] = {}
         for workload_name in ("short", "streaming", "bursty"):
-            held_record, evaluation, header = _collect_held_out(
+            held_record, evaluation = _collect_held_out(
                 root,
                 candidate,
                 attempt,
@@ -6336,24 +6872,11 @@ def collect_validation_candidate(
             )
             held_rows.append(held_record)
             held_evaluations[workload_name] = evaluation
-            headers[workload_name] = header
-        for workload_name in ("short", "streaming", "bursty"):
-            header_path = candidate / "headers" / f"{workload_name}.headers"
-            _write_candidate_bytes(header_path, headers[workload_name])
-            _write_candidate_bytes(
-                candidate / "observations" / f"{workload_name}.json",
-                _canonical_json(
-                    cast(
-                        JsonObject,
-                        {
-                            "header_identity": _candidate_identity(headers[workload_name]),
-                            "status": 206,
-                            "workload": workload_name,
-                        },
-                    )
-                ),
-            )
-        report_inputs = _candidate_report_inputs(training, held_evaluations)
+        report_inputs = _candidate_report_inputs(
+            training,
+            held_evaluations,
+            natural_variation_windows=natural_variation_windows,
+        )
         _write_candidate_bytes(candidate / "report_inputs.json", _canonical_json(report_inputs))
         _write_candidate_bytes(
             candidate / "report.json",
@@ -6407,12 +6930,14 @@ def collect_validation_candidate(
         )
         auditor.audit_bundle(candidate, repository=root)
         return candidate
+    except _CollectionCallbackValueError as error:
+        raise error.error from None
     except TrafficlabError as error:
         raise TrafficlabError(
             f"Validation Study collection failed; preserve the ignored attempt and restart with a new study ID: {error}",
             corrective_action="preserve the failed attempt and restart with a new study ID",
         ) from error
-    except OSError as error:
+    except (OSError, ValueError) as error:
         raise TrafficlabError(
             f"Validation Study collection failed; preserve the ignored attempt and restart with a new study ID: {error}",
             corrective_action="preserve the failed attempt and restart with a new study ID",
@@ -6503,6 +7028,17 @@ def main(
                 corrective_action="supply the exact repository-relative checked prerequisite path",
             ) from error
         prerequisite_path = repository_root.resolve() / Path(*prerequisite_record.split("/"))
+        canonical_prerequisite_path = repository_root.resolve() / "examples" / "validation_study" / "prerequisites.json"
+        try:
+            _require(
+                prerequisite_path == canonical_prerequisite_path,
+                "collection prerequisites must use examples/validation_study/prerequisites.json before candidate creation",
+            )
+        except ValueError as error:
+            raise TrafficlabError(
+                f"invalid Validation Study command arguments: {error}",
+                corrective_action="supply the exact repository-relative checked prerequisite path",
+            ) from error
         if parsed.command == "collect":
             environment, retained_prerequisites, prerequisite_files, configs, object_size_bytes = (
                 _collection_inputs_from_prerequisites(
@@ -6524,6 +7060,7 @@ def main(
                 run=run,
                 capture=capture,
                 object_size_bytes=object_size_bytes,
+                perf_counter=perf_counter,
             )
             print(f"validation-study: candidate collected at {candidate}")
             return 0

@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import platform
 import shutil
 import socket
 import stat
@@ -52,8 +53,18 @@ _ROOT = Path(__file__).resolve().parents[2]
 _FIT_FIXTURE = _ROOT / "examples" / "data" / "fit"
 _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
-_CAPTURE_DOCKERFILE = b"FROM capture-base\n"
-_CAPTURE_SCRIPT = b"#!/bin/sh\nexec dumpcap\n"
+_CAPTURE_DOCKERFILE = (_ROOT / "docker" / "capture" / "Dockerfile").read_bytes()
+_CAPTURE_SCRIPT = (_ROOT / "docker" / "capture" / "capture.sh").read_bytes()
+_CAPTURE_IMAGE_LOCK = json.loads((_ROOT / "docker" / "capture" / "image-lock.json").read_text(encoding="utf-8"))
+_CAPTURE_IMAGE_ID = cast(str, _CAPTURE_IMAGE_LOCK["expected_capture_image_id"])
+
+
+def _write_prerequisite_repository_inputs(repository_root: Path) -> None:
+    capture_root = repository_root / "docker" / "capture"
+    capture_root.mkdir(parents=True)
+    for name in ("Dockerfile", "capture.sh", "image-lock.json"):
+        shutil.copy2(_ROOT / "docker" / "capture" / name, capture_root / name)
+    shutil.copy2(_ROOT / "uv.lock", repository_root / "uv.lock")
 
 
 class _ScriptedPrerequisiteRunner:
@@ -64,7 +75,7 @@ class _ScriptedPrerequisiteRunner:
         self.url = "https://downloads.example.test/object.bin"
         self.final_url = "https://cdn.example.test/object.bin"
         self.target_id = f"sha256:{'b' * 64}"
-        self.capture_id = f"sha256:{'d' * 64}"
+        self.capture_id = _CAPTURE_IMAGE_ID
         self.container_id = "e" * 64
         self.capability_name = f"trafficlab-validation-study-capability-{self.study_id}"
         self.evidence = (
@@ -113,7 +124,7 @@ class _ScriptedPrerequisiteRunner:
             return subprocess.CompletedProcess(command, status, stdout=stdout, stderr=stderr)
         if command == ("docker", "image", "inspect", study.TARGET_REFERENCE):
             return self._inspect_target(command)
-        if command[:3] == ("docker", "build", "--pull=false"):
+        if command[:2] == ("docker", "build"):
             return self._build_capture(command)
         if command[:3] == ("docker", "container", "inspect"):
             return self._inspect_container(command)
@@ -145,14 +156,9 @@ class _ScriptedPrerequisiteRunner:
         return subprocess.CompletedProcess(command, 0, stdout=json.dumps(inspected).encode(), stderr=b"")
 
     def _build_capture(self, command: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
-        assert command == (
-            "docker",
-            "build",
-            "--pull=false",
-            "--no-cache",
-            "--iidfile",
-            str(self.evidence / "capture.iid"),
-            "docker/capture",
+        assert command == study.cold_capture_build_argv(  # pyright: ignore[reportPrivateUsage]
+            f"trafficlab-validation-{self.study_id}:capture",
+            self.evidence / "capture.iid",
         )
         if self.mutation != "capture-iid-missing":
             iid = "trafficlab-capture:local" if self.mutation == "capture-iid-tag" else self.capture_id
@@ -431,11 +437,15 @@ def _valid_prerequisite() -> study.PrerequisiteResults:
         url=url,
         tools=_frozen(
             {
-                "python_version": "3.12.3",
-                "trafficlab_version": "0.1.0",
                 "docker_engine_version": "27.0.0",
                 "docker_compose_version": "2.29.0",
+                "host_architecture": "x86_64",
+                "kernel_release": "test-kernel",
                 "platform": "Linux-test",
+                "python_implementation": "CPython",
+                "python_version": "3.12.3",
+                "trafficlab_version": "0.1.0",
+                "uv_lock_sha256": _HASH,
             }
         ),
         images=_frozen(
@@ -2845,10 +2855,7 @@ def test_junit_parser_requires_positive_all_passed_selection(invalid: bytes) -> 
 
 def test_capability_records_digest_ids_default_user_range_canary_modes_and_cleanup(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
-    capture_root = repository_root / "docker" / "capture"
-    capture_root.mkdir(parents=True)
-    (capture_root / "Dockerfile").write_bytes(_CAPTURE_DOCKERFILE)
-    (capture_root / "capture.sh").write_bytes(_CAPTURE_SCRIPT)
+    _write_prerequisite_repository_inputs(repository_root)
     runner = _ScriptedPrerequisiteRunner(repository_root)
     now = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
     result = study.run_prerequisites(
@@ -2865,7 +2872,11 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         "trafficlab_version": "0.1.0",
         "docker_engine_version": "27.0.0",
         "docker_compose_version": "2.29.0",
+        "host_architecture": study.platform.machine(),
+        "kernel_release": study.platform.release(),
         "platform": study.platform.platform(),
+        "python_implementation": "CPython",
+        "uv_lock_sha256": hashlib.sha256((_ROOT / "uv.lock").read_bytes()).hexdigest(),
     }
     assert result.images == {
         "target_reference": study.TARGET_REFERENCE,
@@ -2918,14 +2929,9 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         ("docker", "compose", "version", "--short"),
         ("docker", "image", "pull", study.TARGET_REFERENCE),
         ("docker", "image", "inspect", study.TARGET_REFERENCE),
-        (
-            "docker",
-            "build",
-            "--pull=false",
-            "--no-cache",
-            "--iidfile",
-            str(runner.evidence / "capture.iid"),
-            "docker/capture",
+        study.cold_capture_build_argv(  # pyright: ignore[reportPrivateUsage]
+            f"trafficlab-validation-{runner.study_id}:capture",
+            runner.evidence / "capture.iid",
         ),
         (
             "docker",
@@ -3024,10 +3030,7 @@ def test_prerequisites_stop_at_first_failure_preserve_primary_and_publish_no_val
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repository_root = tmp_path / "repository"
-    capture_root = repository_root / "docker" / "capture"
-    capture_root.mkdir(parents=True)
-    (capture_root / "Dockerfile").write_bytes(_CAPTURE_DOCKERFILE)
-    (capture_root / "capture.sh").write_bytes(_CAPTURE_SCRIPT)
+    _write_prerequisite_repository_inputs(repository_root)
     runner = _ScriptedPrerequisiteRunner(repository_root, mutation)
     _install_prerequisite_failure(mutation, monkeypatch)
 
@@ -3131,10 +3134,7 @@ def test_prerequisites_wrap_invalid_study_id_without_attempt_preservation(tmp_pa
 
 def test_capability_normal_exit_proves_exact_full_id_and_anchored_name_absent(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
-    capture_root = repository_root / "docker" / "capture"
-    capture_root.mkdir(parents=True)
-    (capture_root / "Dockerfile").write_bytes(_CAPTURE_DOCKERFILE)
-    (capture_root / "capture.sh").write_bytes(_CAPTURE_SCRIPT)
+    _write_prerequisite_repository_inputs(repository_root)
     runner = _ScriptedPrerequisiteRunner(repository_root)
 
     result = study.run_prerequisites(
@@ -3173,10 +3173,7 @@ def test_capability_normal_exit_proves_exact_full_id_and_anchored_name_absent(tm
 
 def test_capability_removes_only_a_lingering_exact_owned_id_after_success(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
-    capture_root = repository_root / "docker" / "capture"
-    capture_root.mkdir(parents=True)
-    (capture_root / "Dockerfile").write_bytes(_CAPTURE_DOCKERFILE)
-    (capture_root / "capture.sh").write_bytes(_CAPTURE_SCRIPT)
+    _write_prerequisite_repository_inputs(repository_root)
     runner = _ScriptedPrerequisiteRunner(repository_root, "capability-lingering-owned")
 
     result = study.run_prerequisites(
@@ -3237,10 +3234,7 @@ def test_capability_cleanup_fails_closed_for_each_listing_and_an_unrelated_name_
     tmp_path: Path,
 ) -> None:
     repository_root = tmp_path / "repository"
-    capture_root = repository_root / "docker" / "capture"
-    capture_root.mkdir(parents=True)
-    (capture_root / "Dockerfile").write_bytes(_CAPTURE_DOCKERFILE)
-    (capture_root / "capture.sh").write_bytes(_CAPTURE_SCRIPT)
+    _write_prerequisite_repository_inputs(repository_root)
     runner = _ScriptedPrerequisiteRunner(repository_root, mutation)
 
     with pytest.raises(TrafficlabError, match="prerequisite validation failed") as captured:
@@ -3423,10 +3417,7 @@ def test_prerequisite_cli_requires_exact_subcommand_arguments_and_reports_errors
     assert reject_calls == []
 
     repository_root = tmp_path / "repository"
-    capture_root = repository_root / "docker" / "capture"
-    capture_root.mkdir(parents=True)
-    (capture_root / "Dockerfile").write_bytes(_CAPTURE_DOCKERFILE)
-    (capture_root / "capture.sh").write_bytes(_CAPTURE_SCRIPT)
+    _write_prerequisite_repository_inputs(repository_root)
     runner = _ScriptedPrerequisiteRunner(repository_root, "dirty-tree")
     now = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
     assert (
@@ -3610,11 +3601,16 @@ class _StudyIdentityRunner:
         *,
         target_image_id: str = _IMAGE_ID,
         capture_image_id: str = f"sha256:{'d' * 64}",
+        target_config_user: str = "",
         dirty: bool = False,
     ) -> None:
         self.root = repository_root
         self.target_image_id = target_image_id
         self.capture_image_id = capture_image_id
+        self.target_config_user = target_config_user
+        self.target_repo_digests: tuple[str, ...] = (study.TARGET_REFERENCE,)
+        self.docker_engine_version = "27.0.0"
+        self.docker_compose_version = "2.29.0"
         self.dirty = dirty
         self.calls: list[tuple[str, ...]] = []
 
@@ -3639,18 +3635,26 @@ class _StudyIdentityRunner:
             ("git", "rev-parse", "HEAD"): b"c" * 40 + b"\n",
             ("git", "rev-parse", "HEAD^{tree}"): b"e" * 40 + b"\n",
             ("git", "status", "--porcelain=v1", "--untracked-files=all"): b" M source.py\n" if self.dirty else b"",
-            ("docker", "version", "--format", "{{.Server.Version}}"): b"27.0.0\n",
-            ("docker", "compose", "version", "--short"): b"2.29.0\n",
+            ("docker", "version", "--format", "{{.Server.Version}}"): f"{self.docker_engine_version}\n".encode(),
+            ("docker", "compose", "version", "--short"): f"{self.docker_compose_version}\n".encode(),
             ("docker", "image", "inspect", study.TARGET_REFERENCE): json.dumps(
                 [
                     {
                         "Id": self.target_image_id,
-                        "RepoDigests": [study.TARGET_REFERENCE],
-                        "Config": {"User": ""},
+                        "RepoDigests": list(self.target_repo_digests),
+                        "Config": {"User": self.target_config_user},
                     }
                 ]
             ).encode(),
             ("docker", "image", "inspect", f"sha256:{'d' * 64}"): json.dumps([{"Id": self.capture_image_id}]).encode(),
+            (
+                "docker",
+                "image",
+                "inspect",
+                _CAPTURE_IMAGE_ID,
+                "--format",
+                "{{.Id}}",
+            ): f"{self.capture_image_id}\n".encode(),
         }
         if command not in outputs:
             raise AssertionError(f"unexpected study command: {command!r}")
@@ -3665,6 +3669,34 @@ def _write_study_inputs(repository_root: Path) -> tuple[Path, study.StudyResults
     prerequisite_path.write_bytes(study.render_prerequisite_results(prerequisite))
     document = _valid_result_document(repository_root)
     return prerequisite_path, _result_value(document)
+
+
+def _write_collection_compatible_inputs(repository_root: Path) -> Path:
+    """Write retained inputs that bind the local revalidation boundary exactly."""
+
+    repository_root.mkdir()
+    shutil.copy2(_ROOT / "uv.lock", repository_root / "uv.lock")
+    prerequisite, _contents = _write_checked_configs(repository_root, capture_image_id=_CAPTURE_IMAGE_ID)
+    tools = cast(study.JsonObject, study._thaw_json(prerequisite.tools))  # pyright: ignore[reportPrivateUsage]
+    tools.update(
+        {
+            "host_architecture": platform.machine(),
+            "kernel_release": platform.release(),
+            "platform": platform.platform(),
+            "python_implementation": platform.python_implementation(),
+            "python_version": platform.python_version(),
+            "uv_lock_sha256": hashlib.sha256((repository_root / "uv.lock").read_bytes()).hexdigest(),
+        }
+    )
+    images = cast(study.JsonObject, study._thaw_json(prerequisite.images))  # pyright: ignore[reportPrivateUsage]
+    images["capture_image_id"] = _CAPTURE_IMAGE_ID
+    prerequisite = replace(prerequisite, tools=_frozen(tools), images=_frozen(images))
+    prerequisite = _write_retained_prerequisite_evidence(repository_root, prerequisite)
+    capture_root = repository_root / "docker" / "capture"
+    shutil.copy2(_ROOT / "docker" / "capture" / "image-lock.json", capture_root / "image-lock.json")
+    prerequisite_path = repository_root / "examples" / "validation_study" / "prerequisites.json"
+    prerequisite_path.write_bytes(study.render_prerequisite_results(prerequisite))
+    return prerequisite_path
 
 
 def _install_primary_orchestration_doubles(
@@ -4572,41 +4604,138 @@ def test_collect_cli_uses_only_frozen_prerequisite_inputs_and_the_candidate_owne
             "run": run_experiment,
             "capture": study.capture_experiment,
             "object_size_bytes": 4_194_304,
+            "perf_counter": study.time.perf_counter,
         }
     ]
     assert "candidate collected" in capsys.readouterr().out
 
 
-def test_collection_inputs_rebind_legacy_prerequisites_to_current_checked_inputs(tmp_path: Path) -> None:
+def test_collect_cli_rejects_an_in_repository_noncanonical_prerequisite_path_before_loading_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the frozen canonical prerequisite path can begin collection."""
+
     repository_root = tmp_path / "repository"
-    prerequisite_path, _expected = _write_study_inputs(repository_root)
-    (repository_root / "uv.lock").write_bytes(b"version = 1\n")
-    image_lock = repository_root / "docker" / "capture" / "image-lock.json"
-    image_lock.write_text(
-        json.dumps(
-            {
-                "base_digest": f"sha256:{'a' * 64}",
-                "base_reference": "docker.io/library/debian@sha256:" + "b" * 64,
-                "capture_tool_version": "4.0.17",
-                "debian_snapshot": "20260816T000000Z",
-                "direct_packages": ["tshark"],
-                "expected_capture_image_id": f"sha256:{'d' * 64}",
-            }
-        ),
-        encoding="utf-8",
+    repository_root.mkdir()
+    calls: list[str] = []
+
+    def should_not_load(*_args: object, **_kwargs: object) -> study.CollectionInputs:
+        calls.append("inputs")
+        raise AssertionError("noncanonical prerequisite path reached collection inputs")
+
+    def should_not_collect(**_kwargs: object) -> Path:
+        calls.append("collect")
+        raise AssertionError("noncanonical prerequisite path reached candidate collection")
+
+    monkeypatch.setattr(study, "_collection_inputs_from_prerequisites", should_not_load)
+    monkeypatch.setattr(study, "collect_validation_candidate", should_not_collect)
+
+    assert (
+        study.main(
+            [
+                "collect",
+                "--url",
+                "https://downloads.example.test/object.bin",
+                "--study-id",
+                "study-1",
+                "--prerequisites",
+                "examples/validation_study/other.json",
+            ],
+            repository_root=repository_root,
+            runner=_StudyIdentityRunner(repository_root),
+        )
+        == 2
     )
+    assert calls == []
+    assert not (repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1").exists()
+    assert not (repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1").exists()
+
+
+def test_prerequisites_cli_publishes_the_canonical_prerequisite_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The public prerequisite command reports its canonical retained path after success."""
+
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    calls: list[tuple[str, str, Path]] = []
+
+    class Result:
+        study_id = "study-1"
+
+    def prerequisites(
+        url: str,
+        study_id: str,
+        *,
+        repository_root: Path,
+        **_kwargs: object,
+    ) -> study.PrerequisiteResults:
+        calls.append((url, study_id, repository_root))
+        return cast(study.PrerequisiteResults, Result())
+
+    monkeypatch.setattr(study, "run_prerequisites", prerequisites)
+
+    assert (
+        study.main(
+            ["prerequisites", "--url", "https://downloads.example.test/object.bin", "--study-id", "study-1"],
+            repository_root=repository_root,
+            runner=_StudyIdentityRunner(repository_root),
+        )
+        == 0
+    )
+    assert calls == [("https://downloads.example.test/object.bin", "study-1", repository_root)]
+    assert str(repository_root / "examples" / "validation_study" / "prerequisites.json") in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("relative", (True, False))
+def test_publish_cli_resolves_relative_and_absolute_candidate_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative: bool,
+) -> None:
+    """The publish command resolves only relative candidates against the supplied repository root."""
+
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    candidate = repository_root / "candidate"
+    calls: list[tuple[Path, str, Path]] = []
+
+    def publish(candidate_path: Path, study_id: str, *, repository_root: Path) -> Path:
+        calls.append((candidate_path, study_id, repository_root))
+        return repository_root / "examples" / "validation_study" / "evidence" / study_id
+
+    monkeypatch.setattr(study, "publish_audited_bundle", publish)
+    argument = Path("candidate") if relative else candidate
+
+    assert (
+        study.main(
+            ["publish", "--candidate", str(argument), "--study-id", "study-1"],
+            repository_root=repository_root,
+            runner=_StudyIdentityRunner(repository_root),
+        )
+        == 0
+    )
+    assert calls == [(candidate, "study-1", repository_root)]
+
+
+def test_collection_inputs_revalidates_current_checked_inputs(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
 
     environment, retained, files, configs, object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
         repository_root,
         prerequisite_path,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
-        runner=_StudyIdentityRunner(repository_root),
+        runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
     )
 
     parsed = cast(study.JsonObject, study.parse_retained_prerequisites(retained))
     retained_environment = cast(study.JsonObject, parsed["environment"])
-    assert retained_environment["capture_image_id"] == f"sha256:{'d' * 64}"
+    assert retained_environment["capture_image_id"] == _CAPTURE_IMAGE_ID
     assert environment["source_commit"] == "c" * 40
     assert environment["source_tree"] == "e" * 40
     assert set(files) == {
@@ -4620,6 +4749,7 @@ def test_collection_inputs_rebind_legacy_prerequisites_to_current_checked_inputs
         "prerequisites/internet_smoke.status.json",
         "prerequisites/internet_smoke.stderr",
         "prerequisites/internet_smoke.stdout",
+        "headers/prerequisites/00-prerequisites/capability.headers",
     }
     assert tuple(configs) == ("short", "streaming", "bursty")
     assert object_size_bytes == 4_194_304
@@ -4629,7 +4759,7 @@ def test_collection_inputs_rebind_legacy_prerequisites_to_current_checked_inputs
             prerequisite_path,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
-            runner=_StudyIdentityRunner(repository_root, dirty=True),
+            runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID, dirty=True),
         )
     (repository_root / "uv.lock").unlink()
     with pytest.raises(TrafficlabError, match="Validation Study collection inputs are invalid"):
@@ -4638,8 +4768,288 @@ def test_collection_inputs_rebind_legacy_prerequisites_to_current_checked_inputs
             prerequisite_path,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
-            runner=_StudyIdentityRunner(repository_root),
+            runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
         )
+
+
+def test_collection_inputs_rejects_legacy_image_lock_before_capture_revalidation(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
+    image_lock = repository_root / "docker" / "capture" / "image-lock.json"
+    image_lock.write_text(
+        json.dumps(
+            {
+                "base_digest": f"sha256:{'a' * 64}",
+                "base_reference": "docker.io/library/debian@sha256:" + "b" * 64,
+                "capture_tool_version": "4.0.17",
+                "debian_snapshot": "20260816T000000Z",
+                "direct_packages": ["tshark"],
+                "expected_capture_image_id": _CAPTURE_IMAGE_ID,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TrafficlabError, match="image lock"):
+        study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+            repository_root,
+            prerequisite_path,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
+        )
+
+
+def test_collection_inputs_rejects_changed_target_metadata_before_candidate_creation(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
+
+    with pytest.raises(TrafficlabError, match="target image"):
+        study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+            repository_root,
+            prerequisite_path,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            runner=_StudyIdentityRunner(
+                repository_root,
+                capture_image_id=_CAPTURE_IMAGE_ID,
+                target_config_user="unexpected",
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "host_architecture",
+        "kernel_release",
+        "platform",
+        "python_implementation",
+        "python_version",
+        "uv_lock",
+        "docker_engine_version",
+        "docker_compose_version",
+        "target_image_id",
+        "target_repo_digests",
+        "target_config_user",
+        "capture_image_id",
+    ),
+)
+def test_collection_inputs_rejects_each_live_environment_mismatch_before_candidate_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    """Collection revalidates every retained host, tool, and image identity before capture."""
+
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
+    runner = _StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID)
+    if mutation == "host_architecture":
+        monkeypatch.setattr(study.platform, "machine", lambda: "other-architecture")
+    elif mutation == "kernel_release":
+        monkeypatch.setattr(study.platform, "release", lambda: "other-kernel")
+    elif mutation == "platform":
+        monkeypatch.setattr(study.platform, "platform", lambda: "Other-platform")
+    elif mutation == "python_implementation":
+        monkeypatch.setattr(study.platform, "python_implementation", lambda: "OtherPython")
+    elif mutation == "python_version":
+        monkeypatch.setattr(study.platform, "python_version", lambda: "0.0.0")
+    elif mutation == "uv_lock":
+        (repository_root / "uv.lock").write_bytes(b"changed checked lock\n")
+    elif mutation == "docker_engine_version":
+        runner.docker_engine_version = "28.0.0"
+    elif mutation == "docker_compose_version":
+        runner.docker_compose_version = "3.0.0"
+    elif mutation == "target_image_id":
+        runner.target_image_id = f"sha256:{'9' * 64}"
+    elif mutation == "target_repo_digests":
+        runner.target_repo_digests = ("curlimages/curl@sha256:" + "f" * 64,)
+    elif mutation == "target_config_user":
+        runner.target_config_user = "unexpected"
+    else:
+        runner.capture_image_id = f"sha256:{'8' * 64}"
+
+    with pytest.raises(TrafficlabError):
+        study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+            repository_root,
+            prerequisite_path,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            runner=runner,
+        )
+
+    assert not (repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1").exists()
+
+
+@pytest.mark.parametrize("case", ("missing", "identity", "study_id", "url", "noncanonical"))
+def test_collection_requires_a_matching_successful_prerequisite_marker_before_candidate_creation(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    """The collection marker is durable, but only the exact successful prerequisite may unlock capture."""
+
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
+    environment, retained, files, configs, object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        prerequisite_path,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
+    )
+    study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        prerequisite_content=retained,
+    )
+    attempt = repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1"
+    success = attempt / "prerequisites-success.json"
+    if case == "missing":
+        success.unlink()
+    elif case == "noncanonical":
+        success.write_bytes(success.read_bytes().replace(b"{", b"{ ", 1))
+    else:
+        marker = cast(dict[str, object], json.loads(success.read_text(encoding="utf-8")))
+        if case == "identity":
+            identity = cast(dict[str, object], marker["prerequisites_identity"])
+            identity["sha256"] = "0" * 64
+        elif case == "study_id":
+            marker["study_id"] = "other-study"
+        else:
+            marker["url"] = "https://other.example.test/object.bin"
+        _write_canonical_json(success, marker)
+
+    calls: list[Path] = []
+
+    def should_not_run(path: Path) -> RunResult:
+        calls.append(path)
+        raise AssertionError("collection must stop before the first capture")
+
+    with pytest.raises(TrafficlabError, match="matching successful prerequisite marker"):
+        study.collect_validation_candidate(
+            repository_root=repository_root,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            environment=environment,
+            retained_prerequisites=retained,
+            prerequisite_files=files,
+            configs=configs,
+            run=should_not_run,
+            object_size_bytes=object_size_bytes,
+        )
+
+    assert calls == []
+    assert not (repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1").exists()
+    assert (attempt / "collection.json").is_file()
+
+
+def test_collection_binds_retained_prerequisite_before_creating_a_candidate(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
+    environment, retained, files, configs, object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        prerequisite_path,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
+    )
+    mismatched = study.parse_retained_prerequisites(retained)
+    mismatched["study_id"] = "other-study"
+    for command in cast(list[dict[str, object]], mismatched["commands"]):
+        kind = cast(str, command["kind"])
+        argv = list(
+            study.prerequisite_command_argv(
+                kind, study_id="other-study", url="https://downloads.example.test/object.bin"
+            )
+        )
+        command["argv"] = argv
+        command_record = cast(dict[str, object], command["command"])
+        command_record["identity"] = identify_bytes(
+            json.dumps({"argv": argv}, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+        ).as_dict()
+    mismatched_content = study.render_retained_prerequisites(mismatched)
+    study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        prerequisite_content=mismatched_content,
+    )
+    calls: list[Path] = []
+
+    def should_not_run(path: Path) -> RunResult:
+        calls.append(path)
+        raise AssertionError("mismatched retained prerequisite must stop before training")
+
+    candidate = repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
+    with pytest.raises(TrafficlabError, match="retained prerequisite"):
+        study.collect_validation_candidate(
+            repository_root=repository_root,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            environment=environment,
+            retained_prerequisites=mismatched_content,
+            prerequisite_files=files,
+            configs=configs,
+            run=should_not_run,
+            object_size_bytes=object_size_bytes,
+        )
+
+    assert calls == []
+    assert not candidate.exists()
+    assert (
+        repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1" / "collection.json"
+    ).is_file()
+
+
+def test_collection_persists_its_phase_marker_before_later_object_validation(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
+    environment, retained, files, configs, _object_size_bytes = study._collection_inputs_from_prerequisites(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        prerequisite_path,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        runner=_StudyIdentityRunner(repository_root, capture_image_id=_CAPTURE_IMAGE_ID),
+    )
+    study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        prerequisite_content=retained,
+    )
+    candidate = repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
+    marker = (
+        repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1" / "collection.json"
+    )
+
+    with pytest.raises(TrafficlabError, match="object size"):
+        study.collect_validation_candidate(
+            repository_root=repository_root,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            environment=environment,
+            retained_prerequisites=retained,
+            prerequisite_files=files,
+            configs=configs,
+            object_size_bytes=1,
+        )
+
+    assert marker.is_file()
+    assert not candidate.exists()
+
+
+def test_audited_publisher_rejects_a_different_destination_id_before_audit(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repository"
+    candidate = repository_root / "examples" / "validation_study" / "evidence" / ".candidates" / "candidate-study"
+    candidate.mkdir(parents=True)
+
+    with pytest.raises(TrafficlabError, match="candidate ID"):
+        study.publish_audited_bundle(candidate, "destination-study", repository_root=repository_root)
+
+    assert candidate.is_dir()
+    assert not (repository_root / "examples" / "validation_study" / "evidence" / "destination-study").exists()
 
 
 def _offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:
@@ -4838,7 +5248,7 @@ def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False)
         check=True,
         capture_output=True,
     )
-    candidate = repository / "candidate"
+    candidate = repository / "fixture-study"
     if generated:
         for relative, content in fixture_generator.generate_fixture_tree(
             source_commit=source_commit, source_tree=source_tree
@@ -5065,7 +5475,7 @@ def test_audited_bundle_rejects_the_first_primary_without_publication_residue(tm
     del expected_candidate[missing]
 
     with pytest.raises(TrafficlabError) as error:
-        study.publish_audited_bundle(candidate, "rejected-study", repository_root=repository)
+        study.publish_audited_bundle(candidate, "fixture-study", repository_root=repository)
 
     outcome = error.value.failure_outcome
     assert outcome is not None
@@ -5369,6 +5779,79 @@ def test_offline_bundle_audit_covers_training_record_and_reconstruction_boundari
     )
 
 
+@pytest.mark.parametrize("field", ("runtime", "winner", "weights", "invalid_chromosome"))
+def test_offline_bundle_audit_recomputes_each_report_input_family(tmp_path: Path, field: str) -> None:
+    """Report inputs are independently reconstructed rather than trusted as producer output."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    path = candidate / "report_inputs.json"
+    document = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+    if field == "runtime":
+        records = cast(list[dict[str, object]], document["runtime_winner_variance"])
+        runtime = cast(dict[str, object], records[0]["runtime_seconds"])
+        runtime["mean"] = cast(float, runtime["mean"]) + 1.0
+    elif field == "winner":
+        records = cast(list[dict[str, object]], document["runtime_winner_variance"])
+        winners = cast(dict[str, object], records[0]["winner_family_counts"])
+        winners["mmpp"] = cast(int, winners["mmpp"]) + 1
+    elif field == "weights":
+        records = cast(list[dict[str, object]], document["controlled_weight_analysis"])
+        records[0]["alternative_aggregate"] = cast(float, records[0]["alternative_aggregate"]) + 1.0
+    else:
+        records = cast(list[dict[str, object]], document["invalid_chromosome_diagnostics"])
+        limits = cast(dict[str, object], records[0]["trial_limits"])
+        limits["max_packets"] = cast(int, limits["max_packets"]) + 1
+    _write_canonical_json(path, document)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", "report_inputs.json", "not_published", "primary")
+
+
+@pytest.mark.parametrize(
+    "binding",
+    auditor._TRANSFER_BINDINGS,  # pyright: ignore[reportPrivateUsage]
+    ids=lambda binding: f"{binding.scope}-{binding.run_id}-{binding.transfer_index}",
+)
+@pytest.mark.parametrize("kind", ("header", "observation"))
+def test_offline_bundle_audit_rejects_each_scoped_transfer_file(
+    tmp_path: Path,
+    binding: auditor._Transfer,  # pyright: ignore[reportPrivateUsage]
+    kind: str,
+) -> None:
+    """Every prerequisite, training, and held-out transfer is an independently retained audit input."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    if kind == "header":
+        relative = f"headers/{binding.scope}/{binding.run_id}/{binding.filename}"
+        path = candidate / relative
+        path.write_bytes(path.read_bytes().replace(b"206", b"205", 1))
+    else:
+        relative = f"observations/{binding.scope}/{binding.run_id}/{binding.filename}.json"
+        path = candidate / relative
+        document = cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+        document["status"] = 205
+        _write_canonical_json(path, document)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert outcome.affected_evidence == relative
+
+
 @pytest.mark.parametrize("case", ("stored_record", "identity"))
 def test_offline_bundle_audit_covers_fresh_simulation_record_boundaries(tmp_path: Path, case: str) -> None:
     repository, candidate = _copy_validation_study_candidate(tmp_path)
@@ -5568,11 +6051,33 @@ def test_offline_bundle_audit_validates_index_metadata_before_scientific_reconst
             "prerequisite:docker_matrix:command.json",
             {"relation": "prerequisite", "record": "docker_matrix.command.json"},
         ),
-        ("headers/short.headers", "transfer-header:short", {"relation": "transfer-header", "workload": "short"}),
         (
-            "observations/streaming.json",
-            "external-observation:streaming",
-            {"relation": "external-observation", "workload": "streaming"},
+            "headers/prerequisites/00-prerequisites/capability.headers",
+            "transfer-header:prerequisites:00-prerequisites:0",
+            {
+                "filename": "capability.headers",
+                "relation": "transfer-header",
+                "requested_end": 0,
+                "requested_start": 0,
+                "run_id": "00-prerequisites",
+                "scope": "prerequisites",
+                "transfer_index": 0,
+                "workload": "prerequisites",
+            },
+        ),
+        (
+            "observations/held_out/held-out-streaming/streaming.headers.json",
+            "external-observation:held_out:held-out-streaming:0",
+            {
+                "filename": "streaming.headers",
+                "relation": "external-observation",
+                "requested_end": 4_194_303,
+                "requested_start": 0,
+                "run_id": "held-out-streaming",
+                "scope": "held_out",
+                "transfer_index": 0,
+                "workload": "streaming",
+            },
         ),
         (
             "configs/training-short-r1.portable.toml",
@@ -5916,11 +6421,11 @@ def test_validation_fixture_generator_main_requires_complete_ids_and_writes_to_i
     output = tmp_path / "owned-fixture"
     monkeypatch.setattr(fixture_generator, "FIXTURE", output)
     assert fixture_generator.main(["--source-commit", source_commit, "--source-tree", source_tree]) == 0
-    assert len(_candidate_bytes(output)) == 155
+    assert len(_candidate_bytes(output)) == 231
 
 
-def test_validation_fixture_retains_the_complete_155_file_evidence_inventory() -> None:
-    assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 155
+def test_validation_fixture_retains_the_complete_231_file_evidence_inventory() -> None:
+    assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 231
 
 
 def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
@@ -6000,6 +6505,20 @@ def test_study_held_out_evaluator_requires_an_independent_reference_and_uses_the
         )
         for index, event in enumerate(independent)
     )
+    longer = study.evaluate_study_held_out(
+        model_content=(fixture / "best_model.json").read_bytes(),
+        model_source=fixture / "best_model.json",
+        config=config,
+        capture_content=_CAPTURE_BYTES,
+        capture_source=fixture / "capture.json",
+        reference_content=encode_pcapng(different_window, metadata),
+        reference_source=Path("held_out/different-window.pcapng"),
+    )
+    assert longer.observation_window_seconds == result.observation_window_seconds
+
+    shorter_window = tuple(
+        TraceEvent(event.timestamp * 0.1, event.direction, event.frame_length) for event in independent
+    )
     with pytest.raises(TrafficlabError, match="reference window"):
         study.evaluate_study_held_out(
             model_content=(fixture / "best_model.json").read_bytes(),
@@ -6007,8 +6526,8 @@ def test_study_held_out_evaluator_requires_an_independent_reference_and_uses_the
             config=config,
             capture_content=_CAPTURE_BYTES,
             capture_source=fixture / "capture.json",
-            reference_content=encode_pcapng(different_window, metadata),
-            reference_source=Path("held_out/different-window.pcapng"),
+            reference_content=encode_pcapng(shorter_window, metadata),
+            reference_source=Path("held_out/short-window.pcapng"),
         )
 
 
@@ -6068,7 +6587,15 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
                 "tests": tests,
             }
         )
+    capability_header = b"HTTP/1.1 206 Partial Content\r\nContent-Length: 1\r\nContent-Range: bytes 0-0/4194304\r\n\r\n"
     document = {
+        "capability": {
+            "canary_sha256": hashlib.sha256(capability_header).hexdigest(),
+            "content_length": 1,
+            "content_range": "bytes 0-0/4194304",
+            "object_size_bytes": 4_194_304,
+            "status": 206,
+        },
         "commands": commands,
         "environment": {
             "capture_image_id": f"sha256:{'d' * 64}",
@@ -6155,7 +6682,7 @@ def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_an
         (candidate / "training" / "short" / "r2" / "generated.pcapng").read_bytes()
     )
     evidence_root = repository / "examples" / "validation_study" / "evidence"
-    destination = evidence_root / "simultaneous"
+    destination = evidence_root / "fixture-study"
     (repository / "inventory-sentinel").symlink_to("candidate")
     candidate_before = _tree_inventory(candidate)
     evidence_before = _tree_inventory(evidence_root)
@@ -6163,7 +6690,7 @@ def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_an
     assert repository_before["inventory-sentinel"] == ("symlink", "candidate")
 
     with pytest.raises(TrafficlabError) as error:
-        study.publish_audited_bundle(candidate, "simultaneous", repository_root=repository)
+        study.publish_audited_bundle(candidate, "fixture-study", repository_root=repository)
 
     outcome = error.value.failure_outcome
     assert outcome is not None
@@ -6213,6 +6740,111 @@ def test_retained_prerequisite_codec_rejects_invalid_public_forms() -> None:
         )
     with pytest.raises(ValueError, match="canonical sorted compact"):
         study.parse_retained_prerequisites(noncanonical)
+
+
+def test_validation_study_gitignore_tracks_only_accepted_run_logs() -> None:
+    """Accepted evidence logs remain trackable while candidates and ordinary logs stay ignored."""
+
+    def ignored(path: str) -> bool:
+        result = subprocess.run(
+            ("git", "check-ignore", "-q", "--", path),
+            cwd=_ROOT,
+            check=False,
+            capture_output=True,
+        )
+        assert result.returncode in (0, 1)
+        return result.returncode == 0
+
+    assert not ignored("examples/validation_study/evidence/study-1/training/short/r1/run.log")
+    assert ignored("examples/validation_study/evidence/.candidates/study-1/training/short/r1/run.log")
+    assert ignored("runs/study-1/run.log")
+
+
+def test_prerequisite_attempt_marker_is_written_before_any_later_failure(tmp_path: Path) -> None:
+    """A syntactically valid prerequisite attempt is permanently visible even if Git fails first."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def fail_git(
+        argv: Sequence[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(argv, 1, b"", b"missing Git state")
+
+    with pytest.raises(TrafficlabError, match="prerequisite validation failed"):
+        study.run_prerequisites(
+            "https://downloads.example.test/object.bin",
+            "study-1",
+            repository_root=repository,
+            runner=cast(study.CommandRunner, fail_git),
+            utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+        )
+
+    marker = (
+        repository / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1" / "prerequisites.json"
+    )
+    assert json.loads(marker.read_text()) == {
+        "phase": "prerequisites",
+        "study_id": "study-1",
+        "url": "https://downloads.example.test/object.bin",
+    }
+    assert not marker.with_name("prerequisites-success.json").exists()
+
+
+def test_successful_prerequisite_marker_binds_the_published_prerequisite_bytes(tmp_path: Path) -> None:
+    """Collection can only follow the exact successful prerequisite publication."""
+
+    repository = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository)
+    runner = _ScriptedPrerequisiteRunner(repository)
+    study.run_prerequisites(
+        runner.url,
+        runner.study_id,
+        repository_root=repository,
+        runner=runner,
+        utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+    )
+    prerequisite = repository / "examples" / "validation_study" / "prerequisites.json"
+    marker = (
+        repository
+        / "examples"
+        / "validation_study"
+        / ".study-work"
+        / "attempts"
+        / runner.study_id
+        / "prerequisites-success.json"
+    )
+    assert json.loads(marker.read_text(encoding="utf-8")) == {
+        "phase": "prerequisites",
+        "prerequisites_identity": identify_bytes(prerequisite.read_bytes()).as_dict(),
+        "study_id": runner.study_id,
+        "url": runner.url,
+    }
+
+
+def test_cold_capture_build_argv_freezes_task9_reproducibility_controls(tmp_path: Path) -> None:
+    """Study prerequisites use the same cold locked capture-build contract as the Docker owner."""
+
+    assert study.cold_capture_build_argv(
+        "trafficlab-validation-study-1:capture",
+        tmp_path / "capture.iid",
+    ) == (
+        "docker",
+        "build",
+        "--pull",
+        "--no-cache",
+        "--provenance=false",
+        "--platform",
+        "linux/amd64",
+        "--output",
+        "type=image,rewrite-timestamp=true,unpack=false",
+        "--tag",
+        "trafficlab-validation-study-1:capture",
+        "--iidfile",
+        str(tmp_path / "capture.iid"),
+        "docker/capture",
+    )
 
 
 @pytest.mark.parametrize(
@@ -6427,8 +7059,8 @@ def test_offline_auditor_reconstructs_all_training_model_selection_rejections(
     ) == (expected_kind, "publication", "protocol", "not_published", "primary")
 
 
-def test_offline_auditor_rejects_natural_variation_without_common_controls(tmp_path: Path) -> None:
-    """Independent report arithmetic rejects a mismatch before any held-out score can be reused."""
+def test_offline_auditor_rejects_natural_variation_below_the_frozen_window(tmp_path: Path) -> None:
+    """Independent report arithmetic rejects a retained reference below its frozen protocol window."""
     repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
     index = _candidate_index(candidate)
     environment = auditor._environment(  # pyright: ignore[reportPrivateUsage]
@@ -6444,20 +7076,25 @@ def test_offline_auditor_rejects_natural_variation_without_common_controls(tmp_p
         )
         for value in cast(list[object], index["training"])
     )
-    mismatched = (replace(training[0], window=training[0].window + 1.0), *training[1:])
+    mismatched = (replace(training[0], window=0.0), *training[1:])
 
-    with pytest.raises(auditor._Issue, match="natural variation requires a common normalized window"):  # pyright: ignore[reportPrivateUsage]
-        auditor._report_inputs(mismatched, {})  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(auditor._Issue, match="shorter than the frozen protocol window"):  # pyright: ignore[reportPrivateUsage]
+        auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
+            mismatched,
+            {},
+            natural_variation_windows=cast(dict[str, object], protocol["natural_variation_windows"]),
+        )
 
 
-def test_fixture_generator_rejects_natural_variation_with_mismatched_windows() -> None:
-    """The deterministic fixture owner has the same common-window guard as the auditor."""
+def test_fixture_generator_rejects_natural_variation_below_its_frozen_window() -> None:
+    """The deterministic fixture owner rejects references that cannot reach frozen W."""
     config = load_configuration_pair(_FIT_FIXTURE / "experiment.toml").realized
-    with pytest.raises(ValueError, match="common normalized observation window"):
+    with pytest.raises(ValueError, match="references reaching the frozen observation window"):
         fixture_generator._natural_variation(  # pyright: ignore[reportPrivateUsage]
             (
                 (cast(ComparisonResult, object()), (), 1.0),
                 (cast(ComparisonResult, object()), (), 2.0),
             ),
             config,
+            window=3.0,
         )

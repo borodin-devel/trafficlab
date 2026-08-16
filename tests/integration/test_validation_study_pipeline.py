@@ -51,7 +51,7 @@ def _copy_audit_fixture_to_clean_checkout(tmp_path: Path) -> tuple[Path, Path]:
         check=True,
         capture_output=True,
     )
-    candidate = repository / "candidate"
+    candidate = repository / "fixture-study"
     shutil.copytree(_AUDIT_FIXTURE, candidate)
     return repository, candidate
 
@@ -236,7 +236,7 @@ def test_clean_checkout_auditor_rejects_a_candidate_bound_to_a_different_source_
         check=True,
         capture_output=True,
     )
-    candidate = repository / "candidate"
+    candidate = repository / "fixture-study"
     shutil.copytree(_AUDIT_FIXTURE, candidate)
     parent = subprocess.run(
         ("git", "rev-parse", "HEAD^"), cwd=repository, check=True, capture_output=True, text=True
@@ -290,7 +290,7 @@ def local_git_only(argv, *args, **kwargs):
         return original_run(argv, *args, **kwargs)
     raise AssertionError("audit attempted Docker or a subprocess")
 subprocess.run = local_git_only
-sys.argv = ["scripts/audit_validation_study.py", "candidate", "--repository", str(checkout)]
+sys.argv = ["scripts/audit_validation_study.py", "fixture-study", "--repository", str(checkout)]
 runpy.run_path(str(checkout / "scripts" / "audit_validation_study.py"), run_name="__main__")
 """
     environment_variables = dict(os.environ)
@@ -363,7 +363,7 @@ def local_git_only(argv, *args, **kwargs):
         return original_run(argv, *args, **kwargs)
     raise AssertionError("audit attempted Docker or a non-local-Git subprocess")
 subprocess.run = local_git_only
-sys.argv = ["scripts/audit_validation_study.py", "candidate", "--repository", str(checkout)]
+sys.argv = ["scripts/audit_validation_study.py", "fixture-study", "--repository", str(checkout)]
 try:
     runpy.run_path(str(checkout / "scripts" / "audit_validation_study.py"), run_name="__main__")
 except SystemExit as error:
@@ -414,5 +414,5 @@ else:
         for path in sorted(clone_fixture.rglob("*"))
         if path.is_file() and not path.is_symlink()
     }
-    assert len(candidate_bytes) == 155
+    assert len(candidate_bytes) == 231
     assert candidate_bytes == fixture_bytes

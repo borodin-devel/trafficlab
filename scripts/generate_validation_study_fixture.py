@@ -4,15 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
-from itertools import combinations
 from pathlib import Path
-from statistics import fmean
 from typing import cast
 
 if __package__ in (None, ""):
@@ -44,6 +43,9 @@ CAPTURE_REFERENCE = f"trafficlab-capture@{CAPTURE_ID}"
 CAPTURE_TOOL_VERSION = cast(str, _IMAGE_LOCK["capture_tool_version"])
 TARGET_ID = f"sha256:{study.TARGET_REFERENCE.rsplit(':', 1)[-1]}"
 _HEX40 = re.compile(r"[0-9a-f]{40}", flags=re.ASCII)
+_STUDY_ID = "fixture-study"
+_URL = "https://downloads.example.test/object.bin"
+_OBJECT_SIZE_BYTES = 4 * 1024 * 1024
 
 
 def _canonical(value: object) -> bytes:
@@ -92,22 +94,6 @@ def _prepared(config: ExperimentConfig, run_directory: Path) -> PreparedExperime
         report=PreflightReport(config, ()),
         run_directory=run_directory,
     )
-
-
-def _score(result: object) -> dict[str, object]:
-    comparison = cast(study.ComparisonResult, result)
-    return {
-        "aggregate": comparison.aggregate_score,
-        "methods": {name: comparison.methods[name].score for name in study.PUBLISHED_METHOD_ORDER},
-    }
-
-
-def _mean(scores: Sequence[dict[str, object]]) -> dict[str, object]:
-    methods = [cast(dict[str, object], score["methods"]) for score in scores]
-    return {
-        "aggregate": fmean(cast(float, score["aggregate"]) for score in scores),
-        "methods": {name: fmean(cast(float, item[name]) for item in methods) for name in study.PUBLISHED_METHOD_ORDER},
-    }
 
 
 def _config_bytes(config: ExperimentConfig, run_directory: str) -> bytes:
@@ -177,30 +163,75 @@ def _selected_training_records(
 
 
 def _natural_variation(
-    group: Sequence[tuple[study.ComparisonResult, tuple[TraceEvent, ...], float]], config: ExperimentConfig
-) -> dict[str, object]:
-    pairs: list[dict[str, object]] = []
-    for left_number, right_number in combinations(range(len(group)), 2):
-        left = group[left_number]
-        right = group[right_number]
-        if left[2] != right[2]:
-            raise ValueError("fixture natural variation requires a common normalized observation window")
-        forward = _score(compare_traces(left[1], right[1], left[2], config.similarity))
-        reverse = _score(compare_traces(right[1], left[1], right[2], config.similarity))
-        pairs.append(
-            {
-                "forward": forward,
-                "left_repeat": left_number + 1,
-                "reverse": reverse,
-                "right_repeat": right_number + 1,
-                "symmetric_mean": _mean((forward, reverse)),
-            }
+    group: Sequence[tuple[study.ComparisonResult, tuple[TraceEvent, ...], float]],
+    config: ExperimentConfig,
+    *,
+    window: float | None = None,
+) -> None:
+    """Require every retained raw observation to reach the frozen variation window."""
+    frozen_window = max(config.similarity.multiscale_widths_seconds) if window is None else window
+    if frozen_window <= 0.0 or any(raw_window < frozen_window for _comparison, _reference, raw_window in group):
+        raise ValueError("fixture natural variation requires references reaching the frozen observation window")
+
+
+def _runtime_seconds(workload: str, repeat: int) -> float:
+    return float(WORKLOADS.index(workload) * len(REPEATS) + repeat)
+
+
+def _transfer_header(start: int, end: int) -> bytes:
+    return (
+        b"HTTP/1.1 206 Partial Content\r\n"
+        + f"Content-Length: {end - start + 1}\r\n".encode("ascii")
+        + f"Content-Range: bytes {start}-{end}/{_OBJECT_SIZE_BYTES}\r\n\r\n".encode("ascii")
+    )
+
+
+def _write_transfer_evidence(root: Path) -> bytes:
+    bindings: list[tuple[str, str, str, int, int, int, str]] = [
+        ("prerequisites", "00-prerequisites", "prerequisites", 0, 0, 0, "capability.headers")
+    ]
+    transfers = {spec.name: spec.transfers for spec in study.workload_specs(_URL)}
+    for _order, run_id, workload, _repeat in study.PRIMARY_ORDER:
+        bindings.extend(
+            ("training", run_id, workload, index, start, end, filename)
+            for index, (start, end, filename) in enumerate(transfers[workload])
         )
-    return {
-        "pairs": pairs,
-        "symmetric_mean": _mean([cast(dict[str, object], pair["symmetric_mean"]) for pair in pairs]),
-        "workload": "",
-    }
+    for workload in WORKLOADS:
+        bindings.extend(
+            ("held_out", f"held-out-{workload}", workload, index, start, end, filename)
+            for index, (start, end, filename) in enumerate(transfers[workload])
+        )
+    capability_header = b""
+    for scope, run_id, workload, transfer_index, start, end, filename in bindings:
+        header = _transfer_header(start, end)
+        if scope == "prerequisites":
+            capability_header = header
+        header_relative = f"headers/{scope}/{run_id}/{filename}"
+        observation_relative = f"observations/{scope}/{run_id}/{filename}.json"
+        header_path = root / header_relative
+        header_path.parent.mkdir(parents=True, exist_ok=True)
+        header_path.write_bytes(header)
+        observation_path = root / observation_relative
+        observation_path.parent.mkdir(parents=True, exist_ok=True)
+        observation_path.write_bytes(
+            _canonical(
+                {
+                    "content_length": end - start + 1,
+                    "content_range": f"bytes {start}-{end}/{_OBJECT_SIZE_BYTES}",
+                    "header_identity": identify_bytes(header).as_dict(),
+                    "requested_end": end,
+                    "requested_start": start,
+                    "run_id": run_id,
+                    "scope": scope,
+                    "status": 206,
+                    "transfer_index": transfer_index,
+                    "workload": workload,
+                }
+            )
+        )
+    if not capability_header:
+        raise ValueError("fixture transfer evidence must retain the prerequisite capability header")
+    return capability_header
 
 
 def _write_training_tree(
@@ -257,6 +288,16 @@ def _write_training_tree(
             run_directory, {"event": "fresh_simulation_published", "stage": "generate", "workload": workload}
         )
         append_run_log(run_directory, {"event": "comparison_published", "stage": "compare", "workload": workload})
+        append_run_log(
+            run_directory,
+            {
+                "event": "validation_study_training_completed",
+                "repeat": repeat,
+                "runtime_seconds": _runtime_seconds(workload, repeat),
+                "stage": "study",
+                "workload": workload,
+            },
+        )
         files = {name: (run_directory / name).read_bytes() for name in study.ARTIFACT_NAMES}
     for name, content in files.items():
         destination = root / directory_relative / name
@@ -367,12 +408,14 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
     metadata = _metadata()
     base_events = _base_events(metadata)
     with tempfile.TemporaryDirectory(prefix="trafficlab-validation-study-candidate-") as temporary:
-        root = Path(temporary) / "candidate"
+        root = Path(temporary) / _STUDY_ID
         root.mkdir()
         training: list[dict[str, object]] = []
         fresh: list[dict[str, object]] = []
         training_files: dict[tuple[str, int], dict[str, bytes]] = {}
-        training_science: dict[tuple[str, int], tuple[study.ComparisonResult, tuple[TraceEvent, ...], float]] = {}
+        natural_variation_groups: dict[
+            study.WorkloadName, list[tuple[study.ComparisonResult, tuple[TraceEvent, ...], float]]
+        ] = {workload: [] for workload in WORKLOADS}
         variant = 1
         for workload in WORKLOADS:
             for repeat in REPEATS:
@@ -387,7 +430,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 variant += 1
                 training.append(record)
                 training_files[(workload, repeat)] = files
-                training_science[(workload, repeat)] = (comparison, reference, window)
+                natural_variation_groups[workload].append((comparison, reference, window))
                 fresh_record = {
                     "comparison_identity": identify_bytes(files["similarity.json"]).as_dict(),
                     "generated_identity": identify_bytes(files["generated.pcapng"]).as_dict(),
@@ -403,6 +446,8 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(_canonical(fresh_record))
                 fresh.append(fresh_record)
+        for natural_variation_group in natural_variation_groups.values():
+            _natural_variation(natural_variation_group, config)
         selections = _selected_training_records(training, training_files, config=config, metadata=metadata)
         selected_training = {
             cast(str, item["workload"]): next(
@@ -411,7 +456,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             for item in selections
         }
         held: list[dict[str, object]] = []
-        held_evaluations: dict[str, study.HeldOutEvaluation] = {}
+        held_evaluations: dict[study.WorkloadName, study.HeldOutEvaluation] = {}
         for number, workload in enumerate(WORKLOADS, start=20):
             selected = selected_training[workload]
             record, evaluation = _write_held_out(
@@ -426,13 +471,20 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             held.append(record)
             held_evaluations[workload] = evaluation
         protocol = {
+            "candidate_id": _STUDY_ID,
+            "destination_id": _STUDY_ID,
             "final_seed": 97,
             "model_selection": {
                 "rule": "highest_best_fitness_then_lowest_repeat",
                 "selected": list(selections),
             },
+            "natural_variation_windows": {
+                workload: max(config.similarity.multiscale_widths_seconds) for workload in WORKLOADS
+            },
+            "prerequisite_path": "examples/validation_study/prerequisites.json",
             "schema_version": 2,
             "selection_seeds": list(config.genetic.trial_seeds),
+            "study_id": _STUDY_ID,
             "training_repetitions": 3,
             "workloads": list(WORKLOADS),
         }
@@ -461,11 +513,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
         (root / "environment.json").write_bytes(_canonical(environment))
         prerequisite_commands: list[dict[str, object]] = []
         for kind in ("docker_matrix", "internet_smoke"):
-            argv = list(
-                study.prerequisite_command_argv(
-                    kind, study_id="fixture-study", url="https://downloads.example.test/object.bin"
-                )
-            )
+            argv = list(study.prerequisite_command_argv(kind, study_id=_STUDY_ID, url=_URL))
             tests = study.prerequisite_junit_counts(
                 b'<testsuite errors="0" failures="0" name="fixture" skipped="0" tests="1"/>\n'
             )
@@ -522,63 +570,44 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 "uv_lock_identity",
             )
         }
+        capability_header = _write_transfer_evidence(root)
         (root / "prerequisites.json").write_bytes(
             study.render_retained_prerequisites(
                 {
+                    "capability": {
+                        "canary_sha256": hashlib.sha256(capability_header).hexdigest(),
+                        "content_length": 1,
+                        "content_range": f"bytes 0-0/{_OBJECT_SIZE_BYTES}",
+                        "object_size_bytes": _OBJECT_SIZE_BYTES,
+                        "status": 206,
+                    },
                     "commands": prerequisite_commands,
                     "environment": prerequisite_environment,
                     "schema_version": 3,
-                    "study_id": "fixture-study",
-                    "url": "https://downloads.example.test/object.bin",
+                    "study_id": _STUDY_ID,
+                    "url": _URL,
                 }
             )
         )
-        for workload in WORKLOADS:
-            header = b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-262143/4194304\r\n\r\n"
-            header_path = root / "headers" / f"{workload}.headers"
-            header_path.parent.mkdir(parents=True, exist_ok=True)
-            header_path.write_bytes(header)
-            observation = {"header_identity": identify_bytes(header).as_dict(), "status": 206, "workload": workload}
-            observation_path = root / "observations" / f"{workload}.json"
-            observation_path.parent.mkdir(parents=True, exist_ok=True)
-            observation_path.write_bytes(_canonical(observation))
-        fresh_rows: list[dict[str, object]] = []
-        training_rows: list[dict[str, object]] = []
-        variation_rows: list[dict[str, object]] = []
-        held_rows: list[dict[str, object]] = []
-        for workload in WORKLOADS:
-            group = [training_science[(workload, repeat)] for repeat in REPEATS]
-            fresh_rows.append({"score": _mean([_score(item[0]) for item in group]), "workload": workload})
-            files = [training_files[(workload, repeat)] for repeat in REPEATS]
-            fitnesses: list[float] = []
-            for current in files:
-                checkpoint = study.parse_checkpoint(  # pyright: ignore[reportPrivateUsage]
-                    current["checkpoint.json"],
-                    study.make_strategy_context(  # pyright: ignore[reportPrivateUsage]
-                        config,
-                        normalize_reference(
-                            parse_pcapng_bytes(current["reference.pcapng"], metadata, source=Path("reference.pcapng"))
-                        )[0],
-                        10.0,
-                        Path("fixture"),
-                        experiment_identity=identify_bytes(current["experiment.toml"]),
-                        reference_identity=identify_bytes(current["reference.pcapng"]),
-                        capture_identity=identify_bytes(current["capture.json"]),
-                    ).compatibility,
-                )
-                fitnesses.append(checkpoint.best_fitness)
-            training_rows.append({"selection_fitness": fmean(fitnesses), "workload": workload})
-            variation = _natural_variation(group, config)
-            variation["workload"] = workload
-            variation_rows.append(variation)
-            held_rows.append({"score": _score(held_evaluations[workload].comparison), "workload": workload})
-        report_inputs = {
-            "formula": "arithmetic_mean",
-            "fresh_simulation": fresh_rows,
-            "held_out": held_rows,
-            "natural_variation": variation_rows,
-            "training": training_rows,
+        candidate_training = tuple(
+            study._load_candidate_training(  # pyright: ignore[reportPrivateUsage]
+                root / "training" / workload / f"r{repeat}",
+                workload=workload,
+                repeat=repeat,
+                config=config,
+                runtime_seconds=_runtime_seconds(workload, repeat),
+            )
+            for workload in WORKLOADS
+            for repeat in REPEATS
+        )
+        natural_variation_windows: dict[study.WorkloadName, float] = {
+            workload: max(config.similarity.multiscale_widths_seconds) for workload in WORKLOADS
         }
+        report_inputs = study._candidate_report_inputs(  # pyright: ignore[reportPrivateUsage]
+            candidate_training,
+            held_evaluations,
+            natural_variation_windows=natural_variation_windows,
+        )
         (root / "report_inputs.json").write_bytes(_canonical(report_inputs))
         (root / "report.json").write_bytes(
             _canonical(
