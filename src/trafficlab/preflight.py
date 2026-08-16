@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Protocol, cast
 
+from trafficlab import USER_AGENT
 from trafficlab.artifacts import append_run_log, create_run_directory
 from trafficlab.compatibility import ContentIdentity
 from trafficlab.compose import ComposePaths, render_production_compose, write_production_compose
@@ -493,6 +494,8 @@ def _probe_document(
                 "--silent",
                 "--show-error",
                 "--location",
+                "--user-agent",
+                USER_AGENT,
                 "--connect-timeout",
                 f"{config.capture.total_timeout_seconds:g}",
                 "--max-time",

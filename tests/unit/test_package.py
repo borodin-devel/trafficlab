@@ -89,6 +89,9 @@ def test_source_tree_version_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
             patched.setattr(importlib.metadata, "version", missing_distribution)
             reloaded = importlib.reload(trafficlab)
             assert reloaded.__version__ == "0.1.0"
+            assert reloaded.USER_AGENT == (
+                f"trafficlab/{reloaded.__version__} (+https://github.com/borodin-devel/trafficlab)"
+            )
     finally:
         importlib.reload(trafficlab)
         importlib.reload(cli)

@@ -10,8 +10,6 @@ import sys
 import time
 import urllib.request
 
-_USER_AGENT = "Trafficlab/0.1.0 (+https://github.com/borodin-devel/trafficlab)"
-
 
 def _traffic(host: str, tcp_count: int, udp_count: int, inter_request_seconds: float = 0.0) -> None:
     for index in range(tcp_count):
@@ -53,8 +51,8 @@ def _traffic(host: str, tcp_count: int, udp_count: int, inter_request_seconds: f
                 raise RuntimeError("invalid UDP reply while waiting for inbound broadcast")
 
 
-def _https(url: str) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+def _https(url: str, user_agent: str) -> None:
+    request = urllib.request.Request(url, headers={"User-Agent": user_agent})
     with urllib.request.urlopen(request, timeout=15.0) as response:  # noqa: S310 - operator-supplied HTTPS only
         if not 200 <= response.status < 400:
             raise RuntimeError(f"HTTPS endpoint returned status {response.status}")
@@ -76,6 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     background.add_argument("--seconds", type=float, default=300.0)
     background.add_argument("--parent-seconds", type=float, default=0.0)
     https = subparsers.add_parser("https")
+    https.add_argument("--user-agent", required=True)
     https.add_argument("url")
     return parser
 
@@ -94,7 +93,7 @@ def main() -> int:
         time.sleep(arguments.parent_seconds)
         return 0
     if arguments.command == "https":
-        _https(arguments.url)
+        _https(arguments.url, arguments.user_agent)
         return 0
     raise AssertionError("unreachable command")
 

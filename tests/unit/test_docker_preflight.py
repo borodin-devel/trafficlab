@@ -8,6 +8,7 @@ import pytest
 
 import trafficlab.cleanup as cleanup_module
 import trafficlab.preflight as preflight_module
+from trafficlab import USER_AGENT
 from trafficlab.cleanup import CleanupResult
 from trafficlab.config import ExperimentConfig
 from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
@@ -280,6 +281,8 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
         "--silent",
         "--show-error",
         "--location",
+        "--user-agent",
+        USER_AGENT,
         "--connect-timeout",
         "60",
         "--max-time",

@@ -6,6 +6,7 @@ import pytest
 
 from tests.conftest import DockerTestEnvironment, TrackedDockerCompose
 from tests.docker.support import write_docker_experiment
+from trafficlab import USER_AGENT
 from trafficlab.capture import capture_experiment
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.trace import Direction
@@ -24,7 +25,7 @@ def test_real_https_capture_proves_dns_tls_bidirectional_traffic_and_teardown(
         tmp_path / "internet.toml",
         valid_config_data,
         docker_test_environment,
-        argv=["https", internet_url],
+        argv=["https", "--user-agent", USER_AGENT, internet_url],
         workload_timeout=60.0,
         total_timeout=120.0,
         probe_url=internet_url,
