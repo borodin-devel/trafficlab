@@ -58,6 +58,8 @@ _CAPTURE_DOCKERFILE = (_ROOT / "docker" / "capture" / "Dockerfile").read_bytes()
 _CAPTURE_SCRIPT = (_ROOT / "docker" / "capture" / "capture.sh").read_bytes()
 _CAPTURE_IMAGE_LOCK = json.loads((_ROOT / "docker" / "capture" / "image-lock.json").read_text(encoding="utf-8"))
 _CAPTURE_IMAGE_ID = cast(str, _CAPTURE_IMAGE_LOCK["expected_capture_image_id"])
+_STUDY_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:study-capture"
+_COLLECTION_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:collection-capture"
 _PRE_USER_AGENT_R6_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_pre_user_agent_r6"
 
 
@@ -3903,12 +3905,13 @@ class _StudyIdentityRunner:
         target_config_user: str = "",
         dirty: bool = False,
         capture_image_present: bool = True,
-        owned_capture_tag_present: bool = False,
+        owned_capture_tags: set[str] | None = None,
         build_exit_status: int = 0,
         write_build_iid: bool = True,
         build_iid_content: str | None = None,
         inspected_capture_image_id: str | None = None,
         cleanup_exit_status: int = 0,
+        on_target_inspect: Callable[[], None] | None = None,
     ) -> None:
         self.root = repository_root
         self.target_image_id = target_image_id
@@ -3919,12 +3922,13 @@ class _StudyIdentityRunner:
         self.docker_compose_version = "2.29.0"
         self.dirty = dirty
         self.capture_image_present = capture_image_present
-        self.owned_capture_tag_present = owned_capture_tag_present
+        self.owned_capture_tags: set[str] = set() if owned_capture_tags is None else set(owned_capture_tags)
         self.build_exit_status = build_exit_status
         self.write_build_iid = write_build_iid
         self.build_iid_content = build_iid_content
         self.inspected_capture_image_id = inspected_capture_image_id
         self.cleanup_exit_status = cleanup_exit_status
+        self.on_target_inspect = on_target_inspect
         self.calls: list[tuple[str, ...]] = []
         self.capture_image_cleanup_tags: list[str] = []
 
@@ -3947,7 +3951,7 @@ class _StudyIdentityRunner:
         self.calls.append(command)
         if command[:2] == ("docker", "build"):
             iidfile = Path(command[command.index("--iidfile") + 1])
-            self.owned_capture_tag_present = True
+            self.owned_capture_tags.add(command[command.index("--tag") + 1])
             if self.write_build_iid:
                 iidfile.write_text(
                     f"{self.capture_image_id if self.build_iid_content is None else self.build_iid_content}\n",
@@ -3965,7 +3969,7 @@ class _StudyIdentityRunner:
             self.capture_image_cleanup_tags.append(command[4])
             if self.cleanup_exit_status == 0:
                 self.capture_image_present = False
-                self.owned_capture_tag_present = False
+                self.owned_capture_tags.discard(command[4])
             return subprocess.CompletedProcess(
                 command,
                 self.cleanup_exit_status,
@@ -3978,11 +3982,12 @@ class _StudyIdentityRunner:
             and command[3].startswith("trafficlab-validation-")
             and command[4:] == ("--format", "{{.Id}}")
         ):
+            present = command[3] in self.owned_capture_tags
             return subprocess.CompletedProcess(
                 command,
-                0 if self.owned_capture_tag_present else 1,
-                stdout=f"{self.capture_image_id}\n".encode() if self.owned_capture_tag_present else b"",
-                stderr=b"" if self.owned_capture_tag_present else b"not present\n",
+                0 if present else 1,
+                stdout=f"{self.capture_image_id}\n".encode() if present else b"",
+                stderr=b"" if present else b"not present\n",
             )
         if (
             len(command) == 6
@@ -4013,6 +4018,8 @@ class _StudyIdentityRunner:
             and not self.capture_image_present
         ):
             return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"not present\n")
+        if command == ("docker", "image", "inspect", study.TARGET_REFERENCE) and self.on_target_inspect is not None:
+            self.on_target_inspect()
         outputs: dict[tuple[str, ...], bytes] = {
             ("git", "rev-parse", "HEAD"): b"c" * 40 + b"\n",
             ("git", "rev-parse", "HEAD^{tree}"): b"e" * 40 + b"\n",
@@ -4214,17 +4221,17 @@ def test_study_runs_nine_absent_primaries_serially_in_balanced_order_and_times_o
         ("docker", "version", "--format", "{{.Server.Version}}"),
         ("docker", "compose", "version", "--short"),
         ("docker", "image", "inspect", study.TARGET_REFERENCE),
-        ("docker", "image", "inspect", "trafficlab-validation-study-1:capture", "--format", "{{.Id}}"),
+        ("docker", "image", "inspect", _STUDY_PHASE_CAPTURE_TAG, "--format", "{{.Id}}"),
     ]
     build = runner.calls[6]
     assert build[:2] == ("docker", "build")
-    assert build[build.index("--tag") + 1] == "trafficlab-validation-study-1:capture"
+    assert build[build.index("--tag") + 1] == _STUDY_PHASE_CAPTURE_TAG
     assert Path(build[build.index("--iidfile") + 1]).name == "capture.iid"
     assert build[-1] == "docker/capture"
     assert runner.calls[7:] == [
         ("docker", "image", "inspect", _CAPTURE_IMAGE_ID, "--format", "{{.Id}}"),
         ("docker", "image", "inspect", _CAPTURE_IMAGE_ID),
-        ("docker", "image", "rm", "--force", "trafficlab-validation-study-1:capture"),
+        ("docker", "image", "rm", "--force", _STUDY_PHASE_CAPTURE_TAG),
     ]
     for order, run_id, workload, repeat in study.PRIMARY_ORDER:
         record = result.runs[order - 1]
@@ -4285,7 +4292,7 @@ def test_public_study_rebuilds_and_cleans_a_no_residue_capture_image(
         with pytest.raises(KeyboardInterrupt):
             invoke()
 
-    tag = "trafficlab-validation-study-1:capture"
+    tag = _STUDY_PHASE_CAPTURE_TAG
     build = next(command for command in runner.calls if command[:2] == ("docker", "build"))
     assert build[build.index("--tag") + 1] == tag
     iidfile = Path(build[build.index("--iidfile") + 1])
@@ -4329,7 +4336,7 @@ def test_public_study_fails_when_owned_image_cleanup_fails_after_success(
             utc_now=lambda: datetime(2026, 8, 13, 13, 0, tzinfo=UTC),
         )
 
-    assert runner.capture_image_cleanup_tags == ["trafficlab-validation-study-1:capture"]
+    assert runner.capture_image_cleanup_tags == [_STUDY_PHASE_CAPTURE_TAG]
 
 
 def test_public_study_preserves_a_primary_base_exception_when_owned_image_cleanup_fails(
@@ -4370,7 +4377,7 @@ def test_public_study_preserves_a_primary_base_exception_when_owned_image_cleanu
     assert captured.value.__notes__ == [
         "study capture image cleanup failed: could not remove owned study capture image: simulated cleanup failure"
     ]
-    assert runner.capture_image_cleanup_tags == ["trafficlab-validation-study-1:capture"]
+    assert runner.capture_image_cleanup_tags == [_STUDY_PHASE_CAPTURE_TAG]
 
 
 @pytest.mark.parametrize("mode", ("non-owned", "missing-iid", "missing-prerequisites"))
@@ -4567,7 +4574,7 @@ def test_public_study_rejects_a_conflicting_phase_capture_tag_before_any_primary
         repository_root,
         capture_image_id=_CAPTURE_IMAGE_ID,
         capture_image_present=False,
-        owned_capture_tag_present=True,
+        owned_capture_tags={_STUDY_PHASE_CAPTURE_TAG},
     )
     runs: list[Path] = []
 
@@ -4590,7 +4597,7 @@ def test_public_study_rejects_a_conflicting_phase_capture_tag_before_any_primary
     assert runs == []
     assert not [command for command in runner.calls if command[:2] == ("docker", "build")]
     assert runner.capture_image_cleanup_tags == []
-    assert runner.owned_capture_tag_present
+    assert _STUDY_PHASE_CAPTURE_TAG in runner.owned_capture_tags
 
 
 @pytest.mark.parametrize(
@@ -4645,7 +4652,7 @@ def test_public_study_rejects_invalid_cold_build_before_any_primary(
         )
 
     assert runs == []
-    assert runner.capture_image_cleanup_tags == ["trafficlab-validation-study-1:capture"]
+    assert runner.capture_image_cleanup_tags == [_STUDY_PHASE_CAPTURE_TAG]
 
 
 @pytest.mark.parametrize("failed_position", [1, 5, 9])
@@ -5631,7 +5638,7 @@ def test_public_collection_rebuilds_and_cleans_a_no_residue_capture_image(
         assert study.main(argv, repository_root=repository_root, runner=runner) == (0 if outcome == "success" else 2)
 
     attempt = repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1"
-    tag = "trafficlab-validation-study-1:capture"
+    tag = _COLLECTION_PHASE_CAPTURE_TAG
     assert study.cold_capture_build_argv(tag, attempt / "collection-capture.iid") in runner.calls  # pyright: ignore[reportPrivateUsage]
     assert runner.capture_image_cleanup_tags == [tag]
     assert not runner.capture_image_present
@@ -5657,7 +5664,7 @@ def test_public_collection_rejects_a_conflicting_phase_capture_tag_before_candid
         repository_root,
         capture_image_id=_CAPTURE_IMAGE_ID,
         capture_image_present=False,
-        owned_capture_tag_present=True,
+        owned_capture_tags={_COLLECTION_PHASE_CAPTURE_TAG},
     )
     calls: list[str] = []
 
@@ -5685,7 +5692,7 @@ def test_public_collection_rejects_a_conflicting_phase_capture_tag_before_candid
     assert calls == []
     assert not [command for command in runner.calls if command[:2] == ("docker", "build")]
     assert runner.capture_image_cleanup_tags == []
-    assert runner.owned_capture_tag_present
+    assert _COLLECTION_PHASE_CAPTURE_TAG in runner.owned_capture_tags
 
 
 @pytest.mark.parametrize(
@@ -5750,7 +5757,7 @@ def test_public_collection_rejects_invalid_cold_build_before_candidate_creation(
     )
     attempt = repository_root / "examples" / "validation_study" / ".study-work" / "attempts" / "study-1"
     assert calls == []
-    assert runner.capture_image_cleanup_tags == ["trafficlab-validation-study-1:capture"]
+    assert runner.capture_image_cleanup_tags == [_COLLECTION_PHASE_CAPTURE_TAG]
     assert not (attempt / "collection-capture.iid").exists()
 
 
@@ -5811,6 +5818,93 @@ def test_public_collection_validates_immutable_inputs_before_cold_build(
         assert ("docker", "image", "inspect", study.TARGET_REFERENCE) in runner.calls
 
 
+@pytest.mark.parametrize("failure", ("config", "retained-artifact"))
+def test_public_collection_defers_cold_build_until_all_retained_inputs_validate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """Late immutable config/evidence failures must not create a capture-image lease."""
+
+    repository_root = tmp_path / "repository"
+    prerequisite_path = _write_collection_compatible_inputs(repository_root)
+    study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository_root,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        prerequisite_content=prerequisite_path.read_bytes(),
+    )
+    if failure == "config":
+        config_path = repository_root / "examples" / "validation_study" / "configs" / "short.toml"
+        config_path.write_bytes(config_path.read_bytes() + b"\n# retained config mutation\n")
+        runner = _StudyIdentityRunner(
+            repository_root,
+            capture_image_id=_CAPTURE_IMAGE_ID,
+            capture_image_present=False,
+        )
+    else:
+        capability_header = (
+            repository_root
+            / "examples"
+            / "validation_study"
+            / ".study-work"
+            / "evidence"
+            / "study-1"
+            / "00-prerequisites"
+            / "capability.headers"
+        )
+
+        def mutate_retained_header() -> None:
+            capability_header.write_bytes(b"retained evidence changed after its initial validation\n")
+
+        runner = _StudyIdentityRunner(
+            repository_root,
+            capture_image_id=_CAPTURE_IMAGE_ID,
+            capture_image_present=False,
+            on_target_inspect=mutate_retained_header,
+        )
+    candidates: list[str] = []
+    runs: list[Path] = []
+    captures: list[Path] = []
+
+    def must_not_collect(**_kwargs: object) -> Path:
+        candidates.append("candidate")
+        raise AssertionError("late retained validation reached candidate collection")
+
+    def must_not_run(path: Path) -> RunResult:
+        runs.append(path)
+        raise AssertionError("late retained validation reached a training run")
+
+    def must_not_capture(path: Path) -> CaptureResult:
+        captures.append(path)
+        raise AssertionError("late retained validation reached a held-out capture")
+
+    monkeypatch.setattr(study, "collect_validation_candidate", must_not_collect)
+    assert (
+        study.main(
+            (
+                "collect",
+                "--url",
+                "https://downloads.example.test/object.bin",
+                "--study-id",
+                "study-1",
+                "--prerequisites",
+                "examples/validation_study/prerequisites.json",
+            ),
+            repository_root=repository_root,
+            runner=runner,
+            run=must_not_run,
+            capture=must_not_capture,
+        )
+        == 2
+    )
+    assert candidates == []
+    assert runs == []
+    assert captures == []
+    assert not [command for command in runner.calls if command[:2] == ("docker", "build")]
+    assert runner.capture_image_cleanup_tags == []
+
+
 def test_public_collection_fails_when_owned_image_cleanup_fails_after_candidate_success(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -5855,7 +5949,7 @@ def test_public_collection_fails_when_owned_image_cleanup_fails_after_candidate_
         == 2
     )
     assert calls == ["candidate"]
-    assert runner.capture_image_cleanup_tags == ["trafficlab-validation-study-1:capture"]
+    assert runner.capture_image_cleanup_tags == [_COLLECTION_PHASE_CAPTURE_TAG]
 
 
 @pytest.mark.parametrize("primary_kind", ("trafficlab", "base"))
@@ -5913,7 +6007,101 @@ def test_public_collection_preserves_primary_when_owned_image_cleanup_fails(
         "collection capture image cleanup failed: "
         "could not remove owned collection capture image: simulated cleanup failure"
     ]
-    assert runner.capture_image_cleanup_tags == ["trafficlab-validation-study-1:capture"]
+    assert runner.capture_image_cleanup_tags == [_COLLECTION_PHASE_CAPTURE_TAG]
+
+
+def test_phase_capture_tags_are_explicitly_disjoint() -> None:
+    """Study and collection must never contend for the same temporary capture tag."""
+
+    assert study._phase_capture_tag("study-1", "study") == "trafficlab-validation-study-1:study-capture"  # pyright: ignore[reportPrivateUsage]
+    assert study._phase_capture_tag("study-1", "collection") == "trafficlab-validation-study-1:collection-capture"  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    ("route", "owned_tag", "foreign_tag"),
+    (
+        (
+            "study",
+            "trafficlab-validation-study-1:study-capture",
+            "trafficlab-validation-study-1:collection-capture",
+        ),
+        (
+            "collection",
+            "trafficlab-validation-study-1:collection-capture",
+            "trafficlab-validation-study-1:study-capture",
+        ),
+    ),
+)
+def test_public_phase_does_not_adopt_or_remove_another_phase_capture_tag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    owned_tag: str,
+    foreign_tag: str,
+) -> None:
+    """A stale tag owned by the other public phase neither blocks nor leaks into this phase."""
+
+    repository_root = tmp_path / "repository"
+    runner = _StudyIdentityRunner(
+        repository_root,
+        capture_image_id=_CAPTURE_IMAGE_ID,
+        capture_image_present=False,
+        owned_capture_tags={foreign_tag},
+    )
+    if route == "study":
+        prerequisite_path, expected = _write_study_inputs(repository_root)
+        events: list[str] = []
+        _install_primary_orchestration_doubles(monkeypatch, expected, events)
+
+        def stop_primary(_path: Path) -> RunResult:
+            raise TrafficlabError("controlled study primary", corrective_action="preserve the study")
+
+        with pytest.raises(TrafficlabError, match="controlled study primary"):
+            study.run_study(
+                "https://downloads.example.test/object.bin",
+                "study-1",
+                prerequisite_path,
+                repository_root=repository_root,
+                run=stop_primary,
+                runner=runner,
+                perf_counter=iter(float(value) for value in range(20)).__next__,
+                utc_now=lambda: datetime(2026, 8, 13, 13, 0, tzinfo=UTC),
+            )
+    else:
+        prerequisite_path = _write_collection_compatible_inputs(repository_root)
+        study._complete_prerequisite_attempt(  # pyright: ignore[reportPrivateUsage]
+            repository_root,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            prerequisite_content=prerequisite_path.read_bytes(),
+        )
+
+        def stop_collection(**_kwargs: object) -> Path:
+            raise TrafficlabError("controlled collection primary", corrective_action="preserve the attempt")
+
+        monkeypatch.setattr(study, "collect_validation_candidate", stop_collection)
+        assert (
+            study.main(
+                (
+                    "collect",
+                    "--url",
+                    "https://downloads.example.test/object.bin",
+                    "--study-id",
+                    "study-1",
+                    "--prerequisites",
+                    "examples/validation_study/prerequisites.json",
+                ),
+                repository_root=repository_root,
+                runner=runner,
+            )
+            == 2
+        )
+
+    build = next(command for command in runner.calls if command[:2] == ("docker", "build"))
+    assert build[build.index("--tag") + 1] == owned_tag
+    assert runner.capture_image_cleanup_tags == [owned_tag]
+    assert foreign_tag in runner.owned_capture_tags
+    assert owned_tag not in runner.owned_capture_tags
 
 
 def test_collection_inputs_rejects_legacy_image_lock_before_capture_revalidation(tmp_path: Path) -> None:
@@ -9925,7 +10113,7 @@ def test_public_prerequisites_then_collect_binds_the_raw_published_marker_before
             "docker",
             "image",
             "inspect",
-            f"trafficlab-validation-{scripted.study_id}:capture",
+            f"trafficlab-validation-{scripted.study_id}:collection-capture",
             "--format",
             "{{.Id}}",
         ):
@@ -9937,7 +10125,13 @@ def test_public_prerequisites_then_collect_binds_the_raw_published_marker_before
             return subprocess.CompletedProcess(command, 0, stdout=b"rebuilt\n", stderr=b"")
         if command == ("docker", "image", "inspect", scripted.capture_id, "--format", "{{.Id}}"):
             return subprocess.CompletedProcess(command, 0, stdout=f"{scripted.capture_id}\n".encode(), stderr=b"")
-        if command == ("docker", "image", "rm", "--force", f"trafficlab-validation-{scripted.study_id}:capture"):
+        if command == (
+            "docker",
+            "image",
+            "rm",
+            "--force",
+            f"trafficlab-validation-{scripted.study_id}:collection-capture",
+        ):
             collection_cleanups.append(command)
             return subprocess.CompletedProcess(command, 0, stdout=b"removed\n", stderr=b"")
         return scripted(argv, cwd=cwd, check=check, capture_output=capture_output, shell=shell, timeout=timeout)
@@ -9977,12 +10171,12 @@ def test_public_prerequisites_then_collect_binds_the_raw_published_marker_before
     assert len(training_calls) == 1
     assert collection_builds == [
         study.cold_capture_build_argv(  # pyright: ignore[reportPrivateUsage]
-            f"trafficlab-validation-{scripted.study_id}:capture",
+            f"trafficlab-validation-{scripted.study_id}:collection-capture",
             attempt / "collection-capture.iid",
         )
     ]
     assert collection_cleanups == [
-        ("docker", "image", "rm", "--force", f"trafficlab-validation-{scripted.study_id}:capture")
+        ("docker", "image", "rm", "--force", f"trafficlab-validation-{scripted.study_id}:collection-capture")
     ]
     assert not (attempt / "collection-capture.iid").exists()
     assert study.main(argv, repository_root=repository, runner=collection_runner) == 2

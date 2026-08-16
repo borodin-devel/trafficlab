@@ -5887,7 +5887,7 @@ def run_study(
     try:
         url = validate_endpoint_url(url)
         study_id = validate_study_id(study_id)
-        owned_capture_image.tag = _phase_capture_tag(study_id)
+        owned_capture_image.tag = _phase_capture_tag(study_id, "study")
         results_path = root / "examples" / "validation_study" / "results.json"
         _require(not _path_entry_exists(results_path), f"study result target already exists: {results_path}")
         with tempfile.TemporaryDirectory(prefix=f"trafficlab-validation-{study_id}-capture-") as temporary_directory:
@@ -8011,16 +8011,6 @@ def _collection_inputs_from_prerequisites(
                 == capture_image_id,
                 "collection capture image must equal the retained prerequisite identity",
             )
-        else:
-            _establish_phase_capture_image(
-                root,
-                phase="collection",
-                expected_image_id=capture_image_id,
-                capture_lock_image_id=capture_lock.expected_capture_image_id,
-                owned_capture_image=owned_capture_image,
-                iidfile=_collection_attempt_root(root, study_id) / "collection-capture.iid",
-                runner=runner,
-            )
         capture_tool_version = capture_lock.capture_tool_version
         evidence_root = (
             root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / "00-prerequisites"
@@ -8126,6 +8116,16 @@ def _collection_inputs_from_prerequisites(
             prerequisites.capability["object_size_bytes"], name="retained prerequisite object size"
         )
         _require(4 * 1024 * 1024 <= object_size_bytes <= 16 * 1024 * 1024, "retained object size is out of range")
+        if owned_capture_image is not None:
+            _establish_phase_capture_image(
+                root,
+                phase="collection",
+                expected_image_id=capture_image_id,
+                capture_lock_image_id=capture_lock.expected_capture_image_id,
+                owned_capture_image=owned_capture_image,
+                iidfile=_collection_attempt_root(root, study_id) / "collection-capture.iid",
+                runner=runner,
+            )
         return environment, retained_prerequisites, files, configs, object_size_bytes
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise TrafficlabError(
@@ -8134,10 +8134,10 @@ def _collection_inputs_from_prerequisites(
         ) from error
 
 
-def _phase_capture_tag(study_id: str) -> str:
+def _phase_capture_tag(study_id: str, phase: Literal["collection", "study"]) -> str:
     """Return the exclusive capture-image tag for one irreversible public phase."""
 
-    return f"trafficlab-validation-{validate_study_id(study_id)}:capture"
+    return f"trafficlab-validation-{validate_study_id(study_id)}:{phase}-capture"
 
 
 def _establish_phase_capture_image(
@@ -8565,7 +8565,7 @@ def main(
                 url=url,
                 phase="collection",
             )
-            owned_capture_image = _PhaseCaptureImage(tag=_phase_capture_tag(study_id))
+            owned_capture_image = _PhaseCaptureImage(tag=_phase_capture_tag(study_id, "collection"))
             primary: BaseException | None = None
             try:
                 environment, retained_prerequisites, prerequisite_files, configs, object_size_bytes = (
