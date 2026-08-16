@@ -153,6 +153,35 @@ scratch remain ignored under `runs/validation_study/$STUDY_ID/` and
 in. The checked JSON retains hashes that bind the publication to the ignored
 audit evidence.
 
+## Accepted evidence bundle audit
+
+An accepted bundle lives at `examples/validation_study/evidence/<study-id>/`.
+It contains three complete nine-artifact run trees, canonical `index.json`, and
+canonical `manifest.json`. The manifest lists every other retained regular file
+with its relative path, byte size, SHA-256, logical owner, and lineage relation;
+it does not recursively hash itself.
+
+The audit is read-only: it does not start Docker, access the network, invoke a
+high-level run, or regenerate artifacts.
+
+```bash
+scripts/run_bounded.sh --memory-high 6G --memory-max 8G --swap-max 1G \
+  --wall-time 20m --kill-after 10s -- \
+  uv run --locked --offline python scripts/audit_validation_study.py \
+  examples/validation_study/evidence/.candidates/<study-id> --repository .
+```
+
+Only an audit-accepted candidate may use exclusive publication:
+
+```bash
+uv run --locked python scripts/run_validation_study.py publish \
+  --study-id "$STUDY_ID" \
+  --candidate examples/validation_study/evidence/.candidates/"$STUDY_ID"
+```
+
+An occupied study ID remains byte-for-byte preserved; choose a new ID rather
+than replacing or merging accepted evidence.
+
 Retain ignored audit evidence by default. Only after accepting the report and
 deciding that local audit evidence is no longer needed may the operator
 manually remove these two exact study-ID audit trees:

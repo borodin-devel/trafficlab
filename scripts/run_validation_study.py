@@ -52,6 +52,7 @@ from trafficlab.models.registry import BestModel, get_family, load_best_model, r
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
+from trafficlab.study_evidence import publish_accepted_bundle
 from trafficlab.trace import (
     CaptureMetadata,
     Direction,
@@ -5302,6 +5303,20 @@ def audit_published_study(
         ) from error
 
 
+def publish_audited_bundle(candidate: Path, study_id: str, *, repository_root: Path) -> Path:
+    """Publish one candidate only after the standalone offline auditor accepts it."""
+
+    from scripts.audit_validation_study import audit_bundle
+
+    root = repository_root.resolve()
+    return publish_accepted_bundle(
+        candidate,
+        root / "examples" / "validation_study" / "evidence",
+        study_id,
+        lambda bundle: audit_bundle(bundle, repository=root),
+    )
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -5316,6 +5331,9 @@ def build_parser() -> argparse.ArgumentParser:
     study_parser.add_argument("--url", required=True)
     study_parser.add_argument("--study-id", required=True)
     study_parser.add_argument("--prerequisites", required=True, type=Path)
+    publish_parser = commands.add_parser("publish")
+    publish_parser.add_argument("--candidate", required=True, type=Path)
+    publish_parser.add_argument("--study-id", required=True)
     return parser
 
 
@@ -5338,6 +5356,15 @@ def main(
     except SystemExit as error:
         return int(error.code) if error.code is not None else 0
     try:
+        if parsed.command == "publish":
+            candidate = parsed.candidate
+            if not candidate.is_absolute():
+                candidate = repository_root.resolve() / candidate
+            destination = publish_audited_bundle(
+                candidate, validate_study_id(parsed.study_id), repository_root=repository_root
+            )
+            print(f"validation-study: accepted evidence published at {destination}")
+            return 0
         try:
             url = validate_endpoint_url(parsed.url)
             study_id = validate_study_id(parsed.study_id)

@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import runpy
+import shutil
+import socket
+import subprocess
+import sys
 from pathlib import Path
 from typing import cast
 
 import pytest
 
+from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
@@ -23,6 +29,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _FIT_FIXTURE = _ROOT / "examples" / "data" / "fit"
 _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
+_AUDIT_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_candidate"
 
 
 def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
@@ -135,3 +142,54 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
     assert artifact_sha256["reference.pcapng"] == input_sha256["reference_pcapng"]
     assert artifact_sha256["generated.pcapng"] == input_sha256["generated_pcapng"]
     assert sorted(path.name for path in config.run.directory.iterdir()) == sorted(study.ARTIFACT_NAMES)
+
+
+def test_audit_cli_accepts_only_a_reconstructed_offline_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repository = tmp_path / "relocated-repository"
+    repository.mkdir()
+    shutil.copy2(_ROOT / "uv.lock", repository / "uv.lock")
+    candidate = repository / "candidate"
+    shutil.copytree(_AUDIT_FIXTURE, candidate)
+
+    def reject_external(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("offline audit attempted an external operation")
+
+    monkeypatch.setattr(socket, "socket", reject_external)
+    monkeypatch.setattr(socket, "create_connection", reject_external)
+    monkeypatch.setattr(subprocess, "run", reject_external)
+    monkeypatch.setattr(study, "run_experiment", reject_external)
+
+    assert auditor.main([str(candidate), "--repository", str(repository)]) == 0
+    assert capsys.readouterr().out.startswith("validation-study-audit: accepted ")
+
+
+def test_audit_script_main_reconstructs_a_relocated_fixture_without_a_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repository = tmp_path / "relocated-repository"
+    repository.mkdir()
+    shutil.copy2(_ROOT / "uv.lock", repository / "uv.lock")
+    candidate = repository / "candidate"
+    shutil.copytree(_AUDIT_FIXTURE, candidate)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(_ROOT / "scripts" / "audit_validation_study.py"),
+            str(candidate),
+            "--repository",
+            str(repository),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exit_code:
+        runpy.run_path(str(_ROOT / "scripts" / "audit_validation_study.py"), run_name="__main__")
+
+    assert exit_code.value.code == 0
+    assert capsys.readouterr().out.startswith("validation-study-audit: accepted ")

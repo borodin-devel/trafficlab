@@ -5,6 +5,8 @@ import hashlib
 import json
 import math
 import os
+import shutil
+import socket
 import stat
 import subprocess
 import tomllib
@@ -19,6 +21,7 @@ from typing import Any, Literal, cast
 import pytest
 import tomli_w
 
+from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
@@ -4660,3 +4663,201 @@ def test_local_audit_revalidates_report_checkpoint_artifacts_and_lineage_without
             report_path=report_path,
         )
     checkpoint_path.write_bytes(checkpoint_content)
+
+
+def _copy_validation_study_candidate(tmp_path: Path) -> tuple[Path, Path]:
+    repository = tmp_path / "relocated-repository"
+    repository.mkdir()
+    shutil.copy2(_ROOT / "uv.lock", repository / "uv.lock")
+    candidate = repository / "candidate"
+    shutil.copytree(_ROOT / "tests" / "fixtures" / "validation_study_candidate", candidate)
+    return repository, candidate
+
+
+def _candidate_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def test_offline_bundle_audit_reconstructs_relocated_complete_fixture_without_external_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    before = _candidate_bytes(candidate)
+
+    def reject_external(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("offline audit attempted an external operation")
+
+    monkeypatch.setattr(socket, "socket", reject_external)
+    monkeypatch.setattr(socket, "create_connection", reject_external)
+    monkeypatch.setattr(subprocess, "run", reject_external)
+    monkeypatch.setattr(study, "run_experiment", reject_external)
+
+    result = auditor.audit_bundle(candidate, repository=repository)
+
+    assert result.bundle == candidate
+    assert result.run_directory == candidate / "runs" / "short-r1"
+    assert result.file_count == len(before) - 1
+    assert result.manifest_sha256 == hashlib.sha256(before["manifest.json"]).hexdigest()
+    assert _candidate_bytes(candidate) == before
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_kind"),
+    (
+        ("missing", "artifact_missing"),
+        ("corrupt", "artifact_corrupt"),
+        ("foreign", "artifact_foreign"),
+        ("extra", "artifact_foreign"),
+        ("symlink", "artifact_foreign"),
+        ("temporary", "artifact_foreign"),
+        ("owner", "artifact_foreign"),
+        ("lineage", "artifact_foreign"),
+    ),
+)
+def test_offline_bundle_audit_rejects_first_manifest_or_artifact_mismatch(
+    tmp_path: Path,
+    mutation: str,
+    expected_kind: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    manifest_path = candidate / "manifest.json"
+
+    if mutation == "missing":
+        (candidate / "runs" / "short-r1" / "best_model.json").unlink()
+    elif mutation == "corrupt":
+        path = candidate / "runs" / "short-r1" / "checkpoint.json"
+        path.write_bytes(path.read_bytes() + b" ")
+    elif mutation == "foreign":
+        target = candidate / "runs" / "short-r1" / "generated.pcapng"
+        target.write_bytes((candidate / "runs" / "short-r1" / "reference.pcapng").read_bytes())
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        ownership = {entry["path"]: entry["owner"] for entry in document["files"]}
+        lineage = {entry["path"]: entry["lineage"] for entry in document["files"]}
+        auditor.write_manifest(candidate, ownership=ownership, lineage=lineage)
+    elif mutation == "extra":
+        (candidate / "unexpected.bin").write_bytes(b"unexpected")
+    elif mutation == "symlink":
+        (candidate / "runs" / "short-r1" / "unexpected-link").symlink_to("generated.pcapng")
+    elif mutation == "temporary":
+        (candidate / "runs" / "short-r1" / ".generated.tmp").write_bytes(b"temporary")
+    else:
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        entry = next(item for item in document["files"] if item["path"] == "runs/short-r1/generated.pcapng")
+        entry[mutation] = f"changed-{mutation}"
+        manifest_path.write_text(
+            json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == expected_kind
+    assert outcome.stage == "publication"
+    assert outcome.evidence_state == "not_published"
+    assert outcome.authority == "primary"
+    assert error.value.failure_outcomes == (outcome,)
+
+
+def test_audited_bundle_publication_rechecks_candidate_and_preserves_an_occupied_destination(tmp_path: Path) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    evidence_root = repository / "examples" / "validation_study" / "evidence"
+
+    destination = study.publish_audited_bundle(candidate, "fixture-study", repository_root=repository)
+    before = _candidate_bytes(destination)
+
+    with pytest.raises(TrafficlabError) as error:
+        study.publish_audited_bundle(candidate, "fixture-study", repository_root=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == "publication_collision"
+    assert outcome.stage == "publication"
+    assert destination == evidence_root / "fixture-study"
+    assert _candidate_bytes(destination) == before
+
+
+@pytest.mark.parametrize("target", ("manifest", "run-log"))
+def test_offline_bundle_audit_rejects_duplicate_json_keys_at_the_owned_boundary(
+    tmp_path: Path,
+    target: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    if target == "manifest":
+        (candidate / "manifest.json").write_bytes(b'{"files":[],"files":[],"schema_version":1}\n')
+    else:
+        log_path = candidate / "runs" / "short-r1" / "run.log"
+        log_path.write_bytes(b'{"event":"fixture","event":"duplicate","stage":"fit"}\n')
+        document = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
+        ownership = {entry["path"]: entry["owner"] for entry in document["files"]}
+        lineage = {entry["path"]: entry["lineage"] for entry in document["files"]}
+        auditor.write_manifest(candidate, ownership=ownership, lineage=lineage)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == "artifact_corrupt"
+    assert outcome.stage == "publication"
+    assert outcome.authority == "primary"
+
+
+@pytest.mark.parametrize("mutation", ("environment", "final-controls"))
+def test_offline_bundle_audit_reconstructs_environment_and_final_controls(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    index_path = candidate / "index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    if mutation == "environment":
+        (repository / "uv.lock").write_bytes(b"different lock\n")
+    else:
+        index["runs"][0]["final"]["seed"] = 98
+        index_path.write_text(
+            json.dumps(index, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        document = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
+        ownership = {entry["path"]: entry["owner"] for entry in document["files"]}
+        lineage = {entry["path"]: entry["lineage"] for entry in document["files"]}
+        auditor.write_manifest(candidate, ownership=ownership, lineage=lineage)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == "artifact_foreign"
+    assert outcome.affected_evidence in {"environment", "run short-r1"}
+
+
+@pytest.mark.parametrize(
+    ("artifact", "content"),
+    (
+        ("experiment.toml", b"[run\n"),
+        ("run.log", b"\xff\n"),
+        ("run.log", b""),
+        ("run.log", b'{"event":"fixture"}'),
+    ),
+)
+def test_offline_bundle_audit_strict_artifact_parser_covers_toml_and_log_failure_boundaries(
+    artifact: str,
+    content: bytes,
+) -> None:
+    fixture_run = _ROOT / "tests" / "fixtures" / "validation_study_candidate" / "runs" / "short-r1"
+    contents = {name: (fixture_run / name).read_bytes() for name in study.ARTIFACT_NAMES}
+    contents[artifact] = content
+
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._strict_artifacts(contents, name="short-r1")  # pyright: ignore[reportPrivateUsage]
+
+    assert error.value.kind == "artifact_corrupt"
