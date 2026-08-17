@@ -302,6 +302,7 @@ def test_clean_checkout_auditor_rejects_a_candidate_bound_to_a_different_source_
     wrapper = """
 import os
 import runpy
+import shutil
 import socket
 import subprocess
 import sys
@@ -361,11 +362,10 @@ def test_clean_checkout_reconstructs_unmodified_candidate_and_checks_owned_fixtu
     source_commit = cast(str, environment["source_commit"])
     source_tree = cast(str, environment["source_tree"])
     clone_fixture = repository / "tests" / "fixtures" / "validation_study_candidate"
-    shutil.rmtree(clone_fixture)
-    shutil.copytree(candidate, clone_fixture)
     wrapper = """
 import os
 import runpy
+import shutil
 import socket
 import subprocess
 import sys
@@ -406,9 +406,15 @@ allowed_git = {
     ("git", "diff", "--name-only", "-z", "--no-renames", f"{source_commit}..{source_commit}"),
     ("git", "show", f"{source_commit}:uv.lock"),
     ("git", "show", f"{source_commit}:docker/capture/image-lock.json"),
+    ("git", "show", f"{source_commit}:examples/data/fit/experiment.toml"),
+    ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"),
 }
 def local_git_only(argv, *args, **kwargs):
     if tuple(argv) in allowed_git:
+        return original_run(argv, *args, **kwargs)
+    if tuple(argv) == ("git", "check-ignore", "-z", "--stdin"):
+        payload = kwargs.get("input")
+        assert isinstance(payload, bytes) and payload.endswith(b"\\0")
         return original_run(argv, *args, **kwargs)
     raise AssertionError("audit attempted Docker or a non-local-Git subprocess")
 subprocess.run = local_git_only
@@ -419,6 +425,8 @@ except SystemExit as error:
     assert error.code == 0
 else:
     raise AssertionError("audit script did not exit")
+shutil.rmtree(checkout / "tests" / "fixtures" / "validation_study_candidate")
+shutil.copytree(checkout / "fixture-study", checkout / "tests" / "fixtures" / "validation_study_candidate")
 sys.argv = [
     "scripts/generate_validation_study_fixture.py",
     "--check",
@@ -503,8 +511,17 @@ def blocked_network(*args, **kwargs):
 socket.socket = blocked_network
 socket.create_connection = blocked_network
 original_run = subprocess.run
+allowed_git = {
+        (
+            ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"),
+            ("git", "check-ignore", "-z", "--stdin"),
+        )
+    }
 def local_git_only(argv, *args, **kwargs):
-    if tuple(argv[:2]) in {{("git", "rev-parse"), ("git", "merge-base"), ("git", "diff"), ("git", "show")}}:
+    if tuple(argv[:2]) in {{("git", "rev-parse"), ("git", "merge-base"), ("git", "diff"), ("git", "show")}} or tuple(argv) in allowed_git:
+        if tuple(argv) == ("git", "check-ignore", "-z", "--stdin"):
+            payload = kwargs.get("input")
+            assert isinstance(payload, bytes) and payload.endswith(b"\\0")
         return original_run(argv, *args, **kwargs)
     raise AssertionError("audit attempted Docker or a non-local-Git subprocess")
 subprocess.run = local_git_only
