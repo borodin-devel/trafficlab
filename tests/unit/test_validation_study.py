@@ -11742,6 +11742,20 @@ def test_offline_auditor_rejects_out_of_order_required_run_log_events(
     assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
 
 
+def test_offline_auditor_reports_a_missing_ordered_run_log_event() -> None:
+    """The ordering guard keeps its canonical error if a caller omits a required stage."""
+
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._require_ordered_log_events(  # pyright: ignore[reportPrivateUsage]
+            ({"event": "capture_environment_identity"},),
+            events=("capture_environment_identity", "capture_published"),
+            name="training/short/r1/run.log",
+        )
+
+    assert error.value.kind == "artifact_foreign"
+    assert error.value.affected == "training/short/r1/run.log"
+
+
 def test_offline_auditor_rejects_incomplete_capture_log_records(
     tmp_path: Path,
 ) -> None:
