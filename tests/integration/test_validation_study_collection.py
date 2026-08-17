@@ -215,11 +215,21 @@ def _offline_stage_runners(
     root: Path,
     *,
     candidate: Path,
+    environment: dict[str, object],
 ) -> tuple[Callable[[Path], RunResult], Callable[[Path], CaptureResult], list[str]]:
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=_FIT_FIXTURE / "capture.json")
     base_events = parse_pcapng_bytes(_REFERENCE_BYTES, metadata, source=_FIT_FIXTURE / "reference.pcapng")
     sequence = count(1)
     calls: list[str] = []
+
+    capture_environment = {
+        "capture_content_id": environment["capture_image_id"],
+        "capture_reference": environment["capture_image_reference"],
+        "capture_tool_version": environment["capture_tool_version"],
+        "host_architecture": environment["host_architecture"],
+        "target_content_id": environment["target_image_id"],
+        "target_reference": environment["target_image_reference"],
+    }
 
     def publish_capture(
         prepared: PreparedExperiment, *, number: int, label: str, window_scale: float = 1.0
@@ -236,8 +246,23 @@ def _offline_stage_runners(
         append_run_log(
             prepared.run_directory,
             {
+                "event": "capture_environment_identity",
+                "stage": "preflight",
+                **capture_environment,
+            },
+        )
+        append_run_log(
+            prepared.run_directory,
+            {
+                "capture_environment_identity": capture_environment,
+                "capture_identity": identify_bytes(capture_path.read_bytes()).as_dict(),
                 "event": "capture_published",
+                "experiment_identity": identify_bytes(
+                    (prepared.run_directory / "experiment.toml").read_bytes()
+                ).as_dict(),
                 "packet_count": inspection.packet_count,
+                "reference_identity": identify_bytes(reference_path.read_bytes()).as_dict(),
+                "reused": False,
                 "stage": "capture",
                 "workload": label,
             },
@@ -300,7 +325,9 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
     candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
-    run_training, capture_held_out, calls = _offline_stage_runners(repository, candidate=candidate)
+    run_training, capture_held_out, calls = _offline_stage_runners(
+        repository, candidate=candidate, environment=environment
+    )
     attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
         repository,
         study_id="study-1",
@@ -459,7 +486,9 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
     candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
-    run_training, capture_held_out, calls = _offline_stage_runners(repository, candidate=candidate)
+    run_training, capture_held_out, calls = _offline_stage_runners(
+        repository, candidate=candidate, environment=environment
+    )
     attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
         repository,
         study_id="study-1",

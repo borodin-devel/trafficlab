@@ -7838,6 +7838,8 @@ def test_audited_bundle_publication_rechecks_candidate_and_preserves_an_occupied
 def test_audited_bundle_rejects_the_first_primary_without_publication_residue(tmp_path: Path) -> None:
     repository, candidate = _copy_validation_study_candidate(tmp_path)
     before = _candidate_bytes(candidate)
+    evidence_root = repository / "examples" / "validation_study" / "evidence"
+    before_evidence = _candidate_bytes(evidence_root)
     missing = "protocol.json"
     (candidate / missing).unlink()
     expected_candidate = dict(before)
@@ -7867,7 +7869,8 @@ def test_audited_bundle_rejects_the_first_primary_without_publication_residue(tm
     )
     assert error.value.failure_outcomes == (outcome,)
     assert _candidate_bytes(candidate) == expected_candidate
-    assert not (repository / "examples" / "validation_study" / "evidence").exists()
+    assert _candidate_bytes(evidence_root) == before_evidence
+    assert not (evidence_root / "fixture-study").exists()
     assert not tuple(repository.rglob("*.tmp"))
 
 
@@ -8260,7 +8263,7 @@ def test_offline_bundle_audit_covers_fresh_simulation_record_boundaries(tmp_path
     ("case", "expected_kind"),
     (
         ("binding", "artifact_foreign"),
-        ("configuration", "scientific_semantics_incompatible"),
+        ("configuration", "artifact_foreign"),
         ("training_reference", "artifact_foreign"),
         ("reconstruction", "artifact_corrupt"),
         ("outputs", "artifact_foreign"),
