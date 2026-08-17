@@ -25,6 +25,9 @@ from types import MappingProxyType
 from typing import Literal, Protocol, cast
 from urllib.parse import urljoin, urlsplit
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from trafficlab import USER_AGENT, __version__
 from trafficlab.artifacts import (
     FileIdentity,
