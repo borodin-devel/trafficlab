@@ -1,1 +1,0 @@
-{"content_length":32768,"content_range":"bytes 3670016-3702783/9520794","header_identity":{"sha256":"f68d78fed2de3f09b1fbb577a96a9b8da607323c4c75fd2f0d247ffae6976e1d","size":2082},"requested_end":3702783,"requested_start":3670016,"run_id":"07-bursty-r3","scope":"training","status":206,"transfer_index":7,"workload":"bursty"}
