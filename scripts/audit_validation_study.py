@@ -2642,13 +2642,20 @@ def _lifecycle_project_name(content: bytes, *, name: str) -> str:
     """Read the one capture project identity already bound by the retained run log."""
 
     records = _run_log_records(content, name=name)
-    record = _required_log_record(records, event="capture_published", name=name)
-    project_name = _string(record.get("project_name"), name=f"capture project name for {name}")
-    if not project_name.startswith("trafficlab-capture-"):
+    creation = _required_log_record(records, event="capture_project_created", name=name)
+    publication = _required_log_record(records, event="capture_published", name=name)
+    created_project_name = _string(creation.get("project_name"), name=f"created capture project name for {name}")
+    project_name = _string(publication.get("project_name"), name=f"capture project name for {name}")
+    if (
+        creation.get("stage") != "capture"
+        or publication.get("stage") != "capture"
+        or not created_project_name.startswith("trafficlab-capture-")
+        or created_project_name != project_name
+    ):
         _fail(
             "artifact_foreign",
             name,
-            "capture publication project name is not a Trafficlab-owned project",
+            "capture project creation and publication do not retain one owned project identity",
             "restore matching capture lineage",
         )
     return project_name
@@ -2761,6 +2768,14 @@ def _lifecycle(
             }
         )
     _lifecycle_rows(document["held_out"], expected=expected_held_out, name="held-out")
+    project_names = [cast(str, row["project_name"]) for row in (*expected_training, *expected_held_out)]
+    if len(project_names) != 12 or len(set(project_names)) != len(project_names):
+        _fail(
+            "artifact_foreign",
+            "lifecycle.json",
+            "collection lifecycle must bind twelve distinct capture projects",
+            "restore the exact retained capture cleanup proof",
+        )
 
 
 def _expected_paths(
@@ -2903,6 +2918,13 @@ def _audit(
         ),
         name=_INDEX,
     )
+    if type(index["schema_version"]) is not int:
+        _fail(
+            "artifact_corrupt",
+            _INDEX,
+            "evidence index schema version must be an integer",
+            "restore canonical evidence index",
+        )
     if index["schema_version"] != _INDEX_SCHEMA:
         _fail(
             "scientific_semantics_incompatible",

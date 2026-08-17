@@ -147,6 +147,10 @@ def _append_capture_log_lineage(
     append_run_log(directory, {"event": "capture_environment_identity", "stage": "preflight", **environment})
     append_run_log(
         directory,
+        {"event": "capture_project_created", "project_name": project_name, "stage": "capture"},
+    )
+    append_run_log(
+        directory,
         {
             "capture_environment_identity": environment,
             "capture_identity": identify_bytes(capture).as_dict(),

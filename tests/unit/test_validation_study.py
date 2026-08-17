@@ -11717,6 +11717,108 @@ def test_offline_auditor_rejects_collection_lifecycle_scalar_type_spoofs(
     ) == ("artifact_corrupt", "publication", "lifecycle.json", "not_published", "primary")
 
 
+def test_offline_auditor_rejects_a_noninteger_collection_index_schema_version(tmp_path: Path) -> None:
+    """The schema-3 index version is an integer fact rather than an equality alias."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    _write_candidate_lifecycle(candidate)
+    index = _candidate_index(candidate)
+    index["schema_version"] = 3.0
+    _write_candidate_index(candidate, index)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_corrupt", "publication", "index.json", "not_published", "primary")
+
+
+@pytest.mark.parametrize(
+    ("mutation", "affected_evidence"),
+    (
+        ("missing_creation", "training/short/r1/run.log"),
+        ("mismatched_creation", "training/short/r1/run.log"),
+        ("duplicate_project", "lifecycle.json"),
+    ),
+)
+def test_offline_auditor_binds_collection_projects_to_unique_created_projects(
+    tmp_path: Path,
+    mutation: str,
+    affected_evidence: str,
+) -> None:
+    """Lifecycle cleanup claims bind the created Compose project for every capture."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+
+    def load(relative: str) -> list[dict[str, object]]:
+        return [cast(dict[str, object], json.loads(line)) for line in (candidate / relative).read_bytes().splitlines()]
+
+    def write(relative: str, records: list[dict[str, object]]) -> None:
+        (candidate / relative).write_bytes(
+            b"".join(
+                json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+                for record in records
+            )
+        )
+
+    def record(records: list[dict[str, object]], event: str) -> dict[str, object]:
+        return next(item for item in records if item["event"] == event)
+
+    def created(records: list[dict[str, object]]) -> dict[str, object]:
+        published = record(records, "capture_published")
+        try:
+            return record(records, "capture_project_created")
+        except StopIteration:
+            item = {
+                "event": "capture_project_created",
+                "project_name": published["project_name"],
+                "stage": "capture",
+            }
+            records.insert(records.index(published), item)
+            return item
+
+    first_relative = "training/short/r1/run.log"
+    first = load(first_relative)
+    if mutation == "missing_creation":
+        first[:] = [item for item in first if item["event"] != "capture_project_created"]
+        write(first_relative, first)
+    elif mutation == "mismatched_creation":
+        created(first)["project_name"] = "trafficlab-capture-mismatched"
+        write(first_relative, first)
+    else:
+        second_relative = "training/short/r2/run.log"
+        second = load(second_relative)
+        project_name = record(first, "capture_published")["project_name"]
+        created(first)["project_name"] = project_name
+        record(second, "capture_published")["project_name"] = project_name
+        created(second)["project_name"] = project_name
+        write(first_relative, first)
+        write(second_relative, second)
+    _write_candidate_lifecycle(candidate)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", affected_evidence, "not_published", "primary")
+
+
 def test_offline_auditor_rejects_a_fixture_profile_with_a_foreign_url(tmp_path: Path) -> None:
     """The narrow fixture compatibility path cannot become a generic profile bypass."""
 

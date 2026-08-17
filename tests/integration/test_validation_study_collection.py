@@ -251,6 +251,11 @@ def _offline_stage_runners(
                 **capture_environment,
             },
         )
+        project_name = f"trafficlab-capture-{label}-{number}"
+        append_run_log(
+            prepared.run_directory,
+            {"event": "capture_project_created", "project_name": project_name, "stage": "capture"},
+        )
         append_run_log(
             prepared.run_directory,
             {
@@ -261,7 +266,7 @@ def _offline_stage_runners(
                     (prepared.run_directory / "experiment.toml").read_bytes()
                 ).as_dict(),
                 "packet_count": inspection.packet_count,
-                "project_name": f"trafficlab-capture-{label}-{number}",
+                "project_name": project_name,
                 "reference_identity": identify_bytes(reference_path.read_bytes()).as_dict(),
                 "reused": False,
                 "stage": "capture",
@@ -471,6 +476,11 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         and cast(str, cast(dict[str, object], row)["project_name"]).startswith("trafficlab-capture-")
         for row in (*cast(list[object], lifecycle["training"]), *cast(list[object], lifecycle["held_out"]))
     )
+    project_names = [
+        cast(str, cast(dict[str, object], row)["project_name"])
+        for row in (*cast(list[object], lifecycle["training"]), *cast(list[object], lifecycle["held_out"]))
+    ]
+    assert len(project_names) == len(set(project_names)) == 12
     assert phase_commands == [
         ("docker", "image", "rm", "--force", tag),
         ("docker", "image", "inspect", tag, "--format", "{{.Id}}"),

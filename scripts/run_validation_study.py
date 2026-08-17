@@ -8459,12 +8459,20 @@ def _collection_capture_lifecycle_record(
         "collection capture must return one fresh successful capture pair",
     )
     records = _parse_run_log((directory / "run.log").read_bytes())
+    creations = [record for record in records if record.get("event") == "capture_project_created"]
+    _require(len(creations) == 1, "collection capture must retain one capture project creation record")
     publications = [record for record in records if record.get("event") == "capture_published"]
     _require(len(publications) == 1, "collection capture must retain one capture publication record")
+    created_project_name = creations[0].get("project_name")
     project_name = publications[0].get("project_name")
     _require(
-        type(project_name) is str and project_name.startswith("trafficlab-capture-"),
-        "collection capture publication must retain its exact project name",
+        creations[0].get("stage") == "capture"
+        and publications[0].get("stage") == "capture"
+        and type(created_project_name) is str
+        and type(project_name) is str
+        and created_project_name.startswith("trafficlab-capture-")
+        and created_project_name == project_name,
+        "collection capture must bind its exact created project name to publication",
     )
     return cast(
         JsonObject,
@@ -8496,6 +8504,15 @@ def _finalize_collection_lifecycle(
     _require(owned_capture_image.tag == expected_tag, "collection lifecycle must use its exact owned capture image tag")
     capture_image_id = environment.get("capture_image_id")
     _require(type(capture_image_id) is str and capture_image_id.startswith("sha256:"), "invalid capture image identity")
+    project_names = [row.get("project_name") for row in (*training, *held_out)]
+    _require(
+        len(project_names) == 12 and all(type(project_name) is str for project_name in project_names),
+        "collection lifecycle must retain twelve exact capture project names",
+    )
+    _require(
+        len({cast(str, project_name) for project_name in project_names}) == len(project_names),
+        "collection lifecycle must retain distinct capture project names",
+    )
     _complete_collection_capture_image_cleanup(
         owned_capture_image,
         repository_root=repository_root,
