@@ -94,7 +94,10 @@ copying the accepted bundle into its matching evidence path. Docker and network
 access are not required:
 
 ```bash
-UV_OFFLINE=1 uv run --locked --offline python scripts/audit_validation_study.py \
+UV_OFFLINE=1 scripts/run_bounded.sh \
+  --memory-high 6G --memory-max 8G --swap-max 1G \
+  --wall-time 20m --kill-after 10s -- \
+  uv run --locked --offline python scripts/audit_validation_study.py \
   examples/validation_study/evidence/2026-08-17-research-fitness-r18 \
   --repository .
 ```

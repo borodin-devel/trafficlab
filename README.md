@@ -455,9 +455,11 @@ does not provide:
 - a long-term public compatibility guarantee.
 
 Docker daemon access and target-image trust are installation and experiment
-concerns, not a Trafficlab-owned privilege or security framework. Raw captures
-may contain sensitive traffic; the Validation Study publication intentionally keeps them
-out of Git.
+concerns, not a Trafficlab-owned privilege or security framework. Ordinary,
+failed, and scratch raw captures may contain sensitive traffic and remain
+ignored outside Git. The sole deliberate exception is the manifest-indexed
+reference and generated PCAPNG evidence in the accepted Validation Study bundle,
+which remains tracked for offline audit.
 
 For the authoritative scope boundary, see
 [Architecture scope boundaries](architecture/README.md#scope-boundaries).
