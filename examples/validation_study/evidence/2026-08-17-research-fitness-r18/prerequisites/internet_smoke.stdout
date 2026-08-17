@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/bsa/projects/trafficlab/.worktrees/research-fitness-implementation/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/bsa/projects/trafficlab/.worktrees/research-fitness-implementation
+configfile: pyproject.toml
+testpaths: tests
+plugins: xdist-3.8.0, cov-7.1.0
+collecting ... collected 3426 items / 3425 deselected / 1 selected
+
+tests/internet/test_capture_internet.py::test_real_https_capture_proves_dns_tls_bidirectional_traffic_and_teardown PASSED [100%]
+
+- generated xml file: /home/bsa/projects/trafficlab/.worktrees/research-fitness-implementation/examples/validation_study/.study-work/evidence/2026-08-17-research-fitness-r18/00-prerequisites/internet.xml -
+===================== 1 passed, 3425 deselected in 16.30s ======================

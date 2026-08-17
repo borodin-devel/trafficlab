@@ -1,1 +1,0 @@
-{"content_length":4194304,"content_range":"bytes 0-4194303/9520794","header_identity":{"sha256":"8bad3154470c6a9a872b12fa7a3730bd64dfa4be79000c1930afdcd6539b701a","size":2078},"requested_end":4194303,"requested_start":0,"run_id":"09-streaming-r3","scope":"training","status":206,"transfer_index":0,"workload":"streaming"}

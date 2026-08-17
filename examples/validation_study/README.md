@@ -9,7 +9,7 @@ commit, endpoint, and prerequisite coordination have been explicitly approved.
 
 ## Accepted corrected study
 
-[`evidence/2026-08-17-research-fitness-r15/`](evidence/2026-08-17-research-fitness-r15/)
+[`evidence/2026-08-17-research-fitness-r18/`](evidence/2026-08-17-research-fitness-r18/)
 is the accepted schema-2 study. Its [report](REPORT.md), `index.json`, and
 `manifest.json` are the navigation and integrity roots. It contains:
 
@@ -23,9 +23,9 @@ is the accepted schema-2 study. Its [report](REPORT.md), `index.json`, and
   environment, report inputs, owner/lineage index, and path/size/SHA-256
   manifest.
 
-The ignored `.candidates/2026-08-17-research-fitness-r15` path is the source
-work copy retained by the exclusive publisher. It is not another accepted
-study. Historical Phase 7 material remains non-accepted consistency evidence.
+The audited source candidate is a transient publisher work copy, not another
+accepted study. Historical Phase 7 material and prior attempts remain
+non-accepted consistency or forensic evidence.
 
 ## Frozen protocol
 
