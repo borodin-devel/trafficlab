@@ -1,0 +1,31 @@
+HTTP/1.1 206 Partial Content
+content-type: image/jpeg
+x-object-meta-sha1base36: aba5r0exrde4o9ng6lfqvznyobyori9
+last-modified: Sun, 03 Nov 2024 17:15:50 GMT
+accept-ranges: bytes
+content-length: 32768
+date: Mon, 17 Aug 2026 03:45:19 GMT
+x-ratelimit-limit: 600000, 600000;w=60
+x-ratelimit-remaining: 599999
+x-ratelimit-reset: 41
+server: envoy
+etag: d015c3f7cc8b1d3e0c37a2118bc5d1a7
+age: 55703
+x-cache: cp3076 hit, cp3076 pass
+x-cache-status: hit-local
+server-timing: cache;desc="hit-local", host;desc="cp3076"
+strict-transport-security: max-age=106384710; includeSubDomains; preload
+report-to: { "group": "wm_nel", "max_age": 604800, "endpoints": [{ "url": "https://intake-logging.wikimedia.org/v1/events?stream=w3c.reportingapi.network_error&schema_uri=/w3c/reportingapi/network_error/1.0.0" }] }
+nel: { "report_to": "wm_nel", "max_age": 604800, "failure_fraction": 0.05, "success_fraction": 0.0}
+x-client-ip: 159.138.216.21
+x-content-type-options: nosniff
+content-range: bytes 3145728-3178495/9520794
+reporting-endpoints: csp_endpoint="https://commons.wikimedia.org/w/api.php?reportonly=1&source=image&action=cspreport&format=json"
+content-security-policy-report-only: default-src 'none'; script-src 'none'; style-src 'unsafe-inline' data:; font-src data:; img-src data: https://upload.wikimedia.org/favicon.ico; connect-src https://upload.wikimedia.org/favicon.ico; media-src data: 'self'; object-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; report-uri https://commons.wikimedia.org/w/api.php?reportonly=1&source=image&action=cspreport&format=json; report-to csp_endpoint
+access-control-allow-origin: *
+access-control-expose-headers: Age, Date, Content-Length, Content-Range, X-Content-Duration, X-Cache
+timing-allow-origin: *
+set-cookie: WMF-Uniq=Z-xQXRwIAvR4OSgAUdIQlAO_AAAAAFvdKhsKsbFwE_7o_pC5fVKBSfFIWxWoiAnz;Domain=upload.wikimedia.org;Path=/;HttpOnly;secure;SameSite=None;Expires=Tue, 17 Aug 2027 00:00:00 GMT
+x-request-id: 22ceaeaf-8af2-4fe0-8af3-0b292a519f2e
+x-analytics: 
+

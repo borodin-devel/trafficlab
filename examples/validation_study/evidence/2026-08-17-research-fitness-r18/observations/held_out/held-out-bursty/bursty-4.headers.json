@@ -1,1 +1,0 @@
-{"content_length":32768,"content_range":"bytes 2097152-2129919/9520794","header_identity":{"sha256":"94de8d53081899c224e4b745f988820c28c80c5d949b730bd89caa7204b9c989","size":2082},"requested_end":2129919,"requested_start":2097152,"run_id":"held-out-bursty","scope":"held_out","status":206,"transfer_index":4,"workload":"bursty"}

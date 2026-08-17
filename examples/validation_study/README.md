@@ -9,7 +9,7 @@ commit, endpoint, and prerequisite coordination have been explicitly approved.
 
 ## Accepted corrected study
 
-[`evidence/2026-08-17-research-fitness-r18/`](evidence/2026-08-17-research-fitness-r18/)
+[`evidence/2026-08-17-research-fitness-r19/`](evidence/2026-08-17-research-fitness-r19/)
 is the accepted schema-2 study. Its [report](REPORT.md), `index.json`, and
 `manifest.json` are the navigation and integrity roots. It contains:
 
