@@ -1199,6 +1199,74 @@ def test_public_capture_reuses_a_locally_validated_pair_without_docker(
     assert result.packet_count == 1
 
 
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("capture_content_id", "sha256:" + ("d" * 64)),
+        ("capture_tool_version", "4.0.18"),
+    ],
+)
+def test_public_capture_reuse_rejects_a_valid_format_environment_that_differs_from_the_checked_lock(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    field: str,
+    replacement: str,
+) -> None:
+    """Config-only reuse must bind the recorded capture identity to the checked lock before Docker."""
+    experiment_path = tmp_path / "experiment.toml"
+    experiment_path.write_text(tomli_w.dumps(valid_config_data), encoding="utf-8")
+    prepared = open_or_prepare_experiment(experiment_path)
+    prepared = replace(
+        prepared,
+        report=replace(
+            prepared.report,
+            environment_identity=CaptureEnvironmentIdentity(
+                host_architecture="linux/amd64",
+                target_reference=prepared.config.target.image,
+                target_content_id="sha256:" + ("c" * 64),
+                capture_reference=prepared.config.capture.image,
+                capture_content_id="sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+                capture_tool_version="4.0.17",
+            ),
+        ),
+    )
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    (prepared.run_directory / "capture.json").write_bytes(render_capture_metadata(metadata))
+    (prepared.run_directory / "reference.pcapng").write_bytes(
+        encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
+    )
+    _seed_capture_lineage(prepared)
+    pair_before = {name: (prepared.run_directory / name).read_bytes() for name in ("capture.json", "reference.pcapng")}
+    log_path = prepared.run_directory / "run.log"
+    records = [json.loads(line) for line in log_path.read_text().splitlines()]
+    publication = next(record for record in records if record["event"] == "capture_published")
+    environment = cast(dict[str, object], publication["capture_environment_identity"])
+    environment[field] = replacement
+    log_path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+
+    class NoDocker:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError(f"lock-incompatible public reuse touched Docker operation {name}")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture_experiment(experiment_path, docker=cast(Any, NoDocker()), clock=lambda: 100.0)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "affected_evidence": "capture pair",
+        "authority": "primary",
+        "corrective_action": "select its matching run or a new run directory",
+        "detail": "capture pair has another identity",
+        "evidence_state": "preserved",
+        "kind": "artifact_stale",
+        "stage": "capture",
+    }
+    assert {
+        name: (prepared.run_directory / name).read_bytes() for name in ("capture.json", "reference.pcapng")
+    } == pair_before
+
+
 def test_capture_lineage_persists_ordered_flat_regular_file_mount_identities(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

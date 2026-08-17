@@ -96,6 +96,27 @@ equivalent choice exists.
 
 ## Fast and detailed tests
 
+### Task 15 normative full-verification gate
+
+For final research-fitness verification, use the active Task 15 plan's bounded
+commands. They are normative for the full non-Docker gate; the broader
+focused-loop examples below are historical development bounds and are not a
+substitute for this gate.
+
+```bash
+scripts/run_bounded.sh \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 10m --kill-after 10s -- \
+  uv run --locked pytest -q -n 4 -m "not docker and not internet"
+scripts/run_bounded.sh \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 10m --kill-after 10s -- \
+  uv run --locked pytest -q -n 0 -m "not docker and not internet" \
+    --cov=trafficlab --cov-branch --cov-report=term-missing --cov-fail-under=90
+```
+
+### Historical focused-loop examples
+
 Every pytest process tree runs with a hard memory, swap, and wall-clock bound.
 On Linux and WSL2 with systemd, `scripts/run_bounded.sh` creates a unique
 `trafficlab-test-guard-*.scope` so the limits include pytest workers and every

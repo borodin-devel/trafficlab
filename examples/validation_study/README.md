@@ -32,7 +32,7 @@ study. Historical Phase 7 material remains non-accepted consistency evidence.
 Use a new study ID matching `[a-z0-9][a-z0-9-]{0,31}` for every attempt. Before
 starting, the source checkout must be clean and the capture image lock must name
 the cold rebuilt local image ID. The prerequisite owner builds with
-`--pull=false --no-cache --iidfile`; it records the exact image ID, locked
+`--pull --no-cache --iidfile`; it records the exact image ID, locked
 source/lock inputs, bounded Docker matrix, Internet smoke, command argv,
 stdout, stderr, JUnit XML, test counts, transfer headers, and capability
 observation.

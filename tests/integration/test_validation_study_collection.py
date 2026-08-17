@@ -47,13 +47,14 @@ def _canonical(value: object) -> bytes:
 def _initialize_repository(root: Path) -> tuple[str, str, dict[str, object]]:
     lock = root / "docker" / "capture"
     lock.mkdir(parents=True)
+    shutil.copy2(_ROOT / ".gitignore", root / ".gitignore")
     shutil.copy2(_ROOT / "uv.lock", root / "uv.lock")
     shutil.copy2(_ROOT / "docker" / "capture" / "image-lock.json", lock / "image-lock.json")
     for argv in (
         ("git", "init", "--quiet"),
         ("git", "config", "user.email", "validation-study@example.test"),
         ("git", "config", "user.name", "Validation Study"),
-        ("git", "add", "uv.lock", "docker/capture/image-lock.json"),
+        ("git", "add", ".gitignore", "uv.lock", "docker/capture/image-lock.json"),
         ("git", "commit", "--quiet", "-m", "fixture source"),
     ):
         subprocess.run(argv, cwd=root, check=True, capture_output=True)

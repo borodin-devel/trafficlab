@@ -47,7 +47,14 @@ from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_f
 from trafficlab.compose import ComposePaths, write_production_compose
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.docker_cli import CapturePlatform, CommandResult, DockerCompose, ProjectInventory, ServiceState
+from trafficlab.docker_cli import (
+    CapturePlatform,
+    CommandResult,
+    DockerCompose,
+    ProjectInventory,
+    ServiceState,
+    load_capture_image_lock,
+)
 from trafficlab.errors import (
     DeadlineExceededError,
     FailureAuthority,
@@ -66,6 +73,7 @@ from trafficlab.preflight import (
 from trafficlab.trace import load_capture_metadata
 
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
+_CAPTURE_IMAGE_LOCK_PATH = Path(__file__).resolve().parents[2] / "docker" / "capture" / "image-lock.json"
 _CAPTURE_ENVIRONMENT_FIELDS = (
     "host_architecture",
     "target_reference",
@@ -358,7 +366,14 @@ def _require_matching_capture_lineage(
             raise ValueError("capture image reference differs from the realized configuration")
         current_mounted_inputs = _require_matching_mounted_inputs(config, recorded_environment.mounted_inputs)
         expected_environment = recorded_environment
-        if environment_identity is not None:
+        if environment_identity is None:
+            lock = load_capture_image_lock(_CAPTURE_IMAGE_LOCK_PATH)
+            if (recorded_environment.capture_content_id, recorded_environment.capture_tool_version) != (
+                lock.expected_capture_image_id,
+                lock.capture_tool_version,
+            ):
+                raise ValueError("capture environment does not match the checked image lock")
+        else:
             expected_environment = replace(environment_identity, mounted_inputs=current_mounted_inputs)
         expected = _capture_lineage(run_directory, expected_environment)
         require_compatible(expected, actual)

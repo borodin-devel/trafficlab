@@ -6590,6 +6590,377 @@ def test_offline_audit_reconstructs_held_out_without_calling_the_producer_bounda
     assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
 
 
+@pytest.mark.parametrize("case", ("tracked_auditor", "tracked_source", "untracked_source"))
+def test_offline_auditor_rejects_non_evidence_worktree_changes(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    """The accepted audit cannot trust a checkout with mutable auditor or source inputs."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    if case == "tracked_auditor":
+        changed = repository / "scripts" / "audit_validation_study.py"
+        changed.write_bytes(changed.read_bytes() + b"\n# dirty auditor\n")
+    elif case == "tracked_source":
+        changed = repository / "src" / "trafficlab" / "comparison.py"
+        changed.write_bytes(changed.read_bytes() + b"\n# dirty source\n")
+    else:
+        (repository / "untracked_source.py").write_text("sentinel = True\n", encoding="utf-8")
+
+    with pytest.raises(TrafficlabError) as captured:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", "environment", "not_published", "primary")
+    assert "working-tree" in outcome.detail
+
+
+def test_offline_auditor_allows_document_evidence_and_ignored_candidate_worktree_changes(tmp_path: Path) -> None:
+    """The source guard shares the committed descendant evidence/document allowlist."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    for relative in ("examples/validation_study/README.md", "examples/validation_study/REPORT.md"):
+        path = repository / relative
+        path.write_bytes(path.read_bytes() + b"\nlocal audit note\n")
+    evidence_note = repository / "examples" / "validation_study" / "evidence" / "local-audit-note.txt"
+    evidence_note.parent.mkdir(parents=True, exist_ok=True)
+    evidence_note.write_text("retained evidence note\n", encoding="utf-8")
+    for relative in (
+        "examples/validation_study/.study-work/attempts/fixture-study/state.json",
+        "examples/validation_study/evidence/.candidates/fixture-study/state.json",
+    ):
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+    if hasattr(os, "mkfifo"):
+        ignored_fifo = (
+            repository / "examples" / "validation_study" / ".study-work" / "attempts" / "fixture-study" / "state.fifo"
+        )
+        os.mkfifo(ignored_fifo)
+
+    status = subprocess.run(
+        ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert b"examples/validation_study/README.md" in status
+    assert b"examples/validation_study/evidence/local-audit-note.txt" in status
+    assert b".study-work" not in status
+    assert b".candidates" not in status
+    assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
+
+
+def test_offline_auditor_allows_a_clean_committed_accepted_bundle(tmp_path: Path) -> None:
+    """A relocated descendant may check accepted evidence in without making its worktree dirty."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    accepted = repository / "examples" / "validation_study" / "evidence" / candidate.name
+    accepted.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(candidate, accepted)
+    shutil.rmtree(candidate)
+    relative = accepted.relative_to(repository).as_posix()
+    for command in (
+        ("git", "add", "--", relative),
+        (
+            "git",
+            "-c",
+            "user.name=Trafficlab Test",
+            "-c",
+            "user.email=trafficlab-test@example.invalid",
+            "commit",
+            "-m",
+            "test accepted evidence",
+        ),
+    ):
+        subprocess.run(command, cwd=repository, check=True, capture_output=True)
+    assert not subprocess.run(
+        ("git", "status", "--porcelain=v1", "--untracked-files=all"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert auditor.audit_bundle(accepted, repository=repository).bundle == accepted
+
+
+def test_offline_auditor_does_not_exempt_an_external_staged_source_candidate(tmp_path: Path) -> None:
+    """Only source candidates beneath the relocated repository can suppress worktree evidence."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+
+    assert (
+        auditor._audit_staged_bundle(  # pyright: ignore[reportPrivateUsage]
+            candidate,
+            repository=repository,
+            source_candidate=tmp_path / "external-candidate",
+        ).bundle
+        == candidate
+    )
+
+
+def test_offline_auditor_never_treats_the_repository_root_as_a_candidate_exemption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller cannot hide every source path by naming the repository as its candidate."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def source_paths(_repository: Path) -> tuple[str, ...]:
+        return ("source.py",)
+
+    def no_nonregular_paths(_repository: Path, *, candidate_paths: Sequence[str]) -> tuple[str, ...]:
+        return ()
+
+    monkeypatch.setattr(auditor, "_relocated_worktree_paths", source_paths)
+    monkeypatch.setattr(auditor, "_nonregular_relocated_worktree_paths", no_nonregular_paths)
+
+    with pytest.raises(auditor._Issue, match="non-evidence working-tree change") as captured:  # pyright: ignore[reportPrivateUsage]
+        auditor._require_permitted_relocated_worktree(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            candidate=repository,
+        )
+
+    assert (captured.value.kind, captured.value.affected) == ("artifact_foreign", "environment")
+
+
+@pytest.mark.parametrize("case", ("symlink", "nonregular"))
+def test_offline_auditor_rejects_untracked_nonregular_source_paths(tmp_path: Path, case: str) -> None:
+    """Filesystem special entries outside retained evidence cannot become audit inputs."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    source = repository / f"foreign-{case}"
+    if case == "symlink":
+        source.symlink_to("scripts/audit_validation_study.py")
+    else:
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("nonregular FIFO entries require POSIX")
+        os.mkfifo(source)
+
+    with pytest.raises(TrafficlabError) as captured:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_foreign",
+        "environment",
+        "not_published",
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    (
+        (b"broken\0", "working-tree status"),
+        (b"?? untracked_source.py", "working-tree status"),
+        (b"?? " + bytes((255, 0)), "working-tree path is not UTF-8"),
+        (bytes((255, 63, 32)) + b"source.py\0", "working-tree status is not ASCII"),
+        (b"!! source.py\0", "working-tree status is malformed"),
+        (b"?? /source.py\0", "working-tree path is not repository-relative"),
+        (b"?? ../source.py\0", "working-tree path is not repository-relative"),
+        (b"?? \0", "working-tree status is malformed"),
+    ),
+)
+def test_offline_auditor_rejects_malformed_worktree_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: bytes,
+    expected: str,
+) -> None:
+    """Git-status decoding is itself canonical audit evidence, not a best-effort hint."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    original_git_bytes = auditor._git_bytes  # pyright: ignore[reportPrivateUsage]
+
+    def malformed_status(repository: Path, argv: tuple[str, ...], *, name: str) -> bytes:
+        if name == "relocated Git working tree":
+            return status
+        return original_git_bytes(repository, argv, name=name)
+
+    monkeypatch.setattr(auditor, "_git_bytes", malformed_status)
+
+    with pytest.raises(TrafficlabError) as captured:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence, outcome.evidence_state) == (
+        "artifact_corrupt",
+        "environment",
+        "not_published",
+    )
+    assert expected in outcome.detail
+
+
+@pytest.mark.parametrize(("case", "expected_kind"), (("oserror", "artifact_corrupt"), ("nonzero", "artifact_foreign")))
+def test_offline_auditor_classifies_worktree_git_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_kind: str,
+) -> None:
+    """The worktree inspection retains the existing Git failure taxonomy."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    original_run = auditor.subprocess.run
+
+    def worktree_failure(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        command = tuple(cast(Sequence[str], args[0]))
+        if command == ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"):
+            if case == "oserror":
+                raise OSError("synthetic status failure")
+            return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"synthetic status failure\n")
+        return cast(Any, original_run)(*args, **kwargs)
+
+    monkeypatch.setattr(auditor.subprocess, "run", worktree_failure)
+
+    with pytest.raises(TrafficlabError) as captured:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence, outcome.evidence_state) == (
+        expected_kind,
+        "environment",
+        "not_published",
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind", "expected"),
+    (
+        ("oserror", "artifact_corrupt", "could not inspect relocated Git ignored paths"),
+        ("nonzero", "artifact_foreign", "could not resolve ignored paths"),
+        ("non_utf8", "artifact_corrupt", "relocated Git ignored path is not UTF-8"),
+        ("foreign_path", "artifact_corrupt", "ignored paths do not match"),
+    ),
+)
+def test_offline_auditor_classifies_ignored_special_entry_git_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_kind: str,
+    expected: str,
+) -> None:
+    """The special-entry ignore query remains a strict Git audit boundary."""
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("nonregular FIFO entries require POSIX")
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    source = repository / "foreign.fifo"
+    os.mkfifo(source)
+    original_run = auditor.subprocess.run
+
+    def ignored_path_failure(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        command = tuple(cast(Sequence[str], args[0]))
+        if command == ("git", "check-ignore", "-z", "--stdin"):
+            if case == "oserror":
+                raise OSError("synthetic ignored-path failure")
+            if case == "nonzero":
+                return subprocess.CompletedProcess(command, 2, stdout=b"", stderr=b"synthetic failure\n")
+            if case == "non_utf8":
+                return subprocess.CompletedProcess(command, 0, stdout=bytes((255, 0)), stderr=b"")
+            return subprocess.CompletedProcess(command, 0, stdout=b"elsewhere\0", stderr=b"")
+        return cast(Any, original_run)(*args, **kwargs)
+
+    monkeypatch.setattr(auditor.subprocess, "run", ignored_path_failure)
+
+    with pytest.raises(TrafficlabError) as captured:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence, outcome.evidence_state) == (
+        expected_kind,
+        "environment",
+        "not_published",
+    )
+    assert expected in outcome.detail
+
+
+@pytest.mark.parametrize("case", ("directory", "entry"))
+def test_offline_auditor_covers_special_entry_scan_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    """Unreadable worktree directories and entries have canonical local diagnostics."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    source = repository / "source.py"
+    source.write_text("sentinel = True\n", encoding="utf-8")
+    original_iterdir = Path.iterdir
+    original_lstat = Path.lstat
+
+    def failing_iterdir(path: Path) -> Any:
+        if case == "directory" and path == repository:
+            raise OSError("synthetic directory failure")
+        return original_iterdir(path)
+
+    def failing_lstat(path: Path) -> os.stat_result:
+        if case == "entry" and path == source:
+            raise OSError("synthetic entry failure")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "iterdir", failing_iterdir)
+    monkeypatch.setattr(Path, "lstat", failing_lstat)
+
+    with pytest.raises(auditor._Issue, match="could not inspect relocated working-tree") as captured:  # pyright: ignore[reportPrivateUsage]
+        auditor._nonregular_relocated_worktree_paths(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            candidate_paths=(),
+        )
+
+    assert (captured.value.kind, captured.value.affected) == ("artifact_corrupt", "environment")
+
+
+def test_offline_auditor_rejects_a_non_utf8_special_entry_path(tmp_path: Path) -> None:
+    """Filesystem paths that cannot be rendered into Git's UTF-8 protocol remain corrupt."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    with pytest.raises(auditor._Issue, match="working-tree path is not UTF-8") as captured:  # pyright: ignore[reportPrivateUsage]
+        auditor._ignored_relocated_worktree_paths(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            ("bad\udcff",),
+        )
+
+    assert (captured.value.kind, captured.value.affected) == ("artifact_corrupt", "environment")
+
+
+def test_offline_auditor_checks_the_worktree_before_committed_descendant_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mutable source is primary before the auditor trusts the committed descendant diff."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    changed = repository / "scripts" / "audit_validation_study.py"
+    changed.write_bytes(changed.read_bytes() + b"\n# dirty auditor\n")
+    original_git_bytes = auditor._git_bytes  # pyright: ignore[reportPrivateUsage]
+
+    def require_worktree_first(repository: Path, argv: tuple[str, ...], *, name: str) -> bytes:
+        if name == "post-source changed paths":
+            pytest.fail("committed descendant paths were trusted before the dirty worktree")
+        return original_git_bytes(repository, argv, name=name)
+
+    monkeypatch.setattr(auditor, "_git_bytes", require_worktree_first)
+
+    with pytest.raises(TrafficlabError, match="working-tree"):
+        auditor.audit_bundle(candidate, repository=repository)
+
+
 @pytest.mark.parametrize(
     ("case", "expected"),
     (
@@ -10745,7 +11116,10 @@ def test_offline_auditor_reconstructs_all_training_model_selection_rejections(
     ) == (expected_kind, "publication", "protocol", "not_published", "primary")
 
 
-def test_candidate_natural_variation_derives_each_directional_reference_window(tmp_path: Path) -> None:
+def test_candidate_natural_variation_derives_each_directional_reference_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Natural variation compares repeated captures at each reference-derived W, not a metric bin width."""
     base_config = load_configuration_pair(_FIT_FIXTURE / "experiment.toml").realized
     config = base_config.model_copy(
@@ -10770,13 +11144,20 @@ def test_candidate_natural_variation_derives_each_directional_reference_window(t
 
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=_FIT_FIXTURE / "capture.json")
 
-    def training(repeat: int, raw_reference: tuple[TraceEvent, ...]) -> study._CandidateTraining:  # pyright: ignore[reportPrivateUsage]
+    configurations = tuple(config.model_copy(deep=True) for _ in range(3))
+    assert configurations[0].similarity is not configurations[1].similarity
+
+    def training(
+        repeat: int,
+        raw_reference: tuple[TraceEvent, ...],
+        configuration: ExperimentConfig,
+    ) -> study._CandidateTraining:  # pyright: ignore[reportPrivateUsage]
         reference, window = normalize_reference(raw_reference)
         return study._CandidateTraining(  # pyright: ignore[reportPrivateUsage]
             workload="short",
             repeat=repeat,
             directory=tmp_path / f"r{repeat}",
-            config=config,
+            config=configuration,
             contents={},
             metadata=metadata,
             reference=reference,
@@ -10786,7 +11167,10 @@ def test_candidate_natural_variation_derives_each_directional_reference_window(t
             comparison=cast(ComparisonResult, object()),
         )
 
-    records = (training(1, trace(0.005)), training(2, trace(0.03)), training(3, trace(0.025)))
+    records = tuple(
+        training(repeat, raw_reference, configurations[repeat - 1])
+        for repeat, raw_reference in enumerate((trace(0.005), trace(0.03), trace(0.025)), start=1)
+    )
     with pytest.raises(TrafficlabError, match="invalid generated trace: at least two events"):
         compare_traces(
             align_generated(records[0].reference, frozen_bin_width),
@@ -10810,7 +11194,23 @@ def test_candidate_natural_variation_derives_each_directional_reference_window(t
         config.similarity,
     )
 
+    settings_calls: list[SimilarityConfig] = []
+    original_compare = study.compare_traces
+
+    def comparison_spy(
+        reference: tuple[TraceEvent, ...],
+        generated: tuple[TraceEvent, ...],
+        window: float,
+        settings: SimilarityConfig,
+    ) -> ComparisonResult:
+        settings_calls.append(settings)
+        return original_compare(reference, generated, window, settings)
+
+    monkeypatch.setattr(study, "compare_traces", comparison_spy)
     result = study._candidate_natural_variation(records)  # pyright: ignore[reportPrivateUsage]
+    assert settings_calls[:2] == [records[0].config.similarity, records[1].config.similarity]
+    assert settings_calls[0] is records[0].config.similarity
+    assert settings_calls[1] is records[1].config.similarity
     first_pair = cast(dict[str, object], cast(list[object], result["pairs"])[0])
     forward_score = cast(dict[str, object], first_pair["forward"])
     reverse_score = cast(dict[str, object], first_pair["reverse"])
@@ -10822,3 +11222,55 @@ def test_candidate_natural_variation_derives_each_directional_reference_window(t
         assert cast(dict[str, float], symmetric["methods"])[method] == fmean(
             (forward.methods[method].score, reverse.methods[method].score)
         )
+
+
+def test_offline_auditor_uses_each_directional_similarity_settings_instance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent reconstruction applies the settings belonging to each reference trace."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    original_training = auditor._training  # pyright: ignore[reportPrivateUsage]
+    original_report_inputs = auditor._report_inputs  # pyright: ignore[reportPrivateUsage]
+    original_compare = auditor.compare_traces
+    expected_settings: dict[tuple[tuple[float, Direction, int], ...], SimilarityConfig] = {}
+    calls: list[tuple[tuple[tuple[float, Direction, int], ...], SimilarityConfig]] = []
+    recording = False
+
+    def trace_key(events: Sequence[TraceEvent]) -> tuple[tuple[float, Direction, int], ...]:
+        return tuple((event.timestamp, event.direction, event.frame_length) for event in events)
+
+    def isolated_training(*args: Any, **kwargs: Any) -> auditor._Training:  # pyright: ignore[reportPrivateUsage]
+        item = original_training(*args, **kwargs)
+        return replace(item, config=item.config.model_copy(deep=True))
+
+    def report_inputs_spy(*args: Any, **kwargs: Any) -> dict[str, object]:
+        nonlocal recording
+        training = cast(Sequence[auditor._Training], args[0])  # pyright: ignore[reportPrivateUsage]
+        expected_settings.update(
+            {trace_key(normalize_reference(item.reference)[0]): item.config.similarity for item in training}
+        )
+        recording = True
+        try:
+            return original_report_inputs(*args, **kwargs)
+        finally:
+            recording = False
+
+    def comparison_spy(
+        reference: tuple[TraceEvent, ...],
+        generated: tuple[TraceEvent, ...],
+        window: float,
+        settings: SimilarityConfig,
+    ) -> ComparisonResult:
+        if recording:
+            calls.append((trace_key(reference), settings))
+        return original_compare(reference, generated, window, settings)
+
+    monkeypatch.setattr(auditor, "_training", isolated_training)
+    monkeypatch.setattr(auditor, "_report_inputs", report_inputs_spy)
+    monkeypatch.setattr(auditor, "compare_traces", comparison_spy)
+
+    assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
+    assert len(calls) == 18
+    assert all(settings is expected_settings[reference] for reference, settings in calls)

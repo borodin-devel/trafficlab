@@ -582,6 +582,214 @@ def _git_identity(repository: Path, argv: tuple[str, ...], *, name: str) -> str:
     return value
 
 
+_RELOCATED_DOCUMENTATION_PATHS = frozenset(
+    {
+        "examples/validation_study/REPORT.md",
+        "examples/validation_study/README.md",
+    }
+)
+_RELOCATED_EVIDENCE_PREFIX = "examples/validation_study/evidence/"
+
+
+def _permitted_relocated_change(path: str) -> bool:
+    return path in _RELOCATED_DOCUMENTATION_PATHS or path.startswith(_RELOCATED_EVIDENCE_PREFIX)
+
+
+def _relocated_worktree_paths(repository: Path) -> tuple[str, ...]:
+    status = _git_bytes(
+        repository,
+        ("status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"),
+        name="relocated Git working tree",
+    )
+    if not status:
+        return ()
+    if not status.endswith(b"\0"):
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "relocated Git working-tree status is not NUL-terminated",
+            "repair the relocated checkout",
+        )
+    paths: list[str] = []
+    for record in status[:-1].split(b"\0"):
+        if len(record) < 4 or record[2:3] != b" ":
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                "relocated Git working-tree status is malformed",
+                "repair the relocated checkout",
+            )
+        try:
+            state = record[:2].decode("ascii")
+        except UnicodeDecodeError as error:
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                f"relocated Git working-tree status is not ASCII: {error}",
+                "repair the relocated checkout",
+            )
+        if (
+            state == "  "
+            or any(character not in " MADRCUT?" for character in state)
+            or ("?" in state and state != "??")
+        ):
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                "relocated Git working-tree status is malformed",
+                "repair the relocated checkout",
+            )
+        try:
+            path = record[3:].decode("utf-8")
+        except UnicodeDecodeError as error:
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                f"relocated Git working-tree path is not UTF-8: {error}",
+                "repair the relocated checkout",
+            )
+        relative = PurePosixPath(path)
+        if not path or relative.is_absolute() or any(part == ".." for part in relative.parts):
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                "relocated Git working-tree path is not repository-relative",
+                "repair the relocated checkout",
+            )
+        paths.append(relative.as_posix())
+    return tuple(paths)
+
+
+def _is_candidate_worktree_path(path: str, candidate_paths: Sequence[str]) -> bool:
+    return any(path == candidate or path.startswith(f"{candidate}/") for candidate in candidate_paths)
+
+
+def _nonregular_relocated_worktree_paths(repository: Path, *, candidate_paths: Sequence[str]) -> tuple[str, ...]:
+    directories = [repository]
+    paths: list[str] = []
+    while directories:
+        directory = directories.pop()
+        try:
+            children = tuple(directory.iterdir())
+        except OSError as error:
+            _fail(
+                "artifact_corrupt",
+                "environment",
+                f"could not inspect relocated working-tree directory: {error}",
+                "repair the relocated checkout",
+            )
+        for child in children:
+            relative = child.relative_to(repository).as_posix()
+            if relative == ".git" or _is_candidate_worktree_path(relative, candidate_paths):
+                continue
+            try:
+                mode = child.lstat().st_mode
+            except OSError as error:
+                _fail(
+                    "artifact_corrupt",
+                    "environment",
+                    f"could not inspect relocated working-tree entry: {error}",
+                    "repair the relocated checkout",
+                )
+            if stat.S_ISDIR(mode):
+                directories.append(child)
+            elif not stat.S_ISREG(mode):
+                paths.append(relative)
+    return tuple(paths)
+
+
+def _ignored_relocated_worktree_paths(repository: Path, paths: Sequence[str]) -> frozenset[str]:
+    if not paths:
+        return frozenset()
+    try:
+        input_paths = b"".join(path.encode("utf-8") + b"\0" for path in paths)
+    except UnicodeEncodeError as error:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            f"relocated Git working-tree path is not UTF-8: {error}",
+            "repair the relocated checkout",
+        )
+    try:
+        completed = subprocess.run(
+            ("git", "check-ignore", "-z", "--stdin"),
+            cwd=repository,
+            check=False,
+            capture_output=True,
+            input=input_paths,
+        )
+    except OSError as error:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            f"could not inspect relocated Git ignored paths: {error}",
+            "repair the relocated checkout",
+        )
+    if completed.returncode not in (0, 1):
+        _fail(
+            "artifact_foreign",
+            "environment",
+            "could not resolve ignored paths from the relocated Git checkout",
+            "audit from the recorded clean source checkout",
+        )
+    try:
+        ignored = frozenset(path.decode("utf-8") for path in completed.stdout.split(b"\0") if path)
+    except UnicodeDecodeError as error:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            f"relocated Git ignored path is not UTF-8: {error}",
+            "repair the relocated checkout",
+        )
+    if any(path not in paths for path in ignored):
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "relocated Git ignored paths do not match the inspected worktree",
+            "repair the relocated checkout",
+        )
+    return ignored
+
+
+def _require_permitted_relocated_worktree(
+    repository: Path,
+    *,
+    candidate: Path,
+    source_candidate: Path | None = None,
+) -> None:
+    candidate_paths: list[str] = []
+    for root in (candidate, source_candidate):
+        if root is None:
+            continue
+        try:
+            relative = root.relative_to(repository).as_posix()
+        except ValueError:
+            continue
+        if relative != ".":
+            candidate_paths.append(relative)
+    for path in _relocated_worktree_paths(repository):
+        if _permitted_relocated_change(path):
+            continue
+        if _is_candidate_worktree_path(path, candidate_paths):
+            continue
+        _fail(
+            "artifact_foreign",
+            "environment",
+            f"relocated checkout contains non-evidence working-tree change: {path}",
+            "audit a clean descendant containing only accepted evidence and report changes",
+        )
+    nonregular_paths = _nonregular_relocated_worktree_paths(repository, candidate_paths=candidate_paths)
+    ignored_paths = _ignored_relocated_worktree_paths(repository, nonregular_paths)
+    for path in nonregular_paths:
+        if path not in ignored_paths:
+            _fail(
+                "artifact_foreign",
+                "environment",
+                f"relocated checkout contains non-regular working-tree entry: {path}",
+                "remove the non-regular entry or audit a clean relocated checkout",
+            )
+
+
 def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
     document = _exact(
         _json(content, name="environment.json"),
@@ -723,11 +931,7 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             f"post-source path is not UTF-8: {error}",
             "repair the relocated checkout",
         )
-    permitted_paths = {"examples/validation_study/REPORT.md", "examples/validation_study/README.md"}
-    if any(
-        path not in permitted_paths and not path.startswith("examples/validation_study/evidence/")
-        for path in changed_paths
-    ):
+    if any(not _permitted_relocated_change(path) for path in changed_paths):
         _fail(
             "artifact_foreign",
             "environment",
@@ -1787,7 +1991,7 @@ def _report_inputs(
                     right_reference,
                     align_generated(left.reference, reverse_window),
                     reverse_window,
-                    left.config.similarity,
+                    right.config.similarity,
                 )
             )
             pairs.append(
@@ -1938,7 +2142,14 @@ def _headers_and_observations(bundle: Path, *, prerequisites: Mapping[str, objec
     return paths
 
 
-def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> AuditResult:
+def _audit(
+    bundle: Path,
+    repository: Path,
+    entries: tuple[_Entry, ...],
+    *,
+    source_candidate: Path | None = None,
+) -> AuditResult:
+    _require_permitted_relocated_worktree(repository, candidate=bundle, source_candidate=source_candidate)
     index = _exact(
         _json(_read_regular(bundle / _INDEX, affected=_INDEX), name=_INDEX),
         (
@@ -2157,7 +2368,7 @@ def _audit(bundle: Path, repository: Path, entries: tuple[_Entry, ...]) -> Audit
     )
 
 
-def audit_bundle(bundle: Path, *, repository: Path) -> AuditResult:
+def _audit_bundle(bundle: Path, *, repository: Path, source_candidate: Path | None = None) -> AuditResult:
     """Strictly audit one complete candidate before exclusive accepted publication."""
     try:
         root = _directory(bundle, name="bundle")
@@ -2173,7 +2384,7 @@ def audit_bundle(bundle: Path, *, repository: Path) -> AuditResult:
             )
         manifest = _read_regular(root / _MANIFEST, affected=_MANIFEST)
         entries = _verify_inventory(root, manifest)
-        return _audit(root, repository_root, entries)
+        return _audit(root, repository_root, entries, source_candidate=source_candidate)
     except _Issue as issue:
         outcome = FailureOutcome(
             kind=issue.kind,
@@ -2203,6 +2414,23 @@ def audit_bundle(bundle: Path, *, repository: Path) -> AuditResult:
         error.failure_outcomes = (outcome,)
         error.failure_outcome = outcome
         raise
+
+
+def audit_bundle(bundle: Path, *, repository: Path) -> AuditResult:
+    """Strictly audit one complete candidate before exclusive accepted publication."""
+
+    return _audit_bundle(bundle, repository=repository)
+
+
+def _audit_staged_bundle(  # pyright: ignore[reportUnusedFunction]
+    bundle: Path,
+    *,
+    repository: Path,
+    source_candidate: Path,
+) -> AuditResult:
+    """Audit a copied candidate while excluding its known source from worktree-state evidence."""
+
+    return _audit_bundle(bundle, repository=repository, source_candidate=source_candidate)
 
 
 def build_parser() -> argparse.ArgumentParser:

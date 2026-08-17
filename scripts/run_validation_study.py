@@ -6220,7 +6220,7 @@ def audit_published_study(
 def publish_audited_bundle(candidate: Path, study_id: str, *, repository_root: Path) -> Path:
     """Publish one candidate only after the standalone offline auditor accepts it."""
 
-    from scripts.audit_validation_study import audit_bundle
+    from scripts.audit_validation_study import _audit_staged_bundle  # pyright: ignore[reportPrivateUsage]
 
     root = repository_root.resolve()
     checked_study_id = validate_study_id(study_id)
@@ -6233,7 +6233,7 @@ def publish_audited_bundle(candidate: Path, study_id: str, *, repository_root: P
         ) from error
 
     def audit(candidate_root: Path) -> None:
-        audit_bundle(candidate_root, repository=root)
+        _audit_staged_bundle(candidate_root, repository=root, source_candidate=candidate.resolve())
 
     return publish_accepted_bundle(
         candidate,
@@ -7401,7 +7401,7 @@ def _candidate_natural_variation(training: Sequence[_CandidateTraining]) -> Json
                     right_reference,
                     align_generated(left.reference, reverse_window),
                     reverse_window,
-                    left.config.similarity,
+                    right.config.similarity,
                 )
             )
             pairs.append(
