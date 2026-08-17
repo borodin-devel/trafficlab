@@ -12,31 +12,30 @@ implementation item remains checked only when its behavior is still valid under
 the amended architecture. Corrected or unverified claims are unchecked. Dated
 evidence remains useful history, but it does not satisfy an amended gate.
 
-Phase 1 is Current because it is the earliest reopened owner. Assessment grades
-remain unchanged until Phase 8 has fresh evidence and reassesses them against the
-unchanged [research fitness criteria](RESEARCH_FITNESS_CRITERIA.md).
+Phases 1 through 8 are complete. Phase 8 has fresh retained r18 evidence, an
+unchanged-rubric reassessment, and a clean final documentation re-review.
 
-Only the 17 criteria currently below Acceptable are reopened:
+The 17 reopened criteria now meet the minimum accepted grade:
 
-| Criterion | Name | Current grade | Owning remediation and final gate |
+| Criterion | Name | Reassessed grade | Owning remediation and final gate |
 |---|---|---|---|
-| 1.5 | Generated-trace correctness | Partial | Phases 4 and 8 |
-| 1.7 | End-to-end result consistency | Partial | Phases 6--8 |
-| 2.1 | Coverage of scientifically meaningful controls | Partial | Phases 2, 6, and 8 |
-| 2.2 | Configuration semantics | Partial | Phases 1, 2, and 8 |
-| 2.4 | Effective-configuration fidelity | Partial | Phases 6--8 |
-| 2.6 | Portability of experiment definitions | Partial | Phases 1, 3, 7, and 8 |
-| 3.3 | Stochastic-generation correctness | Partial | Phases 4 and 8 |
-| 3.4 | Model-competition fairness | Partial | Phases 5 and 8 |
-| 3.8 | Scientific validation strength | Partial | Phases 2, 4, 5, and 8 |
-| 3.9 | Assumption and limitation transparency | Partial | Phases 2, 4, 5, 7, and 8 |
-| 4.7 | Adverse-condition behavior and diagnostics | Partial | Phases 3, 6, and 8 |
-| 5.2 | Environment reproducibility | Partial | Phases 1, 3, 7, and 8 |
-| 5.3 | Input preservation | Poor | Phases 7 and 8 |
-| 5.4 | Artifact lineage | Partial | Phases 6--8 |
-| 5.6 | Fresh and resumed rerun equivalence | Partial | Phases 5, 6, and 8 |
-| 5.7 | Protocol reproducibility | Partial | Phases 7 and 8 |
-| 5.8 | Independent reconstruction | Dreadful | Phases 7 and 8 |
+| 1.5 | Generated-trace correctness | Acceptable | Phases 4 and 8 |
+| 1.7 | End-to-end result consistency | Acceptable | Phases 6--8 |
+| 2.1 | Coverage of scientifically meaningful controls | Acceptable | Phases 2, 6, and 8 |
+| 2.2 | Configuration semantics | Acceptable | Phases 1, 2, and 8 |
+| 2.4 | Effective-configuration fidelity | Acceptable | Phases 6--8 |
+| 2.6 | Portability of experiment definitions | Acceptable | Phases 1, 3, 7, and 8 |
+| 3.3 | Stochastic-generation correctness | Acceptable | Phases 4 and 8 |
+| 3.4 | Model-competition fairness | Acceptable | Phases 5 and 8 |
+| 3.8 | Scientific validation strength | Acceptable | Phases 2, 4, 5, and 8 |
+| 3.9 | Assumption and limitation transparency | Acceptable | Phases 2, 4, 5, 7, and 8 |
+| 4.7 | Adverse-condition behavior and diagnostics | Acceptable | Phases 3, 6, and 8 |
+| 5.2 | Environment reproducibility | Acceptable | Phases 1, 3, 7, and 8 |
+| 5.3 | Input preservation | Acceptable | Phases 7 and 8 |
+| 5.4 | Artifact lineage | Acceptable | Phases 6--8 |
+| 5.6 | Fresh and resumed rerun equivalence | Acceptable | Phases 5, 6, and 8 |
+| 5.7 | Protocol reproducibility | Acceptable | Phases 7 and 8 |
+| 5.8 | Independent reconstruction | Acceptable | Phases 7 and 8 |
 
 | Phase | Primary outcome |
 |---|---|
@@ -51,7 +50,19 @@ Only the 17 criteria currently below Acceptable are reopened:
 
 Phases 7 and 8 validate the complete MVP rather than adding commands.
 
-## Phase 1 — Project, configuration, and local preflight (Current)
+## Closure evidence (verified 2026-08-17)
+
+The accepted r18 bundle records source `2f1537b0f0339bbf761a6c04a33035ee8fd26e8b`
+and is published at evidence commit `c310900b139b806f45f13785bb1d204554515eef`.
+Locked/static/fixture gates passed; bounded non-external verification passed
+3,402 tests with 97.82% branch-aware coverage; retained same-source prerequisites
+passed 19 Docker tests and one Internet smoke; current-tree and guarded no-hardlink
+clone audits each accepted 230 retained files. Independent whole-branch review found
+no Critical or Important implementation/evidence findings through `c310900`.
+Task 16 documentation re-review found no Critical, Important, or Minor findings.
+Historical evidence below remains context only.
+
+## Phase 1 — Project, configuration, and local preflight (Complete)
 
 **Goal:** A developer can install Trafficlab, parse one experiment file, and
 obtain the same validated effective configuration from the CLI and Python API
@@ -88,13 +99,13 @@ without requiring Docker.
 - [x] Snapshot the effective configuration into a new run directory without
   silently replacing an existing run.
 - [x] Provide concise console errors and detailed file logging.
-- [ ] Implement the [portable configuration and realized configuration](SYSTEM.md#portable-and-realized-configuration)
+- [x] Implement the [portable configuration and realized configuration](SYSTEM.md#portable-and-realized-configuration)
   pair, retaining every explicit scientific and workload value while resolving
   only the run directory and declared bind-mount host-source paths.
-- [ ] Require all four mandatory similarity method settings in configuration;
+- [x] Require all four mandatory similarity method settings in configuration;
   make a zero weight affect only aggregate contribution, never execution,
   validation, diagnostics, or the fixed result shape.
-- [ ] Track an [accepted evidence bundle](SYSTEM.md#published-study-evidence) only
+- [x] Track an [accepted evidence bundle](SYSTEM.md#published-study-evidence) only
   under `examples/validation_study/evidence/<study-id>/`, while ordinary, failed,
   and scratch runs remain ignored and unaudited evidence cannot be committed.
 
@@ -114,11 +125,11 @@ without requiring Docker.
   mounts, and deterministic configuration snapshots.
 - [x] CLI integration-test identical effective configuration and errors from
   `preflight --config-only` and the injected Python API, with no Docker call.
-- [ ] Round-trip portable and realized configurations through the CLI and Python
+- [x] Round-trip portable and realized configurations through the CLI and Python
   API, proving exact non-path fidelity and relocation-only path differences.
-- [ ] Round-trip one-hot and mixed method weights, including zero-weight methods,
+- [x] Round-trip one-hot and mixed method weights, including zero-weight methods,
   and require all four settings and diagnostics to remain present.
-- [ ] Test the narrow accepted evidence bundle tracking exception and reject publication
+- [x] Test the narrow accepted evidence bundle tracking exception and reject publication
   until the retained bundle passes its bounded offline audit.
 
 **Done when:** a clean clone passes the locked sync, formatting, linting, type,
@@ -128,7 +139,9 @@ contacting Docker. The portable configuration and realized configuration are
 faithful after relocation, all four method settings survive zero-weight round
 trips, and only an audited accepted evidence bundle can enter the checked path.
 
-## Phase 2 — PCAPNG, canonical trace, and similarity
+**Done-when status (verified 2026-08-17): Complete.**
+
+## Phase 2 — PCAPNG, canonical trace, and similarity (Complete)
 
 **Goal:** Checked-in reference and generated PCAPNG fixtures can be compared
 through four independently verified, interpretable component scores.
@@ -155,7 +168,7 @@ through four independently verified, interpretable component scores.
   \(2\sum_h B_h\le C_{max}\) cell cap.
 - [x] Aggregate configured method weights while retaining every diagnostic.
 - [x] Implement `trafficlab compare` over the shared parser and four methods.
-- [ ] Enforce the [mandatory similarity method contract](similarity_methods/README.md#aggregate-fitness): every
+- [x] Enforce the [mandatory similarity method contract](similarity_methods/README.md#aggregate-fitness): every
   method executes and retains diagnostics at every weight, and zero weight changes
   only its aggregate contribution.
 
@@ -172,7 +185,7 @@ through four independently verified, interpretable component scores.
 - [x] Integration-test all four methods against one reference/generated fixture
   pair and validate `similarity.json`.
 - [x] Use only checked-in fixtures; no Phase 2 test starts or requires Docker.
-- [ ] Directly test one-hot, mixed, and zero-weight aggregates, including
+- [x] Directly test one-hot, mixed, and zero-weight aggregates, including
   execution, diagnostics, input validation, and failure propagation for each
   zero-weight mandatory similarity method.
 
@@ -181,7 +194,9 @@ scores for checked-in fixture PCAPNG files, and every equation has a hand-checke
 test. All four mandatory methods execute with a fixed result shape for every
 valid weight vector, including zero weights.
 
-## Phase 3 — Docker preflight and reference capture
+**Done-when status (verified 2026-08-17): Complete.**
+
+## Phase 3 — Docker preflight and reference capture (Complete)
 
 **Goal:** A configured containerized program can access the Internet and produce
 a validated reference PCAPNG without Trafficlab changing host networking.
@@ -226,14 +241,14 @@ a validated reference PCAPNG without Trafficlab changing host networking.
   visible on failure using the remaining total-run budget. A zero budget makes
   no Docker command and reports the last-known inventory as possibly remaining;
   expiry kills the local CLI and permits no later Docker query.
-- [ ] Make the
+- [x] Make the
   [capture environment reproducible](CAPTURE.md#reproducible-capture-environment) with an exact base
   digest, dated Debian snapshot, exact direct-package versions, and a checked
   `docker/capture/image-lock.json` expected content identity.
-- [ ] Record target and capture references and resolved content identities, and
+- [x] Record target and capture references and resolved content identities, and
   reject incompatible architecture, image, capture-tool, mount, or mounted-input
   identities before capture or publication.
-- [ ] Emit the canonical failure outcome fields for every capture boundary,
+- [x] Emit the canonical failure outcome fields for every capture boundary,
   including affected evidence, evidence state, corrective action, authority,
   optional exact process status, and possibly remaining cleanup inventory.
 
@@ -266,10 +281,10 @@ a validated reference PCAPNG without Trafficlab changing host networking.
 - [x] Use a target fixture with no shell or idle command; require direct launch
   without a wrapper, PID file, or Compose `exec`.
 - [x] Run the opt-in Internet smoke test with a real HTTPS client.
-- [ ] Rebuild the capture image from its checked inputs and require its resolved
+- [x] Rebuild the capture image from its checked inputs and require its resolved
   content identity to match the expected identity; fail rather than update on an
   unavailable or changed snapshot, package, base, or image input.
-- [ ] Test every fresh-capture environment compatibility field and the complete
+- [x] Test every fresh-capture environment compatibility field and the complete
   capture subset of the [canonical diagnostic matrix](TESTING.md#canonical-adverse-condition-diagnostics).
 
 **Done when:** plain `trafficlab preflight` succeeds for the test topology and
@@ -277,6 +292,8 @@ a validated reference PCAPNG without Trafficlab changing host networking.
 controlled integration workload and one real Internet workload, with clean
 Docker state afterward. The capture image rebuilds to its checked identity, and
 environment compatibility plus canonical capture diagnostics pass directly.
+
+**Done-when status (verified 2026-08-17): Complete.**
 
 **Docker evidence (verified 2026-08-14):** the exact guarded command
 `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M
@@ -293,7 +310,7 @@ parseable captures and clean labelled-resource teardown, but it predates the
 amended capture-image, environment-compatibility, and retained-evidence gates
 and does not satisfy them.
 
-## Phase 4 — Three traffic models
+## Phase 4 — Three traffic models (Complete)
 
 **Goal:** Each MVP model can fit the same reference and generate a deterministic,
 bounded synthetic trace through one shared interface.
@@ -312,7 +329,7 @@ bounded synthetic trace through one shared interface.
 - [x] Implement Markov Renewal state construction, smoothed transitions, the
   uniform zero-smoothing empty-row rule, empirical conditional timing, its
   unchanged global-IAT fallback, and generation.
-- [ ] Implement two-state MMPP parameter repair,
+- [x] Implement two-state MMPP parameter repair,
   [arrival-epoch initialization](traffic_models/mmpp.md#mathematical-definition),
   conditioned `t=0` arrival, CTMC/arrival simulation, and joint empirical marks.
 - [x] Enforce complete `[0, W]` generation, common reliability guards,
@@ -320,28 +337,28 @@ bounded synthetic trace through one shared interface.
 - [x] Implement `trafficlab generate`: load a fitted model, generate canonical
   events with its stored `observation_window_seconds`, configured final seed, and
   reliability guards, then render `generated.pcapng`.
-- [ ] Bump the global scientific artifact schema for corrected model semantics;
+- [x] Bump the global scientific artifact schema for corrected model semantics;
   reject well-formed older fitted models and checkpoints as incompatible before
   generation, resume, or stage reuse.
 
 **Tests:**
 
-- [ ] Unit-test every estimator, repair rule, invariant, fallback, event choice,
+- [x] Unit-test every estimator, repair rule, invariant, fallback, event choice,
   limit, and deterministic example in the amended model documents, including the
   MMPP arrival-epoch threshold, conditioned arrival, and RNG order.
 - [x] For Markov Renewal, verify the `[A, B]` empty-row calculation,
   positive-smoothing equivalence, global-IAT fallback, model JSON round-trip,
   fixed-seed generation, missing/nonfinite/negative global-IAT failures, and
   valid zero IATs.
-- [ ] Run each family from fixture reference through current-schema model JSON
+- [x] Run each family from fixture reference through current-schema model JSON
   and generated
   PCAPNG, then reload and reproduce the same fixed-seed output.
 - [x] For every family, test the `W` endpoint, natural completion, incomplete
   generation at each reliability guard, and serialized observation window.
-- [ ] Load a checked-in current-schema fitted-model fixture through
+- [x] Load a checked-in current-schema fitted-model fixture through
   `trafficlab generate`,
   produce deterministic canonical events and `generated.pcapng`, and reload both.
-- [ ] Run the bounded [direct scientific-validation matrix](TESTING.md#bounded-scientific-validation-matrix)
+- [x] Run the bounded [direct scientific-validation matrix](TESTING.md#bounded-scientific-validation-matrix)
   for Poisson empirical, Markov Renewal, and MMPP with predeclared seeds,
   sample sizes, tolerances, analytical or independent test-only oracles, and
   direct completion and joint-mark evidence.
@@ -351,7 +368,9 @@ bounded synthetic trace through one shared interface.
 model fixture. Current-schema artifacts enforce corrected semantics, and all
 three families pass their bounded direct scientific validation.
 
-## Phase 5 — Heterogeneous genetic fitting and checkpoint resume
+**Done-when status (verified 2026-08-17): Complete.**
+
+## Phase 5 — Heterogeneous genetic fitting and checkpoint resume (Complete)
 
 **Goal:** One bounded search can compare all enabled model families fairly,
 resume exactly, and publish an independently validated winner.
@@ -365,11 +384,11 @@ resume exactly, and publish an independently validated winner.
 
 - [x] Implement `trafficlab fit` over the shared model, similarity, and genetic
   interfaces.
-- [ ] Derive one neutral `family_priority` from a temporary
+- [x] Derive one neutral `family_priority` from a temporary
   `random.Random(master_seed).sample(sorted_family_names, len(sorted_family_names))`
   call that consumes no search RNG draw, then use it for quota remainders,
   initial family order, and exact cross-family ties.
-- [ ] Implement deterministic family quotas, common trial seeds, tournament
+- [x] Implement deterministic family quotas, common trial seeds, tournament
   selection, within-family stable-ID ties, `family_priority` cross-family ties,
   global elites, and family champions without input-order or lexical preference.
 - [x] Implement uniform same-family crossover, transformed Gaussian mutation in
@@ -386,7 +405,7 @@ resume exactly, and publish an independently validated winner.
   generation as invalid fitness with a direct reason.
 - [x] Atomically checkpoint complete population, RNG state, settings, and
   history after every evaluated generation.
-- [ ] Retain and validate `family_priority` plus the current scientific artifact
+- [x] Retain and validate `family_priority` plus the current scientific artifact
   schema in checkpoint state before any resume draw, and reevaluate the winner
   with the configured fresh simulation seed on its training reference.
 - [x] Write per-family and overall progress to `ga_history.csv` and winner data
@@ -394,7 +413,7 @@ resume exactly, and publish an independently validated winner.
 
 **Tests:**
 
-- [ ] Unit-test priority derivation, quotas, selection, ties, probability
+- [x] Unit-test priority derivation, quotas, selection, ties, probability
   endpoints, coordinate
   encode/decode, initialization, reflection examples, fixed RNG order, all three
   family repairs, exact duplicates, forced mutation, invalid duplicate attempts,
@@ -409,15 +428,15 @@ resume exactly, and publish an independently validated winner.
   settings, cross-family forced mutation, and representation of every family.
 - [x] Require every competing family and seed to receive the same `W` and reject
   a guard-truncated candidate as incomplete generation.
-- [ ] Permute configuration and registry family order and require identical
+- [x] Permute configuration and registry family order and require identical
   priority, quotas, initial slots, children, and winner; exercise every family
   priority position, equal-fitness ties, symmetric invalids, and a controlled
   unique winner under mixed weights.
-- [ ] Interrupt and resume a search; require the next population, history, and
+- [x] Interrupt and resume a search; require the next population, history, and
   winner to match an uninterrupted run exactly, including repaired gene tuples,
   child IDs, `family_priority`, and RNG state. Alter each compatibility class in
   turn and reject it before reproduction.
-- [ ] Prove full-pipeline resumed equivalence through final publication as owned
+- [x] Prove full-pipeline resumed equivalence through final publication as owned
   by [Testing](TESTING.md#full-pipeline-resume-and-reuse-equivalence), including
   byte-identical scientific artifacts and lineage.
 
@@ -425,7 +444,9 @@ resume exactly, and publish an independently validated winner.
 model without lexical or input-order privilege, and compatible checkpoint resume
 is behaviorally identical to uninterrupted fitting through final publication.
 
-## Phase 6 — Run orchestration and complete integration
+**Done-when status (verified 2026-08-17): Complete.**
+
+## Phase 6 — Run orchestration and complete integration (Complete)
 
 **Goal:** One command runs the complete experiment while individual commands
 support fast stage-by-stage research iteration.
@@ -440,7 +461,7 @@ support fast stage-by-stage research iteration.
 
 - [x] Compose the completed preflight, capture, fit, generate, and compare
   functions inside `trafficlab run` without alternate subprocess protocols.
-- [ ] Validate every stage output against the exact
+- [x] Validate every stage output against the exact
   [compatibility matrix](SYSTEM.md#stage-compatibility), including scientific
   artifact schema, realized configuration, authoritative input identities, and
   lineage, before reuse; preserve completed outputs after a later failure.
@@ -448,7 +469,7 @@ support fast stage-by-stage research iteration.
 - [x] Produce exactly the documented run directory and readable summaries.
 - [x] Keep the documented fast, integration, Docker, and Internet-smoke commands
   working for the complete pipeline.
-- [ ] Emit one canonical failure outcome for every configuration, external,
+- [x] Emit one canonical failure outcome for every configuration, external,
   artifact, scientific, numeric, generation, publication, cleanup, and combined
   failure boundary without changing the established primary-error arbitration.
 
@@ -458,15 +479,15 @@ support fast stage-by-stage research iteration.
   a checked-in capture fixture without Docker; this is not `run`.
 - [x] Run complete `trafficlab run` with the deterministic Docker capture
   workload.
-- [ ] Exercise missing, corrupt, changed, foreign, stale, and incompatible-schema
+- [x] Exercise missing, corrupt, changed, foreign, stale, and incompatible-schema
   outputs across capture, fit, generate, and compare; require the first
   incompatible field before any reuse or publication.
 - [x] Exercise cleanup and artifact preservation on a failure at every stage.
-- [ ] Run the complete
+- [x] Run the complete
   [canonical adverse-condition diagnostic matrix](TESTING.md#canonical-adverse-condition-diagnostics)
   and reproduce its checked credential-free fixture without Docker or network
   access.
-- [ ] Compare uninterrupted and checkpoint-resumed
+- [x] Compare uninterrupted and checkpoint-resumed
   `fit -> generate -> compare -> final publication` runs and
   require equivalent configuration, family priority, scientific bytes,
   identities, lineage, all four mandatory similarity method diagnostics, and
@@ -477,6 +498,8 @@ Docker-backed experiment, and each individual command can safely reproduce its
 own stage. Compatible stage reuse preserves exact lineage, fresh and resumed
 final artifacts are equivalent, and the canonical failure matrix passes.
 
+**Done-when status (verified 2026-08-17): Complete.**
+
 **Historical verification (2026-08-13):** the exact bounded fast and
 branch-coverage gates passed; the checked offline pipeline and old corruption
 matrix passed; and the serial controlled-Docker suite completed the full run and
@@ -485,7 +508,7 @@ labelled resource residue. This predates the amended compatibility, lineage,
 diagnostic, and resumed-equivalence gates. The old Phase 7 run trees are absent,
 so they do not supply complete study evidence.
 
-## Phase 7 — MVP validation on real programs
+## Phase 7 — MVP validation on real programs (Complete)
 
 **Goal:** Establish whether the prototype produces useful results on multiple
 real containerized workloads under corrected semantics and retained,
@@ -502,21 +525,21 @@ infrastructure.
 - [x] Select at least three reproducible workloads with different traffic
   shapes, such as a short HTTP transfer, a streaming transfer, and a bursty
   multi-request client.
-- [ ] Repeat primary captures to measure natural variation in each workload
+- [x] Repeat primary captures to measure natural variation in each workload
   under the corrected scientific artifact schema.
-- [ ] Run all three model families and record component scores, winning family,
+- [x] Run all three model families and record component scores, winning family,
   runtime, and run-to-run variance.
-- [ ] Inspect reference/generated traces, explain major metric disagreements,
+- [x] Inspect reference/generated traces, explain major metric disagreements,
   and state the finite-sample, model, metric, and generalization limitations
   beside the interpreted results. Require the controlled one-factor weight and
   invalid-chromosome interpretations defined by the accepted-study contract.
-- [ ] Publish a concise report with portable and realized configurations,
+- [x] Publish a concise report with portable and realized configurations,
   reproducible commands, separated training, natural-variation, fresh simulation
   seed, and held-out reference claims, and exact artifact lineage.
-- [ ] After freezing the training protocol, capture one genuine independent
+- [x] After freezing the training protocol, capture one genuine independent
   held-out reference per workload and evaluate the training-selected fixed model
   without refitting, family reselection, seed choice, or protocol amendment.
-- [ ] Check the complete
+- [x] Check the complete
   [accepted evidence bundle](SYSTEM.md#published-study-evidence), including every cited
   strict nine-file run tree, held-out input and result, configuration pair,
   protocol-used transfer header and external observation, prerequisite record,
@@ -524,23 +547,23 @@ infrastructure.
 
 **Tests:**
 
-- [ ] Run the opt-in Internet capture smoke test before the replacement study on
+- [x] Run the opt-in Internet capture smoke test before the replacement study on
   the same source revision, tree, lock, Python patch, and scientific schema.
-- [ ] Reproduce every report-cited run from its portable configuration,
+- [x] Reproduce every report-cited run from its portable configuration,
   realized configuration, retained inputs, and seeds in a compatible clean
   environment.
-- [ ] Confirm that every training winner is evaluated with the predeclared fresh
+- [x] Confirm that every training winner is evaluated with the predeclared fresh
   simulation seed, distinct from selection seeds, without calling that result
   held-out evidence.
-- [ ] Run the bounded [offline audit](TESTING.md#bounded-offline-audit) from a
+- [x] Run the bounded [offline audit](TESTING.md#bounded-offline-audit) from a
   relocated clean clone without
   Docker, Internet, the high-level run command, missing-byte fetches, or trust in
   precomputed report values; reconstruct every score, summary, lineage edge, and
   report calculation.
-- [ ] Reject representative missing, corrupt, foreign, and substituted accepted
+- [x] Reject representative missing, corrupt, foreign, and substituted accepted
   evidence with the canonical first-mismatch diagnostic and no acceptance
   publication.
-- [ ] After a candidate passes its bounded offline audit, reject an occupied
+- [x] After a candidate passes its bounded offline audit, reject an occupied
   study-ID publication, preserve the existing different accepted bundle
   byte-for-byte, and publish no candidate evidence.
 
@@ -549,6 +572,8 @@ training, natural variation, fresh simulation seed behavior, and genuine held-ou
 evidence separately; every protocol-used transfer header, external observation,
 and cited byte is checked; publication is exclusive; and the clean-clone offline
 audit reconstructs the complete report and lineage without Docker or Internet.
+
+**Done-when status (verified 2026-08-17): Complete.**
 
 **Historical evidence (2026-08-14):** study
 `validation-study-20260814-ovh-r3` reported nine primary runs plus one
@@ -560,7 +585,7 @@ independent held-out references, complete checked evidence, and clean-clone
 offline reconstruction. It is therefore insufficient for the amended Phase 7
 gate.
 
-## Phase 8 — Minimum research fitness acceptance
+## Phase 8 — Minimum research fitness acceptance (Complete)
 
 **Goal:** Accept the unchanged 17-criterion research-fitness target only after
 all reopened work has fresh, independently reviewed evidence. This phase adds no
@@ -572,29 +597,31 @@ phase contract above, and the complete [testing strategy](TESTING.md).
 
 **Acceptance gates:**
 
-- [ ] Pass every reopened Done-when gate in Phases 1--7.
-- [ ] Pass the bounded analytical scientific-validation matrix for every model,
+- [x] Pass every reopened Done-when gate in Phases 1--7.
+- [x] Pass the bounded analytical scientific-validation matrix for every model,
   mandatory similarity method, and neutral family-competition case.
-- [ ] Transfer one portable configuration to a relocated compatible clean
+- [x] Transfer one portable configuration to a relocated compatible clean
   environment and prove the exact permitted and forbidden realization changes.
-- [ ] Rebuild and preflight the reproducible capture environment from its pinned
+- [x] Rebuild and preflight the reproducible capture environment from its pinned
   base digest, Debian snapshot, exact packages, and checked image identity.
-- [ ] Pass fresh and resumed full-pipeline equivalence through final artifacts,
+- [x] Pass fresh and resumed full-pipeline equivalence through final artifacts,
   identities, lineage, and publication inventory.
-- [ ] Pass the complete canonical adverse-condition diagnostic matrix and its
+- [x] Pass the complete canonical adverse-condition diagnostic matrix and its
   offline checked-fixture reconstruction.
-- [ ] Validate the checked accepted evidence bundle and reconstruct its complete
+- [x] Validate the checked accepted evidence bundle and reconstruct its complete
   study report with the bounded clean-clone offline audit.
-- [ ] Rerun every available Docker and Internet prerequisite against the same
+- [x] Rerun every available Docker and Internet prerequisite against the same
   source revision, tree, lock, Python patch, and scientific artifact schema as
   the accepted study.
-- [ ] Obtain independent review with zero Critical or Important findings.
-- [ ] Reassess all 17 rows in the research-fitness traceability table against the
+- [x] Obtain independent review with zero Critical or Important findings.
+- [x] Reassess all 17 rows in the research-fitness traceability table against the
   unchanged rubric and require every grade to be Acceptable or better.
 
 **Done when:** every acceptance gate above has fresh retained evidence and the
 unchanged-rubric reassessment grades all 17 deficient criteria Acceptable or
 better.
+
+**Done-when status (verified 2026-08-17): Complete.**
 
 ## Later, only if evidence requires it
 

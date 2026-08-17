@@ -26,19 +26,20 @@ The complete `trafficlab run` command performs this sequence. Each stage is also
 available separately so a researcher can iterate on a model or metric without
 repeating a real capture.
 
-## Current research fitness work
+## Research fitness closure
 
-Phase 1 is Current because it is the earliest phase reopened by the
-[research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md). The
-[approved remediation design](../docs/superpowers/specs/2026-08-14-research-fitness-remediation-design.md)
-and [Roadmap](ROADMAP.md) target the minimum work needed to bring every deficient
-[research fitness criterion](RESEARCH_FITNESS_CRITERIA.md) to Acceptable or
-better.
+The [research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) now
+records the 2026-08-17 unchanged-rubric reassessment. All 17 criteria reopened by
+the [Roadmap](ROADMAP.md) meet Acceptable or better, backed by the accepted
+[r18 Validation Study](../examples/validation_study/REPORT.md), final local gates,
+offline clean-clone reconstruction, and a final documentation re-review with no
+Critical, Important, or Minor findings.
 
-The work tightens scientific correctness, configurability, robustness, and
-reproducibility while preserving the same one-process MVP workflow. It adds no
-new model, metric, service, security subsystem, enterprise infrastructure, or
-multi-user scope.
+The completed work tightens scientific correctness, configurability, robustness,
+and reproducibility while preserving the same one-process MVP workflow. It adds
+no new model, metric, service, security subsystem, enterprise infrastructure, or
+multi-user scope. The approved remediation design and earlier evidence remain
+development history rather than current status.
 
 ## Principles
 
@@ -67,7 +68,7 @@ multi-user scope.
   rubric for scientific correctness, configurability, robustness, and
   reproducibility without grading the current implementation.
 - [Research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) records
-  the unchanged evidence grades that reopened the current work.
+  the original evidence grades and the 2026-08-17 closure reassessment.
 - [Remediation design](../docs/superpowers/specs/2026-08-14-research-fitness-remediation-design.md)
   defines the minimum Acceptable target and targeted phase reopenings.
 - [Genetic models](genetic_models/README.md) describes model-family competition

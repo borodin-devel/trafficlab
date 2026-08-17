@@ -426,18 +426,20 @@ captures each. A complete retained candidate records canonical prerequisites,
 protocol headers and observations, environment compatibility, portable and
 realized configurations, nine training run trees, nine same-reference
 fresh-simulation records, and three independent fixed-model heldout bundles.
-Raw Internet PCAPNG files remain outside Git; the checked credential-free
-fixture proves the offline audit contract.
+The accepted r18 bundle retains its exact reference and generated PCAPNG bytes;
+ordinary, failed, and scratch captures remain outside Git. The checked
+credential-free fixture proves the same offline audit contract without network
+access.
 
 - [Study instructions and retained-evidence policy](examples/validation_study/README.md)
 - [Study results and interpretation](examples/validation_study/REPORT.md)
 
-No replacement study has been collected under the corrected protocol yet. The
-historical Phase 7 material is intentionally not an accepted result: it lacks
-the corrected scientific schema, complete retained run trees, fresh-simulation
-separation, genuine held-out references, and clean-clone reconstruction. The
-operator guide freezes the local collection and audit procedure before any
-external command is authorized.
+The accepted corrected study is
+[`2026-08-17-research-fitness-r18`](examples/validation_study/evidence/2026-08-17-research-fitness-r18/manifest.json).
+It retains 230 manifest-indexed evidence files, nine training trees, nine
+same-reference fresh simulations, three independent held-out bundles, exact
+prerequisites, and a guarded offline clean-clone reconstruction. Historical
+Phase 7 material and earlier attempts remain non-accepted evidence.
 
 ## Limitations
 
