@@ -2922,6 +2922,155 @@ def _remove_owned_prerequisite_capture_image(
     )
 
 
+_PREREQUISITE_IGNORED_TOOL_ROOTS = frozenset(
+    {
+        ".superpowers",
+        ".venv",
+        ".worktrees",
+        ".pytest_cache",
+        ".pyright",
+        ".ruff_cache",
+        "build",
+        "dist",
+        "htmlcov",
+    }
+)
+_PREREQUISITE_IGNORED_TOOL_FILES = frozenset({".coverage", "TASK.md"})
+_PREREQUISITE_OWNED_IGNORED_PATHS = frozenset(
+    {
+        "examples/validation_study/prerequisites.json",
+        "examples/validation_study/results.json",
+        "examples/validation_study/configs/short.toml",
+        "examples/validation_study/configs/streaming.toml",
+        "examples/validation_study/configs/bursty.toml",
+    }
+)
+_PREREQUISITE_OWNED_IGNORED_PREFIXES = (
+    "examples/validation_study/.study-work/",
+    "examples/validation_study/.candidates/",
+    "examples/validation_study/evidence/.candidates/",
+)
+
+
+def _prerequisite_publisher_temporary_path(path: str) -> bool:
+    parts = path.split("/")
+    return (
+        len(parts) >= 4
+        and parts[:3] == ["examples", "validation_study", "evidence"]
+        and parts[3].startswith(".")
+        and parts[3].endswith(".tmp")
+    )
+
+
+def _permitted_ignored_prerequisite_worktree_path(path: str) -> bool:
+    parts = path.split("/")
+    first = parts[0]
+    if (
+        path in _PREREQUISITE_IGNORED_TOOL_FILES
+        or first in _PREREQUISITE_IGNORED_TOOL_ROOTS
+        or first == ".env"
+        or first.startswith(".env.")
+        or first.startswith(".coverage.")
+        or "__pycache__" in parts
+        or any(part.endswith(".egg-info") for part in parts)
+    ):
+        return True
+    return (
+        path in _PREREQUISITE_OWNED_IGNORED_PATHS
+        or path.startswith(_PREREQUISITE_OWNED_IGNORED_PREFIXES)
+        or _prerequisite_publisher_temporary_path(path)
+    )
+
+
+def _prerequisite_worktree_entries(repository_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    directories = [repository_root]
+    entries: list[str] = []
+    nonregular_entries: list[str] = []
+    while directories:
+        directory = directories.pop()
+        try:
+            children = tuple(sorted(directory.iterdir(), key=lambda child: child.name))
+        except OSError as error:
+            raise ValueError(f"could not inspect prerequisite worktree directory: {error}") from error
+        for child in children:
+            relative = child.relative_to(repository_root).as_posix()
+            if relative == ".git" or _permitted_ignored_prerequisite_worktree_path(relative):
+                continue
+            try:
+                mode = child.lstat().st_mode
+            except OSError as error:
+                raise ValueError(f"could not inspect prerequisite worktree entry: {error}") from error
+            if stat.S_ISDIR(mode):
+                directories.append(child)
+            else:
+                entries.append(relative)
+                if not stat.S_ISREG(mode):
+                    nonregular_entries.append(relative)
+    return tuple(entries), tuple(nonregular_entries)
+
+
+def _ignored_prerequisite_worktree_paths(
+    repository_root: Path,
+    paths: Sequence[str],
+    *,
+    runner: CommandRunner,
+) -> frozenset[str]:
+    if not paths:
+        return frozenset()
+    completed = runner(
+        ("git", "check-ignore", "-z", "--", *paths),
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        shell=False,
+        timeout=SUBPROCESS_TIMEOUTS["git_or_version"],
+    )
+    output, _stderr = _completed_output(completed, operation="ignored prerequisite paths")
+    if completed.returncode not in (0, 1):
+        raise ValueError(
+            "could not resolve ignored prerequisite paths: "
+            f"{_command_detail(completed, operation='ignored prerequisite paths')}"
+        )
+    if completed.returncode == 0 and not output:
+        raise ValueError("ignored prerequisite paths must be nonempty for match status")
+    if completed.returncode == 1 and output:
+        raise ValueError("ignored prerequisite paths must be empty for no-match status")
+    if output and not output.endswith(b"\0"):
+        raise ValueError("ignored prerequisite paths must be terminal NUL-delimited")
+    records = output[:-1].split(b"\0") if output else ()
+    try:
+        ignored_paths = tuple(record.decode("utf-8") for record in records)
+    except UnicodeDecodeError as error:
+        raise ValueError(f"ignored prerequisite path is not UTF-8: {error}") from error
+    if len(set(ignored_paths)) != len(ignored_paths):
+        raise ValueError("ignored prerequisite paths must be unique")
+    if any(path not in paths for path in ignored_paths):
+        raise ValueError("ignored prerequisite paths do not match the inspected worktree")
+    return frozenset(ignored_paths)
+
+
+def _require_clean_prerequisite_worktree(repository_root: Path, *, runner: CommandRunner) -> None:
+    status_result = runner(
+        ("git", "status", "--porcelain=v1", "--untracked-files=all"),
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        shell=False,
+        timeout=SUBPROCESS_TIMEOUTS["git_or_version"],
+    )
+    status_stdout, _status_stderr = _completed_output(status_result, operation="Git tree inspection")
+    _require(status_result.returncode == 0, "could not inspect prerequisite Git tree")
+    _require(status_stdout == b"", "prerequisites require an exactly clean tracked and untracked Git tree")
+    entries, nonregular_entries = _prerequisite_worktree_entries(repository_root)
+    ignored_entries = _ignored_prerequisite_worktree_paths(repository_root, entries, runner=runner)
+    for path in entries:
+        if path in ignored_entries and not _permitted_ignored_prerequisite_worktree_path(path):
+            raise ValueError(f"ignored prerequisite worktree entry is not permitted: {path}")
+    for path in nonregular_entries:
+        if path not in ignored_entries:
+            raise ValueError(f"prerequisite worktree contains non-regular entry: {path}")
+
+
 def _timeout_bytes(value: bytes | str | None) -> bytes:
     if value is None:
         return b""
@@ -4030,6 +4179,7 @@ def run_prerequisites(
 ) -> PrerequisiteResults:
     root = repository_root.resolve()
     owned_capture_tag: str | None = None
+    primary: BaseException | None = None
     try:
         _require(root.is_dir(), f"repository root must be an existing directory: {root}")
         url = validate_endpoint_url(url)
@@ -4055,17 +4205,7 @@ def run_prerequisites(
             f"{_command_detail(commit_result, operation='Git commit inspection')}",
         )
         git_commit = _git_commit(_stdout_text(commit_result, operation="Git commit inspection"))
-        status_result = runner(
-            ("git", "status", "--porcelain=v1", "--untracked-files=all"),
-            cwd=root,
-            check=False,
-            capture_output=True,
-            shell=False,
-            timeout=SUBPROCESS_TIMEOUTS["git_or_version"],
-        )
-        status_stdout, _status_stderr = _completed_output(status_result, operation="Git tree inspection")
-        _require(status_result.returncode == 0, "could not inspect prerequisite Git tree")
-        _require(status_stdout == b"", "prerequisites require an exactly clean tracked and untracked Git tree")
+        _require_clean_prerequisite_worktree(root, runner=runner)
         _require(platform.python_version() == "3.12.3", "prerequisites require exact CPython 3.12.3")
 
         docker_version = runner(
@@ -4263,16 +4403,23 @@ def run_prerequisites(
             runner=runner,
         )
         return result
+    except TrafficlabError as error:
+        primary = error
+        raise
     except (OSError, TypeError, ValueError, subprocess.SubprocessError) as error:
         if type(study_id) is str and _STUDY_ID_PATTERN.fullmatch(study_id) is not None:
             _best_effort_preserve_capability_canary(
                 root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / "00-prerequisites",
                 root / "examples" / "validation_study" / ".study-work" / "mount" / study_id / ".capability.headers",
             )
-        raise TrafficlabError(
+        primary = TrafficlabError(
             f"Validation Study prerequisite validation failed: {error}",
             corrective_action="preserve the ignored evidence, correct the prerequisite, and restart with a new study ID",
-        ) from error
+        )
+        raise primary from error
+    except BaseException as error:
+        primary = error
+        raise
     finally:
         if owned_capture_tag is not None:
             tag_to_remove = owned_capture_tag
@@ -4283,8 +4430,16 @@ def run_prerequisites(
                     repository_root=root,
                     runner=runner,
                 )
-            except (OSError, ValueError, subprocess.SubprocessError):
-                pass
+            except BaseException as cleanup_error:
+                if primary is None:
+                    raise TrafficlabError(
+                        f"Validation Study prerequisite capture image cleanup failed: {cleanup_error}",
+                        corrective_action=(
+                            "preserve the prerequisite evidence, remove the exact owned capture image tag, "
+                            "and restart with a new study ID"
+                        ),
+                    ) from cleanup_error
+                primary.add_note(f"prerequisite capture image cleanup failed: {cleanup_error}")
 
 
 def _validate_run_key(value: object, *, name: str = "run key") -> JsonObject:

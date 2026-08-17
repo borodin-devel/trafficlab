@@ -589,10 +589,67 @@ _RELOCATED_DOCUMENTATION_PATHS = frozenset(
     }
 )
 _RELOCATED_EVIDENCE_PREFIX = "examples/validation_study/evidence/"
+_RELOCATED_IGNORED_TOOL_ROOTS = frozenset(
+    {
+        ".superpowers",
+        ".venv",
+        ".worktrees",
+        ".pytest_cache",
+        ".pyright",
+        ".ruff_cache",
+        "build",
+        "dist",
+        "htmlcov",
+    }
+)
+_RELOCATED_IGNORED_TOOL_FILES = frozenset({".coverage", "TASK.md"})
+_RELOCATED_IGNORED_VALIDATION_PATHS = frozenset(
+    {
+        "examples/validation_study/prerequisites.json",
+        "examples/validation_study/configs/short.toml",
+        "examples/validation_study/configs/streaming.toml",
+        "examples/validation_study/configs/bursty.toml",
+    }
+)
+_RELOCATED_IGNORED_VALIDATION_PREFIXES = (
+    "examples/validation_study/.study-work/",
+    "examples/validation_study/.candidates/",
+    "examples/validation_study/evidence/.candidates/",
+)
 
 
 def _permitted_relocated_change(path: str) -> bool:
     return path in _RELOCATED_DOCUMENTATION_PATHS or path.startswith(_RELOCATED_EVIDENCE_PREFIX)
+
+
+def _publisher_temporary_worktree_path(path: str) -> bool:
+    parts = path.split("/")
+    return (
+        len(parts) >= 4
+        and parts[:3] == ["examples", "validation_study", "evidence"]
+        and parts[3].startswith(".")
+        and parts[3].endswith(".tmp")
+    )
+
+
+def _permitted_ignored_relocated_worktree_path(path: str) -> bool:
+    parts = path.split("/")
+    first = parts[0]
+    if (
+        path in _RELOCATED_IGNORED_TOOL_FILES
+        or first in _RELOCATED_IGNORED_TOOL_ROOTS
+        or first == ".env"
+        or first.startswith(".env.")
+        or first.startswith(".coverage.")
+        or "__pycache__" in parts
+        or any(part.endswith(".egg-info") for part in parts)
+    ):
+        return True
+    return (
+        path in _RELOCATED_IGNORED_VALIDATION_PATHS
+        or path.startswith(_RELOCATED_IGNORED_VALIDATION_PREFIXES)
+        or _publisher_temporary_worktree_path(path)
+    )
 
 
 def _relocated_worktree_paths(repository: Path) -> tuple[str, ...]:
@@ -664,13 +721,18 @@ def _is_candidate_worktree_path(path: str, candidate_paths: Sequence[str]) -> bo
     return any(path == candidate or path.startswith(f"{candidate}/") for candidate in candidate_paths)
 
 
-def _nonregular_relocated_worktree_paths(repository: Path, *, candidate_paths: Sequence[str]) -> tuple[str, ...]:
+def _relocated_worktree_entry_paths(
+    repository: Path,
+    *,
+    candidate_paths: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     directories = [repository]
     paths: list[str] = []
+    nonregular_paths: list[str] = []
     while directories:
         directory = directories.pop()
         try:
-            children = tuple(directory.iterdir())
+            children = tuple(sorted(directory.iterdir(), key=lambda child: child.name))
         except OSError as error:
             _fail(
                 "artifact_corrupt",
@@ -680,7 +742,11 @@ def _nonregular_relocated_worktree_paths(repository: Path, *, candidate_paths: S
             )
         for child in children:
             relative = child.relative_to(repository).as_posix()
-            if relative == ".git" or _is_candidate_worktree_path(relative, candidate_paths):
+            if (
+                relative == ".git"
+                or _is_candidate_worktree_path(relative, candidate_paths)
+                or _permitted_ignored_relocated_worktree_path(relative)
+            ):
                 continue
             try:
                 mode = child.lstat().st_mode
@@ -693,9 +759,19 @@ def _nonregular_relocated_worktree_paths(repository: Path, *, candidate_paths: S
                 )
             if stat.S_ISDIR(mode):
                 directories.append(child)
-            elif not stat.S_ISREG(mode):
+            else:
                 paths.append(relative)
-    return tuple(paths)
+                if not stat.S_ISREG(mode):
+                    nonregular_paths.append(relative)
+    return tuple(paths), tuple(nonregular_paths)
+
+
+def _nonregular_relocated_worktree_paths(  # pyright: ignore[reportUnusedFunction]
+    repository: Path,
+    *,
+    candidate_paths: Sequence[str],
+) -> tuple[str, ...]:
+    return _relocated_worktree_entry_paths(repository, candidate_paths=candidate_paths)[1]
 
 
 def _ignored_relocated_worktree_paths(repository: Path, paths: Sequence[str]) -> frozenset[str]:
@@ -808,8 +884,16 @@ def _require_permitted_relocated_worktree(
             f"relocated checkout contains non-evidence working-tree change: {path}",
             "audit a clean descendant containing only accepted evidence and report changes",
         )
-    nonregular_paths = _nonregular_relocated_worktree_paths(repository, candidate_paths=candidate_paths)
-    ignored_paths = _ignored_relocated_worktree_paths(repository, nonregular_paths)
+    worktree_paths, nonregular_paths = _relocated_worktree_entry_paths(repository, candidate_paths=candidate_paths)
+    ignored_paths = _ignored_relocated_worktree_paths(repository, worktree_paths)
+    for path in worktree_paths:
+        if path in ignored_paths and not _permitted_ignored_relocated_worktree_path(path):
+            _fail(
+                "artifact_foreign",
+                "environment",
+                f"relocated checkout contains non-evidence working-tree change: {path}",
+                "audit a clean descendant containing only accepted evidence and report changes",
+            )
     for path in nonregular_paths:
         if path not in ignored_paths:
             _fail(

@@ -115,6 +115,8 @@ class _ScriptedPrerequisiteRunner:
         self.mount = self.root / "examples" / "validation_study" / ".study-work" / "mount" / self.study_id
         self.calls: list[tuple[tuple[str, ...], float]] = []
         self.git_trees: dict[str, bytes] = {}
+        self.ignored_worktree_paths: frozenset[str] = frozenset()
+        self.ignored_worktree_protocol = "valid"
         self.container_running = False
         self.capability_finished = False
 
@@ -150,6 +152,8 @@ class _ScriptedPrerequisiteRunner:
         if command in identities:
             status, stdout, stderr = identities[command]
             return subprocess.CompletedProcess(command, status, stdout=stdout, stderr=stderr)
+        if command[:4] == ("git", "check-ignore", "-z", "--"):
+            return self._check_ignored_worktree_paths(command)
         if command == ("docker", "image", "inspect", study.TARGET_REFERENCE):
             return self._inspect_target(command)
         if command[:2] == ("docker", "build"):
@@ -201,6 +205,20 @@ class _ScriptedPrerequisiteRunner:
         if self.mutation in {"capture-image-cleanup-failed", "docker-matrix-failed-cleanup-failed"}:
             return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"cleanup failed\n")
         return subprocess.CompletedProcess(command, 0, stdout=b"removed\n", stderr=b"")
+
+    def _check_ignored_worktree_paths(self, command: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
+        paths = command[4:]
+        if self.ignored_worktree_protocol == "nonzero":
+            return subprocess.CompletedProcess(command, 2, stdout=b"", stderr=b"synthetic ignore failure\n")
+        if self.ignored_worktree_protocol == "truncated":
+            return subprocess.CompletedProcess(command, 0, stdout=b"foreign", stderr=b"")
+        if self.ignored_worktree_protocol == "nonempty-no-match":
+            return subprocess.CompletedProcess(command, 1, stdout=b"foreign\0", stderr=b"")
+        if self.ignored_worktree_protocol == "empty-match":
+            return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
+        matches = tuple(path for path in paths if path in self.ignored_worktree_paths)
+        stdout = b"".join(path.encode("utf-8") + b"\0" for path in matches)
+        return subprocess.CompletedProcess(command, 0 if matches else 1, stdout=stdout, stderr=b"")
 
     def _inspect_container(self, command: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
         identifier = command[-1]
@@ -2972,6 +2990,16 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
     assert [command for command, _timeout in runner.calls] == [
         ("git", "rev-parse", "HEAD"),
         ("git", "status", "--porcelain=v1", "--untracked-files=all"),
+        (
+            "git",
+            "check-ignore",
+            "-z",
+            "--",
+            "uv.lock",
+            "docker/capture/Dockerfile",
+            "docker/capture/capture.sh",
+            "docker/capture/image-lock.json",
+        ),
         ("docker", "version", "--format", "{{.Server.Version}}"),
         ("docker", "compose", "version", "--short"),
         ("docker", "image", "pull", study.TARGET_REFERENCE),
@@ -3016,6 +3044,7 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
         ("docker", "image", "rm", "--force", f"trafficlab-validation-{runner.study_id}:capture"),
     ]
     assert [timeout for _command, timeout in runner.calls] == [
+        20.0,
         20.0,
         20.0,
         20.0,
@@ -3260,7 +3289,7 @@ def test_prerequisite_cleanup_does_not_replace_its_guarded_test_failure(tmp_path
     _write_prerequisite_repository_inputs(repository_root)
     runner = _ScriptedPrerequisiteRunner(repository_root, "docker-matrix-failed-cleanup-failed")
 
-    with pytest.raises(TrafficlabError, match="docker_matrix guarded pytest failed"):
+    with pytest.raises(TrafficlabError, match="docker_matrix guarded pytest failed") as captured:
         study.run_prerequisites(
             runner.url,
             runner.study_id,
@@ -3269,6 +3298,9 @@ def test_prerequisite_cleanup_does_not_replace_its_guarded_test_failure(tmp_path
             utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
         )
 
+    assert captured.value.__notes__ == [
+        "prerequisite capture image cleanup failed: could not remove owned prerequisite capture image: cleanup failed"
+    ]
     assert [command for command, _timeout in runner.calls][-1] == (
         "docker",
         "image",
@@ -3276,6 +3308,105 @@ def test_prerequisite_cleanup_does_not_replace_its_guarded_test_failure(tmp_path
         "--force",
         f"trafficlab-validation-{runner.study_id}:capture",
     )
+
+
+def test_prerequisites_preserve_an_arbitrary_primary_when_shared_capture_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An interruption keeps ownership cleanup as an ordered secondary diagnostic."""
+
+    class ControlledAbort(BaseException):
+        pass
+
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    runner = _ScriptedPrerequisiteRunner(repository_root, "capture-image-cleanup-failed")
+
+    def abort(*_args: object, **_kwargs: object) -> study.JsonObject:
+        raise ControlledAbort("controlled abort")
+
+    monkeypatch.setattr(study, "_run_prerequisite_test", abort)
+    with pytest.raises(ControlledAbort) as captured:
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+        )
+
+    assert captured.value.__notes__ == [
+        "prerequisite capture image cleanup failed: could not remove owned prerequisite capture image: cleanup failed"
+    ]
+    assert [command for command, _timeout in runner.calls][-1] == (
+        "docker",
+        "image",
+        "rm",
+        "--force",
+        f"trafficlab-validation-{runner.study_id}:capture",
+    )
+
+
+@pytest.mark.parametrize("entry_kind", ("regular", "symlink", "fifo"))
+@pytest.mark.parametrize(
+    ("protocol", "expected"),
+    (
+        ("valid", "ignored prerequisite worktree entry is not permitted"),
+        ("truncated", "ignored prerequisite paths must be terminal NUL-delimited"),
+        ("nonempty-no-match", "ignored prerequisite paths must be empty for no-match status"),
+        ("empty-match", "ignored prerequisite paths must be nonempty for match status"),
+        ("nonzero", "could not resolve ignored prerequisite paths"),
+    ),
+)
+def test_prerequisites_reject_local_exclude_ignored_worktree_entries_before_docker(
+    tmp_path: Path,
+    entry_kind: str,
+    protocol: str,
+    expected: str,
+) -> None:
+    """Ignored source entries use the same strict Git-NUL boundary as accepted evidence."""
+
+    if entry_kind == "fifo" and not hasattr(os, "mkfifo"):
+        pytest.skip("nonregular FIFO entries require POSIX")
+    repository_root = tmp_path / "repository"
+    _write_prerequisite_repository_inputs(repository_root)
+    relative = f"locally-excluded-{entry_kind}"
+    entry = repository_root / relative
+    exclude = repository_root / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text(f"{relative}\n", encoding="utf-8")
+    if entry_kind == "regular":
+        entry.write_text("ignored foreign source\n", encoding="utf-8")
+    elif entry_kind == "symlink":
+        entry.symlink_to("source.py")
+    else:
+        os.mkfifo(entry)
+    runner = _ScriptedPrerequisiteRunner(repository_root)
+    runner.ignored_worktree_paths = frozenset({relative})
+    runner.ignored_worktree_protocol = protocol
+
+    with pytest.raises(TrafficlabError, match=expected):
+        study.run_prerequisites(
+            runner.url,
+            runner.study_id,
+            repository_root=repository_root,
+            runner=runner,
+            utc_now=lambda: datetime(2026, 8, 16, tzinfo=UTC),
+        )
+
+    commands = [command for command, _timeout in runner.calls]
+    assert any(command[:4] == ("git", "check-ignore", "-z", "--") for command in commands)
+    assert not any(command[:2] == ("docker", "version") for command in commands)
+    assert (
+        repository_root
+        / "examples"
+        / "validation_study"
+        / ".study-work"
+        / "attempts"
+        / runner.study_id
+        / "prerequisites.json"
+    ).is_file()
 
 
 def test_prerequisites_do_not_publish_success_when_shared_capture_cleanup_fails(tmp_path: Path) -> None:
@@ -6754,6 +6885,67 @@ def test_offline_auditor_rejects_untracked_nonregular_source_paths(tmp_path: Pat
         "artifact_foreign",
         "environment",
         "not_published",
+    )
+
+
+@pytest.mark.parametrize("entry_kind", ("regular", "symlink", "fifo"))
+def test_offline_auditor_rejects_local_exclude_ignored_non_evidence_entries(
+    tmp_path: Path,
+    entry_kind: str,
+) -> None:
+    """Local Git exclusion cannot exempt a source entry from the relocated audit boundary."""
+
+    if entry_kind == "fifo" and not hasattr(os, "mkfifo"):
+        pytest.skip("nonregular FIFO entries require POSIX")
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    relative = f"locally-excluded-{entry_kind}"
+    source = repository / relative
+    exclude_value = subprocess.run(
+        ("git", "rev-parse", "--git-path", "info/exclude"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    exclude = Path(exclude_value)
+    if not exclude.is_absolute():
+        exclude = repository / exclude
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    with exclude.open("a", encoding="utf-8") as stream:
+        stream.write(f"{relative}\n")
+    if entry_kind == "regular":
+        source.write_text("ignored foreign source\n", encoding="utf-8")
+    elif entry_kind == "symlink":
+        source.symlink_to("scripts/audit_validation_study.py")
+    else:
+        os.mkfifo(source)
+
+    status = subprocess.run(
+        ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert relative.encode("utf-8") not in status
+    with pytest.raises(TrafficlabError) as captured:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = captured.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.detail,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == (
+        "artifact_foreign",
+        "publication",
+        f"relocated checkout contains non-evidence working-tree change: {relative}",
+        "environment",
+        "not_published",
+        "primary",
     )
 
 
@@ -11373,3 +11565,203 @@ def test_offline_auditor_uses_each_directional_similarity_settings_instance(
     assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
     assert len(calls) == 18
     assert all(settings is expected_settings[reference] for reference, settings in calls)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "expected"),
+    (
+        (bytes((255, 0)), "path is not UTF-8"),
+        (b"foreign\0foreign\0", "paths must be unique"),
+        (b"elsewhere\0", "paths do not match the inspected worktree"),
+    ),
+)
+def test_prerequisite_ignored_path_parser_rejects_invalid_match_records(
+    tmp_path: Path,
+    stdout: bytes,
+    expected: str,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert argv == ("git", "check-ignore", "-z", "--", "foreign")
+        assert cwd == repository
+        assert check is False
+        assert capture_output is True
+        assert shell is False
+        assert timeout == study.SUBPROCESS_TIMEOUTS["git_or_version"]
+        return subprocess.CompletedProcess(tuple(argv), 0, stdout=stdout, stderr=b"")
+
+    assert study._ignored_prerequisite_worktree_paths(repository, (), runner=runner) == frozenset()  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(ValueError, match=expected):
+        study._ignored_prerequisite_worktree_paths(repository, ("foreign",), runner=runner)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("failure", ("directory", "entry"))
+def test_prerequisite_worktree_entry_scan_rejects_filesystem_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Literal["directory", "entry"],
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    entry = repository / "source.py"
+    entry.write_text("pass\n", encoding="utf-8")
+
+    if failure == "directory":
+
+        def unavailable_iterdir(path: Path) -> Any:
+            assert path == repository
+            raise OSError("directory unavailable")
+
+        monkeypatch.setattr(Path, "iterdir", unavailable_iterdir)
+    else:
+
+        def one_entry(path: Path) -> Any:
+            assert path == repository
+            return iter((entry,))
+
+        def unavailable_lstat(path: Path) -> Any:
+            assert path == entry
+            raise OSError("entry unavailable")
+
+        monkeypatch.setattr(Path, "iterdir", one_entry)
+        monkeypatch.setattr(Path, "lstat", unavailable_lstat)
+
+    with pytest.raises(ValueError):
+        study._prerequisite_worktree_entries(repository)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_prerequisite_worktree_cleanliness_rejects_unignored_special_entries(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "ordinary.txt").write_text("ordinary\n", encoding="utf-8")
+    special = repository / "foreign.fifo"
+    os.mkfifo(special)
+    runner = _ScriptedPrerequisiteRunner(repository)
+    runner.ignored_worktree_paths = frozenset()
+
+    with pytest.raises(ValueError, match="non-regular entry"):
+        study._require_clean_prerequisite_worktree(repository, runner=runner)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    (
+        (".superpowers/state", True),
+        (".coverage", True),
+        ("TASK.md", True),
+        (".env.local", True),
+        (".coverage.local", True),
+        ("pkg/__pycache__/x.pyc", True),
+        ("pkg.egg-info/METADATA", True),
+        ("examples/validation_study/configs/short.toml", True),
+        ("examples/validation_study/.study-work/state", True),
+        ("examples/validation_study/.candidates/study-1/state", True),
+        ("examples/validation_study/evidence/.candidates/study-1/state", True),
+        ("examples/validation_study/evidence/.study-1.tmp/state", True),
+        ("foreign.py", False),
+    ),
+)
+def test_auditor_ignored_worktree_path_policy_is_explicit(path: str, expected: bool) -> None:
+    assert auditor._permitted_ignored_relocated_worktree_path(path) is expected  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    (
+        (".superpowers/state", True),
+        (".coverage", True),
+        ("TASK.md", True),
+        (".env.local", True),
+        (".coverage.local", True),
+        ("pkg/__pycache__/x.pyc", True),
+        ("pkg.egg-info/METADATA", True),
+        ("examples/validation_study/prerequisites.json", True),
+        ("examples/validation_study/results.json", True),
+        ("examples/validation_study/configs/short.toml", True),
+        ("examples/validation_study/.study-work/state", True),
+        ("examples/validation_study/.candidates/study-1/state", True),
+        ("examples/validation_study/evidence/.candidates/study-1/state", True),
+        ("examples/validation_study/evidence/.study-1.tmp/state", True),
+        ("foreign.py", False),
+    ),
+)
+def test_prerequisite_ignored_worktree_path_policy_is_explicit(path: str, expected: bool) -> None:
+    assert study._permitted_ignored_prerequisite_worktree_path(path) is expected  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("status", (b"", b"?? foreign\0"))
+def test_auditor_worktree_status_parser_accepts_empty_and_canonical_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: bytes,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def git_bytes(*_args: object, **_kwargs: object) -> bytes:
+        return status
+
+    monkeypatch.setattr(auditor, "_git_bytes", git_bytes)
+    auditor._relocated_worktree_paths(repository)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_auditor_worktree_entry_scan_covers_regular_directory_special_and_skipped_paths(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "source.py").write_text("pass\n", encoding="utf-8")
+    nested = repository / "nested"
+    nested.mkdir()
+    (nested / "child.py").write_text("pass\n", encoding="utf-8")
+    (repository / "candidate.txt").write_text("candidate\n", encoding="utf-8")
+    (repository / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    (repository / ".venv" / "deep").mkdir(parents=True)
+    (repository / ".venv" / "deep" / "ignored.py").write_text("pass\n", encoding="utf-8")
+    special = repository / "special.fifo"
+    os.mkfifo(special)
+
+    entries, nonregular = auditor._relocated_worktree_entry_paths(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        candidate_paths=("candidate.txt",),
+    )
+
+    assert "source.py" in entries
+    assert "nested/child.py" in entries
+    assert "candidate.txt" not in entries
+    assert ".git" not in entries
+    assert ".venv/deep/ignored.py" not in entries
+    assert nonregular == ("special.fifo",)
+
+
+def test_prerequisite_cleanliness_continues_past_permitted_ignored_special_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    runner = _ScriptedPrerequisiteRunner(repository)
+
+    def entries(_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        return (("first", "second"), ("first", "second"))
+
+    def ignored_paths(_root: Path, _paths: Sequence[str], *, runner: Any) -> frozenset[str]:
+        return frozenset({"first"})
+
+    def permitted_path(path: str) -> bool:
+        return path == "first"
+
+    monkeypatch.setattr(study, "_prerequisite_worktree_entries", entries)
+    monkeypatch.setattr(study, "_ignored_prerequisite_worktree_paths", ignored_paths)
+    monkeypatch.setattr(study, "_permitted_ignored_prerequisite_worktree_path", permitted_path)
+
+    with pytest.raises(ValueError, match="non-regular entry: second"):
+        study._require_clean_prerequisite_worktree(repository, runner=runner)  # pyright: ignore[reportPrivateUsage]
