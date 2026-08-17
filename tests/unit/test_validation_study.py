@@ -11601,15 +11601,43 @@ def test_offline_auditor_rejects_required_run_log_identity_and_status_mismatches
     ) == ("artifact_foreign", "publication", relative, "not_published", "primary")
 
 
-def test_offline_auditor_accepts_r18_canonical_capture_platform_log_identity() -> None:
-    """Capture lineage binds the frozen Docker platform, not the host-machine spelling."""
+def test_offline_auditor_accepts_r18_canonical_capture_platform_log_lineage() -> None:
+    """R18 records the frozen capture platform and each successful lineage sequence."""
 
     bundle = _ROOT / "examples/validation_study/evidence/2026-08-17-research-fitness-r18"
     environment = cast(dict[str, object], json.loads((bundle / "environment.json").read_bytes()))
+    sequences = (
+        (
+            "training/short/r1/run.log",
+            (
+                "capture_environment_identity",
+                "capture_published",
+                "best_model_published",
+                "generated_pcapng_published",
+                "comparison_succeeded",
+                "run_completed",
+                "validation_study_training_completed",
+            ),
+            ("run_completed", "validation_study_training_completed"),
+        ),
+        (
+            "held_out/short/run.log",
+            ("capture_environment_identity", "capture_published", "held_out_evaluated"),
+            ("held_out_evaluated",),
+        ),
+    )
+    for relative, events, terminal in sequences:
+        records = auditor._run_log_records(  # pyright: ignore[reportPrivateUsage]
+            (bundle / relative).read_bytes(),
+            name=relative,
+        )
+        auditor._require_successful_log_status(records, name=relative)  # pyright: ignore[reportPrivateUsage]
+        auditor._require_terminal_log_events(records, events=terminal, name=relative)  # pyright: ignore[reportPrivateUsage]
+        auditor._require_ordered_log_events(records, events=events, name=relative)  # pyright: ignore[reportPrivateUsage]
+
     directory = bundle / "training" / "short" / "r1"
     records = auditor._run_log_records(  # pyright: ignore[reportPrivateUsage]
-        (directory / "run.log").read_bytes(),
-        name="training/short/r1/run.log",
+        (directory / "run.log").read_bytes(), name="training/short/r1/run.log"
     )
 
     auditor._require_capture_log_lineage(  # pyright: ignore[reportPrivateUsage]
