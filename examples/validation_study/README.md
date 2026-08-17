@@ -1,11 +1,31 @@
 # Validation Study
 
-This directory contains the frozen local protocol for the replacement Phase 7
-study. The protocol is serial and bounded. It has no default endpoint: the
+This directory contains the frozen local protocol and accepted evidence for the
+replacement Phase 7 study. The protocol is serial and bounded. It has no default endpoint: the
 operator supplies one credential-free HTTPS URL at invocation time, and the
 exact URL, redirect result, headers, and external observation are retained in
 the candidate bundle. Do not run the external commands below until the source
 commit, endpoint, and prerequisite coordination have been explicitly approved.
+
+## Accepted corrected study
+
+[`evidence/2026-08-17-research-fitness-r13/`](evidence/2026-08-17-research-fitness-r13/)
+is the accepted schema-2 study. Its [report](REPORT.md), `index.json`, and
+`manifest.json` are the navigation and integrity roots. It contains:
+
+- nine complete training trees, arranged as three workloads times three
+  independent captures;
+- nine fixed-final-seed fresh-simulation records and three genuine independent
+  held-out records;
+- portable/realized configuration pairs in `configs/`, named
+  `training-<workload>-r<repeat>.portable.toml` and `.realized.toml`;
+- retained prerequisite commands/results, transfer headers/observations,
+  environment, report inputs, owner/lineage index, and path/size/SHA-256
+  manifest.
+
+The ignored `.candidates/2026-08-17-research-fitness-r13` path is the source
+work copy retained by the exclusive publisher. It is not another accepted
+study. Historical Phase 7 material remains non-accepted consistency evidence.
 
 ## Frozen protocol
 
