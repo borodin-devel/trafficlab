@@ -48,8 +48,8 @@ not treat later documentation as scientific source behavior.
 | Locked sync and lock check | Passed offline with no lock change | Exact Python dependency environment |
 | Global Ruff and strict Pyright | Passed; 0 type errors, warnings, or informations | Static and documentation-adjacent quality |
 | Three deterministic fixture checks | Checked-in paths and bytes matched | Canonical fixture evidence |
-| Bounded parallel non-external gate | 3,418 passed in 74.66 seconds | Broad behavioral evidence |
-| Bounded serial branch gate | 3,418 passed, 20 deselected; 98% | Branch coverage above 90% |
+| Bounded parallel non-external gate | 3,422 passed in 85.31 seconds | Broad behavioral evidence |
+| Bounded serial branch gate | 3,422 passed, 20 deselected in 587.87 seconds; 97.82% | Branch coverage above 90% |
 | Retained r18 Docker matrix | 19 passed; 0 failed, skipped, or errored | Same-source controlled Docker prerequisite |
 | Retained r18 Internet smoke | 1 passed; 0 failed, skipped, or errored | Same-source real HTTPS prerequisite |
 | Current-tree r18 audit | Accepted 230 retained files | Complete current accepted bundle |
@@ -239,7 +239,7 @@ retained real checkpoint supports excellent reconstruction across fresh and resu
 
 **Evidence**
 
-- Fresh reassessment: the bounded 3,418-test gates include exact RNG-order, endpoint, guard, schema, codec, and
+- Fresh reassessment: the bounded 3,422-test gates include exact RNG-order, endpoint, guard, schema, codec, and
   [`tests/scientific/test_model_validation.py`](../tests/scientific/test_model_validation.py) oracle cases.
 - Source: schema 2 implements arrival-epoch MMPP initialization and conditioned time-zero arrival; all three families
   retain the exact fitted model, seed, observation window, limits, diagnostics, and input lineage.
@@ -303,7 +303,7 @@ independent operation across every compatible platform, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: configuration, comparison, candidate-evaluation, and report tests in the 3,418-test gate cover
+- Fresh reassessment: configuration, comparison, candidate-evaluation, and report tests in the 3,422-test gate cover
   workload, model, search, seed, metric, weight, and reliability-limit variation without source edits.
 - Source: the [mandatory aggregate contract](../architecture/similarity_methods/README.md#aggregate-fitness) makes all
   four methods explicit and mandatory; zero weight changes only aggregate contribution, never execution or diagnostics.
@@ -563,7 +563,7 @@ for every critical conversion are absent, so excellent boundary evidence is not 
 
 **Evidence**
 
-- Fresh reassessment: 3,418 bounded tests include hand-calculated similarity cases, analytical invariants, independent
+- Fresh reassessment: 3,422 bounded tests include hand-calculated similarity cases, analytical invariants, independent
   standard-library stochastic oracles, known simulations, family-order controls, and strict edge cases.
 - Source: [`tests/scientific/oracles.py`](../tests/scientific/oracles.py) does not call production fitting or generation
   helpers when deriving expected statistics, draw races, occupancy, or tolerance decisions.
