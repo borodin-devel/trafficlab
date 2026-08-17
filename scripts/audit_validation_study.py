@@ -1385,7 +1385,9 @@ def _capture_log_environment(environment: Mapping[str, object]) -> dict[str, obj
 def _require_successful_log_status(records: Sequence[Mapping[str, object]], *, name: str) -> None:
     for record in records:
         event = record.get("event")
-        if type(event) is str and (event.endswith("_reused") or event.endswith("_failed")):
+        if (type(event) is str and (event.endswith("_reused") or event.endswith("_failed"))) or (
+            "reused" in record and record["reused"] is not False
+        ):
             _fail(
                 "artifact_foreign",
                 name,

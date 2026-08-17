@@ -11684,6 +11684,32 @@ def test_offline_auditor_rejects_contradictory_run_log_status_events(
     assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
 
 
+def test_offline_auditor_rejects_a_reused_field_on_a_successful_run_log_event(tmp_path: Path) -> None:
+    """A producer success event cannot claim that its retained work was reused."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    path = candidate / "training" / "short" / "r1" / "run.log"
+    records = [json.loads(line) for line in path.read_bytes().splitlines()]
+    next(record for record in records if record["event"] == "best_model_published")["reused"] = True
+    path.write_bytes(
+        b"".join(
+            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
+                "utf-8"
+            )
+            + b"\n"
+            for record in records
+        )
+    )
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", "training/short/r1/run.log")
+
+
 @pytest.mark.parametrize("relative", ("training/short/r1/run.log", "held_out/short/run.log"))
 def test_offline_auditor_rejects_run_log_records_after_terminal_publication(tmp_path: Path, relative: str) -> None:
     """Successful publication markers must remain the terminal retained status records."""
