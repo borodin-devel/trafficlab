@@ -114,7 +114,16 @@ def test_clean_checkout_checks_the_pristine_tracked_validation_fixture(tmp_path:
     fixture = repository / "tests" / "fixtures" / "validation_study_candidate"
     environment = cast(dict[str, object], json.loads((fixture / "environment.json").read_text(encoding="utf-8")))
     clone_environment = dict(os.environ)
-    clone_environment.pop("PYTHONPATH", None)
+    clone_environment["PYTHONPATH"] = str(repository / "src")
+    imported = subprocess.run(
+        (sys.executable, "-c", "import trafficlab; print(trafficlab.__file__)"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=clone_environment,
+    )
+    assert Path(imported.stdout.strip()).is_relative_to(repository)
     completed = subprocess.run(
         (
             sys.executable,
