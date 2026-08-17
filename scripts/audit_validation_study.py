@@ -2651,6 +2651,7 @@ def _lifecycle_project_name(content: bytes, *, name: str) -> str:
         or publication.get("stage") != "capture"
         or not created_project_name.startswith("trafficlab-capture-")
         or created_project_name != project_name
+        or records.index(creation) >= records.index(publication)
     ):
         _fail(
             "artifact_foreign",

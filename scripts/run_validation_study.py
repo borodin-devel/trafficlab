@@ -8471,7 +8471,8 @@ def _collection_capture_lifecycle_record(
         and type(created_project_name) is str
         and type(project_name) is str
         and created_project_name.startswith("trafficlab-capture-")
-        and created_project_name == project_name,
+        and created_project_name == project_name
+        and records.index(creations[0]) < records.index(publications[0]),
         "collection capture must bind its exact created project name to publication",
     )
     return cast(

@@ -11746,6 +11746,7 @@ def test_offline_auditor_rejects_a_noninteger_collection_index_schema_version(tm
     (
         ("missing_creation", "training/short/r1/run.log"),
         ("mismatched_creation", "training/short/r1/run.log"),
+        ("late_creation", "training/short/r1/run.log"),
         ("duplicate_project", "lifecycle.json"),
     ),
 )
@@ -11792,6 +11793,11 @@ def test_offline_auditor_binds_collection_projects_to_unique_created_projects(
         write(first_relative, first)
     elif mutation == "mismatched_creation":
         created(first)["project_name"] = "trafficlab-capture-mismatched"
+        write(first_relative, first)
+    elif mutation == "late_creation":
+        creation = created(first)
+        first.remove(creation)
+        first.insert(first.index(record(first, "capture_published")) + 1, creation)
         write(first_relative, first)
     else:
         second_relative = "training/short/r2/run.log"
