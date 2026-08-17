@@ -515,7 +515,7 @@ else:
         for path in sorted(clone_fixture.rglob("*"))
         if path.is_file() and not path.is_symlink()
     }
-    assert len(candidate_bytes) == 231
+    assert len(candidate_bytes) == 232
     assert candidate_bytes == fixture_bytes
 
 
