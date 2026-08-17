@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import fcntl
 import hashlib
 import json
 import math
@@ -10,13 +11,16 @@ import shutil
 import socket
 import stat
 import subprocess
+import sys
 import tomllib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from random import Random
 from statistics import fmean, variance
+from types import SimpleNamespace
 from typing import Any, Literal, cast
 
 import pytest
@@ -25,6 +29,7 @@ import tomli_w
 from scripts import audit_validation_study as auditor
 from scripts import generate_validation_study_fixture as fixture_generator
 from scripts import run_validation_study as study
+from tests.conftest import test_body_failure
 from trafficlab import USER_AGENT
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
@@ -61,6 +66,30 @@ _CAPTURE_IMAGE_ID = cast(str, _CAPTURE_IMAGE_LOCK["expected_capture_image_id"])
 _STUDY_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:study-capture"
 _COLLECTION_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:collection-capture"
 _PRE_USER_AGENT_R6_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_pre_user_agent_r6"
+_REAL_SUBPROCESS_RUN = subprocess.run
+_shared_validation_study_repository_path: Path | None = None
+_current_validation_study_test_name: str | None = None
+_current_isolated_validation_study_worktrees: list[Path] | None = None
+_ISOLATED_VALIDATION_STUDY_REPOSITORY_TESTS = frozenset(
+    {
+        "test_audited_bundle_publication_rechecks_candidate_and_preserves_an_occupied_destination",
+        "test_audited_bundle_rejects_the_first_primary_without_publication_residue",
+        "test_offline_auditor_allows_a_clean_committed_accepted_bundle",
+        "test_offline_auditor_allows_document_evidence_and_ignored_candidate_worktree_changes",
+        "test_offline_auditor_checks_the_worktree_before_committed_descendant_changes",
+        "test_offline_auditor_classifies_ignored_special_entry_git_failures",
+        "test_offline_auditor_rejects_environment_binding_after_the_first_identity_check",
+        "test_offline_auditor_rejects_local_exclude_ignored_non_evidence_entries",
+        "test_offline_auditor_rejects_non_evidence_worktree_changes",
+        "test_offline_auditor_rejects_untracked_nonregular_source_paths",
+        "test_offline_auditor_rejects_untrusted_fixture_profile_source_bytes",
+        "test_offline_bundle_audit_reconstructs_environment_and_final_controls",
+        "test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_and_all_inventories",
+    }
+)
+_VALIDATION_STUDY_LOCAL_EXCLUDE_LOCK = Path("/tmp") / (
+    f"trafficlab-validation-study-{hashlib.sha256(str(_ROOT).encode('utf-8')).hexdigest()}.exclude.lock"
+)
 
 
 def _write_prerequisite_repository_inputs(repository_root: Path) -> None:
@@ -6661,8 +6690,7 @@ def test_local_audit_revalidates_report_checkpoint_artifacts_and_lineage_without
     checkpoint_path.write_bytes(checkpoint_content)
 
 
-def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False) -> tuple[Path, Path]:
-    repository = tmp_path / "relocated-repository"
+def _validation_study_fixture_identity() -> tuple[str, str]:
     source_environment = cast(
         dict[str, object],
         json.loads(
@@ -6671,15 +6699,145 @@ def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False)
             )
         ),
     )
-    source_commit = cast(str, source_environment["source_commit"])
-    source_tree = cast(str, source_environment["source_tree"])
-    subprocess.run(
+    return cast(str, source_environment["source_commit"]), cast(str, source_environment["source_tree"])
+
+
+def _validation_study_request_test_name(request: pytest.FixtureRequest) -> str:
+    """Resolve the stable base test name used to select a shared or isolated checkout."""
+
+    node = cast(Any, request).node
+    return cast(str, node.originalname or node.name)
+
+
+def _add_validation_study_worktree(repository: Path, source_commit: str) -> None:
+    _REAL_SUBPROCESS_RUN(
         ("git", "worktree", "add", "--detach", str(repository), source_commit),
         cwd=_ROOT,
         check=True,
         capture_output=True,
     )
+
+
+def _remove_validation_study_worktree(repository: Path) -> None:
+    _REAL_SUBPROCESS_RUN(
+        ("git", "worktree", "remove", "--force", str(repository)),
+        cwd=_ROOT,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _finish_validation_study_worktree_cleanup(
+    repositories: Sequence[Path],
+    *,
+    body_error: BaseException | None,
+    remove: Callable[[Path], None] = _remove_validation_study_worktree,
+) -> None:
+    """Remove all owned checkouts while retaining a prior body failure and cleanup diagnostics."""
+
+    cleanup_errors: list[BaseException] = []
+    for repository in reversed(repositories):
+        try:
+            remove(repository)
+        except BaseException as error:
+            cleanup_errors.append(error)
+    if not cleanup_errors:
+        return
+    if body_error is not None:
+        raise BaseExceptionGroup(
+            "validation-study test body and detached-checkout cleanup both failed",
+            (body_error, *cleanup_errors),
+        ) from None
+    if len(cleanup_errors) == 1:
+        raise cleanup_errors[0]
+    raise BaseExceptionGroup("validation-study detached-checkout cleanup failed", cleanup_errors)
+
+
+def _finish_validation_study_exclude_restore(*, body_error: BaseException | None, restore: Callable[[], None]) -> None:
+    """Restore shared Git exclusion bytes without discarding a primary audit failure."""
+
+    try:
+        restore()
+    except BaseException as cleanup_error:
+        if body_error is not None:
+            raise BaseExceptionGroup(
+                "validation-study audit and shared Git exclusion cleanup both failed",
+                (body_error, cleanup_error),
+            ) from None
+        raise
+
+
+@contextmanager
+def _exclusive_validation_study_file_lock(path: Path) -> Generator[None, None, None]:
+    """Serialize a temporary mutation of shared Git administration bytes across workers."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+@pytest.fixture(scope="session")
+def _shared_validation_study_repository(  # pyright: ignore[reportUnusedFunction]
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[Path]:
+    """Provide one detached source checkout per pytest worker for candidate-only audits."""
+
+    global _shared_validation_study_repository_path
+    source_commit, _source_tree = _validation_study_fixture_identity()
+    repository = tmp_path_factory.mktemp("validation-study-checkout") / "repository"
+    _add_validation_study_worktree(repository, source_commit)
+    _shared_validation_study_repository_path = repository
+    try:
+        yield repository
+    finally:
+        _shared_validation_study_repository_path = None
+        _remove_validation_study_worktree(repository)
+
+
+@pytest.fixture(autouse=True)
+def _validation_study_candidate_context(  # pyright: ignore[reportUnusedFunction]
+    request: pytest.FixtureRequest, _shared_validation_study_repository: Path
+) -> Iterator[None]:
+    """Track the active test so source-mutating audits retain isolated checkouts."""
+
+    del _shared_validation_study_repository
+    global _current_isolated_validation_study_worktrees, _current_validation_study_test_name
+    _current_isolated_validation_study_worktrees = []
+    _current_validation_study_test_name = _validation_study_request_test_name(request)
+    try:
+        yield
+    finally:
+        repositories = _current_isolated_validation_study_worktrees
+        _current_isolated_validation_study_worktrees = None
+        _current_validation_study_test_name = None
+        assert repositories is not None
+        _finish_validation_study_worktree_cleanup(
+            repositories,
+            body_error=test_body_failure(request),
+        )
+
+
+def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False) -> tuple[Path, Path]:
+    source_commit, source_tree = _validation_study_fixture_identity()
+    shared_repository = _shared_validation_study_repository_path
+    if (
+        shared_repository is not None
+        and _current_validation_study_test_name not in _ISOLATED_VALIDATION_STUDY_REPOSITORY_TESTS
+    ):
+        repository = shared_repository
+    else:
+        repository = tmp_path / "relocated-repository"
+        _add_validation_study_worktree(repository, source_commit)
+        repositories = _current_isolated_validation_study_worktrees
+        assert repositories is not None
+        repositories.append(repository)
     candidate = repository / "fixture-study"
+    if candidate.exists():
+        shutil.rmtree(candidate)
     if generated:
         for relative, content in fixture_generator.generate_fixture_tree(
             source_commit=source_commit, source_tree=source_tree
@@ -6714,6 +6872,103 @@ def test_relocated_audit_candidate_uses_a_detached_git_worktree(tmp_path: Path) 
         ).stdout.strip()
         == source_environment["source_commit"]
     )
+
+
+def test_shared_validation_study_checkout_refreshes_each_candidate(
+    tmp_path: Path, _shared_validation_study_repository: Path
+) -> None:
+    """Candidate-only audits reuse one worker checkout without retaining prior candidate bytes."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    assert repository == _shared_validation_study_repository
+    (candidate / "foreign.txt").write_text("test-only residue\n", encoding="utf-8")
+
+    next_repository, next_candidate = _copy_validation_study_candidate(tmp_path)
+
+    assert next_repository == repository
+    assert next_candidate == candidate
+    assert not (next_candidate / "foreign.txt").exists()
+
+
+def test_validation_study_context_uses_node_name_when_original_name_is_absent() -> None:
+    """Non-parametrized pytest nodes retain an isolation key for source-mutating audits."""
+
+    request = cast(
+        pytest.FixtureRequest,
+        SimpleNamespace(
+            node=SimpleNamespace(
+                name="test_audited_bundle_publication_rechecks_candidate_and_preserves_an_occupied_destination",
+                originalname=None,
+            )
+        ),
+    )
+
+    assert _validation_study_request_test_name(request) in _ISOLATED_VALIDATION_STUDY_REPOSITORY_TESTS
+
+
+def test_validation_study_local_exclude_lock_is_process_exclusive(tmp_path: Path) -> None:
+    """The common Git exclusion mutation serializes independently scheduled workers."""
+
+    lock_path = tmp_path / "exclude.lock"
+    probe = (
+        "import fcntl, pathlib, sys\n"
+        "with pathlib.Path(sys.argv[1]).open('a+b') as stream:\n"
+        "    try:\n"
+        "        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+        "    except BlockingIOError:\n"
+        "        raise SystemExit(0)\n"
+        "    raise SystemExit(1)\n"
+    )
+
+    with _exclusive_validation_study_file_lock(lock_path):
+        result = subprocess.run(
+            (sys.executable, "-c", probe, str(lock_path)),
+            check=False,
+            capture_output=True,
+        )
+
+    assert result.returncode == 0
+
+
+def test_validation_study_worktree_removal_propagates_cleanup_failure(tmp_path: Path) -> None:
+    """Detached-checkout cleanup must not silently retain Git administration state."""
+
+    with pytest.raises(subprocess.CalledProcessError):
+        _remove_validation_study_worktree(tmp_path / "not-a-worktree")
+
+
+def test_validation_study_worktree_cleanup_preserves_a_primary_failure() -> None:
+    """A failing finalizer adds its diagnostic without erasing the body failure."""
+
+    primary = RuntimeError("primary test failure")
+    cleanup = OSError("synthetic worktree cleanup failure")
+
+    def cleanup_failure(_repository: Path) -> None:
+        raise cleanup
+
+    with pytest.raises(BaseExceptionGroup) as captured:
+        _finish_validation_study_worktree_cleanup(
+            (Path("owned-worktree"),),
+            body_error=primary,
+            remove=cleanup_failure,
+        )
+
+    assert captured.value.exceptions == (primary, cleanup)
+
+
+def test_validation_study_exclude_restore_preserves_a_primary_failure() -> None:
+    """A shared-Git restore failure retains the audit assertion that triggered cleanup."""
+
+    primary = RuntimeError("primary audit failure")
+    cleanup = OSError("synthetic exclude restore failure")
+
+    def restore_failure() -> None:
+        raise cleanup
+
+    with pytest.raises(BaseExceptionGroup) as captured:
+        _finish_validation_study_exclude_restore(body_error=primary, restore=restore_failure)
+
+    assert captured.value.exceptions == (primary, cleanup)
 
 
 def _candidate_bytes(root: Path) -> dict[str, bytes]:
@@ -6928,42 +7183,58 @@ def test_offline_auditor_rejects_local_exclude_ignored_non_evidence_entries(
     if not exclude.is_absolute():
         exclude = repository / exclude
     exclude.parent.mkdir(parents=True, exist_ok=True)
-    with exclude.open("a", encoding="utf-8") as stream:
-        stream.write(f"{relative}\n")
-    if entry_kind == "regular":
-        source.write_text("ignored foreign source\n", encoding="utf-8")
-    elif entry_kind == "symlink":
-        source.symlink_to("scripts/audit_validation_study.py")
-    else:
-        os.mkfifo(source)
+    with _exclusive_validation_study_file_lock(_VALIDATION_STUDY_LOCAL_EXCLUDE_LOCK):
+        original_exclude = exclude.read_bytes() if exclude.exists() else None
+        body_error: BaseException | None = None
+        try:
+            with exclude.open("a", encoding="utf-8") as stream:
+                stream.write(f"{relative}\n")
+            if entry_kind == "regular":
+                source.write_text("ignored foreign source\n", encoding="utf-8")
+            elif entry_kind == "symlink":
+                source.symlink_to("scripts/audit_validation_study.py")
+            else:
+                os.mkfifo(source)
 
-    status = subprocess.run(
-        ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all"),
-        cwd=repository,
-        check=True,
-        capture_output=True,
-    ).stdout
-    assert relative.encode("utf-8") not in status
-    with pytest.raises(TrafficlabError) as captured:
-        auditor.audit_bundle(candidate, repository=repository)
+            status = subprocess.run(
+                ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all"),
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            ).stdout
+            assert relative.encode("utf-8") not in status
+            with pytest.raises(TrafficlabError) as captured:
+                auditor.audit_bundle(candidate, repository=repository)
 
-    outcome = captured.value.failure_outcome
-    assert outcome is not None
-    assert (
-        outcome.kind,
-        outcome.stage,
-        outcome.detail,
-        outcome.affected_evidence,
-        outcome.evidence_state,
-        outcome.authority,
-    ) == (
-        "artifact_foreign",
-        "publication",
-        f"relocated checkout contains non-evidence working-tree change: {relative}",
-        "environment",
-        "not_published",
-        "primary",
-    )
+            outcome = captured.value.failure_outcome
+            assert outcome is not None
+            assert (
+                outcome.kind,
+                outcome.stage,
+                outcome.detail,
+                outcome.affected_evidence,
+                outcome.evidence_state,
+                outcome.authority,
+            ) == (
+                "artifact_foreign",
+                "publication",
+                f"relocated checkout contains non-evidence working-tree change: {relative}",
+                "environment",
+                "not_published",
+                "primary",
+            )
+        except BaseException as error:
+            body_error = error
+            raise
+        finally:
+
+            def restore() -> None:
+                if original_exclude is None:
+                    exclude.unlink(missing_ok=True)
+                else:
+                    exclude.write_bytes(original_exclude)
+
+            _finish_validation_study_exclude_restore(body_error=body_error, restore=restore)
 
 
 @pytest.mark.parametrize(

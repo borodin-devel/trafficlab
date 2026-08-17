@@ -122,6 +122,13 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
         item.stash[_TEST_BODY_FAILURE] = call.excinfo.value
 
 
+def test_body_failure(request: pytest.FixtureRequest) -> BaseException | None:
+    """Return the retained call-phase failure for fixture cleanup arbitration."""
+
+    node = cast(_ItemFixtureRequest, request).node
+    return node.stash.get(_TEST_BODY_FAILURE, None)
+
+
 def validate_internet_url(value: str | None) -> str:
     """Require an operator-supplied credential-free HTTPS URL with a hostname."""
     if value is None or not value:
