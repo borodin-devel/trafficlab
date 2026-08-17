@@ -732,8 +732,24 @@ def _ignored_relocated_worktree_paths(repository: Path, paths: Sequence[str]) ->
             "could not resolve ignored paths from the relocated Git checkout",
             "audit from the recorded clean source checkout",
         )
+    output = completed.stdout
+    if completed.returncode == 1 and output:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "relocated Git ignored paths must be empty for no-match status",
+            "repair the relocated checkout",
+        )
+    if output and not output.endswith(b"\0"):
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "relocated Git ignored paths must be terminal NUL-delimited",
+            "repair the relocated checkout",
+        )
+    records = output[:-1].split(b"\0") if output else ()
     try:
-        ignored = frozenset(path.decode("utf-8") for path in completed.stdout.split(b"\0") if path)
+        ignored_paths = tuple(record.decode("utf-8") for record in records)
     except UnicodeDecodeError as error:
         _fail(
             "artifact_corrupt",
@@ -741,14 +757,21 @@ def _ignored_relocated_worktree_paths(repository: Path, paths: Sequence[str]) ->
             f"relocated Git ignored path is not UTF-8: {error}",
             "repair the relocated checkout",
         )
-    if any(path not in paths for path in ignored):
+    if len(set(ignored_paths)) != len(ignored_paths):
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "relocated Git ignored paths must be unique",
+            "repair the relocated checkout",
+        )
+    if any(path not in paths for path in ignored_paths):
         _fail(
             "artifact_corrupt",
             "environment",
             "relocated Git ignored paths do not match the inspected worktree",
             "repair the relocated checkout",
         )
-    return ignored
+    return frozenset(ignored_paths)
 
 
 def _require_permitted_relocated_worktree(

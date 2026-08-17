@@ -6836,12 +6836,78 @@ def test_offline_auditor_classifies_worktree_git_failures(
 
 
 @pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    (
+        (0, b"", frozenset[str]()),
+        (1, b"", frozenset[str]()),
+        (0, b"foreign.fifo\0", frozenset({"foreign.fifo"})),
+    ),
+)
+def test_offline_auditor_exactly_parses_terminal_nul_ignored_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    stdout: bytes,
+    expected: frozenset[str],
+) -> None:
+    """The Git NUL protocol has explicit empty and exactly-delimited records."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    calls: list[tuple[tuple[str, ...], bytes]] = []
+
+    def check_ignore(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        command = tuple(cast(Sequence[str], args[0]))
+        calls.append((command, cast(bytes, kwargs["input"])))
+        return subprocess.CompletedProcess(command, returncode, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr(auditor.subprocess, "run", check_ignore)
+
+    assert (
+        auditor._ignored_relocated_worktree_paths(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            ("foreign.fifo",),
+        )
+        == expected
+    )
+    assert calls == [(("git", "check-ignore", "-z", "--stdin"), b"foreign.fifo\0")]
+
+
+def test_offline_auditor_rejects_nonempty_no_match_ignored_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git's no-match status cannot carry a record that exempts a special entry."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def inconsistent_no_match(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        command = tuple(cast(Sequence[str], args[0]))
+        assert kwargs["input"] == b"foreign.fifo\0"
+        return subprocess.CompletedProcess(command, 1, stdout=b"foreign.fifo\0", stderr=b"")
+
+    monkeypatch.setattr(auditor.subprocess, "run", inconsistent_no_match)
+
+    with pytest.raises(auditor._Issue, match="must be empty for no-match status") as captured:  # pyright: ignore[reportPrivateUsage]
+        auditor._ignored_relocated_worktree_paths(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            ("foreign.fifo",),
+        )
+
+    assert (captured.value.kind, captured.value.affected) == ("artifact_corrupt", "environment")
+
+
+@pytest.mark.parametrize(
     ("case", "expected_kind", "expected"),
     (
         ("oserror", "artifact_corrupt", "could not inspect relocated Git ignored paths"),
         ("nonzero", "artifact_foreign", "could not resolve ignored paths"),
         ("non_utf8", "artifact_corrupt", "relocated Git ignored path is not UTF-8"),
         ("foreign_path", "artifact_corrupt", "ignored paths do not match"),
+        ("truncated", "artifact_corrupt", "ignored paths must be terminal NUL-delimited"),
+        ("duplicate", "artifact_corrupt", "ignored paths must be unique"),
+        ("nonempty_no_match", "artifact_corrupt", "ignored paths must be empty for no-match status"),
     ),
 )
 def test_offline_auditor_classifies_ignored_special_entry_git_failures(
@@ -6869,6 +6935,12 @@ def test_offline_auditor_classifies_ignored_special_entry_git_failures(
                 return subprocess.CompletedProcess(command, 2, stdout=b"", stderr=b"synthetic failure\n")
             if case == "non_utf8":
                 return subprocess.CompletedProcess(command, 0, stdout=bytes((255, 0)), stderr=b"")
+            if case == "truncated":
+                return subprocess.CompletedProcess(command, 0, stdout=b"foreign.fifo", stderr=b"")
+            if case == "duplicate":
+                return subprocess.CompletedProcess(command, 0, stdout=b"foreign.fifo\0foreign.fifo\0", stderr=b"")
+            if case == "nonempty_no_match":
+                return subprocess.CompletedProcess(command, 1, stdout=b"foreign.fifo\0", stderr=b"")
             return subprocess.CompletedProcess(command, 0, stdout=b"elsewhere\0", stderr=b"")
         return cast(Any, original_run)(*args, **kwargs)
 
