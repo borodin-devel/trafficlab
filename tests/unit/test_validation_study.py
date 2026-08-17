@@ -11531,7 +11531,7 @@ def test_offline_auditor_reconstructs_nonfixture_profiles_and_rejects_a_missing_
 def test_offline_auditor_requires_study_bound_collection_lifecycle(tmp_path: Path) -> None:
     """A complete candidate is not auditable without retained collection cleanup proof."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
     (candidate / "lifecycle.json").unlink(missing_ok=True)
 
     with pytest.raises(TrafficlabError) as error:
@@ -11551,7 +11551,7 @@ def test_offline_auditor_requires_study_bound_collection_lifecycle(tmp_path: Pat
 def test_offline_auditor_accepts_complete_study_bound_collection_lifecycle(tmp_path: Path) -> None:
     """The public auditor reconstructs cleanup proof from retained collection bytes."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
     lifecycle = _write_candidate_lifecycle(candidate)
 
     assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
@@ -11600,7 +11600,7 @@ def test_offline_auditor_rejects_collection_lifecycle_identity_and_cleanup_mutat
 ) -> None:
     """Lifecycle booleans and run bindings are independently required before publication."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
     lifecycle = _write_candidate_lifecycle(candidate)
     if mutation == "study_id":
         lifecycle["study_id"] = "other-study"
@@ -11636,7 +11636,7 @@ def test_offline_auditor_rejects_collection_lifecycle_identity_and_cleanup_mutat
 def test_offline_auditor_rejects_malformed_collection_lifecycle(tmp_path: Path, content: bytes) -> None:
     """Lifecycle proof uses one closed, canonical schema rather than a producer extension bag."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
     _write_candidate_lifecycle(candidate)
     (candidate / "lifecycle.json").write_bytes(content)
     _rewrite_candidate_manifest(candidate)
@@ -11658,7 +11658,7 @@ def test_offline_auditor_rejects_malformed_collection_lifecycle(tmp_path: Path, 
 def test_offline_auditor_rejects_a_wrong_collection_lifecycle_schema_version(tmp_path: Path) -> None:
     """A closed lifecycle schema cannot silently accept a future producer shape."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
     lifecycle = _write_candidate_lifecycle(candidate)
     lifecycle["schema_version"] = 2
     _write_canonical_json(candidate / "lifecycle.json", lifecycle)
@@ -11688,7 +11688,7 @@ def test_offline_auditor_rejects_collection_lifecycle_scalar_type_spoofs(
 ) -> None:
     """Cleanup facts use closed JSON scalar types before their exact value binding."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
     lifecycle = _write_candidate_lifecycle(candidate)
     if mutation == "schema_version":
         lifecycle["schema_version"] = True
@@ -11720,7 +11720,7 @@ def test_offline_auditor_rejects_collection_lifecycle_scalar_type_spoofs(
 def test_offline_auditor_rejects_a_noninteger_collection_index_schema_version(tmp_path: Path) -> None:
     """The schema-3 index version is an integer fact rather than an equality alias."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
     _write_candidate_lifecycle(candidate)
     index = _candidate_index(candidate)
     index["schema_version"] = 3.0
@@ -11757,7 +11757,7 @@ def test_offline_auditor_binds_collection_projects_to_unique_created_projects(
 ) -> None:
     """Lifecycle cleanup claims bind the created Compose project for every capture."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
 
     def load(relative: str) -> list[dict[str, object]]:
         return [cast(dict[str, object], json.loads(line)) for line in (candidate / relative).read_bytes().splitlines()]
