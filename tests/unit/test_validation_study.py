@@ -11651,121 +11651,59 @@ def test_offline_auditor_accepts_r18_canonical_capture_platform_log_lineage() ->
     )
 
 
-@pytest.mark.parametrize(
-    ("relative", "record"),
-    (
-        ("training/short/r1/run.log", {"event": "capture_reused", "stage": "capture"}),
-        ("held_out/short/run.log", {"event": "run_failed", "stage": "run"}),
-    ),
-)
-def test_offline_auditor_rejects_contradictory_run_log_status_events(
-    tmp_path: Path,
-    relative: str,
-    record: dict[str, object],
-) -> None:
-    """A retained fresh-study log cannot also claim reuse or a failed stage."""
+def test_offline_auditor_rejects_each_contradictory_run_log_lineage_mutation(tmp_path: Path) -> None:
+    """Every contradictory successful-run claim independently fails the public audit."""
 
     repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
-    path = candidate / relative
-    with path.open("ab") as stream:
-        stream.write(
-            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
-                "utf-8"
-            )
-            + b"\n"
-        )
-    _rewrite_candidate_manifest(candidate)
-
-    with pytest.raises(TrafficlabError) as error:
-        auditor.audit_bundle(candidate, repository=repository)
-
-    outcome = error.value.failure_outcome
-    assert outcome is not None
-    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
-
-
-def test_offline_auditor_rejects_a_reused_field_on_a_successful_run_log_event(tmp_path: Path) -> None:
-    """A producer success event cannot claim that its retained work was reused."""
-
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
-    path = candidate / "training" / "short" / "r1" / "run.log"
-    records = [json.loads(line) for line in path.read_bytes().splitlines()]
-    next(record for record in records if record["event"] == "best_model_published")["reused"] = True
-    path.write_bytes(
-        b"".join(
-            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
-                "utf-8"
-            )
-            + b"\n"
-            for record in records
-        )
+    cases = (
+        ("capture_reused", "training/short/r1/run.log"),
+        ("run_failed", "held_out/short/run.log"),
+        ("reused_field", "training/short/r1/run.log"),
+        ("training_after_terminal", "training/short/r1/run.log"),
+        ("held_out_after_terminal", "held_out/short/run.log"),
+        ("training_order", "training/short/r1/run.log"),
+        ("held_out_order", "held_out/short/run.log"),
     )
-    _rewrite_candidate_manifest(candidate)
-
-    with pytest.raises(TrafficlabError) as error:
-        auditor.audit_bundle(candidate, repository=repository)
-
-    outcome = error.value.failure_outcome
-    assert outcome is not None
-    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", "training/short/r1/run.log")
-
-
-@pytest.mark.parametrize("relative", ("training/short/r1/run.log", "held_out/short/run.log"))
-def test_offline_auditor_rejects_run_log_records_after_terminal_publication(tmp_path: Path, relative: str) -> None:
-    """Successful publication markers must remain the terminal retained status records."""
-
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
-    path = candidate / relative
-    with path.open("ab") as stream:
-        stream.write(b'{"event":"diagnostic","stage":"run"}\n')
-    _rewrite_candidate_manifest(candidate)
-
-    with pytest.raises(TrafficlabError) as error:
-        auditor.audit_bundle(candidate, repository=repository)
-
-    outcome = error.value.failure_outcome
-    assert outcome is not None
-    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
-
-
-@pytest.mark.parametrize(
-    ("relative", "first_event", "second_event"),
-    (
-        ("training/short/r1/run.log", "capture_published", "best_model_published"),
-        ("held_out/short/run.log", "capture_environment_identity", "capture_published"),
-    ),
-)
-def test_offline_auditor_rejects_out_of_order_required_run_log_events(
-    tmp_path: Path,
-    relative: str,
-    first_event: str,
-    second_event: str,
-) -> None:
-    """Every retained successful stage must follow its recorded predecessor."""
-
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
-    path = candidate / relative
-    records = [json.loads(line) for line in path.read_bytes().splitlines()]
-    first = next(index for index, record in enumerate(records) if record["event"] == first_event)
-    second = next(index for index, record in enumerate(records) if record["event"] == second_event)
-    records[first], records[second] = records[second], records[first]
-    path.write_bytes(
-        b"".join(
-            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
-                "utf-8"
+    for case, relative in cases:
+        path = candidate / relative
+        original = path.read_bytes()
+        records = [json.loads(line) for line in original.splitlines()]
+        if case == "capture_reused":
+            records.append({"event": "capture_reused", "stage": "capture"})
+        elif case == "run_failed":
+            records.append({"event": "run_failed", "stage": "run"})
+        elif case == "reused_field":
+            next(record for record in records if record["event"] == "best_model_published")["reused"] = True
+        elif case.endswith("after_terminal"):
+            records.append({"event": "diagnostic", "stage": "run"})
+        else:
+            first_event, second_event = (
+                ("capture_published", "best_model_published")
+                if case == "training_order"
+                else ("capture_environment_identity", "capture_published")
             )
-            + b"\n"
-            for record in records
+            first = next(index for index, record in enumerate(records) if record["event"] == first_event)
+            second = next(index for index, record in enumerate(records) if record["event"] == second_event)
+            records[first], records[second] = records[second], records[first]
+        path.write_bytes(
+            b"".join(
+                json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
+                    "utf-8"
+                )
+                + b"\n"
+                for record in records
+            )
         )
-    )
-    _rewrite_candidate_manifest(candidate)
-
-    with pytest.raises(TrafficlabError) as error:
-        auditor.audit_bundle(candidate, repository=repository)
-
-    outcome = error.value.failure_outcome
-    assert outcome is not None
-    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
+        _rewrite_candidate_manifest(candidate)
+        try:
+            with pytest.raises(TrafficlabError) as error:
+                auditor.audit_bundle(candidate, repository=repository)
+            outcome = error.value.failure_outcome
+            assert outcome is not None
+            assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
+        finally:
+            path.write_bytes(original)
+            _rewrite_candidate_manifest(candidate)
 
 
 def test_offline_auditor_reports_a_missing_ordered_run_log_event() -> None:
