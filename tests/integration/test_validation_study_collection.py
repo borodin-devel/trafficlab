@@ -492,6 +492,85 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
 
 
+def test_collection_rejects_late_capture_project_record_before_final_artifacts(tmp_path: Path) -> None:
+    """Collection rejects a causally impossible capture project record before finalization."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
+    candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
+    run_training, capture_held_out, _calls = _offline_stage_runners(
+        repository, candidate=candidate, environment=environment
+    )
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        phase="collection",
+    )
+    tag = study._phase_capture_tag("study-1", "collection")  # pyright: ignore[reportPrivateUsage]
+
+    def late_created_capture(path: Path) -> CaptureResult:
+        result = capture_held_out(path)
+        log_path = result.reference_path.parent / "run.log"
+        lines = log_path.read_text().splitlines()
+        created = [
+            line
+            for line in lines
+            if cast(str, cast(dict[str, object], json.loads(line))["event"]) == "capture_project_created"
+        ]
+        assert len(created) == 1
+        log_path.write_text(
+            "\n".join(
+                [
+                    line
+                    for line in lines
+                    if cast(str, cast(dict[str, object], json.loads(line))["event"]) != "capture_project_created"
+                ]
+                + created
+            )
+            + "\n"
+        )
+        return result
+
+    def phase_runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+        input: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        pytest.fail("phase image cleanup must not begin after malformed capture lifecycle")
+
+    with pytest.raises(
+        TrafficlabError, match="collection capture must bind its exact created project name to publication"
+    ):
+        study.collect_validation_candidate(
+            repository_root=repository,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            attempt=attempt,
+            environment=environment,
+            retained_prerequisites=prerequisite,
+            prerequisite_files=prerequisite_files,
+            configs=configs,
+            run=run_training,
+            capture=late_created_capture,
+            object_size_bytes=4_194_304,
+            owned_capture_image=study._PhaseCaptureImage(tag=tag, build_attempted=True),  # pyright: ignore[reportPrivateUsage]
+            runner=phase_runner,
+        )
+
+    assert not (candidate / "lifecycle.json").exists()
+    assert not (candidate / "report_inputs.json").exists()
+    assert not (candidate / "REPORT.md").exists()
+    assert not (candidate / "index.json").exists()
+    assert not (candidate / "manifest.json").exists()
+
+
 @pytest.mark.parametrize("cleanup_failure", ("remove", "retained_tag"))
 def test_collection_refuses_to_finalize_when_phase_image_cleanup_is_not_verified(
     tmp_path: Path,
