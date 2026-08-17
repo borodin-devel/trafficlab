@@ -5535,6 +5535,7 @@ def test_collect_cli_uses_only_frozen_prerequisite_inputs_and_the_candidate_owne
     monkeypatch.setattr(study, "_collection_inputs_from_prerequisites", load_inputs, raising=False)
     monkeypatch.setattr(study, "collect_validation_candidate", collect)
 
+    runner = _StudyIdentityRunner(repository_root)
     assert (
         study.main(
             [
@@ -5547,7 +5548,7 @@ def test_collect_cli_uses_only_frozen_prerequisite_inputs_and_the_candidate_owne
                 "examples/validation_study/prerequisites.json",
             ],
             repository_root=repository_root,
-            runner=_StudyIdentityRunner(repository_root),
+            runner=runner,
         )
         == 0
     )
@@ -5564,7 +5565,11 @@ def test_collect_cli_uses_only_frozen_prerequisite_inputs_and_the_candidate_owne
             "run": run_experiment,
             "capture": study.capture_experiment,
             "object_size_bytes": 4_194_304,
+            "owned_capture_image": study._PhaseCaptureImage(  # pyright: ignore[reportPrivateUsage]
+                tag=_COLLECTION_PHASE_CAPTURE_TAG
+            ),
             "perf_counter": study.time.perf_counter,
+            "runner": runner,
         }
     ]
     assert "candidate collected" in capsys.readouterr().out
@@ -8730,11 +8735,12 @@ def test_offline_bundle_fixture_carries_complete_phase7_evidence_and_reconstruct
     before = _candidate_bytes(candidate)
     index = json.loads((candidate / "index.json").read_text(encoding="utf-8"))
 
-    assert index["schema_version"] == 2
+    assert index["schema_version"] == 3
     assert set(index) == {
         "environment",
         "fresh_simulation",
         "held_out",
+        "lifecycle",
         "lineage",
         "ownership",
         "prerequisites",
@@ -8744,6 +8750,7 @@ def test_offline_bundle_fixture_carries_complete_phase7_evidence_and_reconstruct
         "schema_version",
         "training",
     }
+    assert index["lifecycle"] == "lifecycle.json"
     expected_training = {(workload, repeat) for workload in ("short", "streaming", "bursty") for repeat in (1, 2, 3)}
     training = index["training"]
     assert {(item["workload"], item["repeat"]) for item in training} == expected_training
@@ -8853,11 +8860,11 @@ def test_validation_fixture_generator_main_requires_complete_ids_and_writes_to_i
     output = tmp_path / "owned-fixture"
     monkeypatch.setattr(fixture_generator, "FIXTURE", output)
     assert fixture_generator.main(["--source-commit", source_commit, "--source-tree", source_tree]) == 0
-    assert len(_candidate_bytes(output)) == 231
+    assert len(_candidate_bytes(output)) == 232
 
 
-def test_validation_fixture_retains_the_complete_231_file_evidence_inventory() -> None:
-    assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 231
+def test_validation_fixture_retains_the_complete_232_file_evidence_inventory() -> None:
+    assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 232
 
 
 def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
