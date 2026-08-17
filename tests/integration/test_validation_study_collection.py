@@ -396,6 +396,7 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     assert "natural_variation_windows" not in protocol
     published = study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
     assert published == repository / "examples" / "validation_study" / "evidence" / "study-1"
+    assert auditor.audit_bundle(published, repository=repository).bundle == published
     with pytest.raises(TrafficlabError, match="already exists"):
         study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
 

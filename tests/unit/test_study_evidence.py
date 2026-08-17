@@ -75,14 +75,135 @@ def test_audit_runs_before_any_destination_or_temporary_sibling_exists(tmp_path:
     def audit(path: Path) -> None:
         calls.append(path)
         assert not destination.exists()
-        assert not evidence_root.exists()
+        if path == candidate:
+            assert not evidence_root.exists()
+        else:
+            assert path.name == "study-1"
+            assert path.parent.parent == evidence_root
 
     published = publish_accepted_bundle(candidate, evidence_root, "study-1", audit)
 
-    assert calls == [candidate]
+    assert len(calls) == 2
+    assert calls[0] == candidate
+    assert calls[1].name == "study-1"
     assert published == destination
     assert _tree_bytes(destination) == _tree_bytes(candidate)
     assert list(evidence_root.iterdir()) == [destination]
+
+
+def test_staged_audit_runs_on_the_final_named_child_before_rename(tmp_path: Path) -> None:
+    """The bytes to be renamed, not only their source, must pass the bundle audit."""
+
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    destination = evidence_root / "study-1"
+    calls: list[Path] = []
+
+    def audit(path: Path) -> None:
+        calls.append(path)
+        if path == candidate:
+            assert not evidence_root.exists()
+            return
+        assert path.name == "study-1"
+        assert path.parent.parent == evidence_root
+        assert not destination.exists()
+        assert (path / "manifest.json").read_bytes() == b'{"files":[]}\n'
+
+    published = publish_accepted_bundle(candidate, evidence_root, "study-1", audit)
+
+    assert published == destination
+    assert len(calls) == 2
+    assert calls[0] == candidate
+    assert calls[1].name == "study-1"
+    assert _tree_bytes(destination) == _tree_bytes(candidate)
+    assert _temporary_siblings(evidence_root, "study-1") == []
+
+
+class _StagedAuditAbort(BaseException):
+    pass
+
+
+class _CleanupAbort(BaseException):
+    pass
+
+
+def _injected_cleanup_failure(_path: Path) -> str:
+    return "injected cleanup failure"
+
+
+@pytest.mark.parametrize("failure", (OSError(errno.EIO, "staged audit I/O failure"), _StagedAuditAbort()))
+def test_staged_audit_failure_preserves_source_and_removes_staging(tmp_path: Path, failure: BaseException) -> None:
+    """A copied-but-rejected bundle never becomes an accepted destination."""
+
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    destination = evidence_root / "study-1"
+    before = _tree_bytes(candidate)
+    calls = 0
+
+    def audit(_path: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise failure
+
+    with pytest.raises(type(failure)) as caught:
+        publish_accepted_bundle(candidate, evidence_root, "study-1", audit)
+
+    assert caught.value is failure
+    assert calls == 2
+    assert not destination.exists()
+    assert _tree_bytes(candidate) == before
+    assert _temporary_siblings(evidence_root, "study-1") == []
+
+
+def test_staged_audit_cleanup_failure_preserves_the_primary_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    rejection = _StagedAuditAbort("staged audit rejected the copied bundle")
+
+    def audit(path: Path) -> None:
+        if path != candidate:
+            raise rejection
+
+    def cleanup_failure(_path: Path) -> str:
+        return "injected staging cleanup failure"
+
+    monkeypatch.setattr(study_evidence, "_cleanup_temporary", cleanup_failure)
+
+    with pytest.raises(_StagedAuditAbort) as caught:
+        publish_accepted_bundle(candidate, tmp_path / "evidence", "study-1", audit)
+
+    assert caught.value is rejection
+    assert caught.value.__notes__ == ["temporary staging cleanup also failed: injected staging cleanup failure"]
+
+
+def test_staged_audit_cleanup_base_exception_preserves_the_primary_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    rejection = _StagedAuditAbort("staged audit rejected the copied bundle")
+    cleanup_abort = _CleanupAbort("injected cleanup interruption")
+
+    def audit(path: Path) -> None:
+        if path != candidate:
+            raise rejection
+
+    def interrupt_cleanup(_path: Path, *_args: object, **_kwargs: object) -> None:
+        raise cleanup_abort
+
+    monkeypatch.setattr(study_evidence.shutil, "rmtree", interrupt_cleanup)
+
+    with pytest.raises(_StagedAuditAbort) as caught:
+        publish_accepted_bundle(candidate, tmp_path / "evidence", "study-1", audit)
+
+    assert caught.value is rejection
+    assert caught.value.__notes__ == [
+        "temporary staging cleanup also failed: _CleanupAbort: injected cleanup interruption"
+    ]
 
 
 def test_first_publication_fsyncs_parent_before_staging_and_root_after_rename(
@@ -115,9 +236,12 @@ def test_first_publication_fsyncs_parent_before_staging_and_root_after_rename(
     monkeypatch.setattr(study_evidence, "_fsync_tree", record_tree)
     monkeypatch.setattr(study_evidence, "_rename_noreplace", record_rename)
 
-    publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+    def audit(path: Path) -> None:
+        operations.append("source_audit" if path == candidate else "staged_audit")
 
-    assert operations == ["parent_fsync", "tree_fsync", "rename", "root_fsync"]
+    publish_accepted_bundle(candidate, evidence_root, "study-1", audit)
+
+    assert operations == ["source_audit", "parent_fsync", "tree_fsync", "staged_audit", "rename", "root_fsync"]
 
 
 def test_post_rename_root_fsync_failure_reports_preserved_exact_destination(
@@ -161,6 +285,52 @@ def test_post_rename_root_fsync_failure_reports_preserved_exact_destination(
     assert _temporary_siblings(evidence_root, "study-1") == []
 
 
+def test_collision_preserves_its_immutable_outcome_when_staging_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    destination = evidence_root / "study-1"
+    original_cleanup = study_evidence._cleanup_temporary  # pyright: ignore[reportPrivateUsage]
+
+    def collide(_source: Path, _destination: Path) -> None:
+        raise OSError(errno.EEXIST, "injected collision")
+
+    def cleanup_with_diagnostic(path: Path) -> str | None:
+        assert original_cleanup(path) is None
+        return "injected staging cleanup failure"
+
+    monkeypatch.setattr(study_evidence, "_rename_noreplace", collide)
+    monkeypatch.setattr(study_evidence, "_cleanup_temporary", cleanup_with_diagnostic)
+
+    with pytest.raises(TrafficlabError) as caught:
+        publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+        outcome.status,
+    ) == (
+        "publication_collision",
+        "publication",
+        "candidate accepted evidence bundle",
+        "not_published",
+        "primary",
+        None,
+    )
+    assert outcome.detail == "accepted bundle already exists"
+    assert outcome.corrective_action == "choose a new study ID"
+    assert caught.value.__notes__ == ["temporary staging cleanup also failed: injected staging cleanup failure"]
+    assert not destination.exists()
+    assert list(evidence_root.glob(".*.tmp")) == []
+
+
 def test_failed_audit_preserves_its_exception_and_publishes_nothing(tmp_path: Path) -> None:
     candidate = _candidate(tmp_path)
     evidence_root = tmp_path / "evidence"
@@ -200,13 +370,22 @@ def test_occupied_study_id_is_never_replaced_or_merged(tmp_path: Path, occupied_
         outcome.evidence_state,
         outcome.authority,
         outcome.status,
-    ) == ("publication_collision", "publication", "candidate accepted evidence bundle", "not_published", "primary", None)
+    ) == (
+        "publication_collision",
+        "publication",
+        "candidate accepted evidence bundle",
+        "not_published",
+        "primary",
+        None,
+    )
     assert outcome.detail == "accepted bundle already exists"
     assert outcome.corrective_action == "choose a new study ID"
     assert str(error.value).startswith("publication_collision: accepted evidence bundle already exists at ")
     assert error.value.corrective_action == "choose a new study ID; accepted evidence bundles are immutable"
     assert error.value.corrective_action == "choose a new study ID; accepted evidence bundles are immutable"
-    assert audit_calls == [candidate]
+    assert len(audit_calls) == 2
+    assert audit_calls[0] == candidate
+    assert audit_calls[1].name == "study-1"
     assert destination.stat().st_ino == before_inode
     assert _tree_bytes(destination) == before
     assert _temporary_siblings(evidence_root, "study-1") == []
@@ -239,6 +418,224 @@ def test_copy_fsync_and_rename_failures_remove_the_owned_temporary_sibling(
     assert not destination.exists()
     assert _temporary_siblings(evidence_root, "study-1") == []
     assert _tree_bytes(candidate)["manifest.json"] == b'{"files":[]}\n'
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    (
+        ("missing", None),
+        ("oserror", "[Errno 5] injected cleanup I/O failure"),
+        ("base_exception", "_CleanupAbort: injected cleanup interruption"),
+    ),
+)
+def test_temporary_cleanup_reports_all_failure_classes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected: str | None,
+) -> None:
+    temporary = tmp_path / "temporary"
+    if case == "missing":
+        assert study_evidence._cleanup_temporary(temporary) is expected  # pyright: ignore[reportPrivateUsage]
+        return
+
+    temporary.mkdir()
+
+    def fail_cleanup(_path: Path, *_args: object, **_kwargs: object) -> None:
+        if case == "oserror":
+            raise OSError(errno.EIO, "injected cleanup I/O failure")
+        raise _CleanupAbort("injected cleanup interruption")
+
+    monkeypatch.setattr(study_evidence.shutil, "rmtree", fail_cleanup)
+
+    assert study_evidence._cleanup_temporary(temporary) == expected  # pyright: ignore[reportPrivateUsage]
+
+
+def test_non_directory_evidence_root_fails_after_source_audit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    evidence_root.write_bytes(b"not a directory\n")
+    audit_calls: list[Path] = []
+    original_mkdir = Path.mkdir
+
+    def preserve_non_directory(
+        path: Path,
+        mode: int = 0o777,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> None:
+        if path == evidence_root:
+            return
+        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    monkeypatch.setattr(study_evidence.Path, "mkdir", preserve_non_directory)
+
+    with pytest.raises(TrafficlabError, match="could not publish accepted evidence bundle"):
+        publish_accepted_bundle(candidate, evidence_root, "study-1", audit_calls.append)
+
+    assert audit_calls == [candidate]
+
+
+def test_staging_creation_oserror_preserves_the_source_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    before = _tree_bytes(candidate)
+
+    def fail_mkdtemp(*_args: object, **_kwargs: object) -> str:
+        raise OSError(errno.EIO, "injected staging creation failure")
+
+    monkeypatch.setattr(study_evidence.tempfile, "mkdtemp", fail_mkdtemp)
+
+    with pytest.raises(TrafficlabError, match="injected staging creation failure"):
+        publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    assert _tree_bytes(candidate) == before
+    assert _temporary_siblings(evidence_root, "study-1") == []
+
+
+def test_copy_oserror_cleanup_failure_preserves_diagnostic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    candidate = _candidate(tmp_path)
+    before = _tree_bytes(candidate)
+
+    def fail_copy(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.EIO, "injected copy failure")
+
+    monkeypatch.setattr(study_evidence.shutil, "copytree", fail_copy)
+    monkeypatch.setattr(study_evidence, "_cleanup_temporary", _injected_cleanup_failure)
+
+    with pytest.raises(TrafficlabError, match="injected copy failure; temporary cleanup also failed"):
+        publish_accepted_bundle(candidate, tmp_path / "evidence", "study-1", lambda _path: None)
+
+    assert _tree_bytes(candidate) == before
+
+
+def test_copy_base_exception_preserves_source_and_removes_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    interruption = _StagedAuditAbort("injected copy interruption")
+
+    def interrupt_copy(*_args: object, **_kwargs: object) -> None:
+        raise interruption
+
+    monkeypatch.setattr(study_evidence.shutil, "copytree", interrupt_copy)
+
+    with pytest.raises(_StagedAuditAbort) as caught:
+        publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    assert caught.value is interruption
+    assert _temporary_siblings(evidence_root, "study-1") == []
+
+
+def test_collision_cleanup_failure_preserves_the_occupied_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    destination = evidence_root / "study-1"
+    destination.mkdir(parents=True)
+    (destination / "accepted.txt").write_bytes(b"accepted\n")
+    before = _tree_bytes(destination)
+    monkeypatch.setattr(study_evidence, "_cleanup_temporary", _injected_cleanup_failure)
+
+    with pytest.raises(TrafficlabError) as caught:
+        publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+        outcome.status,
+    ) == (
+        "publication_collision",
+        "publication",
+        "candidate accepted evidence bundle",
+        "not_published",
+        "primary",
+        None,
+    )
+    assert outcome.detail == "accepted bundle already exists"
+    assert outcome.corrective_action == "choose a new study ID"
+    assert caught.value.__notes__ == ["temporary staging cleanup also failed: injected cleanup failure"]
+    assert _tree_bytes(destination) == before
+
+
+def test_rename_oserror_cleanup_failure_preserves_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+
+    def fail_rename(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.EIO, "injected rename failure")
+
+    monkeypatch.setattr(study_evidence, "_rename_noreplace", fail_rename)
+    monkeypatch.setattr(study_evidence, "_cleanup_temporary", _injected_cleanup_failure)
+
+    with pytest.raises(TrafficlabError, match="injected rename failure; temporary cleanup also failed"):
+        publish_accepted_bundle(candidate, tmp_path / "evidence", "study-1", lambda _path: None)
+
+
+def test_post_rename_base_exception_preserves_destination_and_cleans_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    destination = evidence_root / "study-1"
+    interruption = _StagedAuditAbort("injected post-rename interruption")
+    original_rmdir = Path.rmdir
+
+    def interrupt_staging_rmdir(path: Path) -> None:
+        if path.parent == evidence_root and path.name.startswith(".study-1."):
+            raise interruption
+        original_rmdir(path)
+
+    monkeypatch.setattr(study_evidence.Path, "rmdir", interrupt_staging_rmdir)
+
+    with pytest.raises(_StagedAuditAbort) as caught:
+        publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    assert caught.value is interruption
+    assert _tree_bytes(destination) == _tree_bytes(candidate)
+    assert _temporary_siblings(evidence_root, "study-1") == []
+
+
+def test_rename_base_exception_preserves_source_and_removes_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = _candidate(tmp_path)
+    evidence_root = tmp_path / "evidence"
+    destination = evidence_root / "study-1"
+    before = _tree_bytes(candidate)
+    interruption = _StagedAuditAbort("injected publication interruption")
+
+    def interrupt_rename(_source: Path, _destination: Path) -> None:
+        raise interruption
+
+    monkeypatch.setattr(study_evidence, "_rename_noreplace", interrupt_rename)
+
+    with pytest.raises(_StagedAuditAbort) as caught:
+        publish_accepted_bundle(candidate, evidence_root, "study-1", lambda _path: None)
+
+    assert caught.value is interruption
+    assert not destination.exists()
+    assert _tree_bytes(candidate) == before
+    assert _temporary_siblings(evidence_root, "study-1") == []
 
 
 def test_audit_argument_must_be_callable(tmp_path: Path) -> None:

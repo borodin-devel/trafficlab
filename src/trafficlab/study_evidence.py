@@ -150,7 +150,14 @@ def _cleanup_temporary(temporary: Path) -> str | None:
         return None
     except OSError as error:
         return str(error)
+    except BaseException as error:
+        return f"{type(error).__name__}: {error}"
     return None
+
+
+def _note_cleanup_failure(error: BaseException, cleanup_error: str | None) -> None:
+    if cleanup_error is not None:
+        error.add_note(f"temporary staging cleanup also failed: {cleanup_error}")
 
 
 def publish_accepted_bundle(
@@ -175,30 +182,55 @@ def publish_accepted_bundle(
         if not stat.S_ISDIR(root_mode):
             raise OSError(errno.ENOTDIR, "evidence root is not a regular directory", evidence_root)
         _fsync_open_path(evidence_root.parent, directory=True)
-        temporary = Path(tempfile.mkdtemp(prefix=f".{checked_study_id}.", suffix=".tmp", dir=evidence_root))
+        temporary_container = Path(tempfile.mkdtemp(prefix=f".{checked_study_id}.", suffix=".tmp", dir=evidence_root))
     except OSError as error:
         raise _publication_error(str(error)) from error
 
+    temporary = temporary_container / checked_study_id
+
     try:
-        shutil.copytree(checked_candidate, temporary, dirs_exist_ok=True, symlinks=True)
-        _fsync_tree(temporary)
-        _rename_noreplace(temporary, destination)
+        shutil.copytree(checked_candidate, temporary, symlinks=True)
+        _fsync_tree(temporary_container)
     except OSError as error:
-        cleanup_error = _cleanup_temporary(temporary)
-        if error.errno in {errno.EEXIST, errno.ENOTEMPTY}:
-            if cleanup_error is None:
-                raise _collision(destination) from error
-            raise _publication_error(
-                f"publication collision; temporary cleanup also failed: {cleanup_error}"
-            ) from error
+        cleanup_error = _cleanup_temporary(temporary_container)
         detail = str(error)
         if cleanup_error is not None:
             detail = f"{detail}; temporary cleanup also failed: {cleanup_error}"
         raise _publication_error(detail) from error
+    except BaseException as error:
+        _note_cleanup_failure(error, _cleanup_temporary(temporary_container))
+        raise
 
     try:
+        audit(temporary)
+    except BaseException as error:
+        _note_cleanup_failure(error, _cleanup_temporary(temporary_container))
+        raise
+
+    try:
+        _rename_noreplace(temporary, destination)
+    except OSError as error:
+        cleanup_error = _cleanup_temporary(temporary_container)
+        if error.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+            collision = _collision(destination)
+            _note_cleanup_failure(collision, cleanup_error)
+            raise collision from error
+        detail = str(error)
+        if cleanup_error is not None:
+            detail = f"{detail}; temporary cleanup also failed: {cleanup_error}"
+        raise _publication_error(detail) from error
+    except BaseException as error:
+        _note_cleanup_failure(error, _cleanup_temporary(temporary_container))
+        raise
+
+    try:
+        temporary_container.rmdir()
         _fsync_open_path(evidence_root, directory=True)
     except OSError as error:
+        _note_cleanup_failure(error, _cleanup_temporary(temporary_container))
         raise AcceptedBundlePublicationError(destination, error) from error
+    except BaseException as error:
+        _note_cleanup_failure(error, _cleanup_temporary(temporary_container))
+        raise
 
     return destination

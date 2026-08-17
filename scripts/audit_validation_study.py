@@ -1015,6 +1015,10 @@ def _config_semantics(config: ExperimentConfig) -> dict[str, object]:
     document = cast(dict[str, object], config.model_dump(mode="json", exclude_none=True))
     run = cast(dict[str, object], document["run"])
     run["directory"] = "<operational>"
+    target = cast(dict[str, object], document["target"])
+    mounts = cast(list[dict[str, object]], target["mounts"])
+    for mount in mounts:
+        mount["source"] = "<operational>"
     return document
 
 
@@ -1181,7 +1185,9 @@ def _training(
             f"run configuration is invalid: {error}",
             "restore canonical run configuration",
         )
-    if render_effective_config(pair.portable) != contents["experiment.toml"] or pair.realized != config:
+    if render_effective_config(pair.portable) != contents["experiment.toml"] or _config_semantics(
+        pair.realized
+    ) != _config_semantics(config):
         _fail(
             "artifact_foreign",
             f"{directory_relative}/experiment.toml",

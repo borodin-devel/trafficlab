@@ -31,8 +31,8 @@ from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import ComparisonResult, compare_experiment, compare_traces, parse_comparison_result
 from trafficlab.compatibility import ContentIdentity, identify_bytes
-from trafficlab.config import GenerationLimits, SimilarityConfig
-from trafficlab.config_io import load_configuration_pair
+from trafficlab.config import ExperimentConfig, GenerationLimits, SimilarityConfig
+from trafficlab.config_io import load_configuration_pair, render_effective_config
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
@@ -6767,6 +6767,275 @@ def test_offline_bundle_audit_reconstructs_relocated_complete_fixture_without_ex
     assert _candidate_bytes(candidate) == before
 
 
+def _auditor_semantics_fixture_config() -> ExperimentConfig:
+    """Build one valid config with the declared host mount that publication relocates."""
+
+    document = tomllib.loads(
+        (
+            _ROOT / "tests" / "fixtures" / "validation_study_candidate" / "configs" / "training-short-r1.realized.toml"
+        ).read_text(encoding="utf-8")
+    )
+    target = cast(dict[str, Any], document["target"])
+    target["mounts"] = [{"source": "/retained/mount", "target": "/trafficlab-study/short.headers", "read_only": True}]
+    return ExperimentConfig.model_validate(document)
+
+
+def test_offline_auditor_config_semantics_masks_only_declared_operational_paths() -> None:
+    """Relocation may alter only the run directory and host-side mount source."""
+
+    baseline = _auditor_semantics_fixture_config()
+    relocated_mount = baseline.target.mounts[0].model_copy(update={"source": Path("/relocated/mount")})
+    relocated_target = baseline.target.model_copy(update={"mounts": (relocated_mount,)})
+    relocated = baseline.model_copy(
+        update={
+            "run": baseline.run.model_copy(update={"directory": Path("/relocated/run")}),
+            "target": relocated_target,
+        }
+    )
+
+    assert auditor._config_semantics(relocated) == auditor._config_semantics(baseline)  # pyright: ignore[reportPrivateUsage]
+
+
+_NONOPERATIONAL_CONFIG_MUTATIONS = (
+    "master_seed",
+    "target_image",
+    "target_argv_order",
+    "target_environment",
+    "target_working_directory",
+    "mount_target",
+    "mount_read_only",
+    "capture_timeout",
+    "trial_limit",
+    "final_limit",
+    "population_size",
+    "model_bound",
+    "similarity_limit",
+)
+_NONOPERATIONAL_REALIZED_CONFIG_MUTATIONS = tuple(
+    case for case in _NONOPERATIONAL_CONFIG_MUTATIONS if case not in {"mount_target", "mount_read_only"}
+)
+
+
+def _nonoperational_config_mutation(config: ExperimentConfig, case: str) -> ExperimentConfig:
+    document = config.model_dump(mode="json")
+    target = cast(dict[str, Any], document["target"])
+    if case == "master_seed":
+        cast(dict[str, Any], document["run"])["master_seed"] = 74
+    elif case == "target_image":
+        target["image"] = "curlimages/curl@sha256:" + "1" * 64
+    elif case == "target_argv_order":
+        target["argv"] = list(reversed(cast(list[str], target["argv"])))
+    elif case == "target_environment":
+        target["environment"] = {"TRAFFICLAB_MUTATION": "1"}
+    elif case == "target_working_directory":
+        target["working_directory"] = "/changed"
+    elif case == "mount_target":
+        mount = cast(dict[str, Any], cast(list[object], target["mounts"])[0])
+        mount["target"] = "/changed.headers"
+    elif case == "mount_read_only":
+        mount = cast(dict[str, Any], cast(list[object], target["mounts"])[0])
+        mount["read_only"] = False
+    elif case == "capture_timeout":
+        cast(dict[str, Any], document["capture"])["readiness_timeout_seconds"] = 3.0
+    elif case == "trial_limit":
+        cast(dict[str, Any], cast(dict[str, Any], document["generation"])["trial"])["max_packets"] = 501
+    elif case == "final_limit":
+        cast(dict[str, Any], cast(dict[str, Any], document["generation"])["final"])["max_packets"] = 1001
+    elif case == "population_size":
+        cast(dict[str, Any], document["genetic"])["population_size"] = 7
+    elif case == "model_bound":
+        cast(dict[str, Any], cast(dict[str, Any], document["models"])["poisson_empirical"])["c_lambda"]["lower"] = 0.6
+    else:
+        cast(dict[str, Any], document["similarity"])["max_direction_bin_cells"] = 101
+
+    return ExperimentConfig.model_validate(document)
+
+
+@pytest.mark.parametrize("case", _NONOPERATIONAL_CONFIG_MUTATIONS)
+def test_offline_auditor_config_semantics_rejects_each_nonoperational_mutation(case: str) -> None:
+    """Every scientific/workload field remains part of the retained config identity."""
+
+    baseline = _auditor_semantics_fixture_config()
+    mutated = _nonoperational_config_mutation(baseline, case)
+
+    assert auditor._config_semantics(mutated) != auditor._config_semantics(baseline)  # pyright: ignore[reportPrivateUsage]
+
+
+def _config_semantic_leaf_paths(value: Any, prefix: tuple[str | int, ...] = ()) -> tuple[tuple[str | int, ...], ...]:
+    if prefix == ("run", "directory"):
+        return ()
+    if prefix == ("target", "mounts"):
+        mounts = cast(list[dict[str, Any]], value)
+        return tuple(
+            path
+            for index, mount in enumerate(mounts)
+            for path in (("target", "mounts", index, "target"), ("target", "mounts", index, "read_only"))
+            if path[-1] in mount
+        )
+    if prefix == ("similarity", "method_weights"):
+        return (prefix,)
+    if prefix == ("similarity",):
+        coupled = {
+            "acf_lags",
+            "acf_lag_weights",
+            "acf_iat_weight",
+            "acf_size_weight",
+            "multiscale_packet_weight",
+            "multiscale_byte_weight",
+        }
+        settings = cast(dict[str, Any], value)
+        return (
+            ("similarity", "__acf_lags_and_weights__"),
+            ("similarity", "__acf_component_weights__"),
+            ("similarity", "__multiscale_component_weights__"),
+            *(
+                path
+                for key, child in settings.items()
+                if key not in coupled
+                for path in _config_semantic_leaf_paths(child, (*prefix, key))
+            ),
+        )
+    if isinstance(value, dict):
+        mapping = cast(dict[str, Any], value)
+        if not mapping:
+            return (prefix,)
+        return tuple(
+            path for key, child in mapping.items() for path in _config_semantic_leaf_paths(child, (*prefix, key))
+        )
+    return (prefix,)
+
+
+def _config_semantic_path_value(document: dict[str, Any], path: tuple[str | int, ...]) -> Any:
+    if isinstance(path[-1], str) and path[-1].startswith("__"):
+        return None
+    value: Any = document
+    for part in path:
+        value = value[part]
+    return value
+
+
+def _set_config_semantic_path_value(
+    document: dict[str, Any],
+    path: tuple[str | int, ...],
+    replacement: Any,
+) -> None:
+    if path == ("similarity", "__acf_lags_and_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["acf_lags"] = [1, 2]
+        similarity["acf_lag_weights"] = [0.5, 0.5]
+        return
+    if path == ("similarity", "__acf_component_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["acf_iat_weight"] = 0.6
+        similarity["acf_size_weight"] = 0.4
+        return
+    if path == ("similarity", "__multiscale_component_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["multiscale_packet_weight"] = 0.6
+        similarity["multiscale_byte_weight"] = 0.4
+        return
+    parent = _config_semantic_path_value(document, path[:-1])
+    parent[path[-1]] = replacement
+
+
+def _config_semantic_replacements(path: tuple[str | int, ...], value: Any) -> tuple[Any, ...]:
+    if isinstance(path[-1], str) and path[-1].startswith("__"):
+        return (None,)
+    if path == ("target", "image"):
+        return ("curlimages/curl@sha256:" + "1" * 64,)
+    if path == ("capture", "image"):
+        return ("trafficlab-capture@sha256:" + "2" * 64,)
+    if path == ("capture", "network_probe_url"):
+        return ("https://example.test/changed",)
+    if path == ("similarity", "method_weights"):
+        weights = cast(dict[str, float], value)
+        return ({**weights, "frame_size_ks": 0.30, "iat_ks": 0.20},)
+    if type(value) is bool:
+        return (not value,)
+    if type(value) is int:
+        return (value + 1, value - 1)
+    if type(value) is float:
+        return (value + 0.01, value - 0.01)
+    if type(value) is str:
+        return (f"{value}-changed",)
+    if isinstance(value, list):
+        items = cast(list[Any], value)
+        if path == ("genetic", "trial_seeds"):
+            return ([cast(int, items[0]) + 1],)
+        if all(type(item) is str for item in items):
+            return (list(reversed(items)),)
+        if all(type(item) is int for item in items):
+            return ([cast(int, items[0]) + 1],)
+        if len(items) == 1:
+            return ([cast(float, items[0]) + 0.1], [cast(float, items[0]) - 0.1])
+        changed = list(items)
+        changed[0] = cast(float, changed[0]) + 0.1
+        changed[-1] = cast(float, changed[-1]) - 0.1
+        return (changed,)
+    if isinstance(value, dict):
+        mapping = cast(dict[str, Any], value)
+        return ({**mapping, "TRAFFICLAB_MUTATION": "1"},)
+    raise AssertionError(f"no mutation candidate for config path {path}")
+
+
+def test_offline_auditor_config_semantics_retains_every_nonoperational_control() -> None:
+    """Only the two documented host-path classes are removed from config comparison."""
+
+    baseline = _auditor_semantics_fixture_config()
+    document = baseline.model_dump(mode="json")
+    paths = _config_semantic_leaf_paths(document)
+    assert paths
+    for path in paths:
+        value = _config_semantic_path_value(document, path)
+        for replacement in _config_semantic_replacements(path, value):
+            mutated_document = copy.deepcopy(document)
+            _set_config_semantic_path_value(mutated_document, path, replacement)
+            try:
+                mutated = ExperimentConfig.model_validate(mutated_document)
+            except ValueError:
+                continue
+            assert auditor._config_semantics(mutated) != auditor._config_semantics(baseline)  # pyright: ignore[reportPrivateUsage]
+            break
+        else:
+            raise AssertionError(f"no valid semantic mutation for config path {path}")
+
+
+@pytest.mark.parametrize("case", _NONOPERATIONAL_REALIZED_CONFIG_MUTATIONS)
+def test_offline_auditor_rejects_each_nonoperational_realized_config_mutation(
+    tmp_path: Path,
+    case: str,
+) -> None:
+    """A portable/realized pair rejects every non-operational relocation mutation."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path)
+    realized_path = candidate / "configs" / "training-short-r1.realized.toml"
+    original = realized_path.read_bytes()
+    baseline = ExperimentConfig.model_validate(tomllib.loads(original.decode("utf-8")))
+    realized_path.write_bytes(render_effective_config(_nonoperational_config_mutation(baseline, case)))
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(
+        TrafficlabError, match="realized configuration does not match its portable configuration"
+    ) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == (
+        "artifact_foreign",
+        "publication",
+        "configs/training-short-r1.realized.toml",
+        "not_published",
+        "primary",
+    )
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected_kind"),
     (
@@ -7113,7 +7382,8 @@ def test_offline_bundle_audit_validates_every_environment_lock_boundary(
         ("directory", "artifact_foreign"),
         ("configuration_path", "artifact_foreign"),
         ("seeds", "scientific_semantics_incompatible"),
-        ("run_configuration", "artifact_foreign"),
+        ("run_configuration", "artifact_corrupt"),
+        ("run_configuration_semantics", "artifact_foreign"),
         ("reconstruction", "artifact_corrupt"),
         ("history", "artifact_foreign"),
         ("winner", "artifact_foreign"),
@@ -7146,6 +7416,10 @@ def test_offline_bundle_audit_covers_training_record_and_reconstruction_boundari
         _write_canonical_json(protocol_path, protocol)
     elif case == "run_configuration":
         (run / "experiment.toml").write_bytes((candidate / "configs" / "training-short-r1.realized.toml").read_bytes())
+    elif case == "run_configuration_semantics":
+        document = tomllib.loads((run / "experiment.toml").read_text(encoding="utf-8"))
+        cast(dict[str, Any], document["run"])["master_seed"] = 74
+        (run / "experiment.toml").write_bytes(render_effective_config(ExperimentConfig.model_validate(document)))
     elif case == "reconstruction":
         (run / "capture.json").write_bytes(b"{}\n")
     elif case == "history":
