@@ -59,6 +59,7 @@ from trafficlab.trace import TraceEvent, align_generated, normalize_reference, p
 _MANIFEST = "manifest.json"
 _INDEX = "index.json"
 _SCHEMA = 2
+_INDEX_SCHEMA = 3
 _WORKLOADS = ("short", "streaming", "bursty")
 _REPEATS = (1, 2, 3)
 _HEX40 = re.compile(r"[0-9a-f]{40}", flags=re.ASCII)
@@ -443,6 +444,8 @@ def owner_for_path(relative: str) -> str:
         return "study-report-inputs"
     if relative == "report.json":
         return "study-report"
+    if relative == "lifecycle.json":
+        return "study-lifecycle"
     if len(parts) == 2 and parts[0] == "prerequisites":
         kind, _, suffix = parts[1].partition(".")
         if kind in ("docker_matrix", "internet_smoke") and suffix in (
@@ -499,7 +502,14 @@ def lineage_for_path(relative: str) -> dict[str, object]:
     parts = PurePosixPath(relative).parts
     if relative == _INDEX:
         return {"relation": "study-index"}
-    if relative in {"protocol.json", "environment.json", "prerequisites.json", "report_inputs.json", "report.json"}:
+    if relative in {
+        "protocol.json",
+        "environment.json",
+        "prerequisites.json",
+        "report_inputs.json",
+        "report.json",
+        "lifecycle.json",
+    }:
         return {"relation": relative.removesuffix(".json")}
     if len(parts) == 2 and parts[0] == "prerequisites":
         return {"relation": "prerequisite", "record": parts[1]}
@@ -2628,6 +2638,117 @@ def _report_inputs(
     }
 
 
+def _lifecycle_project_name(content: bytes, *, name: str) -> str:
+    """Read the one capture project identity already bound by the retained run log."""
+
+    records = _run_log_records(content, name=name)
+    record = _required_log_record(records, event="capture_published", name=name)
+    project_name = _string(record.get("project_name"), name=f"capture project name for {name}")
+    if not project_name.startswith("trafficlab-capture-"):
+        _fail(
+            "artifact_foreign",
+            name,
+            "capture publication project name is not a Trafficlab-owned project",
+            "restore matching capture lineage",
+        )
+    return project_name
+
+
+def _lifecycle_rows(value: object, *, expected: Sequence[dict[str, object]], name: str) -> None:
+    """Require a closed ordered lifecycle row list before trusting cleanup assertions."""
+
+    if type(value) is not list:
+        _fail("artifact_corrupt", "lifecycle.json", f"{name} lifecycle rows must be a list", "restore lifecycle proof")
+    rows = [
+        _exact(item, ("cleanup_verified", "directory", "project_name", "run_id"), name=f"{name} lifecycle row")
+        for item in cast(list[object], value)
+    ]
+    if rows != expected:
+        _fail(
+            "artifact_foreign",
+            "lifecycle.json",
+            f"{name} lifecycle rows do not bind the completed capture runs",
+            "restore matching collection cleanup evidence",
+        )
+
+
+def _lifecycle(
+    bundle: Path,
+    value: object,
+    *,
+    protocol: Mapping[str, object],
+    environment: Mapping[str, object],
+    training: Sequence[_Training],
+) -> None:
+    """Independently validate candidate-owned capture and phase-image cleanup proof."""
+
+    document = _exact(
+        value,
+        ("held_out", "phase_capture_image", "schema_version", "study_id", "training"),
+        name="lifecycle.json",
+    )
+    if document["schema_version"] != 1:
+        _fail(
+            "artifact_corrupt",
+            "lifecycle.json",
+            "collection lifecycle must use schema version 1",
+            "restore canonical collection cleanup evidence",
+        )
+    study_id = _string(document["study_id"], name="lifecycle study ID")
+    if study_id != protocol["study_id"] or study_id != bundle.name:
+        _fail(
+            "artifact_foreign",
+            "lifecycle.json",
+            "collection lifecycle study ID does not match frozen protocol identity",
+            "restore matching collection cleanup evidence",
+        )
+    phase = _exact(
+        document["phase_capture_image"],
+        ("capture_image_id", "cleanup_verified", "post_cleanup_inspect_exit_status", "tag"),
+        name="collection phase capture image lifecycle",
+    )
+    expected_phase = {
+        "capture_image_id": environment["capture_image_id"],
+        "cleanup_verified": True,
+        "post_cleanup_inspect_exit_status": 1,
+        "tag": f"trafficlab-validation-{study_id}:collection-capture",
+    }
+    if phase != expected_phase:
+        _fail(
+            "artifact_foreign",
+            "lifecycle.json",
+            "collection phase capture image cleanup does not match frozen identity",
+            "restore matching collection cleanup evidence",
+        )
+    training_by_key = {(item.workload, item.repeat): item for item in training}
+    expected_training: list[dict[str, object]] = []
+    for _order, run_id, workload, repeat in PRIMARY_ORDER:
+        item = training_by_key[(workload, repeat)]
+        relative = f"training/{workload}/r{repeat}"
+        expected_training.append(
+            {
+                "cleanup_verified": True,
+                "directory": relative,
+                "project_name": _lifecycle_project_name(item.contents["run.log"], name=f"{relative}/run.log"),
+                "run_id": run_id,
+            }
+        )
+    _lifecycle_rows(document["training"], expected=expected_training, name="training")
+    expected_held_out: list[dict[str, object]] = []
+    for workload in _WORKLOADS:
+        relative = f"held_out/{workload}"
+        content = _read_regular(bundle / relative / "run.log", affected=f"{relative}/run.log")
+        expected_held_out.append(
+            {
+                "cleanup_verified": True,
+                "directory": relative,
+                "project_name": _lifecycle_project_name(content, name=f"{relative}/run.log"),
+                "run_id": f"held-out-{workload}",
+            }
+        )
+    _lifecycle_rows(document["held_out"], expected=expected_held_out, name="held-out")
+
+
 def _expected_paths(
     index: dict[str, object],
     protocol: dict[str, object],
@@ -2641,6 +2762,7 @@ def _expected_paths(
         _relative(index["environment"], name="index environment"),
         _relative(index["protocol"], name="index protocol"),
         _relative(index["prerequisites"], name="index prerequisites"),
+        _relative(index["lifecycle"], name="index lifecycle"),
         _relative(index["report_inputs"], name="index report inputs"),
         _relative(index["report"], name="index report"),
         *prerequisite_paths,
@@ -2755,6 +2877,7 @@ def _audit(
             "environment",
             "fresh_simulation",
             "held_out",
+            "lifecycle",
             "lineage",
             "ownership",
             "prerequisites",
@@ -2766,12 +2889,12 @@ def _audit(
         ),
         name=_INDEX,
     )
-    if index["schema_version"] != _SCHEMA:
+    if index["schema_version"] != _INDEX_SCHEMA:
         _fail(
             "scientific_semantics_incompatible",
             _INDEX,
-            "evidence index must use schema version 2",
-            "rebuild retained evidence under schema 2",
+            "evidence index must use schema version 3",
+            "rebuild retained evidence under schema 3",
         )
     _metadata(index, entries)
     environment_path = _relative(index["environment"], name="index environment")
@@ -2781,12 +2904,14 @@ def _audit(
         environment_path,
         protocol_path,
         prerequisites_path,
+        _relative(index["lifecycle"], name="index lifecycle"),
         _relative(index["report_inputs"], name="index report inputs"),
         _relative(index["report"], name="index report"),
     ) != (
         "environment.json",
         "protocol.json",
         "prerequisites.json",
+        "lifecycle.json",
         "report_inputs.json",
         "report.json",
     ):
@@ -2924,6 +3049,14 @@ def _audit(
         )
         held_evaluations[workload] = evaluation
         held_paths.update(paths)
+    lifecycle_path = _relative(index["lifecycle"], name="index lifecycle")
+    _lifecycle(
+        bundle,
+        _json(_read_regular(bundle / lifecycle_path, affected=lifecycle_path), name=lifecycle_path),
+        protocol=protocol,
+        environment=environment,
+        training=ordered_training,
+    )
     expected_paths = _expected_paths(index, protocol, prerequisite_paths, ordered_training, fresh_paths, held_paths)
     actual_paths = {entry.path for entry in entries}
     for relative in sorted(expected_paths - actual_paths, key=_path_key):

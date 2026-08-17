@@ -8,7 +8,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from itertools import count
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import pytest
 
@@ -261,6 +261,7 @@ def _offline_stage_runners(
                     (prepared.run_directory / "experiment.toml").read_bytes()
                 ).as_dict(),
                 "packet_count": inspection.packet_count,
+                "project_name": f"trafficlab-capture-{label}-{number}",
                 "reference_identity": identify_bytes(reference_path.read_bytes()).as_dict(),
                 "reused": False,
                 "stage": "capture",
@@ -334,6 +335,31 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         url="https://downloads.example.test/object.bin",
         phase="collection",
     )
+    tag = study._phase_capture_tag("study-1", "collection")  # pyright: ignore[reportPrivateUsage]
+    phase_commands: list[tuple[str, ...]] = []
+
+    def phase_runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+        input: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert cwd == repository
+        assert check is False
+        assert capture_output is True
+        assert shell is False
+        assert input is None
+        assert timeout == study.SUBPROCESS_TIMEOUTS["image_pull_or_build"]
+        command = tuple(argv)
+        phase_commands.append(command)
+        if command == ("docker", "image", "rm", "--force", tag):
+            return subprocess.CompletedProcess(command, 0, stdout=b"removed\n", stderr=b"")
+        assert command == ("docker", "image", "inspect", tag, "--format", "{{.Id}}")
+        return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"")
 
     collected = study.collect_validation_candidate(
         repository_root=repository,
@@ -347,6 +373,8 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         run=run_training,
         capture=capture_held_out,
         object_size_bytes=4_194_304,
+        owned_capture_image=study._PhaseCaptureImage(tag=tag, build_attempted=True),  # pyright: ignore[reportPrivateUsage]
+        runner=phase_runner,
     )
 
     assert collected == candidate
@@ -422,11 +450,108 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     assert protocol["prerequisite_path"] == "examples/validation_study/prerequisites.json"
     assert protocol["schema_version"] == 3
     assert "natural_variation_windows" not in protocol
+    lifecycle = cast(dict[str, object], json.loads((candidate / "lifecycle.json").read_text()))
+    assert lifecycle["study_id"] == "study-1"
+    assert lifecycle["phase_capture_image"] == {
+        "capture_image_id": environment["capture_image_id"],
+        "cleanup_verified": True,
+        "post_cleanup_inspect_exit_status": 1,
+        "tag": tag,
+    }
+    assert [cast(dict[str, object], row)["run_id"] for row in cast(list[object], lifecycle["training"])] == [
+        run_id for _order, run_id, _workload, _repeat in study.PRIMARY_ORDER
+    ]
+    assert [cast(dict[str, object], row)["run_id"] for row in cast(list[object], lifecycle["held_out"])] == [
+        "held-out-short",
+        "held-out-streaming",
+        "held-out-bursty",
+    ]
+    assert all(
+        cast(dict[str, object], row)["cleanup_verified"] is True
+        and cast(str, cast(dict[str, object], row)["project_name"]).startswith("trafficlab-capture-")
+        for row in (*cast(list[object], lifecycle["training"]), *cast(list[object], lifecycle["held_out"]))
+    )
+    assert phase_commands == [
+        ("docker", "image", "rm", "--force", tag),
+        ("docker", "image", "inspect", tag, "--format", "{{.Id}}"),
+    ]
     published = study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
     assert published == repository / "examples" / "validation_study" / "evidence" / "study-1"
     assert auditor.audit_bundle(published, repository=repository).bundle == published
     with pytest.raises(TrafficlabError, match="already exists"):
         study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
+
+
+@pytest.mark.parametrize("cleanup_failure", ("remove", "retained_tag"))
+def test_collection_refuses_to_finalize_when_phase_image_cleanup_is_not_verified(
+    tmp_path: Path,
+    cleanup_failure: str,
+) -> None:
+    """A capture tag that survives removal cannot become audit-ready lifecycle evidence."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
+    candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
+    run_training, capture_held_out, _calls = _offline_stage_runners(
+        repository, candidate=candidate, environment=environment
+    )
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        phase="collection",
+    )
+    tag = study._phase_capture_tag("study-1", "collection")  # pyright: ignore[reportPrivateUsage]
+
+    def retained_tag_runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+        input: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert cwd == repository
+        assert check is False
+        assert capture_output is True
+        assert shell is False
+        assert input is None
+        assert timeout == study.SUBPROCESS_TIMEOUTS["image_pull_or_build"]
+        command = tuple(argv)
+        if command == ("docker", "image", "rm", "--force", tag):
+            return subprocess.CompletedProcess(
+                command,
+                1 if cleanup_failure == "remove" else 0,
+                stdout=b"removed\n" if cleanup_failure != "remove" else b"",
+                stderr=b"simulated removal failure\n" if cleanup_failure == "remove" else b"",
+            )
+        assert command == ("docker", "image", "inspect", tag, "--format", "{{.Id}}")
+        return subprocess.CompletedProcess(command, 0, stdout=b"sha256:still-owned\n", stderr=b"")
+
+    with pytest.raises(TrafficlabError, match="capture image cleanup"):
+        study.collect_validation_candidate(
+            repository_root=repository,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            attempt=attempt,
+            environment=environment,
+            retained_prerequisites=prerequisite,
+            prerequisite_files=prerequisite_files,
+            configs=configs,
+            run=run_training,
+            capture=capture_held_out,
+            object_size_bytes=4_194_304,
+            owned_capture_image=study._PhaseCaptureImage(tag=tag, build_attempted=True),  # pyright: ignore[reportPrivateUsage]
+            runner=retained_tag_runner,
+        )
+
+    assert not (candidate / "lifecycle.json").exists()
+    assert not (candidate / "report_inputs.json").exists()
+    assert not (candidate / "index.json").exists()
+    assert not (candidate / "manifest.json").exists()
 
 
 def test_collection_failure_locks_the_study_id_to_a_new_attempt(tmp_path: Path) -> None:

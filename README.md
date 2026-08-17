@@ -426,7 +426,7 @@ captures each. A complete retained candidate records canonical prerequisites,
 protocol headers and observations, environment compatibility, portable and
 realized configurations, nine training run trees, nine same-reference
 fresh-simulation records, and three independent fixed-model heldout bundles.
-The accepted r18 bundle retains its exact reference and generated PCAPNG bytes;
+The accepted bundle retains its exact reference and generated PCAPNG bytes;
 ordinary, failed, and scratch captures remain outside Git. The checked
 credential-free fixture proves the same offline audit contract without network
 access.
@@ -434,12 +434,13 @@ access.
 - [Study instructions and retained-evidence policy](examples/validation_study/README.md)
 - [Study results and interpretation](examples/validation_study/REPORT.md)
 
-The accepted corrected study is
-[`2026-08-17-research-fitness-r18`](examples/validation_study/evidence/2026-08-17-research-fitness-r18/manifest.json).
-It retains 230 manifest-indexed evidence files, nine training trees, nine
-same-reference fresh simulations, three independent held-out bundles, exact
-prerequisites, and a guarded offline clean-clone reconstruction. Historical
-Phase 7 material and earlier attempts remain non-accepted evidence.
+The accepted corrected study is identified by the checked
+[study instructions](examples/validation_study/README.md) and
+[study report](examples/validation_study/REPORT.md), rather than a mutable
+concrete bundle ID. It retains the manifest-indexed training, fresh-simulation,
+held-out, prerequisite, and guarded offline-reconstruction evidence described
+there. Historical Phase 7 material and earlier attempts remain non-accepted
+evidence.
 
 ## Limitations
 

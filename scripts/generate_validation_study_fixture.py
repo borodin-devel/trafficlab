@@ -141,6 +141,7 @@ def _append_capture_log_lineage(
     reference: bytes,
     experiment: bytes,
     packet_count: int,
+    project_name: str,
 ) -> None:
     environment = _capture_log_environment()
     append_run_log(directory, {"event": "capture_environment_identity", "stage": "preflight", **environment})
@@ -152,6 +153,7 @@ def _append_capture_log_lineage(
             "event": "capture_published",
             "experiment_identity": identify_bytes(experiment).as_dict(),
             "packet_count": packet_count,
+            "project_name": project_name,
             "reference_identity": identify_bytes(reference).as_dict(),
             "reused": False,
             "stage": "capture",
@@ -329,6 +331,7 @@ def _write_training_tree(
             reference=reference,
             experiment=experiment,
             packet_count=len(parsed_reference),
+            project_name=f"trafficlab-capture-fixture-{workload}-r{repeat}",
         )
         append_run_log(
             run_directory,
@@ -473,6 +476,7 @@ def _write_held_out(
         reference=reference,
         experiment=realized,
         packet_count=len(events),
+        project_name=f"trafficlab-capture-fixture-held-out-{workload}",
     )
     append_run_log(directory, {"event": "held_out_evaluated", "stage": "compare", "workload": workload})
     return {
@@ -713,17 +717,47 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 }
             )
         )
+        lifecycle = {
+            "held_out": [
+                {
+                    "cleanup_verified": True,
+                    "directory": f"held_out/{workload}",
+                    "project_name": f"trafficlab-capture-fixture-held-out-{workload}",
+                    "run_id": f"held-out-{workload}",
+                }
+                for workload in WORKLOADS
+            ],
+            "phase_capture_image": {
+                "capture_image_id": CAPTURE_ID,
+                "cleanup_verified": True,
+                "post_cleanup_inspect_exit_status": 1,
+                "tag": f"trafficlab-validation-{_STUDY_ID}:collection-capture",
+            },
+            "schema_version": 1,
+            "study_id": _STUDY_ID,
+            "training": [
+                {
+                    "cleanup_verified": True,
+                    "directory": f"training/{workload}/r{repeat}",
+                    "project_name": f"trafficlab-capture-fixture-{workload}-r{repeat}",
+                    "run_id": run_id,
+                }
+                for _order, run_id, workload, repeat in study.PRIMARY_ORDER
+            ],
+        }
+        (root / "lifecycle.json").write_bytes(_canonical(lifecycle))
         index: dict[str, object] = {
             "environment": "environment.json",
             "fresh_simulation": fresh,
             "held_out": held,
+            "lifecycle": "lifecycle.json",
             "lineage": {},
             "ownership": {},
             "prerequisites": "prerequisites.json",
             "protocol": "protocol.json",
             "report": "report.json",
             "report_inputs": "report_inputs.json",
-            "schema_version": 2,
+            "schema_version": 3,
             "training": training,
         }
         (root / "index.json").write_bytes(_canonical(index))

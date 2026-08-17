@@ -119,6 +119,7 @@ class _PhaseCaptureImage:
 
     tag: str
     build_attempted: bool = False
+    cleanup_verified: bool = False
 
 
 def evaluate_study_held_out(
@@ -7925,7 +7926,7 @@ def _collect_held_out(
     environment: Mapping[str, object],
     capture: HeldOutCaptureRunner,
     object_size_bytes: int,
-) -> tuple[JsonObject, HeldOutEvaluation]:
+) -> tuple[JsonObject, HeldOutEvaluation, CaptureResult]:
     directory = candidate / "held_out" / workload.name
     _require(not _path_entry_exists(directory), f"held-out directory already exists: {directory}")
     config = _config_with_run_directory(training.config, directory)
@@ -8003,6 +8004,7 @@ def _collect_held_out(
             },
         ),
         evaluation,
+        result,
     )
 
 
@@ -8403,6 +8405,124 @@ def _remove_owned_phase_capture_image(
     )
 
 
+def _complete_collection_capture_image_cleanup(
+    owned_capture_image: _PhaseCaptureImage,
+    *,
+    repository_root: Path,
+    runner: CommandRunner,
+) -> None:
+    """Remove and prove absence of the exact collection tag before candidate finalization."""
+
+    _require(owned_capture_image.build_attempted, "collection capture image must be established before cleanup")
+    try:
+        _remove_owned_phase_capture_image(
+            owned_capture_image,
+            phase="collection",
+            repository_root=repository_root,
+            runner=runner,
+        )
+    except ValueError as error:
+        raise ValueError(f"collection capture image cleanup failed: {error}") from error
+    inspected = runner(
+        ("docker", "image", "inspect", owned_capture_image.tag, "--format", "{{.Id}}"),
+        cwd=repository_root,
+        check=False,
+        capture_output=True,
+        shell=False,
+        timeout=SUBPROCESS_TIMEOUTS["image_pull_or_build"],
+    )
+    if inspected.returncode != 1:
+        detail = (
+            "collection capture image cleanup left the exact owned tag present"
+            if inspected.returncode == 0
+            else "could not inspect the collection capture image tag after cleanup: "
+            + _command_detail(inspected, operation="collection capture image post-cleanup inspect")
+        )
+        raise ValueError(detail)
+    owned_capture_image.cleanup_verified = True
+
+
+def _collection_capture_lifecycle_record(
+    capture_result: CaptureResult,
+    *,
+    directory: Path,
+    directory_relative: str,
+    run_id: str,
+) -> JsonObject:
+    """Bind one successful capture return to its retained project-cleanup lineage."""
+
+    _require(
+        capture_result.run_directory == directory
+        and capture_result.reference_path == directory / "reference.pcapng"
+        and capture_result.target_status == 0
+        and not capture_result.reused,
+        "collection capture must return one fresh successful capture pair",
+    )
+    records = _parse_run_log((directory / "run.log").read_bytes())
+    publications = [record for record in records if record.get("event") == "capture_published"]
+    _require(len(publications) == 1, "collection capture must retain one capture publication record")
+    project_name = publications[0].get("project_name")
+    _require(
+        type(project_name) is str and project_name.startswith("trafficlab-capture-"),
+        "collection capture publication must retain its exact project name",
+    )
+    return cast(
+        JsonObject,
+        {
+            "cleanup_verified": True,
+            "directory": directory_relative,
+            "project_name": project_name,
+            "run_id": run_id,
+        },
+    )
+
+
+def _finalize_collection_lifecycle(
+    *,
+    candidate: Path,
+    environment: Mapping[str, object],
+    held_out: Sequence[JsonObject],
+    owned_capture_image: _PhaseCaptureImage | None,
+    repository_root: Path,
+    runner: CommandRunner,
+    study_id: str,
+    training: Sequence[JsonObject],
+) -> None:
+    """Publish the one audit-owned cleanup contract only after every cleanup proof succeeds."""
+
+    if owned_capture_image is None:
+        raise ValueError("collection finalization requires its owned capture image")
+    expected_tag = _phase_capture_tag(study_id, "collection")
+    _require(owned_capture_image.tag == expected_tag, "collection lifecycle must use its exact owned capture image tag")
+    capture_image_id = environment.get("capture_image_id")
+    _require(type(capture_image_id) is str and capture_image_id.startswith("sha256:"), "invalid capture image identity")
+    _complete_collection_capture_image_cleanup(
+        owned_capture_image,
+        repository_root=repository_root,
+        runner=runner,
+    )
+    _write_candidate_bytes(
+        candidate / "lifecycle.json",
+        _canonical_json(
+            cast(
+                JsonObject,
+                {
+                    "held_out": [cast(JsonValue, row) for row in held_out],
+                    "phase_capture_image": {
+                        "capture_image_id": capture_image_id,
+                        "cleanup_verified": True,
+                        "post_cleanup_inspect_exit_status": 1,
+                        "tag": expected_tag,
+                    },
+                    "schema_version": 1,
+                    "study_id": study_id,
+                    "training": [cast(JsonValue, row) for row in training],
+                },
+            )
+        ),
+    )
+
+
 def collect_validation_candidate(
     *,
     repository_root: Path,
@@ -8417,6 +8537,8 @@ def collect_validation_candidate(
     capture: HeldOutCaptureRunner = capture_experiment,
     object_size_bytes: int,
     perf_counter: Callable[[], float] = time.perf_counter,
+    owned_capture_image: _PhaseCaptureImage | None = None,
+    runner: CommandRunner = cast(CommandRunner, subprocess.run),  # noqa: B008 - fixed injected lifecycle boundary
 ) -> Path:
     """Collect one immutable, audit-ready Phase 7 candidate through existing stage owners."""
     root = repository_root.resolve()
@@ -8437,6 +8559,7 @@ def collect_validation_candidate(
         _stage_retained_prerequisites(candidate, content=retained_prerequisites, files=prerequisite_files)
         workloads = {item.name: item for item in workload_specs(checked_url)}
         training: list[_CandidateTraining] = []
+        training_lifecycle: list[JsonObject] = []
         for _order, run_id, workload_value, repeat in PRIMARY_ORDER:
             workload_name = cast(WorkloadName, workload_value)
             workload = workloads[workload_name]
@@ -8447,7 +8570,7 @@ def collect_validation_candidate(
             prepared = prepare_transfer_scratch(root, checked_study_id, run_id, workload)
             started = perf_counter()
             try:
-                run(source)
+                run_result = run(source)
             except ValueError as error:
                 raise _CollectionCallbackValueError(error) from error
             runtime_seconds = perf_counter() - started
@@ -8491,6 +8614,14 @@ def collect_validation_candidate(
                 runtime_seconds=runtime_seconds,
             )
             training.append(loaded)
+            training_lifecycle.append(
+                _collection_capture_lifecycle_record(
+                    run_result.capture,
+                    directory=directory,
+                    directory_relative=f"training/{workload_name}/r{repeat}",
+                    run_id=run_id,
+                )
+            )
 
         natural_variation = tuple(
             _candidate_natural_variation([item for item in training if item.workload == workload])
@@ -8533,9 +8664,10 @@ def collect_validation_candidate(
                 item for item in training if f"training/{item.workload}/r{item.repeat}" == selected_directory
             )
         held_rows: list[JsonObject] = []
+        held_lifecycle: list[JsonObject] = []
         held_evaluations: dict[WorkloadName, HeldOutEvaluation] = {}
         for workload_name in ("short", "streaming", "bursty"):
-            held_record, evaluation = _collect_held_out(
+            held_record, evaluation, capture_result = _collect_held_out(
                 root,
                 candidate,
                 attempt,
@@ -8547,7 +8679,25 @@ def collect_validation_candidate(
                 object_size_bytes=object_size_bytes,
             )
             held_rows.append(held_record)
+            held_lifecycle.append(
+                _collection_capture_lifecycle_record(
+                    capture_result,
+                    directory=candidate / "held_out" / workload_name,
+                    directory_relative=f"held_out/{workload_name}",
+                    run_id=f"held-out-{workload_name}",
+                )
+            )
             held_evaluations[workload_name] = evaluation
+        _finalize_collection_lifecycle(
+            candidate=candidate,
+            environment=environment,
+            held_out=held_lifecycle,
+            owned_capture_image=owned_capture_image,
+            repository_root=root,
+            runner=runner,
+            study_id=checked_study_id,
+            training=training_lifecycle,
+        )
         report_inputs = _candidate_report_inputs(
             training,
             held_evaluations,
@@ -8580,13 +8730,14 @@ def collect_validation_candidate(
             "environment": "environment.json",
             "fresh_simulation": [cast(JsonValue, record) for record in sorted_fresh],
             "held_out": [cast(JsonValue, record) for record in held_rows],
+            "lifecycle": "lifecycle.json",
             "lineage": {},
             "ownership": {},
             "prerequisites": "prerequisites.json",
             "protocol": "protocol.json",
             "report": "report.json",
             "report_inputs": "report_inputs.json",
-            "schema_version": 2,
+            "schema_version": 3,
             "training": [
                 cast(JsonValue, _candidate_training_record(item, environment=environment)) for item in ordered_training
             ],
@@ -8749,12 +8900,14 @@ def main(
                     capture=capture,
                     object_size_bytes=object_size_bytes,
                     perf_counter=perf_counter,
+                    owned_capture_image=owned_capture_image,
+                    runner=runner,
                 )
             except BaseException as error:
                 primary = error
                 raise
             finally:
-                if owned_capture_image.build_attempted:
+                if owned_capture_image.build_attempted and not owned_capture_image.cleanup_verified:
                     try:
                         _remove_owned_phase_capture_image(
                             owned_capture_image,
