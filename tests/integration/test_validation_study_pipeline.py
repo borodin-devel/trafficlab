@@ -113,13 +113,11 @@ def test_clean_checkout_checks_the_pristine_tracked_validation_fixture(tmp_path:
     subprocess.run(("git", "checkout", "--detach", "HEAD"), cwd=repository, check=True, capture_output=True)
     fixture = repository / "tests" / "fixtures" / "validation_study_candidate"
     environment = cast(dict[str, object], json.loads((fixture / "environment.json").read_text(encoding="utf-8")))
+    clone_environment = dict(os.environ)
+    clone_environment.pop("PYTHONPATH", None)
     completed = subprocess.run(
         (
-            "uv",
-            "run",
-            "--locked",
-            "--offline",
-            "python",
+            sys.executable,
             "scripts/generate_validation_study_fixture.py",
             "--check",
             "--source-commit",
@@ -131,9 +129,11 @@ def test_clean_checkout_checks_the_pristine_tracked_validation_fixture(tmp_path:
         check=False,
         capture_output=True,
         text=True,
+        env=clone_environment,
     )
 
     assert completed.returncode == 0, completed.stderr
+    assert not (repository / ".venv").exists()
 
 
 def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
