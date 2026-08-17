@@ -935,16 +935,16 @@ uv run --locked python scripts/generate_fit_fixtures.py --check
 
 ```bash
 scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 20m --kill-after 10s -- \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 10m --kill-after 10s -- \
   uv run --locked pytest -n 4 --dist worksteal \
   -m "not docker and not internet"
 ```
 
 ```bash
 scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 20m --kill-after 10s -- \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 10m --kill-after 10s -- \
   uv run --locked pytest -q -n 0 \
   -m "not docker and not internet" \
   --cov=trafficlab --cov-branch --cov-fail-under=90 \
