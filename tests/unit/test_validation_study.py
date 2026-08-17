@@ -7410,6 +7410,32 @@ def _write_candidate_index(candidate: Path, index: dict[str, object]) -> None:
     _write_canonical_json(candidate / "index.json", index)
 
 
+def _rewrite_training_configuration_identities(candidate: Path, *, workload: str, repeat: int) -> None:
+    """Keep an intentional configuration mutation internally self-consistent."""
+
+    index = _candidate_index(candidate)
+    record = next(
+        item
+        for item in cast(list[dict[str, object]], index["training"])
+        if item["workload"] == workload and item["repeat"] == repeat
+    )
+    directory = f"training/{workload}/r{repeat}"
+    for field, relative in (
+        ("portable_config_identity", f"configs/training-{workload}-r{repeat}.portable.toml"),
+        ("realized_config_identity", f"configs/training-{workload}-r{repeat}.realized.toml"),
+        ("run_config_identity", f"{directory}/experiment.toml"),
+    ):
+        record[field] = identify_bytes((candidate / relative).read_bytes()).as_dict()
+    checkpoint_path = candidate / directory / "checkpoint.json"
+    checkpoint = cast(dict[str, object], json.loads(checkpoint_path.read_bytes()))
+    checkpoint["experiment_identity"] = identify_bytes(
+        (candidate / directory / "experiment.toml").read_bytes()
+    ).as_dict()
+    _write_canonical_json(checkpoint_path, checkpoint)
+    _write_candidate_index(candidate, index)
+    _rewrite_candidate_manifest(candidate)
+
+
 def test_offline_bundle_audit_reconstructs_relocated_complete_fixture_without_external_calls(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -11338,6 +11364,273 @@ def test_offline_auditor_rejects_training_configuration_without_the_frozen_curl_
         outcome.evidence_state,
         outcome.authority,
     ) == ("artifact_foreign", "publication", "training/short/r1", "not_published", "primary")
+
+
+def test_offline_auditor_rejects_self_consistent_frozen_profile_mutations(
+    tmp_path: Path,
+) -> None:
+    """Internal portable/realized agreement cannot replace the frozen profile oracle."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    for relative in (
+        "configs/training-short-r1.portable.toml",
+        "configs/training-short-r1.realized.toml",
+        "training/short/r1/experiment.toml",
+    ):
+        path = candidate / relative
+        content = path.read_bytes()
+        assert b"minimum_free_bytes = 1\n" in content
+        path.write_bytes(content.replace(b"minimum_free_bytes = 1\n", b"minimum_free_bytes = 2\n", 1))
+    _rewrite_training_configuration_identities(candidate, workload="short", repeat=1)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", "training/short/r1", "not_published", "primary")
+
+
+def test_offline_auditor_requires_the_exact_frozen_model_family_set(tmp_path: Path) -> None:
+    """Every retained profile must retain the complete three-family comparison set."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
+    protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_bytes()))
+    frozen = auditor._frozen_profiles(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        environment=environment,
+        protocol=protocol,
+        url="https://downloads.example.test/object.bin",
+    )["short"]
+    document = frozen.model_dump(mode="python")
+    models = cast(dict[str, object], document["models"])
+    models["enabled"] = ["poisson_empirical", "markov_renewal"]
+    del models["mmpp"]
+    subset = ExperimentConfig.model_validate(document)
+
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._require_frozen_profile(  # pyright: ignore[reportPrivateUsage]
+            subset,
+            frozen,
+            affected="held_out/short",
+        )
+
+    assert error.value.kind == "artifact_foreign"
+
+
+def test_offline_auditor_reconstructs_real_study_profiles_and_rejects_a_missing_family(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real-study profile oracle is independent of candidate-generated configuration bytes."""
+
+    evidence = _ROOT / "examples/validation_study/evidence/2026-08-17-research-fitness-r18"
+    environment = cast(dict[str, object], json.loads((evidence / "environment.json").read_bytes()))
+    protocol = cast(dict[str, object], json.loads((evidence / "protocol.json").read_bytes()))
+    prerequisites = study.parse_retained_prerequisites((evidence / "prerequisites.json").read_bytes())
+    profiles = auditor._frozen_profiles(  # pyright: ignore[reportPrivateUsage]
+        _ROOT,
+        environment=environment,
+        protocol=protocol,
+        url=cast(str, prerequisites["url"]),
+    )
+    assert tuple(profiles) == ("short", "streaming", "bursty")
+    frozen = profiles["short"]
+    document = frozen.model_dump(mode="python")
+    models = cast(dict[str, object], document["models"])
+    models["enabled"] = ["poisson_empirical", "markov_renewal"]
+    del models["mmpp"]
+    subset = ExperimentConfig.model_validate(document)
+
+    def invalid_profile(**_kwargs: object) -> ExperimentConfig:
+        return subset
+
+    monkeypatch.setattr(auditor, "_validation_profile", invalid_profile)
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._frozen_profiles(  # pyright: ignore[reportPrivateUsage]
+            _ROOT,
+            environment=environment,
+            protocol=protocol,
+            url=cast(str, prerequisites["url"]),
+        )
+
+    assert error.value.kind == "scientific_semantics_incompatible"
+
+
+def test_offline_auditor_rejects_a_fixture_profile_with_a_foreign_url(tmp_path: Path) -> None:
+    """The narrow fixture compatibility path cannot become a generic profile bypass."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
+    protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_bytes()))
+
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._frozen_profiles(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            environment=environment,
+            protocol=protocol,
+            url="https://invalid.example/",
+        )
+
+    assert error.value.kind == "artifact_foreign"
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_kind"),
+    (("different", "artifact_foreign"), ("invalid", "artifact_corrupt"), ("noncanonical", "artifact_foreign")),
+)
+def test_offline_auditor_rejects_untrusted_fixture_profile_source_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected_kind: str,
+) -> None:
+    """Fixture compatibility derives its profile from checked source bytes, never candidate bytes."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
+    source = repository / "examples/data/fit/experiment.toml"
+    original = source.read_bytes()
+    if case == "different":
+        source.write_bytes(b"different\n")
+    else:
+        replacement = b"invalid = [\n" if case == "invalid" else b"# retained comment\n" + original
+        source.write_bytes(replacement)
+
+        def recorded_fixture_profile(*_args: object, **_kwargs: object) -> bytes:
+            return replacement
+
+        monkeypatch.setattr(auditor, "_git_bytes", recorded_fixture_profile)
+
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._fixture_profile(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            source_commit=cast(str, environment["source_commit"]),
+            workload="short",
+            url="https://downloads.example.test/object.bin",
+            environment=environment,
+        )
+
+    assert error.value.kind == expected_kind
+
+
+@pytest.mark.parametrize(
+    ("relative", "record"),
+    (
+        ("training/short/r1/run.log", b'{"event":"capture_published","stage":"capture","workload":"short"}\n'),
+        ("held_out/short/run.log", b'{"event":"held_out_evaluated","stage":"compare","workload":"short"}\n'),
+    ),
+)
+def test_offline_auditor_rejects_contradictory_required_run_log_records(
+    tmp_path: Path,
+    relative: str,
+    record: bytes,
+) -> None:
+    """Run logs are retained lineage, not merely syntax-valid diagnostics."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    with (candidate / relative).open("ab") as stream:
+        stream.write(record)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", relative, "not_published", "primary")
+
+
+@pytest.mark.parametrize(
+    ("relative", "field"),
+    (("training/short/r1/run.log", "reused"), ("held_out/short/run.log", "capture_identity")),
+)
+def test_offline_auditor_rejects_required_run_log_identity_and_status_mismatches(
+    tmp_path: Path,
+    relative: str,
+    field: str,
+) -> None:
+    """Required run-log records bind both capture identity and completion status."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    path = candidate / relative
+    records = [cast(dict[str, object], json.loads(line)) for line in path.read_bytes().splitlines()]
+    capture = next(record for record in records if record["event"] == "capture_published")
+    if field == "reused":
+        capture["reused"] = True
+    else:
+        identity = cast(dict[str, object], capture["capture_identity"])
+        identity["sha256"] = "0" * 64
+    path.write_bytes(
+        b"".join(
+            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
+                "utf-8"
+            )
+            + b"\n"
+            for record in records
+        )
+    )
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_foreign", "publication", relative, "not_published", "primary")
+
+
+def test_offline_auditor_rejects_incomplete_capture_log_records(
+    tmp_path: Path,
+) -> None:
+    """Canonical JSON alone is insufficient when retained capture-lineage fields are absent."""
+
+    _, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
+    capture = b"capture"
+    reference = b"reference"
+    experiment = b"experiment"
+    environment_fields = auditor._capture_log_environment(environment)  # pyright: ignore[reportPrivateUsage]
+    records = (
+        {"event": "capture_environment_identity", "stage": "preflight", **environment_fields},
+        {
+            "capture_identity": identify_bytes(capture).as_dict(),
+            "event": "capture_published",
+            "experiment_identity": identify_bytes(experiment).as_dict(),
+            "reference_identity": identify_bytes(reference).as_dict(),
+            "reused": False,
+            "stage": "capture",
+        },
+    )
+    with pytest.raises(auditor._Issue) as incomplete:  # pyright: ignore[reportPrivateUsage]
+        auditor._require_capture_log_lineage(  # pyright: ignore[reportPrivateUsage]
+            records,
+            name="run.log",
+            environment=environment,
+            capture=capture,
+            reference=reference,
+            experiment=experiment,
+            packet_count=None,
+        )
+    assert incomplete.value.kind == "artifact_foreign"
 
 
 @pytest.mark.parametrize(

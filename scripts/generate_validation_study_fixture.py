@@ -123,6 +123,42 @@ def _capture_lineage(capture: bytes) -> dict[str, object]:
     }
 
 
+def _capture_log_environment() -> dict[str, object]:
+    return {
+        "capture_content_id": CAPTURE_ID,
+        "capture_reference": CAPTURE_REFERENCE,
+        "capture_tool_version": CAPTURE_TOOL_VERSION,
+        "host_architecture": "fixture-x86_64",
+        "target_content_id": TARGET_ID,
+        "target_reference": study.TARGET_REFERENCE,
+    }
+
+
+def _append_capture_log_lineage(
+    directory: Path,
+    *,
+    capture: bytes,
+    reference: bytes,
+    experiment: bytes,
+    packet_count: int,
+) -> None:
+    environment = _capture_log_environment()
+    append_run_log(directory, {"event": "capture_environment_identity", "stage": "preflight", **environment})
+    append_run_log(
+        directory,
+        {
+            "capture_environment_identity": environment,
+            "capture_identity": identify_bytes(capture).as_dict(),
+            "event": "capture_published",
+            "experiment_identity": identify_bytes(experiment).as_dict(),
+            "packet_count": packet_count,
+            "reference_identity": identify_bytes(reference).as_dict(),
+            "reused": False,
+            "stage": "capture",
+        },
+    )
+
+
 def _checkpoint_fitness(files: Mapping[str, bytes], config: ExperimentConfig, metadata: CaptureMetadata) -> float:
     reference, window = normalize_reference(
         parse_pcapng_bytes(files["reference.pcapng"], metadata, source=Path("reference.pcapng"))
@@ -284,12 +320,59 @@ def _write_training_tree(
         (run_directory / "generated.pcapng").write_bytes(generated_bytes)
         (run_directory / "similarity.json").write_bytes(render_comparison_result(comparison))
         (run_directory / "run.log").write_bytes(b"")
-        append_run_log(run_directory, {"event": "capture_published", "stage": "capture", "workload": workload})
-        append_run_log(run_directory, {"event": "fit_published", "stage": "fit", "workload": workload})
-        append_run_log(
-            run_directory, {"event": "fresh_simulation_published", "stage": "generate", "workload": workload}
+        checkpoint = cast(dict[str, object], json.loads((run_directory / "checkpoint.json").read_bytes()))
+        best = cast(dict[str, object], checkpoint["best"])
+        fitness = cast(float, best["fitness"])
+        _append_capture_log_lineage(
+            run_directory,
+            capture=capture,
+            reference=reference,
+            experiment=experiment,
+            packet_count=len(parsed_reference),
         )
-        append_run_log(run_directory, {"event": "comparison_published", "stage": "compare", "workload": workload})
+        append_run_log(
+            run_directory,
+            {
+                "event": "best_model_published",
+                "family": model.family,
+                "fitness": fitness,
+                "observation_window_seconds": window,
+                "reference_sha256": identify_bytes(reference).sha256,
+                "stage": "fit",
+            },
+        )
+        append_run_log(
+            run_directory,
+            {
+                "event": "generated_pcapng_published",
+                "observation_window_seconds": window,
+                "packet_count": len(generated),
+                "seed": model.final_seed,
+                "stage": "generate",
+            },
+        )
+        append_run_log(
+            run_directory,
+            {
+                "aggregate_score": comparison.aggregate_score,
+                "event": "comparison_succeeded",
+                "observation_window_seconds": window,
+                "reused": False,
+                "stage": "compare",
+            },
+        )
+        append_run_log(
+            run_directory,
+            {
+                "aggregate_score": comparison.aggregate_score,
+                "event": "run_completed",
+                "family": model.family,
+                "fitness": fitness,
+                "generated_packet_count": len(generated),
+                "reference_packet_count": len(parsed_reference),
+                "stage": "run",
+            },
+        )
         append_run_log(
             run_directory,
             {
@@ -384,6 +467,13 @@ def _write_held_out(
     for name, content in contents.items():
         (directory / name).write_bytes(content)
     (directory / "run.log").write_bytes(b"")
+    _append_capture_log_lineage(
+        directory,
+        capture=capture,
+        reference=reference,
+        experiment=realized,
+        packet_count=len(events),
+    )
     append_run_log(directory, {"event": "held_out_evaluated", "stage": "compare", "workload": workload})
     return {
         "capture_lineage": _capture_lineage(capture),

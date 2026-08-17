@@ -65,6 +65,9 @@ _HEX40 = re.compile(r"[0-9a-f]{40}", flags=re.ASCII)
 _HEX64 = re.compile(r"[0-9a-f]{64}", flags=re.ASCII)
 _TEMP_SUFFIXES = (".tmp", ".partial", ".swp")
 _TRANSFER_PROFILE_URL = "https://validation-study.example/object"
+_MODEL_FAMILIES = ("poisson_empirical", "markov_renewal", "mmpp")
+_FIXTURE_STUDY_ID = "fixture-study"
+_FIXTURE_URL = "https://downloads.example.test/object.bin"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1333,6 +1336,191 @@ def _training_runtime(content: bytes, *, name: str, workload: str, repeat: int) 
     return value
 
 
+def _run_log_records(content: bytes, *, name: str) -> tuple[dict[str, object], ...]:
+    """Parse canonical JSONL into the retained producer records."""
+
+    _canonical_jsonl(content, name=name)
+    records: list[dict[str, object]] = []
+    for line_number, raw in enumerate(content.splitlines(keepends=True), start=1):
+        value = _json(raw, name=f"{name}:{line_number}", canonical=False)
+        records.append(value)
+    return tuple(records)
+
+
+def _required_log_record(records: Sequence[Mapping[str, object]], *, event: str, name: str) -> Mapping[str, object]:
+    matches = tuple(record for record in records if record.get("event") == event)
+    if len(matches) != 1:
+        _fail(
+            "artifact_foreign",
+            name,
+            f"run log must contain exactly one {event} record",
+            "restore complete matching run-log lineage",
+        )
+    return matches[0]
+
+
+def _require_log_fields(record: Mapping[str, object], expected: Mapping[str, object], *, name: str, event: str) -> None:
+    if any(record.get(field) != value for field, value in expected.items()):
+        _fail(
+            "artifact_foreign",
+            name,
+            f"{event} run-log record does not match retained identities and status",
+            "restore complete matching run-log lineage",
+        )
+
+
+def _capture_log_environment(environment: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "capture_content_id": environment["capture_image_id"],
+        "capture_reference": environment["capture_image_reference"],
+        "capture_tool_version": environment["capture_tool_version"],
+        "host_architecture": environment["host_architecture"],
+        "target_content_id": environment["target_image_id"],
+        "target_reference": environment["target_image_reference"],
+    }
+
+
+def _require_capture_log_lineage(
+    records: Sequence[Mapping[str, object]],
+    *,
+    name: str,
+    environment: Mapping[str, object],
+    capture: bytes,
+    reference: bytes,
+    experiment: bytes,
+    packet_count: int | None,
+) -> None:
+    environment_fields = _capture_log_environment(environment)
+    _require_log_fields(
+        _required_log_record(records, event="capture_environment_identity", name=name),
+        {"event": "capture_environment_identity", "stage": "preflight", **environment_fields},
+        name=name,
+        event="capture_environment_identity",
+    )
+    capture_record = _required_log_record(records, event="capture_published", name=name)
+    expected: dict[str, object] = {
+        "event": "capture_published",
+        "stage": "capture",
+        "capture_identity": _identity(capture),
+        "reference_identity": _identity(reference),
+        "experiment_identity": _identity(experiment),
+        "reused": False,
+    }
+    if packet_count is not None:
+        expected["packet_count"] = packet_count
+    _require_log_fields(capture_record, expected, name=name, event="capture_published")
+    nested = capture_record.get("capture_environment_identity")
+    if not isinstance(nested, Mapping):
+        _fail(
+            "artifact_foreign",
+            name,
+            "capture_published run-log record lacks its capture environment identity",
+            "restore complete matching run-log lineage",
+        )
+    _require_log_fields(cast(Mapping[str, object], nested), environment_fields, name=name, event="capture_published")
+
+
+def _require_training_log_lineage(
+    records: Sequence[Mapping[str, object]],
+    *,
+    name: str,
+    environment: Mapping[str, object],
+    contents: Mapping[str, bytes],
+    reference_count: int,
+    generated_count: int,
+    checkpoint: CheckpointState,
+    best: BestModel,
+    comparison: ComparisonResult,
+    window: float,
+) -> None:
+    _require_capture_log_lineage(
+        records,
+        name=name,
+        environment=environment,
+        capture=contents["capture.json"],
+        reference=contents["reference.pcapng"],
+        experiment=contents["experiment.toml"],
+        packet_count=reference_count,
+    )
+    _require_log_fields(
+        _required_log_record(records, event="best_model_published", name=name),
+        {
+            "event": "best_model_published",
+            "stage": "fit",
+            "family": best.family,
+            "observation_window_seconds": window,
+            "reference_sha256": _identity(contents["reference.pcapng"])["sha256"],
+        },
+        name=name,
+        event="best_model_published",
+    )
+    _require_log_fields(
+        _required_log_record(records, event="generated_pcapng_published", name=name),
+        {
+            "event": "generated_pcapng_published",
+            "stage": "generate",
+            "seed": best.final_seed,
+            "observation_window_seconds": window,
+            "packet_count": generated_count,
+        },
+        name=name,
+        event="generated_pcapng_published",
+    )
+    _require_log_fields(
+        _required_log_record(records, event="comparison_succeeded", name=name),
+        {
+            "event": "comparison_succeeded",
+            "stage": "compare",
+            "observation_window_seconds": window,
+            "aggregate_score": comparison.aggregate_score,
+            "reused": False,
+        },
+        name=name,
+        event="comparison_succeeded",
+    )
+    _require_log_fields(
+        _required_log_record(records, event="run_completed", name=name),
+        {
+            "event": "run_completed",
+            "stage": "run",
+            "family": best.family,
+            "fitness": checkpoint.best_fitness,
+            "reference_packet_count": reference_count,
+            "generated_packet_count": generated_count,
+            "aggregate_score": comparison.aggregate_score,
+        },
+        name=name,
+        event="run_completed",
+    )
+
+
+def _require_held_out_log_lineage(
+    records: Sequence[Mapping[str, object]],
+    *,
+    name: str,
+    workload: str,
+    environment: Mapping[str, object],
+    capture: bytes,
+    reference: bytes,
+    experiment: bytes,
+) -> None:
+    _require_capture_log_lineage(
+        records,
+        name=name,
+        environment=environment,
+        capture=capture,
+        reference=reference,
+        experiment=experiment,
+        packet_count=None,
+    )
+    _require_log_fields(
+        _required_log_record(records, event="held_out_evaluated", name=name),
+        {"event": "held_out_evaluated", "stage": "compare", "workload": workload},
+        name=name,
+        event="held_out_evaluated",
+    )
+
+
 def _config_semantics(config: ExperimentConfig) -> dict[str, object]:
     document = cast(dict[str, object], config.model_dump(mode="json", exclude_none=True))
     run = cast(dict[str, object], document["run"])
@@ -1388,6 +1576,198 @@ def _config_pair(
     return pair.realized, {portable, realized}
 
 
+def _fixture_profile(
+    repository: Path,
+    *,
+    source_commit: str,
+    workload: str,
+    url: str,
+    environment: Mapping[str, object],
+) -> ExperimentConfig:
+    """Derive the deterministic fixture profile from its recorded source tree."""
+
+    relative = "examples/data/fit/experiment.toml"
+    path = repository / relative
+    content = _read_regular(path, affected=relative)
+    committed = _git_bytes(repository, ("show", f"{source_commit}:{relative}"), name="recorded fixture profile")
+    if content != committed:
+        _fail(
+            "artifact_foreign",
+            relative,
+            "fixture profile bytes do not match the recorded source revision",
+            "audit the exact recorded fixture source",
+        )
+    try:
+        pair = load_configuration_pair(path)
+    except TrafficlabError as error:
+        _fail(
+            "artifact_corrupt",
+            relative,
+            f"recorded fixture profile is invalid: {error}",
+            "restore the checked fixture profile",
+        )
+    if render_effective_config(pair.portable) != content:
+        _fail(
+            "artifact_foreign",
+            relative,
+            "recorded fixture profile is not canonical",
+            "restore the canonical fixture profile",
+        )
+    spec = next(specification for specification in workload_specs(url) if specification.name == workload)
+    target = pair.portable.target.model_copy(update={"argv": spec.argv, "image": environment["target_image_reference"]})
+    capture = pair.portable.capture.model_copy(update={"image": environment["capture_image_reference"]})
+    return pair.portable.model_copy(update={"target": target, "capture": capture})
+
+
+def _validation_profile(*, workload: str, url: str, environment: Mapping[str, object]) -> ExperimentConfig:
+    """Independently reconstruct one non-operational frozen Validation Study profile."""
+
+    spec = next(specification for specification in workload_specs(url) if specification.name == workload)
+    return ExperimentConfig.model_validate(
+        {
+            "run": {
+                "directory": Path("."),
+                "minimum_free_bytes": 1_048_576,
+                "master_seed": 73,
+                "final_seed": 97,
+            },
+            "target": {
+                "image": environment["target_image_reference"],
+                "argv": spec.argv,
+                "environment": {},
+                "working_directory": "/",
+                "mounts": ({"source": Path("."), "target": "/trafficlab-study", "read_only": False},),
+            },
+            "capture": {
+                "image": environment["capture_image_reference"],
+                "network_probe_url": url,
+                "readiness_timeout_seconds": 10.0,
+                "workload_timeout_seconds": spec.workload_timeout_seconds,
+                "flush_timeout_seconds": 5.0,
+                "total_timeout_seconds": spec.total_timeout_seconds,
+            },
+            "generation": {
+                "trial": {"max_packets": 25_000, "max_output_bytes": 40_000_000, "max_wall_seconds": 5.0},
+                "final": {"max_packets": 50_000, "max_output_bytes": 80_000_000, "max_wall_seconds": 10.0},
+            },
+            "genetic": {
+                "population_size": 6,
+                "generation_count": 2,
+                "tournament_size": 2,
+                "elite_count": 1,
+                "trial_seeds": (17, 29),
+                "duplicate_mutation_attempts": 3,
+                "early_stopping_generations": 0,
+                "early_stopping_tolerance": 0.0,
+                "resume": True,
+            },
+            "models": {
+                "enabled": _MODEL_FAMILIES,
+                "poisson_empirical": {
+                    "crossover_probability": 0.9,
+                    "mutation_probability": 1.0,
+                    "mutation_scale": 0.1,
+                    "c_lambda": {"lower": 0.25, "upper": 4.0},
+                },
+                "markov_renewal": {
+                    "crossover_probability": 0.9,
+                    "mutation_probability": 0.2,
+                    "mutation_scale": 0.1,
+                    "q1": {"lower": 0.1, "upper": 0.4},
+                    "q2": {"lower": 0.6, "upper": 0.9},
+                    "alpha": {"lower": 0.0, "upper": 2.0},
+                    "r": {"lower": 1, "upper": 8},
+                    "c_t": {"lower": 0.25, "upper": 4.0},
+                },
+                "mmpp": {
+                    "crossover_probability": 0.9,
+                    "mutation_probability": 0.25,
+                    "mutation_scale": 0.1,
+                    "q01": {"lower": 0.01, "upper": 10.0},
+                    "q10": {"lower": 0.01, "upper": 10.0},
+                    "lambda0": {"lower": 10.0, "upper": 100.0},
+                    "lambda1": {"lower": 0.1, "upper": 1000.0},
+                },
+            },
+            "similarity": {
+                "iat_diagnostic_quantile": 0.95,
+                "acf_lags": (1,),
+                "acf_lag_weights": (1.0,),
+                "acf_iat_weight": 0.5,
+                "acf_size_weight": 0.5,
+                "multiscale_widths_seconds": spec.multiscale_widths_seconds,
+                "multiscale_scale_weights": (0.5, 0.5),
+                "multiscale_packet_weight": 0.5,
+                "multiscale_byte_weight": 0.5,
+                "max_direction_bin_cells": 100_000,
+                "method_weights": {
+                    "frame_size_ks": 0.25,
+                    "iat_ks": 0.25,
+                    "autocorrelation": 0.25,
+                    "multiscale_rate": 0.25,
+                },
+            },
+        }
+    )
+
+
+def _frozen_profiles(
+    repository: Path,
+    *,
+    environment: Mapping[str, object],
+    protocol: Mapping[str, object],
+    url: str,
+) -> dict[str, ExperimentConfig]:
+    """Reconstruct the source-owned profile for every retained workload."""
+
+    study_id = _string(protocol["study_id"], name="protocol study ID")
+    source_commit = _string(environment["source_commit"], name="environment source_commit")
+    if study_id == _FIXTURE_STUDY_ID:
+        if url != _FIXTURE_URL:
+            _fail(
+                "artifact_foreign",
+                "protocol.json",
+                "fixture-study must use its exact frozen URL",
+                "restore the deterministic fixture protocol",
+            )
+        profiles = {
+            workload: _fixture_profile(
+                repository,
+                source_commit=source_commit,
+                workload=workload,
+                url=url,
+                environment=environment,
+            )
+            for workload in _WORKLOADS
+        }
+    else:
+        profiles = {
+            workload: _validation_profile(workload=workload, url=url, environment=environment)
+            for workload in _WORKLOADS
+        }
+    for workload, profile in profiles.items():
+        if tuple(profile.models.enabled) != _MODEL_FAMILIES:
+            _fail(
+                "scientific_semantics_incompatible",
+                f"frozen-profile/{workload}",
+                "frozen profile must enable exactly poisson_empirical, markov_renewal, and mmpp",
+                "restore the complete frozen model-family profile",
+            )
+    return profiles
+
+
+def _require_frozen_profile(config: ExperimentConfig, frozen: ExperimentConfig, *, affected: str) -> None:
+    """Require one retained configuration to equal its independently reconstructed profile."""
+
+    if tuple(config.models.enabled) != _MODEL_FAMILIES or _config_semantics(config) != _config_semantics(frozen):
+        _fail(
+            "artifact_foreign",
+            affected,
+            "configuration does not match the frozen source-owned study profile",
+            "restore the exact frozen workload configuration",
+        )
+
+
 def _score(result: ComparisonResult) -> dict[str, object]:
     return {
         "aggregate": result.aggregate_score,
@@ -1436,6 +1816,7 @@ def _training(
     *,
     protocol: dict[str, object],
     environment: Mapping[str, object],
+    frozen_profiles: Mapping[str, ExperimentConfig],
     url: str,
 ) -> _Training:
     document = _exact(
@@ -1485,6 +1866,7 @@ def _training(
         url=url,
         affected=directory_relative,
     )
+    _require_frozen_profile(config, frozen_profiles[workload], affected=directory_relative)
     if config.run.final_seed != protocol["final_seed"] or tuple(config.genetic.trial_seeds) != tuple(
         cast(list[int], protocol["selection_seeds"])
     ):
@@ -1517,6 +1899,7 @@ def _training(
             "restore matching run configuration",
         )
     _canonical_jsonl(contents["run.log"], name=f"{directory_relative}/run.log")
+    run_log_records = _run_log_records(contents["run.log"], name=f"{directory_relative}/run.log")
     runtime_seconds = _training_runtime(
         contents["run.log"], name=f"{directory_relative}/run.log", workload=workload, repeat=repeat
     )
@@ -1639,6 +2022,18 @@ def _training(
             "training index identities do not match retained bytes",
             "restore matching index identities",
         )
+    _require_training_log_lineage(
+        run_log_records,
+        name=f"{directory_relative}/run.log",
+        environment=environment,
+        contents=contents,
+        reference_count=len(reference),
+        generated_count=len(generated),
+        checkpoint=checkpoint,
+        best=best,
+        comparison=persisted_comparison,
+        window=window,
+    )
     return _Training(
         workload,
         repeat,
@@ -1828,6 +2223,7 @@ def _held_out(
     final_seed: int,
     training_references: set[str],
     environment: Mapping[str, object],
+    frozen_profiles: Mapping[str, ExperimentConfig],
 ) -> tuple[str, set[str], HeldOutEvaluation]:
     document = _exact(
         value, ("capture_lineage", "directory", "training_directory", "workload"), name="held-out index record"
@@ -1851,6 +2247,7 @@ def _held_out(
     realized = f"{directory_relative}/realized.toml"
     config, config_paths = _config_pair(bundle, portable, realized, directory=directory, name=directory_relative)
     _require_config_images(config, environment, affected=directory_relative)
+    _require_frozen_profile(config, frozen_profiles[workload], affected=directory_relative)
     if _config_semantics(config) != _config_semantics(training.config) or config.run.final_seed != final_seed:
         _fail(
             "scientific_semantics_incompatible",
@@ -1861,6 +2258,7 @@ def _held_out(
     names = ("capture.json", "reference.pcapng", "generated.pcapng", "similarity.json", "record.json", "run.log")
     contents = {name: _read_regular(directory / name, affected=f"{directory_relative}/{name}") for name in names}
     _canonical_jsonl(contents["run.log"], name=f"{directory_relative}/run.log")
+    run_log_records = _run_log_records(contents["run.log"], name=f"{directory_relative}/run.log")
     reference_identity = identify_bytes(contents["reference.pcapng"])
     if reference_identity.sha256 in training_references:
         _fail(
@@ -1939,6 +2337,15 @@ def _held_out(
             "held-out record does not match reconstructed evidence",
             "restore matching held-out record",
         )
+    _require_held_out_log_lineage(
+        run_log_records,
+        name=f"{directory_relative}/run.log",
+        workload=workload,
+        environment=environment,
+        capture=contents["capture.json"],
+        reference=contents["reference.pcapng"],
+        experiment=_read_regular(bundle / realized, affected=realized),
+    )
     return directory_relative, config_paths | {f"{directory_relative}/{name}" for name in names}, evaluation
 
 
@@ -2335,6 +2742,12 @@ def _audit(
             "restore matching prerequisite evidence",
         )
     _headers_and_observations(bundle, prerequisites=prerequisites)
+    frozen_profiles = _frozen_profiles(
+        repository,
+        environment=environment,
+        protocol=protocol,
+        url=cast(str, prerequisites["url"]),
+    )
     training_values = index["training"]
     if type(training_values) is not list:
         _fail(
@@ -2351,6 +2764,7 @@ def _audit(
             value,
             protocol=protocol,
             environment=environment,
+            frozen_profiles=frozen_profiles,
             url=cast(str, prerequisites["url"]),
         )
         for value in training_items
@@ -2432,6 +2846,7 @@ def _audit(
             final_seed=cast(int, protocol["final_seed"]),
             training_references=training_references,
             environment=environment,
+            frozen_profiles=frozen_profiles,
         )
         held_evaluations[workload] = evaluation
         held_paths.update(paths)
