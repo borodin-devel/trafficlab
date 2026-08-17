@@ -2663,6 +2663,13 @@ def _lifecycle_rows(value: object, *, expected: Sequence[dict[str, object]], nam
         _exact(item, ("cleanup_verified", "directory", "project_name", "run_id"), name=f"{name} lifecycle row")
         for item in cast(list[object], value)
     ]
+    if any(type(row["cleanup_verified"]) is not bool for row in rows):
+        _fail(
+            "artifact_corrupt",
+            "lifecycle.json",
+            f"{name} lifecycle cleanup verification must be a boolean",
+            "restore canonical collection cleanup evidence",
+        )
     if rows != expected:
         _fail(
             "artifact_foreign",
@@ -2687,7 +2694,7 @@ def _lifecycle(
         ("held_out", "phase_capture_image", "schema_version", "study_id", "training"),
         name="lifecycle.json",
     )
-    if document["schema_version"] != 1:
+    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
         _fail(
             "artifact_corrupt",
             "lifecycle.json",
@@ -2707,6 +2714,13 @@ def _lifecycle(
         ("capture_image_id", "cleanup_verified", "post_cleanup_inspect_exit_status", "tag"),
         name="collection phase capture image lifecycle",
     )
+    if type(phase["cleanup_verified"]) is not bool or type(phase["post_cleanup_inspect_exit_status"]) is not int:
+        _fail(
+            "artifact_corrupt",
+            "lifecycle.json",
+            "collection phase capture image lifecycle has invalid scalar types",
+            "restore canonical collection cleanup evidence",
+        )
     expected_phase = {
         "capture_image_id": environment["capture_image_id"],
         "cleanup_verified": True,

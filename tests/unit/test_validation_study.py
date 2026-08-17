@@ -11563,6 +11563,33 @@ def test_offline_auditor_accepts_complete_study_bound_collection_lifecycle(tmp_p
     }
 
 
+def test_collection_lifecycle_guards_reject_missing_owner_and_malformed_rows(tmp_path: Path) -> None:
+    """Lifecycle finalization and reconstruction reject incomplete ownership proof."""
+
+    with pytest.raises(ValueError, match="collection finalization requires its owned capture image"):
+        study._finalize_collection_lifecycle(  # pyright: ignore[reportPrivateUsage]
+            candidate=tmp_path / "candidate",
+            environment={},
+            held_out=(),
+            owned_capture_image=None,
+            repository_root=tmp_path,
+            runner=cast(study.CommandRunner, object()),
+            study_id="study-1",
+            training=(),
+        )
+
+    with pytest.raises(auditor._Issue) as project_name:  # pyright: ignore[reportPrivateUsage]
+        auditor._lifecycle_project_name(  # pyright: ignore[reportPrivateUsage]
+            b'{"event":"capture_published","project_name":"foreign-project"}\n',
+            name="training/short/r1/run.log",
+        )
+    assert project_name.value.kind == "artifact_foreign"
+
+    with pytest.raises(auditor._Issue) as rows:  # pyright: ignore[reportPrivateUsage]
+        auditor._lifecycle_rows({}, expected=(), name="training")  # pyright: ignore[reportPrivateUsage]
+    assert rows.value.kind == "artifact_corrupt"
+
+
 @pytest.mark.parametrize(
     "mutation",
     ("study_id", "phase_cleanup", "training_cleanup", "held_out_cleanup", "duplicate_training", "wrong_run"),
@@ -11612,6 +11639,68 @@ def test_offline_auditor_rejects_malformed_collection_lifecycle(tmp_path: Path, 
     repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
     _write_candidate_lifecycle(candidate)
     (candidate / "lifecycle.json").write_bytes(content)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_corrupt", "publication", "lifecycle.json", "not_published", "primary")
+
+
+def test_offline_auditor_rejects_a_wrong_collection_lifecycle_schema_version(tmp_path: Path) -> None:
+    """A closed lifecycle schema cannot silently accept a future producer shape."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    lifecycle = _write_candidate_lifecycle(candidate)
+    lifecycle["schema_version"] = 2
+    _write_canonical_json(candidate / "lifecycle.json", lifecycle)
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_corrupt", "publication", "lifecycle.json", "not_published", "primary")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("schema_version", "phase_cleanup", "phase_inspect", "training_cleanup", "held_out_cleanup"),
+)
+def test_offline_auditor_rejects_collection_lifecycle_scalar_type_spoofs(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    """Cleanup facts use closed JSON scalar types before their exact value binding."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    lifecycle = _write_candidate_lifecycle(candidate)
+    if mutation == "schema_version":
+        lifecycle["schema_version"] = True
+    elif mutation == "phase_cleanup":
+        cast(dict[str, object], lifecycle["phase_capture_image"])["cleanup_verified"] = 1
+    elif mutation == "phase_inspect":
+        cast(dict[str, object], lifecycle["phase_capture_image"])["post_cleanup_inspect_exit_status"] = True
+    elif mutation == "training_cleanup":
+        cast(list[dict[str, object]], lifecycle["training"])[0]["cleanup_verified"] = 1
+    else:
+        cast(list[dict[str, object]], lifecycle["held_out"])[0]["cleanup_verified"] = 1
+    _write_canonical_json(candidate / "lifecycle.json", lifecycle)
     _rewrite_candidate_manifest(candidate)
 
     with pytest.raises(TrafficlabError) as error:
