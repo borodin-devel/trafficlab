@@ -65,8 +65,9 @@ accepted bundle binds them to the exact scientific source used for collection.
 The accepted r18 index and manifest independently enumerate 230 owned lineage entries. They retain nine strict
 training trees, nine same-reference fresh simulations, three independent held-out bundles, nine portable/realized
 configuration pairs, exact prerequisite records, protocol, environment, report inputs, and report. Candidate,
-accepted-tree, current-tree, and guarded clone audits all accepted the same content. Missing, malformed, foreign,
-lineage-substituted, and occupied-publication cases were rejected without mutating accepted evidence.
+accepted-tree audits completed at r18 publication, and a later recorded-source guarded clone audit accepted the same
+content. Missing, malformed, foreign, lineage-substituted, and occupied-publication cases were rejected without
+mutating accepted evidence.
 
 Earlier studies and failed attempt IDs remain historical or forensic evidence only. They are not used to satisfy a
 closure grade and are not described as accepted results.
@@ -243,7 +244,7 @@ retained real checkpoint supports excellent reconstruction across fresh and resu
 - Source: schema 2 implements arrival-epoch MMPP initialization and conditioned time-zero arrival; all three families
   retain the exact fitted model, seed, observation window, limits, diagnostics, and input lineage.
 - Retained r18: nine training and nine fresh-simulation traces plus three held-out traces were strictly reparsed and
-  identity-checked by the current-tree and guarded clone audits.
+  identity-checked by the recorded-source guarded clone audit.
 
 **Rationale:** Events follow each declared fitted process and seed, remain ordered within the exact window and limits,
 and round-trip through strict PCAPNG with model, configuration, reference, and environment lineage. The independent
@@ -280,7 +281,7 @@ absent, so excellent input-to-value reconstruction is not demonstrated.
 
 **Evidence**
 
-- Fresh reassessment: current-tree and guarded no-hardlink clone audits each accepted all 230 r18 manifest entries;
+- Fresh reassessment: a recorded-source guarded no-hardlink clone audit accepted all 230 r18 manifest entries;
   representative missing, malformed, foreign, substituted-lineage, and collision mutations were rejected.
 - Source: [`tests/integration/test_pipeline_equivalence.py`](../tests/integration/test_pipeline_equivalence.py) and
   [`tests/integration/test_run_pipeline.py`](../tests/integration/test_run_pipeline.py) reconstruct final identities
@@ -768,8 +769,8 @@ invalid-path sequences are absent, preventing excellent evidence.
 
 **Evidence**
 
-- Fresh reassessment: locked offline sync, lock check, deterministic fixtures, strict typing, current-tree audit, and
-  guarded no-hardlink clone audit passed against the final accepted-evidence head.
+- Fresh reassessment: locked offline sync, lock check, deterministic fixtures, strict typing, and a guarded
+  no-hardlink clone audit passed against r18's recorded source.
 - Source: CPython 3.12 is pinned; the capture image uses an exact base digest, dated snapshot, direct package versions,
   reproducible build inputs, expected content identity, platform checks, and capture-tool compatibility.
 - Retained r18: environment and prerequisites bind CPython 3.12.3, lock SHA-256, source commit/tree, Docker Engine and
@@ -787,7 +788,7 @@ implementations, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: current-tree and guarded clone audits accepted the same 230 manifest-retained bytes and rejected
+- Fresh reassessment: a recorded-source guarded clone audit accepted all 230 manifest-retained bytes and rejected
   representative missing, malformed, foreign, and substituted inputs.
 - Retained r18: exact portable/realized configurations, references, workload argv, bounds, seeds, checkpoints, models,
   generated traces, comparisons, logs, headers, observations, prerequisite results, and environment are retained.
@@ -806,7 +807,7 @@ file across multiple storage implementations, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: the production auditor reconstructed all 230 r18 owner/lineage entries in the current tree and a
+- Fresh reassessment: the production auditor reconstructed all 230 r18 owner/lineage entries in a recorded-source
   guarded no-hardlink clone; lineage substitution and foreign/replaced evidence were rejected.
 - Source: strict schemas and content identities connect reference, effective configuration, checkpoint, history,
   best model, generated trace, similarity result, final result, fresh simulation, and held-out publication.
@@ -865,7 +866,7 @@ and every possible interruption instruction, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: the current-tree and guarded clone audits reconstructed the r18 protocol and report, and the
+- Fresh reassessment: the recorded-source guarded clone audit reconstructed the r18 protocol and report, and the
   independent whole-branch review found no Critical or Important protocol/evidence mismatch.
 - Retained r18: protocol freezes workloads, balanced order, three repeats, selection seeds 17 and 29, final seed 97,
   failure/no-retry rules, training-only selection, one independent held-out capture per workload, and exclusive publish.
@@ -884,8 +885,8 @@ multiple endpoints, hosts, or operators, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: the current-tree audit and a socket-, Docker-, shell-, and subprocess-guarded no-hardlink clone
-  audit each accepted all 230 r18 files from the recorded source and locked environment without network or Docker.
+- Fresh reassessment: a socket-, Docker-, shell-, and subprocess-guarded recorded-source no-hardlink clone audit
+  accepted all 230 r18 files from the locked environment without network or Docker.
 - Source: the offline auditor directly reloads strict public codecs, reparses PCAPNG, recomputes hashes, aggregates,
   natural variation, selection, held-out bindings, report inputs, ownership, lineage, and manifest consistency.
 - Fresh reassessment: representative missing, malformed, foreign, substituted-lineage, and publication-collision clone
