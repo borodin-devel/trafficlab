@@ -134,9 +134,7 @@ def test_trafficlab_error_rejects_invalid_ordered_payloads_and_append_requires_a
     with pytest.raises(ValueError, match="first"):
         TrafficlabError("secondary first", corrective_action="repair", failure_outcomes=(secondary,))
     with pytest.raises(ValueError, match="secondary"):
-        TrafficlabError(
-            "later primary", corrective_action="repair", failure_outcomes=(primary, primary)
-        )
+        TrafficlabError("later primary", corrective_action="repair", failure_outcomes=(primary, primary))
     error = TrafficlabError("missing primary", corrective_action="repair")
     with pytest.raises(ValueError, match="primary"):
         append_failure_outcome(error, secondary)
