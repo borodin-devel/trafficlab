@@ -606,6 +606,7 @@ _RELOCATED_IGNORED_TOOL_FILES = frozenset({".coverage", "TASK.md"})
 _RELOCATED_IGNORED_VALIDATION_PATHS = frozenset(
     {
         "examples/validation_study/prerequisites.json",
+        "examples/validation_study/results.json",
         "examples/validation_study/configs/short.toml",
         "examples/validation_study/configs/streaming.toml",
         "examples/validation_study/configs/bursty.toml",
@@ -643,6 +644,9 @@ def _permitted_ignored_relocated_worktree_path(path: str) -> bool:
         or first.startswith(".coverage.")
         or "__pycache__" in parts
         or any(part.endswith(".egg-info") for part in parts)
+        or path.endswith((".pyc", ".pyo", ".pyd"))
+        or path.endswith(".log")
+        or first == "runs"
     ):
         return True
     return (

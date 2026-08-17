@@ -2973,6 +2973,9 @@ def _permitted_ignored_prerequisite_worktree_path(path: str) -> bool:
         or first.startswith(".coverage.")
         or "__pycache__" in parts
         or any(part.endswith(".egg-info") for part in parts)
+        or path.endswith((".pyc", ".pyo", ".pyd"))
+        or path.endswith(".log")
+        or first == "runs"
     ):
         return True
     return (
