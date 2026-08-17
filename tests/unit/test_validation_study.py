@@ -6838,7 +6838,6 @@ def test_offline_auditor_classifies_worktree_git_failures(
 @pytest.mark.parametrize(
     ("returncode", "stdout", "expected"),
     (
-        (0, b"", frozenset[str]()),
         (1, b"", frozenset[str]()),
         (0, b"foreign.fifo\0", frozenset({"foreign.fifo"})),
     ),
@@ -6871,6 +6870,31 @@ def test_offline_auditor_exactly_parses_terminal_nul_ignored_paths(
         == expected
     )
     assert calls == [(("git", "check-ignore", "-z", "--stdin"), b"foreign.fifo\0")]
+
+
+def test_offline_auditor_rejects_empty_match_ignored_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git's match status must include an exact ignored-path record."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def inconsistent_match(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        command = tuple(cast(Sequence[str], args[0]))
+        assert kwargs["input"] == b"foreign.fifo\0"
+        return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(auditor.subprocess, "run", inconsistent_match)
+
+    with pytest.raises(auditor._Issue, match="must be nonempty for match status") as captured:  # pyright: ignore[reportPrivateUsage]
+        auditor._ignored_relocated_worktree_paths(  # pyright: ignore[reportPrivateUsage]
+            repository,
+            ("foreign.fifo",),
+        )
+
+    assert (captured.value.kind, captured.value.affected) == ("artifact_corrupt", "environment")
 
 
 def test_offline_auditor_rejects_nonempty_no_match_ignored_output(
@@ -6908,6 +6932,7 @@ def test_offline_auditor_rejects_nonempty_no_match_ignored_output(
         ("truncated", "artifact_corrupt", "ignored paths must be terminal NUL-delimited"),
         ("duplicate", "artifact_corrupt", "ignored paths must be unique"),
         ("nonempty_no_match", "artifact_corrupt", "ignored paths must be empty for no-match status"),
+        ("empty_match", "artifact_corrupt", "ignored paths must be nonempty for match status"),
     ),
 )
 def test_offline_auditor_classifies_ignored_special_entry_git_failures(
@@ -6941,6 +6966,8 @@ def test_offline_auditor_classifies_ignored_special_entry_git_failures(
                 return subprocess.CompletedProcess(command, 0, stdout=b"foreign.fifo\0foreign.fifo\0", stderr=b"")
             if case == "nonempty_no_match":
                 return subprocess.CompletedProcess(command, 1, stdout=b"foreign.fifo\0", stderr=b"")
+            if case == "empty_match":
+                return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
             return subprocess.CompletedProcess(command, 0, stdout=b"elsewhere\0", stderr=b"")
         return cast(Any, original_run)(*args, **kwargs)
 

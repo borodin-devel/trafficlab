@@ -733,6 +733,13 @@ def _ignored_relocated_worktree_paths(repository: Path, paths: Sequence[str]) ->
             "audit from the recorded clean source checkout",
         )
     output = completed.stdout
+    if completed.returncode == 0 and not output:
+        _fail(
+            "artifact_corrupt",
+            "environment",
+            "relocated Git ignored paths must be nonempty for match status",
+            "repair the relocated checkout",
+        )
     if completed.returncode == 1 and output:
         _fail(
             "artifact_corrupt",
