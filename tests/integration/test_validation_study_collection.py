@@ -5,7 +5,7 @@ import json
 import platform
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from itertools import count
 from pathlib import Path
 from typing import cast
@@ -448,6 +448,84 @@ def test_collection_failure_locks_the_study_id_to_a_new_attempt(tmp_path: Path) 
         "url": "https://downloads.example.test/object.bin",
     }
     assert calls == 1
+
+
+def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A primary-derived metric precondition must fail before independent held-out capture."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
+    candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
+    run_training, capture_held_out, calls = _offline_stage_runners(repository, candidate=candidate)
+    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+        repository,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        phase="collection",
+    )
+    original_align_generated = study.align_generated
+    original_natural_variation = study._candidate_natural_variation  # pyright: ignore[reportPrivateUsage]
+    targeted_underflows = 0
+
+    def underflow_natural_variation(
+        training: Sequence[study._CandidateTraining],  # pyright: ignore[reportPrivateUsage]
+    ) -> object:
+        nonlocal targeted_underflows
+        if training[0].workload != "bursty":
+            return original_natural_variation(training)
+        assert [item.repeat for item in training] == [1, 2, 3]
+        alignment_index = 0
+
+        def underflow_generated(events: Sequence[TraceEvent], window: float) -> tuple[TraceEvent, ...]:
+            nonlocal alignment_index, targeted_underflows
+            alignment_index += 1
+            aligned = original_align_generated(events, window)
+            if alignment_index == 4:
+                assert events == training[0].reference
+                assert window == training[2].observation_window_seconds
+                targeted_underflows += 1
+                return aligned[:1]
+            return aligned
+
+        with monkeypatch.context() as variation_patch:
+            variation_patch.setattr(study, "align_generated", underflow_generated)
+            return original_natural_variation(training)
+
+    monkeypatch.setattr(study, "_candidate_natural_variation", underflow_natural_variation)
+
+    with pytest.raises(TrafficlabError, match="invalid generated trace: at least two events"):
+        study.collect_validation_candidate(
+            repository_root=repository,
+            study_id="study-1",
+            url="https://downloads.example.test/object.bin",
+            attempt=attempt,
+            environment=environment,
+            retained_prerequisites=prerequisite,
+            prerequisite_files=prerequisite_files,
+            configs=configs,
+            run=run_training,
+            capture=capture_held_out,
+            object_size_bytes=4_194_304,
+        )
+
+    assert calls == [
+        "training:short",
+        "training:streaming",
+        "training:bursty",
+        "training:streaming",
+        "training:bursty",
+        "training:short",
+        "training:bursty",
+        "training:short",
+        "training:streaming",
+    ]
+    assert targeted_underflows == 1
+    assert not (candidate / "fresh_simulation").exists()
+    assert not (candidate / "protocol.json").exists()
+    assert not (candidate / "held_out").exists()
 
 
 def test_collection_preserves_unexpected_programming_errors_after_freezing_the_attempt(tmp_path: Path) -> None:

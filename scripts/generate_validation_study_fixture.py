@@ -602,7 +602,17 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             for workload in WORKLOADS
             for repeat in REPEATS
         )
-        report_inputs = study._candidate_report_inputs(candidate_training, held_evaluations)  # pyright: ignore[reportPrivateUsage]
+        natural_variation = tuple(
+            study._candidate_natural_variation(  # pyright: ignore[reportPrivateUsage]
+                [item for item in candidate_training if item.workload == workload]
+            )
+            for workload in ("short", "streaming", "bursty")
+        )
+        report_inputs = study._candidate_report_inputs(  # pyright: ignore[reportPrivateUsage]
+            candidate_training,
+            held_evaluations,
+            natural_variation=natural_variation,
+        )
         (root / "report_inputs.json").write_bytes(_canonical(report_inputs))
         (root / "report.json").write_bytes(
             _canonical(

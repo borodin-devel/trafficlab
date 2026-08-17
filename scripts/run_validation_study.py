@@ -7685,10 +7685,11 @@ def _candidate_invalid_chromosome_diagnostics(training: Sequence[_CandidateTrain
 def _candidate_report_inputs(
     training: Sequence[_CandidateTraining],
     held_out: Mapping[WorkloadName, HeldOutEvaluation],
+    *,
+    natural_variation: Sequence[JsonObject],
 ) -> JsonObject:
     fresh_simulation: list[JsonValue] = []
     held_out_scores: list[JsonValue] = []
-    natural_variation: list[JsonValue] = []
     training_scores: list[JsonValue] = []
     for workload in ("short", "streaming", "bursty"):
         group = [item for item in training if item.workload == workload]
@@ -7726,7 +7727,6 @@ def _candidate_report_inputs(
                 },
             )
         )
-        natural_variation.append(_candidate_natural_variation(group))
         held_out_scores.append(
             cast(
                 JsonObject,
@@ -7743,7 +7743,7 @@ def _candidate_report_inputs(
         "fresh_simulation": fresh_simulation,
         "held_out": held_out_scores,
         "invalid_chromosome_diagnostics": _candidate_invalid_chromosome_diagnostics(training),
-        "natural_variation": natural_variation,
+        "natural_variation": list(natural_variation),
         "runtime_winner_variance": training_scores,
         "training": training_scores,
     }
@@ -8437,7 +8437,6 @@ def collect_validation_candidate(
         _stage_retained_prerequisites(candidate, content=retained_prerequisites, files=prerequisite_files)
         workloads = {item.name: item for item in workload_specs(checked_url)}
         training: list[_CandidateTraining] = []
-        fresh: list[JsonObject] = []
         for _order, run_id, workload_value, repeat in PRIMARY_ORDER:
             workload_name = cast(WorkloadName, workload_value)
             workload = workloads[workload_name]
@@ -8492,6 +8491,13 @@ def collect_validation_candidate(
                 runtime_seconds=runtime_seconds,
             )
             training.append(loaded)
+
+        natural_variation = tuple(
+            _candidate_natural_variation([item for item in training if item.workload == workload])
+            for workload in ("short", "streaming", "bursty")
+        )
+        fresh: list[JsonObject] = []
+        for loaded in training:
             fresh_path, fresh_record = _candidate_fresh_record(loaded)
             _write_candidate_bytes(candidate / fresh_path, _canonical_json(fresh_record))
             fresh.append(fresh_record)
@@ -8542,7 +8548,11 @@ def collect_validation_candidate(
             )
             held_rows.append(held_record)
             held_evaluations[workload_name] = evaluation
-        report_inputs = _candidate_report_inputs(training, held_evaluations)
+        report_inputs = _candidate_report_inputs(
+            training,
+            held_evaluations,
+            natural_variation=natural_variation,
+        )
         _write_candidate_bytes(candidate / "report_inputs.json", _canonical_json(report_inputs))
         _write_candidate_bytes(
             candidate / "report.json",
