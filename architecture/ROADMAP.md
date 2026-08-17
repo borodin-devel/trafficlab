@@ -56,8 +56,8 @@ The accepted r18 bundle records source `2f1537b0f0339bbf761a6c04a33035ee8fd26e8b
 and is published at evidence commit `c310900b139b806f45f13785bb1d204554515eef`.
 Locked/static/fixture gates passed; bounded non-external verification passed
 3,422 tests with 97.82% branch-aware coverage; retained same-source prerequisites
-passed 19 Docker tests and one Internet smoke; current-tree and guarded no-hardlink
-clone audits each accepted 230 retained files. Independent whole-branch review found
+passed 19 Docker tests and one Internet smoke; a recorded-source guarded no-hardlink
+clone audit accepted 230 retained files. Independent whole-branch review found
 no Critical or Important implementation/evidence findings through `c310900`.
 Task 16 documentation re-review found no Critical, Important, or Minor findings.
 Historical evidence below remains context only.

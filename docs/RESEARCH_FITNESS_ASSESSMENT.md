@@ -52,8 +52,7 @@ not treat later documentation as scientific source behavior.
 | Bounded serial branch gate | 3,422 passed, 20 deselected in 587.87 seconds; 97.82% | Branch coverage above 90% |
 | Retained r18 Docker matrix | 19 passed; 0 failed, skipped, or errored | Same-source controlled Docker prerequisite |
 | Retained r18 Internet smoke | 1 passed; 0 failed, skipped, or errored | Same-source real HTTPS prerequisite |
-| Current-tree r18 audit | Accepted 230 retained files | Complete current accepted bundle |
-| Guarded no-hardlink clone audit | Accepted the same 230 retained files | Offline relocated reconstruction |
+| Recorded-source guarded no-hardlink r18 clone audit | Accepted 230 retained files | Offline relocated reconstruction at the recorded source |
 | Whole-branch independent review | No Critical or Important findings | Independent implementation/evidence review |
 | Task 16 documentation re-review | No Critical, Important, or Minor findings | Independent closure review |
 
