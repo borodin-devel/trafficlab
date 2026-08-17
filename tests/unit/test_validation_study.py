@@ -129,6 +129,7 @@ class _ScriptedPrerequisiteRunner:
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         command = tuple(argv)
         assert cwd == self.root
@@ -152,8 +153,8 @@ class _ScriptedPrerequisiteRunner:
         if command in identities:
             status, stdout, stderr = identities[command]
             return subprocess.CompletedProcess(command, status, stdout=stdout, stderr=stderr)
-        if command[:4] == ("git", "check-ignore", "-z", "--"):
-            return self._check_ignored_worktree_paths(command)
+        if command == ("git", "check-ignore", "-z", "--stdin"):
+            return self._check_ignored_worktree_paths(command, input=input)
         if command == ("docker", "image", "inspect", study.TARGET_REFERENCE):
             return self._inspect_target(command)
         if command[:2] == ("docker", "build"):
@@ -206,8 +207,15 @@ class _ScriptedPrerequisiteRunner:
             return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"cleanup failed\n")
         return subprocess.CompletedProcess(command, 0, stdout=b"removed\n", stderr=b"")
 
-    def _check_ignored_worktree_paths(self, command: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
-        paths = command[4:]
+    def _check_ignored_worktree_paths(
+        self,
+        command: tuple[str, ...],
+        *,
+        input: bytes | None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        if input is None or not input.endswith(b"\0"):
+            return subprocess.CompletedProcess(command, 2, stdout=b"", stderr=b"missing NUL input\n")
+        paths = tuple(record.decode("utf-8") for record in input[:-1].split(b"\0"))
         if self.ignored_worktree_protocol == "nonzero":
             return subprocess.CompletedProcess(command, 2, stdout=b"", stderr=b"synthetic ignore failure\n")
         if self.ignored_worktree_protocol == "truncated":
@@ -2994,11 +3002,7 @@ def test_capability_records_digest_ids_default_user_range_canary_modes_and_clean
             "git",
             "check-ignore",
             "-z",
-            "--",
-            "uv.lock",
-            "docker/capture/Dockerfile",
-            "docker/capture/capture.sh",
-            "docker/capture/image-lock.json",
+            "--stdin",
         ),
         ("docker", "version", "--format", "{{.Server.Version}}"),
         ("docker", "compose", "version", "--short"),
@@ -3396,7 +3400,7 @@ def test_prerequisites_reject_local_exclude_ignored_worktree_entries_before_dock
         )
 
     commands = [command for command, _timeout in runner.calls]
-    assert any(command[:4] == ("git", "check-ignore", "-z", "--") for command in commands)
+    assert any(command == ("git", "check-ignore", "-z", "--stdin") for command in commands)
     assert not any(command[:2] == ("docker", "version") for command in commands)
     assert (
         repository_root
@@ -3706,6 +3710,7 @@ def test_capability_absence_helpers_reject_invalid_daemon_evidence_and_report_ab
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         del cwd, check, capture_output, shell, timeout
         return subprocess.CompletedProcess(tuple(argv), 0, stdout=b"\xff", stderr=b"")
@@ -3725,6 +3730,7 @@ def test_capability_absence_helpers_reject_invalid_daemon_evidence_and_report_ab
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         del cwd, check, capture_output, shell, timeout
         command = tuple(argv)
@@ -3752,6 +3758,7 @@ def test_capability_absence_helpers_reject_invalid_daemon_evidence_and_report_ab
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         del cwd, check, capture_output, shell, timeout
         return subprocess.CompletedProcess(tuple(argv), 0, stdout=b"", stderr=b"")
@@ -3821,6 +3828,7 @@ def test_prerequisite_cli_requires_exact_subcommand_arguments_and_reports_errors
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         del cwd, check, capture_output, shell, timeout
         reject_calls.append(tuple(argv))
@@ -4072,6 +4080,7 @@ class _StudyIdentityRunner:
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         del timeout
         command = tuple(argv)
@@ -5034,6 +5043,7 @@ def test_reproduction_changes_only_run_directory_seeds_nothing_and_invokes_exact
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         command = tuple(argv)
         calls.append(command)
@@ -5211,6 +5221,7 @@ def test_cli_reproduction_reconstructs_fresh_fresh_simulation_lineage_and_honest
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         command = tuple(argv)
         assert cwd == repository_root
@@ -6507,6 +6518,7 @@ def _offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         command = tuple(argv)
         assert cwd == repository_root
@@ -11048,6 +11060,7 @@ def test_public_prerequisites_then_collect_binds_the_raw_published_marker_before
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         command = tuple(argv)
         if command == ("git", "rev-parse", "HEAD^{tree}"):
@@ -11591,8 +11604,10 @@ def test_prerequisite_ignored_path_parser_rejects_invalid_match_records(
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
-        assert argv == ("git", "check-ignore", "-z", "--", "foreign")
+        assert argv == ("git", "check-ignore", "-z", "--stdin")
+        assert input == b"foreign\0"
         assert cwd == repository
         assert check is False
         assert capture_output is True
@@ -11772,3 +11787,124 @@ def test_prerequisite_cleanliness_continues_past_permitted_ignored_special_entry
 
     with pytest.raises(ValueError, match="non-regular entry: second"):
         study._require_clean_prerequisite_worktree(repository, runner=runner)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_prerequisite_cleanliness_uses_real_git_stdin_nul_records_for_ignored_foreign_names(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(("git", "init", "--quiet"), cwd=repository, check=True, capture_output=True)
+    names = ("foreign space", "foreign\nnewline")
+    (repository / ".git" / "info" / "exclude").write_text("foreign*\n", encoding="utf-8")
+    for name in names:
+        (repository / name).write_text("ignored\n", encoding="utf-8")
+    calls: list[tuple[tuple[str, ...], bytes | None]] = []
+
+    def runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+        input: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert cwd == repository
+        assert check is False
+        assert capture_output is True
+        assert shell is False
+        assert timeout == study.SUBPROCESS_TIMEOUTS["git_or_version"]
+        calls.append((tuple(argv), input))
+        return subprocess.run(
+            argv,
+            cwd=cwd,
+            check=check,
+            capture_output=capture_output,
+            shell=shell,
+            timeout=timeout,
+            input=input,
+        )
+
+    with pytest.raises(ValueError, match="ignored prerequisite worktree entry is not permitted"):
+        study._require_clean_prerequisite_worktree(repository, runner=runner)  # pyright: ignore[reportPrivateUsage]
+
+    check_ignore = [call for call in calls if call[0][:3] == ("git", "check-ignore", "-z")]
+    assert check_ignore == [
+        (
+            ("git", "check-ignore", "-z", "--stdin"),
+            b"".join(os.fsencode(name) + b"\0" for name in sorted(names)),
+        )
+    ]
+
+
+def test_prerequisite_cleanliness_rejects_non_utf8_ignored_git_record_after_byte_exact_input(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(("git", "init", "--quiet"), cwd=repository, check=True, capture_output=True)
+    raw_name = b"foreign-\xff"
+    name = os.fsdecode(raw_name)
+    (repository / ".git" / "info" / "exclude").write_text("foreign*\n", encoding="utf-8")
+    (repository / name).write_text("ignored\n", encoding="utf-8")
+    check_ignore_inputs: list[bytes | None] = []
+
+    def runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+        input: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert cwd == repository
+        if tuple(argv[:3]) == ("git", "check-ignore", "-z"):
+            check_ignore_inputs.append(input)
+        return subprocess.run(
+            argv,
+            cwd=cwd,
+            check=check,
+            capture_output=capture_output,
+            shell=shell,
+            timeout=timeout,
+            input=input,
+        )
+
+    with pytest.raises(ValueError, match="ignored prerequisite path is not UTF-8"):
+        study._require_clean_prerequisite_worktree(repository, runner=runner)  # pyright: ignore[reportPrivateUsage]
+
+    assert check_ignore_inputs == [raw_name + b"\0"]
+
+
+def test_prerequisite_ignored_path_codec_skips_real_git_for_an_empty_path_set(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: Sequence[str],
+        *,
+        cwd: Path,
+        check: Literal[False],
+        capture_output: Literal[True],
+        shell: Literal[False],
+        timeout: float,
+        input: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        calls.append(tuple(argv))
+        return subprocess.run(
+            argv,
+            cwd=cwd,
+            check=check,
+            capture_output=capture_output,
+            shell=shell,
+            timeout=timeout,
+            input=input,
+        )
+
+    assert study._ignored_prerequisite_worktree_paths(repository, (), runner=runner) == frozenset()  # pyright: ignore[reportPrivateUsage]
+    assert calls == []

@@ -91,6 +91,7 @@ class CommandRunner(Protocol):
         capture_output: Literal[True],
         shell: Literal[False],
         timeout: float,
+        input: bytes | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
         raise NotImplementedError
 
@@ -3021,12 +3022,13 @@ def _ignored_prerequisite_worktree_paths(
     if not paths:
         return frozenset()
     completed = runner(
-        ("git", "check-ignore", "-z", "--", *paths),
+        ("git", "check-ignore", "-z", "--stdin"),
         cwd=repository_root,
         check=False,
         capture_output=True,
         shell=False,
         timeout=SUBPROCESS_TIMEOUTS["git_or_version"],
+        input=b"".join(os.fsencode(path) + b"\0" for path in paths),
     )
     output, _stderr = _completed_output(completed, operation="ignored prerequisite paths")
     if completed.returncode not in (0, 1):
