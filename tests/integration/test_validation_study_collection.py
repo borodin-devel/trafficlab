@@ -226,7 +226,7 @@ def _offline_stage_runners(
         "capture_content_id": environment["capture_image_id"],
         "capture_reference": environment["capture_image_reference"],
         "capture_tool_version": environment["capture_tool_version"],
-        "host_architecture": environment["host_architecture"],
+        "host_architecture": "linux/amd64",
         "target_content_id": environment["target_image_id"],
         "target_reference": environment["target_image_reference"],
     }

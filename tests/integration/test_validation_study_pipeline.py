@@ -101,6 +101,41 @@ def _copy_audit_fixture_to_committed_destination(tmp_path: Path) -> tuple[Path, 
     return repository, destination
 
 
+def test_clean_checkout_checks_the_pristine_tracked_validation_fixture(tmp_path: Path) -> None:
+    """The checked fixture itself, including retained logs, must survive a no-hardlink clone."""
+
+    repository = tmp_path / "pristine-current-checkout"
+    subprocess.run(
+        ("git", "clone", "--no-local", "--no-hardlinks", "--no-checkout", str(_ROOT), str(repository)),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(("git", "checkout", "--detach", "HEAD"), cwd=repository, check=True, capture_output=True)
+    fixture = repository / "tests" / "fixtures" / "validation_study_candidate"
+    environment = cast(dict[str, object], json.loads((fixture / "environment.json").read_text(encoding="utf-8")))
+    completed = subprocess.run(
+        (
+            "uv",
+            "run",
+            "--locked",
+            "--offline",
+            "python",
+            "scripts/generate_validation_study_fixture.py",
+            "--check",
+            "--source-commit",
+            cast(str, environment["source_commit"]),
+            "--source-tree",
+            cast(str, environment["source_tree"]),
+        ),
+        cwd=repository,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed_and_lineage(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()

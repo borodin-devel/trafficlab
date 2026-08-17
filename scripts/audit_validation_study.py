@@ -1374,10 +1374,57 @@ def _capture_log_environment(environment: Mapping[str, object]) -> dict[str, obj
         "capture_content_id": environment["capture_image_id"],
         "capture_reference": environment["capture_image_reference"],
         "capture_tool_version": environment["capture_tool_version"],
-        "host_architecture": environment["host_architecture"],
+        # The capture service records the frozen container platform, while the
+        # top-level environment records the host-machine architecture.
+        "host_architecture": "linux/amd64",
         "target_content_id": environment["target_image_id"],
         "target_reference": environment["target_image_reference"],
     }
+
+
+def _require_successful_log_status(records: Sequence[Mapping[str, object]], *, name: str) -> None:
+    for record in records:
+        event = record.get("event")
+        if type(event) is str and (event.endswith("_reused") or event.endswith("_failed")):
+            _fail(
+                "artifact_foreign",
+                name,
+                "run log cannot retain reused or failed stage status",
+                "restore complete matching run-log lineage",
+            )
+
+
+def _require_terminal_log_events(
+    records: Sequence[Mapping[str, object]], *, events: tuple[str, ...], name: str
+) -> None:
+    if tuple(record.get("event") for record in records[-len(events) :]) != events:
+        _fail(
+            "artifact_foreign",
+            name,
+            f"run log must end with the successful publication sequence {events!r}",
+            "restore complete matching run-log lineage",
+        )
+
+
+def _require_ordered_log_events(records: Sequence[Mapping[str, object]], *, events: tuple[str, ...], name: str) -> None:
+    positions: list[int] = []
+    for event in events:
+        position = next((index for index, record in enumerate(records) if record.get("event") == event), None)
+        if position is None:
+            _fail(
+                "artifact_foreign",
+                name,
+                f"run log lacks required {event} event for successful stage order",
+                "restore complete matching run-log lineage",
+            )
+        positions.append(position)
+    if positions != sorted(positions):
+        _fail(
+            "artifact_foreign",
+            name,
+            "run log does not preserve successful stage order",
+            "restore complete matching run-log lineage",
+        )
 
 
 def _require_capture_log_lineage(
@@ -1390,6 +1437,7 @@ def _require_capture_log_lineage(
     experiment: bytes,
     packet_count: int | None,
 ) -> None:
+    _require_successful_log_status(records, name=name)
     environment_fields = _capture_log_environment(environment)
     _require_log_fields(
         _required_log_record(records, event="capture_environment_identity", name=name),
@@ -1492,6 +1540,24 @@ def _require_training_log_lineage(
         name=name,
         event="run_completed",
     )
+    _require_terminal_log_events(
+        records,
+        events=("run_completed", "validation_study_training_completed"),
+        name=name,
+    )
+    _require_ordered_log_events(
+        records,
+        events=(
+            "capture_environment_identity",
+            "capture_published",
+            "best_model_published",
+            "generated_pcapng_published",
+            "comparison_succeeded",
+            "run_completed",
+            "validation_study_training_completed",
+        ),
+        name=name,
+    )
 
 
 def _require_held_out_log_lineage(
@@ -1518,6 +1584,12 @@ def _require_held_out_log_lineage(
         {"event": "held_out_evaluated", "stage": "compare", "workload": workload},
         name=name,
         event="held_out_evaluated",
+    )
+    _require_terminal_log_events(records, events=("held_out_evaluated",), name=name)
+    _require_ordered_log_events(
+        records,
+        events=("capture_environment_identity", "capture_published", "held_out_evaluated"),
+        name=name,
     )
 
 

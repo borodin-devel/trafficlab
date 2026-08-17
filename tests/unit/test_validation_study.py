@@ -11601,6 +11601,119 @@ def test_offline_auditor_rejects_required_run_log_identity_and_status_mismatches
     ) == ("artifact_foreign", "publication", relative, "not_published", "primary")
 
 
+def test_offline_auditor_accepts_r18_canonical_capture_platform_log_identity() -> None:
+    """Capture lineage binds the frozen Docker platform, not the host-machine spelling."""
+
+    bundle = _ROOT / "examples/validation_study/evidence/2026-08-17-research-fitness-r18"
+    environment = cast(dict[str, object], json.loads((bundle / "environment.json").read_bytes()))
+    directory = bundle / "training" / "short" / "r1"
+    records = auditor._run_log_records(  # pyright: ignore[reportPrivateUsage]
+        (directory / "run.log").read_bytes(),
+        name="training/short/r1/run.log",
+    )
+
+    auditor._require_capture_log_lineage(  # pyright: ignore[reportPrivateUsage]
+        records,
+        name="training/short/r1/run.log",
+        environment=environment,
+        capture=(directory / "capture.json").read_bytes(),
+        reference=(directory / "reference.pcapng").read_bytes(),
+        experiment=(directory / "experiment.toml").read_bytes(),
+        packet_count=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("relative", "record"),
+    (
+        ("training/short/r1/run.log", {"event": "capture_reused", "stage": "capture"}),
+        ("held_out/short/run.log", {"event": "run_failed", "stage": "run"}),
+    ),
+)
+def test_offline_auditor_rejects_contradictory_run_log_status_events(
+    tmp_path: Path,
+    relative: str,
+    record: dict[str, object],
+) -> None:
+    """A retained fresh-study log cannot also claim reuse or a failed stage."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    path = candidate / relative
+    with path.open("ab") as stream:
+        stream.write(
+            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
+                "utf-8"
+            )
+            + b"\n"
+        )
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
+
+
+@pytest.mark.parametrize("relative", ("training/short/r1/run.log", "held_out/short/run.log"))
+def test_offline_auditor_rejects_run_log_records_after_terminal_publication(tmp_path: Path, relative: str) -> None:
+    """Successful publication markers must remain the terminal retained status records."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    path = candidate / relative
+    with path.open("ab") as stream:
+        stream.write(b'{"event":"diagnostic","stage":"run"}\n')
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
+
+
+@pytest.mark.parametrize(
+    ("relative", "first_event", "second_event"),
+    (
+        ("training/short/r1/run.log", "capture_published", "best_model_published"),
+        ("held_out/short/run.log", "capture_environment_identity", "capture_published"),
+    ),
+)
+def test_offline_auditor_rejects_out_of_order_required_run_log_events(
+    tmp_path: Path,
+    relative: str,
+    first_event: str,
+    second_event: str,
+) -> None:
+    """Every retained successful stage must follow its recorded predecessor."""
+
+    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    path = candidate / relative
+    records = [json.loads(line) for line in path.read_bytes().splitlines()]
+    first = next(index for index, record in enumerate(records) if record["event"] == first_event)
+    second = next(index for index, record in enumerate(records) if record["event"] == second_event)
+    records[first], records[second] = records[second], records[first]
+    path.write_bytes(
+        b"".join(
+            json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode(
+                "utf-8"
+            )
+            + b"\n"
+            for record in records
+        )
+    )
+    _rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", relative)
+
+
 def test_offline_auditor_rejects_incomplete_capture_log_records(
     tmp_path: Path,
 ) -> None:

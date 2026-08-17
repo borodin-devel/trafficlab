@@ -128,7 +128,7 @@ def _capture_log_environment() -> dict[str, object]:
         "capture_content_id": CAPTURE_ID,
         "capture_reference": CAPTURE_REFERENCE,
         "capture_tool_version": CAPTURE_TOOL_VERSION,
-        "host_architecture": "fixture-x86_64",
+        "host_architecture": "linux/amd64",
         "target_content_id": TARGET_ID,
         "target_reference": study.TARGET_REFERENCE,
     }
