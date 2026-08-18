@@ -53,7 +53,7 @@ Classify every development problem by both impact and difficulty:
   external blocker for which no safe implementation or valid test substitute
   can satisfy the roadmap. Only [PROBLEM-C5] permits asking the human a question.
 
-The human has pre-approved recommended choices for Classes 1–4. Do not pause for
+The human has pre-approved recommended choices for [PROBLEM-C1] through [PROBLEM-C4]. Do not pause for
 routine confirmations, status choices, dependency approval, expected test
 failures, implementation preferences, or permission to continue. Do not broaden
 scope, push to a remote, publish data, or perform destructive external actions
