@@ -71,7 +71,7 @@ def test_capture_fixture_identity_uses_injected_inspect_result() -> None:
 
 
 def test_capture_fixture_identity_rejects_mismatch_without_rewriting_lock() -> None:
-    reference = "trafficlab-capture:phase3-test"
+    reference = "trafficlab-capture:docker-capture-test"
     lock_path = conftest.REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
     before = lock_path.read_bytes()
 

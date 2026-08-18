@@ -1,4 +1,4 @@
-# Task 13 - Offline validation-study auditor and complete Phase 7 fixture
+# Task 13 - Offline validation-study auditor and complete nine-run real-program validation workload fixture
 
 ## Scope
 
@@ -13,7 +13,8 @@ The authoritative adverse-condition fixture remains
 
 ## Complete retained evidence
 
-The deterministic credential-free fixture has 155 regular retained files:
+The deterministic credential-free fixture represents the complete nine-run
+real-program validation workload and has 155 regular retained files:
 
 - Three workloads times three distinct training repeats, each with the strict
   nine-file run inventory.
@@ -44,9 +45,9 @@ SHA-256 for every retained file except itself.
 
 ## RED evidence
 
-1. The former three-run candidate could not represent the Phase 7 workload,
-   repetition, independent held-out, prerequisite, protocol, environment, and
-   report requirements.
+1. The former three-run candidate could not represent the nine-run real-program
+   validation workload, its repetitions, independent held-out evaluation,
+   prerequisite, protocol, environment, and report requirements.
 2. `test_validation_fixture_generator_rejects_nonhex_source_identities` RED:
    `Failed: DID NOT RAISE ValueError`. The new source-ID guard rejects nonhex
    and all-zero commit/tree values.

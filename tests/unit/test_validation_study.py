@@ -9186,7 +9186,9 @@ def test_audit_bundle_wraps_an_unclassified_owner_error_and_preserves_a_classifi
     assert second.value.failure_outcomes == (classified_outcome,)
 
 
-def test_offline_bundle_fixture_carries_complete_phase7_evidence_and_reconstructs_it(tmp_path: Path) -> None:
+def test_offline_bundle_fixture_carries_complete_real_program_validation_evidence_and_reconstructs_it(
+    tmp_path: Path,
+) -> None:
     """A retained candidate distinguishes training, fresh simulation, and independent held-out evidence."""
     repository, candidate = _copy_validation_study_candidate(tmp_path)
     before = _candidate_bytes(candidate)

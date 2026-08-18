@@ -8698,7 +8698,9 @@ def collect_validation_candidate(
     owned_capture_image: _PhaseCaptureImage | None = None,
     runner: CommandRunner = cast(CommandRunner, subprocess.run),  # noqa: B008 - fixed injected lifecycle boundary
 ) -> Path:
-    """Collect one immutable, audit-ready Phase 7 candidate through existing stage owners."""
+    """Collect one immutable, audit-ready real-program validation candidate
+    through the existing capture, fitting, generation, and comparison owners.
+    """
     root = repository_root.resolve()
     checked_study_id = validate_study_id(study_id)
     checked_url = validate_endpoint_url(url)

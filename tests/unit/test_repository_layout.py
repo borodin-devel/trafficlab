@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import re
 import runpy
 import subprocess
 import sys
@@ -12,6 +14,37 @@ import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 CHECKER_PATH = REPOSITORY / "scripts" / "check_fixture_layout.py"
+
+
+def test_numbered_roadmap_aliases_are_confined_to_authoritative_documents() -> None:
+    legacy_word = "pha" + "se"
+    pattern = re.compile(
+        rf"{legacy_word}[\s_-]*[0-9]+",
+        flags=re.IGNORECASE,
+    )
+    completed = subprocess.run(
+        ("git", "ls-files", "-z"),
+        cwd=REPOSITORY,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    matches: list[Path] = []
+    for encoded in completed.stdout.split(b"\0"):
+        if not encoded:
+            continue
+        relative = Path(os.fsdecode(encoded))
+        if relative.parts[0] in {"architecture", "docs"}:
+            continue
+        path = REPOSITORY / relative
+        if not path.is_file():
+            continue
+        try:
+            document = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if pattern.search(document):
+            matches.append(relative)
+    assert matches == []
 
 
 class _ManifestEntry(Protocol):
@@ -170,7 +203,7 @@ def test_tracked_phase_paths_reports_case_insensitive_basenames_only(tmp_path: P
     repository.mkdir()
     subprocess.run(("git", "init", "-q"), cwd=repository, check=True)
     for relative in (
-        "docs/legacy-phase-1.md",
+        "docs/legacy-phase-name.md",
         "scripts/PHASE_builder.py",
         "docs/phase-parent/clean.md",
         "docs/mentions-phase-in-parent/also-clean.md",
@@ -182,7 +215,7 @@ def test_tracked_phase_paths_reports_case_insensitive_basenames_only(tmp_path: P
     subprocess.run(("git", "add", "."), cwd=repository, check=True)
 
     assert checker.tracked_phase_paths(repository) == (
-        Path("docs/legacy-phase-1.md"),
+        Path("docs/legacy-phase-name.md"),
         Path("scripts/PHASE_builder.py"),
     )
 

@@ -439,8 +439,8 @@ The accepted corrected study is identified by the checked
 [study report](examples/validation_study/REPORT.md), rather than a mutable
 concrete bundle ID. It retains the manifest-indexed training, fresh-simulation,
 held-out, prerequisite, and guarded offline-reconstruction evidence described
-there. Historical Phase 7 material and earlier attempts remain non-accepted
-evidence.
+there. Historical real-program validation-study material and earlier attempts
+remain non-accepted evidence.
 
 ## Limitations
 

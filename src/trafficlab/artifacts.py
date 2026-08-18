@@ -701,7 +701,9 @@ def _clean_failed_publication(run_directory: Path, owned_files: list[Path]) -> s
 
 
 def _publish_run_log(run_directory: Path, owned_files: list[Path]) -> None:
-    """Atomically publish deterministic records for a prepared Phase 1 run."""
+    """Atomically publish deterministic records for a prepared experiment run,
+    the artifact boundary established by project configuration and local preflight.
+    """
     log_path = run_directory / "run.log"
     records = (
         {

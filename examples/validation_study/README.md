@@ -1,7 +1,7 @@
 # Validation Study
 
 This directory contains the frozen local protocol and accepted evidence for the
-replacement Phase 7 study. The protocol is serial and bounded. It has no default
+replacement real-program validation study. The protocol is serial and bounded. It has no default
 endpoint: the operator supplies one credential-free HTTPS URL at invocation time,
 and the exact URL, redirect result, headers, and external observation are retained
 in the candidate bundle. Do not run the external commands below until the source
@@ -25,8 +25,8 @@ binds 231 retained evidence paths and excludes only itself. The bundle contains:
   path/size/SHA-256 manifest.
 
 The audited source candidate is a transient publisher work copy, not another
-accepted study. Historical Phase 7 material and prior attempts remain
-non-accepted consistency or forensic evidence.
+accepted study. Historical real-program validation-study material and prior
+attempts remain non-accepted consistency or forensic evidence.
 
 ## Frozen protocol
 
