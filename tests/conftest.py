@@ -277,14 +277,18 @@ def docker_test_environment(pytestconfig: pytest.Config) -> Iterator[DockerTestE
         timeout=20.0,
     )
     supplied_capture_image = cast(str | None, pytestconfig.getoption("capture_image"))
+    session_suffix = uuid.uuid4().hex
     environment = DockerTestEnvironment(
         capture_image=(
             require_checked_prebuilt_capture_image(supplied_capture_image)
             if supplied_capture_image is not None
-            else f"{CAPTURE_IMAGE}-{uuid.uuid4().hex}"
-        )
+            else f"{CAPTURE_IMAGE}-{session_suffix}"
+        ),
+        endpoint_image=f"{ENDPOINT_IMAGE}-{session_suffix}",
+        client_image=f"{CLIENT_IMAGE}-{session_suffix}",
+        no_shell_image=f"{NO_SHELL_IMAGE}-{session_suffix}",
     )
-    capture_built = False
+    built_images: list[str] = []
     try:
         if supplied_capture_image is None:
             build_test_image(
@@ -292,19 +296,31 @@ def docker_test_environment(pytestconfig: pytest.Config) -> Iterator[DockerTestE
                 REPOSITORY_ROOT / "docker" / "capture",
                 reproducible_capture=True,
             )
-            capture_built = True
+            built_images.append(environment.capture_image)
         build_test_image(environment.client_image, environment.fixture_root / "images" / "client")
+        built_images.append(environment.client_image)
         if external_tests_requested(pytestconfig, "docker"):
             build_test_image(environment.endpoint_image, environment.fixture_root / "images" / "endpoint")
+            built_images.append(environment.endpoint_image)
             build_test_image(environment.no_shell_image, environment.fixture_root / "images" / "no_shell")
+            built_images.append(environment.no_shell_image)
         yield environment
     finally:
-        if capture_built:
-            run_external_command(
-                ("docker", "image", "rm", "--force", environment.capture_image),
-                purpose=f"remove owned capture test image {environment.capture_image}",
-                timeout=20.0,
-            )
+        cleanup_errors: list[BaseException] = []
+        for image in reversed(built_images):
+            try:
+                run_external_command(
+                    ("docker", "image", "rm", "--force", image),
+                    purpose=f"remove owned test image {image}",
+                    timeout=20.0,
+                )
+            except BaseException as error:
+                cleanup_errors.append(error)
+        if cleanup_errors:
+            primary = cleanup_errors[0]
+            for secondary in cleanup_errors[1:]:
+                primary.add_note(f"additional owned image cleanup failure: {secondary}")
+            raise primary
 
 
 @pytest.fixture(scope="session")

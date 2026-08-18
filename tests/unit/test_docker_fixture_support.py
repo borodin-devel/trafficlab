@@ -145,7 +145,7 @@ def test_capture_fixture_build_disables_nondeterministic_provenance(
     ]
 
 
-def test_docker_environment_owns_a_unique_capture_tag_and_removes_it(
+def test_docker_environment_owns_unique_tags_and_removes_every_built_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[str, ...]] = []
@@ -176,11 +176,28 @@ def test_docker_environment_owns_a_unique_capture_tag_and_removes_it(
     )
     iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
     environment = next(iterator)
-
-    assert environment.capture_image.startswith("trafficlab-capture:docker-capture-test-")
-    assert environment.capture_image != conftest.CAPTURE_IMAGE
     iterator.close()
-    assert calls[-1] == ("docker", "image", "rm", "--force", environment.capture_image)
+
+    images = (
+        environment.capture_image,
+        environment.client_image,
+        environment.endpoint_image,
+        environment.no_shell_image,
+    )
+    for image, prefix in zip(
+        images,
+        (conftest.CAPTURE_IMAGE, conftest.CLIENT_IMAGE, conftest.ENDPOINT_IMAGE, conftest.NO_SHELL_IMAGE),
+        strict=True,
+    ):
+        assert image.startswith(f"{prefix}-")
+        assert image != prefix
+    assert len(set(images)) == 4
+    assert calls[-4:] == [
+        ("docker", "image", "rm", "--force", environment.no_shell_image),
+        ("docker", "image", "rm", "--force", environment.endpoint_image),
+        ("docker", "image", "rm", "--force", environment.client_image),
+        ("docker", "image", "rm", "--force", environment.capture_image),
+    ]
 
 
 @pytest.mark.parametrize("marker", ("docker", "internet"))
@@ -225,10 +242,108 @@ def test_docker_environment_reuses_a_checked_prerequisite_image_without_building
     iterator.close()
 
     assert environment.capture_image == reference
+    assert environment.client_image.startswith(f"{conftest.CLIENT_IMAGE}-")
     assert ("docker", "image", "inspect", reference) in calls
     assert ("docker", "run", "--rm", "--entrypoint", "dumpcap", reference, "--version") in calls
     assert not any(command[:2] == ("docker", "build") and reference in command for command in calls)
     assert ("docker", "image", "rm", "--force", reference) not in calls
+    removed = [command[-1] for command in calls if command[:4] == ("docker", "image", "rm", "--force")]
+    expected_removed = [environment.client_image]
+    if marker == "docker":
+        expected_removed = [environment.no_shell_image, environment.endpoint_image, environment.client_image]
+    assert removed == expected_removed
+
+
+def test_docker_environment_cleans_successful_images_after_a_later_build_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        actual = tuple(argv)
+        calls.append(actual)
+        if actual[:2] == ("docker", "build") and "trafficlab-endpoint:" in actual[-2]:
+            raise pytest.UsageError("injected endpoint build failure")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    class _SelectedDockerConfig:
+        option = SimpleNamespace(numprocesses=0)
+        invocation_params = SimpleNamespace(args=("tests/docker",))
+
+        def getoption(self, name: str) -> str | None:
+            values = {"markexpr": "docker", "capture_image": None}
+            return values[name]
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+    fixture = cast(
+        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
+        cast(Any, conftest.docker_test_environment).__wrapped__,
+    )
+
+    with pytest.raises(pytest.UsageError, match="endpoint build failure"):
+        next(fixture(cast(pytest.Config, _SelectedDockerConfig())))
+
+    removed = [command[-1] for command in calls if command[:4] == ("docker", "image", "rm", "--force")]
+    assert len(removed) == 2
+    assert removed[0].startswith(f"{conftest.CLIENT_IMAGE}-")
+    assert removed[1].startswith(f"{conftest.CAPTURE_IMAGE}-")
+
+
+def test_docker_environment_attempts_all_image_cleanup_and_preserves_first_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...] | list[str],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        actual = tuple(argv)
+        calls.append(actual)
+        if actual[:4] == ("docker", "image", "rm", "--force") and (
+            "trafficlab-no-shell:" in actual[-1] or "trafficlab-client:" in actual[-1]
+        ):
+            raise pytest.UsageError(f"injected cleanup failure for {actual[-1]}")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    class _SelectedDockerConfig:
+        option = SimpleNamespace(numprocesses=0)
+        invocation_params = SimpleNamespace(args=("tests/docker",))
+
+        def getoption(self, name: str) -> str | None:
+            values = {"markexpr": "docker", "capture_image": None}
+            return values[name]
+
+    monkeypatch.setattr(conftest, "run_external_command", command)
+    fixture = cast(
+        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
+        cast(Any, conftest.docker_test_environment).__wrapped__,
+    )
+    iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
+    environment = next(iterator)
+
+    with pytest.raises(pytest.UsageError, match="no-shell") as caught:
+        iterator.close()
+
+    removed = [command[-1] for command in calls if command[:4] == ("docker", "image", "rm", "--force")]
+    assert removed == [
+        environment.no_shell_image,
+        environment.endpoint_image,
+        environment.client_image,
+        environment.capture_image,
+    ]
+    assert any("client" in note for note in getattr(caught.value, "__notes__", ()))
 
 
 def test_docker_environment_rejects_an_empty_borrowed_capture_image_before_image_work(

@@ -678,7 +678,11 @@ fresh-environment variation does not establish reuse equivalence.
 
 Docker tests call the real `docker` and `docker compose` CLIs. A session fixture
 checks `docker info`, `docker compose version`, and required test images before
-the first capture test.
+the first capture test. Every image built by that fixture receives the same
+session-unique suffix and is removed in reverse build order through bounded
+commands, including after a later build or test failure. A checked capture image
+supplied by the validation-study prerequisite is borrowed rather than removed;
+locally built client and endpoint helpers remain uniquely owned and cleaned.
 
 Every test derives a unique Compose project name. Its production topology has
 capture own the default-bridge network namespace while target joins with

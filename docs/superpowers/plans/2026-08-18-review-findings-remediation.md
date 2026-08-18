@@ -151,6 +151,7 @@ requested this remediation.
 
 **Files:**
 
+- Modify: `architecture/TESTING.md`
 - Modify: `tests/conftest.py`
 - Test: `tests/unit/test_docker_fixture_support.py`
 
@@ -160,26 +161,26 @@ requested this remediation.
 - Teardown makes a bounded removal attempt for every successfully built image while never removing a borrowed capture
   image supplied through `--capture-image`.
 
-- [ ] **[STEP-16-ea7161ef] Write failing unique-tag and complete-cleanup tests**
+- [x] **[STEP-16-ea7161ef] Write failing unique-tag and complete-cleanup tests**
 
   Require all locally built image references to be unique, require reverse-order removal of all owned images, require
   partial-build cleanup, and require borrowed capture preservation alongside cleanup of locally built helper images.
 
-- [ ] **[STEP-17-be8e3883] Run Docker fixture RED tests**
+- [x] **[STEP-17-be8e3883] Run Docker fixture RED tests**
 
   Run `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 2m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_docker_fixture_support.py` and require fixed helper tags and incomplete teardown to fail.
 
-- [ ] **[STEP-18-a4dfdf08] Implement session-local image ownership and teardown**
+- [x] **[STEP-18-a4dfdf08] Implement session-local image ownership and teardown**
 
   Derive all local tags from one UUID, record each successful build, remove all recorded images in reverse order with
   the existing 20-second command bound, and preserve the first cleanup failure while noting later failures.
 
-- [ ] **[STEP-19-9af8e037] Run Docker fixture GREEN and static checks**
+- [x] **[STEP-19-9af8e037] Run Docker fixture GREEN and static checks**
 
   Rerun the focused test, then `uv run --locked ruff check tests/conftest.py tests/unit/test_docker_fixture_support.py`
   and `uv run --locked pyright`.
 
-- [ ] **[STEP-20-86a1abb3] Commit Docker fixture ownership**
+- [x] **[STEP-20-86a1abb3] Commit Docker fixture ownership**
 
   Commit both files with message `test: isolate Docker fixture images`.
 
