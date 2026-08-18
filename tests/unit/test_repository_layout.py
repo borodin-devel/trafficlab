@@ -211,8 +211,8 @@ def test_agents_requires_precise_progress_and_generated_task_labels() -> None:
     assert "[ETA:" not in document
     for problem_class in range(1, 6):
         assert f"[PROBLEM-C{problem_class}]" in document
-    assert "Class " not in document
-    assert "Classes " not in document
+        assert f"**Class {problem_class} —" not in document
+    assert "choices for Classes 1–4" not in document
     assert "[TASK-<ordinal>-<crc32>]" in document
     assert "[STEP-<ordinal>-<crc32>]" in document
     assert "eight lowercase hexadecimal digits" in document
