@@ -16,6 +16,15 @@ _LEGACY_FIXTURE_PATHS = (
     Path("tests/docker/images"),
     Path("tests/fixtures"),
 )
+_LEGACY_REFERENCE_BYTES = (
+    b"examples/data",
+    b"tests/fixtures",
+    b"tests/docker/images",
+    b"tests/docker/compose.endpoint.json",
+)
+_ACTIVE_REFERENCE_PREFIXES = ("examples/configs/", "scripts/", "src/", "tests/")
+_ACTIVE_REFERENCE_SUFFIXES = frozenset({".json", ".py", ".toml", ".yaml", ".yml"})
+_REFERENCE_SCAN_EXCLUSIONS = frozenset({"scripts/check_fixture_layout.py", "tests/unit/test_repository_layout.py"})
 
 
 class FixtureLayoutError(ValueError):
@@ -154,6 +163,31 @@ def legacy_fixture_paths(repository: Path) -> tuple[Path, ...]:
     return tuple(present)
 
 
+def legacy_fixture_references(repository: Path) -> tuple[Path, ...]:
+    result = subprocess.run(
+        ("git", "ls-files", "-z"),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    references: list[Path] = []
+    for value in result.stdout.split(b"\0"):
+        if not value:
+            continue
+        relative = Path(value.decode("utf-8"))
+        name = relative.as_posix()
+        if (
+            name in _REFERENCE_SCAN_EXCLUSIONS
+            or relative.suffix not in _ACTIVE_REFERENCE_SUFFIXES
+            or not name.startswith(_ACTIVE_REFERENCE_PREFIXES)
+        ):
+            continue
+        content = (repository / relative).read_bytes()
+        if any(reference in content for reference in _LEGACY_REFERENCE_BYTES):
+            references.append(relative)
+    return tuple(references)
+
+
 def _repository() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -187,6 +221,11 @@ def main(argv: list[str] | None = None) -> int:
         legacy_paths = legacy_fixture_paths(repository)
         if legacy_paths:
             _fail("legacy fixture paths remain: " + ", ".join(path.as_posix() for path in legacy_paths))
+        legacy_references = legacy_fixture_references(repository)
+        if legacy_references:
+            _fail(
+                "active sources reference legacy fixtures: " + ", ".join(path.as_posix() for path in legacy_references)
+            )
     return 0
 
 

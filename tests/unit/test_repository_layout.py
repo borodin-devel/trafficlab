@@ -32,6 +32,8 @@ class _Checker(Protocol):
 
     def legacy_fixture_paths(self, repository: Path) -> tuple[Path, ...]: ...
 
+    def legacy_fixture_references(self, repository: Path) -> tuple[Path, ...]: ...
+
 
 def _load_checker() -> _Checker:
     assert CHECKER_PATH.is_file(), "repository fixture-layout checker is missing"
@@ -186,8 +188,10 @@ def test_fixture_path_catalog_owns_each_compartment() -> None:
     assert catalog_path.is_file()
     catalog = runpy.run_path(str(catalog_path))
 
-    assert catalog["FIXTURE_ROOT"] == REPOSITORY / "fixtures"
-    assert catalog["PIPELINE_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "examples" / "pipeline"
+    assert catalog["FIXTURES_ROOT"] == REPOSITORY / "fixtures"
+    assert catalog["EXAMPLE_FIXTURES"] == REPOSITORY / "fixtures" / "examples" / "pipeline"
+    assert catalog["TEST_FIXTURES"] == REPOSITORY / "fixtures" / "tests"
+    assert catalog["PIPELINE_FIXTURE_ROOT"] == catalog["EXAMPLE_FIXTURES"]
     assert catalog["DIAGNOSTIC_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "diagnostics"
     assert catalog["DOCKER_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "docker"
     assert catalog["PROCESS_GUARD_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "process_guard"
@@ -204,3 +208,30 @@ def test_repository_has_no_legacy_fixture_paths() -> None:
     checker = _load_checker()
 
     assert checker.legacy_fixture_paths(REPOSITORY) == ()
+
+
+@pytest.mark.parametrize(
+    "reference",
+    (
+        "examples/data/reference.pcapng",
+        "tests/fixtures/diagnostics/outcome.jsonl",
+        "tests/docker/images/client/client.py",
+        "tests/docker/compose.endpoint.json",
+    ),
+)
+def test_legacy_fixture_references_reports_active_source_files(tmp_path: Path, reference: str) -> None:
+    checker = _load_checker()
+    repository = tmp_path / "repository"
+    source = repository / "scripts" / "consumer.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(f'FIXTURE = "{reference}"\n', encoding="utf-8")
+    subprocess.run(("git", "init", "-q"), cwd=repository, check=True)
+    subprocess.run(("git", "add", "."), cwd=repository, check=True)
+
+    assert checker.legacy_fixture_references(repository) == (Path("scripts/consumer.py"),)
+
+
+def test_repository_has_no_active_legacy_fixture_references() -> None:
+    checker = _load_checker()
+
+    assert checker.legacy_fixture_references(REPOSITORY) == ()
