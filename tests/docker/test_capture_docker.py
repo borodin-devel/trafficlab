@@ -12,7 +12,6 @@ from tests.conftest import (
     DockerTestEnvironment,
     EndpointDockerCompose,
     inspect_project_resources,
-    merge_endpoint_overlay,
 )
 from tests.docker.support import (
     capture_lifecycle_positions,
@@ -22,9 +21,6 @@ from tests.docker.support import (
 )
 from trafficlab.capture import capture_experiment, capture_prepared_experiment
 from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.compose import ComposePaths, render_production_compose
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment
 from trafficlab.docker_cli import CommandResult
 from trafficlab.preflight import run_preflight
 from trafficlab.trace import Direction
@@ -38,11 +34,6 @@ def test_capture_image_matches_checked_content_identity(
     identity = require_checked_capture_image(docker_test_environment.capture_image)
 
     assert identity.reference == docker_test_environment.capture_image
-
-
-def _services(document: bytes) -> dict[str, object]:
-    parsed = cast(dict[str, object], json.loads(document))
-    return cast(dict[str, object], parsed["services"])
 
 
 class _ReadinessDocker(EndpointDockerCompose):
@@ -67,48 +58,6 @@ class _ReadinessDocker(EndpointDockerCompose):
             output / "reference.pcapng.tmp"
         ).read_bytes()[:4] == b"\x0a\x0d\x0d\x0a"
         return super().start_target(compose_path, project_name, timeout=timeout, deadline=deadline)
-
-
-def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
-    valid_config_data: dict[str, object],
-    tmp_path: Path,
-    docker_test_environment: DockerTestEnvironment,
-) -> None:
-    experiment = write_docker_experiment(
-        tmp_path / "topology.toml",
-        valid_config_data,
-        docker_test_environment,
-        argv=["traffic", "--tcp-count", "2", "--udp-count", "3"],
-    )
-    config: ExperimentConfig = load_experiment(experiment)
-    production = render_production_compose(
-        config,
-        ComposePaths("trafficlab-contract", tmp_path.resolve()),
-        target_image=config.target.image,
-        capture_image=config.capture.image,
-    )
-
-    assert set(_services(production)) == {"capture", "target"}
-    overlay_services = _services(merge_endpoint_overlay(production))
-    assert set(overlay_services) == {
-        "capture",
-        "endpoint",
-        "noise",
-        "orphan",
-        "target",
-    }
-    overlay_addresses: list[object] = []
-    for service_name in ("endpoint", "noise", "orphan"):
-        service = cast(dict[str, object], overlay_services[service_name])
-        networks = cast(dict[str, object], service.get("networks", {}))
-        default_network = cast(dict[str, object], networks.get("default", {}))
-        overlay_addresses.append(default_network.get("ipv4_address"))
-    assert overlay_addresses == ["172.31.254.2", "172.31.254.3", "172.31.254.4"]
-    target = cast(dict[str, object], _services(production)["target"])
-    assert target["command"] == ["traffic", "--tcp-count", "2", "--udp-count", "3"]
-    assert target["network_mode"] == "service:capture"
-    assert target["init"] is True
-    assert "entrypoint" not in target
 
 
 def test_full_preflight_and_capture_observe_controlled_tcp_udp_and_broadcast(

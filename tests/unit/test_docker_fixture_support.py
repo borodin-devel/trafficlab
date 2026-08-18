@@ -13,8 +13,58 @@ import pytest
 from tests import conftest
 from tests.docker import support
 from trafficlab.artifacts import append_run_log
+from trafficlab.compose import ComposePaths, render_production_compose
+from trafficlab.config import ExperimentConfig
+from trafficlab.config_io import load_experiment
 
 _CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
+
+
+def _services(document: bytes) -> dict[str, object]:
+    parsed = cast(dict[str, object], json.loads(document))
+    return cast(dict[str, object], parsed["services"])
+
+
+def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+) -> None:
+    environment = conftest.DockerTestEnvironment()
+    experiment = support.write_docker_experiment(
+        tmp_path / "topology.toml",
+        valid_config_data,
+        environment,
+        argv=["traffic", "--tcp-count", "2", "--udp-count", "3"],
+    )
+    config: ExperimentConfig = load_experiment(experiment)
+    production = render_production_compose(
+        config,
+        ComposePaths("trafficlab-contract", tmp_path.resolve()),
+        target_image=config.target.image,
+        capture_image=config.capture.image,
+    )
+
+    assert set(_services(production)) == {"capture", "target"}
+    overlay_services = _services(conftest.merge_endpoint_overlay(production))
+    assert set(overlay_services) == {
+        "capture",
+        "endpoint",
+        "noise",
+        "orphan",
+        "target",
+    }
+    overlay_addresses: list[object] = []
+    for service_name in ("endpoint", "noise", "orphan"):
+        service = cast(dict[str, object], overlay_services[service_name])
+        networks = cast(dict[str, object], service.get("networks", {}))
+        default_network = cast(dict[str, object], networks.get("default", {}))
+        overlay_addresses.append(default_network.get("ipv4_address"))
+    assert overlay_addresses == ["172.31.254.2", "172.31.254.3", "172.31.254.4"]
+    target = cast(dict[str, object], _services(production)["target"])
+    assert target["command"] == ["traffic", "--tcp-count", "2", "--udp-count", "3"]
+    assert target["network_mode"] == "service:capture"
+    assert target["init"] is True
+    assert "entrypoint" not in target
 
 
 def _capture_inspect(

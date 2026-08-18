@@ -684,14 +684,15 @@ commands, including after a later build or test failure. A checked capture image
 supplied by the validation-study prerequisite is borrowed rather than removed;
 locally built client and endpoint helpers remain uniquely owned and cleaned.
 
-Every test derives a unique Compose project name. Its production topology has
+An ordinary in-process fixture-contract test requires the rendered production
+service set to remain exactly `{capture, target}` while the controlled endpoint,
+noise, and orphan services exist only in the test overlay. Every external test
+derives a unique Compose project name. Its production topology has
 capture own the default-bridge network namespace while target joins with
 `network_mode: service:capture`. A deterministic client sends known TCP and UDP
 payload counts to the existing controlled endpoint service on the Compose
 bridge. Assertions require:
 
-- the rendered production service keys are exactly `{capture, target}`; the
-  controlled endpoint exists only in the test fixture;
 - normal orchestration invokes `docker` directly without `sudo`;
 - capture readiness precedes target service-command start;
 - natural successful and nonzero target statuses are propagated exactly;
