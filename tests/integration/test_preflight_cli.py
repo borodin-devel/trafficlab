@@ -393,6 +393,4 @@ def test_checked_in_example_is_complete_and_uses_repository_relative_paths() -> 
     assert config.models.poisson_empirical.operator_values == (0.9, 1.0, 0.1)
     assert config.models.markov_renewal.operator_values == (0.9, 0.2, 0.1)
     assert config.models.mmpp.operator_values == (0.9, 0.25, 0.1)
-    assert (repository / "examples" / "data" / "request.txt").read_text(encoding="utf-8") == (
-        "trafficlab example\n"
-    )
+    assert (repository / "examples" / "data" / "request.txt").read_text(encoding="utf-8") == ("trafficlab example\n")

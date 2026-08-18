@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from tests.scientific.oracles import (
     empirical_cdf,
     empirical_mean,
@@ -21,7 +22,6 @@ from tests.scientific.oracles import (
     markov_stationary_distribution,
     mmpp_moments,
 )
-from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import (
     FloatBounds,
