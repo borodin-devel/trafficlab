@@ -1379,9 +1379,7 @@ def test_writable_file_and_directory_mounts_are_not_immutable_inputs(
         MountConfig(source=writable_file, target="/work/output.txt", read_only=False),
         MountConfig(source=writable_directory, target="/work/output", read_only=False),
     )
-    config = prepared.config.model_copy(
-        update={"target": prepared.config.target.model_copy(update={"mounts": mounts})}
-    )
+    config = prepared.config.model_copy(update={"target": prepared.config.target.model_copy(update={"mounts": mounts})})
 
     assert cast(Any, capture_module)._identify_mounted_inputs(config) == ()
 

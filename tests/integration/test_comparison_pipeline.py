@@ -91,7 +91,7 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     }
     assert linked == [(linked[0][0], run_directory / "similarity.json")]
     assert not linked[0][0].exists()
-    assert len(fsync_calls) == 2
+    assert len(fsync_calls) == 3
     assert list(run_directory.glob(".similarity.json.*.tmp")) == []
     assert json.loads((run_directory / "similarity.json").read_text(encoding="utf-8"))["methods"] == {
         name: method.as_dict() for name, method in result.methods.items()
@@ -109,7 +109,7 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
 
     assert retried == result
     assert linked == [(linked[0][0], run_directory / "similarity.json")]
-    assert len(fsync_calls) == 3
+    assert len(fsync_calls) == 4
     assert json.loads((run_directory / "run.log").read_text(encoding="utf-8").splitlines()[-1]) == {
         "aggregate_score": _EXPECTED_AGGREGATE_SCORE,
         "event": "comparison_succeeded",

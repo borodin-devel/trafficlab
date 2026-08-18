@@ -771,12 +771,15 @@ def test_publish_capture_pair_directory_durability_failure_preserves_pair(
         "capture pair",
         "preserved",
     )
-    assert artifacts.validate_capture_pair(
-        run_directory / "capture.json",
-        run_directory / "reference.pcapng",
-        deadline=None,
-        clock=lambda: 0.0,
-    ).packet_count == 1
+    assert (
+        artifacts.validate_capture_pair(
+            run_directory / "capture.json",
+            run_directory / "reference.pcapng",
+            deadline=None,
+            clock=lambda: 0.0,
+        ).packet_count
+        == 1
+    )
     assert list(run_directory.glob(".capture-pair.*.tmp")) == []
 
 

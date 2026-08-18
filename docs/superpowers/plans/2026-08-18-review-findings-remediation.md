@@ -118,6 +118,7 @@ requested this remediation.
 - Test: `tests/unit/test_artifacts.py`
 - Test: `tests/unit/test_comparison.py`
 - Test: `tests/integration/test_generate_cli.py`
+- Test: `tests/integration/test_comparison_pipeline.py`
 
 **Interfaces:**
 
