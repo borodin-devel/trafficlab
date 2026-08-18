@@ -212,6 +212,9 @@ projection, and `best_model.json` is the independently final-validated winner.
 
 
 def _fixture_config() -> ExperimentConfig:
+    # The fixture generator exercises the public codec in both directions.  Its
+    # embedded TOML is not trusted until validation and canonical rendering
+    # produce the same typed configuration on a second parse.
     try:
         document = tomllib.loads(_CONFIG_TEMPLATE)
         config = ExperimentConfig.model_validate(document)

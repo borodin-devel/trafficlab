@@ -56,6 +56,9 @@ def _bounded_discrepancy(value: float, *, name: str) -> float:
 
 def _exact_l1_totals(reference: tuple[int | float, ...], generated: tuple[int | float, ...]) -> tuple[int, int]:
     """Return exact binary-rational numerator and denominator totals."""
+    # ``float.as_integer_ratio`` always yields a power-of-two denominator.
+    # The largest denominator is therefore divisible by every smaller one, so
+    # both vectors can be lifted to integers without introducing new rounding.
     reference_ratios = tuple((cell, 1) if type(cell) is int else cell.as_integer_ratio() for cell in reference)
     generated_ratios = tuple((cell, 1) if type(cell) is int else cell.as_integer_ratio() for cell in generated)
     common_denominator = max((denominator for _, denominator in (*reference_ratios, *generated_ratios)), default=1)
@@ -129,6 +132,10 @@ def _validated_weights(values: Iterable[object], *, name: str, expected_length: 
 
 def _snap_near_integer(quotient: float) -> float:
     """Snap a finite quotient only within four ULPs of its nearest integer."""
+    # Values such as ``(k * width) / width`` can land a few representable
+    # floats either side of k.  Snapping only within an ULP-scale tolerance
+    # stabilizes exact bin boundaries without treating nearby real times as
+    # equal or creating a user-visible fuzzy boundary.
     nearest = round(quotient)
     if abs(quotient - nearest) <= 4.0 * math.ulp(quotient):
         return float(nearest)
@@ -181,6 +188,9 @@ def _validated_widths_and_bin_counts(
         bin_counts.append(math.ceil(_snap_near_integer(quotient)))
         previous_width = width
 
+    # Account for both directions before allocating any lists.  This makes the
+    # configured cap a bound on actual feature cells rather than merely on the
+    # number of time bins requested for one direction.
     direction_bin_cell_counts = tuple(2 * count for count in bin_counts)
     total_direction_bin_cells = sum(direction_bin_cell_counts)
     if (
@@ -269,6 +279,9 @@ def _binned_features(
     byte_cells = [0] * (2 * bins_per_direction)
     for event in events:
         quotient = event.timestamp / width
+        # The observation window is closed.  An event exactly at W belongs to
+        # the final bin, while the direction offset keeps the stable serialized
+        # layout ``outbound bins`` followed by ``inbound bins``.
         bin_index = min(math.floor(_snap_near_integer(quotient)), bins_per_direction - 1)
         direction_offset = 0 if event.direction is Direction.OUTBOUND else bins_per_direction
         cell_index = direction_offset + bin_index
@@ -376,6 +389,10 @@ def multiscale_rate_similarity(
             }
         )
 
+    # Aggregate each feature across scales before applying feature weights.
+    # Keeping this decomposition explicit makes the diagnostic feature totals
+    # the exact operands used by the final score, including floating-point
+    # summation order.
     packet_total = _bounded_discrepancy(
         math.fsum(
             weight * discrepancy

@@ -3192,6 +3192,9 @@ def _cleanup_failed_capability(
     capability_cid: Path,
     runner: CommandRunner,
 ) -> str:
+    # The exclusive CID file is the ownership proof for destructive cleanup.
+    # Never fall back to a name-only removal: a colliding container may belong
+    # to another attempt even when it uses the expected naming convention.
     try:
         container_id = capability_cid.read_text(encoding="ascii").strip()
     except (OSError, UnicodeDecodeError) as error:

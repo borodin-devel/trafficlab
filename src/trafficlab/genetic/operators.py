@@ -60,6 +60,9 @@ class ReproductionContext:
         candidates = tuple(existing_candidates)
         if any(type(candidate) is not Candidate for candidate in candidates):
             raise TypeError("existing candidates must be Candidate values")
+        # Freeze both the comparison population and family settings at the start
+        # of reproduction.  Duplicate retries must see a stable set or their
+        # random-draw count would depend on later caller mutation.
         object.__setattr__(self, "reference", tuple(reference))
         object.__setattr__(self, "family_bounds", MappingProxyType(copied_bounds))
         object.__setattr__(

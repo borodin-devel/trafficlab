@@ -79,6 +79,9 @@ class DockerResult(Protocol):
     def stderr(self) -> str: ...
 
 
+# This narrow protocol is also the seam used by in-process tests.  Keeping it at
+# Docker operations rather than subprocess primitives lets preflight validate
+# orchestration order without starting containers.
 class DockerPreflight(Protocol):
     """Docker operations needed by full preflight without importing the concrete adapter."""
 
@@ -374,6 +377,9 @@ def _parse_compose_plugin_version(result: DockerResult) -> str:
 
 def _preflight_failure_outcome(finding: PreflightFinding, *, authority: FailureAuthority = "primary") -> FailureOutcome:
     """Render a direct preflight finding without changing its existing error path."""
+    # These checks form one Docker capability boundary.  Callers can distinguish
+    # configuration failures from daemon/image/network failures without parsing
+    # human-readable detail strings.
     docker_findings = {
         "capture_image_lock",
         "capture_image",

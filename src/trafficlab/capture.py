@@ -367,6 +367,9 @@ def _require_matching_capture_lineage(
         current_mounted_inputs = _require_matching_mounted_inputs(config, recorded_environment.mounted_inputs)
         expected_environment = recorded_environment
         if environment_identity is None:
+            # Config-only reuse deliberately avoids Docker.  The checked lock is
+            # therefore the independent authority that prevents a syntactically
+            # valid run log from claiming a different capture image or tool.
             lock = load_capture_image_lock(_CAPTURE_IMAGE_LOCK_PATH)
             if (recorded_environment.capture_content_id, recorded_environment.capture_tool_version) != (
                 lock.expected_capture_image_id,
@@ -409,6 +412,9 @@ def _temporary_capture_directory(
     try:
         yield temporary_directory.__enter__()
     finally:
+        # Cleanup is secondary to the capture result.  Report it through the
+        # caller's arbitration callback rather than replacing an active primary
+        # failure while unwinding the context manager.
         try:
             temporary_directory.__exit__(None, None, None)
         except OSError as error:

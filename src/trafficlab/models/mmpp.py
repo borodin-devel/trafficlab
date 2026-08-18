@@ -110,6 +110,8 @@ def _stationary_probabilities(q01: object, q10: object) -> tuple[float, float]:
         or q10 <= 0.0
     ):
         raise ValueError("transition rates must be finite positive floats")
+    # Scaling both rates before normalization preserves their ratio while
+    # avoiding overflow when valid rates sit near the floating-point limit.
     scale = max(q01, q10)
     q01_scaled = q01 / scale
     q10_scaled = q10 / scale
@@ -142,6 +144,9 @@ def _arrival_epoch_probabilities(
     checked_q10 = cast(float, q10)
     checked_lambda0 = cast(float, lambda0)
     checked_lambda1 = cast(float, lambda1)
+    # Conditioning on an arrival size-biases the time-stationary regime by its
+    # Poisson rate.  Log weights keep that product stable across wide rate
+    # ranges before the final two-term normalization.
     log_weight0 = math.log(checked_q10) + math.log(checked_lambda0)
     log_weight1 = math.log(checked_q01) + math.log(checked_lambda1)
     maximum_log_weight = max(log_weight0, log_weight1)

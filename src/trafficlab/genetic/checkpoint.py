@@ -256,6 +256,10 @@ def _compatibility_error(detail: str) -> TrafficlabError:
 def atomic_replace(path: Path, content: bytes) -> None:
     """Replace rendered validated bytes after proving the persisted temporary copy is exact."""
 
+    # Validation reads the temporary sibling back from disk before rename.  A
+    # successful return therefore means the atomic replacement published the
+    # exact rendered bytes, not merely that the preceding write call succeeded.
+
     def validate(persisted: bytes) -> None:
         if persisted != content:
             raise _invalid("persisted temporary artifact differs from the rendered content")
@@ -1124,6 +1128,9 @@ def _history_winner(rows: Sequence[HistoryRow], family_priority: FamilyPriority)
 
 
 def _validate_history(state: CheckpointState, family_names: tuple[FamilyName, ...]) -> None:
+    # Every generation is a fixed lexical block: one row per enabled family,
+    # then the overall winner.  Enforcing the shape makes CSV projection and
+    # resume selection deterministic instead of trusting stored row order.
     block_size = len(family_names) + 1
     expected_length = (state.generation + 1) * block_size
     if len(state.history) != expected_length:

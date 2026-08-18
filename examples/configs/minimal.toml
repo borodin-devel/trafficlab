@@ -1,10 +1,16 @@
 [run]
+# Relative paths are resolved from this configuration file's directory.  This
+# keeps generated state under the repository's ignored ``runs/`` tree.
 directory = "../../runs/minimal"
 minimum_free_bytes = 1048576
+# The master seed drives model search and trials; the separate final seed is
+# reserved for generating the selected model's final trace.
 master_seed = 12345
 final_seed = 54321
 
 [target]
+# ``example.invalid`` prevents accidental live traffic.  Replace the image and
+# argv together when turning this validation example into an actual capture.
 image = "curlimages/curl:8.10.1"
 argv = ["https://example.invalid/data"]
 working_directory = "/work"
@@ -13,6 +19,8 @@ working_directory = "/work"
 LANG = "C"
 
 [[target.mounts]]
+# The example data directory is mounted read-only so the target cannot mutate
+# source-controlled inputs while it runs.
 source = "../data"
 target = "/work/data"
 read_only = true
@@ -20,12 +28,16 @@ read_only = true
 [capture]
 image = "trafficlab-capture:local"
 network_probe_url = "https://example.invalid/"
+# Component timeouts diagnose readiness, workload, and flush failures; the
+# total timeout is an independent upper bound for the entire capture lifecycle.
 readiness_timeout_seconds = 10.0
 workload_timeout_seconds = 30.0
 flush_timeout_seconds = 5.0
 total_timeout_seconds = 60.0
 
 [generation.trial]
+# Trial traces are deliberately cheap because the genetic search evaluates many
+# candidates.  Final generation receives larger packet, byte, and time budgets.
 max_packets = 2000
 max_output_bytes = 4000000
 max_wall_seconds = 5.0
@@ -36,6 +48,9 @@ max_output_bytes = 40000000
 max_wall_seconds = 30.0
 
 [genetic]
+# Every enabled family uses the same population and seed schedule.  Zero early
+# stopping generations disables that shortcut, and resume=false starts without
+# accepting a prior checkpoint.
 population_size = 9
 generation_count = 3
 tournament_size = 3
@@ -46,6 +61,8 @@ early_stopping_generations = 0
 resume = false
 
 [models]
+# Each classical family is fitted independently before similarity selects the
+# best retained candidate.
 enabled = ["poisson_empirical", "markov_renewal", "mmpp"]
 
 [models.poisson_empirical]
@@ -104,6 +121,8 @@ lower = 0.1
 upper = 1000.0
 
 [similarity]
+# Scale and feature weights are normalized independently.  The cell cap bounds
+# both traffic directions across all configured widths before allocation.
 iat_diagnostic_quantile = 0.95
 acf_lags = [1]
 acf_lag_weights = [1.0]
@@ -116,6 +135,8 @@ multiscale_byte_weight = 0.5
 max_direction_bin_cells = 100000
 
 [similarity.method_weights]
+# These four weights must sum to one; each mandatory method contributes equally
+# to the aggregate score in this minimal example.
 frame_size_ks = 0.25
 iat_ks = 0.25
 autocorrelation = 0.25

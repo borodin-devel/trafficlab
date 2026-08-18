@@ -2,6 +2,10 @@
 
 set -eu
 
+# ``systemd-run --scope`` re-executes this script inside the transient scope.
+# The child writes an atomic acknowledgement before replacing itself with the
+# requested command; the parent uses that token to distinguish its own scope
+# from a colliding or partially created unit with the same name.
 if [[ ${1-} == --scope-child ]]; then
     if (($# < 5)) || [[ $4 != -- ]]; then
         printf 'run_bounded: invalid internal scope-child invocation\n' >&2
@@ -16,6 +20,8 @@ if [[ ${1-} == --scope-child ]]; then
     exec "$@"
 fi
 
+# Randomized names avoid ordinary collisions.  An explicit --unit remains
+# supported for tests, but launch still fails if systemd already knows it.
 unit="trafficlab-test-guard-${BASHPID}-${RANDOM}-${RANDOM}"
 memory_high=""
 memory_max=""
@@ -143,6 +149,9 @@ if ! timeout --kill-after=1s 10s systemctl --user is-system-running >/dev/null 2
 fi
 
 scope_state() {
+    # Treat an unrecognized systemd response as an inspection failure, not as
+    # an inactive scope.  Cleanup must fail closed when descendant ownership
+    # or liveness cannot be established reliably.
     state_output=""
     state_status=0
     state_output=$(timeout --kill-after=1s 10s systemctl --user is-active "${unit}.scope" 2>&1) || state_status=$?
@@ -159,6 +168,8 @@ scope_state() {
 }
 
 stop_launcher() {
+    # The launcher owns a new process group via setsid.  Signal both its PID and
+    # group so a systemd-run helper cannot outlive a failed scope launch.
     [[ -n $launcher_pid ]] || return 0
     kill -TERM "$launcher_pid" 2>/dev/null || true
     kill -TERM -- "-$launcher_pid" 2>/dev/null || true
@@ -189,6 +200,8 @@ current_scope_is_owned() {
 }
 
 prove_ownership() {
+    # Prefer the acknowledgement written from inside the scope; Description is
+    # a fallback for the short interval before that file becomes observable.
     if [[ -f $ownership_acknowledgement ]] && \
         [[ $(<"$ownership_acknowledgement") == "$ownership_token" ]]; then
         scope_owned=1
@@ -202,6 +215,9 @@ prove_ownership() {
 }
 
 cleanup_scope() {
+    # Never signal a scope until its per-launch token proves ownership.  This
+    # is the central safety invariant: a name collision may fail the command,
+    # but it must not let this wrapper kill an unrelated user's processes.
     CLEANUP_FOUND_ACTIVE=0
     ((cleanup_running == 0)) || return 0
     cleanup_running=1
@@ -301,6 +317,9 @@ cleanup_scope() {
 }
 
 on_exit() {
+    # Cleanup failure overrides the child result because an unverifiable live
+    # scope breaks the wrapper's resource-bound guarantee.  Likewise, a child
+    # that exits zero while leaving descendants behind is not a successful run.
     original_status=$1
     trap - EXIT INT TERM HUP
     if ! cleanup_scope; then
@@ -333,6 +352,9 @@ chmod 700 "$ownership_directory" || fail "could not protect private ownership di
 ownership_acknowledgement="${ownership_directory}/ack"
 ownership_token="trafficlab-test-guard-token-${BASHPID}-${RANDOM}-${RANDOM}"
 
+# Start systemd-run in a separate process group so pre-scope launch failures can
+# be terminated locally.  Once ownership is acknowledged, cleanup operates on
+# the complete systemd scope and therefore includes every descendant process.
 setsid systemd-run --user --quiet --scope --collect --unit="$unit" \
     -p "Description=$ownership_token" \
     -p "MemoryHigh=$memory_high" \

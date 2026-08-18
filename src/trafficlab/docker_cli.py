@@ -711,6 +711,9 @@ class DockerCompose:
     def _remaining(self, *, timeout: float | None, deadline: float | None) -> float:
         return _budget(timeout=timeout, deadline=deadline, clock=self._clock)
 
+    # All synchronous Docker operations pass through one budget calculation and
+    # argv runner.  Adapters therefore cannot accidentally reset a shared stage
+    # deadline when a logical operation needs several CLI calls.
     def _run(
         self,
         argv: tuple[str, ...],
@@ -989,6 +992,9 @@ class DockerCompose:
             deadline=deadline,
         )
 
+    # Cleanup verification inventories containers, networks, and volumes
+    # independently.  An empty container list alone is insufficient because
+    # Compose can leave project-scoped network or volume residue.
     def project_inventory(
         self,
         compose_path: Path,

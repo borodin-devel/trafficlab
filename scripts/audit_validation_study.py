@@ -132,6 +132,10 @@ _FROZEN_CURL_COMMON = (
 def _frozen_workload_profiles(url: str) -> dict[str, _FrozenWorkload]:
     """Reconstruct the validation profile without reusing the collection oracle."""
 
+    # The apparent duplication with the collector is deliberate.  An auditor
+    # that imported the producer's profile would accept the same accidental or
+    # malicious mutation on both sides and cease to be an independent oracle.
+
     short = _FrozenWorkload(
         argv=(
             *_FROZEN_CURL_COMMON,
@@ -367,6 +371,9 @@ def _directory(value: object, *, name: str) -> Path:
 
 
 def files_for_candidate(root: Path, *, include_manifest: bool) -> dict[str, Path]:
+    # Inventory the filesystem before trusting manifest paths.  This detects
+    # foreign files, symlinks, FIFOs, and unowned residue that a manifest could
+    # otherwise omit from its self-description.
     discovered: dict[str, Path] = {}
     try:
         paths = tuple(root.rglob("*"))

@@ -175,6 +175,9 @@ def fit_experiment(
     )
     try:
         best_model_path = run_directory / "best_model.json"
+        # Existing output is inspected before any search work.  A malformed or
+        # foreign winner is stale evidence, not permission to overwrite it and
+        # silently turn a contaminated directory into a successful run.
         try:
             validate_existing_best_model(best_model_path)
         except ScientificArtifactSchemaError as error:

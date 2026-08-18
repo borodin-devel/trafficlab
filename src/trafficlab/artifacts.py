@@ -39,6 +39,9 @@ def _unlink_owned_temp(path: Path) -> None:
 
 
 def _write_fsync_temp_sibling(path: Path, content: bytes) -> Path:
+    # A same-directory sibling guarantees the later os.replace stays on one
+    # filesystem.  fsync makes the file contents durable before its name can
+    # become authoritative.
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -79,6 +82,9 @@ def _post_replace_error(path: Path, operation: str, error: OSError) -> Trafficla
 
 
 def _fsync_containing_directory(path: Path) -> None:
+    # Replacing a file and persisting its directory entry are separate durability
+    # steps.  Once replacement succeeds, failures here are reported as
+    # post-publication errors and must never trigger deletion of the destination.
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
         descriptor = os.open(path.parent, flags)

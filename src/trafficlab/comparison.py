@@ -111,6 +111,9 @@ def _normalized_weights(value: object, *, name: str, expected_length: int) -> tu
 
 
 def _require_close(actual: float, expected: float, *, name: str) -> None:
+    # Persisted diagnostics are treated as scientific evidence, not display
+    # metadata.  Reconstructing each documented equation prevents a forged
+    # aggregate from remaining internally plausible but numerically unrelated.
     if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
         raise ValueError(f"{name} is inconsistent with its documented components")
 
@@ -513,6 +516,10 @@ class MethodComparison:
 @dataclass(frozen=True, slots=True, init=False)
 class ComparisonResult:
     """One deeply immutable comparison result, optionally carrying artifact identities."""
+
+    # Construction copies nested method and identity mappings before exposing
+    # them.  Callers can safely retain this object as publication evidence even
+    # if the dictionaries used to build it are later mutated.
 
     aggregate_score: float
     observation_window_seconds: float

@@ -361,6 +361,9 @@ def _validate_final_artifacts(
     comparison: ComparisonResult,
 ) -> None:
     """Strictly reload the complete documented run before publishing coordinator success."""
+    # Stage return objects are not publication authority: files may have changed
+    # after a stage validated them.  Reloading every artifact here binds the
+    # final success event to one mutually compatible on-disk snapshot.
     run_directory = prepared.run_directory
     identities: _FinalIdentities = {}
     _validate_successful_run_tree(run_directory)

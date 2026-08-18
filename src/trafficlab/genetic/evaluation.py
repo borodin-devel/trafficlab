@@ -110,6 +110,9 @@ def _validate_trial_seeds(seeds: object) -> None:
 
 def validate_evaluation_context(context: EvaluationContext) -> ValidatedEvaluationContext:
     """Validate every shared input and prove all configured metrics on the reference once."""
+    # Candidate evaluation is intentionally downstream of this boundary.  By
+    # exercising metric preconditions on the reference first, configuration or
+    # sample infeasibility cannot be misreported as one candidate's poor fitness.
     if type(context) is not EvaluationContext:
         raise TypeError("context must be an unvalidated EvaluationContext")
     if type(context.reference) is not tuple:

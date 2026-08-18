@@ -30,6 +30,9 @@ _MINIMUM_FRAME_LENGTH = 14
 _MAXIMUM_FRAME_LENGTH = 2**32 - 1
 type TimingTier = Literal["transition", "source", "global"]
 
+# Sparse captures may not observe every direction transition.  Timing lookup
+# falls back from the exact transition, to the source direction, to the global
+# sample; retaining the tier makes that statistical provenance explicit.
 _TIMING_TIERS = frozenset(("transition", "source", "global"))
 
 
@@ -58,6 +61,9 @@ def type7_quantile(values: Sequence[int | float], q: float) -> float:
             corrective_action="provide a nonempty finite numerical sample and a quantile in [0, 1]",
         )
     ordered = sorted(float(value) for value in sample)
+    # Type 7 uses the zero-based fractional rank (n - 1)q and linear
+    # interpolation.  This matches common scientific tooling and keeps fitted
+    # quantiles reproducible without an optional numerical dependency.
     h = (len(ordered) - 1) * q
     lower_index = math.floor(h)
     fraction = h - lower_index

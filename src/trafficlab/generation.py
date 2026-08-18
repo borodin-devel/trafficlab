@@ -50,6 +50,9 @@ def reproduce_generated_pcapng(
         best.final_limits,
         clock=clock,
     ).require_complete()
+    # Fitness uses full-precision model events, while publication uses timestamps
+    # representable by PCAPNG.  Return both forms so later audit can reproduce
+    # the precise quantization boundary instead of conflating the two traces.
     rendered_events = quantize_generated_events(events, best.observation_window_seconds)
     return events, rendered_events, encode_pcapng(rendered_events, metadata)
 

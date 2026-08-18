@@ -194,6 +194,9 @@ def _selected_training_records(
     selected: list[dict[str, object]] = []
     for workload in WORKLOADS:
         candidates = [item for item in training if item["workload"] == workload]
+        # Selection duplicates the public protocol: maximize retained checkpoint
+        # fitness and use the repeat ordinal only as a deterministic tie-breaker.
+        # Recomputing from fixture bytes prevents the index from choosing itself.
         winner = min(
             candidates,
             key=lambda item: (

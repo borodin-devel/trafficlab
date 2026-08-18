@@ -81,6 +81,9 @@ def _read_chunked(stream: BinaryIO, size: int, *, truncated: str) -> bytes:
 
 
 def _read_zero_padding(stream: BinaryIO, size: int, *, context: str, truncated: str) -> None:
+    # PCAPNG padding is structural, not arbitrary ignored data.  Requiring zero
+    # bytes rejects covert trailing payloads and gives canonical encoders exactly
+    # one representation for the same block contents.
     padding = _read_exact(stream, size, truncated=truncated)
     if any(padding):
         raise _malformed(f"{context} must be zero-filled")
@@ -121,6 +124,8 @@ def _consume_options(
                 raise _malformed(f"invalid {context} end-of-options marker")
             return timestamp_resolution
 
+        # Options consume their declared bytes plus enough zero padding to reach
+        # the format's four-byte boundary; the padding is not part of the value.
         padded_length = option_length + (-option_length % 4)
         if padded_length > remaining:
             raise _malformed(f"truncated {context} options")
