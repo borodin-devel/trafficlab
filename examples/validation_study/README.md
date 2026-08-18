@@ -1,17 +1,18 @@
 # Validation Study
 
 This directory contains the frozen local protocol and accepted evidence for the
-replacement Phase 7 study. The protocol is serial and bounded. It has no default endpoint: the
-operator supplies one credential-free HTTPS URL at invocation time, and the
-exact URL, redirect result, headers, and external observation are retained in
-the candidate bundle. Do not run the external commands below until the source
+replacement Phase 7 study. The protocol is serial and bounded. It has no default
+endpoint: the operator supplies one credential-free HTTPS URL at invocation time,
+and the exact URL, redirect result, headers, and external observation are retained
+in the candidate bundle. Do not run the external commands below until the source
 commit, endpoint, and prerequisite coordination have been explicitly approved.
 
 ## Accepted corrected study
 
-[`evidence/2026-08-17-research-fitness-r19/`](evidence/2026-08-17-research-fitness-r19/)
-is the accepted schema-2 study. Its [report](REPORT.md), `index.json`, and
-`manifest.json` are the navigation and integrity roots. It contains:
+[`evidence/2026-08-18-research-fitness-r21/`](evidence/2026-08-18-research-fitness-r21/)
+is the accepted final-source study. Its [report](REPORT.md), schema-3 `index.json`,
+and schema-2 `manifest.json` are the navigation and integrity roots. The manifest
+binds 231 retained evidence paths and excludes only itself. The bundle contains:
 
 - nine complete training trees, arranged as three workloads times three
   independent captures;
@@ -20,8 +21,8 @@ is the accepted schema-2 study. Its [report](REPORT.md), `index.json`, and
 - portable/realized configuration pairs in `configs/`, named
   `training-<workload>-r<repeat>.portable.toml` and `.realized.toml`;
 - retained prerequisite commands/results, transfer headers/observations,
-  environment, report inputs, owner/lineage index, and path/size/SHA-256
-  manifest.
+  environment, lifecycle cleanup proof, report inputs, owner/lineage index, and
+  path/size/SHA-256 manifest.
 
 The audited source candidate is a transient publisher work copy, not another
 accepted study. Historical Phase 7 material and prior attempts remain
@@ -32,10 +33,9 @@ non-accepted consistency or forensic evidence.
 Use a new study ID matching `[a-z0-9][a-z0-9-]{0,31}` for every attempt. Before
 starting, the source checkout must be clean and the capture image lock must name
 the cold rebuilt local image ID. The prerequisite owner builds with
-`--pull --no-cache --iidfile`; it records the exact image ID, locked
-source/lock inputs, bounded Docker matrix, Internet smoke, command argv,
-stdout, stderr, JUnit XML, test counts, transfer headers, and capability
-observation.
+`--pull --no-cache --iidfile`; it records the exact image ID, locked source/lock
+inputs, bounded Docker matrix, Internet smoke, command argv, stdout, stderr,
+JUnit XML, test counts, transfer headers, and capability observation.
 
 ```bash
 export TRAFFICLAB_INTERNET_URL='https://operator-approved.example/object'
@@ -80,13 +80,14 @@ nine primary runs, the short repeated-capture comparison `r2 <- r1` retained
 one aligned event at r2's reference-derived observation window, making the
 mandatory autocorrelation metric infeasible. Its ignored attempt and candidate
 remain preserved; it created no accepted bundle, report, index, or manifest.
-`2026-08-18-research-fitness-r21` is the predeclared next complete attempt; no
-r21 prerequisite or collection command has begun. It uses the short
-single-request profile `--range 0-1048575 --max-filesize 1048576` at the
-unchanged `--limit-rate 4M`. This reduces the observed cross-direction
-one-event risk without changing the URL, timeouts, metrics, observation-window
-derivation, seeds, model families, or resource scope. An infeasible metric
-still invalidates the whole new ID.
+
+`2026-08-18-research-fitness-r21` is the accepted successor. Its predeclared
+short single-request profile used `--range 0-1048575 --max-filesize 1048576` at
+the unchanged `--limit-rate 4M`. This changed only the short transfer extent to
+reduce the observed cross-direction one-event risk; the approved URL, timeouts,
+metrics, observation-window derivation, seeds, model families, and resource
+scope remained fixed. An infeasible metric would still have invalidated the
+whole new ID.
 
 ## Candidate audit and exclusive publication
 
@@ -113,7 +114,7 @@ it must not start Docker, open the network, fetch bytes, regenerate artifacts,
 or mutate the candidate.
 
 ```bash
-scripts/run_bounded.sh --memory-high 6G --memory-max 8G --swap-max 1G \
+UV_OFFLINE=1 scripts/run_bounded.sh --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
   examples/validation_study/evidence/.candidates/"$STUDY_ID" --repository .
@@ -122,7 +123,7 @@ scripts/run_bounded.sh --memory-high 6G --memory-max 8G --swap-max 1G \
 Only a passing audit may publish through the exclusive owner:
 
 ```bash
-uv run --locked python scripts/run_validation_study.py publish \
+UV_OFFLINE=1 uv run --locked --offline python scripts/run_validation_study.py publish \
   --study-id "$STUDY_ID" \
   --candidate examples/validation_study/evidence/.candidates/"$STUDY_ID"
 ```
