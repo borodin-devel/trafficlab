@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import fcntl
 import hashlib
+import importlib
 import json
 import math
 import os
@@ -12019,10 +12020,10 @@ def test_offline_auditor_rejects_one_generation_against_the_unpatched_frozen_pro
     assert error.value.kind == "artifact_foreign"
 
 
-def test_offline_auditor_rejects_legacy_short_transfer_against_its_independent_frozen_profile(
+def test_offline_auditor_rejects_legacy_short_transfer_against_its_reloaded_independent_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A producer regression cannot change the auditor's predeclared short profile."""
+    """A producer profile regression cannot alter any auditor-owned short contract."""
 
     environment: dict[str, object] = {
         "capture_image_reference": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
@@ -12030,9 +12031,10 @@ def test_offline_auditor_rejects_legacy_short_transfer_against_its_independent_f
             "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
         ),
     }
+    producer_workload_specs = study.workload_specs
 
     def legacy_workload_specs(url: str) -> tuple[study.WorkloadSpec, ...]:
-        specifications = study.workload_specs(url)
+        specifications = producer_workload_specs(url)
         return tuple(
             replace(
                 specification,
@@ -12047,35 +12049,62 @@ def test_offline_auditor_rejects_legacy_short_transfer_against_its_independent_f
             for specification in specifications
         )
 
-    monkeypatch.setattr(auditor, "workload_specs", legacy_workload_specs, raising=False)
-    frozen = auditor._validation_profile(  # pyright: ignore[reportPrivateUsage]
-        workload="short",
-        url="https://validation-study.example/object",
-        environment=environment,
-    )
-    assert "0-1048575" in frozen.target.argv
-    assert "1048576" in frozen.target.argv
-    legacy = frozen.model_copy(
-        update={
-            "target": frozen.target.model_copy(
-                update={
-                    "argv": tuple(
-                        "0-262143" if item == "0-1048575" else "262144" if item == "1048576" else item
-                        for item in frozen.target.argv
-                    )
-                }
-            )
-        }
-    )
-
-    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
-        auditor._require_frozen_profile(  # pyright: ignore[reportPrivateUsage]
-            legacy,
-            frozen,
-            affected="held_out/short",
+    monkeypatch.setattr(study, "workload_specs", legacy_workload_specs)
+    try:
+        importlib.reload(auditor)
+        assert {
+            (binding.requested_start, binding.requested_end, binding.filename)
+            for binding in auditor._TRANSFER_BINDINGS  # pyright: ignore[reportPrivateUsage]
+            if binding.workload == "short"
+        } == {(0, 1_048_575, "short.headers")}
+        frozen = auditor._validation_profile(  # pyright: ignore[reportPrivateUsage]
+            workload="short",
+            url="https://validation-study.example/object",
+            environment=environment,
+        )
+        source_commit, _source_tree = _validation_study_fixture_identity()
+        fixture = auditor._fixture_profile(  # pyright: ignore[reportPrivateUsage]
+            _ROOT,
+            source_commit=source_commit,
+            workload="short",
+            url=auditor._FIXTURE_URL,  # pyright: ignore[reportPrivateUsage]
+            environment=environment,
+        )
+        assert "0-1048575" in frozen.target.argv
+        assert "1048576" in frozen.target.argv
+        assert fixture.target.argv == frozen.target.argv[:-1] + (auditor._FIXTURE_URL,)  # pyright: ignore[reportPrivateUsage]
+        legacy = frozen.model_copy(
+            update={
+                "target": frozen.target.model_copy(
+                    update={
+                        "argv": tuple(
+                            "0-262143" if item == "0-1048575" else "262144" if item == "1048576" else item
+                            for item in frozen.target.argv
+                        )
+                    }
+                )
+            }
         )
 
-    assert error.value.kind == "artifact_foreign"
+        with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+            auditor._require_frozen_profile(  # pyright: ignore[reportPrivateUsage]
+                legacy,
+                frozen,
+                affected="held_out/short",
+            )
+        assert error.value.kind == "artifact_foreign"
+
+        with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+            auditor._require_config_workload_argv(  # pyright: ignore[reportPrivateUsage]
+                legacy,
+                workload="short",
+                url="https://validation-study.example/object",
+                affected="held_out/short/experiment.toml",
+            )
+        assert error.value.kind == "artifact_foreign"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(auditor)
 
 
 def test_offline_auditor_reconstructs_nonfixture_profiles_and_rejects_a_missing_family(
