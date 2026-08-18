@@ -505,11 +505,11 @@ Commit: `feat(capture): expose capture CLI`
 
 **Files:**
 - Create: `fixtures/tests/docker/compose.endpoint.json`
-- Create: `tests/docker/images/endpoint/Dockerfile`
-- Create: `tests/docker/images/endpoint/server.py`
-- Create: `tests/docker/images/client/Dockerfile`
-- Create: `tests/docker/images/client/client.py`
-- Create: `tests/docker/images/no_shell/Dockerfile`
+- Create: `fixtures/tests/docker/images/endpoint/Dockerfile`
+- Create: `fixtures/tests/docker/images/endpoint/server.py`
+- Create: `fixtures/tests/docker/images/client/Dockerfile`
+- Create: `fixtures/tests/docker/images/client/client.py`
+- Create: `fixtures/tests/docker/images/no_shell/Dockerfile`
 - Create: `tests/docker/test_capture_docker.py`
 - Create: `tests/docker/test_capture_failures.py`
 - Create: `tests/internet/test_capture_internet.py`

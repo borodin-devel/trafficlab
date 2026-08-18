@@ -13,6 +13,7 @@ _MANIFEST_EXCLUSIONS = frozenset({"README.md", "manifest.json"})
 _LEGACY_FIXTURE_PATHS = (
     Path("examples/data"),
     Path("tests/docker/compose.endpoint.json"),
+    Path("tests/docker/images"),
     Path("tests/fixtures"),
 )
 

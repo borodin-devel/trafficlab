@@ -148,7 +148,12 @@ def test_tracked_phase_paths_reports_case_insensitive_basenames_only(tmp_path: P
 
 @pytest.mark.parametrize(
     "relative",
-    ("tests/fixtures", "tests/docker/compose.endpoint.json", "examples/data"),
+    (
+        "tests/fixtures",
+        "tests/docker/compose.endpoint.json",
+        "tests/docker/images",
+        "examples/data",
+    ),
 )
 def test_legacy_fixture_paths_reports_each_forbidden_source(tmp_path: Path, relative: str) -> None:
     checker = _load_checker()
