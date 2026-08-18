@@ -238,12 +238,12 @@ and the working tree plus Docker project resources are clean.
   On the available host, run the serial 20-test `docker or internet` matrix with the documented credential-free HTTPS
   endpoint; inspect that no TrafficLab-labelled container, network, volume, or owned image remains.
 
-- [ ] **[STEP-29-ddd7d782] Integrate the verified branch into main**
+- [x] **[STEP-29-ddd7d782] Integrate the verified branch into main**
 
   Fast-forward `main` to the verified remediation branch without pulling or pushing, then rerun the narrow merged-tree
   static and focused regression checks before removing the worktree.
 
-- [ ] **[STEP-30-7b04d064] Record completion, move MVP_2, and require clean state**
+- [x] **[STEP-30-7b04d064] Record completion, move MVP_2, and require clean state**
 
   Mark these final steps complete, commit the plan state, replace the lightweight local `MVP_2` tag at that commit, and
   confirm `git status --short --branch`, `git show-ref --tags MVP_2`, the final commit log, and absence of project-scoped
