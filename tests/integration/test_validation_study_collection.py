@@ -738,8 +738,7 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
         training: Sequence[study._CandidateTraining],  # pyright: ignore[reportPrivateUsage]
     ) -> object:
         nonlocal targeted_underflows
-        if training[0].workload != "bursty":
-            return original_natural_variation(training)
+        assert training[0].workload == "short"
         assert [item.repeat for item in training] == [1, 2, 3]
         alignment_index = 0
 
@@ -747,9 +746,9 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
             nonlocal alignment_index, targeted_underflows
             alignment_index += 1
             aligned = original_align_generated(events, window)
-            if alignment_index == 4:
+            if alignment_index == 2:
                 assert events == training[0].reference
-                assert window == training[2].observation_window_seconds
+                assert window == training[1].observation_window_seconds
                 targeted_underflows += 1
                 return aligned[:1]
             return aligned
@@ -760,7 +759,7 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
 
     monkeypatch.setattr(study, "_candidate_natural_variation", underflow_natural_variation)
 
-    with pytest.raises(TrafficlabError, match="invalid generated trace: at least two events"):
+    with pytest.raises(TrafficlabError, match="invalid generated trace: at least two events") as error:
         study.collect_validation_candidate(
             repository_root=repository,
             study_id="study-1",
@@ -775,6 +774,15 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
             object_size_bytes=4_194_304,
         )
 
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("metric_infeasible", "compare", "similarity.json", "not_published", "primary")
     assert calls == [
         "training:short",
         "training:streaming",
@@ -787,9 +795,14 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
         "training:streaming",
     ]
     assert targeted_underflows == 1
+    assert (candidate / "training" / "bursty" / "r3" / "reference.pcapng").is_file()
     assert not (candidate / "fresh_simulation").exists()
     assert not (candidate / "protocol.json").exists()
     assert not (candidate / "held_out").exists()
+    assert not (candidate / "report_inputs.json").exists()
+    assert not (candidate / "report.json").exists()
+    assert not (candidate / "index.json").exists()
+    assert not (candidate / "manifest.json").exists()
 
 
 def test_collection_preserves_unexpected_programming_errors_after_freezing_the_attempt(tmp_path: Path) -> None:

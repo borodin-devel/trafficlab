@@ -253,20 +253,25 @@ definitions with the operator URL as `URL`.
 
 ### Short range
 
-One 256 KiB range is capped at 4 MiB/s. This remains a short single request but
-avoids a near-zero observation window on a fast endpoint.
+One 1 MiB range is capped at 4 MiB/s. This remains a short single request while
+giving cross-direction repeated-capture comparisons materially more time than
+the prior 256 KiB profile. The r20 short natural-variation underflow consumed
+that study ID without publication; this predeclared revision applies only to a
+new complete study. It does not change the URL, rate cap, timeouts, metrics,
+windows, seeds, model families, or resource scope, and it still hard-fails if
+the captured sample is infeasible.
 
 ```text
 --fail --silent --show-error --location --max-redirs 3
 --proto =https --proto-redir =https --http1.1 --user-agent "trafficlab/<package-version> (+https://github.com/borodin-devel/trafficlab)"
 --connect-timeout 15 --max-time 30 --limit-rate 4M
---range 0-262143 --max-filesize 262144
+--range 0-1048575 --max-filesize 1048576
 --dump-header /trafficlab-study/short.headers
 --output /dev/null --url URL
 ```
 
 The final response must be `206` with exact header value
-`Content-Range: bytes 0-262143/TOTAL` and `Content-Length: 262144`, where
+`Content-Range: bytes 0-1048575/TOTAL` and `Content-Length: 1048576`, where
 `TOTAL` equals the capability check's object size.
 
 ### Fixed-rate streaming range

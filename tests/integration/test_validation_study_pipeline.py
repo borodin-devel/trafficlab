@@ -199,7 +199,7 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
         repository_root / "examples" / "validation_study" / ".study-work" / "evidence" / study_id / run_id
     )
     evidence_directory.mkdir(parents=True)
-    header_bytes = b"HTTP/1.1 206 Response\r\nContent-Range: bytes 0-262143/4194304\r\nContent-Length: 262144\r\n\r\n"
+    header_bytes = b"HTTP/1.1 206 Response\r\nContent-Range: bytes 0-1048575/4194304\r\nContent-Length: 1048576\r\n\r\n"
     header_path = evidence_directory / "short.headers"
     header_path.write_bytes(header_bytes)
     header_path.chmod(0o600)
@@ -207,10 +207,10 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
         {
             "transfer_index": 0,
             "requested_start": 0,
-            "requested_end": 262143,
+            "requested_end": 1048575,
             "status": 206,
-            "content_length": 262144,
-            "content_range": "bytes 0-262143/4194304",
+            "content_length": 1048576,
+            "content_range": "bytes 0-1048575/4194304",
             "header_archive_path": header_path.relative_to(repository_root).as_posix(),
             "header_sha256": hashlib.sha256(header_bytes).hexdigest(),
             "scratch_precreate_mode": 438,

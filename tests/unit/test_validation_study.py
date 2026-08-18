@@ -919,7 +919,7 @@ def _champions(repeat: int, *, delta: float = 0.0) -> list[dict[str, object]]:
 
 def _transfer_responses(study_id: str, run_id: str, workload: str) -> list[dict[str, object]]:
     if workload == "short":
-        transfers = [(0, 262143, "short.headers")]
+        transfers = [(0, 1048575, "short.headers")]
     elif workload == "streaming":
         transfers = [(0, 4194303, "streaming.headers")]
     else:
@@ -2160,9 +2160,9 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
         "--limit-rate",
         "4M",
         "--range",
-        "0-262143",
+        "0-1048575",
         "--max-filesize",
-        "262144",
+        "1048576",
         "--dump-header",
         "/trafficlab-study/short.headers",
         "--output",
@@ -2214,7 +2214,7 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
     specs = study.workload_specs(url)
 
     assert specs == (
-        study.WorkloadSpec("short", short_argv, ((0, 262143, "short.headers"),), 35.0, 90.0, (0.001, 0.01)),
+        study.WorkloadSpec("short", short_argv, ((0, 1048575, "short.headers"),), 35.0, 90.0, (0.001, 0.01)),
         study.WorkloadSpec(
             "streaming",
             streaming_argv,
@@ -2238,6 +2238,23 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
     assert specs[2].argv.count("--next") == 7
     assert specs[2].argv[-1] == url
     assert all("sh" not in spec.argv and "-c" not in spec.argv for spec in specs)
+    legacy_short = replace(
+        specs[0],
+        argv=tuple(
+            "0-262143"
+            if item == "0-1048575"
+            else "262144"
+            if item == "1048576"
+            else item
+            for item in specs[0].argv
+        ),
+        transfers=((0, 262143, "short.headers"),),
+    )
+    with pytest.raises(ValueError, match="exact HTTPS-only curl profile oracle"):
+        study._validate_workload_specs(  # pyright: ignore[reportPrivateUsage]
+            (legacy_short, specs[1], specs[2]),
+            url=url,
+        )
     capability_argv = study._expected_capability_argv("study-1", url)  # pyright: ignore[reportPrivateUsage]
     capability_user_agent = capability_argv.index("--user-agent")
     assert capability_argv[capability_user_agent : capability_user_agent + 2] == ("--user-agent", USER_AGENT)
@@ -2551,7 +2568,7 @@ def test_scratch_files_are_exclusive_regular_0666_and_archives_are_sibling_0600(
     assert stat.S_ISREG(path.lstat().st_mode)
     assert stat.S_IMODE(path.lstat().st_mode) == 0o666
     assert path.read_bytes() == b""
-    header_bytes = _response_headers(0, 262143)
+    header_bytes = _response_headers(0, 1048575)
     path.write_bytes(header_bytes)
 
     responses = study.archive_transfer_evidence(
@@ -2577,10 +2594,10 @@ def test_scratch_files_are_exclusive_regular_0666_and_archives_are_sibling_0600(
         {
             "transfer_index": 0,
             "requested_start": 0,
-            "requested_end": 262143,
+            "requested_end": 1048575,
             "status": 206,
-            "content_length": 262144,
-            "content_range": "bytes 0-262143/4194304",
+            "content_length": 1048576,
+            "content_range": "bytes 0-1048575/4194304",
             "header_archive_path": "examples/validation_study/.study-work/evidence/study-1/01-short-r1/short.headers",
             "header_sha256": hashlib.sha256(header_bytes).hexdigest(),
             "scratch_precreate_mode": 438,
@@ -2655,24 +2672,24 @@ def test_transfer_evidence_rejects_unsafe_or_inexact_headers(mutation: str, tmp_
         return
 
     prepared = study.prepare_transfer_scratch(repository_root, "study-1", "01-short-r1", workload)
-    valid = _response_headers(0, 262143)
+    valid = _response_headers(0, 1048575)
     invalid_headers = {
         "empty-header": b"",
         "duplicate-status": b"HTTP/1.1 206 Response\r\n" + valid,
         "duplicate-content-range": valid.replace(
-            b"Content-Length:", b"Content-Range: bytes 0-262143/4194304\r\nContent-Length:"
+            b"Content-Length:", b"Content-Range: bytes 0-1048575/4194304\r\nContent-Length:"
         ),
-        "wrong-total": _response_headers(0, 262143, total=4_194_305),
-        "range-ignored-200": _response_headers(0, 262143, status=200),
-        "wrong-content-length": _response_headers(0, 262143, length=262143),
+        "wrong-total": _response_headers(0, 1048575, total=4_194_305),
+        "range-ignored-200": _response_headers(0, 1048575, status=200),
+        "wrong-content-length": _response_headers(0, 1048575, length=1048575),
         "credential-redirect": _response_headers(
             0,
-            262143,
+            1048575,
             prefix=b"HTTP/1.1 302 Found\r\nLocation: https://user@example.test/object\r\n\r\n",
         ),
         "http-redirect": _response_headers(
             0,
-            262143,
+            1048575,
             prefix=b"HTTP/1.1 302 Found\r\nLocation: http://example.test/object\r\n\r\n",
         ),
     }
@@ -11969,6 +11986,47 @@ def test_offline_auditor_rejects_one_generation_against_the_unpatched_frozen_pro
     with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
         auditor._require_frozen_profile(  # pyright: ignore[reportPrivateUsage]
             one_generation,
+            frozen,
+            affected="held_out/short",
+        )
+
+    assert error.value.kind == "artifact_foreign"
+
+
+def test_offline_auditor_rejects_legacy_short_transfer_against_the_frozen_profile() -> None:
+    """The profile oracle binds the predeclared one-mebibyte short transfer."""
+
+    environment: dict[str, object] = {
+        "capture_image_reference": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "target_image_reference": (
+            "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
+        ),
+    }
+    frozen = auditor._validation_profile(  # pyright: ignore[reportPrivateUsage]
+        workload="short",
+        url="https://validation-study.example/object",
+        environment=environment,
+    )
+    legacy = frozen.model_copy(
+        update={
+            "target": frozen.target.model_copy(
+                update={
+                    "argv": tuple(
+                        "0-262143"
+                        if item == "0-1048575"
+                        else "262144"
+                        if item == "1048576"
+                        else item
+                        for item in frozen.target.argv
+                    )
+                }
+            )
+        }
+    )
+
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._require_frozen_profile(  # pyright: ignore[reportPrivateUsage]
+            legacy,
             frozen,
             affected="held_out/short",
         )

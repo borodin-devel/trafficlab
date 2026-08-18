@@ -49,7 +49,7 @@ from trafficlab.compatibility import ContentIdentity, identify_bytes, require_co
 from trafficlab.config import ExperimentConfig, FamilyName, SimilarityConfig
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.docker_cli import cold_capture_build_argv, load_capture_image_lock, validate_capture_dockerfile
-from trafficlab.errors import TrafficlabError
+from trafficlab.errors import TrafficlabError, attach_failure_outcome
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.genetic.evaluation import evaluate_final, validate_evaluation_context
 from trafficlab.genetic.strategy import StrategyContext, make_strategy_context
@@ -520,9 +520,9 @@ def _validate_workload_specs(
         "--limit-rate",
         "4M",
         "--range",
-        "0-262143",
+        "0-1048575",
         "--max-filesize",
-        "262144",
+        "1048576",
         "--dump-header",
         "/trafficlab-study/short.headers",
         "--output",
@@ -570,7 +570,7 @@ def _validate_workload_specs(
         )
     expected_bursty = ("--parallel", "--parallel-max", "4", "--fail-early", *bursty_groups)
     expected_shape = (
-        ("short", ((0, 262143, "short.headers"),), 35.0, 90.0, (0.001, 0.01), expected_short),
+        ("short", ((0, 1048575, "short.headers"),), 35.0, 90.0, (0.001, 0.01), expected_short),
         ("streaming", ((0, 4194303, "streaming.headers"),), 50.0, 120.0, (0.25, 1.0), expected_streaming),
         (
             "bursty",
@@ -609,9 +609,9 @@ def workload_specs(url: str) -> tuple[WorkloadSpec, WorkloadSpec, WorkloadSpec]:
             "--limit-rate",
             "4M",
             "--range",
-            "0-262143",
+            "0-1048575",
             "--max-filesize",
-            "262144",
+            "1048576",
             "--dump-header",
             "/trafficlab-study/short.headers",
             "--output",
@@ -619,7 +619,7 @@ def workload_specs(url: str) -> tuple[WorkloadSpec, WorkloadSpec, WorkloadSpec]:
             "--url",
             validated_url,
         ),
-        transfers=((0, 262143, "short.headers"),),
+        transfers=((0, 1048575, "short.headers"),),
         workload_timeout_seconds=35.0,
         total_timeout_seconds=90.0,
         multiscale_widths_seconds=(0.001, 0.01),
@@ -8641,10 +8641,24 @@ def collect_validation_candidate(
                 )
             )
 
-        natural_variation = tuple(
-            _candidate_natural_variation([item for item in training if item.workload == workload])
-            for workload in ("short", "streaming", "bursty")
-        )
+        try:
+            natural_variation = tuple(
+                _candidate_natural_variation([item for item in training if item.workload == workload])
+                for workload in ("short", "streaming", "bursty")
+            )
+        except TrafficlabError as error:
+            natural_error = TrafficlabError(
+                str(error),
+                corrective_action="correct samples or settings",
+                failure_outcomes=error.failure_outcomes,
+            )
+            raise attach_failure_outcome(
+                natural_error,
+                kind="metric_infeasible",
+                stage="compare",
+                affected_evidence="similarity.json",
+                evidence_state="not_published",
+            ) from error
         fresh: list[JsonObject] = []
         for loaded in training:
             fresh_path, fresh_record = _candidate_fresh_record(loaded)
@@ -8781,6 +8795,7 @@ def collect_validation_candidate(
         raise TrafficlabError(
             f"Validation Study collection failed; preserve the ignored attempt and restart with a new study ID: {error}",
             corrective_action="preserve the failed attempt and restart with a new study ID",
+            failure_outcomes=error.failure_outcomes,
         ) from error
     except (OSError, ValueError) as error:
         raise TrafficlabError(
