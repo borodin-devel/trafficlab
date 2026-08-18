@@ -26,10 +26,10 @@ from trafficlab.docker_cli import (
 )
 
 REPOSITORY_ROOT = Path(__file__).parents[1].resolve()
-CAPTURE_IMAGE = "trafficlab-capture:phase3-test"
-ENDPOINT_IMAGE = "trafficlab-endpoint:phase3-test"
-CLIENT_IMAGE = "trafficlab-client:phase3-test"
-NO_SHELL_IMAGE = "trafficlab-no-shell:phase3-test"
+CAPTURE_IMAGE = "trafficlab-capture:docker-capture-test"
+ENDPOINT_IMAGE = "trafficlab-endpoint:docker-capture-test"
+CLIENT_IMAGE = "trafficlab-client:docker-capture-test"
+NO_SHELL_IMAGE = "trafficlab-no-shell:docker-capture-test"
 _EXTERNAL_MARKERS = frozenset({"docker", "internet"})
 _MARK_EXPRESSION_TOKEN = re.compile(r"\b(?:not|and|or|[A-Za-z_][A-Za-z0-9_]*)\b|[()]")
 _DUMPCAP_VERSION = re.compile(r"^Dumpcap \(Wireshark\) ([0-9]+(?:\.[0-9]+){2})(?:\s|$)")

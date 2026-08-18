@@ -38,7 +38,7 @@ def _capture_inspect(
 
 
 def test_capture_fixture_identity_uses_injected_inspect_result() -> None:
-    reference = "trafficlab-capture:phase3-test"
+    reference = "trafficlab-capture:docker-capture-test"
     calls: list[tuple[str, ...]] = []
 
     def command(
@@ -177,7 +177,7 @@ def test_docker_environment_owns_a_unique_capture_tag_and_removes_it(
     iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
     environment = next(iterator)
 
-    assert environment.capture_image.startswith("trafficlab-capture:phase3-test-")
+    assert environment.capture_image.startswith("trafficlab-capture:docker-capture-test-")
     assert environment.capture_image != conftest.CAPTURE_IMAGE
     iterator.close()
     assert calls[-1] == ("docker", "image", "rm", "--force", environment.capture_image)
