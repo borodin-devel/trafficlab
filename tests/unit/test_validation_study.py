@@ -6929,8 +6929,30 @@ def _validation_study_candidate_context(  # pyright: ignore[reportUnusedFunction
         )
 
 
-def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False) -> tuple[Path, Path]:
+@pytest.fixture(scope="session")
+def generated_validation_study_candidate_template(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    """Generate one immutable candidate template per pytest worker."""
+
     source_commit, source_tree = _validation_study_fixture_identity()
+    template = tmp_path_factory.mktemp("validation-study-generated-template") / "fixture-study"
+    for relative, content in fixture_generator.generate_fixture_tree(
+        source_commit=source_commit,
+        source_tree=source_tree,
+    ).items():
+        path = template / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    return template
+
+
+def _copy_validation_study_candidate(
+    tmp_path: Path,
+    *,
+    generated_template: Path | None = None,
+) -> tuple[Path, Path]:
+    source_commit, _source_tree = _validation_study_fixture_identity()
     shared_repository = _shared_validation_study_repository_path
     if (
         shared_repository is not None
@@ -6946,16 +6968,35 @@ def _copy_validation_study_candidate(tmp_path: Path, *, generated: bool = False)
     candidate = repository / "fixture-study"
     if candidate.exists():
         shutil.rmtree(candidate)
-    if generated:
-        for relative, content in fixture_generator.generate_fixture_tree(
-            source_commit=source_commit, source_tree=source_tree
-        ).items():
-            path = candidate / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(content)
+    if generated_template is not None:
+        shutil.copytree(generated_template, candidate, copy_function=shutil.copy2)
     else:
         shutil.copytree(_ROOT / "tests" / "fixtures" / "validation_study_candidate", candidate)
     return repository, candidate
+
+
+def test_generated_validation_study_template_restores_an_independent_candidate(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
+    """Generated mutation candidates restore immutable template bytes between tests."""
+
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
+    original_environment = (candidate / "environment.json").read_bytes()
+    assert original_environment == (generated_validation_study_candidate_template / "environment.json").read_bytes()
+    (candidate / "environment.json").write_bytes(b"mutated test candidate\n")
+
+    next_repository, next_candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
+
+    assert next_repository == repository
+    assert next_candidate == candidate
+    assert (next_candidate / "environment.json").read_bytes() == original_environment
 
 
 def test_relocated_audit_candidate_uses_a_detached_git_worktree(tmp_path: Path) -> None:
@@ -9519,8 +9560,14 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
     assert commands[0]["tests"] == {"errors": 0, "failed": 0, "passed": 3, "skipped": 0, "total": 3}
 
 
-def test_offline_auditor_binds_the_environment_to_the_relocated_git_and_image_locks(tmp_path: Path) -> None:
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+def test_offline_auditor_binds_the_environment_to_the_relocated_git_and_image_locks(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     environment_path = candidate / "environment.json"
     environment = cast(dict[str, object], json.loads(environment_path.read_text(encoding="utf-8")))
     environment["source_commit"] = "b" * 40
@@ -9542,8 +9589,14 @@ def test_offline_auditor_binds_the_environment_to_the_relocated_git_and_image_lo
     ) == ("artifact_foreign", "publication", "environment", "not_published", "primary")
 
 
-def test_complete_fixture_freezes_training_model_selection_and_bidirectional_variation(tmp_path: Path) -> None:
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+def test_complete_fixture_freezes_training_model_selection_and_bidirectional_variation(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text(encoding="utf-8")))
     report_inputs = cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text(encoding="utf-8")))
 
@@ -9573,8 +9626,12 @@ def test_complete_fixture_freezes_training_model_selection_and_bidirectional_var
 
 def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_and_all_inventories(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
 ) -> None:
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     missing = candidate / "training" / "short" / "r1" / "best_model.json"
     missing.unlink()
     (candidate / "training" / "short" / "r1" / "checkpoint.json").write_bytes(b"corrupt\n")
@@ -11662,12 +11719,16 @@ def test_cold_capture_build_argv_rejects_invalid_boundary_types(
 )
 def test_offline_auditor_covers_retained_prerequisite_rejection_branches(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     case: str,
     expected_kind: str,
     expected_path: str,
 ) -> None:
     """Retained prerequisite output evidence is independently checked through the public audit boundary."""
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     prerequisite_path = candidate / "prerequisites.json"
     document = study.parse_retained_prerequisites(prerequisite_path.read_bytes())
     command = next(
@@ -11724,10 +11785,14 @@ def test_offline_auditor_covers_retained_prerequisite_rejection_branches(
 @pytest.mark.parametrize("case", ("recorded_lock", "image_lock"))
 def test_offline_auditor_rejects_environment_binding_after_the_first_identity_check(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     case: str,
 ) -> None:
     """The auditor separately binds current lock bytes and image-lock identities."""
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     environment_path = candidate / "environment.json"
     environment = cast(dict[str, object], json.loads(environment_path.read_text(encoding="utf-8")))
     if case == "recorded_lock":
@@ -11753,9 +11818,15 @@ def test_offline_auditor_rejects_environment_binding_after_the_first_identity_ch
     ) == ("artifact_foreign", "publication", "environment", "not_published", "primary")
 
 
-def test_offline_auditor_rejects_training_configuration_with_foreign_image_lock_binding(tmp_path: Path) -> None:
+def test_offline_auditor_rejects_training_configuration_with_foreign_image_lock_binding(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
     """Every retained training configuration is bound to the prerequisite image references."""
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     target_reference = study.TARGET_REFERENCE.encode("ascii")
     foreign_reference = b"curlimages/curl@sha256:" + b"1" * 64
     for name in ("configs/training-short-r1.portable.toml", "configs/training-short-r1.realized.toml"):
@@ -11779,11 +11850,16 @@ def test_offline_auditor_rejects_training_configuration_with_foreign_image_lock_
     ) == ("artifact_foreign", "publication", "training/short/r1", "not_published", "primary")
 
 
-def test_offline_auditor_rejects_training_configuration_without_the_frozen_curl_argv(tmp_path: Path) -> None:
+def test_offline_auditor_rejects_training_configuration_without_the_frozen_curl_argv(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
     """A candidate cannot replace the frozen workload command while retaining the image lock."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
-    assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     for name in ("configs/training-short-r1.portable.toml", "configs/training-short-r1.realized.toml"):
         path = candidate / name
         content = path.read_bytes()
@@ -11807,10 +11883,14 @@ def test_offline_auditor_rejects_training_configuration_without_the_frozen_curl_
 
 def test_offline_auditor_rejects_self_consistent_frozen_profile_mutations(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
 ) -> None:
     """Internal portable/realized agreement cannot replace the frozen profile oracle."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     for relative in (
         "configs/training-short-r1.portable.toml",
         "configs/training-short-r1.realized.toml",
@@ -11836,10 +11916,16 @@ def test_offline_auditor_rejects_self_consistent_frozen_profile_mutations(
     ) == ("artifact_foreign", "publication", "training/short/r1", "not_published", "primary")
 
 
-def test_offline_auditor_requires_the_exact_frozen_model_family_set(tmp_path: Path) -> None:
+def test_offline_auditor_requires_the_exact_frozen_model_family_set(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
     """Every retained profile must retain the complete three-family comparison set."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
     protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_bytes()))
     frozen = auditor._frozen_profiles(  # pyright: ignore[reportPrivateUsage]
@@ -12230,10 +12316,16 @@ def test_offline_auditor_binds_collection_projects_to_unique_created_projects(
     ) == ("artifact_foreign", "publication", affected_evidence, "not_published", "primary")
 
 
-def test_offline_auditor_rejects_a_fixture_profile_with_a_foreign_url(tmp_path: Path) -> None:
+def test_offline_auditor_rejects_a_fixture_profile_with_a_foreign_url(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
     """The narrow fixture compatibility path cannot become a generic profile bypass."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
     protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_bytes()))
 
@@ -12254,13 +12346,17 @@ def test_offline_auditor_rejects_a_fixture_profile_with_a_foreign_url(tmp_path: 
 )
 def test_offline_auditor_rejects_untrusted_fixture_profile_source_bytes(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     monkeypatch: pytest.MonkeyPatch,
     case: str,
     expected_kind: str,
 ) -> None:
     """Fixture compatibility derives its profile from checked source bytes, never candidate bytes."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
     source = repository / "examples/data/fit/experiment.toml"
     original = source.read_bytes()
@@ -12296,12 +12392,16 @@ def test_offline_auditor_rejects_untrusted_fixture_profile_source_bytes(
 )
 def test_offline_auditor_rejects_contradictory_required_run_log_records(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     relative: str,
     record: bytes,
 ) -> None:
     """Run logs are retained lineage, not merely syntax-valid diagnostics."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     with (candidate / relative).open("ab") as stream:
         stream.write(record)
     _rewrite_candidate_manifest(candidate)
@@ -12326,12 +12426,16 @@ def test_offline_auditor_rejects_contradictory_required_run_log_records(
 )
 def test_offline_auditor_rejects_required_run_log_identity_and_status_mismatches(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     relative: str,
     field: str,
 ) -> None:
     """Required run-log records bind both capture identity and completion status."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     path = candidate / relative
     records = [cast(dict[str, object], json.loads(line)) for line in path.read_bytes().splitlines()]
     capture = next(record for record in records if record["event"] == "capture_published")
@@ -12415,10 +12519,16 @@ def test_offline_auditor_accepts_fixture_canonical_capture_platform_log_lineage(
     )
 
 
-def test_offline_auditor_rejects_each_contradictory_run_log_lineage_mutation(tmp_path: Path) -> None:
+def test_offline_auditor_rejects_each_contradictory_run_log_lineage_mutation(
+    tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
+) -> None:
     """Every contradictory successful-run claim independently fails the public audit."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     cases = (
         ("capture_reused", "training/short/r1/run.log"),
         ("run_failed", "held_out/short/run.log"),
@@ -12484,13 +12594,13 @@ def test_offline_auditor_reports_a_missing_ordered_run_log_event() -> None:
     assert error.value.affected == "training/short/r1/run.log"
 
 
-def test_offline_auditor_rejects_incomplete_capture_log_records(
-    tmp_path: Path,
-) -> None:
+def test_offline_auditor_rejects_incomplete_capture_log_records() -> None:
     """Canonical JSON alone is insufficient when retained capture-lineage fields are absent."""
 
-    _, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
-    environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
+    environment = cast(
+        dict[str, object],
+        json.loads((_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_bytes()),
+    )
     capture = b"capture"
     reference = b"reference"
     experiment = b"experiment"
@@ -12525,11 +12635,15 @@ def test_offline_auditor_rejects_incomplete_capture_log_records(
 )
 def test_offline_auditor_rejects_capture_lineage_that_disagrees_with_retained_bytes(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     section: str,
     expected_directory: str,
 ) -> None:
     """Training and held-out capture provenance cannot be substituted after capture validation."""
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     index = _candidate_index(candidate)
     record = cast(list[dict[str, object]], index[section])[0]
     cast(dict[str, object], record["capture_lineage"])["capture_tool_version"] = "tampered"
@@ -12562,11 +12676,15 @@ def test_offline_auditor_rejects_capture_lineage_that_disagrees_with_retained_by
 )
 def test_offline_auditor_reconstructs_all_training_model_selection_rejections(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     case: str,
     expected_kind: str,
 ) -> None:
     """The protocol's retained training-only selection is recomputed before held-out evaluation."""
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     protocol_path = candidate / "protocol.json"
     protocol = cast(dict[str, object], json.loads(protocol_path.read_text(encoding="utf-8")))
     selection = cast(dict[str, object], protocol["model_selection"])
@@ -12709,11 +12827,15 @@ def test_candidate_natural_variation_derives_each_directional_reference_window(
 
 def test_offline_auditor_uses_each_directional_similarity_settings_instance(
     tmp_path: Path,
+    generated_validation_study_candidate_template: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Independent reconstruction applies the settings belonging to each reference trace."""
 
-    repository, candidate = _copy_validation_study_candidate(tmp_path, generated=True)
+    repository, candidate = _copy_validation_study_candidate(
+        tmp_path,
+        generated_template=generated_validation_study_candidate_template,
+    )
     original_training = auditor._training  # pyright: ignore[reportPrivateUsage]
     original_report_inputs = auditor._report_inputs  # pyright: ignore[reportPrivateUsage]
     original_compare = auditor.compare_traces
