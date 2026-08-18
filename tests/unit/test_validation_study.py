@@ -8648,7 +8648,19 @@ def test_offline_bundle_audit_covers_training_record_and_reconstruction_boundari
     )
 
 
-@pytest.mark.parametrize("field", ("runtime", "winner", "weights", "invalid_chromosome", "natural_variation"))
+@pytest.mark.parametrize(
+    "field",
+    (
+        "runtime",
+        "winner",
+        "weights",
+        "invalid_chromosome",
+        "natural_variation",
+        "natural_reverse_null",
+        "natural_reverse_missing",
+        "natural_excluded",
+    ),
+)
 def test_offline_bundle_audit_recomputes_each_report_input_family(tmp_path: Path, field: str) -> None:
     """Report inputs are independently reconstructed rather than trusted as producer output."""
 
@@ -8670,11 +8682,23 @@ def test_offline_bundle_audit_recomputes_each_report_input_family(tmp_path: Path
         records = cast(list[dict[str, object]], document["invalid_chromosome_diagnostics"])
         limits = cast(dict[str, object], records[0]["trial_limits"])
         limits["max_packets"] = cast(int, limits["max_packets"]) + 1
-    else:
+    elif field == "natural_variation":
         records = cast(list[dict[str, object]], document["natural_variation"])
         pairs = cast(list[dict[str, object]], records[0]["pairs"])
         forward = cast(dict[str, object], pairs[0]["forward"])
         forward["aggregate"] = cast(float, forward["aggregate"]) + 1.0
+    elif field == "natural_reverse_null":
+        records = cast(list[dict[str, object]], document["natural_variation"])
+        pairs = cast(list[dict[str, object]], records[0]["pairs"])
+        pairs[0]["reverse"] = None
+    elif field == "natural_reverse_missing":
+        records = cast(list[dict[str, object]], document["natural_variation"])
+        pairs = cast(list[dict[str, object]], records[0]["pairs"])
+        del pairs[0]["reverse"]
+    else:
+        records = cast(list[dict[str, object]], document["natural_variation"])
+        pairs = cast(list[dict[str, object]], records[0]["pairs"])
+        pairs[0]["excluded"] = True
     _write_canonical_json(path, document)
     _rewrite_candidate_manifest(candidate)
 
@@ -9637,6 +9661,13 @@ def test_complete_fixture_freezes_training_model_selection_and_bidirectional_var
                 "right_repeat",
                 "symmetric_mean",
             }
+            for field in ("forward", "reverse", "symmetric_mean"):
+                score = cast(dict[str, object], cast(dict[str, object], pair)[field])
+                assert set(score) == {"aggregate", "methods"}
+                assert type(score["aggregate"]) is float
+                methods = cast(dict[str, object], score["methods"])
+                assert tuple(methods) == study.PUBLISHED_METHOD_ORDER
+                assert all(type(methods[method]) is float for method in study.PUBLISHED_METHOD_ORDER)
 
     assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
 
