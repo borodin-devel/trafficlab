@@ -12,8 +12,9 @@ implementation item remains checked only when its behavior is still valid under
 the amended architecture. Corrected or unverified claims are unchecked. Dated
 evidence remains useful history, but it does not satisfy an amended gate.
 
-Phases 1 through 8 are complete. Phase 8 has fresh retained r18 evidence, an
-unchanged-rubric reassessment, and a clean final documentation re-review.
+Phases 1 through 8 are complete. Phase 8 has fresh retained r21 evidence, a
+current-state review of all 37 criteria, and an unchanged-rubric reassessment of
+the 17 formally reopened criteria.
 
 The 17 reopened criteria now meet the minimum accepted grade:
 
@@ -50,16 +51,19 @@ The 17 reopened criteria now meet the minimum accepted grade:
 
 Phases 7 and 8 validate the complete MVP rather than adding commands.
 
-## Closure evidence (verified 2026-08-17)
+## Closure evidence (verified 2026-08-18)
 
-The accepted r18 bundle records source `2f1537b0f0339bbf761a6c04a33035ee8fd26e8b`
-and is published at evidence commit `c310900b139b806f45f13785bb1d204554515eef`.
-Locked/static/fixture gates passed; bounded non-external verification passed
-3,422 tests with 97.82% branch-aware coverage; retained same-source prerequisites
-passed 19 Docker tests and one Internet smoke; a recorded-source guarded no-hardlink
-clone audit accepted 230 retained files. Independent whole-branch review found
-no Critical or Important implementation/evidence findings through `c310900`.
-Task 16 documentation re-review found no Critical, Important, or Minor findings.
+The accepted r21 bundle records source `ca2522dcfae5b39a44355d9df5329744847b7136`,
+source tree `4a743a7d8a48cd8ad34d8e96de48d53d4e7d789c`, and evidence commit
+`0864afdbb9a107bf0285de6d8494609912534c7a`. Locked sync/lock, Ruff format/lint,
+strict Pyright, and the deterministic validation-study fixture check passed.
+Bounded non-external verification passed 3,464 tests in parallel and 3,464 tests
+serially with 97.82% branch-aware coverage. Retained same-source prerequisites
+passed 19 Docker tests and one Internet smoke. Candidate, accepted-tree, and
+recorded-source guarded no-hardlink clone audits each accepted 231
+manifest-retained files (232 physical files including the self-excluded
+manifest). Independent r21 staged-evidence review found no Critical or Important
+findings.
 Historical evidence below remains context only.
 
 ## Phase 1 — Project, configuration, and local preflight (Complete)
@@ -139,7 +143,7 @@ contacting Docker. The portable configuration and realized configuration are
 faithful after relocation, all four method settings survive zero-weight round
 trips, and only an audited accepted evidence bundle can enter the checked path.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
 
 ## Phase 2 — PCAPNG, canonical trace, and similarity (Complete)
 
@@ -194,7 +198,7 @@ scores for checked-in fixture PCAPNG files, and every equation has a hand-checke
 test. All four mandatory methods execute with a fixed result shape for every
 valid weight vector, including zero weights.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
 
 ## Phase 3 — Docker preflight and reference capture (Complete)
 
@@ -293,15 +297,13 @@ controlled integration workload and one real Internet workload, with clean
 Docker state afterward. The capture image rebuilds to its checked identity, and
 environment compatibility plus canonical capture diagnostics pass directly.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
 
-**Docker evidence (verified 2026-08-14):** the exact guarded command
-`scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M
---wall-time 20m --kill-after 10s -- uv run --locked pytest -vv -n 0 -m docker`
-selected and passed 18 tests with zero skips and zero failures. Automatic
-per-test tracker inspection found no remaining project-labelled resources, and
-the post-run `org.trafficlab.pytest=1` inspection found zero containers,
-networks, or volumes.
+**Retained Docker evidence (verified 2026-08-18):** the r21 same-source
+prerequisite matrix selected and passed 19 tests with zero skips, failures, or
+errors. Its lifecycle evidence binds each distinct capture project and the phase
+image to successful cleanup before publication; post-cleanup inspection found
+no owned image.
 
 **Historical Internet evidence (verified 2026-08-14):** the old Phase 7
 prerequisite gate selected and passed the opt-in Internet smoke test against a
@@ -368,7 +370,7 @@ bounded synthetic trace through one shared interface.
 model fixture. Current-schema artifacts enforce corrected semantics, and all
 three families pass their bounded direct scientific validation.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
 
 ## Phase 5 — Heterogeneous genetic fitting and checkpoint resume (Complete)
 
@@ -444,7 +446,7 @@ resume exactly, and publish an independently validated winner.
 model without lexical or input-order privilege, and compatible checkpoint resume
 is behaviorally identical to uninterrupted fitting through final publication.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
 
 ## Phase 6 — Run orchestration and complete integration (Complete)
 
@@ -498,7 +500,7 @@ Docker-backed experiment, and each individual command can safely reproduce its
 own stage. Compatible stage reuse preserves exact lineage, fresh and resumed
 final artifacts are equivalent, and the canonical failure matrix passes.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
 
 **Historical verification (2026-08-13):** the exact bounded fast and
 branch-coverage gates passed; the checked offline pipeline and old corruption
@@ -573,7 +575,13 @@ evidence separately; every protocol-used transfer header, external observation,
 and cited byte is checked; publication is exclusive; and the clean-clone offline
 audit reconstructs the complete report and lineage without Docker or Internet.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
+
+**Retained closure evidence (verified 2026-08-18):** r21 separates nine training
+runs, nine same-reference fresh simulations, and three fixed-model held-out
+evaluations. Candidate, accepted-tree, and recorded-source guarded no-hardlink
+audits each reconstructed all 231 manifest-retained files without Docker or
+Internet.
 
 **Historical evidence (2026-08-14):** study
 `validation-study-20260814-ovh-r3` reported nine primary runs plus one
@@ -621,7 +629,7 @@ phase contract above, and the complete [testing strategy](TESTING.md).
 unchanged-rubric reassessment grades all 17 deficient criteria Acceptable or
 better.
 
-**Done-when status (verified 2026-08-17): Complete.**
+**Done-when status (verified 2026-08-18): Complete.**
 
 ## Later, only if evidence requires it
 

@@ -2,20 +2,21 @@
 
 Original assessed product commit: `63f8c1b6da8a293bc65740890ca0ec7d0f479e1a`
 
-Closure scientific source commit: `2f1537b0f0339bbf761a6c04a33035ee8fd26e8b`
+Closure scientific source commit: `ca2522dcfae5b39a44355d9df5329744847b7136`
 
-Accepted-evidence commit: `c310900b139b806f45f13785bb1d204554515eef`
+Accepted-evidence commit: `0864afdbb9a107bf0285de6d8494609912534c7a`
 
 Original assessment date: 2026-08-14 (Europe/Moscow)
 
-Closure reassessment date: 2026-08-17 (Europe/Moscow)
+Closure reassessment date: 2026-08-18 (Europe/Moscow)
 
 ## Scope and method
 
 This document applies the 37 independent anchors in the
 [research-fitness rubric](../architecture/RESEARCH_FITNESS_CRITERIA.md) to the declared one-process research
-prototype. The 2026-08-17 closure reassesses exactly the 17 criteria reopened by the Roadmap against the unchanged
-rubric. The other 20 criteria retain their 2026-08-14 Acceptable grades. Enterprise hardening, multi-user operation,
+prototype. The 2026-08-18 closure reviews all 37 criteria against the current implementation and final r21 evidence,
+and reassesses the 17 criteria formally reopened by the Roadmap against the unchanged rubric. The other 20 criteria
+retain their Acceptable grades after that current-state review. Enterprise hardening, multi-user operation,
 distributed execution, hosted deployment, and feature breadth remain excluded unless they directly affect scientific
 evidence.
 
@@ -25,13 +26,13 @@ volume are not grading evidence by themselves.
 
 Evidence provenance is explicit throughout:
 
-- **Fresh reassessment** means a 2026-08-17 command or independent review against the closure source and accepted r18
-  evidence.
+- **Fresh reassessment** means a 2026-08-18 command or independent review against closure source `ca2522d` and accepted
+  r21 evidence commit `0864afd`.
 - **Fresh** without a date remains evidence executed for the original 2026-08-14 assessment and is credited only to
   rows that were not reopened.
 - **Source** means architecture, implementation, direct tests, or deterministic fixtures at the closure source.
-- **Retained r18** means a checked artifact in the accepted
-  [`2026-08-17-research-fitness-r18`](../examples/validation_study/evidence/2026-08-17-research-fitness-r18/)
+- **Retained r21** means a checked artifact in the accepted
+  [`2026-08-18-research-fitness-r21`](../examples/validation_study/evidence/2026-08-18-research-fitness-r21/)
   bundle.
 - **Historical** means evidence preserved for context but not used to satisfy an amended closure gate.
 - **Literature** means an external primary paper or authoritative mathematical definition.
@@ -47,26 +48,28 @@ not treat later documentation as scientific source behavior.
 |---|---|---|
 | Locked sync and lock check | Passed offline with no lock change | Exact Python dependency environment |
 | Global Ruff and strict Pyright | Passed; 0 type errors, warnings, or informations | Static and documentation-adjacent quality |
-| Three deterministic fixture checks | Checked-in paths and bytes matched | Canonical fixture evidence |
-| Bounded parallel non-external gate | 3,422 passed in 85.31 seconds | Broad behavioral evidence |
-| Bounded serial branch gate | 3,422 passed, 20 deselected in 587.87 seconds; 97.82% | Branch coverage above 90% |
-| Retained r18 Docker matrix | 19 passed; 0 failed, skipped, or errored | Same-source controlled Docker prerequisite |
-| Retained r18 Internet smoke | 1 passed; 0 failed, skipped, or errored | Same-source real HTTPS prerequisite |
-| Recorded-source guarded no-hardlink r18 clone audit | Accepted 230 retained files | Offline relocated reconstruction at the recorded source |
-| Whole-branch independent review | No Critical or Important findings | Independent implementation/evidence review |
-| Task 16 documentation re-review | No Critical, Important, or Minor findings | Independent closure review |
+| Validation-study fixture check | Checked-in candidate paths and bytes matched | Canonical retained-evidence fixture |
+| Bounded parallel non-external gate | 3,464 passed in 90.44 seconds | Broad behavioral evidence |
+| Bounded serial branch gate | 3,464 passed, 20 deselected in 563.79 seconds; 97.82% | Branch coverage above 90% |
+| Retained r21 Docker matrix | 19 passed; 0 failed, skipped, or errored | Same-source controlled Docker prerequisite |
+| Retained r21 Internet smoke | 1 passed; 0 failed, skipped, or errored | Same-source real HTTPS prerequisite |
+| Candidate, accepted-tree, and guarded no-hardlink clone audits | Each accepted 231 retained files | Prepublication, checked-destination, and relocated reconstruction |
+| Independent r21 staged-evidence review | No Critical or Important findings | Independent evidence and publication review |
 
 The external commands, stdout, stderr, JUnit, status, exact image identities, URL observation, source commit, source
-tree, and lock identity are retained under r18. The external suites were not rerun after publication because the
+tree, and lock identity are retained under r21. The external suites were not rerun after publication because the
 accepted bundle binds them to the exact scientific source used for collection.
 
-### Retained r18 evidence
+### Retained r21 evidence
 
-The accepted r18 index and manifest independently enumerate 230 owned lineage entries. They retain nine strict
+The accepted r21 index and manifest independently enumerate 231 owned lineage entries (232 physical files including
+the self-excluded manifest). They retain nine strict
 training trees, nine same-reference fresh simulations, three independent held-out bundles, nine portable/realized
 configuration pairs, exact prerequisite records, protocol, environment, report inputs, and report. Candidate,
-accepted-tree audits completed at r18 publication, and a later recorded-source guarded clone audit accepted the same
-content. Missing, malformed, foreign, lineage-substituted, and occupied-publication cases were rejected without
+accepted-tree, and recorded-source guarded no-hardlink clone audits accepted the same content. The lifecycle record
+binds every distinct capture project and phase image to successful cleanup before publication; the auditor also binds
+the exact frozen workload profiles and enabled family set independently of producer summaries. Missing, malformed,
+foreign, profile/family-substituted, lifecycle-substituted, and occupied-publication cases were rejected without
 mutating accepted evidence.
 
 Earlier studies and failed attempt IDs remain historical or forensic evidence only. They are not used to satisfy a
@@ -152,8 +155,8 @@ alignment, weighting, heterogeneous reproduction, or final-seed conventions.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -166,15 +169,15 @@ historical context, not current closure inventory; this already-Acceptable row w
 **Rationale:** Effective configuration drives local and Docker checks, and direct failures name the unmet condition.
 Config-only and full paths are separated without silently claiming Docker readiness.
 
-**Limitation:** The excellent anchor is not supported because the fresh Docker matrix is indeterminate and no
-independent changed-environment matrix measures false approvals and false rejections for every prerequisite.
+**Limitation:** The excellent anchor is not supported because the retained Docker matrix covers one compatible host,
+and no independent changed-environment matrix measures false approvals and false rejections for every prerequisite.
 
 ### 1.2 Capture fidelity
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -187,15 +190,15 @@ historical context, not current closure inventory; this already-Acceptable row w
 **Rationale:** Target ownership, interface, observation lifecycle, direction, and error behavior are explicit and
 directly exercised within the declared container topology. The fresh real capture confirms current external use.
 
-**Limitation:** Independent packet inspection across known timing and rate variation is absent, and the fresh
-controlled Docker matrix has no conclusive result, preventing excellent evidence strength.
+**Limitation:** Independent packet inspection across broad timing, rate, and platform variation is absent; the retained
+controlled Docker matrix covers the declared cases on one compatible host, preventing excellent evidence strength.
 
 ### 1.3 Capture artifact correctness
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -215,8 +218,8 @@ study supports the excellent anchor.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -239,11 +242,11 @@ retained real checkpoint supports excellent reconstruction across fresh and resu
 
 **Evidence**
 
-- Fresh reassessment: the bounded 3,422-test gates include exact RNG-order, endpoint, guard, schema, codec, and
+- Fresh reassessment: the bounded 3,464-test gates include exact RNG-order, endpoint, guard, schema, codec, and
   [`tests/scientific/test_model_validation.py`](../tests/scientific/test_model_validation.py) oracle cases.
 - Source: schema 2 implements arrival-epoch MMPP initialization and conditioned time-zero arrival; all three families
   retain the exact fitted model, seed, observation window, limits, diagnostics, and input lineage.
-- Retained r18: nine training and nine fresh-simulation traces plus three held-out traces were strictly reparsed and
+- Retained r21: nine training and nine fresh-simulation traces plus three held-out traces were strictly reparsed and
   identity-checked by the recorded-source guarded clone audit.
 
 **Rationale:** Events follow each declared fitted process and seed, remain ordered within the exact window and limits,
@@ -257,8 +260,8 @@ exhaustive parameter-space or cross-platform simulation campaign, preventing Exc
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -281,12 +284,12 @@ absent, so excellent input-to-value reconstruction is not demonstrated.
 
 **Evidence**
 
-- Fresh reassessment: a recorded-source guarded no-hardlink clone audit accepted all 230 r18 manifest entries;
+- Fresh reassessment: a recorded-source guarded no-hardlink clone audit accepted all 231 r21 manifest entries;
   representative missing, malformed, foreign, substituted-lineage, and collision mutations were rejected.
 - Source: [`tests/integration/test_pipeline_equivalence.py`](../tests/integration/test_pipeline_equivalence.py) and
   [`tests/integration/test_run_pipeline.py`](../tests/integration/test_run_pipeline.py) reconstruct final identities
   and reject stale, partial, changed, or incompatible stage trees.
-- Retained r18: the index binds nine strict training trees, nine fresh simulations, and three held-out bundles to exact
+- Retained r21: the index binds nine strict training trees, nine fresh simulations, and three held-out bundles to exact
   owners, content identities, protocol, environment, configurations, and report inputs.
 
 **Rationale:** Success requires one strict final set whose bytes, identities, order, lineage, and outcomes agree. The
@@ -303,11 +306,11 @@ independent operation across every compatible platform, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: configuration, comparison, candidate-evaluation, and report tests in the 3,422-test gate cover
+- Fresh reassessment: configuration, comparison, candidate-evaluation, and report tests in the 3,464-test gate cover
   workload, model, search, seed, metric, weight, and reliability-limit variation without source edits.
 - Source: the [mandatory aggregate contract](../architecture/similarity_methods/README.md#aggregate-fitness) makes all
   four methods explicit and mandatory; zero weight changes only aggregate contribution, never execution or diagnostics.
-- Retained r18: portable configurations express three workload shapes and the controlled one-factor analysis changes
+- Retained r21: portable configurations express three workload shapes and the controlled one-factor analysis changes
   only weights while retaining identical components, diagnostics, traces, and executed methods.
 
 **Rationale:** Every result-affecting variable within the declared MVP is explicit and independently controllable where
@@ -326,7 +329,7 @@ catalog, so the stronger Excellent evidence is not established.
   exact types, units, domains, defaults, precedence, feasibility, unknown fields, and cross-setting relationships.
 - Source: the [portable/realized contract](../architecture/SYSTEM.md#portable-and-realized-configuration) and mandatory
   aggregate contract define stage ownership, path realization, method participation, and zero-weight behavior once.
-- Retained r18: nine portable/realized pairs and the one-factor weight record preserve all four settings and diagnostics
+- Retained r21: nine portable/realized pairs and the one-factor weight record preserve all four settings and diagnostics
   under both baseline and alternative aggregates.
 
 **Rationale:** Documentation, validation, effective rendering, comparison, fitting, and reporting now give every
@@ -339,8 +342,8 @@ examples, strict snapshots, and reviewed documentation.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -366,7 +369,7 @@ excellent anchor for every field and important interaction.
   gates; the guarded clone audit accepted the retained configurations at the recorded source.
 - Source: strict snapshot identities are checked before and after stage reads and before reuse, resume, final
   publication, or report acceptance.
-- Retained r18: every training index entry names byte-identified portable, realized, and run configurations; the audit
+- Retained r21: every training index entry names byte-identified portable, realized, and run configurations; the audit
   proves the run configuration equals the realized configuration and that all downstream lineage consumes it.
 
 **Rationale:** One normalized effective configuration contains every defaulted, resolved, derived, and scientific value
@@ -379,8 +382,8 @@ operating systems, preventing Excellent.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -402,10 +405,10 @@ reconstructed downstream values is absent, preventing excellent evidence.
 **Evidence**
 
 - Fresh reassessment: the relocation matrix passed 58 focused cases, and the final guarded no-hardlink clone recreated
-  the locked environment and accepted all 230 r18 retained files without Docker or network access.
+  the locked environment and accepted all 231 r21 retained files without Docker or network access.
 - Source: only `run.directory` and declared bind-mount host sources may realize differently; all scientific and workload
   values remain strict, and incompatible environment identities are rejected before reuse.
-- Retained r18: nine portable/realized pairs, exact environment identities, source/tree binding, and immutable image
+- Retained r21: nine portable/realized pairs, exact environment identities, source/tree binding, and immutable image
   references preserve both the transferable definition and its concrete realization.
 
 **Rationale:** Transfer changes only declared environmental paths, retains both forms, and rejects incompatible
@@ -420,8 +423,8 @@ platforms, so Excellent is not supported.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -441,8 +444,8 @@ and an unambiguous zero-weight rule are missing, preventing excellent traceabili
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -469,7 +472,7 @@ are absent, so excellent scientific confirmation is not available.
   samples, and tolerances for Poisson, Markov Renewal, and MMPP arrival, transition, occupancy, correlation, and marks.
 - Source: exact scripted draw-order tests cover arrival-epoch initialization, conditioned time-zero arrival, state and
   mark choices, transitions, endpoints, degenerate cases, and every reliability stop.
-- Retained r18: strict audits reparse finite generated traces from all three competing families' evaluations and bind
+- Retained r21: strict audits reparse finite generated traces from all three competing families' evaluations and bind
   published winners to current schema 2 semantics.
 
 **Rationale:** Every draw, state transition, initialization, mark, and stop decision follows the declared process and
@@ -485,10 +488,11 @@ parameter recovery study, preventing Excellent.
 **Evidence**
 
 - Fresh reassessment: priority, quota, permutation, equal-fitness, known-winner, invalid-candidate, checkpoint, and
-  resumed-equivalence tests passed in the bounded gates and received phase and whole-branch independent review.
+  resumed-equivalence tests passed in the bounded gates and received phase reviews plus independent staged-evidence
+  review.
 - Source: one seed-derived neutral `family_priority` owns quota remainders, initial order, cross-family ties, champions,
   elites, and tournament ties; all families share references, windows, metrics, trial seeds, and limits.
-- Retained r18: every training run evaluates all three enabled families under the same recorded settings and selection
+- Retained r21: every training run evaluates all three enabled families under the same recorded settings and selection
   seeds, then freezes the training-only winner before held-out evaluation.
 
 **Rationale:** Family-specific chromosomes use explicit neutral rules without lexical or configuration-order privilege,
@@ -501,8 +505,8 @@ resource-fairness behavior across all feasible model difficulties, preventing Ex
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -521,8 +525,8 @@ lacks broad sensitivity or calibration evidence, preventing excellent validation
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -541,8 +545,8 @@ zero-weight participation are missing, preventing excellent evidence.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -563,11 +567,11 @@ for every critical conversion are absent, so excellent boundary evidence is not 
 
 **Evidence**
 
-- Fresh reassessment: 3,422 bounded tests include hand-calculated similarity cases, analytical invariants, independent
+- Fresh reassessment: 3,464 bounded tests include hand-calculated similarity cases, analytical invariants, independent
   standard-library stochastic oracles, known simulations, family-order controls, and strict edge cases.
 - Source: [`tests/scientific/oracles.py`](../tests/scientific/oracles.py) does not call production fitting or generation
   helpers when deriving expected statistics, draw races, occupancy, or tolerance decisions.
-- Retained r18: real captures, generated traces, natural-variation pairs, fixed-seed simulations, held-out comparisons,
+- Retained r21: real captures, generated traces, natural-variation pairs, fixed-seed simulations, held-out comparisons,
   and a one-factor weight analysis supplement the controlled evidence without being treated as universal validation.
 
 **Rationale:** Every core model, metric, aggregate, and heterogeneous-competition method has direct behavioral evidence
@@ -582,11 +586,11 @@ method across a large real-data corpus, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: final independent documentation re-review found no Critical, Important, or Minor finding after
-  its initial closure-document findings were resolved and every affected gate was rerun.
+- Fresh reassessment: the independent r21 staged-evidence review found no Critical or Important finding after its
+  evidence-document findings were resolved and every affected gate was rerun.
 - Source: model, genetic, similarity, capture, and testing documents state domains, estimator choices, local policies,
   failure signals, bounds, mandatory diagnostics, neutral family rules, and current schema semantics.
-- Retained r18: the report separates training selection, repeated-capture variation, same-reference fresh simulation,
+- Retained r21: the report separates training selection, repeated-capture variation, same-reference fresh simulation,
   and genuine held-out evidence, exposes weak multiscale scores and weight sensitivity, and limits generalization claims.
 
 **Rationale:** Assumptions, conventions, diagnostics, failure meaning, and supported conclusions are explicit enough to
@@ -601,8 +605,8 @@ sensitivity studies for every documented limitation, preventing Excellent.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -622,8 +626,8 @@ independently demonstrated, preventing excellent evidence.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -635,15 +639,15 @@ historical context, not current closure inventory; this already-Acceptable row w
 **Rationale:** Explicit stage and descendant budgets are recalculated at boundaries; expiry blocks later work, and
 partial output is not accepted. Real process trees demonstrate local containment under wall and memory limits.
 
-**Limitation:** The fresh Docker matrix is indeterminate, and no independent repeated container/output-growth campaign
-proves containment at every production boundary, preventing excellent evidence.
+**Limitation:** The retained Docker matrix covers one compatible host, and no independent repeated
+container/output-growth campaign proves containment at every production boundary, preventing excellent evidence.
 
 ### 4.3 Failure semantics
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -662,8 +666,8 @@ not available, so excellent evidence is not supported.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -683,8 +687,8 @@ absent, preventing the excellent anchor.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -704,12 +708,14 @@ equivalence are missing, preventing excellent recovery evidence.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
-- Fresh: the Internet smoke passed teardown, and post-gate Docker inventory contained no labelled resource.
+- Fresh reassessment: r21 lifecycle and prerequisite records bind every distinct capture project through publication
+  and successful cleanup, bind the phase image to removal, and record an empty post-cleanup inspection. The retained
+  19-test Docker matrix and Internet smoke both passed.
 - Source: [cleanup tests](../tests/unit/test_cleanup.py) cover idempotence, zero budget, hung commands, inventory,
   remaining resources, signal failures, and exact-owner scoping.
 - Source: [cleanup-boundary tests](../tests/integration/test_cleanup_boundary.py) use real subprocesses to prove bounded
@@ -718,8 +724,8 @@ historical context, not current closure inventory; this already-Acceptable row w
 **Rationale:** Cleanup is unconditional, bounded, idempotent, owner-scoped, descendant-aware, and honest about
 possibly remaining resources when absence cannot be proven.
 
-**Limitation:** The fresh Docker matrix has no conclusive result, and no independent real-resource matrix spans every
-staged failure and concurrent identity reuse, preventing excellent evidence.
+**Limitation:** Real-resource evidence comes from one compatible host and does not independently span every staged
+failure, concurrent identity reuse, daemon failure, or platform, preventing excellent evidence.
 
 ### 4.7 Adverse-condition behavior and diagnostics
 
@@ -731,7 +737,7 @@ staged failure and concurrent identity reuse, preventing excellent evidence.
   gates passed malformed-input, extreme-finite, timeout, process, replacement, combined-failure, and cleanup cases.
 - Source: public failure-outcome matrices require typed stage, cause, affected evidence, evidence state, authority,
   correction, exact status where known, secondary detail, and possibly remaining resource inventory.
-- Retained r18: offline mutation and publication-collision cases reject invalid work with canonical diagnostics while
+- Retained r21: offline mutation and publication-collision cases reject invalid work with canonical diagnostics while
   preserving candidate and accepted inventories; external prerequisites retain exact command and status evidence.
 
 **Rationale:** Every declared expected failure boundary produces an actionable typed non-success result without
@@ -746,8 +752,8 @@ failure combination and host, preventing Excellent.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -770,10 +776,10 @@ invalid-path sequences are absent, preventing excellent evidence.
 **Evidence**
 
 - Fresh reassessment: locked offline sync, lock check, deterministic fixtures, strict typing, and a guarded
-  no-hardlink clone audit passed against r18's recorded source.
+  no-hardlink clone audit passed against r21's recorded source.
 - Source: CPython 3.12 is pinned; the capture image uses an exact base digest, dated snapshot, direct package versions,
   reproducible build inputs, expected content identity, platform checks, and capture-tool compatibility.
-- Retained r18: environment and prerequisites bind CPython 3.12.3, lock SHA-256, source commit/tree, Docker Engine and
+- Retained r21: environment and prerequisites bind CPython 3.12.3, lock SHA-256, source commit/tree, Docker Engine and
   Compose versions, linux/amd64, immutable target/capture image IDs, dumpcap 4.0.17, and schema 2.
 
 **Rationale:** Every result-affecting interpreter, package, tool, image, source, and runtime assumption is locked or
@@ -788,12 +794,12 @@ implementations, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: a recorded-source guarded clone audit accepted all 230 manifest-retained bytes and rejected
+- Fresh reassessment: a recorded-source guarded clone audit accepted all 231 manifest-retained bytes and rejected
   representative missing, malformed, foreign, and substituted inputs.
-- Retained r18: exact portable/realized configurations, references, workload argv, bounds, seeds, checkpoints, models,
+- Retained r21: exact portable/realized configurations, references, workload argv, bounds, seeds, checkpoints, models,
   generated traces, comparisons, logs, headers, observations, prerequisite results, and environment are retained.
-- Retained r18: the canonical manifest stores path, size, SHA-256, owner, and lineage for every file; the index contains
-  the same 230 ownership and lineage entries.
+- Retained r21: the canonical manifest stores path, size, SHA-256, owner, and lineage for every file; the index contains
+  the same 231 ownership and lineage entries.
 
 **Rationale:** Every result-affecting scientific and external input is stored exactly or identified immutably, including
 raw references, effective settings, workload behavior, model bounds, seed policy, and environment observations.
@@ -807,11 +813,11 @@ file across multiple storage implementations, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: the production auditor reconstructed all 230 r18 owner/lineage entries in a recorded-source
+- Fresh reassessment: the production auditor reconstructed all 231 r21 owner/lineage entries in a recorded-source
   guarded no-hardlink clone; lineage substitution and foreign/replaced evidence were rejected.
 - Source: strict schemas and content identities connect reference, effective configuration, checkpoint, history,
   best model, generated trace, similarity result, final result, fresh simulation, and held-out publication.
-- Retained r18: index, manifest, training, fresh-simulation, and held-out records expose each exact input/output identity
+- Retained r21: index, manifest, training, fresh-simulation, and held-out records expose each exact input/output identity
   and bind the report and report inputs to the same complete evidence graph.
 
 **Rationale:** Exact identities and strict schemas form a complete validated chain from reference and configuration
@@ -824,8 +830,8 @@ multiple filesystems and independent implementations, preventing Excellent.
 
 **Grade: acceptable**
 
-**Evidence status:** The evidence, rationale, and limitation below are the original 2026-08-14 snapshot. They are
-historical context, not current closure inventory; this already-Acceptable row was not reopened or regraded.
+**Evidence status:** Reassessed against the 2026-08-18 closure source and r21 evidence. The unchanged
+rubric still supports the original Acceptable grade; dated 2026-08-14 evidence below remains historical context.
 
 **Evidence**
 
@@ -851,7 +857,7 @@ canonical-byte checks are absent, preventing excellent serialization evidence.
   failure-log, and lineage identities for uninterrupted, resumed, and reused paths.
 - Source: checkpoint tests preserve population, history, family priority, winner, IDs, complete MT19937 state, schema,
   settings, and compatibility before any resumed draw; deterministic fixtures regenerate byte-identically.
-- Retained r18: nine fresh-simulation records distinguish expected seeded simulation variation from authoritative input
+- Retained r21: nine fresh-simulation records distinguish expected seeded simulation variation from authoritative input
   lineage, and the clean-clone audit reconstructs their exact reference/model/generated/comparison identities.
 
 **Rationale:** Equivalent fresh, reused, and resumed executions reproduce every deterministic scientific value through
@@ -866,11 +872,11 @@ and every possible interruption instruction, preventing Excellent.
 
 **Evidence**
 
-- Fresh reassessment: the recorded-source guarded clone audit reconstructed the r18 protocol and report, and the
-  independent whole-branch review found no Critical or Important protocol/evidence mismatch.
-- Retained r18: protocol freezes workloads, balanced order, three repeats, selection seeds 17 and 29, final seed 97,
+- Fresh reassessment: the recorded-source guarded clone audit reconstructed the r21 protocol and report, and the
+  independent staged-evidence review found no Critical or Important protocol/evidence mismatch.
+- Retained r21: protocol freezes workloads, balanced order, three repeats, selection seeds 17 and 29, final seed 97,
   failure/no-retry rules, training-only selection, one independent held-out capture per workload, and exclusive publish.
-- Retained r18: exact prerequisite and collection commands, outcomes, failed-attempt policy, natural variation, fresh
+- Retained r21: exact prerequisite and collection commands, outcomes, failed-attempt policy, natural variation, fresh
   simulation, held-out results, environment, configurations, report inputs, and limitations are retained separately.
 
 **Rationale:** Another researcher need not invent any material workload, order, seed, competition, failure, selection,
@@ -886,11 +892,12 @@ multiple endpoints, hosts, or operators, preventing Excellent.
 **Evidence**
 
 - Fresh reassessment: a socket-, Docker-, shell-, and subprocess-guarded recorded-source no-hardlink clone audit
-  accepted all 230 r18 files from the locked environment without network or Docker.
+  accepted all 231 r21 files from the locked environment without network or Docker.
 - Source: the offline auditor directly reloads strict public codecs, reparses PCAPNG, recomputes hashes, aggregates,
   natural variation, selection, held-out bindings, report inputs, ownership, lineage, and manifest consistency.
-- Fresh reassessment: representative missing, malformed, foreign, substituted-lineage, and publication-collision clone
-  cases failed canonically; Task 16 review found no reconstruction-specific Critical or Important issue.
+- Fresh reassessment: representative missing, malformed, foreign, substituted-lineage, profile/family, lifecycle, and
+  publication-collision clone cases failed canonically; the independent r21 staged-evidence review found no
+  reconstruction-specific Critical or Important issue.
 
 **Rationale:** A compatible researcher can use retained inputs, strict artifacts, pinned tools, and the documented
 bounded command to reconstruct and verify every published scientific value without original process state or external
@@ -901,12 +908,13 @@ implemented complete analysis run by an independent operator, preventing Excelle
 
 ## Cross-cutting limitations
 
-All 17 reopened criteria now meet the unchanged Acceptable anchor within the declared one-process MVP scope. The
+All 37 criteria were reviewed against the closure source and r21 evidence. The 17 formally reopened criteria now meet
+the unchanged Acceptable anchor, and the other 20 remain Acceptable, within the declared one-process MVP scope. The
 remaining scientific limitation is evidence breadth rather than a known method contradiction: bounded direct oracles
 cover every core method, but no exhaustive recovery, calibration, or deliberate scientific-mutation campaign spans all
 parameters and model interactions.
 
-The accepted r18 study is complete and independently auditable from retained bytes, but it remains a finite experiment
+The accepted r21 study is complete and independently auditable from retained bytes, but it remains a finite experiment
 on one host, one approved HTTPS object, three workload shapes, three training captures per workload, and one held-out
 capture per workload. It must not be generalized to unseen programs, endpoints, networks, platforms, or model classes.
 
@@ -917,7 +925,7 @@ components and weight sensitivity rather than hiding them behind the aggregate.
 ## Reproduction commands for fresh closure evidence
 
 Run from the repository root at the accepted-evidence revision. The external Docker and Internet commands and their
-passing results are retained in r18 `prerequisites.json`; the closure audit itself is offline.
+passing results are retained in r21 `prerequisites.json`; the closure audit itself is offline.
 
 ```bash
 UV_OFFLINE=1 uv sync --locked --all-groups
@@ -931,6 +939,7 @@ uv run --locked pyright
 uv run --locked python scripts/generate_phase2_fixtures.py --check
 uv run --locked python scripts/generate_model_fixtures.py --check
 uv run --locked python scripts/generate_fit_fixtures.py --check
+uv run --locked python scripts/generate_validation_study_fixture.py --check
 ```
 
 ```bash
@@ -956,6 +965,6 @@ UV_OFFLINE=1 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/2026-08-17-research-fitness-r18 \
+  examples/validation_study/evidence/2026-08-18-research-fitness-r21 \
   --repository .
 ```

@@ -28,12 +28,13 @@ repeating a real capture.
 
 ## Research fitness closure
 
-The [research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) now
-records the 2026-08-17 unchanged-rubric reassessment. All 17 criteria reopened by
-the [Roadmap](ROADMAP.md) meet Acceptable or better, backed by the accepted
-[r18 Validation Study](../examples/validation_study/REPORT.md), final local gates,
-offline clean-clone reconstruction, and a final documentation re-review with no
-Critical, Important, or Minor findings.
+The [research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) records
+the 2026-08-18 current-state review of all 37 criteria and unchanged-rubric
+reassessment of the 17 criteria reopened by the [Roadmap](ROADMAP.md). Every
+criterion is Acceptable, backed by the accepted
+[r21 Validation Study](../examples/validation_study/REPORT.md), final local
+gates, offline clean-clone reconstruction, and an independent staged-evidence
+review with no Critical or Important findings.
 
 The completed work tightens scientific correctness, configurability, robustness,
 and reproducibility while preserving the same one-process MVP workflow. It adds
@@ -68,7 +69,7 @@ development history rather than current status.
   rubric for scientific correctness, configurability, robustness, and
   reproducibility without grading the current implementation.
 - [Research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) records
-  the original evidence grades and the 2026-08-17 closure reassessment.
+  the original assessment and the 2026-08-18 current-state closure reassessment.
 - [Remediation design](../docs/superpowers/specs/2026-08-14-research-fitness-remediation-design.md)
   defines the minimum Acceptable target and targeted phase reopenings.
 - [Genetic models](genetic_models/README.md) describes model-family competition
