@@ -3710,15 +3710,124 @@ def _historic_schema_one_capability_argv() -> tuple[str, ...]:
 def _historic_schema_one_workload_argvs() -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     """Return the sole pre-User-Agent workload projections retained in checked schema-1 evidence."""
 
-    projections = tuple(
-        tuple(
-            token
-            for index, token in enumerate(spec.argv)
-            if token != "--user-agent" and (index == 0 or spec.argv[index - 1] != "--user-agent")
-        )
-        for spec in workload_specs(_HISTORIC_SCHEMA_ONE_RESULT_URL)
+    common = (
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--max-redirs",
+        "3",
+        "--proto",
+        "=https",
+        "--proto-redir",
+        "=https",
+        "--http1.1",
+        "--connect-timeout",
+        "15",
     )
-    return cast(tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]], projections)
+    url = _HISTORIC_SCHEMA_ONE_RESULT_URL
+    short = (
+        *common,
+        "--max-time",
+        "30",
+        "--limit-rate",
+        "4M",
+        "--range",
+        "0-262143",
+        "--max-filesize",
+        "262144",
+        "--dump-header",
+        "/trafficlab-study/short.headers",
+        "--output",
+        "/dev/null",
+        "--url",
+        url,
+    )
+    streaming = (
+        *common,
+        "--max-time",
+        "40",
+        "--limit-rate",
+        "256K",
+        "--range",
+        "0-4194303",
+        "--max-filesize",
+        "4194304",
+        "--dump-header",
+        "/trafficlab-study/streaming.headers",
+        "--output",
+        "/dev/null",
+        "--url",
+        url,
+    )
+    bursty_transfers = tuple(
+        (start, start + 32_767, f"bursty-{index}.headers")
+        for index, start in enumerate((0, 524_288, 1_048_576, 1_572_864, 2_097_152, 2_621_440, 3_145_728, 3_670_016))
+    )
+    bursty_groups: list[str] = []
+    for index, (start, end, filename) in enumerate(bursty_transfers):
+        if index:
+            bursty_groups.append("--next")
+        bursty_groups.extend(
+            (
+                *common,
+                "--max-time",
+                "30",
+                "--range",
+                f"{start}-{end}",
+                "--max-filesize",
+                "32768",
+                "--dump-header",
+                f"/trafficlab-study/{filename}",
+                "--output",
+                "/dev/null",
+                "--url",
+                url,
+            )
+        )
+    return short, streaming, ("--parallel", "--parallel-max", "4", "--fail-early", *bursty_groups)
+
+
+def _historic_schema_one_workload_specs() -> tuple[WorkloadSpec, WorkloadSpec, WorkloadSpec]:
+    """Return the complete measured profile of the sole retained schema-1 study."""
+
+    short, streaming, bursty = _historic_schema_one_workload_argvs()
+    bursty_transfers = tuple(
+        (start, start + 32_767, f"bursty-{index}.headers")
+        for index, start in enumerate((0, 524_288, 1_048_576, 1_572_864, 2_097_152, 2_621_440, 3_145_728, 3_670_016))
+    )
+    return (
+        WorkloadSpec(
+            name="short",
+            argv=short,
+            transfers=((0, 262_143, "short.headers"),),
+            workload_timeout_seconds=35.0,
+            total_timeout_seconds=90.0,
+            multiscale_widths_seconds=(0.001, 0.01),
+        ),
+        WorkloadSpec(
+            name="streaming",
+            argv=streaming,
+            transfers=((0, 4_194_303, "streaming.headers"),),
+            workload_timeout_seconds=50.0,
+            total_timeout_seconds=120.0,
+            multiscale_widths_seconds=(0.25, 1.0),
+        ),
+        WorkloadSpec(
+            name="bursty",
+            argv=bursty,
+            transfers=bursty_transfers,
+            workload_timeout_seconds=35.0,
+            total_timeout_seconds=90.0,
+            multiscale_widths_seconds=(0.001, 0.01),
+        ),
+    )
+
+
+def _historic_schema_one_workload_transfers(workload: str) -> tuple[tuple[int, int, str], ...]:
+    """Return the exact range requests recorded by the sole schema-1 study."""
+
+    return next(spec.transfers for spec in _historic_schema_one_workload_specs() if spec.name == workload)
 
 
 def _validate_capability(
@@ -4593,8 +4702,9 @@ def _validate_sample(value: object, *, name: str, expected_count: int, frame_len
     return cast(JsonObject, document)
 
 
-def _workload_widths(workload: str) -> tuple[float, float]:
-    return next(spec.multiscale_widths_seconds for spec in workload_specs(_ORACLE_URL) if spec.name == workload)
+def _workload_widths(workload: str, *, historic_schema_one_result: bool = False) -> tuple[float, float]:
+    specs = _historic_schema_one_workload_specs() if historic_schema_one_result else workload_specs(_ORACLE_URL)
+    return next(spec.multiscale_widths_seconds for spec in specs if spec.name == workload)
 
 
 def _validate_scale(
@@ -4619,7 +4729,13 @@ def _validate_scale(
     return cast(JsonObject, document)
 
 
-def _validate_trace(value: object, *, workload: str, name: str) -> JsonObject:
+def _validate_trace(
+    value: object,
+    *,
+    workload: str,
+    name: str,
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
     keys = (
         "packet_count",
         "observation_window_seconds",
@@ -4644,14 +4760,20 @@ def _validate_trace(value: object, *, workload: str, name: str) -> JsonObject:
     )
     _validate_sample(document["iats"], name=f"{name}.IATs", expected_count=packet_count - 1, frame_lengths=False)
     scales = _strict_list(document["scales"], name=f"{name}.scales")
-    widths = _workload_widths(workload)
+    widths = _workload_widths(workload, historic_schema_one_result=historic_schema_one_result)
     _require(len(scales) == len(widths), f"{name}.scales must contain the exact configured widths")
     for scale, width in zip(scales, widths, strict=True):
         _validate_scale(scale, expected_width=width, packet_totals=packets, byte_totals=bytes_)
     return cast(JsonObject, document)
 
 
-def _expected_transfers(workload: str) -> tuple[tuple[int, int, str], ...]:
+def _expected_transfers(
+    workload: str,
+    *,
+    historic_schema_one_result: bool = False,
+) -> tuple[tuple[int, int, str], ...]:
+    if historic_schema_one_result:
+        return _historic_schema_one_workload_transfers(workload)
     return next(spec.transfers for spec in workload_specs(_ORACLE_URL) if spec.name == workload)
 
 
@@ -4662,9 +4784,10 @@ def _validate_transfer_responses(
     workload: str,
     evidence_directory: str,
     object_size: int,
+    historic_schema_one_result: bool = False,
 ) -> list[JsonValue]:
     responses = _strict_list(value, name="transfer responses")
-    expected = _expected_transfers(workload)
+    expected = _expected_transfers(workload, historic_schema_one_result=historic_schema_one_result)
     _require(
         len(responses) == len(expected),
         "transfer responses must contain the exact workload response count",
@@ -4835,13 +4958,24 @@ def _validate_run_evidence(
     evidence_directory: str,
     object_size: int,
     fresh_simulation_source: str,
+    historic_schema_one_result: bool = False,
 ) -> None:
     elapsed = _strict_float(document["elapsed_seconds"], name="run elapsed seconds", lower=0.0)
     _require(elapsed > 0.0, "run elapsed seconds must be positive")
     cleanup = _strict_bool(document["cleanup_verified"], name="run cleanup verification")
     _require(cleanup, "run cleanup must be verified")
-    reference = _validate_trace(document["reference"], workload=workload, name="reference trace")
-    generated = _validate_trace(document["generated"], workload=workload, name="generated trace")
+    reference = _validate_trace(
+        document["reference"],
+        workload=workload,
+        name="reference trace",
+        historic_schema_one_result=historic_schema_one_result,
+    )
+    generated = _validate_trace(
+        document["generated"],
+        workload=workload,
+        name="generated trace",
+        historic_schema_one_result=historic_schema_one_result,
+    )
     champions = _validate_champions(document["family_champions"])
     _validate_reuse(document["reuse"])
     _validate_transfer_responses(
@@ -4850,6 +4984,7 @@ def _validate_run_evidence(
         workload=workload,
         evidence_directory=evidence_directory,
         object_size=object_size,
+        historic_schema_one_result=historic_schema_one_result,
     )
     _validate_artifact_hashes(document["artifact_sha256"])
     _validate_winner(document["winner"], champions=champions)
@@ -4865,6 +5000,7 @@ def _validate_run_document(
     repository_root: Path,
     study_id: str,
     object_size: int,
+    historic_schema_one_result: bool = False,
 ) -> JsonObject:
     document = _exact_object(value, _STUDY_RUN_KEYS, name="study run")
     order = _strict_int(document["execution_order"], name="execution order")
@@ -4905,6 +5041,7 @@ def _validate_run_document(
         evidence_directory=evidence_directory,
         object_size=object_size,
         fresh_simulation_source="run_experiment_fit_outcome",
+        historic_schema_one_result=historic_schema_one_result,
     )
     return cast(JsonObject, document)
 
@@ -4945,15 +5082,10 @@ def _validate_workloads(
     historic_schema_one_result: bool = False,
 ) -> list[JsonValue]:
     items = _strict_list(value, name="workload definitions")
-    expected_specs = workload_specs(url)
-    expected_argvs = (
-        _historic_schema_one_workload_argvs()
-        if historic_schema_one_result
-        else tuple(spec.argv for spec in expected_specs)
-    )
+    expected_specs = _historic_schema_one_workload_specs() if historic_schema_one_result else workload_specs(url)
     _require(len(items) == 3, "workload definitions must contain short, streaming, and bursty")
     keys = ("name", "argv", "workload_timeout_seconds", "total_timeout_seconds", "multiscale_widths_seconds")
-    for index, (item, expected) in enumerate(zip(items, expected_specs, strict=True)):
+    for _index, (item, expected) in enumerate(zip(items, expected_specs, strict=True)):
         document = _exact_object(item, keys, name="workload definition")
         name = _strict_string(document["name"], name="workload name")
         _require(name == expected.name, "workload definitions must be ordered short, streaming, bursty")
@@ -4966,7 +5098,7 @@ def _validate_workloads(
         )
         actual = (argv, workload_timeout, total_timeout, widths)
         oracle = (
-            expected_argvs[index],
+            expected.argv,
             expected.workload_timeout_seconds,
             expected.total_timeout_seconds,
             expected.multiscale_widths_seconds,
@@ -5393,10 +5525,11 @@ def _validate_study_document(document: JsonObject, *, repository_root: Path) -> 
     schema_version = _strict_int(root["schema_version"], name="result schema version")
     _require(schema_version == 1, "result schema version must be exactly 1")
     environment = _validate_environment(root["environment"])
+    historic_schema_one_result = cast(str, environment["git_commit"]) == _HISTORIC_SCHEMA_ONE_RESULT_COMMIT
     protocol = _validate_protocol(
         root["protocol"],
         repository_root=repository_root,
-        historic_schema_one_result=cast(str, environment["git_commit"]) == _HISTORIC_SCHEMA_ONE_RESULT_COMMIT,
+        historic_schema_one_result=historic_schema_one_result,
     )
     _require(
         environment["capture_image_id"] == protocol["capture_image_id"],
@@ -5413,6 +5546,7 @@ def _validate_study_document(document: JsonObject, *, repository_root: Path) -> 
             repository_root=repository_root,
             study_id=study_id,
             object_size=object_size,
+            historic_schema_one_result=historic_schema_one_result,
         )
         for item, expected in zip(run_items, PRIMARY_ORDER, strict=True)
     ]

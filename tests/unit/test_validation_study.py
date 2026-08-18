@@ -9324,6 +9324,57 @@ def test_validation_fixture_retains_the_complete_232_file_evidence_inventory() -
     assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 232
 
 
+def test_historic_schema_one_workload_oracle_retains_the_measured_short_transfer() -> None:
+    """The checked r3 result remains bound to its 256 KiB measured protocol."""
+
+    short, streaming, bursty = study._historic_schema_one_workload_argvs()  # pyright: ignore[reportPrivateUsage]
+
+    assert "--user-agent" not in short
+    assert "0-262143" in short
+    assert "262144" in short
+    assert "0-1048575" not in short
+    assert "1048576" not in short
+    assert "0-4194303" in streaming
+    assert "--parallel" in bursty
+    assert study._expected_transfers("short") == ((0, 1_048_575, "short.headers"),)  # pyright: ignore[reportPrivateUsage]
+    assert study._expected_transfers("short", historic_schema_one_result=True) == (  # pyright: ignore[reportPrivateUsage]
+        (0, 262_143, "short.headers"),
+    )
+    assert study._workload_widths("short") == (0.001, 0.01)  # pyright: ignore[reportPrivateUsage]
+    assert study._workload_widths("short", historic_schema_one_result=True) == (  # pyright: ignore[reportPrivateUsage]
+        0.001,
+        0.01,
+    )
+
+
+def test_historic_schema_one_result_does_not_follow_current_workload_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sole preserved result is bound to its complete measured workload profile."""
+
+    current_workload_specs = study.workload_specs
+
+    def changed_current_workloads(url: str) -> tuple[study.WorkloadSpec, ...]:
+        return tuple(
+            replace(
+                specification,
+                workload_timeout_seconds=36.0,
+                total_timeout_seconds=91.0,
+                multiscale_widths_seconds=(0.002, 0.02),
+            )
+            if specification.name == "short"
+            else specification
+            for specification in current_workload_specs(url)
+        )
+
+    monkeypatch.setattr(study, "workload_specs", changed_current_workloads)
+    content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
+
+    assert study.parse_study_results(content, repository_root=_ROOT).protocol["study_id"] == (
+        "validation-study-20260814-ovh-r3"
+    )
+
+
 def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
     content = (_ROOT / "examples" / "validation_study" / "results.json").read_bytes()
     document = cast(dict[str, object], json.loads(content))
