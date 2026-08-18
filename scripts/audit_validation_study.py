@@ -720,6 +720,7 @@ _RELOCATED_DOCUMENTATION_PATHS = frozenset(
         "examples/validation_study/README.md",
     }
 )
+_RELOCATED_FIXTURE_METADATA_PATHS = frozenset({"fixtures/manifest.json"})
 _RELOCATED_EVIDENCE_PREFIX = "examples/validation_study/evidence/"
 _RELOCATED_IGNORED_TOOL_ROOTS = frozenset(
     {
@@ -752,7 +753,11 @@ _RELOCATED_IGNORED_VALIDATION_PREFIXES = (
 
 
 def _permitted_relocated_change(path: str) -> bool:
-    return path in _RELOCATED_DOCUMENTATION_PATHS or path.startswith(_RELOCATED_EVIDENCE_PREFIX)
+    return (
+        path in _RELOCATED_DOCUMENTATION_PATHS
+        or path in _RELOCATED_FIXTURE_METADATA_PATHS
+        or path.startswith(_RELOCATED_EVIDENCE_PREFIX)
+    )
 
 
 def _publisher_temporary_worktree_path(path: str) -> bool:

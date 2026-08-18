@@ -7184,11 +7184,15 @@ def test_offline_auditor_rejects_non_evidence_worktree_changes(
     assert "working-tree" in outcome.detail
 
 
-def test_offline_auditor_allows_document_evidence_and_ignored_candidate_worktree_changes(tmp_path: Path) -> None:
-    """The source guard shares the committed descendant evidence/document allowlist."""
+def test_offline_auditor_allows_document_fixture_metadata_and_evidence_worktree_changes(tmp_path: Path) -> None:
+    """The source guard shares the committed descendant fixture/evidence allowlist."""
 
     repository, candidate = _copy_validation_study_candidate(tmp_path)
-    for relative in ("examples/validation_study/README.md", "examples/validation_study/REPORT.md"):
+    for relative in (
+        "examples/validation_study/README.md",
+        "examples/validation_study/REPORT.md",
+        "fixtures/manifest.json",
+    ):
         path = repository / relative
         path.write_bytes(path.read_bytes() + b"\nlocal audit note\n")
     evidence_note = repository / "examples" / "validation_study" / "evidence" / "local-audit-note.txt"
