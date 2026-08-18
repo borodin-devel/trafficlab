@@ -224,26 +224,27 @@ stationary initialization.
 **Interfaces:** `main` contains the reviewed commits, `MVP_2` points at the verified final commit, no remote is changed,
 and the working tree plus Docker project resources are clean.
 
-- [ ] **[STEP-26-f0f9438a] Run deterministic and static gates**
+- [x] **[STEP-26-f0f9438a] Run deterministic and static gates**
 
   Run locked sync/lock, fixture layout and all four deterministic fixture generators, Ruff format/lint, strict Pyright,
   and `git diff --check`.
 
-- [ ] **[STEP-27-76293924] Run bounded non-external tests and coverage**
+- [x] **[STEP-27-76293924] Run bounded non-external tests and coverage**
 
   Run the documented four-worker non-external suite and the serial branch-aware coverage suite with a 90% floor.
 
-- [ ] **[STEP-28-819b0c67] Run bounded Docker and Internet verification**
+- [x] **[STEP-28-819b0c67] Run bounded Docker and Internet verification**
 
   On the available host, run the serial 20-test `docker or internet` matrix with the documented credential-free HTTPS
   endpoint; inspect that no TrafficLab-labelled container, network, volume, or owned image remains.
 
-- [ ] **[STEP-29-ddd7d782] Integrate the verified branch and move the local tag**
+- [ ] **[STEP-29-ddd7d782] Integrate the verified branch into main**
 
-  Fast-forward `main` to the verified remediation branch, verify the old `MVP_2` target before replacing the lightweight
-  local tag, and do not push the branch or tag.
+  Fast-forward `main` to the verified remediation branch without pulling or pushing, then rerun the narrow merged-tree
+  static and focused regression checks before removing the worktree.
 
-- [ ] **[STEP-30-7b04d064] Require final clean state**
+- [ ] **[STEP-30-7b04d064] Record completion, move MVP_2, and require clean state**
 
-  Confirm `git status --short --branch`, `git show-ref --tags MVP_2`, the final commit log, and absence of project-scoped
-  Docker residue before reporting completion.
+  Mark these final steps complete, commit the plan state, replace the lightweight local `MVP_2` tag at that commit, and
+  confirm `git status --short --branch`, `git show-ref --tags MVP_2`, the final commit log, and absence of project-scoped
+  Docker residue. Do not push the branch or tag.
