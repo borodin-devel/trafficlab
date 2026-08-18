@@ -50,6 +50,13 @@ the missing context, but it must remain unambiguous. For example, a generator
 dedicated to similarity fixtures may say `similarity fixture`, while a Docker
 image tag may say `docker-capture-test`.
 
+Comments, docstrings, command help, error messages, READMEs, reports, and other
+explanatory prose must use the complete capability name and explain the
+relationship relevant to that context. They must not merely substitute another
+short label for the numbered milestone. For example, model-fixture prose must
+say that its parent input is the canonical-trace and offline-similarity fixture,
+while the constrained function name may use `similarity` alone.
+
 ## Concrete migration
 
 The Docker integration image tags change from the milestone-coded
