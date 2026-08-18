@@ -13,6 +13,21 @@ a simple one-person research prototype: one Python process, two production
 containers for capture, classical models only, no security subsystem, no Node.js
 application dependencies, and no speculative infrastructure.
 
+## Output and generated-task identity
+
+- Begin every progress update with `[<integer>%]`, calculated from weighted
+  whole-task acceptance criteria rather than elapsed time or message count.
+- When completion changes, follow it with `[+<integer>%]` or `[-<integer>%]`;
+  every task/subtask start and every percentage change must also include
+  `[ETA: <hours>h <minutes>m]`.
+- In generated task documents, label every logical task, step, stage, or phase
+  as `[TASK-<ordinal>-<crc32>]`, `[STEP-<ordinal>-<crc32>]`, or the equivalent
+  kind. Do not emit generic unlabeled task or step headings.
+- Compute `<crc32>` as eight lowercase hexadecimal digits from the UTF-8
+  nanosecond creation timestamp plus document path, kind, and ordinal. Labels
+  are immutable; regenerate the timestamp on collision so each label is unique
+  within the repository.
+
 ## Autonomous decision policy
 
 Classify every development problem by both impact and difficulty:
