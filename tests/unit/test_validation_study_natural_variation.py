@@ -12,7 +12,7 @@ import pytest
 
 from scripts import audit_validation_study as auditor
 from scripts.run_validation_study import PUBLISHED_METHOD_ORDER, HeldOutEvaluation
-from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
 from trafficlab.comparison import ComparisonResult
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_configuration_pair

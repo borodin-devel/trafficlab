@@ -9,7 +9,7 @@ import pytest
 
 import trafficlab.artifacts as artifacts
 import trafficlab.comparison as comparison
-from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import create_run_directory
 from trafficlab.comparison import compare_experiment, load_comparison_result
 from trafficlab.config import ExperimentConfig

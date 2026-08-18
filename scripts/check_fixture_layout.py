@@ -11,21 +11,13 @@ from typing import NoReturn, cast
 
 _MANIFEST_EXCLUSIONS = frozenset({"README.md", "manifest.json"})
 _GENERATED_CACHE_DIRECTORY = "__pycache__"
-_LEGACY_FIXTURE_PATHS = (
-    Path("examples/data"),
+_MISPLACED_FIXTURE_PATHS = (
+    Path("fixtures"),
     Path("tests/docker/compose.endpoint.json"),
     Path("tests/docker/images"),
-    Path("tests/fixtures"),
 )
-_LEGACY_REFERENCE_BYTES = (
-    b"examples/data",
-    b"tests/fixtures",
-    b"tests/docker/images",
-    b"tests/docker/compose.endpoint.json",
-)
-_ACTIVE_REFERENCE_PREFIXES = ("examples/configs/", "scripts/", "src/", "tests/")
-_ACTIVE_REFERENCE_SUFFIXES = frozenset({".json", ".py", ".toml", ".yaml", ".yml"})
-_REFERENCE_SCAN_EXCLUSIONS = frozenset({"scripts/check_fixture_layout.py", "tests/unit/test_repository_layout.py"})
+_PRODUCTION_TEST_REFERENCE_BYTES = (b"tests/fixtures", b"tests.fixtures")
+_PRODUCTION_SOURCE_PREFIX = "src/"
 
 
 class FixtureLayoutError(ValueError):
@@ -157,9 +149,9 @@ def tracked_phase_paths(repository: Path) -> tuple[Path, ...]:
     return tuple(path for path in paths if "phase" in PurePosixPath(path.as_posix()).name.lower())
 
 
-def legacy_fixture_paths(repository: Path) -> tuple[Path, ...]:
+def misplaced_fixture_paths(repository: Path) -> tuple[Path, ...]:
     present: list[Path] = []
-    for relative in _LEGACY_FIXTURE_PATHS:
+    for relative in _MISPLACED_FIXTURE_PATHS:
         try:
             (repository / relative).lstat()
         except FileNotFoundError:
@@ -168,7 +160,7 @@ def legacy_fixture_paths(repository: Path) -> tuple[Path, ...]:
     return tuple(present)
 
 
-def legacy_fixture_references(repository: Path) -> tuple[Path, ...]:
+def production_test_fixture_references(repository: Path) -> tuple[Path, ...]:
     result = subprocess.run(
         ("git", "ls-files", "-z"),
         cwd=repository,
@@ -181,14 +173,10 @@ def legacy_fixture_references(repository: Path) -> tuple[Path, ...]:
             continue
         relative = Path(value.decode("utf-8"))
         name = relative.as_posix()
-        if (
-            name in _REFERENCE_SCAN_EXCLUSIONS
-            or relative.suffix not in _ACTIVE_REFERENCE_SUFFIXES
-            or not name.startswith(_ACTIVE_REFERENCE_PREFIXES)
-        ):
+        if relative.suffix != ".py" or not name.startswith(_PRODUCTION_SOURCE_PREFIX):
             continue
         content = (repository / relative).read_bytes()
-        if any(reference in content for reference in _LEGACY_REFERENCE_BYTES):
+        if any(reference in content for reference in _PRODUCTION_TEST_REFERENCE_BYTES):
             references.append(relative)
     return tuple(references)
 
@@ -213,23 +201,25 @@ def _fail(message: str) -> NoReturn:
 def main(argv: list[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     repository = _repository()
-    root = repository / "fixtures"
-    manifest = root / "manifest.json"
+    roots = (repository / "examples" / "data", repository / "tests" / "fixtures" / "data")
     if cast(bool, arguments.write_manifest):
-        write_manifest(root, manifest)
+        for root in roots:
+            write_manifest(root, root / "manifest.json")
         return 0
-    check_manifest(root, manifest)
+    for root in roots:
+        check_manifest(root, root / "manifest.json")
     if cast(bool, arguments.check):
         phase_paths = tracked_phase_paths(repository)
         if phase_paths:
             _fail("tracked filenames contain phase: " + ", ".join(path.as_posix() for path in phase_paths))
-        legacy_paths = legacy_fixture_paths(repository)
-        if legacy_paths:
-            _fail("legacy fixture paths remain: " + ", ".join(path.as_posix() for path in legacy_paths))
-        legacy_references = legacy_fixture_references(repository)
-        if legacy_references:
+        misplaced_paths = misplaced_fixture_paths(repository)
+        if misplaced_paths:
+            _fail("misplaced fixture paths remain: " + ", ".join(path.as_posix() for path in misplaced_paths))
+        production_references = production_test_fixture_references(repository)
+        if production_references:
             _fail(
-                "active sources reference legacy fixtures: " + ", ".join(path.as_posix() for path in legacy_references)
+                "production sources reference test fixtures: "
+                + ", ".join(path.as_posix() for path in production_references)
             )
     return 0
 

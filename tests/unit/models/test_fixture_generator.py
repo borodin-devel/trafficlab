@@ -7,7 +7,7 @@ import pytest
 
 from scripts import generate_model_fixtures as fixture_generator
 from scripts import generate_similarity_fixtures as similarity_fixture_generator
-from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.config import ExperimentConfig
 from trafficlab.errors import TrafficlabError
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent

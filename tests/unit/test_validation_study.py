@@ -32,7 +32,7 @@ from scripts import audit_validation_study as auditor
 from scripts import generate_validation_study_fixture as fixture_generator
 from scripts import run_validation_study as study
 from tests.conftest import test_body_failure
-from tests.support.fixture_paths import (
+from tests.fixtures.paths import (
     PIPELINE_FIXTURE_ROOT,
     PRE_USER_AGENT_R6_FIXTURE,
     VALIDATION_STUDY_CANDIDATE,
@@ -7184,15 +7184,15 @@ def test_offline_auditor_rejects_non_evidence_worktree_changes(
     assert "working-tree" in outcome.detail
 
 
-def test_offline_auditor_allows_document_fixture_metadata_and_evidence_worktree_changes(tmp_path: Path) -> None:
-    """The source guard shares the committed descendant fixture/evidence allowlist."""
+def test_offline_auditor_allows_document_test_and_evidence_worktree_changes(tmp_path: Path) -> None:
+    """The source guard permits non-production test changes and retained evidence."""
 
     repository, candidate = _copy_validation_study_candidate(tmp_path)
     for relative in (
         "examples/validation_study/README.md",
         "examples/validation_study/REPORT.md",
-        "fixtures/manifest.json",
-        "fixtures/tests/validation_study/candidate/environment.json",
+        "tests/fixtures/data/manifest.json",
+        "tests/fixtures/data/validation_study/candidate/environment.json",
     ):
         path = repository / relative
         path.write_bytes(path.read_bytes() + b"\nlocal audit note\n")
@@ -12542,7 +12542,7 @@ def test_offline_auditor_rejects_untrusted_fixture_profile_source_bytes(
         generated_template=generated_validation_study_candidate_template,
     )
     environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
-    source = repository / "fixtures/examples/pipeline/fit/experiment.toml"
+    source = repository / "examples/data/fit/experiment.toml"
     original = source.read_bytes()
     if case == "different":
         source.write_bytes(b"different\n")

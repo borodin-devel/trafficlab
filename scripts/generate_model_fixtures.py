@@ -16,7 +16,7 @@ from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"
-_EXAMPLE_DATA = _REPOSITORY / "fixtures" / "examples" / "pipeline"
+_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
 _MODEL_PATH = _EXAMPLE_DATA / "models" / "best_model.json"
 _GENERATED_PATH = _EXAMPLE_DATA / "models" / "generated.pcapng"
 

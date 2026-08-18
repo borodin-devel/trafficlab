@@ -53,7 +53,7 @@ def _prepare_comparison_run(
     experiment_path.write_bytes(snapshot)
     run_directory.mkdir()
     (run_directory / "experiment.toml").write_bytes(snapshot)
-    example_data = Path(__file__).parents[2] / "fixtures" / "examples" / "pipeline"
+    example_data = Path(__file__).parents[2] / "examples" / "data"
     names = ["capture.json", "reference.pcapng", "models/generated.pcapng"]
     if include_best_model:
         names.append("models/best_model.json")
@@ -138,7 +138,7 @@ def test_compare_public_boundary_rejects_a_foreign_generated_capture_before_publ
     experiment_path.write_bytes(snapshot)
     run_directory.mkdir()
     (run_directory / "experiment.toml").write_bytes(snapshot)
-    example_data = Path(__file__).parents[2] / "fixtures" / "examples" / "pipeline"
+    example_data = Path(__file__).parents[2] / "examples" / "data"
     for source, destination in (
         (example_data / "capture.json", run_directory / "capture.json"),
         (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
@@ -466,7 +466,7 @@ def test_compare_rejects_reference_mutation_before_similarity_publication(
     experiment_path.write_bytes(snapshot)
     run_directory.mkdir()
     (run_directory / "experiment.toml").write_bytes(snapshot)
-    example_data = Path(__file__).parents[2] / "fixtures" / "examples" / "pipeline"
+    example_data = Path(__file__).parents[2] / "examples" / "data"
     for source, destination in (
         (example_data / "capture.json", run_directory / "capture.json"),
         (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
@@ -511,7 +511,7 @@ def test_compare_rejects_incompatible_best_model_before_similarity_publication(
     experiment_path.write_bytes(snapshot)
     run_directory.mkdir()
     (run_directory / "experiment.toml").write_bytes(snapshot)
-    example_data = Path(__file__).parents[2] / "fixtures" / "examples" / "pipeline"
+    example_data = Path(__file__).parents[2] / "examples" / "data"
     for source, destination in (
         (example_data / "capture.json", run_directory / "capture.json"),
         (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
@@ -546,7 +546,7 @@ def test_compare_translates_each_pcap_parse_failure_before_publication(
     experiment_path.write_bytes(snapshot)
     run_directory.mkdir()
     (run_directory / "experiment.toml").write_bytes(snapshot)
-    example_data = Path(__file__).parents[2] / "fixtures" / "examples" / "pipeline"
+    example_data = Path(__file__).parents[2] / "examples" / "data"
     for source, destination in (
         (example_data / "capture.json", run_directory / "capture.json"),
         (example_data / "reference.pcapng", run_directory / "reference.pcapng"),
@@ -628,7 +628,7 @@ def _add_input_identity_field(document: dict[str, object]) -> None:
 
 
 def _valid_result_document() -> dict[str, object]:
-    fixture = Path(__file__).parents[2] / "fixtures" / "examples" / "pipeline" / "similarity.json"
+    fixture = Path(__file__).parents[2] / "examples" / "data" / "similarity.json"
     return cast(dict[str, object], json.loads(fixture.read_bytes()))
 
 

@@ -33,8 +33,8 @@ from trafficlab.preflight import PreflightReport, PreparedExperiment
 from trafficlab.trace import CaptureMetadata, TraceEvent, align_generated, normalize_reference, parse_capture_metadata
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-FIXTURE = REPOSITORY / "fixtures" / "tests" / "validation_study" / "candidate"
-FIT_FIXTURE = REPOSITORY / "fixtures" / "examples" / "pipeline" / "fit"
+FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"
+FIT_FIXTURE = REPOSITORY / "examples" / "data" / "fit"
 WORKLOADS: tuple[study.WorkloadName, ...] = ("short", "streaming", "bursty")
 REPEATS = (1, 2, 3)
 _IMAGE_LOCK = cast(dict[str, object], json.loads((REPOSITORY / "docker" / "capture" / "image-lock.json").read_text()))

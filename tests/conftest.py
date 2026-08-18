@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from tests.support.fixture_paths import DOCKER_FIXTURE_ROOT
+from tests.fixtures.paths import DOCKER_FIXTURE_ROOT
 from trafficlab.compose import ComposePaths
 from trafficlab.config import ExperimentConfig
 from trafficlab.docker_cli import (

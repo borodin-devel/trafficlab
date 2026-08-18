@@ -30,7 +30,7 @@ from trafficlab.run import RunDependencies, RunResult, run_experiment
 pytestmark = pytest.mark.integration
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FIT_FIXTURE = _ROOT / "fixtures" / "examples" / "pipeline" / "fit"
+_FIT_FIXTURE = _ROOT / "examples" / "data" / "fit"
 _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
 
@@ -400,7 +400,7 @@ def test_similarity_artifact_missing_corrupt_different_and_identical_policy(tmp_
     elif state == "malformed":
         path.write_bytes(b"{}")
     elif state == "different":
-        path.write_bytes((_ROOT / "fixtures" / "examples" / "pipeline" / "similarity.json").read_bytes())
+        path.write_bytes((_ROOT / "examples" / "data" / "similarity.json").read_bytes())
     before = path.read_bytes() if path.exists() else None
 
     if state in {"malformed", "different"}:

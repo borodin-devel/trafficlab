@@ -32,7 +32,7 @@ from trafficlab.trace import TraceEvent, parse_capture_metadata
 pytestmark = pytest.mark.integration
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FIT_FIXTURE = _ROOT / "fixtures" / "examples" / "pipeline" / "fit"
+_FIT_FIXTURE = _ROOT / "examples" / "data" / "fit"
 _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
 

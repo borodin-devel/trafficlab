@@ -24,7 +24,7 @@ from trafficlab.trace import (
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"
-_EXAMPLE_DATA = _REPOSITORY / "fixtures" / "examples" / "pipeline"
+_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
 _ARTIFACT_NAMES = (
     "capture.json",
     "reference.pcapng",

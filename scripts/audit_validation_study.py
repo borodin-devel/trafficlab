@@ -720,8 +720,7 @@ _RELOCATED_DOCUMENTATION_PATHS = frozenset(
         "examples/validation_study/README.md",
     }
 )
-_RELOCATED_FIXTURE_METADATA_PATHS = frozenset({"fixtures/manifest.json"})
-_RELOCATED_FIXTURE_DATA_PREFIX = "fixtures/tests/validation_study/candidate/"
+_RELOCATED_TEST_PREFIX = "tests/"
 _RELOCATED_EVIDENCE_PREFIX = "examples/validation_study/evidence/"
 _RELOCATED_IGNORED_TOOL_ROOTS = frozenset(
     {
@@ -756,8 +755,7 @@ _RELOCATED_IGNORED_VALIDATION_PREFIXES = (
 def _permitted_relocated_change(path: str) -> bool:
     return (
         path in _RELOCATED_DOCUMENTATION_PATHS
-        or path in _RELOCATED_FIXTURE_METADATA_PATHS
-        or path.startswith(_RELOCATED_FIXTURE_DATA_PREFIX)
+        or path.startswith(_RELOCATED_TEST_PREFIX)
         or path.startswith(_RELOCATED_EVIDENCE_PREFIX)
     )
 
@@ -1796,7 +1794,7 @@ def _fixture_profile(
 ) -> ExperimentConfig:
     """Derive the deterministic fixture profile from its recorded source tree."""
 
-    relative = "fixtures/examples/pipeline/fit/experiment.toml"
+    relative = "examples/data/fit/experiment.toml"
     path = repository / relative
     content = _read_regular(path, affected=relative)
     committed = _git_bytes(repository, ("show", f"{source_commit}:{relative}"), name="recorded fixture profile")

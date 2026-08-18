@@ -21,7 +21,7 @@ from tests.scientific.oracles import (
     markov_stationary_distribution,
     mmpp_moments,
 )
-from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import (
     FloatBounds,

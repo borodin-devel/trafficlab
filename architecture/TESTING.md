@@ -644,7 +644,7 @@ The capture rows implement the authority and precedence rules from
 [Capture reliability](CAPTURE.md#reliability-behavior).
 
 A small checked-in immutable fixture at
-`fixtures/tests/diagnostics/failure-outcomes.jsonl` contains one credential-free
+`tests/fixtures/data/diagnostics/failure-outcomes.jsonl` contains one credential-free
 canonical record for each matrix row, including each unavailable and incompatible
 Docker, image, capture-tool, mount, mounted-input, and prerequisite case. Strict
 offline parsing reproduces the table expectations without Docker, network

@@ -19,7 +19,7 @@ import pytest
 import trafficlab.artifacts as artifact_module
 import trafficlab.cli as cli_module
 import trafficlab.generation as generation_module
-from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import create_run_directory, publish_generated_pcapng
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig

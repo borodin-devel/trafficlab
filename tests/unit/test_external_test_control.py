@@ -96,4 +96,4 @@ def test_external_tests_reject_xdist_workers() -> None:
 
 def test_external_fixture_paths_are_repository_absolute() -> None:
     root = Path(__file__).parents[2]
-    assert conftest.DOCKER_FIXTURE_ROOT == root / "fixtures" / "tests" / "docker"
+    assert conftest.DOCKER_FIXTURE_ROOT == root / "tests" / "fixtures" / "data" / "docker"

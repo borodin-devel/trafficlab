@@ -10,7 +10,7 @@ from typing import Any, cast
 import pytest
 
 import trafficlab
-from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import create_run_directory
 from trafficlab.cli import main
 from trafficlab.comparison import compare_experiment, compare_traces, load_comparison_result

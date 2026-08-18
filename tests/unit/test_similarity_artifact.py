@@ -8,7 +8,7 @@ import pytest
 
 import trafficlab.artifacts as artifacts
 import trafficlab.comparison as comparison
-from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import append_run_log, create_run_directory
 from trafficlab.comparison import compare_experiment
 from trafficlab.config import ExperimentConfig

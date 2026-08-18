@@ -15,7 +15,7 @@ import trafficlab.fitting as fitting
 import trafficlab.generation as generation
 import trafficlab.preflight as preflight
 import trafficlab.run as run
-from tests.support.fixture_paths import DIAGNOSTIC_FIXTURE_ROOT
+from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT
 from trafficlab.capture_policy import CaptureOutcome, FailureDetail, FailureKind
 from trafficlab.config import ExperimentConfig
 from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome, failure_outcome_from_error

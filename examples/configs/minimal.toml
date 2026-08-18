@@ -13,7 +13,7 @@ working_directory = "/work"
 LANG = "C"
 
 [[target.mounts]]
-source = "../../fixtures/examples/pipeline"
+source = "../data"
 target = "/work/data"
 read_only = true
 

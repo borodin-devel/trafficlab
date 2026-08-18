@@ -18,7 +18,7 @@ import trafficlab.generation as generation
 import trafficlab.genetic.strategy as strategy_module
 import trafficlab.preflight as preflight
 import trafficlab.study_evidence as study_evidence
-from tests.support.fixture_paths import DIAGNOSTIC_FIXTURE_ROOT, PIPELINE_FIXTURE_ROOT
+from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT, PIPELINE_FIXTURE_ROOT
 from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FloatBounds
 from trafficlab.config_io import render_effective_config
@@ -1542,7 +1542,7 @@ def _run_generation_boundary_case(
         )
     experiment_path.write_bytes(render_effective_config(config))
     prepared = preflight.open_or_prepare_experiment(experiment_path)
-    capture_content = (_ROOT / "fixtures" / "examples" / "pipeline" / "capture.json").read_bytes()
+    capture_content = (_ROOT / "examples" / "data" / "capture.json").read_bytes()
     (run_directory / "capture.json").write_bytes(capture_content)
     if case.scenario == "best_model_schema":
         document = cast(dict[str, object], json.loads(best_content))
@@ -1766,7 +1766,7 @@ def _run_comparison_boundary_case(
     snapshot = render_effective_config(config)
     experiment_path.write_bytes(snapshot)
     (run_directory / "experiment.toml").write_bytes(snapshot)
-    example_data = _ROOT / "fixtures" / "examples" / "pipeline"
+    example_data = _ROOT / "examples" / "data"
     for source, destination in (
         (example_data / "capture.json", run_directory / "capture.json"),
         (example_data / "reference.pcapng", run_directory / "reference.pcapng"),

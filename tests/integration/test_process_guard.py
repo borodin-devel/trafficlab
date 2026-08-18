@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.fixture_paths import PROCESS_GUARD_FIXTURE_ROOT
+from tests.fixtures.paths import PROCESS_GUARD_FIXTURE_ROOT
 
 pytestmark = pytest.mark.integration
 

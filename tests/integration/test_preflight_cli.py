@@ -384,7 +384,7 @@ def test_checked_in_example_is_complete_and_uses_repository_relative_paths() -> 
     config = load_experiment(example_path)
 
     assert config.run.directory == repository / "runs" / "minimal"
-    assert config.target.mounts[0].source == repository / "fixtures" / "examples" / "pipeline"
+    assert config.target.mounts[0].source == repository / "examples" / "data"
     assert config.target.mounts[0].target == "/work/data"
     assert config.target.mounts[0].read_only is True
     assert config.models.poisson_empirical is not None
@@ -393,6 +393,6 @@ def test_checked_in_example_is_complete_and_uses_repository_relative_paths() -> 
     assert config.models.poisson_empirical.operator_values == (0.9, 1.0, 0.1)
     assert config.models.markov_renewal.operator_values == (0.9, 0.2, 0.1)
     assert config.models.mmpp.operator_values == (0.9, 0.25, 0.1)
-    assert (repository / "fixtures" / "examples" / "pipeline" / "request.txt").read_text(encoding="utf-8") == (
+    assert (repository / "examples" / "data" / "request.txt").read_text(encoding="utf-8") == (
         "trafficlab example\n"
     )

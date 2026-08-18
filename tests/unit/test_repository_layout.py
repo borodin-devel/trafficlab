@@ -30,9 +30,9 @@ class _Checker(Protocol):
 
     def tracked_phase_paths(self, repository: Path) -> tuple[Path, ...]: ...
 
-    def legacy_fixture_paths(self, repository: Path) -> tuple[Path, ...]: ...
+    def misplaced_fixture_paths(self, repository: Path) -> tuple[Path, ...]: ...
 
-    def legacy_fixture_references(self, repository: Path) -> tuple[Path, ...]: ...
+    def production_test_fixture_references(self, repository: Path) -> tuple[Path, ...]: ...
 
 
 def _load_checker() -> _Checker:
@@ -187,16 +187,8 @@ def test_tracked_phase_paths_reports_case_insensitive_basenames_only(tmp_path: P
     )
 
 
-@pytest.mark.parametrize(
-    "relative",
-    (
-        "tests/fixtures",
-        "tests/docker/compose.endpoint.json",
-        "tests/docker/images",
-        "examples/data",
-    ),
-)
-def test_legacy_fixture_paths_reports_each_forbidden_source(tmp_path: Path, relative: str) -> None:
+@pytest.mark.parametrize("relative", ("fixtures", "tests/docker/images", "tests/docker/compose.endpoint.json"))
+def test_misplaced_fixture_paths_reports_each_forbidden_source(tmp_path: Path, relative: str) -> None:
     checker = _load_checker()
     repository = tmp_path / "repository"
     path = repository / relative
@@ -206,7 +198,7 @@ def test_legacy_fixture_paths_reports_each_forbidden_source(tmp_path: Path, rela
     else:
         path.mkdir(parents=True)
 
-    assert checker.legacy_fixture_paths(repository) == (Path(relative),)
+    assert checker.misplaced_fixture_paths(repository) == (Path(relative),)
 
 
 def test_agents_requires_precise_progress_and_generated_task_labels() -> None:
@@ -223,18 +215,19 @@ def test_agents_requires_precise_progress_and_generated_task_labels() -> None:
 
 
 def test_fixture_path_catalog_owns_each_compartment() -> None:
-    catalog_path = REPOSITORY / "tests" / "support" / "fixture_paths.py"
+    catalog_path = REPOSITORY / "tests" / "fixtures" / "paths.py"
     assert catalog_path.is_file()
     catalog = runpy.run_path(str(catalog_path))
 
-    assert catalog["FIXTURES_ROOT"] == REPOSITORY / "fixtures"
-    assert catalog["EXAMPLE_FIXTURES"] == REPOSITORY / "fixtures" / "examples" / "pipeline"
-    assert catalog["TEST_FIXTURES"] == REPOSITORY / "fixtures" / "tests"
+    assert catalog["FIXTURES_ROOT"] == REPOSITORY / "tests" / "fixtures"
+    assert catalog["STATIC_FIXTURE_DATA"] == REPOSITORY / "tests" / "fixtures" / "data"
+    assert catalog["EXAMPLE_FIXTURES"] == REPOSITORY / "examples" / "data"
+    assert catalog["TEST_FIXTURES"] == catalog["STATIC_FIXTURE_DATA"]
     assert catalog["PIPELINE_FIXTURE_ROOT"] == catalog["EXAMPLE_FIXTURES"]
-    assert catalog["DIAGNOSTIC_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "diagnostics"
-    assert catalog["DOCKER_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "docker"
-    assert catalog["PROCESS_GUARD_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "process_guard"
-    assert catalog["VALIDATION_STUDY_FIXTURE_ROOT"] == (REPOSITORY / "fixtures" / "tests" / "validation_study")
+    assert catalog["DIAGNOSTIC_FIXTURE_ROOT"] == REPOSITORY / "tests" / "fixtures" / "data" / "diagnostics"
+    assert catalog["DOCKER_FIXTURE_ROOT"] == REPOSITORY / "tests" / "fixtures" / "data" / "docker"
+    assert catalog["PROCESS_GUARD_FIXTURE_ROOT"] == REPOSITORY / "tests" / "fixtures" / "data" / "process_guard"
+    assert catalog["VALIDATION_STUDY_FIXTURE_ROOT"] == (REPOSITORY / "tests" / "fixtures" / "data" / "validation_study")
 
 
 def test_repository_has_no_phase_named_tracked_files() -> None:
@@ -243,34 +236,36 @@ def test_repository_has_no_phase_named_tracked_files() -> None:
     assert checker.tracked_phase_paths(REPOSITORY) == ()
 
 
-def test_repository_has_no_legacy_fixture_paths() -> None:
+def test_repository_has_no_misplaced_fixture_paths() -> None:
     checker = _load_checker()
 
-    assert checker.legacy_fixture_paths(REPOSITORY) == ()
+    assert checker.misplaced_fixture_paths(REPOSITORY) == ()
 
 
-@pytest.mark.parametrize(
-    "reference",
-    (
-        "examples/data/reference.pcapng",
-        "tests/fixtures/diagnostics/outcome.jsonl",
-        "tests/docker/images/client/client.py",
-        "tests/docker/compose.endpoint.json",
-    ),
-)
-def test_legacy_fixture_references_reports_active_source_files(tmp_path: Path, reference: str) -> None:
+@pytest.mark.parametrize("reference", ("tests/fixtures/data/sample.json", "tests.fixtures.paths"))
+def test_production_test_fixture_references_reports_package_dependencies(tmp_path: Path, reference: str) -> None:
     checker = _load_checker()
     repository = tmp_path / "repository"
-    source = repository / "scripts" / "consumer.py"
+    source = repository / "src" / "trafficlab" / "consumer.py"
     source.parent.mkdir(parents=True)
-    source.write_text(f'FIXTURE = "{reference}"\n', encoding="utf-8")
+    source.write_text(f'DEPENDENCY = "{reference}"\n', encoding="utf-8")
     subprocess.run(("git", "init", "-q"), cwd=repository, check=True)
     subprocess.run(("git", "add", "."), cwd=repository, check=True)
 
-    assert checker.legacy_fixture_references(repository) == (Path("scripts/consumer.py"),)
+    assert checker.production_test_fixture_references(repository) == (Path("src/trafficlab/consumer.py"),)
 
 
-def test_repository_has_no_active_legacy_fixture_references() -> None:
+def test_repository_production_has_no_test_fixture_dependencies() -> None:
     checker = _load_checker()
 
-    assert checker.legacy_fixture_references(REPOSITORY) == ()
+    assert checker.production_test_fixture_references(REPOSITORY) == ()
+
+
+def test_repository_owned_fixture_manifests_match() -> None:
+    checker = _load_checker()
+
+    checker.check_manifest(REPOSITORY / "examples" / "data", REPOSITORY / "examples" / "data" / "manifest.json")
+    checker.check_manifest(
+        REPOSITORY / "tests" / "fixtures" / "data",
+        REPOSITORY / "tests" / "fixtures" / "data" / "manifest.json",
+    )
