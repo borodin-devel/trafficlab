@@ -313,8 +313,8 @@ evaluation.
   quantile-based mark states, fits smoothed conditional transitions and timing,
   and retains the documented global-IAT fallback.
 - [Two-state MMPP](architecture/traffic_models/mmpp.md) repairs and fits a
-  two-state Markov-modulated Poisson process, initializes from its stationary
-  distribution, and simulates CTMC switches and arrivals.
+  two-state Markov-modulated Poisson process, initializes from its rate-weighted
+  arrival-epoch distribution, and simulates CTMC switches and arrivals.
 
 The shared interfaces, reliability guards, chromosome meanings, and registry
 rules are indexed in [Traffic Models](architecture/traffic_models/README.md).

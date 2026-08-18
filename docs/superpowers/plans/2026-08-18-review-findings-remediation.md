@@ -194,25 +194,25 @@ requested this remediation.
 **Interfaces:** The root README names rate-weighted arrival-epoch initialization and no longer claims arbitrary-time
 stationary initialization.
 
-- [ ] **[STEP-21-60512926] Confirm the authoritative MMPP wording**
+- [x] **[STEP-21-60512926] Confirm the authoritative MMPP wording**
 
   Compare the root overview with `architecture/traffic_models/mmpp.md` and `src/trafficlab/models/mmpp.py` before editing.
 
-- [ ] **[STEP-22-0358047a] Update only the incorrect README sentence**
+- [x] **[STEP-22-0358047a] Update only the incorrect README sentence**
 
   Replace “initializes from its stationary distribution” with concise arrival-epoch wording and make no unrelated
   documentation changes.
 
-- [ ] **[STEP-23-92c120dd] Run documentation checks**
+- [x] **[STEP-23-92c120dd] Run documentation checks**
 
   Run `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 1m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_readme.py`, `uv run --locked ruff format --check README.md`, and `git diff --check`.
 
-- [ ] **[STEP-24-501d1885] Review the corrected scientific description**
+- [x] **[STEP-24-501d1885] Review the corrected scientific description**
 
   Re-read the README paragraph beside the MMPP architecture equation and require that it distinguishes arbitrary-time
   stationarity from arrival-epoch conditioning.
 
-- [ ] **[STEP-25-1fe62d13] Commit the documentation correction**
+- [x] **[STEP-25-1fe62d13] Commit the documentation correction**
 
   Commit `README.md` with message `docs: correct MMPP initialization`.
 
