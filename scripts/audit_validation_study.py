@@ -721,6 +721,7 @@ _RELOCATED_DOCUMENTATION_PATHS = frozenset(
     }
 )
 _RELOCATED_FIXTURE_METADATA_PATHS = frozenset({"fixtures/manifest.json"})
+_RELOCATED_FIXTURE_DATA_PREFIX = "fixtures/tests/validation_study/candidate/"
 _RELOCATED_EVIDENCE_PREFIX = "examples/validation_study/evidence/"
 _RELOCATED_IGNORED_TOOL_ROOTS = frozenset(
     {
@@ -756,6 +757,7 @@ def _permitted_relocated_change(path: str) -> bool:
     return (
         path in _RELOCATED_DOCUMENTATION_PATHS
         or path in _RELOCATED_FIXTURE_METADATA_PATHS
+        or path.startswith(_RELOCATED_FIXTURE_DATA_PREFIX)
         or path.startswith(_RELOCATED_EVIDENCE_PREFIX)
     )
 

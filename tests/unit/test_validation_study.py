@@ -7192,6 +7192,7 @@ def test_offline_auditor_allows_document_fixture_metadata_and_evidence_worktree_
         "examples/validation_study/README.md",
         "examples/validation_study/REPORT.md",
         "fixtures/manifest.json",
+        "fixtures/tests/validation_study/candidate/environment.json",
     ):
         path = repository / relative
         path.write_bytes(path.read_bytes() + b"\nlocal audit note\n")
