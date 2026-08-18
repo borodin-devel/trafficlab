@@ -13,7 +13,7 @@ immutable image identities, and the locked dependency identity.
 `2026-08-18-research-fitness-r20` is a consumed failed attempt, not a result: a
 mandatory natural-variation comparison had insufficient aligned events and the
 collector stopped before held-out/report/publication artifacts. Historical
-real-program validation-study material and earlier failed attempts are historical
+real-program validation study material and earlier failed attempts are historical
 or forensic evidence only. The r21 destination is the accepted study bundle in
 this repository with complete retained real-program validation evidence.
 

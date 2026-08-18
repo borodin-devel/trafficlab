@@ -25,7 +25,7 @@ binds 231 retained evidence paths and excludes only itself. The bundle contains:
   path/size/SHA-256 manifest.
 
 The audited source candidate is a transient publisher work copy, not another
-accepted study. Historical real-program validation-study material and prior
+accepted study. Historical real-program validation study material and prior
 attempts remain non-accepted consistency or forensic evidence.
 
 ## Frozen protocol
