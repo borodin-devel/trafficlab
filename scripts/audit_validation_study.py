@@ -33,8 +33,8 @@ from scripts.run_validation_study import (
     parse_retained_prerequisites,
     prerequisite_junit_counts,
     retained_prerequisite_paths,
-    workload_specs,
 )
+from trafficlab import USER_AGENT
 from trafficlab.artifacts import quantize_generated_events
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import (
@@ -100,6 +100,123 @@ class _Transfer:
 
 
 @dataclass(frozen=True, slots=True)
+class _FrozenWorkload:
+    """Auditor-owned immutable workload policy, independent of collection code."""
+
+    argv: tuple[str, ...]
+    transfers: tuple[tuple[int, int, str], ...]
+    workload_timeout_seconds: float
+    total_timeout_seconds: float
+    multiscale_widths_seconds: tuple[float, float]
+
+
+_FROZEN_CURL_COMMON = (
+    "--fail",
+    "--silent",
+    "--show-error",
+    "--location",
+    "--max-redirs",
+    "3",
+    "--proto",
+    "=https",
+    "--proto-redir",
+    "=https",
+    "--http1.1",
+    "--user-agent",
+    USER_AGENT,
+    "--connect-timeout",
+    "15",
+)
+
+
+def _frozen_workload_profiles(url: str) -> dict[str, _FrozenWorkload]:
+    """Reconstruct the validation profile without reusing the collection oracle."""
+
+    short = _FrozenWorkload(
+        argv=(
+            *_FROZEN_CURL_COMMON,
+            "--max-time",
+            "30",
+            "--limit-rate",
+            "4M",
+            "--range",
+            "0-1048575",
+            "--max-filesize",
+            "1048576",
+            "--dump-header",
+            "/trafficlab-study/short.headers",
+            "--output",
+            "/dev/null",
+            "--url",
+            url,
+        ),
+        transfers=((0, 1_048_575, "short.headers"),),
+        workload_timeout_seconds=35.0,
+        total_timeout_seconds=90.0,
+        multiscale_widths_seconds=(0.001, 0.01),
+    )
+    streaming = _FrozenWorkload(
+        argv=(
+            *_FROZEN_CURL_COMMON,
+            "--max-time",
+            "40",
+            "--limit-rate",
+            "256K",
+            "--range",
+            "0-4194303",
+            "--max-filesize",
+            "4194304",
+            "--dump-header",
+            "/trafficlab-study/streaming.headers",
+            "--output",
+            "/dev/null",
+            "--url",
+            url,
+        ),
+        transfers=((0, 4_194_303, "streaming.headers"),),
+        workload_timeout_seconds=50.0,
+        total_timeout_seconds=120.0,
+        multiscale_widths_seconds=(0.25, 1.0),
+    )
+    bursty_transfers = tuple(
+        (start, start + 32_767, f"bursty-{index}.headers")
+        for index, start in enumerate((0, 524_288, 1_048_576, 1_572_864, 2_097_152, 2_621_440, 3_145_728, 3_670_016))
+    )
+    bursty_groups: list[str] = []
+    for index, (start, end, filename) in enumerate(bursty_transfers):
+        if index:
+            bursty_groups.append("--next")
+        bursty_groups.extend(
+            (
+                *_FROZEN_CURL_COMMON,
+                "--max-time",
+                "30",
+                "--range",
+                f"{start}-{end}",
+                "--max-filesize",
+                "32768",
+                "--dump-header",
+                f"/trafficlab-study/{filename}",
+                "--output",
+                "/dev/null",
+                "--url",
+                url,
+            )
+        )
+    return {
+        "short": short,
+        "streaming": streaming,
+        "bursty": _FrozenWorkload(
+            argv=("--parallel", "--parallel-max", "4", "--fail-early", *bursty_groups),
+            transfers=bursty_transfers,
+            workload_timeout_seconds=35.0,
+            total_timeout_seconds=90.0,
+            multiscale_widths_seconds=(0.001, 0.01),
+        ),
+    }
+
+
+@dataclass(frozen=True, slots=True)
 class _Training:
     workload: str
     repeat: int
@@ -126,7 +243,9 @@ _TRANSFER_RUNS = (
     *(("training", run_id, workload) for _order, run_id, workload, _repeat in PRIMARY_ORDER),
     *(("held_out", f"held-out-{workload}", workload) for workload in _WORKLOADS),
 )
-_TRANSFER_SPECS = {spec.name: spec.transfers for spec in workload_specs(_TRANSFER_PROFILE_URL)}
+_TRANSFER_SPECS = {
+    name: profile.transfers for name, profile in _frozen_workload_profiles(_TRANSFER_PROFILE_URL).items()
+}
 _TRANSFER_BINDINGS = (
     _Transfer("prerequisites", "00-prerequisites", "prerequisites", 0, 0, 0, "capability.headers"),
 ) + tuple(
@@ -1697,7 +1816,7 @@ def _fixture_profile(
             "recorded fixture profile is not canonical",
             "restore the canonical fixture profile",
         )
-    spec = next(specification for specification in workload_specs(url) if specification.name == workload)
+    spec = _frozen_workload_profiles(url)[workload]
     target = pair.portable.target.model_copy(update={"argv": spec.argv, "image": environment["target_image_reference"]})
     capture = pair.portable.capture.model_copy(update={"image": environment["capture_image_reference"]})
     return pair.portable.model_copy(update={"target": target, "capture": capture})
@@ -1706,7 +1825,7 @@ def _fixture_profile(
 def _validation_profile(*, workload: str, url: str, environment: Mapping[str, object]) -> ExperimentConfig:
     """Independently reconstruct one non-operational frozen Validation Study profile."""
 
-    spec = next(specification for specification in workload_specs(url) if specification.name == workload)
+    spec = _frozen_workload_profiles(url)[workload]
     return ExperimentConfig.model_validate(
         {
             "run": {
@@ -1884,7 +2003,7 @@ def _require_config_images(config: ExperimentConfig, environment: Mapping[str, o
 
 
 def _require_config_workload_argv(config: ExperimentConfig, *, workload: str, url: str, affected: str) -> None:
-    expected = next(spec.argv for spec in workload_specs(url) if spec.name == workload)
+    expected = _frozen_workload_profiles(url)[workload].argv
     if config.target.argv != expected:
         _fail(
             "artifact_foreign",

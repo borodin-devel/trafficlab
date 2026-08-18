@@ -12019,8 +12019,10 @@ def test_offline_auditor_rejects_one_generation_against_the_unpatched_frozen_pro
     assert error.value.kind == "artifact_foreign"
 
 
-def test_offline_auditor_rejects_legacy_short_transfer_against_the_frozen_profile() -> None:
-    """The profile oracle binds the predeclared one-mebibyte short transfer."""
+def test_offline_auditor_rejects_legacy_short_transfer_against_its_independent_frozen_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A producer regression cannot change the auditor's predeclared short profile."""
 
     environment: dict[str, object] = {
         "capture_image_reference": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
@@ -12028,11 +12030,31 @@ def test_offline_auditor_rejects_legacy_short_transfer_against_the_frozen_profil
             "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
         ),
     }
+
+    def legacy_workload_specs(url: str) -> tuple[study.WorkloadSpec, ...]:
+        specifications = study.workload_specs(url)
+        return tuple(
+            replace(
+                specification,
+                argv=tuple(
+                    "0-262143" if item == "0-1048575" else "262144" if item == "1048576" else item
+                    for item in specification.argv
+                ),
+                transfers=((0, 262143, "short.headers"),),
+            )
+            if specification.name == "short"
+            else specification
+            for specification in specifications
+        )
+
+    monkeypatch.setattr(auditor, "workload_specs", legacy_workload_specs, raising=False)
     frozen = auditor._validation_profile(  # pyright: ignore[reportPrivateUsage]
         workload="short",
         url="https://validation-study.example/object",
         environment=environment,
     )
+    assert "0-1048575" in frozen.target.argv
+    assert "1048576" in frozen.target.argv
     legacy = frozen.model_copy(
         update={
             "target": frozen.target.model_copy(

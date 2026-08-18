@@ -256,8 +256,9 @@ definitions with the operator URL as `URL`.
 One 1 MiB range is capped at 4 MiB/s. This remains a short single request while
 giving cross-direction repeated-capture comparisons materially more time than
 the prior 256 KiB profile. The r20 short natural-variation underflow consumed
-that study ID without publication; this predeclared revision applies only to a
-new complete study. It does not change the URL, rate cap, timeouts, metrics,
+that study ID without publication; this predeclared revision applies only to
+`2026-08-18-research-fitness-r21`. No r21 prerequisite or collection command
+has begun. It does not change the URL, rate cap, timeouts, metrics,
 windows, seeds, model families, or resource scope, and it still hard-fails if
 the captured sample is infeasible.
 

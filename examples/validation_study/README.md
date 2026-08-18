@@ -80,11 +80,13 @@ nine primary runs, the short repeated-capture comparison `r2 <- r1` retained
 one aligned event at r2's reference-derived observation window, making the
 mandatory autocorrelation metric infeasible. Its ignored attempt and candidate
 remain preserved; it created no accepted bundle, report, index, or manifest.
-The next complete attempt uses the predeclared short single-request profile
-`--range 0-1048575 --max-filesize 1048576` at the unchanged `--limit-rate 4M`.
-This reduces the observed cross-direction one-event risk without changing the
-URL, timeouts, metrics, observation-window derivation, seeds, model families,
-or resource scope. An infeasible metric still invalidates the whole new ID.
+`2026-08-18-research-fitness-r21` is the predeclared next complete attempt; no
+r21 prerequisite or collection command has begun. It uses the short
+single-request profile `--range 0-1048575 --max-filesize 1048576` at the
+unchanged `--limit-rate 4M`. This reduces the observed cross-direction
+one-event risk without changing the URL, timeouts, metrics, observation-window
+derivation, seeds, model families, or resource scope. An infeasible metric
+still invalidates the whole new ID.
 
 ## Candidate audit and exclusive publication
 
