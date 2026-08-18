@@ -22,11 +22,12 @@ Docker Compose default bridge (Docker-provided Internet, DNS, and NAT)
 ```
 
 The target joins the capture service's network namespace, so both services
-observe the same `eth0` without capturing unrelated host or
-neighboring-container traffic. Capture remains alive after target stops and can
-flush the completed workload window. This is interface-level capture: another
-process in the shared network namespace could also produce a captured frame.
-Trafficlab does not claim process-level attribution.
+observe the same `eth0` without promiscuously capturing unrelated host or
+neighboring-container unicast traffic. Ordinary bridge broadcasts, including
+ARP, may still reach that interface. Capture remains alive after target stops
+and can flush the completed workload window. This is interface-level capture:
+another process in the shared network namespace could also produce a captured
+frame. Trafficlab does not claim process-level attribution.
 
 The capture service receives the Docker capabilities required by the capture
 tool, normally `NET_RAW` and `NET_ADMIN`; these are Compose settings, not a

@@ -710,7 +710,8 @@ bridge. Assertions require:
 - at least one outbound and one inbound frame are classified according to the
   controlled target and endpoint roles;
 - a controlled inbound broadcast frame is classified as inbound;
-- unrelated test-project traffic does not appear;
+- unrelated test-project IPv4 unicast does not appear; ordinary bridge ARP
+  broadcasts may remain visible at the captured interface;
 - capture `SIGINT` produces a readable final capture within the flush timeout;
 - a capture fixture that ignores `SIGINT` is killed at the flush timeout and its
   incomplete output is rejected;

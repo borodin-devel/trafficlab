@@ -160,7 +160,12 @@ def test_full_preflight_and_capture_observe_controlled_tcp_udp_and_broadcast(
         for packet in inspection.packets
         if packet.ethernet_frame[12:14] == b"\x08\x00" and len(packet.ethernet_frame) >= 34
     )
-    observed_addresses = set(inspection.source_address_counts) | set(inspection.destination_address_counts)
+    observed_addresses = {
+        str(ipaddress.IPv4Address(packet.ethernet_frame[offset : offset + 4]))
+        for packet in inspection.packets
+        if packet.ethernet_frame[12:14] == b"\x08\x00" and len(packet.ethernet_frame) >= 34
+        for offset in (26, 30)
+    }
     assert "172.31.254.3" not in observed_addresses
     assert all(
         ipaddress.ip_address(address) in ipaddress.ip_network("172.31.254.0/24") for address in observed_addresses
