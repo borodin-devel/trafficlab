@@ -1,6 +1,7 @@
 """Exact content identities and ordered stage-compatibility checks."""
 
 import hashlib
+import json
 import os
 import re
 import stat
@@ -14,6 +15,8 @@ from trafficlab.errors import TrafficlabError
 _HASH_CHUNK_SIZE = 1024 * 1024
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 type _FileState = tuple[int, int, int, int, int]
+type _TreeState = tuple[int, int, int, int, int, int]
+type _TreeEntry = tuple[str, str, _TreeState]
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +72,10 @@ def _file_state(status: os.stat_result) -> _FileState:
     return (status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns)
 
 
+def _tree_state(status: os.stat_result) -> _TreeState:
+    return (*_file_state(status), status.st_mode)
+
+
 def _unstable_file_error(path: Path) -> TrafficlabError:
     return TrafficlabError(
         f"file changed while its content identity was being computed: {path}",
@@ -112,6 +119,90 @@ def identify_file(path: Path) -> ContentIdentity:
     if not all((states_stable, size_stable)):
         raise _unstable_file_error(path)
     return ContentIdentity(size=byte_count, sha256=digest.hexdigest())
+
+
+def _directory_snapshot(root: Path) -> tuple[_TreeEntry, ...]:
+    """Return one type-sensitive UTF-8-ordered directory inventory."""
+    pending = [root]
+    entries: list[_TreeEntry] = []
+    while pending:
+        directory = pending.pop()
+        try:
+            children = tuple(directory.iterdir())
+        except OSError as error:
+            raise TrafficlabError(
+                f"could not inspect mounted directory identity {root}: {error}",
+                corrective_action="provide a stable readable directory containing only regular files and directories",
+            ) from error
+        for child in children:
+            try:
+                relative = child.relative_to(root).as_posix()
+                relative_key = relative.encode("utf-8")
+                status = child.stat(follow_symlinks=False)
+            except (OSError, UnicodeEncodeError) as error:
+                raise TrafficlabError(
+                    f"could not inspect mounted directory identity {root}: {error}",
+                    corrective_action=(
+                        "provide a stable readable UTF-8 directory containing only regular files and directories"
+                    ),
+                ) from error
+            if stat.S_ISDIR(status.st_mode):
+                kind = "directory"
+                pending.append(child)
+            elif stat.S_ISREG(status.st_mode):
+                kind = "file"
+            else:
+                raise TrafficlabError(
+                    f"mounted directory identity {root} requires only regular files and directories: {relative}",
+                    corrective_action="replace links and nonregular entries with stable regular input files",
+                )
+            entries.append((relative_key.decode("utf-8"), kind, _tree_state(status)))
+    return tuple(sorted(entries, key=lambda entry: entry[0].encode("utf-8")))
+
+
+def identify_directory(path: Path) -> ContentIdentity:
+    """Identify one stable directory from its relative regular-file inventory and exact bytes."""
+    root = _path_argument(path)
+    try:
+        root_status = root.stat(follow_symlinks=False)
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not identify mounted directory {root}: {error}",
+            corrective_action="provide a stable readable directory containing only regular files and directories",
+        ) from error
+    if not stat.S_ISDIR(root_status.st_mode):
+        raise TrafficlabError(
+            f"cannot identify non-directory mounted input: {root}",
+            corrective_action="provide a stable readable directory containing only regular files and directories",
+        )
+
+    before = _directory_snapshot(root)
+    records: list[dict[str, object]] = []
+    total_size = 0
+    for relative, kind, _state in before:
+        record: dict[str, object] = {"kind": kind, "path": relative}
+        if kind == "file":
+            identity = identify_file(root / relative)
+            record.update(identity.as_dict())
+            total_size += identity.size
+        records.append(record)
+    try:
+        current_root = root.stat(follow_symlinks=False)
+    except OSError as error:
+        raise _unstable_file_error(root) from error
+    after = _directory_snapshot(root)
+    if _tree_state(root_status) != _tree_state(current_root) or before != after:
+        raise TrafficlabError(
+            f"directory changed while its content identity was being computed: {root}",
+            corrective_action="stop concurrent writes and recompute the directory identity before capture",
+        )
+    canonical_inventory = json.dumps(
+        records,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return ContentIdentity(size=total_size, sha256=hashlib.sha256(canonical_inventory).hexdigest())
 
 
 def _compatibility_error(detail: str) -> TrafficlabError:

@@ -9,6 +9,7 @@ import tomli_w
 
 import trafficlab.artifacts as artifact_module
 import trafficlab.capture as capture_module
+import trafficlab.compatibility as compatibility
 from trafficlab.capture import CaptureResult, capture_experiment, capture_prepared_experiment
 from trafficlab.capture_policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
 from trafficlab.compatibility import identify_file
@@ -1267,7 +1268,7 @@ def test_public_capture_reuse_rejects_a_valid_format_environment_that_differs_fr
     } == pair_before
 
 
-def test_capture_lineage_persists_ordered_flat_regular_file_mount_identities(
+def test_capture_lineage_persists_ordered_read_only_file_and_directory_identities(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     first = tmp_path / "request.txt"
@@ -1276,6 +1277,7 @@ def test_capture_lineage_persists_ordered_flat_regular_file_mount_identities(
     first.write_bytes(b"request-v1")
     second.write_bytes(b'{"value":1}\n')
     directory.mkdir()
+    (directory / "nested.txt").write_bytes(b"nested-input")
     target = cast(dict[str, object], valid_config_data["target"])
     target["mounts"] = [
         {"source": str(first), "target": "/work/request.txt", "read_only": True},
@@ -1298,10 +1300,10 @@ def test_capture_lineage_persists_ordered_flat_regular_file_mount_identities(
             "target": "/work/request.txt",
         },
         {
-            "read_only": False,
-            "sha256": identify_file(second).sha256,
-            "size": len(b'{"value":1}\n'),
-            "target": "/work/settings.json",
+            "read_only": True,
+            "sha256": compatibility.identify_directory(directory).sha256,
+            "size": len(b"nested-input"),
+            "target": "/work/directory-input",
         },
     ]
 
@@ -1342,6 +1344,46 @@ def test_public_capture_reuse_reidentifies_mounted_file_bytes_before_docker(
         "kind": "docker_preflight_failed",
         "stage": "preflight",
     }
+
+
+def test_mounted_input_comparison_rejects_changed_read_only_directory_bytes(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / "directory-input"
+    directory.mkdir()
+    payload = directory / "request.txt"
+    payload.write_bytes(b"request-v1")
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    del experiment_path
+    mount = MountConfig(source=directory, target="/work/input", read_only=True)
+    config = prepared.config.model_copy(
+        update={"target": prepared.config.target.model_copy(update={"mounts": (mount,)})}
+    )
+    expected = cast(Any, capture_module)._identify_mounted_inputs(config)
+    payload.write_bytes(b"request-v2")
+
+    with pytest.raises(TrafficlabError, match="mounted input input is incompatible"):
+        cast(Any, capture_module)._require_matching_mounted_inputs(config, expected)
+
+
+def test_writable_file_and_directory_mounts_are_not_immutable_inputs(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    writable_file = tmp_path / "output.txt"
+    writable_file.write_bytes(b"initial")
+    writable_directory = tmp_path / "output"
+    writable_directory.mkdir()
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    del experiment_path
+    mounts = (
+        MountConfig(source=writable_file, target="/work/output.txt", read_only=False),
+        MountConfig(source=writable_directory, target="/work/output", read_only=False),
+    )
+    config = prepared.config.model_copy(
+        update={"target": prepared.config.target.model_copy(update={"mounts": mounts})}
+    )
+
+    assert cast(Any, capture_module)._identify_mounted_inputs(config) == ()
 
 
 def test_prepared_capture_reuse_reidentifies_an_unavailable_mounted_file(

@@ -43,7 +43,13 @@ from trafficlab.capture_policy import (
     record_validation_failure,
 )
 from trafficlab.cleanup import CleanupCompose, cleanup_project
-from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
+from trafficlab.compatibility import (
+    ContentIdentity,
+    identify_bytes,
+    identify_directory,
+    identify_file,
+    require_compatible,
+)
 from trafficlab.compose import ComposePaths, write_production_compose
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_experiment, render_effective_config
@@ -182,16 +188,20 @@ def _mounted_input_error(target: str, *, unavailable: bool) -> TrafficlabError:
 def _identify_mounted_inputs(config: ExperimentConfig) -> tuple[MountedInputIdentity, ...]:
     identities: list[MountedInputIdentity] = []
     for mount in config.target.mounts:
+        if not mount.read_only:
+            continue
         try:
             status = mount.source.stat(follow_symlinks=False)
         except OSError as error:
             raise _mounted_input_error(mount.target, unavailable=True) from error
         if stat.S_ISDIR(status.st_mode):
-            continue
-        if not stat.S_ISREG(status.st_mode):
+            identifier = identify_directory
+        elif stat.S_ISREG(status.st_mode):
+            identifier = identify_file
+        else:
             raise _mounted_input_error(mount.target, unavailable=False)
         try:
-            identity = identify_file(mount.source)
+            identity = identifier(mount.source)
         except TrafficlabError as error:
             try:
                 current = mount.source.stat(follow_symlinks=False)

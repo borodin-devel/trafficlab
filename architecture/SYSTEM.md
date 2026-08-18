@@ -206,6 +206,13 @@ experiment. `W` is derived data, not a TOML setting. Multiscale widths and their
 derived direction-bin cell count are validated against `W` after reference
 parsing.
 
+Read-only mounts are immutable workload inputs. A regular-file mount is bound by
+its exact bytes; a directory mount is bound by a deterministic relative inventory
+of directories and regular-file bytes. Links and nonregular entries are rejected.
+Writable mounts are workload output/workspace locations: their configured source,
+target, and mode remain authoritative, but expected workload writes are not treated
+as input-identity changes.
+
 For capture, the configured total-run deadline starts when the Compose project
 is created and caps every later wait, parsing or validation step, and
 unconditional cleanup. Readiness, workload, and flush timeouts are also enforced

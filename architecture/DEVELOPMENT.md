@@ -45,7 +45,7 @@ must match for deterministic offline regeneration:
 must match for a fresh compatible capture environment:
   host architecture, target content ID, capture image-lock expected/resolved ID,
   capture-tool version, container argv/environment/workdir/mount target+mode,
-  mounted-input content hashes
+  read-only mounted-input content hashes
 
 recorded external variation permitted after successful feature preflight:
   Docker Engine/Compose versions (including supported Compose v2/v5 plugins), kernel release, checkout/run/mount-source
@@ -55,6 +55,10 @@ recorded external variation permitted after successful feature preflight:
 Capture reuse remains stricter: it requires the exact realized snapshot and
 capture identities. Permitted fresh-environment variation is never reusable
 capture equivalence.
+
+Read-only directory identities cover their relative directory inventory and
+regular-file bytes. Writable mounts retain path, target, and mode semantics but
+are excluded from immutable-input hashes because the workload may change them.
 
 Ordinary `runs/` and scratch study work remain ignored. The narrow checked
 exception is `examples/validation_study/evidence/<study-id>/`, which holds an

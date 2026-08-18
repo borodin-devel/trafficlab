@@ -34,8 +34,11 @@ requested this remediation.
 
 **Files:**
 
+- Modify: `architecture/SYSTEM.md`
+- Modify: `architecture/DEVELOPMENT.md`
 - Modify: `src/trafficlab/compatibility.py`
 - Modify: `src/trafficlab/capture.py`
+- Modify: `src/trafficlab/preflight.py`
 - Test: `tests/unit/test_compatibility.py`
 - Test: `tests/unit/test_capture.py`
 
@@ -45,26 +48,26 @@ requested this remediation.
   regular-file entries that rejects links, nonregular entries, and concurrent inventory changes.
 - `_identify_mounted_inputs` hashes read-only regular files and directories and omits writable output mounts.
 
-- [ ] **[STEP-1-85ff5b7b] Write failing directory and mount-role tests**
+- [x] **[STEP-1-85ff5b7b] Write failing directory and mount-role tests**
 
   Add direct tests proving byte/path/inventory changes alter a read-only directory identity, symlinks and nonregular
   entries fail, read-only directory changes fail mounted-input comparison, and writable file/directory mounts are not
   treated as immutable inputs.
 
-- [ ] **[STEP-2-0c171569] Run the focused RED tests**
+- [x] **[STEP-2-0c171569] Run the focused RED tests**
 
   Run `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 2m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_compatibility.py tests/unit/test_capture.py` and require failures caused by the absent directory identity and current mount-role behavior.
 
-- [ ] **[STEP-3-5be8e346] Implement deterministic directory identity and mount classification**
+- [x] **[STEP-3-5be8e346] Implement deterministic directory identity and mount classification**
 
   Add the standard-library directory inventory codec in `compatibility.py`; use it only for read-only directory mounts,
   retain `identify_file` for read-only file mounts, and omit writable mounts from the immutable input tuple.
 
-- [ ] **[STEP-4-d600a728] Run focused GREEN and static checks**
+- [x] **[STEP-4-d600a728] Run focused GREEN and static checks**
 
   Rerun the focused pytest command, then `uv run --locked ruff check src/trafficlab/compatibility.py src/trafficlab/capture.py tests/unit/test_compatibility.py tests/unit/test_capture.py` and `uv run --locked pyright`.
 
-- [ ] **[STEP-5-d89a64cf] Commit mounted-input fidelity**
+- [x] **[STEP-5-d89a64cf] Commit mounted-input fidelity**
 
   Commit the four files with message `fix: bind immutable directory mounts`.
 

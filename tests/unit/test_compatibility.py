@@ -24,6 +24,75 @@ def test_identify_file_returns_size_and_sha256_of_exact_bytes(tmp_path: Path) ->
     )
 
 
+def test_identify_directory_returns_canonical_tree_identity(tmp_path: Path) -> None:
+    root = tmp_path / "input"
+    root.mkdir()
+    (root / "empty").mkdir()
+    (root / "payload.bin").write_bytes(b"abc")
+    canonical_inventory = (
+        b'[{"kind":"directory","path":"empty"},'
+        b'{"kind":"file","path":"payload.bin",'
+        b'"sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",'
+        b'"size":3}]'
+    )
+
+    assert compatibility.identify_directory(root) == ContentIdentity(
+        size=3,
+        sha256=hashlib.sha256(canonical_inventory).hexdigest(),
+    )
+
+
+def test_identify_directory_changes_with_file_bytes_paths_and_empty_directories(tmp_path: Path) -> None:
+    root = tmp_path / "input"
+    root.mkdir()
+    payload = root / "request.txt"
+    payload.write_bytes(b"v1")
+    original = compatibility.identify_directory(root)
+
+    payload.write_bytes(b"v2")
+    changed_bytes = compatibility.identify_directory(root)
+    payload.rename(root / "renamed.txt")
+    changed_path = compatibility.identify_directory(root)
+    (root / "empty").mkdir()
+    changed_inventory = compatibility.identify_directory(root)
+
+    assert len({original, changed_bytes, changed_path, changed_inventory}) == 4
+
+
+@pytest.mark.parametrize("entry_kind", ("symlink", "fifo"))
+def test_identify_directory_rejects_nonregular_entries(tmp_path: Path, entry_kind: str) -> None:
+    root = tmp_path / "input"
+    root.mkdir()
+    entry = root / "foreign"
+    if entry_kind == "symlink":
+        entry.symlink_to(root / "missing")
+    else:
+        os.mkfifo(entry)
+
+    with pytest.raises(TrafficlabError, match="directory identity.*regular files and directories"):
+        compatibility.identify_directory(root)
+
+
+def test_identify_directory_rejects_an_inventory_change_during_hashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "input"
+    root.mkdir()
+    payload = root / "request.txt"
+    payload.write_bytes(b"v1")
+    original_identify_file = compatibility.identify_file
+
+    def mutate_during_hash(path: Path) -> ContentIdentity:
+        identity = original_identify_file(path)
+        (root / "added.txt").write_bytes(b"late")
+        return identity
+
+    monkeypatch.setattr(compatibility, "identify_file", mutate_during_hash)
+
+    with pytest.raises(TrafficlabError, match="directory changed while.*identity"):
+        compatibility.identify_directory(root)
+
+
 def test_content_identity_has_one_strict_canonical_codec() -> None:
     identity = identify_bytes(b"identity bytes")
 

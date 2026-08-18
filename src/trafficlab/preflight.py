@@ -129,7 +129,7 @@ class PreflightFinding:
 
 @dataclass(frozen=True, slots=True)
 class MountedInputIdentity:
-    """One path-independent regular-file identity bound to its container mount semantics."""
+    """One path-independent immutable-input identity bound to its container mount semantics."""
 
     target: str
     read_only: bool
