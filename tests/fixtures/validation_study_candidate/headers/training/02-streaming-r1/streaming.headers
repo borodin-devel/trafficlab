@@ -1,4 +1,0 @@
-HTTP/1.1 206 Partial Content
-Content-Length: 4194304
-Content-Range: bytes 0-4194303/4194304
-
