@@ -12,11 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.fixture_paths import PROCESS_GUARD_FIXTURE_ROOT
+
 pytestmark = pytest.mark.integration
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
 GUARD = REPOSITORY_ROOT / "scripts" / "run_bounded.sh"
-TREE_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "process_guard_tree.py"
+TREE_FIXTURE = PROCESS_GUARD_FIXTURE_ROOT / "process_guard_tree.py"
 PID_NAMES = ("parent.pid", "child.pid", "grandchild.pid")
 
 

@@ -30,7 +30,7 @@ from trafficlab.trace import (
 )
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-FIT_DIRECTORY = REPOSITORY / "examples" / "data" / "fit"
+FIT_DIRECTORY = REPOSITORY / "fixtures" / "examples" / "pipeline" / "fit"
 ARTIFACT_NAMES = (
     "experiment.toml",
     "capture.json",
@@ -232,7 +232,7 @@ def _fixture_config() -> ExperimentConfig:
 
 def _prepared_fixture(config: ExperimentConfig, run_directory: Path) -> PreparedExperiment:
     return PreparedExperiment(
-        source=Path("examples/data/fit/experiment.toml"),
+        source=Path("fixtures/examples/pipeline/fit/experiment.toml"),
         config=config,
         report=PreflightReport(config, ()),
         run_directory=run_directory,
@@ -300,7 +300,7 @@ def generate_fixture_tree() -> dict[str, bytes]:
         (run_directory / "run.log").write_bytes(b"")
         prepared = _prepared_fixture(config, run_directory)
         dependencies = FitDependencies(lambda _path: prepared, read_fit_input, run_strategy)
-        fit_experiment(Path("examples/data/fit/experiment.toml"), dependencies=dependencies)
+        fit_experiment(Path("fixtures/examples/pipeline/fit/experiment.toml"), dependencies=dependencies)
         tree = {
             "experiment.toml": experiment_content,
             "capture.json": capture_content,
@@ -315,7 +315,7 @@ def generate_fixture_tree() -> dict[str, bytes]:
 
 
 def _fixture_label(name: str) -> str:
-    return (Path("examples") / "data" / "fit" / name).as_posix()
+    return (Path("fixtures") / "examples" / "pipeline" / "fit" / name).as_posix()
 
 
 def compare_fixture_tree(expected: dict[str, bytes]) -> int:
@@ -346,7 +346,7 @@ def compare_fixture_tree(expected: dict[str, bytes]) -> int:
 
 
 def write_fixture_tree(expected: dict[str, bytes]) -> None:
-    """Write exactly the complete expected tree below examples/data/fit and nowhere else in the repository."""
+    """Write exactly the complete expected tree below fixtures/examples/pipeline/fit and nowhere else in the repository."""
     if tuple(expected) != ARTIFACT_NAMES or any(Path(name).name != name for name in expected):
         raise TrafficlabError(
             "refusing to write an invalid fit fixture path set",
@@ -359,7 +359,7 @@ def write_fixture_tree(expected: dict[str, bytes]) -> None:
     except OSError as error:
         raise TrafficlabError(
             f"could not write deterministic fit fixture tree: {error}",
-            corrective_action="verify examples/data/fit is writable",
+            corrective_action="verify fixtures/examples/pipeline/fit is writable",
         ) from error
 
 
@@ -375,10 +375,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.check:
         status = compare_fixture_tree(expected)
         if status == 0:
-            print("phase 5 fit fixtures: checked-in paths and bytes match deterministic production output")
+            print("fit fixtures: checked-in paths and bytes match deterministic production output")
         return status
     write_fixture_tree(expected)
-    print(f"phase 5 fit fixtures: wrote {', '.join(ARTIFACT_NAMES)} to {FIT_DIRECTORY}")
+    print(f"fit fixtures: wrote {', '.join(ARTIFACT_NAMES)} to {FIT_DIRECTORY}")
     return 0
 
 
@@ -386,5 +386,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except TrafficlabError as error:
-        print(f"phase 5 fit fixtures: {error}; {error.corrective_action}", file=sys.stderr)
+        print(f"fit fixtures: {error}; {error.corrective_action}", file=sys.stderr)
         raise SystemExit(error.exit_code) from None

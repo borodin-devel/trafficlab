@@ -15,7 +15,7 @@ from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.trace import load_capture_metadata, normalize_reference
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FIT_DIRECTORY = _ROOT / "examples" / "data" / "fit"
+_FIT_DIRECTORY = _ROOT / "fixtures" / "examples" / "pipeline" / "fit"
 
 
 def _checked_tree() -> dict[str, bytes]:
@@ -60,7 +60,7 @@ def test_normal_mode_writes_only_the_complete_fit_fixture_tree(
 ) -> None:
     """Dropping an artifact or escaping the fit directory would publish an incomplete reproducibility fixture."""
     expected = _checked_tree()
-    destination = tmp_path / "examples" / "data" / "fit"
+    destination = tmp_path / "fixtures" / "examples" / "pipeline" / "fit"
     monkeypatch.setattr(fixture_generator, "FIT_DIRECTORY", destination)
     monkeypatch.setattr(fixture_generator, "generate_fixture_tree", lambda: expected)
 
@@ -80,7 +80,7 @@ def test_check_mode_reports_every_missing_modified_and_unexpected_relative_path(
 ) -> None:
     """Stopping at the first mismatch would hide other stale paths in the checked fixture tree."""
     expected = _checked_tree()
-    destination = tmp_path / "examples" / "data" / "fit"
+    destination = tmp_path / "fixtures" / "examples" / "pipeline" / "fit"
     destination.mkdir(parents=True)
     for name, content in expected.items():
         (destination / name).write_bytes(content)
@@ -94,9 +94,9 @@ def test_check_mode_reports_every_missing_modified_and_unexpected_relative_path(
 
     errors = capsys.readouterr().err.splitlines()
     assert errors == [
-        "mismatched fixture path: examples/data/fit/best_model.json",
-        "mismatched fixture path: examples/data/fit/checkpoint.json",
-        "unexpected fixture path: examples/data/fit/unexpected.txt",
+        "mismatched fixture path: fixtures/examples/pipeline/fit/best_model.json",
+        "mismatched fixture path: fixtures/examples/pipeline/fit/checkpoint.json",
+        "unexpected fixture path: fixtures/examples/pipeline/fit/unexpected.txt",
     ]
 
 

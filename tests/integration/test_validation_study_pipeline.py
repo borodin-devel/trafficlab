@@ -16,6 +16,7 @@ import pytest
 
 from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
+from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
@@ -29,10 +30,10 @@ from trafficlab.run import RunDependencies, run_experiment
 pytestmark = pytest.mark.integration
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FIT_FIXTURE = _ROOT / "examples" / "data" / "fit"
+_FIT_FIXTURE = PIPELINE_FIXTURE_ROOT / "fit"
 _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
-_AUDIT_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_candidate"
+_AUDIT_FIXTURE = VALIDATION_STUDY_CANDIDATE
 
 
 def _copy_audit_fixture_to_clean_checkout(tmp_path: Path) -> tuple[Path, Path]:
@@ -111,7 +112,7 @@ def test_clean_checkout_checks_the_pristine_tracked_validation_fixture(tmp_path:
         capture_output=True,
     )
     subprocess.run(("git", "checkout", "--detach", "HEAD"), cwd=repository, check=True, capture_output=True)
-    fixture = repository / "tests" / "fixtures" / "validation_study_candidate"
+    fixture = repository / "fixtures" / "tests" / "validation_study" / "candidate"
     environment = cast(dict[str, object], json.loads((fixture / "environment.json").read_text(encoding="utf-8")))
     clone_environment = dict(os.environ)
     clone_environment["PYTHONPATH"] = str(repository / "src")
@@ -408,7 +409,7 @@ def test_clean_checkout_reconstructs_unmodified_candidate_and_checks_owned_fixtu
     environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_text(encoding="utf-8")))
     source_commit = cast(str, environment["source_commit"])
     source_tree = cast(str, environment["source_tree"])
-    clone_fixture = repository / "tests" / "fixtures" / "validation_study_candidate"
+    clone_fixture = repository / "fixtures" / "tests" / "validation_study" / "candidate"
     wrapper = """
 import os
 import runpy
@@ -453,7 +454,7 @@ allowed_git = {
     ("git", "diff", "--name-only", "-z", "--no-renames", f"{source_commit}..{source_commit}"),
     ("git", "show", f"{source_commit}:uv.lock"),
     ("git", "show", f"{source_commit}:docker/capture/image-lock.json"),
-    ("git", "show", f"{source_commit}:examples/data/fit/experiment.toml"),
+    ("git", "show", f"{source_commit}:fixtures/examples/pipeline/fit/experiment.toml"),
     ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"),
 }
 def local_git_only(argv, *args, **kwargs):
@@ -472,8 +473,8 @@ except SystemExit as error:
     assert error.code == 0
 else:
     raise AssertionError("audit script did not exit")
-shutil.rmtree(checkout / "tests" / "fixtures" / "validation_study_candidate")
-shutil.copytree(checkout / "fixture-study", checkout / "tests" / "fixtures" / "validation_study_candidate")
+shutil.rmtree(checkout / "fixtures" / "tests" / "validation_study" / "candidate")
+shutil.copytree(checkout / "fixture-study", checkout / "fixtures" / "tests" / "validation_study" / "candidate")
 sys.argv = [
     "scripts/generate_validation_study_fixture.py",
     "--check",

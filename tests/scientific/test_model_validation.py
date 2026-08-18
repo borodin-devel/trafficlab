@@ -21,6 +21,7 @@ from tests.scientific.oracles import (
     markov_stationary_distribution,
     mmpp_moments,
 )
+from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import (
     FloatBounds,
@@ -55,7 +56,7 @@ from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.trace import Direction, TraceEvent, normalize_reference, parse_capture_metadata
 
 _ROOT = Path(__file__).resolve().parents[2]
-_EXAMPLE_DATA = _ROOT / "examples" / "data"
+_EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
 
 _POISSON_SEEDS = (1103, 2207, 3301, 4409)
 _MARKOV_SEEDS = (5101, 5209, 5303, 5413)

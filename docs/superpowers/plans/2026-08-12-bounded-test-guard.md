@@ -47,7 +47,7 @@ coreutils `timeout`, CPython 3.12, pytest, uv, Ruff, Pyright
 
 **Files:**
 - Create: `scripts/run_bounded.sh`
-- Create: `tests/fixtures/process_guard_tree.py`
+- Create: `fixtures/tests/process_guard/process_guard_tree.py`
 - Create: `tests/integration/test_process_guard.py`
 - Modify: `architecture/DEVELOPMENT.md`
 - Modify: `architecture/TESTING.md`
@@ -208,7 +208,7 @@ separate-process-group containment, low memory pressure, and documentation
 values. Commit:
 
 ```bash
-git add scripts/run_bounded.sh tests/fixtures/process_guard_tree.py \
+git add scripts/run_bounded.sh fixtures/tests/process_guard/process_guard_tree.py \
   tests/integration/test_process_guard.py architecture/DEVELOPMENT.md \
   architecture/TESTING.md architecture/ROADMAP.md
 git commit -m "test(tooling): enforce bounded process trees"

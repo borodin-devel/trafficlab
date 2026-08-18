@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
+from tests.support.fixture_paths import DOCKER_FIXTURE_ROOT
 from trafficlab.compose import ComposePaths
 from trafficlab.config import ExperimentConfig
 from trafficlab.docker_cli import (
@@ -25,7 +26,6 @@ from trafficlab.docker_cli import (
 )
 
 REPOSITORY_ROOT = Path(__file__).parents[1].resolve()
-DOCKER_FIXTURE_ROOT = REPOSITORY_ROOT / "tests" / "docker"
 CAPTURE_IMAGE = "trafficlab-capture:phase3-test"
 ENDPOINT_IMAGE = "trafficlab-endpoint:phase3-test"
 CLIENT_IMAGE = "trafficlab-client:phase3-test"

@@ -10,6 +10,7 @@ from typing import Any, cast
 import pytest
 
 import trafficlab
+from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import create_run_directory
 from trafficlab.cli import main
 from trafficlab.comparison import compare_experiment, compare_traces, load_comparison_result
@@ -22,7 +23,7 @@ pytestmark = pytest.mark.integration
 
 _REPOSITORY = Path(__file__).parents[2]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"
-_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
 
 _REFERENCE_EVENTS = (
     TraceEvent(10.0, Direction.OUTBOUND, 60),

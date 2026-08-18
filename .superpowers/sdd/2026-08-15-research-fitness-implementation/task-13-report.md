@@ -8,7 +8,7 @@ It stays offline and in-process: no Docker, network, high-level run, retained
 artifact mutation, or added infrastructure.
 
 The authoritative adverse-condition fixture remains
-`tests/fixtures/diagnostics/failure-outcomes.jsonl`; the stale plan spelling
+`fixtures/tests/diagnostics/failure-outcomes.jsonl`; the stale plan spelling
 `canonical_adverse_conditions.jsonl` was not introduced.
 
 ## Complete retained evidence
@@ -108,7 +108,7 @@ subsequent `--check` reported byte-for-byte agreement.
 - `scripts/generate_validation_study_fixture.py`
 - `tests/unit/test_validation_study.py`
 - `tests/integration/test_validation_study_pipeline.py`
-- `tests/fixtures/validation_study_candidate/`
+- `fixtures/tests/validation_study/candidate/`
 - `examples/validation_study/README.md`
 - `examples/validation_study/REPORT.md`
 - `examples/validation_study/results.json`
@@ -212,7 +212,7 @@ functions are each 100% lines and branches.
 - Final source tree: `706ffb8bca2b19457f5b30a9972eed85463f78d5`.
 - Fixture regeneration commit: `56dfae7`.
 - Earlier round-two source commits retained in history: `828939b`, `32b2ab5`, and `8111039`.
-- Review-fix files: `scripts/run_validation_study.py`, `scripts/audit_validation_study.py`, `scripts/generate_validation_study_fixture.py`, `tests/unit/test_validation_study.py`, `tests/integration/test_validation_study_pipeline.py`, and `tests/fixtures/validation_study_candidate/`.
+- Review-fix files: `scripts/run_validation_study.py`, `scripts/audit_validation_study.py`, `scripts/generate_validation_study_fixture.py`, `tests/unit/test_validation_study.py`, `tests/integration/test_validation_study_pipeline.py`, and `fixtures/tests/validation_study/candidate/`.
 
 ### Self-review and concern
 

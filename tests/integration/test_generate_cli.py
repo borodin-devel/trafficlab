@@ -19,6 +19,7 @@ import pytest
 import trafficlab.artifacts as artifact_module
 import trafficlab.cli as cli_module
 import trafficlab.generation as generation_module
+from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import create_run_directory, publish_generated_pcapng
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig
@@ -34,7 +35,7 @@ from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, normalize_r
 pytestmark = pytest.mark.integration
 
 _ROOT = Path(__file__).parents[2]
-_EXAMPLE_DATA = _ROOT / "examples" / "data"
+_EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
 _MODEL_BYTES = (_EXAMPLE_DATA / "models" / "best_model.json").read_bytes()
 _CAPTURE_BYTES = (_EXAMPLE_DATA / "capture.json").read_bytes()
 

@@ -24,7 +24,7 @@ from trafficlab.trace import (
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"
-_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_EXAMPLE_DATA = _REPOSITORY / "fixtures" / "examples" / "pipeline"
 _ARTIFACT_NAMES = (
     "capture.json",
     "reference.pcapng",
@@ -160,10 +160,10 @@ def main() -> int:
         generated = _read_artifacts(run_directory)
     if arguments.check:
         _check_artifacts(generated)
-        print("phase 2 fixtures: checked-in bytes match deterministic production output")
+        print("similarity fixtures: checked-in bytes match deterministic production output")
     else:
         _write_artifacts(generated)
-        print(f"phase 2 fixtures: wrote {', '.join(_ARTIFACT_NAMES)} to {_EXAMPLE_DATA}")
+        print(f"similarity fixtures: wrote {', '.join(_ARTIFACT_NAMES)} to {_EXAMPLE_DATA}")
     return 0
 
 
@@ -171,5 +171,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except TrafficlabError as error:
-        print(f"phase 2 fixtures: {error}; {error.corrective_action}")
+        print(f"similarity fixtures: {error}; {error.corrective_action}")
         raise SystemExit(error.exit_code) from None

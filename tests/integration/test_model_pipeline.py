@@ -26,7 +26,7 @@ from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 _ROOT = Path(__file__).resolve().parents[2]
-_DATA = _ROOT / "examples" / "data"
+_DATA = _ROOT / "fixtures" / "examples" / "pipeline"
 _LIMITS = GenerationLimits(max_packets=10_000, max_output_bytes=10_000_000, max_wall_seconds=10.0)
 
 CASES: tuple[tuple[ModelFamily, Genes, FamilyBounds], ...] = (

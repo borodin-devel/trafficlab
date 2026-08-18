@@ -32,6 +32,11 @@ from scripts import audit_validation_study as auditor
 from scripts import generate_validation_study_fixture as fixture_generator
 from scripts import run_validation_study as study
 from tests.conftest import test_body_failure
+from tests.support.fixture_paths import (
+    PIPELINE_FIXTURE_ROOT,
+    PRE_USER_AGENT_R6_FIXTURE,
+    VALIDATION_STUDY_CANDIDATE,
+)
 from trafficlab import USER_AGENT
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
@@ -58,7 +63,7 @@ from trafficlab.trace import Direction, TraceEvent, align_generated, normalize_r
 _HASH = "a" * 64
 _IMAGE_ID = f"sha256:{'b' * 64}"
 _ROOT = Path(__file__).resolve().parents[2]
-_FIT_FIXTURE = _ROOT / "examples" / "data" / "fit"
+_FIT_FIXTURE = PIPELINE_FIXTURE_ROOT / "fit"
 _CAPTURE_BYTES = (_FIT_FIXTURE / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_FIXTURE / "reference.pcapng").read_bytes()
 _CAPTURE_DOCKERFILE = (_ROOT / "docker" / "capture" / "Dockerfile").read_bytes()
@@ -67,7 +72,7 @@ _CAPTURE_IMAGE_LOCK = json.loads((_ROOT / "docker" / "capture" / "image-lock.jso
 _CAPTURE_IMAGE_ID = cast(str, _CAPTURE_IMAGE_LOCK["expected_capture_image_id"])
 _STUDY_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:study-capture"
 _COLLECTION_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:collection-capture"
-_PRE_USER_AGENT_R6_FIXTURE = _ROOT / "tests" / "fixtures" / "validation_study_pre_user_agent_r6"
+_PRE_USER_AGENT_R6_FIXTURE = PRE_USER_AGENT_R6_FIXTURE
 _REAL_SUBPROCESS_RUN = subprocess.run
 _shared_validation_study_repository_path: Path | None = None
 _current_validation_study_test_name: str | None = None
@@ -6814,11 +6819,7 @@ def test_local_audit_revalidates_report_checkpoint_artifacts_and_lineage_without
 def _validation_study_fixture_identity() -> tuple[str, str]:
     source_environment = cast(
         dict[str, object],
-        json.loads(
-            (_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text(
-                encoding="utf-8"
-            )
-        ),
+        json.loads((VALIDATION_STUDY_CANDIDATE / "environment.json").read_text(encoding="utf-8")),
     )
     return cast(str, source_environment["source_commit"]), cast(str, source_environment["source_tree"])
 
@@ -6984,7 +6985,7 @@ def _copy_validation_study_candidate(
     if generated_template is not None:
         shutil.copytree(generated_template, candidate, copy_function=shutil.copy2)
     else:
-        shutil.copytree(_ROOT / "tests" / "fixtures" / "validation_study_candidate", candidate)
+        shutil.copytree(VALIDATION_STUDY_CANDIDATE, candidate)
     return repository, candidate
 
 
@@ -7017,11 +7018,7 @@ def test_relocated_audit_candidate_uses_a_detached_git_worktree(tmp_path: Path) 
     repository, _candidate = _copy_validation_study_candidate(tmp_path)
     source_environment = cast(
         dict[str, object],
-        json.loads(
-            (_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text(
-                encoding="utf-8"
-            )
-        ),
+        json.loads((VALIDATION_STUDY_CANDIDATE / "environment.json").read_text(encoding="utf-8")),
     )
     assert (repository / ".git").is_file()
     assert (
@@ -7959,9 +7956,7 @@ def _auditor_semantics_fixture_config() -> ExperimentConfig:
     """Build one valid config with the declared host mount that publication relocates."""
 
     document = tomllib.loads(
-        (
-            _ROOT / "tests" / "fixtures" / "validation_study_candidate" / "configs" / "training-short-r1.realized.toml"
-        ).read_text(encoding="utf-8")
+        (VALIDATION_STUDY_CANDIDATE / "configs" / "training-short-r1.realized.toml").read_text(encoding="utf-8")
     )
     target = cast(dict[str, Any], document["target"])
     target["mounts"] = [{"source": "/retained/mount", "target": "/trafficlab-study/short.headers", "read_only": True}]
@@ -9280,7 +9275,7 @@ def test_validation_fixture_generator_check_rebuilds_the_retained_bytes() -> Non
 def test_validation_fixture_generator_check_honors_explicit_source_identities() -> None:
     environment = cast(
         dict[str, object],
-        json.loads((_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text()),
+        json.loads((VALIDATION_STUDY_CANDIDATE / "environment.json").read_text()),
     )
     source_commit = cast(str, environment["source_commit"])
     alternate_commit = "a" * 40 if source_commit != "a" * 40 else "b" * 40
@@ -9305,7 +9300,7 @@ def test_validation_fixture_generator_main_requires_complete_ids_and_writes_to_i
 ) -> None:
     environment = cast(
         dict[str, object],
-        json.loads((_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_text()),
+        json.loads((VALIDATION_STUDY_CANDIDATE / "environment.json").read_text()),
     )
     source_commit = cast(str, environment["source_commit"])
     source_tree = cast(str, environment["source_tree"])
@@ -9321,7 +9316,7 @@ def test_validation_fixture_generator_main_requires_complete_ids_and_writes_to_i
 
 
 def test_validation_fixture_retains_the_complete_232_file_evidence_inventory() -> None:
-    assert len(_candidate_bytes(_ROOT / "tests" / "fixtures" / "validation_study_candidate")) == 232
+    assert len(_candidate_bytes(VALIDATION_STUDY_CANDIDATE)) == 232
 
 
 def test_historic_schema_one_workload_oracle_retains_the_measured_short_transfer() -> None:
@@ -9774,7 +9769,7 @@ def test_simultaneous_evidence_mismatches_preserve_the_first_complete_primary_an
 
 def test_retained_prerequisite_codec_rejects_invalid_public_forms() -> None:
     """The public retained codec rejects unsupported roots, kinds, and noncanonical bytes."""
-    content = (_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "prerequisites.json").read_bytes()
+    content = (VALIDATION_STUDY_CANDIDATE / "prerequisites.json").read_bytes()
     noncanonical = content.replace(b"{", b"{ ", 1)
     assert noncanonical != content
 
@@ -12542,7 +12537,7 @@ def test_offline_auditor_rejects_untrusted_fixture_profile_source_bytes(
         generated_template=generated_validation_study_candidate_template,
     )
     environment = cast(dict[str, object], json.loads((candidate / "environment.json").read_bytes()))
-    source = repository / "examples/data/fit/experiment.toml"
+    source = repository / "fixtures/examples/pipeline/fit/experiment.toml"
     original = source.read_bytes()
     if case == "different":
         source.write_bytes(b"different\n")
@@ -12656,7 +12651,7 @@ def test_offline_auditor_rejects_required_run_log_identity_and_status_mismatches
 def test_offline_auditor_accepts_fixture_canonical_capture_platform_log_lineage() -> None:
     """The deterministic fixture records the frozen platform and successful lineage sequences."""
 
-    bundle = _ROOT / "tests" / "fixtures" / "validation_study_candidate"
+    bundle = VALIDATION_STUDY_CANDIDATE
     environment = cast(dict[str, object], json.loads((bundle / "environment.json").read_bytes()))
     sequences = (
         (
@@ -12783,7 +12778,7 @@ def test_offline_auditor_rejects_incomplete_capture_log_records() -> None:
 
     environment = cast(
         dict[str, object],
-        json.loads((_ROOT / "tests" / "fixtures" / "validation_study_candidate" / "environment.json").read_bytes()),
+        json.loads((VALIDATION_STUDY_CANDIDATE / "environment.json").read_bytes()),
     )
     capture = b"capture"
     reference = b"reference"

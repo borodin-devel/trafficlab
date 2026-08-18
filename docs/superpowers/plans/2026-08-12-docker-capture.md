@@ -504,7 +504,7 @@ Commit: `feat(capture): expose capture CLI`
 ### Task 9: Real Docker fixtures, Internet smoke, and Phase 3 evidence
 
 **Files:**
-- Create: `tests/docker/compose.endpoint.json`
+- Create: `fixtures/tests/docker/compose.endpoint.json`
 - Create: `tests/docker/images/endpoint/Dockerfile`
 - Create: `tests/docker/images/endpoint/server.py`
 - Create: `tests/docker/images/client/Dockerfile`

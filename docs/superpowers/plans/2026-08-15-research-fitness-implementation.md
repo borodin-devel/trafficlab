@@ -272,8 +272,8 @@ git commit -m "feat: gate accepted evidence publication"
 - Test: `tests/unit/models/test_registry.py`
 - Test: `tests/unit/genetic/test_checkpoint.py`
 - Test: `tests/integration/test_generate_cli.py`
-- Modify generated fixture: `examples/data/fit/checkpoint.json`
-- Create generated fixture: `examples/data/fit/best_model.json`
+- Modify generated fixture: `fixtures/examples/pipeline/fit/checkpoint.json`
+- Create generated fixture: `fixtures/examples/pipeline/fit/best_model.json`
 
 **Interfaces:**
 
@@ -321,7 +321,7 @@ uv run --locked pyright
 git add src/trafficlab/scientific_schema.py src/trafficlab/models/registry.py \
   src/trafficlab/genetic/checkpoint.py src/trafficlab/fitting.py src/trafficlab/generation.py \
   tests/unit/models/test_registry.py tests/unit/genetic/test_checkpoint.py \
-  tests/integration/test_generate_cli.py examples/data/fit/checkpoint.json examples/data/fit/best_model.json
+  tests/integration/test_generate_cli.py fixtures/examples/pipeline/fit/checkpoint.json fixtures/examples/pipeline/fit/best_model.json
 git commit -m "feat: version scientific artifacts"
 ```
 
@@ -376,7 +376,7 @@ git commit -m "fix: initialize MMPP at arrival epochs"
 
 - Create: `tests/scientific/test_model_validation.py`
 - Create: `tests/scientific/oracles.py`
-- Modify: model fixture files under `examples/data/fit/`
+- Modify: model fixture files under `fixtures/examples/pipeline/fit/`
 - Test: `tests/integration/test_generate_cli.py`
 
 **Interfaces:** Test-only oracles may parse public model output but must not call production estimators or similarity
@@ -418,7 +418,7 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
     tests/integration/test_generate_cli.py
 uv run --locked ruff check tests/scientific tests/integration/test_generate_cli.py
 uv run --locked pyright
-git add tests/scientific tests/integration/test_generate_cli.py examples/data/fit
+git add tests/scientific tests/integration/test_generate_cli.py fixtures/examples/pipeline/fit
 git commit -m "test: validate traffic model science"
 ```
 
@@ -490,7 +490,7 @@ git commit -m "feat: neutralize family population order"
 - Test: `tests/unit/genetic/test_strategy.py`
 - Test: `tests/unit/genetic/test_checkpoint.py`
 - Test: `tests/integration/test_genetic_fitting.py`
-- Regenerate: `examples/data/fit/checkpoint.json`, dependent history/winner fixtures
+- Regenerate: `fixtures/examples/pipeline/fit/checkpoint.json`, dependent history/winner fixtures
 
 **Interfaces:** Retain `family_priority` in checkpoint compatibility and state and expose it in the fit result used by
 final publication.
@@ -529,7 +529,7 @@ uv run --locked ruff check src/trafficlab/genetic src/trafficlab/fitting.py test
   tests/integration/test_genetic_fitting.py
 uv run --locked pyright
 git add src/trafficlab/genetic src/trafficlab/fitting.py tests/unit/genetic \
-  tests/integration/test_genetic_fitting.py examples/data/fit
+  tests/integration/test_genetic_fitting.py fixtures/examples/pipeline/fit
 git commit -m "feat: retain neutral family priority"
 ```
 
@@ -604,7 +604,7 @@ git commit -m "feat: pin capture environment identity"
 - Modify: `src/trafficlab/generation.py`
 - Modify: `src/trafficlab/comparison.py`
 - Modify: `src/trafficlab/run.py`
-- Create fixture: `tests/fixtures/canonical_adverse_conditions.jsonl`
+- Create fixture: `fixtures/tests/diagnostics/failure-outcomes.jsonl`
 - Create test: `tests/unit/test_failure_outcomes.py`
 
 **Interfaces:**
@@ -655,7 +655,7 @@ uv run --locked ruff check src/trafficlab tests/unit/test_failure_outcomes.py
 uv run --locked pyright
 git add src/trafficlab/errors.py src/trafficlab/preflight.py src/trafficlab/capture.py \
   src/trafficlab/fitting.py src/trafficlab/generation.py src/trafficlab/comparison.py src/trafficlab/run.py \
-  tests/fixtures/canonical_adverse_conditions.jsonl tests/unit/test_failure_outcomes.py tests/unit/test_run.py \
+  fixtures/tests/diagnostics/failure-outcomes.jsonl tests/unit/test_failure_outcomes.py tests/unit/test_run.py \
   tests/unit/test_fitting.py tests/unit/test_comparison.py
 git commit -m "feat: standardize failure evidence"
 ```
@@ -740,7 +740,7 @@ git commit -m "feat: validate stage lineage"
 - Modify: `tests/integration/test_genetic_fitting.py`
 - Create: `tests/integration/test_pipeline_equivalence.py`
 - Modify: `tests/unit/test_failure_outcomes.py`
-- Modify fixture: `tests/fixtures/canonical_adverse_conditions.jsonl`
+- Modify fixture: `fixtures/tests/diagnostics/failure-outcomes.jsonl`
 
 **Interfaces:** No new production API unless a RED test exposes an uninjectable stage boundary; prefer existing
 in-process `fit -> generate -> compare` functions over subprocesses.
@@ -775,7 +775,7 @@ Fix only RED-proven production defects, then rerun Ruff and Pyright.
 ```bash
 git add src/trafficlab tests/integration/test_pipeline_equivalence.py \
   tests/integration/test_run_pipeline.py tests/integration/test_genetic_fitting.py \
-  tests/unit/test_failure_outcomes.py tests/fixtures/canonical_adverse_conditions.jsonl
+  tests/unit/test_failure_outcomes.py fixtures/tests/diagnostics/failure-outcomes.jsonl
 git commit -m "test: prove resumed pipeline equivalence"
 ```
 
@@ -791,7 +791,7 @@ collecting external evidence.
 - Modify: `scripts/run_validation_study.py`
 - Modify: `tests/unit/test_validation_study.py`
 - Modify: `tests/integration/test_validation_study_pipeline.py`
-- Create fixture tree: `tests/fixtures/validation_study_candidate/`
+- Create fixture tree: `fixtures/tests/validation_study/candidate/`
 - Modify: `README.md`
 - Modify: `examples/validation_study/README.md`
 - Modify: `examples/validation_study/REPORT.md`
@@ -849,7 +849,7 @@ uv run --locked ruff check scripts/audit_validation_study.py scripts/run_validat
 uv run --locked pyright
 git add scripts/audit_validation_study.py scripts/run_validation_study.py tests/unit/test_validation_study.py \
   scripts/generate_validation_study_fixture.py tests/integration/test_validation_study_pipeline.py \
-  tests/fixtures/validation_study_candidate README.md examples/validation_study/README.md \
+  fixtures/tests/validation_study/candidate README.md examples/validation_study/README.md \
   examples/validation_study/REPORT.md
 git commit -m "feat: audit retained study evidence"
 ```

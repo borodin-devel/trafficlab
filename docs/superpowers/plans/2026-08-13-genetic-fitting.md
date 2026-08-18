@@ -108,7 +108,7 @@ uv locked environment.
 - `src/trafficlab/artifacts.py`: Reusable atomic exclusive bytes publication helper for checkpoint/history/
   best-model artifacts.
 - `src/trafficlab/cli.py`: `trafficlab fit EXPERIMENT` parser, injected fit boundary, success/error output.
-- `examples/data/fit/`: Checked-in offline fit input, expected artifacts, nondefault competition, resume, and
+- `fixtures/examples/pipeline/fit/`: Checked-in offline fit input, expected artifacts, nondefault competition, resume, and
   tamper fixtures.
 - `scripts/generate_fit_fixtures.py`: Deterministically regenerate fixtures or fail under `--check`.
 - `tests/unit/genetic/`: Pure contracts, coordinates, population, operators, evaluation, checkpoint, and
@@ -1501,13 +1501,13 @@ git commit -m "feat: add genetic fit stage"
 
 **Files:**
 
-- Create: `examples/data/fit/experiment.toml`
-- Create: `examples/data/fit/capture.json`
-- Create: `examples/data/fit/reference.pcapng`
-- Create: `examples/data/fit/checkpoint.json`
-- Create: `examples/data/fit/ga_history.csv`
-- Create: `examples/data/fit/best_model.json`
-- Create: `examples/data/fit/README.md`
+- Create: `fixtures/examples/pipeline/fit/experiment.toml`
+- Create: `fixtures/examples/pipeline/fit/capture.json`
+- Create: `fixtures/examples/pipeline/fit/reference.pcapng`
+- Create: `fixtures/examples/pipeline/fit/checkpoint.json`
+- Create: `fixtures/examples/pipeline/fit/ga_history.csv`
+- Create: `fixtures/examples/pipeline/fit/best_model.json`
+- Create: `fixtures/examples/pipeline/fit/README.md`
 - Create: `scripts/generate_fit_fixtures.py`
 - Create: `tests/unit/test_fit_fixture_generator.py`
 - Create: `tests/integration/test_genetic_fitting.py`
@@ -1555,7 +1555,7 @@ Use the existing deterministic PCAPNG writer and capture metadata codec, never m
 Configure all three families, `population_size` satisfying elites plus champions, one or two selection seeds, a
 distinct `final_seed`, nondefault crossover/mutation/scale values for each family, `generation_count=1`, and
 sufficiently large trial/final guards. Put the exact values and expected family order in
-`examples/data/fit/README.md`.
+`fixtures/examples/pipeline/fit/README.md`.
 
 ```toml
 [genetic]
@@ -1583,7 +1583,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 ```
 
 `--check` must compare every expected byte file and return nonzero with the exact mismatched relative path;
-regular mode writes only under `examples/data/fit/`. Generate initial/resumed/tamper support deterministically
+regular mode writes only under `fixtures/examples/pipeline/fit/`. Generate initial/resumed/tamper support deterministically
 without network or Docker.
 
 - [ ] **Step 5: Add offline `fit -> generate -> compare` integration test**
@@ -1630,7 +1630,7 @@ Read every checked-in JSON/CSV/TOML byte artifact through its real strict loader
 
 ```bash
 git diff --check
-git add examples/data/fit scripts/generate_fit_fixtures.py tests/unit/test_fit_fixture_generator.py \
+git add fixtures/examples/pipeline/fit scripts/generate_fit_fixtures.py tests/unit/test_fit_fixture_generator.py \
   tests/integration/test_genetic_fitting.py
 git commit -m "test: add genetic fitting fixtures"
 ```

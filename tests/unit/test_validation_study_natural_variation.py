@@ -12,6 +12,7 @@ import pytest
 
 from scripts import audit_validation_study as auditor
 from scripts.run_validation_study import PUBLISHED_METHOD_ORDER, HeldOutEvaluation
+from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
 from trafficlab.comparison import ComparisonResult
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_configuration_pair
@@ -24,7 +25,7 @@ _WORKLOADS = ("short", "streaming", "bursty")
 
 
 def _config() -> ExperimentConfig:
-    return load_configuration_pair(_ROOT / "examples" / "data" / "fit" / "experiment.toml").realized
+    return load_configuration_pair(PIPELINE_FIXTURE_ROOT / "fit" / "experiment.toml").realized
 
 
 def _training(config: ExperimentConfig) -> tuple[auditor._Training, ...]:  # pyright: ignore[reportPrivateUsage]
@@ -133,7 +134,7 @@ def test_report_inputs_derives_each_directional_reference_window(
     ),
 )
 def test_protocol_rejects_each_noncanonical_schema_three_control(field: str, value: object) -> None:
-    protocol_path = _ROOT / "tests" / "fixtures" / "validation_study_candidate" / "protocol.json"
+    protocol_path = VALIDATION_STUDY_CANDIDATE / "protocol.json"
     protocol = cast(dict[str, object], json.loads(protocol_path.read_text(encoding="utf-8")))
     protocol[field] = value
 

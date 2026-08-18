@@ -16,7 +16,7 @@ from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"
-_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_EXAMPLE_DATA = _REPOSITORY / "fixtures" / "examples" / "pipeline"
 _MODEL_PATH = _EXAMPLE_DATA / "models" / "best_model.json"
 _GENERATED_PATH = _EXAMPLE_DATA / "models" / "generated.pcapng"
 
@@ -122,11 +122,11 @@ def main() -> int:
     if arguments.check:
         for path, content in artifacts:
             _check_fixture(path, content)
-        print("phase 4 model fixtures: checked-in bytes match deterministic production output")
+        print("model fixtures: checked-in bytes match deterministic production output")
     else:
         for path, content in artifacts:
             _write_fixture(path, content)
-        print(f"phase 4 model fixtures: wrote {_MODEL_PATH}, {_GENERATED_PATH}")
+        print(f"model fixtures: wrote {_MODEL_PATH}, {_GENERATED_PATH}")
     return 0
 
 

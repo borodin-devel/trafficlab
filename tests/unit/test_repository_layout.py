@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -218,3 +219,22 @@ def test_root_fixture_copy_matches_legacy_source(
     for source_path, destination_path in zip(source_files, destination_files, strict=True):
         assert destination_path.read_bytes() == source_path.read_bytes()
         assert destination_path.stat().st_mode & 0o777 == source_path.stat().st_mode & 0o777
+
+
+def test_fixture_path_catalog_owns_each_compartment() -> None:
+    catalog_path = REPOSITORY / "tests" / "support" / "fixture_paths.py"
+    assert catalog_path.is_file()
+    catalog = runpy.run_path(str(catalog_path))
+
+    assert catalog["FIXTURE_ROOT"] == REPOSITORY / "fixtures"
+    assert catalog["PIPELINE_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "examples" / "pipeline"
+    assert catalog["DIAGNOSTIC_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "diagnostics"
+    assert catalog["DOCKER_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "docker"
+    assert catalog["PROCESS_GUARD_FIXTURE_ROOT"] == REPOSITORY / "fixtures" / "tests" / "process_guard"
+    assert catalog["VALIDATION_STUDY_FIXTURE_ROOT"] == (REPOSITORY / "fixtures" / "tests" / "validation_study")
+
+
+def test_repository_has_no_phase_named_tracked_files() -> None:
+    checker = _load_checker()
+
+    assert checker.tracked_phase_paths(REPOSITORY) == ()

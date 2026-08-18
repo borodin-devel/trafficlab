@@ -39,7 +39,7 @@ from trafficlab.trace import normalize_reference, parse_capture_metadata
 pytestmark = pytest.mark.integration
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FIT_DIRECTORY = _ROOT / "examples" / "data" / "fit"
+_FIT_DIRECTORY = _ROOT / "fixtures" / "examples" / "pipeline" / "fit"
 _EXPERIMENT_PATH = _FIT_DIRECTORY / "experiment.toml"
 _EXPERIMENT_BYTES = _EXPERIMENT_PATH.read_bytes()
 _CAPTURE_BYTES = (_FIT_DIRECTORY / "capture.json").read_bytes()

@@ -439,11 +439,11 @@ Commit: `feat(compare): aggregate similarity results`
 **Files:**
 - Modify: `src/trafficlab/cli.py`
 - Create: `tests/integration/test_compare_cli.py`
-- Create: `examples/data/capture.json`
-- Create: `examples/data/reference.pcapng`
-- Create: `examples/data/generated.pcapng`
-- Create: `examples/data/similarity.json`
-- Create: `scripts/generate_phase2_fixtures.py`
+- Create: `fixtures/examples/pipeline/capture.json`
+- Create: `fixtures/examples/pipeline/reference.pcapng`
+- Create: `fixtures/examples/pipeline/generated.pcapng`
+- Create: `fixtures/examples/pipeline/similarity.json`
+- Create: `scripts/generate_similarity_fixtures.py`
 - Modify: `architecture/ROADMAP.md`
 
 **Interfaces:**
@@ -496,7 +496,7 @@ uv run --locked pytest -vv -x -n 0 \
   tests/integration/test_compare_cli.py::test_in_process_compare_matches_api_without_internal_processes
 uv run --locked pytest -vv -x -n 0 \
   tests/integration/test_compare_cli.py::test_installed_compare_publishes_expected_result
-uv run --locked python scripts/generate_phase2_fixtures.py --check
+uv run --locked python scripts/generate_similarity_fixtures.py --check
 ```
 
 - [ ] **Step 5: Close the Roadmap phase truthfully**

@@ -1789,7 +1789,7 @@ def _fixture_profile(
 ) -> ExperimentConfig:
     """Derive the deterministic fixture profile from its recorded source tree."""
 
-    relative = "examples/data/fit/experiment.toml"
+    relative = "fixtures/examples/pipeline/fit/experiment.toml"
     path = repository / relative
     content = _read_regular(path, affected=relative)
     committed = _git_bytes(repository, ("show", f"{source_commit}:{relative}"), name="recorded fixture profile")

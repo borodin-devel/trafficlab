@@ -8,6 +8,7 @@ import pytest
 
 import trafficlab.artifacts as artifacts
 import trafficlab.comparison as comparison
+from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import append_run_log, create_run_directory
 from trafficlab.comparison import compare_experiment
 from trafficlab.config import ExperimentConfig
@@ -21,7 +22,7 @@ from trafficlab.trace import (
 )
 
 _REPOSITORY = Path(__file__).parents[2]
-_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
 _EXPECTED_AGGREGATE_SCORE = 0.5956427487361957
 
 

@@ -79,7 +79,7 @@ def _comparison(
     *,
     identities: dict[str, ContentIdentity] | None = None,
 ) -> ComparisonResult:
-    fixture = Path(__file__).parents[2] / "examples" / "data" / "similarity.json"
+    fixture = Path(__file__).parents[2] / "fixtures" / "examples" / "pipeline" / "similarity.json"
     document = cast(dict[str, object], json.loads(fixture.read_bytes()))
     result = ComparisonResult.from_dict(document)
     if identities is not None:

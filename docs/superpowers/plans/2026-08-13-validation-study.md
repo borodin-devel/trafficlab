@@ -2139,7 +2139,7 @@ uv sync --locked --all-groups
 uv lock --check
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
-  uv run --locked python scripts/generate_phase2_fixtures.py --check
+  uv run --locked python scripts/generate_similarity_fixtures.py --check
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python scripts/generate_model_fixtures.py --check
@@ -2804,7 +2804,7 @@ uv sync --locked --all-groups
 uv lock --check
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
-  uv run --locked python scripts/generate_phase2_fixtures.py --check
+  uv run --locked python scripts/generate_similarity_fixtures.py --check
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked python scripts/generate_model_fixtures.py --check

@@ -9,6 +9,7 @@ import pytest
 
 import trafficlab.artifacts as artifacts
 import trafficlab.comparison as comparison
+from tests.support.fixture_paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import create_run_directory
 from trafficlab.comparison import compare_experiment, load_comparison_result
 from trafficlab.config import ExperimentConfig
@@ -17,7 +18,7 @@ from trafficlab.config_io import load_experiment, render_effective_config
 pytestmark = pytest.mark.integration
 
 _REPOSITORY = Path(__file__).parents[2]
-_EXAMPLE_DATA = _REPOSITORY / "examples" / "data"
+_EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
 _EXPECTED_AGGREGATE_SCORE = 0.5956427487361957
 _EXPECTED_METHOD_SCORES = {
     "autocorrelation": 0.8100292509744677,

@@ -783,7 +783,7 @@ git commit -m "feat(preflight): add local configuration checks"
 - Modify: `src/trafficlab/preflight.py`
 - Modify: `src/trafficlab/cli.py`
 - Create: `examples/configs/minimal.toml`
-- Create: `examples/data/request.txt`
+- Create: `fixtures/examples/pipeline/request.txt`
 - Create: `tests/integration/test_preflight_cli.py`
 
 **Interfaces:**
@@ -860,7 +860,7 @@ its `run.log`.
 Create `examples/configs/minimal.toml` with the Task 2 valid shape, paths relative
 to the repository, all resolved operator values explicit, `run.directory =
 "../../runs/minimal"`, and a read-only mount from `../data` to `/work/data`.
-Create `examples/data/request.txt` containing one line: `trafficlab example`.
+Create `fixtures/examples/pipeline/request.txt` containing one line: `trafficlab example`.
 
 - [ ] **Step 6: Verify and commit**
 

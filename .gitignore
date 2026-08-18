@@ -19,7 +19,7 @@ dist/
 .env.*
 !.env.example
 *.log
-!tests/fixtures/validation_study_candidate/**/run.log
+!fixtures/tests/validation_study/candidate/**/run.log
 !examples/validation_study/evidence/
 !examples/validation_study/evidence/**/
 !examples/validation_study/evidence/**/run.log

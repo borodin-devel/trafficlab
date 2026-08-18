@@ -102,10 +102,10 @@ strict Pyright through uv.
 - `src/trafficlab/artifacts.py`: validated, exclusive, byte-identical reusable `generated.pcapng` publication.
 - `src/trafficlab/cli.py`: lazy `generate` command adapter and concise success/error output.
 - `scripts/generate_model_fixtures.py`: deterministic checked-fixture producer with `--check` byte comparison.
-- `examples/data/models/best_model.json`: Phase 4 Poisson artifact whose hashes identify the parent checked capture
+- `fixtures/examples/pipeline/models/best_model.json`: Phase 4 Poisson artifact whose hashes identify the parent checked capture
   metadata/reference bytes without modifying Phase 2-owned fixtures.
-- `examples/data/models/generated.pcapng`: Phase 4 deterministic final-seed rendering from that model and the parent
-  `examples/data/capture.json`.
+- `fixtures/examples/pipeline/models/generated.pcapng`: Phase 4 deterministic final-seed rendering from that model and the parent
+  `fixtures/examples/pipeline/capture.json`.
 
 The common concrete signatures are:
 
@@ -639,12 +639,12 @@ renewal uses `quantile="type7_linear"`, `state_order="first_appearance"`,
 - Create: `tests/unit/models/test_contract.py`
 - Create: `tests/integration/test_model_pipeline.py`
 - Create: `scripts/generate_model_fixtures.py`
-- Create: `examples/data/models/best_model.json`
+- Create: `fixtures/examples/pipeline/models/best_model.json`
 - Modify: `src/trafficlab/models/__init__.py`
 
 **Interfaces:**
 - Consumes: the three complete family objects/codecs from Tasks 2–4, existing parent
-  `examples/data/capture.json` and `examples/data/reference.pcapng`, `parse_pcapng`, `normalize_reference`, and exact
+  `fixtures/examples/pipeline/capture.json` and `fixtures/examples/pipeline/reference.pcapng`, `parse_pcapng`, `normalize_reference`, and exact
   SHA-256 identities.
 - Produces: the locked `BestModel`, `make_best_model`, `load_best_model`, `render_best_model`, `get_family`, a direct
   closed registry, one common family contract, the in-process pipeline, and the checked Phase 4 model for Task 6.
@@ -746,7 +746,7 @@ renewal uses `quantile="type7_linear"`, `state_order="first_appearance"`,
 
   `scripts/generate_model_fixtures.py` accepts only optional `--check`. It reads the parent Phase 2 capture metadata
   and reference once, hashes/parses those same bytes, fits Poisson gene `(1.0,)` with bounds from `minimal.toml`, and
-  renders `examples/data/models/best_model.json`. Normal mode writes only Phase 4 model fixtures; `--check` compares
+  renders `fixtures/examples/pipeline/models/best_model.json`. Normal mode writes only Phase 4 model fixtures; `--check` compares
   expected bytes and exits nonzero with the differing path. It never mutates parent Phase 2 fixtures.
 
   ```bash
@@ -774,7 +774,7 @@ renewal uses `quantile="type7_linear"`, `state_order="first_appearance"`,
   ```bash
   git add src/trafficlab/models tests/unit/models/test_registry.py tests/unit/models/test_contract.py \
     tests/integration/test_model_pipeline.py scripts/generate_model_fixtures.py \
-    examples/data/models/best_model.json
+    fixtures/examples/pipeline/models/best_model.json
   git commit -m "feat: add strict traffic model registry"
   ```
 
@@ -788,7 +788,7 @@ renewal uses `quantile="type7_linear"`, `state_order="first_appearance"`,
 - Modify: `src/trafficlab/artifacts.py`
 - Modify: `src/trafficlab/cli.py`
 - Modify: `scripts/generate_model_fixtures.py`
-- Create: `examples/data/models/generated.pcapng`
+- Create: `fixtures/examples/pipeline/models/generated.pcapng`
 
 **Interfaces:**
 - Consumes: `open_or_prepare_experiment`, strict snapshot config, `load_best_model`, registered family generation,
@@ -917,7 +917,7 @@ renewal uses `quantile="type7_linear"`, `state_order="first_appearance"`,
 
   Extend the fixture script to load its just-computed model, generate with `minimal.toml` final seed/limits, require
   completion, encode with checked parent capture metadata, parse/compare it, and write/check only
-  `examples/data/models/generated.pcapng`. CLI integration copies the Phase 4 `best_model.json` into a temporary
+  `fixtures/examples/pipeline/models/generated.pcapng`. CLI integration copies the Phase 4 `best_model.json` into a temporary
   prepared run and compares its run artifact with this Phase 4 PCAPNG. Never mutate parent Phase 2 fixtures.
 
   ```bash
@@ -941,7 +941,7 @@ renewal uses `quantile="type7_linear"`, `state_order="first_appearance"`,
   ```bash
   git add src/trafficlab/generation.py src/trafficlab/artifacts.py src/trafficlab/cli.py \
     tests/integration/test_generate_cli.py scripts/generate_model_fixtures.py \
-    examples/data/models/generated.pcapng
+    fixtures/examples/pipeline/models/generated.pcapng
   git commit -m "feat: generate final synthetic capture"
   ```
 
@@ -1036,8 +1036,8 @@ renewal uses `quantile="type7_linear"`, `state_order="first_appearance"`,
 
   ```bash
   git add architecture/ROADMAP.md architecture/traffic_models src/trafficlab tests \
-    scripts/generate_model_fixtures.py examples/data/models/best_model.json \
-    examples/data/models/generated.pcapng
+    scripts/generate_model_fixtures.py fixtures/examples/pipeline/models/best_model.json \
+    fixtures/examples/pipeline/models/generated.pcapng
   git commit -m "docs: complete Phase 4 traffic models"
   git status --short
   ```
