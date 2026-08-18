@@ -9347,10 +9347,12 @@ def test_historic_schema_one_workload_oracle_retains_the_measured_short_transfer
     )
 
 
+@pytest.mark.parametrize("workload", ("short", "streaming"))
 def test_historic_schema_one_result_does_not_follow_current_workload_metadata(
     monkeypatch: pytest.MonkeyPatch,
+    workload: study.WorkloadName,
 ) -> None:
-    """The sole preserved result is bound to its complete measured workload profile."""
+    """The sole preserved result is bound to its complete primary and reproduction profiles."""
 
     current_workload_specs = study.workload_specs
 
@@ -9362,7 +9364,7 @@ def test_historic_schema_one_result_does_not_follow_current_workload_metadata(
                 total_timeout_seconds=91.0,
                 multiscale_widths_seconds=(0.002, 0.02),
             )
-            if specification.name == "short"
+            if specification.name == workload
             else specification
             for specification in current_workload_specs(url)
         )

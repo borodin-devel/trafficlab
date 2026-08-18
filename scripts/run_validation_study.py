@@ -5384,6 +5384,7 @@ def _validate_reproduction(
     repository_root: Path,
     protocol: JsonObject,
     source: JsonObject,
+    historic_schema_one_result: bool = False,
 ) -> JsonObject:
     document = _exact_object(value, _REPRODUCTION_KEYS, name="reproduction")
     study_id = cast(str, protocol["study_id"])
@@ -5443,6 +5444,7 @@ def _validate_reproduction(
         evidence_directory=evidence_directory,
         object_size=object_size,
         fresh_simulation_source="post_cli_evaluate_final",
+        historic_schema_one_result=historic_schema_one_result,
     )
     _validate_reproduction_comparison(
         document["comparison_to_source"], reproduction=cast(JsonObject, document), source=source
@@ -5574,7 +5576,11 @@ def _validate_study_document(document: JsonObject, *, repository_root: Path) -> 
     ]
     source = grouped["streaming"][1]
     reproduction = _validate_reproduction(
-        root["reproduction"], repository_root=repository_root, protocol=protocol, source=source
+        root["reproduction"],
+        repository_root=repository_root,
+        protocol=protocol,
+        source=source,
+        historic_schema_one_result=historic_schema_one_result,
     )
     return StudyResults(
         schema_version=schema_version,
