@@ -160,6 +160,9 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
         url=url,
         capture_image_id=f"sha256:{'d' * 64}",
     )
+    config = config.model_copy(update={"genetic": config.genetic.model_copy(update={"generation_count": 1})})
+    assert config.genetic.generation_count == 1
+    assert config.genetic.trial_seeds == (17, 29)
     experiment_path = repository_root / "runs" / "validation_study" / study_id / "realized-configs" / f"{run_id}.toml"
     study._render_realized_config(config, experiment_path)  # pyright: ignore[reportPrivateUsage]
 

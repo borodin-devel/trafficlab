@@ -5,7 +5,7 @@ import json
 import platform
 import shutil
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from itertools import count
 from pathlib import Path
 from typing import Literal, cast
@@ -205,7 +205,10 @@ def _collection_inputs(
             capture_image_id=capture_id,
         )
         configs[workload.name] = base.model_copy(
-            update={"capture": base.capture.model_copy(update={"image": capture_reference})}
+            update={
+                "capture": base.capture.model_copy(update={"image": capture_reference}),
+                "genetic": base.genetic.model_copy(update={"generation_count": 1}),
+            }
         )
     (root / "examples" / "validation_study" / ".study-work" / "mount" / study_id).mkdir(parents=True)
     return environment, prerequisite, files, configs
@@ -326,10 +329,28 @@ def _offline_stage_runners(
     return run_training, capture_held_out, calls
 
 
-def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidate(tmp_path: Path) -> None:
+def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
+    assert {config.genetic.generation_count for config in configs.values()} == {1}
+    assert {config.genetic.trial_seeds for config in configs.values()} == {(17, 29)}
+
+    validation_profile = auditor._validation_profile  # pyright: ignore[reportPrivateUsage]
+
+    def one_generation_validation_profile(
+        *,
+        workload: str,
+        url: str,
+        environment: Mapping[str, object],
+    ) -> ExperimentConfig:
+        profile = validation_profile(workload=workload, url=url, environment=environment)
+        return profile.model_copy(update={"genetic": profile.genetic.model_copy(update={"generation_count": 1})})
+
+    monkeypatch.setattr(auditor, "_validation_profile", one_generation_validation_profile)
     candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
     run_training, capture_held_out, calls = _offline_stage_runners(
         repository, candidate=candidate, environment=environment

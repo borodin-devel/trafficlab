@@ -11756,6 +11756,32 @@ def test_offline_auditor_requires_the_exact_frozen_model_family_set(tmp_path: Pa
     assert error.value.kind == "artifact_foreign"
 
 
+def test_offline_auditor_rejects_one_generation_against_the_unpatched_frozen_profile() -> None:
+    """The fast collection fixture must not relax the production two-generation oracle."""
+
+    environment: dict[str, object] = {
+        "capture_image_reference": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "target_image_reference": (
+            "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
+        ),
+    }
+    frozen = auditor._validation_profile(  # pyright: ignore[reportPrivateUsage]
+        workload="short",
+        url="https://validation-study.example/object",
+        environment=environment,
+    )
+    one_generation = frozen.model_copy(update={"genetic": frozen.genetic.model_copy(update={"generation_count": 1})})
+
+    with pytest.raises(auditor._Issue) as error:  # pyright: ignore[reportPrivateUsage]
+        auditor._require_frozen_profile(  # pyright: ignore[reportPrivateUsage]
+            one_generation,
+            frozen,
+            affected="held_out/short",
+        )
+
+    assert error.value.kind == "artifact_foreign"
+
+
 def test_offline_auditor_reconstructs_nonfixture_profiles_and_rejects_a_missing_family(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
