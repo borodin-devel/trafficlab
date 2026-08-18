@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
 
 _MANIFEST_EXCLUSIONS = frozenset({"README.md", "manifest.json"})
+_GENERATED_CACHE_DIRECTORY = "__pycache__"
 _LEGACY_FIXTURE_PATHS = (
     Path("examples/data"),
     Path("tests/docker/compose.endpoint.json"),
@@ -54,6 +55,10 @@ def build_manifest(root: Path) -> tuple[ManifestEntry, ...]:
     for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix().encode("utf-8")):
         relative = path.relative_to(root).as_posix()
         metadata = path.lstat()
+        if _GENERATED_CACHE_DIRECTORY in PurePosixPath(relative).parts:
+            if path.name == _GENERATED_CACHE_DIRECTORY and not stat.S_ISDIR(metadata.st_mode):
+                raise FixtureLayoutError(f"fixture Python cache path must be a directory: {relative}")
+            continue
         if stat.S_ISDIR(metadata.st_mode):
             continue
         if relative in _MANIFEST_EXCLUSIONS:
