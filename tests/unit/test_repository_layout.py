@@ -173,3 +173,48 @@ def test_agents_requires_precise_progress_and_generated_task_labels() -> None:
     assert "[STEP-<ordinal>-<crc32>]" in document
     assert "eight lowercase hexadecimal digits" in document
     assert "regenerate the timestamp on collision" in document
+
+
+@pytest.mark.parametrize(
+    ("source_relative", "destination_relative"),
+    (
+        ("tests/fixtures/diagnostics", "fixtures/tests/diagnostics"),
+        (
+            "tests/fixtures/process_guard_tree.py",
+            "fixtures/tests/process_guard/process_guard_tree.py",
+        ),
+        (
+            "tests/fixtures/validation_study_candidate",
+            "fixtures/tests/validation_study/candidate",
+        ),
+        (
+            "tests/fixtures/validation_study_pre_user_agent_r6",
+            "fixtures/tests/validation_study/pre-user-agent-r6",
+        ),
+        (
+            "tests/docker/compose.endpoint.json",
+            "fixtures/tests/docker/compose.endpoint.json",
+        ),
+        ("examples/data", "fixtures/examples/pipeline"),
+    ),
+)
+def test_root_fixture_copy_matches_legacy_source(
+    source_relative: str,
+    destination_relative: str,
+) -> None:
+    source = REPOSITORY / source_relative
+    destination = REPOSITORY / destination_relative
+    assert source.exists()
+    assert destination.exists()
+    if source.is_file():
+        source_files = (source,)
+        destination_files = (destination,)
+    else:
+        source_files = tuple(path for path in source.rglob("*") if path.is_file())
+        destination_files = tuple(path for path in destination.rglob("*") if path.is_file())
+        assert tuple(path.relative_to(source) for path in source_files) == tuple(
+            path.relative_to(destination) for path in destination_files
+        )
+    for source_path, destination_path in zip(source_files, destination_files, strict=True):
+        assert destination_path.read_bytes() == source_path.read_bytes()
+        assert destination_path.stat().st_mode & 0o777 == source_path.stat().st_mode & 0o777
