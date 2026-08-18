@@ -596,21 +596,34 @@ def run_experiment(
         comparison = active.compare(experiment_path)
         _validate_comparison_result(comparison, observation_window_seconds, expected_input_identities)
         completed_stages = (*completed_stages, "compare")
+        current_stage = "run"
         _validate_final_artifacts(prepared, capture, fit, generation, comparison)
 
-        append_run_log(
-            prepared.run_directory,
-            {
-                "aggregate_score": comparison.aggregate_score,
-                "event": "run_completed",
-                "family": fit.outcome.winner.family,
-                "fitness": fit.outcome.winner.fitness,
-                "generated_packet_count": len(generation.events),
-                "reference_packet_count": capture.packet_count,
-                "run_directory": str(prepared.run_directory),
-                "stage": "run",
-            },
-        )
+        try:
+            append_run_log(
+                prepared.run_directory,
+                {
+                    "aggregate_score": comparison.aggregate_score,
+                    "event": "run_completed",
+                    "family": fit.outcome.winner.family,
+                    "fitness": fit.outcome.winner.fitness,
+                    "generated_packet_count": len(generation.events),
+                    "reference_packet_count": capture.packet_count,
+                    "run_directory": str(prepared.run_directory),
+                    "stage": "run",
+                },
+            )
+        except TrafficlabError as logging_error:
+            raise attach_failure_outcome(
+                TrafficlabError(
+                    f"final run completion logging failed: {logging_error}",
+                    corrective_action=logging_error.corrective_action,
+                ),
+                kind="publication_failed",
+                stage="publication",
+                affected_evidence="run.log",
+                evidence_state="preserved",
+            ) from logging_error
     except TrafficlabError as error:
         failed_stage = error.owner if isinstance(error, _FinalArtifactError) else current_stage
         _append_run_failure(

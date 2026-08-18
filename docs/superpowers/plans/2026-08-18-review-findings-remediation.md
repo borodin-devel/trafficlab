@@ -84,26 +84,26 @@ requested this remediation.
 - The failed `run_completed` append produces `publication_failed`, stage `publication`, affected evidence `run.log`,
   evidence state `preserved`, with completed stages through `compare`.
 
-- [ ] **[STEP-6-9bbf96b2] Write the failing final-completion logging test**
+- [x] **[STEP-6-9bbf96b2] Write the failing final-completion logging test**
 
   Inject a failure only for the `run_completed` append, allow `run_failed` to persist, and assert the exact canonical
   outcome plus the preserved comparison artifact and completed stage list.
 
-- [ ] **[STEP-7-326eb34c] Run the focused RED test**
+- [x] **[STEP-7-326eb34c] Run the focused RED test**
 
   Run `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 2m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_run.py` and require the existing `metric_infeasible/compare/similarity.json` result to fail the new assertion.
 
-- [ ] **[STEP-8-ae553034] Implement the run-owned publication outcome**
+- [x] **[STEP-8-ae553034] Implement the run-owned publication outcome**
 
   Wrap only the final completion append, attach the canonical publication outcome, and set the coordinator stage to
   `run` before that boundary without changing earlier stage arbitration.
 
-- [ ] **[STEP-9-a3a6d396] Run focused GREEN and static checks**
+- [x] **[STEP-9-a3a6d396] Run focused GREEN and static checks**
 
   Rerun `tests/unit/test_run.py`, then `uv run --locked ruff check src/trafficlab/run.py tests/unit/test_run.py` and
   `uv run --locked pyright`.
 
-- [ ] **[STEP-10-8d7b545b] Commit final-log failure semantics**
+- [x] **[STEP-10-8d7b545b] Commit final-log failure semantics**
 
   Commit the implementation and regression test with message `fix: classify final run log failure`.
 

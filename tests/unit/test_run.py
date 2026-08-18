@@ -310,6 +310,54 @@ def test_run_experiment_appends_one_exact_completion_record(
     ]
 
 
+def test_run_completion_log_failure_reports_preserved_run_publication(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing final log record must not recast a completed comparison as absent."""
+    experiment_path, prepared = _prepared_experiment(valid_config_data, tmp_path)
+    dependencies, _expected = _success_dependencies(experiment_path, prepared, [])
+    original_append = run_module.append_run_log
+
+    def fail_only_completion(run_directory: Path, record: object) -> None:
+        document = cast(dict[str, object], record)
+        if document.get("event") == "run_completed":
+            raise TrafficlabError("synthetic completion log failure", corrective_action="repair run.log")
+        original_append(run_directory, document)
+
+    monkeypatch.setattr(run_module, "append_run_log", fail_only_completion)
+    similarity_before = (prepared.run_directory / "similarity.json").read_bytes()
+
+    with pytest.raises(TrafficlabError, match="final run completion logging failed") as caught:
+        run_experiment(experiment_path, dependencies=dependencies)
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert outcome.as_dict() == {
+        "affected_evidence": "run.log",
+        "authority": "primary",
+        "corrective_action": "repair run.log",
+        "detail": "final run completion logging failed: synthetic completion log failure",
+        "evidence_state": "preserved",
+        "kind": "publication_failed",
+        "stage": "publication",
+    }
+    assert (prepared.run_directory / "similarity.json").read_bytes() == similarity_before
+    records = _records(prepared)
+    assert [record for record in records if record.get("event") == "run_completed"] == []
+    failures = [record for record in records if record.get("event") == "run_failed"]
+    assert failures == [
+        {
+            "completed_stages": ["preflight", "capture", "fit", "generate", "compare"],
+            "corrective_action": "repair run.log",
+            "detail": "final run completion logging failed: synthetic completion log failure",
+            "event": "run_failed",
+            "failed_stage": "run",
+            "failure_outcome": outcome.as_dict(),
+            "stage": "run",
+        }
+    ]
+
+
 def test_final_artifact_validation_rejects_a_fit_result_with_mismatched_priority(
     valid_config_data: dict[str, object], tmp_path: Path
 ) -> None:
