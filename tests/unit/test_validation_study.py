@@ -2241,12 +2241,7 @@ def test_workload_specs_expand_exact_short_streaming_and_eight_bursty_argv(
     legacy_short = replace(
         specs[0],
         argv=tuple(
-            "0-262143"
-            if item == "0-1048575"
-            else "262144"
-            if item == "1048576"
-            else item
-            for item in specs[0].argv
+            "0-262143" if item == "0-1048575" else "262144" if item == "1048576" else item for item in specs[0].argv
         ),
         transfers=((0, 262143, "short.headers"),),
     )
@@ -12043,11 +12038,7 @@ def test_offline_auditor_rejects_legacy_short_transfer_against_the_frozen_profil
             "target": frozen.target.model_copy(
                 update={
                     "argv": tuple(
-                        "0-262143"
-                        if item == "0-1048575"
-                        else "262144"
-                        if item == "1048576"
-                        else item
+                        "0-262143" if item == "0-1048575" else "262144" if item == "1048576" else item
                         for item in frozen.target.argv
                     )
                 }
