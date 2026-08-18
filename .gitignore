@@ -1,35 +1,47 @@
-.worktrees/
-.venv/
+# Local Git worktrees and the project virtual environment.
+/.worktrees/
+/.venv/
 
+# Python bytecode.
 __pycache__/
 *.py[cod]
 
+# Test, analysis, and coverage caches.
 .pytest_cache/
+.ruff_cache/
+.pyright/
 .coverage
 .coverage.*
 htmlcov/
-.ruff_cache/
-.pyright/
 
+# Build and packaging output.
 build/
 dist/
 *.egg-info/
 
+# Local environment files; keep the distributable template visible.
 .env
 .env.*
 !.env.example
+
+# Runtime logs and generated run directories.
 *.log
-!tests/fixtures/data/validation_study/candidate/**/run.log
-!examples/validation_study/evidence/
-!examples/validation_study/evidence/**/
-!examples/validation_study/evidence/**/run.log
 runs/
-examples/validation_study/.study-work/
-examples/validation_study/evidence/.candidates/
-examples/validation_study/evidence/.*.tmp/
+
+# Retain manifest-bound validation logs despite the general log rule.
+!/tests/fixtures/data/validation_study/candidate/**/run.log
+!/examples/validation_study/evidence/**/run.log
+
+# Validation-study scratch state, incomplete candidates, and staging trees.
+/examples/validation_study/.study-work/
+/examples/validation_study/evidence/.candidates/
+/examples/validation_study/evidence/.*.tmp/
+
+# Generated validation-study inputs and local result snapshots.
 /examples/validation_study/prerequisites.json
 /examples/validation_study/results.json
 /examples/validation_study/configs/*.toml
-/.superpowers/
 
-TASK.md
+# Local agent state and the user's private task record.
+/.superpowers/
+/TASK.md
