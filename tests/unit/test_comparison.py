@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 
+import trafficlab.artifacts as artifacts
 import trafficlab.comparison as comparison
 from trafficlab.comparison import (
     ComparisonResult,
@@ -1526,6 +1527,56 @@ def test_publication_fsync_failure_is_translated_and_cleans_the_owned_temp(
         "primary",
     )
     assert not destination.exists()
+    assert list(tmp_path.glob(".similarity.json.*.tmp")) == []
+
+
+def test_publication_fsyncs_directory_after_exclusive_link(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    destination = tmp_path / "similarity.json"
+    operations: list[str] = []
+    real_link = os.link
+
+    def observe_link(source: str | Path, target: str | Path) -> None:
+        operations.append("link")
+        real_link(source, target)
+
+    def observe_directory_fsync(path: Path, *, stage: str, affected_evidence: str) -> None:
+        assert path == destination
+        assert stage == "compare"
+        assert affected_evidence == "similarity.json"
+        operations.append("fsync-directory")
+
+    monkeypatch.setattr(comparison.os, "link", observe_link)
+    monkeypatch.setattr(comparison, "fsync_published_artifact", observe_directory_fsync, raising=False)
+
+    comparison._publish_comparison_result(destination, _valid_result())  # pyright: ignore[reportPrivateUsage]
+
+    assert operations == ["link", "fsync-directory"]
+
+
+def test_publication_directory_durability_failure_preserves_similarity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "similarity.json"
+    expected = _valid_result()
+    content = render_comparison_result(expected)
+
+    def fail_directory_fsync(_path: Path) -> None:
+        raise TrafficlabError("injected similarity directory fsync failure", corrective_action="repair storage")
+
+    monkeypatch.setattr(artifacts, "_fsync_containing_directory", fail_directory_fsync)
+
+    with pytest.raises(TrafficlabError, match="similarity directory fsync failure") as caught:
+        comparison._publish_comparison_result(destination, expected)  # pyright: ignore[reportPrivateUsage]
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "publication_failed",
+        "compare",
+        "similarity.json",
+        "preserved",
+    )
+    assert destination.read_bytes() == content
     assert list(tmp_path.glob(".similarity.json.*.tmp")) == []
 
 

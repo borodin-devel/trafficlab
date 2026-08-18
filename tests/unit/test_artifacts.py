@@ -714,15 +714,21 @@ def test_publish_capture_pair_validates_temps_then_links_metadata_before_referen
     run_directory = tmp_path / "run"
     run_directory.mkdir()
     real_link = os.link
-    destinations: list[str] = []
+    real_directory_fsync = artifacts._fsync_containing_directory  # pyright: ignore[reportPrivateUsage]
+    operations: list[str] = []
 
     def observed_link(source: str | Path, destination: str | Path) -> None:
         source_path = Path(source)
         assert source_path.name.startswith(".capture-pair.")
-        destinations.append(Path(destination).name)
+        operations.append(f"link:{Path(destination).name}")
         real_link(source, destination)
 
+    def observed_directory_fsync(path: Path) -> None:
+        operations.append(f"fsync:{path.name}")
+        real_directory_fsync(path)
+
     monkeypatch.setattr(artifacts.os, "link", observed_link)
+    monkeypatch.setattr(artifacts, "_fsync_containing_directory", observed_directory_fsync)
 
     publish_capture_pair(
         *sources,
@@ -732,7 +738,45 @@ def test_publish_capture_pair_validates_temps_then_links_metadata_before_referen
         clock=lambda: 0.0,
     )
 
-    assert destinations == ["capture.json", "reference.pcapng"]
+    assert operations == ["link:capture.json", "link:reference.pcapng", "fsync:reference.pcapng"]
+    assert list(run_directory.glob(".capture-pair.*.tmp")) == []
+
+
+def test_publish_capture_pair_directory_durability_failure_preserves_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sources = _capture_sources(tmp_path / "sources")
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+
+    def fail_directory_fsync(_path: Path) -> None:
+        raise TrafficlabError("injected capture directory fsync failure", corrective_action="repair storage")
+
+    monkeypatch.setattr(artifacts, "_fsync_containing_directory", fail_directory_fsync)
+
+    with pytest.raises(TrafficlabError, match="capture directory fsync failure") as caught:
+        publish_capture_pair(
+            *sources,
+            run_directory,
+            target_success=True,
+            deadline=None,
+            clock=lambda: 0.0,
+        )
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "publication_failed",
+        "capture",
+        "capture pair",
+        "preserved",
+    )
+    assert artifacts.validate_capture_pair(
+        run_directory / "capture.json",
+        run_directory / "reference.pcapng",
+        deadline=None,
+        clock=lambda: 0.0,
+    ).packet_count == 1
     assert list(run_directory.glob(".capture-pair.*.tmp")) == []
 
 

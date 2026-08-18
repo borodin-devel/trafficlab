@@ -310,10 +310,12 @@ winning fitted model stores it so `generate` does not need to reopen the
 reference capture. Every similarity method also returns it in diagnostics.
 
 Structured results and checkpoints are written to a temporary sibling, flushed,
-validated, and renamed into place. Capture writes and validates temporary
-metadata and PCAPNG, renames `capture.json` first, then publishes
-`reference.pcapng`. A crash may therefore leave metadata without a published
-capture; stage reuse requires both valid files and reruns capture otherwise.
+validated, and atomically published. Replaceable checkpoints use rename;
+immutable stage results use exclusive links so an existing result is never
+silently replaced. Each successful publication fsyncs its containing directory.
+Capture publishes `capture.json` first, then `reference.pcapng`. A crash may
+therefore leave metadata without a published capture; stage reuse requires both
+valid files and reruns capture otherwise.
 PCAPNG is accepted only after it is closed and successfully parsed. Existing
 results are not silently replaced. `genetic.resume = true` may update
 `checkpoint.json` only after compatibility validation; `false` rejects an

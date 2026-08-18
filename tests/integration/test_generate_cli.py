@@ -92,6 +92,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
     run_directory = tmp_path / "run"
     run_directory.mkdir()
     real_fsync = os.fsync
+    real_directory_fsync = artifact_module._fsync_containing_directory  # pyright: ignore[reportPrivateUsage]
     real_parse = parse_pcapng_bytes
     real_link = os.link
     operations: list[str] = []
@@ -116,9 +117,15 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
         operations.append("link")
         real_link(source, destination)
 
+    def observe_directory_fsync(path: Path) -> None:
+        assert operations == ["fsync", "parse", "link"]
+        operations.append("fsync-directory")
+        real_directory_fsync(path)
+
     monkeypatch.setattr(artifact_module.os, "fsync", observe_fsync)
     monkeypatch.setattr(artifact_module, "parse_pcapng_bytes", observe_parse)
     monkeypatch.setattr(artifact_module.os, "link", observe_link)
+    monkeypatch.setattr(artifact_module, "_fsync_containing_directory", observe_directory_fsync)
 
     publication = publish_generated_pcapng(
         run_directory,
@@ -131,8 +138,45 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
     assert publication.path == run_directory / "generated.pcapng"
     assert publication.created_by_call is True
     assert publication.content == encoded
-    assert operations == ["fsync", "parse", "link"]
+    assert operations == ["fsync", "parse", "link", "fsync-directory", "fsync"]
     assert publication.path.read_bytes() == encoded
+    assert list(run_directory.glob(".generated.pcapng.*.tmp")) == []
+
+
+def test_generated_directory_durability_failure_preserves_published_capture(
+    tmp_path: Path,
+    metadata: CaptureMetadata,
+    generated_events: tuple[TraceEvent, ...],
+    encoded: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    destination = run_directory / "generated.pcapng"
+
+    def fail_directory_fsync(_path: Path) -> None:
+        raise TrafficlabError("injected generated directory fsync failure", corrective_action="repair storage")
+
+    monkeypatch.setattr(artifact_module, "_fsync_containing_directory", fail_directory_fsync)
+
+    with pytest.raises(TrafficlabError, match="generated directory fsync failure") as caught:
+        publish_generated_pcapng(
+            run_directory,
+            encoded,
+            metadata=metadata,
+            expected_events=generated_events,
+            observation_window_seconds=1.0,
+        )
+
+    outcome = caught.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
+        "publication_failed",
+        "generate",
+        "generated.pcapng",
+        "preserved",
+    )
+    assert destination.read_bytes() == encoded
     assert list(run_directory.glob(".generated.pcapng.*.tmp")) == []
 
 

@@ -9,7 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import ValidationError
 
@@ -104,6 +104,32 @@ def _fsync_containing_directory(path: Path) -> None:
         raise _post_replace_error(path, "close failure", error) from error
     if fsync_error is not None:
         raise _post_replace_error(path, "fsync failure", fsync_error) from fsync_error
+
+
+type ArtifactPublicationStage = Literal["preflight", "capture", "fit", "generate", "compare", "publication"]
+
+
+def fsync_published_artifact(
+    path: Path,
+    *,
+    stage: ArtifactPublicationStage,
+    affected_evidence: str,
+) -> None:
+    """Persist one published directory entry while preserving it on durability failure."""
+    try:
+        _fsync_containing_directory(path)
+    except TrafficlabError as error:
+        published = TrafficlabError(
+            f"{affected_evidence} was published at {path}, but containing directory durability failed: {error}",
+            corrective_action=error.corrective_action,
+        )
+        raise attach_failure_outcome(
+            published,
+            kind="publication_failed",
+            stage=stage,
+            affected_evidence=affected_evidence,
+            evidence_state="preserved",
+        ) from error
 
 
 def atomic_replace(path: Path, content: bytes, *, validator: Callable[[bytes], None]) -> None:
@@ -629,6 +655,11 @@ def publish_generated_pcapng(
                     corrective_action="retry generation after verifying the run directory is stable",
                 ) from error
             publication = winner
+        fsync_published_artifact(
+            destination,
+            stage="generate",
+            affected_evidence="generated.pcapng",
+        )
     except BaseException as error:
         cleanup_error: OSError | None = None
         if temporary_path is not None:
@@ -1053,7 +1084,8 @@ def _capture_publication_error(error: Exception, destination: Path, cleanup_deta
     if cleanup_details:
         detail = f"{detail}; cleanup incomplete: {'; '.join(cleanup_details)}"
     error_type = DeadlineExceededError if isinstance(error, DeadlineExceededError) else TrafficlabError
-    return error_type(detail, corrective_action=action)
+    outcomes = error.failure_outcomes if isinstance(error, TrafficlabError) and error.failure_outcomes else None
+    return error_type(detail, corrective_action=action, failure_outcomes=outcomes)
 
 
 def publish_capture_pair(
@@ -1106,6 +1138,11 @@ def publish_capture_pair(
             os.link(temporary_path, destination)
         if _capture_pair_identity(*destinations) != owned_identity:
             raise _recovery_error("capture pair changed during publication")
+        fsync_published_artifact(
+            destinations[-1],
+            stage="capture",
+            affected_evidence="capture pair",
+        )
     except Exception as error:
         cleanup_details = [
             detail

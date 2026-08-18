@@ -11,7 +11,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Self, cast
 
-from trafficlab.artifacts import append_run_log
+from trafficlab.artifacts import append_run_log, fsync_published_artifact
 from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
 from trafficlab.config import SimilarityConfig
 from trafficlab.config_io import load_experiment, render_effective_config
@@ -835,6 +835,9 @@ def _publication_error(error: Exception, destination: Path, cleanup_error: BaseE
     elif isinstance(error, FileExistsError):
         detail = f"similarity artifact already exists: {destination}"
         action = "preserve the existing result or start a new run directory"
+    elif isinstance(error, TrafficlabError):
+        detail = str(error)
+        action = error.corrective_action
     else:
         detail = f"could not publish similarity artifact {destination}: {error}"
         action = "verify the run directory is writable and has available space"
@@ -846,16 +849,19 @@ def _publication_error(error: Exception, destination: Path, cleanup_error: BaseE
     else:
         outcome_detail = detail
         outcome_action = action
-    outcome = FailureOutcome(
-        kind="publication_collision" if isinstance(error, FileExistsError) else "publication_failed",
-        stage="compare",
-        detail=outcome_detail,
-        affected_evidence="similarity.json",
-        evidence_state="preserved" if isinstance(error, FileExistsError) else "not_published",
-        corrective_action=outcome_action,
-        authority="primary",
-    )
-    outcomes = (outcome,)
+    if isinstance(error, TrafficlabError) and error.failure_outcomes:
+        outcomes = error.failure_outcomes
+    else:
+        outcome = FailureOutcome(
+            kind="publication_collision" if isinstance(error, FileExistsError) else "publication_failed",
+            stage="compare",
+            detail=outcome_detail,
+            affected_evidence="similarity.json",
+            evidence_state="preserved" if isinstance(error, FileExistsError) else "not_published",
+            corrective_action=outcome_action,
+            authority="primary",
+        )
+        outcomes = (outcome,)
     if cleanup_error is not None:
         outcomes = (
             *outcomes,
@@ -930,6 +936,11 @@ def _publish_comparison_result(destination: Path, result: ComparisonResult) -> b
                 created_by_call = False
             else:
                 created_by_call = True
+            fsync_published_artifact(
+                destination,
+                stage="compare",
+                affected_evidence="similarity.json",
+            )
     except (OSError, ValueError, TrafficlabError) as error:
         expected_error = error
     except BaseException as error:

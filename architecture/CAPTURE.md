@@ -118,10 +118,11 @@ applicable and by the remaining total-run budget.
    using the target MAC. Pass the monotonic total-run deadline into parsing and
    validation; check it before work starts and after every frame. Expiry aborts
    before another frame is accepted.
-10. After target success, atomically rename `capture.json` into place, then
-    publish `reference.pcapng`. Stage reuse requires both files to be present
-    and valid. A target failure may retain validated output only as diagnostic
-    data, not as a reusable reference pair.
+10. After target success, exclusively publish `capture.json` first, then
+    `reference.pcapng`, and fsync the containing directory after both links.
+    Stage reuse requires both files to be present and valid. A target failure may
+    retain validated output only as diagnostic data, not as a reusable reference
+    pair.
 11. Enter cleanup unconditionally using the last known project resource
     inventory. With positive remaining budget, run
     `docker compose down --volumes --remove-orphans` within it. With zero budget,

@@ -111,10 +111,13 @@ requested this remediation.
 
 **Files:**
 
+- Modify: `architecture/SYSTEM.md`
+- Modify: `architecture/CAPTURE.md`
 - Modify: `src/trafficlab/artifacts.py`
 - Modify: `src/trafficlab/comparison.py`
 - Test: `tests/unit/test_artifacts.py`
 - Test: `tests/unit/test_comparison.py`
+- Test: `tests/integration/test_generate_cli.py`
 
 **Interfaces:**
 
@@ -122,25 +125,25 @@ requested this remediation.
 - Capture-pair, generated-PCAPNG, and similarity publishers fsync their containing directory after successful linking;
   a post-link failure preserves and reports the destination.
 
-- [ ] **[STEP-11-d89f2940] Write failing publication ordering and failure-state tests**
+- [x] **[STEP-11-d89f2940] Write failing publication ordering and failure-state tests**
 
   Add tests for generated, capture-pair, and similarity publication that require directory fsync after linking and
   require `publication_failed` with `preserved` evidence when only the directory fsync fails.
 
-- [ ] **[STEP-12-1ad3b73f] Run publication RED tests**
+- [x] **[STEP-12-1ad3b73f] Run publication RED tests**
 
-  Run `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 3m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_artifacts.py tests/unit/test_comparison.py` and require the missing post-link durability calls to fail.
+  Run `scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-time 3m --kill-after 10s -- uv run --locked pytest -q -n 0 tests/unit/test_artifacts.py tests/unit/test_comparison.py tests/integration/test_generate_cli.py` and require the missing post-link durability calls to fail.
 
-- [ ] **[STEP-13-8f58963d] Implement the shared post-publication durability boundary**
+- [x] **[STEP-13-8f58963d] Implement the shared post-publication durability boundary**
 
   Reuse the existing containing-directory fsync implementation, preserve established collision behavior, and retain
   already-linked destinations on durability failure.
 
-- [ ] **[STEP-14-45fe5620] Run publication GREEN and static checks**
+- [x] **[STEP-14-45fe5620] Run publication GREEN and static checks**
 
-  Rerun both focused files, then `uv run --locked ruff check src/trafficlab/artifacts.py src/trafficlab/comparison.py tests/unit/test_artifacts.py tests/unit/test_comparison.py` and `uv run --locked pyright`.
+  Rerun the three focused files, then `uv run --locked ruff check src/trafficlab/artifacts.py src/trafficlab/comparison.py tests/unit/test_artifacts.py tests/unit/test_comparison.py tests/integration/test_generate_cli.py` and `uv run --locked pyright`.
 
-- [ ] **[STEP-15-056ea904] Commit publication durability**
+- [x] **[STEP-15-056ea904] Commit publication durability**
 
   Commit the implementation and tests with message `fix: fsync exclusive publications`.
 
