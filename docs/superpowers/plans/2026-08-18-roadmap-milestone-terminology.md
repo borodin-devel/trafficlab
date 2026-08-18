@@ -60,9 +60,7 @@ Change the direct expected references in
 
 ```python
 reference = "trafficlab-capture:docker-capture-test"
-assert environment.capture_image.startswith(
-    "trafficlab-capture:docker-capture-test-"
-)
+assert environment.capture_image.startswith("trafficlab-capture:docker-capture-test-")
 ```
 
 Require the retained Compose fixture to use
