@@ -19,7 +19,7 @@ application dependencies, and no speculative infrastructure.
   whole-task acceptance criteria rather than elapsed time or message count.
 - When completion changes, follow it with `[+<integer>%]` or `[-<integer>%]`;
   every task/subtask start and every percentage change must also include
-  `[ETA: <hours>h <minutes>m]`.
+  `[T: <clock_timestamp>]`.
 - In generated task documents, label every logical task, step, stage, or phase
   as `[TASK-<ordinal>-<crc32>]`, `[STEP-<ordinal>-<crc32>]`, or the equivalent
   kind. Do not emit generic unlabeled task or step headings.
@@ -32,26 +32,26 @@ application dependencies, and no speculative infrastructure.
 
 Classify every development problem by both impact and difficulty:
 
-- **Class 1 — local:** typo, formatting, small test correction, obvious function
+- **[PROBLEM-C1] — local:** typo, formatting, small test correction, obvious function
   implementation, or deterministic fixture update. Fix immediately.
-- **Class 2 — contained:** isolated module bug, ordinary dependency choice,
+- **[PROBLEM-C2] — contained:** isolated module bug, ordinary dependency choice,
   validation edge case, or small refactor. Compare credible options, choose the
   recommended conventional solution, implement it, and verify it.
-- **Class 3 — cross-module:** interface mismatch, algorithm ambiguity already
+- **[PROBLEM-C3] — cross-module:** interface mismatch, algorithm ambiguity already
   resolvable from the architecture or cited mathematics, or integration failure
   spanning several modules. Diagnose systematically, record the resolution in
   code/tests or the owning architecture document, and continue.
-- **Class 4 — environmental or major:** unavailable tool/service, difficult
+- **[PROBLEM-C4] — environmental or major:** unavailable tool/service, difficult
   reproducibility problem, substantial redesign within approved scope, or a
   persistent failure requiring a different implementation approach. Exhaust
   safe local diagnostics, primary documentation, deterministic substitutes, and
   recommended in-scope alternatives. Implement the best supported solution and
   continue without asking for confirmation.
-- **Class 5 — human decision required:** an unresolved contradiction that would
+- **[PROBLEM-C5] — human decision required:** an unresolved contradiction that would
   change the scientific purpose or committed scope; required credentials or
   authority that are not available; an irreversible external action; or a hard
   external blocker for which no safe implementation or valid test substitute
-  can satisfy the roadmap. Only Class 5 permits asking the human a question.
+  can satisfy the roadmap. Only [PROBLEM-C5] permits asking the human a question.
 
 The human has pre-approved recommended choices for Classes 1–4. Do not pause for
 routine confirmations, status choices, dependency approval, expected test
@@ -112,6 +112,6 @@ Do not stop merely because one phase passes. Stop only after:
 - locked sync, format, lint, strict typing, unit, in-process integration,
   coverage, and available Docker integration commands pass;
 - required Internet/real-program validation has reproducible evidence or a
-  Class 5 external blocker has been demonstrated;
+  [PROBLEM-C5] external blocker has been demonstrated;
 - an independent final review has no Critical or Important findings; and
 - the working tree is clean with all implementation commits retained locally.
