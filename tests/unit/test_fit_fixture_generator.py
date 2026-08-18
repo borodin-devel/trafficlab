@@ -137,7 +137,10 @@ def test_fixture_validation_rejects_wrong_path_set_invalid_toml_stale_history_an
 def test_generator_rejects_invalid_embedded_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """An invalid embedded experiment must fail before the generator runs a fit."""
     monkeypatch.setattr(fixture_generator, "_CONFIG_TEMPLATE", "[invalid\n")
-    with pytest.raises(TrafficlabError, match="invalid deterministic fit fixture configuration"):
+    with pytest.raises(
+        TrafficlabError,
+        match="invalid genetic-fitting and checkpoint-resume fixture configuration",
+    ):
         fixture_generator.generate_fixture_tree()
 
 
@@ -147,7 +150,10 @@ def test_writer_rejects_invalid_paths_and_translates_write_failure(
 ) -> None:
     """Invalid or failed destinations must not be reported as a complete checked fixture tree."""
     expected = _checked_tree()
-    with pytest.raises(TrafficlabError, match="invalid fit fixture path set"):
+    with pytest.raises(
+        TrafficlabError,
+        match="invalid genetic-fitting and checkpoint-resume fixture path set",
+    ):
         fixture_generator.write_fixture_tree({"../escape": b"no"})
 
     destination = tmp_path / "fit"
