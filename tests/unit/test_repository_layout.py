@@ -185,10 +185,6 @@ def test_agents_requires_precise_progress_and_generated_task_labels() -> None:
             "fixtures/tests/process_guard/process_guard_tree.py",
         ),
         (
-            "tests/fixtures/validation_study_candidate",
-            "fixtures/tests/validation_study/candidate",
-        ),
-        (
             "tests/fixtures/validation_study_pre_user_agent_r6",
             "fixtures/tests/validation_study/pre-user-agent-r6",
         ),
