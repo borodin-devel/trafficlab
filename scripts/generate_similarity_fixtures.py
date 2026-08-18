@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or verify the deterministic Phase 2 offline-comparison fixtures."""
+"""Generate or verify the deterministic canonical-trace and offline-similarity fixture."""
 
 import argparse
 import tempfile
@@ -62,7 +62,7 @@ def _build_temporary_run(root: Path) -> Path:
     if bounds is None:
         raise TrafficlabError(
             "minimal example configuration has no Poisson model bounds",
-            corrective_action="restore models.poisson_empirical before generating Phase 2 fixtures",
+            corrective_action="restore models.poisson_empirical before generating the canonical-trace and offline-similarity fixture",
         )
     reference, window = normalize_reference(_REFERENCE_EVENTS)
     model = make_best_model(
@@ -89,22 +89,22 @@ def _validate_canonical_events(run_directory: Path) -> None:
     metadata = load_capture_metadata(run_directory / "capture.json")
     if metadata != _METADATA:
         raise TrafficlabError(
-            "generated capture metadata does not match the hand-listed fixture",
-            corrective_action="restore the Phase 2 fixture metadata and regenerate",
+            "canonical-trace and offline-similarity fixture metadata does not match the hand-listed metadata",
+            corrective_action="restore the canonical-trace and offline-similarity fixture metadata and regenerate",
         )
     parsed_reference = parse_pcapng(run_directory / "reference.pcapng", metadata)
     if parsed_reference != _REFERENCE_EVENTS:
         raise TrafficlabError(
-            "reference PCAPNG events do not match the hand-listed canonical fixture",
-            corrective_action="restore the Phase 2 reference events and regenerate",
+            "canonical-trace and offline-similarity fixture reference events do not match the hand-listed events",
+            corrective_action="restore the canonical-trace and offline-similarity fixture reference events and regenerate",
         )
     model_path = run_directory / "best_model.json"
     model = load_best_model(model_path.read_bytes(), source=model_path)
     _, _, expected_generated = reproduce_generated_pcapng(model, metadata, clock=lambda: 0.0)
     if (run_directory / "generated.pcapng").read_bytes() != expected_generated:
         raise TrafficlabError(
-            "generated PCAPNG is not owned by the retained fitted model",
-            corrective_action="regenerate the Phase 2 model and generated capture together",
+            "canonical-trace and offline-similarity fixture generated capture is not owned by its retained fitted model",
+            corrective_action="regenerate the canonical-trace and offline-similarity fixture model and generated capture together",
         )
 
 
@@ -119,13 +119,13 @@ def _check_artifacts(generated: dict[str, bytes]) -> None:
             checked_in = path.read_bytes()
         except OSError as error:
             raise TrafficlabError(
-                f"could not read checked-in Phase 2 fixture {path}: {error}",
-                corrective_action="run the fixture generator without --check",
+                f"could not read checked-in canonical-trace and offline-similarity fixture {path}: {error}",
+                corrective_action="run the canonical-trace and offline-similarity fixture generator without --check",
             ) from error
         if checked_in != generated[name]:
             raise TrafficlabError(
-                f"checked-in Phase 2 fixture differs from deterministic production output: {path}",
-                corrective_action="run the fixture generator without --check and commit the result",
+                f"checked-in canonical-trace and offline-similarity fixture differs from deterministic production output: {path}",
+                corrective_action="run the canonical-trace and offline-similarity fixture generator without --check and commit the result",
             )
 
 
@@ -137,7 +137,7 @@ def _write_artifacts(generated: dict[str, bytes]) -> None:
             path.write_bytes(generated[name])
         except OSError as error:
             raise TrafficlabError(
-                f"could not write Phase 2 fixture {path}: {error}",
+                f"could not write canonical-trace and offline-similarity fixture {path}: {error}",
                 corrective_action="verify the example data directory is writable",
             ) from error
 
@@ -154,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = build_parser().parse_args()
-    with tempfile.TemporaryDirectory(prefix="trafficlab-phase2-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="trafficlab-similarity-fixtures-") as temporary:
         run_directory = _build_temporary_run(Path(temporary))
         _validate_canonical_events(run_directory)
         generated = _read_artifacts(run_directory)

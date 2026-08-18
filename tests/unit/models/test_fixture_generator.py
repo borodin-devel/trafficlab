@@ -17,7 +17,7 @@ _MODEL_BYTES = (PIPELINE_FIXTURE_ROOT / "models" / "best_model.json").read_bytes
 _GENERATED_BYTES = (PIPELINE_FIXTURE_ROOT / "models" / "generated.pcapng").read_bytes()
 
 
-def test_phase2_builder_publishes_the_model_that_owns_generated_bytes(tmp_path: Path) -> None:
+def test_similarity_builder_publishes_the_model_that_owns_generated_bytes(tmp_path: Path) -> None:
     run_directory = similarity_fixture_generator._build_temporary_run(tmp_path)  # pyright: ignore[reportPrivateUsage]
 
     assert (run_directory / "best_model.json").is_file()
@@ -25,7 +25,7 @@ def test_phase2_builder_publishes_the_model_that_owns_generated_bytes(tmp_path: 
     assert (run_directory / "similarity.json").is_file()
 
 
-def test_normal_mode_writes_both_phase4_artifacts(
+def test_normal_mode_writes_both_traffic_model_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -42,7 +42,7 @@ def test_normal_mode_writes_both_phase4_artifacts(
     assert generated_path.read_bytes() == _GENERATED_BYTES
 
 
-def test_check_mode_accepts_both_exact_phase4_artifacts(
+def test_check_mode_accepts_both_exact_traffic_model_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -83,7 +83,10 @@ def test_builder_translates_parent_fixture_read_failure(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(Path, "read_bytes", fail_capture)
 
-    with pytest.raises(TrafficlabError, match="parent Phase 2.*parent read sentinel"):
+    with pytest.raises(
+        TrafficlabError,
+        match="parent canonical-trace and offline-similarity fixture.*parent read sentinel",
+    ):
         fixture_generator._build_fixture()  # pyright: ignore[reportPrivateUsage]
 
 

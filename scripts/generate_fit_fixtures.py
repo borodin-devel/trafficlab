@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or verify the deterministic Phase 5 offline fitting fixture tree."""
+"""Generate or verify the deterministic genetic-fitting and checkpoint-resume fixture tree."""
 
 from __future__ import annotations
 
@@ -187,9 +187,9 @@ _REFERENCE_EVENTS = (
 _README = b"""\
 # Deterministic offline fitting fixture
 
-This directory is a tiny, Docker-free Phase 5 fit captured entirely through production codecs and the real fitting
-stage. Regenerate it with `uv run --locked python scripts/generate_fit_fixtures.py`; verify every expected path and
-byte with `uv run --locked python scripts/generate_fit_fixtures.py --check`.
+This Docker-free fixture exercises production codecs and the real heterogeneous fitting path, including
+checkpoint-compatible artifacts. Regenerate it with `uv run --locked python scripts/generate_fit_fixtures.py`;
+verify every expected path and byte with `uv run --locked python scripts/generate_fit_fixtures.py --check`.
 
 The reference contains 21 Ethernet events from timestamp 20.0 through 30.0, so the one normalized observation
 window is exactly `W = 10.0` seconds. Registry metadata remains lexical for display, while master seed 73 derives
@@ -219,12 +219,12 @@ def _fixture_config() -> ExperimentConfig:
         reparsed = ExperimentConfig.model_validate(tomllib.loads(rendered.decode("utf-8")))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError, ValueError) as error:
         raise TrafficlabError(
-            f"invalid deterministic fit fixture configuration: {error}",
-            corrective_action="correct the checked fixture generator configuration",
+            f"invalid genetic-fitting and checkpoint-resume fixture configuration: {error}",
+            corrective_action="correct the checked genetic-fitting and checkpoint-resume fixture generator configuration",
         ) from error
     if reparsed != config:
         raise TrafficlabError(
-            "deterministic fit fixture configuration did not round-trip",
+            "genetic-fitting and checkpoint-resume fixture configuration did not round-trip",
             corrective_action="report the production effective-configuration codec defect",
         )
     return config
@@ -242,8 +242,8 @@ def _prepared_fixture(config: ExperimentConfig, run_directory: Path) -> Prepared
 def _validate_fixture_tree(tree: dict[str, bytes], run_directory: Path) -> None:
     if tuple(tree) != ARTIFACT_NAMES:
         raise TrafficlabError(
-            "deterministic fit fixture tree has the wrong paths",
-            corrective_action="restore the complete ordered Phase 5 fixture artifact set",
+            "genetic-fitting and checkpoint-resume fixture tree has the wrong paths",
+            corrective_action="restore the complete ordered genetic-fitting and checkpoint-resume fixture artifact set",
         )
     try:
         config = ExperimentConfig.model_validate(tomllib.loads(tree["experiment.toml"].decode("utf-8")))
@@ -280,13 +280,13 @@ def _validate_fixture_tree(tree: dict[str, bytes], run_directory: Path) -> None:
         tree["README.md"].decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
         raise TrafficlabError(
-            f"generated fit fixture README is not UTF-8: {error}",
+            f"generated genetic-fitting and checkpoint-resume fixture README is not UTF-8: {error}",
             corrective_action="save the fixture README as UTF-8",
         ) from error
 
 
 def generate_fixture_tree() -> dict[str, bytes]:
-    """Run the real fit stage in an isolated directory and return all portable deterministic fixture bytes."""
+    """Run the real heterogeneous fitting path and return portable deterministic fixture bytes."""
     config = _fixture_config()
     experiment_content = render_effective_config(config)
     capture_content = render_capture_metadata(_METADATA)
@@ -335,7 +335,7 @@ def compare_fixture_tree(expected: dict[str, bytes]) -> int:
         }
     except OSError as error:
         raise TrafficlabError(
-            f"could not inspect checked fit fixture directory {FIT_DIRECTORY}: {error}",
+            f"could not inspect checked genetic-fitting and checkpoint-resume fixture directory {FIT_DIRECTORY}: {error}",
             corrective_action="verify the fixture directory is readable",
         ) from error
     for name in sorted(actual_names - set(expected)):
@@ -349,8 +349,8 @@ def write_fixture_tree(expected: dict[str, bytes]) -> None:
     """Write exactly the complete expected tree below examples/data/fit and nowhere else in the repository."""
     if tuple(expected) != ARTIFACT_NAMES or any(Path(name).name != name for name in expected):
         raise TrafficlabError(
-            "refusing to write an invalid fit fixture path set",
-            corrective_action="restore the exact flat Phase 5 fixture artifact names",
+            "refusing to write an invalid genetic-fitting and checkpoint-resume fixture path set",
+            corrective_action="restore the exact flat genetic-fitting and checkpoint-resume fixture artifact names",
         )
     try:
         FIT_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -358,14 +358,18 @@ def write_fixture_tree(expected: dict[str, bytes]) -> None:
             (FIT_DIRECTORY / name).write_bytes(content)
     except OSError as error:
         raise TrafficlabError(
-            f"could not write deterministic fit fixture tree: {error}",
+            f"could not write genetic-fitting and checkpoint-resume fixture tree: {error}",
             corrective_action="verify examples/data/fit is writable",
         ) from error
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="compare every checked-in fit fixture path and byte")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="compare every checked-in genetic-fitting and checkpoint-resume fixture path and byte",
+    )
     return parser
 
 
@@ -375,10 +379,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.check:
         status = compare_fixture_tree(expected)
         if status == 0:
-            print("fit fixtures: checked-in paths and bytes match deterministic production output")
+            print(
+                "genetic-fitting and checkpoint-resume fixture: checked-in paths and bytes match deterministic output"
+            )
         return status
     write_fixture_tree(expected)
-    print(f"fit fixtures: wrote {', '.join(ARTIFACT_NAMES)} to {FIT_DIRECTORY}")
+    print(f"genetic-fitting and checkpoint-resume fixture: wrote {', '.join(ARTIFACT_NAMES)} to {FIT_DIRECTORY}")
     return 0
 
 
@@ -386,5 +392,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except TrafficlabError as error:
-        print(f"fit fixtures: {error}; {error.corrective_action}", file=sys.stderr)
+        print(f"genetic-fitting and checkpoint-resume fixture: {error}; {error.corrective_action}", file=sys.stderr)
         raise SystemExit(error.exit_code) from None

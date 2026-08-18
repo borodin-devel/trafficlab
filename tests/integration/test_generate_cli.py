@@ -1564,7 +1564,7 @@ def test_cli_default_generate_lazily_imports_and_runs_stage(
     assert captured.err == ""
 
 
-def test_cli_generated_capture_matches_checked_phase4_fixture_and_final_settings(
+def test_cli_generated_capture_matches_checked_traffic_model_fixture_and_final_settings(
     valid_config_data: dict[str, object],
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

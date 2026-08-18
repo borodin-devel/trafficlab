@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or verify the deterministic Phase 4 final-capture fixture."""
+"""Generate or verify the deterministic traffic-model generation fixture."""
 
 from __future__ import annotations
 
@@ -37,8 +37,8 @@ def _build_fixture() -> tuple[bytes, bytes]:
         reference_content = reference_path.read_bytes()
     except OSError as error:
         raise TrafficlabError(
-            f"could not read parent Phase 2 model input: {error}",
-            corrective_action="restore the checked-in Phase 2 capture and reference fixtures",
+            f"could not read parent canonical-trace and offline-similarity fixture input: {error}",
+            corrective_action="restore the checked-in canonical-trace and offline-similarity fixture capture and reference artifacts",
         ) from error
 
     metadata = parse_capture_metadata(capture_content, source=capture_path)
@@ -72,12 +72,12 @@ def _build_fixture() -> tuple[bytes, bytes]:
     parsed_generated = parse_pcapng_bytes(generated_content, metadata, source=_GENERATED_PATH)
     if any(event.timestamp < 0.0 or event.timestamp > loaded.observation_window_seconds for event in parsed_generated):
         raise TrafficlabError(
-            "deterministic Phase 4 generated capture exceeds its stored observation window",
+            "traffic-model generation fixture generated capture exceeds its stored observation window",
             corrective_action="report the production PCAPNG generation defect",
         )
     if parsed_generated != rendered_events:
         raise TrafficlabError(
-            "deterministic Phase 4 generated capture did not round-trip",
+            "traffic-model generation fixture generated capture did not round-trip",
             corrective_action="report the production PCAPNG generation defect",
         )
     return model_content, generated_content
@@ -88,13 +88,13 @@ def _check_fixture(path: Path, expected: bytes) -> None:
         actual = path.read_bytes()
     except OSError as error:
         raise TrafficlabError(
-            f"could not read checked-in Phase 4 fixture {path}: {error}",
-            corrective_action="run the model fixture generator without --check",
+            f"could not read checked-in traffic-model generation fixture {path}: {error}",
+            corrective_action="run the traffic-model generation fixture generator without --check",
         ) from error
     if actual != expected:
         raise TrafficlabError(
-            f"checked-in Phase 4 fixture differs from deterministic production output: {path}",
-            corrective_action="run the model fixture generator without --check and commit the result",
+            f"checked-in traffic-model generation fixture differs from deterministic production output: {path}",
+            corrective_action="run the traffic-model generation fixture generator without --check and commit the result",
         )
 
 
@@ -104,14 +104,16 @@ def _write_fixture(path: Path, content: bytes) -> None:
         path.write_bytes(content)
     except OSError as error:
         raise TrafficlabError(
-            f"could not write Phase 4 fixture {path}: {error}",
-            corrective_action="verify the model fixture directory is writable",
+            f"could not write traffic-model generation fixture {path}: {error}",
+            corrective_action="verify the traffic-model generation fixture directory is writable",
         ) from error
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="byte-compare both checked-in Phase 4 artifacts")
+    parser.add_argument(
+        "--check", action="store_true", help="byte-compare both checked-in traffic-model generation artifacts"
+    )
     return parser
 
 
@@ -134,5 +136,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except TrafficlabError as error:
-        print(f"phase 4 model fixture: {error}; {error.corrective_action}")
+        print(f"traffic-model generation fixture: {error}; {error.corrective_action}")
         raise SystemExit(error.exit_code) from None

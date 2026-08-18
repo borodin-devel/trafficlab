@@ -1,8 +1,8 @@
 # Deterministic offline fitting fixture
 
-This directory is a tiny, Docker-free Phase 5 fit captured entirely through production codecs and the real fitting
-stage. Regenerate it with `uv run --locked python scripts/generate_fit_fixtures.py`; verify every expected path and
-byte with `uv run --locked python scripts/generate_fit_fixtures.py --check`.
+This Docker-free fixture exercises production codecs and the real heterogeneous fitting path, including
+checkpoint-compatible artifacts. Regenerate it with `uv run --locked python scripts/generate_fit_fixtures.py`;
+verify every expected path and byte with `uv run --locked python scripts/generate_fit_fixtures.py --check`.
 
 The reference contains 21 Ethernet events from timestamp 20.0 through 30.0, so the one normalized observation
 window is exactly `W = 10.0` seconds. Registry metadata remains lexical for display, while master seed 73 derives
