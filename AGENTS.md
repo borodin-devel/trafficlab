@@ -20,6 +20,8 @@ application dependencies, and no speculative infrastructure.
 - When completion changes, follow it with `[+<integer>%]` or `[-<integer>%]`;
   every task/subtask start and every percentage change must also include
   `[T: <clock_timestamp>]`.
+- Obtain `<clock_timestamp>` from the OS with `date +%T` or an equivalent OS
+  clock command; never invent or reuse it.
 - In generated task documents, label every logical task, step, stage, or phase
   as `[TASK-<ordinal>-<crc32>]`, `[STEP-<ordinal>-<crc32>]`, or the equivalent
   kind. Do not emit generic unlabeled task or step headings.

@@ -208,6 +208,7 @@ def test_agents_requires_precise_progress_and_generated_task_labels() -> None:
     assert "[+<integer>%]" in document
     assert "[-<integer>%]" in document
     assert "[T: <clock_timestamp>]" in document
+    assert "`date +%T`" in document
     assert "[ETA:" not in document
     for problem_class in range(1, 6):
         assert f"[PROBLEM-C{problem_class}]" in document
