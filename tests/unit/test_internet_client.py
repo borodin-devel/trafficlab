@@ -14,12 +14,13 @@ from typing import cast
 
 import pytest
 
+from tests.support.fixture_paths import DOCKER_FIXTURE_ROOT
 from trafficlab import USER_AGENT
 from trafficlab.compose import ComposePaths
 from trafficlab.config import ExperimentConfig
 from trafficlab.preflight import _probe_document  # pyright: ignore[reportPrivateUsage]
 
-_CLIENT_PATH = Path(__file__).parents[1] / "docker" / "images" / "client" / "client.py"
+_CLIENT_PATH = DOCKER_FIXTURE_ROOT / "images" / "client" / "client.py"
 _REPOSITORY_ROOT = Path(__file__).parents[2]
 
 
