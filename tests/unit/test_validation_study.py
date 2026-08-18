@@ -15,6 +15,7 @@ import sys
 import tomllib
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1520,6 +1521,67 @@ def _offline_validation_study_primary(
     return result, spec, workload, transfer_responses
 
 
+@pytest.fixture(scope="session")
+def offline_primary_baselines(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, _OfflinePrimaryBaseline]:
+    """Build the two immutable real-pipeline primary templates once per worker."""
+
+    short_parent = tmp_path_factory.mktemp("validation-study-primary-short")
+    short_root = short_parent / "repository"
+    short_result, short_spec, short_workload, short_responses = _offline_validation_study_primary(short_root)
+    short_template = short_parent / "template"
+    shutil.copytree(short_root, short_template, copy_function=shutil.copy2)
+
+    streaming_parent = tmp_path_factory.mktemp("validation-study-primary-streaming")
+    streaming_root = streaming_parent / "repository"
+    streaming_result, streaming_spec, streaming_workload, streaming_responses = _offline_validation_study_primary(
+        streaming_root,
+        execution_order=4,
+        run_id="04-streaming-r2",
+        workload_name="streaming",
+        repeat=2,
+    )
+    streaming_template = streaming_parent / "template"
+    shutil.copytree(streaming_root, streaming_template, copy_function=shutil.copy2)
+    return {
+        "short": (
+            short_root,
+            short_template,
+            short_result,
+            short_spec,
+            short_workload,
+            short_responses,
+        ),
+        "streaming": (
+            streaming_root,
+            streaming_template,
+            streaming_result,
+            streaming_spec,
+            streaming_workload,
+            streaming_responses,
+        ),
+    }
+
+
+def _materialize_offline_primary_baseline(
+    baseline: _OfflinePrimaryBaseline,
+) -> tuple[Path, RunResult, study.StudyRunSpec, study.WorkloadSpec, tuple[study.JsonObject, ...]]:
+    """Restore one exact primary tree at its original absolute workspace path."""
+
+    repository_root, template_root, result, spec, workload, transfer_responses = baseline
+    if repository_root.exists():
+        shutil.rmtree(repository_root)
+    shutil.copytree(template_root, repository_root, copy_function=shutil.copy2)
+    return (
+        repository_root,
+        result,
+        spec,
+        workload,
+        deepcopy(transfer_responses),
+    )
+
+
 def test_trace_summary_uses_canonical_events_and_multiscale_direction_totals(tmp_path: Path) -> None:
     config = study.build_base_config(
         study.workload_specs("https://downloads.example.test/object.bin")[0],
@@ -1595,11 +1657,59 @@ def test_trace_summary_uses_canonical_events_and_multiscale_direction_totals(tmp
     }
 
 
+_OfflinePrimaryBaseline = tuple[
+    Path,
+    Path,
+    RunResult,
+    study.StudyRunSpec,
+    study.WorkloadSpec,
+    tuple[study.JsonObject, ...],
+]
+
+
+def test_offline_primary_baseline_materializes_independent_regular_copies(
+    tmp_path: Path,
+    offline_primary_baselines: dict[str, _OfflinePrimaryBaseline],
+) -> None:
+    """Each extraction mutation starts from an independent regular-file primary tree."""
+
+    baseline = offline_primary_baselines["short"]
+    first_root, first_result, first_spec, _first_workload, _first_responses = _materialize_offline_primary_baseline(
+        baseline
+    )
+    first_log = first_spec.run_directory / "run.log"
+    original_log = first_log.read_bytes()
+    first_log.write_bytes(b"mutated\n")
+
+    second_root, second_result, second_spec, _second_workload, _second_responses = (
+        _materialize_offline_primary_baseline(baseline)
+    )
+    first_config = study.load_experiment(first_spec.config_path)
+    second_config = study.load_experiment(second_spec.config_path)
+
+    assert first_root == second_root
+    assert first_result.run_directory.is_relative_to(first_root)
+    assert second_result.run_directory.is_relative_to(second_root)
+    assert second_result.capture.reference_path.is_relative_to(second_root)
+    assert second_result.fit.best_model_path.is_relative_to(second_root)
+    assert second_result.generation.generated_path.is_relative_to(second_root)
+    assert second_spec.config_path.is_relative_to(second_root)
+    assert second_spec.transfer_evidence_directory.is_relative_to(second_root)
+    assert first_config.run.directory == first_spec.run_directory
+    assert first_config.target.mounts[0].source.is_relative_to(first_root)
+    assert second_config.run.directory == second_spec.run_directory
+    assert second_config.target.mounts[0].source.is_relative_to(second_root)
+    assert (second_spec.run_directory / "run.log").read_bytes() == original_log
+
+
 def test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    offline_primary_baselines: dict[str, _OfflinePrimaryBaseline],
 ) -> None:
-    result, spec, workload, transfer_responses = _offline_validation_study_primary(tmp_path / "repository")
+    repository_root, result, spec, workload, transfer_responses = _materialize_offline_primary_baseline(
+        offline_primary_baselines["short"]
+    )
     authoritative_trial = result.fit.outcome.final_trials[0]
     observed_trials: list[TrialResult] = []
     real_reconstruct = study._reconstruct_science  # pyright: ignore[reportPrivateUsage]
@@ -1625,7 +1735,7 @@ def test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_line
     monkeypatch.setattr(study, "evaluate_final", reject_evaluate)
 
     record = study.extract_primary_record(
-        tmp_path / "repository",
+        repository_root,
         spec,
         workload,
         result,
@@ -1694,9 +1804,11 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
     mutation: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    offline_primary_baselines: dict[str, _OfflinePrimaryBaseline],
 ) -> None:
-    repository_root = tmp_path / "repository"
-    result, spec, workload, transfer_responses = _offline_validation_study_primary(repository_root)
+    repository_root, result, spec, workload, transfer_responses = _materialize_offline_primary_baseline(
+        offline_primary_baselines["short"]
+    )
 
     if mutation == "missing-artifact":
         (spec.run_directory / "run.log").unlink()
@@ -5208,8 +5320,8 @@ def test_best_effort_archive_returns_secondary_diagnostics(tmp_path: Path) -> No
 def test_cli_reproduction_reconstructs_fresh_fresh_simulation_lineage_and_honest_source_deltas(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    offline_primary_baselines: dict[str, _OfflinePrimaryBaseline],
 ) -> None:
-    repository_root = tmp_path / "repository"
     evaluate_calls = 0
     real_evaluate_final = study.evaluate_final
 
@@ -5219,12 +5331,8 @@ def test_cli_reproduction_reconstructs_fresh_fresh_simulation_lineage_and_honest
         return real_evaluate_final(*args, **kwargs)
 
     monkeypatch.setattr(study, "evaluate_final", count_evaluate)
-    source_result, source_spec, workload, source_responses = _offline_validation_study_primary(
-        repository_root,
-        execution_order=4,
-        run_id="04-streaming-r2",
-        workload_name="streaming",
-        repeat=2,
+    repository_root, source_result, source_spec, workload, source_responses = _materialize_offline_primary_baseline(
+        offline_primary_baselines["streaming"]
     )
     source = study.extract_primary_record(
         repository_root,
