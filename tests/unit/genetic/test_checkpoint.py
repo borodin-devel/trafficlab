@@ -24,6 +24,7 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.checkpoint import (
     CheckpointArtifact,
     CheckpointCompatibility,
+    CheckpointCorruptionError,
     CheckpointState,
     FamilyCheckpointSpec,
     GeneticCheckpointSettings,
@@ -278,6 +279,45 @@ def test_checkpoint_publication_root_is_strict_and_schema_describes_every_varian
     ):
         assert f'"const": "{kind}"' in schema_text
     assert '"const": "python.random.Random/MT19937"' in schema_text
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "mt-623",
+        "mt-625",
+        "empty-trial-seeds",
+        "empty-families",
+        "empty-family-priority",
+        "empty-population",
+        "empty-history",
+        "empty-gene-order",
+        "empty-coordinates",
+        "schema-3",
+    ),
+)
+def test_independent_checkpoint_schema_rejects_invalid_required_array_cardinality_and_schema(
+    mutation: str,
+) -> None:
+    """Draft 2020-12 readers must enforce the same fixed and nonempty wire arrays as Pydantic."""
+    document = _decoded()
+    if mutation.startswith("mt-"):
+        rng = cast(dict[str, object], document["rng"])
+        state = cast(dict[str, object], rng["state"])
+        words = cast(list[object], state["mt_state"])
+        state["mt_state"] = words[:-1] if mutation == "mt-623" else [*words, 0]
+    elif mutation == "empty-gene-order":
+        cast(list[dict[str, object]], document["families"])[0]["gene_order"] = []
+    elif mutation == "empty-coordinates":
+        cast(list[dict[str, object]], document["families"])[0]["coordinates"] = []
+    elif mutation == "schema-3":
+        document["scientific_artifact_schema"] = 3
+    else:
+        document[mutation.removeprefix("empty-").replace("-", "_")] = []
+
+    schema = CheckpointArtifact.model_json_schema(mode="validation")
+    validator = Draft202012Validator(schema)
+    assert not validator.is_valid(cast(Any, document))  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_checkpoint_schema_revalidates_nested_instances_from_primitives() -> None:
@@ -817,6 +857,62 @@ def test_checkpoint_rejects_duplicate_json_keys() -> None:
     duplicate_key = content.replace(b'{"best":', b'{"best":null,"best":', 1)
     with pytest.raises(TrafficlabError, match="duplicate JSON key"):
         parse_checkpoint(duplicate_key, COMPATIBILITY)
+
+
+def test_checkpoint_parse_normalizes_pydantic_errors_without_input_or_url() -> None:
+    """Persisted attacker-controlled values and Pydantic URLs must not enter stable diagnostics."""
+    document = _decoded()
+    candidate = cast(dict[str, object], cast(list[object], document["population"])[0])
+    candidate["fitness"] = {"DO_NOT_LEAK_SECRET": True}
+
+    with pytest.raises(CheckpointCorruptionError) as captured:
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
+
+    assert str(captured.value) == (
+        "invalid checkpoint: population.0.valid.fitness: Value error, value must be an exact float [value_error]"
+    )
+    assert "DO_NOT_LEAK_SECRET" not in str(captured.value)
+    assert "pydantic.dev" not in str(captured.value)
+
+
+def test_checkpoint_render_normalizes_pydantic_errors_without_input_or_url() -> None:
+    """Invalid nested runtime instances must produce the same stable boundary diagnostic shape."""
+    poisoned = DuplicateDiagnostic.model_construct(
+        attempt=0,
+        outcome="duplicate",
+        detail=cast(Any, {"DO_NOT_LEAK_SECRET": True}),
+    )
+    candidate = replace(POPULATION[0], duplicate_diagnostics=(poisoned,))
+    state = replace(VALID_STATE, population=(candidate, *POPULATION[1:]))
+
+    with pytest.raises(CheckpointCorruptionError) as captured:
+        render_checkpoint(state)
+
+    assert str(captured.value) == (
+        "invalid checkpoint: population.0.valid.duplicate_diagnostics.0.detail: "
+        "Input should be a valid string [string_type]"
+    )
+    assert "DO_NOT_LEAK_SECRET" not in str(captured.value)
+    assert "pydantic.dev" not in str(captured.value)
+
+
+def test_checkpoint_render_rejects_schema_validation_that_changes_the_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A schema codec that normalizes canonical values must fail before publication."""
+
+    class ChangedArtifact:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {}
+
+    def changed_document(_cls: type[CheckpointArtifact], _value: object) -> ChangedArtifact:
+        return ChangedArtifact()
+
+    monkeypatch.setattr(CheckpointArtifact, "model_validate", classmethod(changed_document))
+
+    with pytest.raises(CheckpointCorruptionError, match="schema validation changed"):
+        render_checkpoint(VALID_STATE)
 
 
 @pytest.mark.parametrize(
@@ -2006,6 +2102,31 @@ def test_experiment_hash_mismatch_precedes_rng_engine_and_engine_mismatch_is_spe
     engine_and_experiment["experiment_identity"] = {"size": 101, "sha256": "d" * 64}
     with pytest.raises(TrafficlabError, match="experiment snapshot SHA-256"):
         parse_checkpoint(_encoded(engine_and_experiment), COMPATIBILITY)
+
+
+@pytest.mark.parametrize("engine", (None, True, 7, {}), ids=("null", "boolean", "integer", "object"))
+def test_malformed_rng_engine_is_corruption_not_experiment_incompatibility(engine: object) -> None:
+    document = _decoded()
+    cast(dict[str, object], document["rng"])["engine"] = engine
+
+    with pytest.raises(CheckpointCorruptionError, match="rng.engine"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
+
+
+def test_missing_rng_engine_is_corruption_not_experiment_incompatibility() -> None:
+    document = _decoded()
+    del cast(dict[str, object], document["rng"])["engine"]
+
+    with pytest.raises(CheckpointCorruptionError, match="rng.engine"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
+
+
+def test_nonobject_rng_record_is_corruption_not_experiment_incompatibility() -> None:
+    document = _decoded()
+    document["rng"] = []
+
+    with pytest.raises(CheckpointCorruptionError, match="rng"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
 
 
 def test_operator_mismatch_is_specific_and_checkpoint_is_not_rewritten(tmp_path: Path) -> None:

@@ -221,8 +221,8 @@ class RngState(_StrictCheckpointModel):
     state_version: NonnegativeInt
     mt_state: Annotated[
         tuple[Annotated[StrictInt, Field(ge=0, le=2**32 - 1)], ...],
-        BeforeValidator(_tuple_input),
         Field(min_length=624, max_length=624),
+        BeforeValidator(_tuple_input),
     ]
     index: Annotated[StrictInt, Field(ge=0, le=624)]
     gauss_next: None
@@ -242,9 +242,9 @@ class CheckpointCompatibility(_StrictCheckpointModel):
     reference_identity: ContentIdentity
     capture_identity: ContentIdentity
     observation_window_seconds: PositiveFloat
-    trial_seeds: Annotated[tuple[NonnegativeInt, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    trial_seeds: Annotated[tuple[NonnegativeInt, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
     trial_limits: GenerationLimits
-    families: Annotated[tuple[FamilyCheckpointSpec, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    families: Annotated[tuple[FamilyCheckpointSpec, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
     family_priority: Annotated[FamilyPriority, BeforeValidator(_tuple_input)]
     genetic: GeneticCheckpointSettings
     similarity: SimilarityConfig
@@ -340,8 +340,8 @@ class FamilyOperatorsRecord(_StrictCheckpointModel):
 
 class FamilyCheckpointRecord(_StrictCheckpointModel):
     name: FamilyName
-    gene_order: Annotated[tuple[NonemptyString, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
-    coordinates: Annotated[tuple[CoordinateRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    gene_order: Annotated[tuple[NonemptyString, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
+    coordinates: Annotated[tuple[CoordinateRecord, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
     operators: FamilyOperatorsRecord
 
 
@@ -460,21 +460,21 @@ class BestCandidateRecord(_StrictCheckpointModel):
 class CheckpointArtifact(_StrictCheckpointModel):
     """Exact public checkpoint JSON root before cross-artifact compatibility checks."""
 
-    scientific_artifact_schema: NonnegativeInt
+    scientific_artifact_schema: Literal[2]
     experiment_identity: ContentIdentityRecord
     reference_identity: ContentIdentityRecord
     capture_identity: ContentIdentityRecord
     observation_window_seconds: PositiveFloat
-    trial_seeds: Annotated[tuple[NonnegativeInt, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    trial_seeds: Annotated[tuple[NonnegativeInt, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
     trial_limits: GenerationLimits
-    families: Annotated[tuple[FamilyCheckpointRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
-    family_priority: Annotated[FamilyPriority, BeforeValidator(_tuple_input), Field(min_length=1)]
+    families: Annotated[tuple[FamilyCheckpointRecord, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
+    family_priority: Annotated[FamilyPriority, Field(min_length=1), BeforeValidator(_tuple_input)]
     genetic: GeneticCheckpointSettings
     similarity: SimilarityConfig
     rng: NamedRngState
     generation: NonnegativeInt
-    population: Annotated[tuple[CandidateRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
-    history: Annotated[tuple[HistoryRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    population: Annotated[tuple[CandidateRecord, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
+    history: Annotated[tuple[HistoryRecord, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
     best: BestCandidateRecord
     consecutive_stagnation: NonnegativeInt
     terminal_reason: TerminalReason
@@ -508,6 +508,15 @@ def _invalid(detail: str) -> CheckpointCorruptionError:
         f"invalid checkpoint: {detail}",
         corrective_action="preserve the checkpoint and resume from a compatible complete generation",
     )
+
+
+def _validation_error_detail(error: ValidationError) -> str:
+    """Return stable Pydantic diagnostics without persisted input values or documentation URLs."""
+    details: list[str] = []
+    for item in error.errors(include_url=False, include_input=False):
+        location = ".".join(str(component) for component in item["loc"])
+        details.append(f"{location}: {item['msg']} [{item['type']}]")
+    return "; ".join(details)
 
 
 def _compatibility_error(detail: str) -> TrafficlabError:
@@ -1372,7 +1381,9 @@ def render_checkpoint(state: CheckpointState) -> bytes:
         if validated_document != wire_document:
             raise ValueError("checkpoint schema validation changed the canonical document")
         text = json.dumps(validated_document, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    except (KeyError, TypeError, ValueError, ValidationError) as error:
+    except ValidationError as error:
+        raise _invalid(_validation_error_detail(error)) from error
+    except (KeyError, TypeError, ValueError) as error:
         raise _invalid(str(error)) from error
     return f"{text}\n".encode()
 
@@ -1389,8 +1400,10 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         if experiment_identity != compatibility.experiment_identity:
             raise _compatibility_error("experiment snapshot SHA-256/size identity")
         raw_rng = document.get("rng")
-        if type(raw_rng) is dict and cast(dict[str, object], raw_rng).get("engine") != compatibility.rng_engine:
-            raise _compatibility_error("RNG engine")
+        if type(raw_rng) is dict:
+            engine = cast(dict[str, object], raw_rng).get("engine")
+            if type(engine) is str and engine != compatibility.rng_engine:
+                raise _compatibility_error("RNG engine")
         artifact = CheckpointArtifact.model_validate(_with_complete_failure_records(document))
         stored_compatibility = _compatibility_from_artifact(artifact)
         validate_compatibility(stored_compatibility, compatibility)
@@ -1425,7 +1438,9 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         return state
     except TrafficlabError:
         raise
-    except (KeyError, TypeError, ValueError, ValidationError) as error:
+    except ValidationError as error:
+        raise _invalid(_validation_error_detail(error)) from error
+    except (KeyError, TypeError, ValueError) as error:
         raise _invalid(str(error)) from error
 
 
