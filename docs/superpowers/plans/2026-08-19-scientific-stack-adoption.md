@@ -368,27 +368,27 @@ Run Ruff, Pyright, all validation-study unit/integration selections, schema gene
 - Produces: `Generator(PCG64(seed))` draw protocol and JSON-compatible named RNG state; scientific artifact schema version 3.
 - Invalidates: schema-v2 best models/checkpoints with existing explicit refit instructions.
 
-- [ ] **[STEP-43-eb9ed857] Step 1: Add failing named-generator, draw-order, and v2 rejection tests**
+- [x] **[STEP-43-eb9ed857] Step 1: Add failing named-generator, draw-order, and v2 rejection tests**
 
 Assert no production constructor accepts module-global RNG, exact first draws for a literal seed and operation sequence, JSON state restore equality, schema-v2 artifact rejection, and schema-v3 render/parse/resume identity.
 
-- [ ] **[STEP-44-2f6276eb] Step 2: Run focused RNG/schema tests and capture RED**
+- [x] **[STEP-44-2f6276eb] Step 2: Run focused RNG/schema tests and capture RED**
 
 Run model generation, genetic population/operators/strategy/checkpoint, and scientific schema tests; confirm failures arise from Python `random.Random` state and schema version 2.
 
-- [ ] **[STEP-45-959bb089] Step 3: Introduce one typed PCG64 construction/state boundary**
+- [x] **[STEP-45-959bb089] Step 3: Introduce one typed PCG64 construction/state boundary**
 
 Centralize explicit `Generator(PCG64(seed))` construction and state encode/decode without wrapping every NumPy method. State records include bit-generator name and exact JSON-compatible state; mismatched names fail.
 
-- [ ] **[STEP-46-e8b6efb5] Step 4: Migrate model and genetic draws in declared order**
+- [x] **[STEP-46-e8b6efb5] Step 4: Migrate model and genetic draws in declared order**
 
 Translate uniform, integer, choice, exponential, shuffle/permutation, mutation, and crossover draws with explicit shapes/endpoints. Keep the call order stable and document it in owning architecture files. Never use `default_rng`.
 
-- [ ] **[STEP-47-fc4ae3f2] Step 5: Bump schema and regenerate deterministic artifacts**
+- [x] **[STEP-47-fc4ae3f2] Step 5: Bump schema and regenerate deterministic artifacts**
 
 Set `SCIENTIFIC_ARTIFACT_SCHEMA_VERSION = 3`, regenerate model/fit/similarity/validation fixtures through generators, update manifests, and prove two locked runs produce identical arrays and bytes.
 
-- [ ] **[STEP-48-f0a687c7] Step 6: Verify and commit RNG/schema v3**
+- [x] **[STEP-48-f0a687c7] Step 6: Verify and commit RNG/schema v3**
 
 Run Ruff, Pyright, all model/genetic unit and scientific tests, integration pipelines, and every affected generator `--check`. Commit `feat: adopt pcg64 scientific schema v3`.
 
