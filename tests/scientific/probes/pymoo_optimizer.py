@@ -6,11 +6,11 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypedDict, cast
+from typing import Annotated, Any, Literal, Self, TypedDict, cast
 
 import numpy as np
 import pymoo  # pyright: ignore[reportMissingTypeStubs]
-from pydantic import BaseModel, BeforeValidator, ConfigDict, StrictFloat, StrictInt
+from pydantic import BaseModel, BeforeValidator, ConfigDict, StrictBool, StrictFloat, StrictInt, model_validator
 from pymoo.algorithms.soo.nonconvex.ga import GA  # pyright: ignore[reportMissingTypeStubs]
 from pymoo.core.mixed import MixedVariableGA  # pyright: ignore[reportMissingTypeStubs]
 from pymoo.core.population import Population  # pyright: ignore[reportMissingTypeStubs]
@@ -36,7 +36,7 @@ from trafficlab.genetic.evaluation import (
     evaluate_final,
     validate_evaluation_context,
 )
-from trafficlab.genetic.types import Candidate, CandidateId
+from trafficlab.genetic.types import Candidate, CandidateId, TrialResult, rebuild_genetic_record
 from trafficlab.models.common import FamilyBounds, Gene, Genes, ModelFamily
 from trafficlab.models.registry import REGISTRY
 from trafficlab.trace import Direction, TraceEvent
@@ -59,6 +59,58 @@ CHAMPION_SEED = 43
 WINDOW_SECONDS = 6.0
 INVALID_OBJECTIVE = 1.0
 MINIMUM_LOC_REDUCTION_PERCENT = 40.0
+
+# Fix-round policy, declared before executing the revised known-case searches.
+KNOWN_POPULATION_SIZE = 20
+KNOWN_GENERATIONS = 40
+KNOWN_TOLERANCES = {
+    "bounded_continuous_sphere": 0.001,
+    "mixed_integer_real_quadratic": 0.001,
+}
+CONTINUOUS_INITIAL_SAMPLES: tuple[tuple[float, float], ...] = (
+    (-1.8, -1.8),
+    (-1.8, -0.9),
+    (-1.8, 0.9),
+    (-1.8, 1.8),
+    (-0.9, -1.8),
+    (-0.9, -0.9),
+    (-0.9, 0.9),
+    (-0.9, 1.8),
+    (0.9, -1.8),
+    (0.9, -0.9),
+    (0.9, 0.9),
+    (0.9, 1.8),
+    (1.8, -1.8),
+    (1.8, -0.9),
+    (1.8, 0.9),
+    (1.8, 1.8),
+    (-1.35, 0.45),
+    (-0.45, 1.35),
+    (0.45, -1.35),
+    (1.35, -0.45),
+)
+MIXED_INITIAL_SAMPLES: tuple[dict[str, int | float], ...] = (
+    {"count": 0, "scale": 0.6},
+    {"count": 1, "scale": 0.8},
+    {"count": 2, "scale": 1.0},
+    {"count": 3, "scale": 1.5},
+    {"count": 4, "scale": 1.7},
+    {"count": 5, "scale": 1.9},
+    {"count": 6, "scale": 0.7},
+    {"count": 0, "scale": 0.9},
+    {"count": 1, "scale": 1.1},
+    {"count": 2, "scale": 1.4},
+    {"count": 3, "scale": 1.0},
+    {"count": 4, "scale": 0.8},
+    {"count": 5, "scale": 1.6},
+    {"count": 6, "scale": 1.8},
+    {"count": 0, "scale": 2.0},
+    {"count": 1, "scale": 0.5},
+    {"count": 2, "scale": 1.9},
+    {"count": 3, "scale": 1.7},
+    {"count": 4, "scale": 1.1},
+    {"count": 5, "scale": 0.6},
+)
 
 GENERATION_LIMITS = GenerationLimits(
     max_packets=1_000,
@@ -93,6 +145,8 @@ CACHE_KEY_FIELDS = (
     "similarity",
 )
 CHECKPOINT_FIELDS = (
+    "complete",
+    "missing_fields",
     "population",
     "generation",
     "evaluation_count",
@@ -103,15 +157,17 @@ CHECKPOINT_FIELDS = (
 )
 REPLAY_HISTORY_FIELDS = (
     "evaluation_index",
-    "family",
-    "genes",
+    "generation",
+    "candidate",
     "objective",
-    "fitness",
-    "status",
-    "failure",
-    "trials",
+    "cache_key_payload",
     "cache_key",
     "cache_hit",
+)
+REPLAY_MISSING_FIELDS = (
+    "documented public algorithm initialization/iteration restore API",
+    "documented public operator configuration and mutable operator state",
+    "documented public termination-progress restore API",
 )
 PROHIBITED_SERIALIZERS = ("dill", "pickle", "cloudpickle")
 GATE_NAMES = (
@@ -162,7 +218,6 @@ _FAMILY_BOUNDS: dict[FamilyName, FamilyBounds] = {
     ),
     "poisson_empirical": PoissonConfig(c_lambda=FloatBounds(lower=0.5, upper=1.5)),
 }
-
 _INITIAL_VALUES: dict[FamilyName, tuple[dict[str, Gene], ...]] = {
     "markov_renewal": (
         {"q1": 0.2, "q2": 0.7, "alpha": 0.2, "r": 2, "c_t": 0.8},
@@ -183,7 +238,6 @@ _INITIAL_VALUES: dict[FamilyName, tuple[dict[str, Gene], ...]] = {
         {"c_lambda": 1.25},
     ),
 }
-
 _REFERENCE = tuple(
     TraceEvent(
         timestamp=index * 0.5,
@@ -194,31 +248,44 @@ _REFERENCE = tuple(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class _CachedOutcome:
-    candidate: Candidate
-    objective: float
-
-
-@dataclass(frozen=True, slots=True)
-class _FamilyExecution:
-    record: JsonObject
-    best_candidate: Candidate
-    checkpoint: JsonObject
-
-
 def _tuple_input(value: object) -> object:
     return tuple(cast(list[object], value)) if type(value) is list else value
 
 
 class _StrictProbeRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
+
+
+type Scalar = StrictInt | StrictFloat
+type Scalars = dict[str, Scalar]
+
+
+class VariableSpec(_StrictProbeRecord):
+    name: str
+    kind: Literal["integer", "real"]
+    lower: Scalar
+    upper: Scalar
+
+    @model_validator(mode="after")
+    def bound_types_match_kind(self) -> Self:
+        values = (self.lower, self.upper)
+        if self.kind == "integer" and any(type(value) is not int for value in values):
+            raise ValueError("integer variable bounds must be exact integers")
+        if self.kind == "real" and any(type(value) is not float for value in values):
+            raise ValueError("real variable bounds must be exact floats")
+        if self.lower >= self.upper:
+            raise ValueError("variable lower bound must be less than upper")
+        return self
 
 
 class PublicPopulationState(_StrictProbeRecord):
-    """One public pymoo population member without opaque algorithm internals."""
-
-    variables: dict[str, StrictInt | StrictFloat]
+    variables: Scalars
     objectives: Annotated[tuple[StrictFloat, ...], BeforeValidator(_tuple_input)]
     status: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
 
@@ -226,16 +293,39 @@ class PublicPopulationState(_StrictProbeRecord):
 class PublicTerminationState(_StrictProbeRecord):
     kind: Literal["MaximumGenerationTermination"]
     progress: StrictFloat
-    has_terminated: bool
+    has_terminated: StrictBool
+
+
+class ConstructorSettings(_StrictProbeRecord):
+    pop_size: StrictInt
+    n_offsprings: StrictInt | None
+    sampling: Literal["pymoo.core.population.Population"]
+    mating: Literal["pymoo.core.mixed.MixedVariableMating"]
+    eliminate_duplicates: StrictBool
+    survival: Literal["pymoo.algorithms.soo.nonconvex.ga.FitnessSurvival"]
+    output: Literal["pymoo.util.display.single.SingleObjectiveOutput"]
+    callback: Literal["pymoo.core.callback.Callback"]
+    display: Literal["pymoo.util.display.display.Display"]
+    archive: None
+    return_least_infeasible: Literal[False]
+    save_history: Literal[False]
+    verbose: Literal[False]
+    evaluator: Literal["pymoo.core.evaluator.Evaluator"]
+
+
+class TerminationSettings(_StrictProbeRecord):
+    kind: Literal["n_gen"]
+    value: StrictInt
 
 
 class PublicAlgorithmConfiguration(_StrictProbeRecord):
     algorithm: Literal["pymoo.core.mixed.MixedVariableGA"]
     family: FamilyName
-    population_size: StrictInt
-    generations: StrictInt
-    eliminate_duplicates: bool
-    variable_kinds: dict[str, Literal["integer", "real"]]
+    search_seed: StrictInt
+    variables: Annotated[tuple[VariableSpec, ...], BeforeValidator(_tuple_input)]
+    initial_sampling: Annotated[tuple[Scalars, ...], BeforeValidator(_tuple_input)]
+    constructor: ConstructorSettings
+    termination: TerminationSettings
 
 
 class PublicRngState(_StrictProbeRecord):
@@ -244,8 +334,8 @@ class PublicRngState(_StrictProbeRecord):
 
 
 class PublicStateSnapshot(_StrictProbeRecord):
-    """Strict transparent checkpoint fields observable through pymoo's public objects."""
-
+    complete: Literal[False]
+    missing_fields: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
     population: Annotated[tuple[PublicPopulationState, ...], BeforeValidator(_tuple_input)]
     generation: StrictInt
     evaluation_count: StrictInt
@@ -253,6 +343,249 @@ class PublicStateSnapshot(_StrictProbeRecord):
     configuration: PublicAlgorithmConfiguration
     pymoo_version: Literal["0.6.2"]
     rng: PublicRngState
+
+
+class CacheKeyRecord(_StrictProbeRecord):
+    family: FamilyName
+    genes: Annotated[tuple[Scalar, ...], BeforeValidator(_tuple_input)]
+    observation_window_seconds: StrictFloat
+    trial_seeds: Annotated[tuple[StrictInt, ...], BeforeValidator(_tuple_input)]
+    generation_limits: GenerationLimits
+    similarity: SimilarityConfig
+
+
+class AttemptRecord(_StrictProbeRecord):
+    evaluation_index: StrictInt
+    generation: StrictInt
+    candidate: Candidate
+    objective: StrictFloat
+    cache_key_payload: CacheKeyRecord
+    cache_key: str
+    cache_hit: StrictBool
+
+
+class FamilyRunRecord(_StrictProbeRecord):
+    optimizer_instance: StrictInt
+    optimizer_class: Literal["pymoo.core.mixed.MixedVariableGA"]
+    family: FamilyName
+    search_seed: StrictInt
+    observation_window_seconds: StrictFloat
+    trial_seeds: Annotated[tuple[StrictInt, ...], BeforeValidator(_tuple_input)]
+    generation_limits: GenerationLimits
+    similarity: SimilarityConfig
+    variables: Annotated[tuple[VariableSpec, ...], BeforeValidator(_tuple_input)]
+    initial_sampling: Annotated[tuple[Scalars, ...], BeforeValidator(_tuple_input)]
+    initial_evaluations: StrictInt
+    total_attempts: StrictInt
+    objective_evaluations: StrictInt
+    cache_hits: StrictInt
+    history: Annotated[tuple[AttemptRecord, ...], BeforeValidator(_tuple_input)]
+    best_candidate: Candidate
+
+    @model_validator(mode="after")
+    def history_cardinality_matches_summary(self) -> Self:
+        if len(self.history) != self.total_attempts:
+            raise ValueError("family history length must equal total attempts")
+        return self
+
+
+class FamilyEvidence(_StrictProbeRecord):
+    family: FamilyName
+    runs: Annotated[tuple[FamilyRunRecord, FamilyRunRecord], BeforeValidator(_tuple_input)]
+
+
+class KnownPopulationRecord(_StrictProbeRecord):
+    variables: Scalars
+    objective: StrictFloat
+
+
+class KnownGenerationRecord(_StrictProbeRecord):
+    generation: StrictInt
+    evaluation_count: StrictInt
+    minimum_objective: StrictFloat
+    population: Annotated[tuple[KnownPopulationRecord, ...], BeforeValidator(_tuple_input)]
+
+
+class KnownRunRecord(_StrictProbeRecord):
+    variables: Scalars
+    objective: StrictFloat
+    evaluations: StrictInt
+    initial_minimum_objective: StrictFloat
+    history: Annotated[tuple[KnownGenerationRecord, ...], BeforeValidator(_tuple_input)]
+
+
+class KnownOptimumRecord(_StrictProbeRecord):
+    variables: Scalars
+    objective: StrictFloat
+
+
+class KnownCaseEvidence(_StrictProbeRecord):
+    name: Literal["bounded_continuous_sphere", "mixed_integer_real_quadratic"]
+    variable_kinds: dict[str, Literal["integer", "real"]]
+    bounds: dict[str, Annotated[tuple[Scalar, Scalar], BeforeValidator(_tuple_input)]]
+    known_optimum: KnownOptimumRecord
+    tolerance: StrictFloat
+    population_size: StrictInt
+    generations: StrictInt
+    initial_sampling: Annotated[tuple[Scalars, ...], BeforeValidator(_tuple_input)]
+    runs: Annotated[tuple[KnownRunRecord, KnownRunRecord], BeforeValidator(_tuple_input)]
+
+
+class ChampionRecord(_StrictProbeRecord):
+    family: FamilyName
+    candidate: Candidate
+    fresh_seed: StrictInt
+    fresh_fitness: StrictFloat
+    search_attempts_completed: StrictInt
+    trials: Annotated[tuple[TrialResult, ...], BeforeValidator(_tuple_input)]
+
+
+class FairnessEvidence(_StrictProbeRecord):
+    measured_family_set: Annotated[tuple[FamilyName, ...], BeforeValidator(_tuple_input)]
+    distinct_optimizer_instances: StrictInt
+    common_search_seed: StrictInt
+    common_trial_seeds: Annotated[tuple[StrictInt, ...], BeforeValidator(_tuple_input)]
+    common_champion_seed: StrictInt
+    common_window_seconds: StrictFloat
+    common_generation_limits: GenerationLimits
+    common_similarity: SimilarityConfig
+    equal_initial_budget: StrictInt
+    equal_total_budget: StrictInt
+    cache_key_fields: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    champions_compared_after_attempts: StrictInt
+    champion_comparison: Annotated[tuple[ChampionRecord, ...], BeforeValidator(_tuple_input)]
+    winner_family: FamilyName
+
+
+class InvalidClassificationEvidence(_StrictProbeRecord):
+    execution: Literal["pymoo.MixedVariableGA.next"]
+    family: Literal["poisson_empirical"]
+    limits: GenerationLimits
+    pymoo_evaluations: StrictInt
+    history: Annotated[tuple[AttemptRecord, ...], BeforeValidator(_tuple_input)]
+
+
+class ReplayComparison(_StrictProbeRecord):
+    exact_history_identity: StrictBool
+    checked_fields: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    uninterrupted_history: Annotated[tuple[AttemptRecord, ...], BeforeValidator(_tuple_input)]
+    resumed_history: tuple[AttemptRecord, ...] | None
+    reason: str
+
+
+class PublicApiProof(_StrictProbeRecord):
+    installed_algorithm_methods: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    installed_observable_state: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    documented_checkpoint_transport: Literal["dill algorithm serialization"]
+    opaque_transport_allowed: Literal[False]
+    transparent_restore_api: None
+    checkpoint_documentation: str
+    usage_documentation: str
+
+
+class CheckpointEvidence(_StrictProbeRecord):
+    encoding: Literal["canonical-json"]
+    snapshot: PublicStateSnapshot
+    comparison: ReplayComparison
+    public_api_proof: PublicApiProof
+
+
+class LocFileRecord(_StrictProbeRecord):
+    path: str
+    sloc: StrictInt
+
+
+class ProductionLocEvidence(_StrictProbeRecord):
+    status: Literal["indeterminate"]
+    method: Literal["nonblank non-comment physical Python lines"]
+    current_inventory: Annotated[tuple[LocFileRecord, ...], BeforeValidator(_tuple_input)]
+    current_sloc: StrictInt
+    estimated_reduction_percent: None
+    required_reduction_percent: StrictFloat
+    gate_passed: Literal[False]
+    reason: str
+
+
+class GateRecord(_StrictProbeRecord):
+    known_optima: StrictBool
+    deterministic_repeats: StrictBool
+    family_fairness: StrictBool
+    cache_and_diagnostics: StrictBool
+    exact_public_state_replay: StrictBool
+    production_loc_reduction: StrictBool
+
+
+class DecisionRecord(_StrictProbeRecord):
+    outcome: Literal["pass", "reject"]
+    failed_gates: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    production_changed: Literal[False]
+    production_strategy: Literal["basic_generational"]
+
+
+class PolicyRecord(_StrictProbeRecord):
+    production_changed: Literal[False]
+    pymoo_version: Literal["0.6.2"]
+    family_names: Annotated[tuple[FamilyName, ...], BeforeValidator(_tuple_input)]
+    independent_optimizer_per_family: Literal[True]
+    categorical_family_variable: Literal[False]
+    initial_evaluation_budget: StrictInt
+    total_generations: StrictInt
+    search_seed: StrictInt
+    trial_seeds: Annotated[tuple[StrictInt, ...], BeforeValidator(_tuple_input)]
+    champion_seed: StrictInt
+    window_seconds: StrictFloat
+    generation_limits: GenerationLimits
+    similarity: SimilarityConfig
+    cache_key_fields: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    checkpoint_fields: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    replay_history_fields: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    checkpoint_encoding: Literal["canonical-json"]
+    prohibited_serializers: Annotated[tuple[str, ...], BeforeValidator(_tuple_input)]
+    minimum_loc_reduction_percent: StrictFloat
+    known_population_size: StrictInt
+    known_generations: StrictInt
+    known_tolerances: dict[str, StrictFloat]
+
+
+class ProbeEvidence(_StrictProbeRecord):
+    schema_version: Literal[3]
+    probe: Literal["pymoo_optimizer"]
+    policy: PolicyRecord
+    known_cases: Annotated[tuple[KnownCaseEvidence, KnownCaseEvidence], BeforeValidator(_tuple_input)]
+    families: Annotated[
+        tuple[FamilyEvidence, FamilyEvidence, FamilyEvidence],
+        BeforeValidator(_tuple_input),
+    ]
+    fairness: FairnessEvidence
+    invalid_classification: InvalidClassificationEvidence
+    checkpoint: CheckpointEvidence
+    production_loc: ProductionLocEvidence
+    gates: GateRecord
+    decision: DecisionRecord
+
+    @model_validator(mode="after")
+    def evidence_sets_are_exact(self) -> Self:
+        if tuple(case.name for case in self.known_cases) != (
+            "bounded_continuous_sphere",
+            "mixed_integer_real_quadratic",
+        ):
+            raise ValueError("known case set and order must be exact")
+        if tuple(item.family for item in self.families) != FAMILY_NAMES:
+            raise ValueError("traffic family set and order must be exact")
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class _CachedOutcome:
+    candidate: Candidate
+    objective: float
+
+
+@dataclass(frozen=True, slots=True)
+class _FamilyExecution:
+    algorithm: object
+    run: FamilyRunRecord
+    checkpoint: PublicStateSnapshot
 
 
 class _SphereProblem(ElementwiseProblem):
@@ -265,7 +598,11 @@ class _SphereProblem(ElementwiseProblem):
         )
 
     def _evaluate(
-        self, values: np.ndarray[Any, np.dtype[np.float64]], out: dict[str, object], *args: object, **kwargs: object
+        self,
+        values: np.ndarray[Any, np.dtype[np.float64]],
+        out: dict[str, object],
+        *args: object,
+        **kwargs: object,
     ) -> None:
         del args, kwargs
         out["F"] = float(values[0] ** 2 + values[1] ** 2)
@@ -292,104 +629,99 @@ def _json_value(value: object) -> object:
     if isinstance(value, np.ndarray):
         return [_json_value(item) for item in value.tolist()]
     if isinstance(value, Mapping):
-        items = cast(Mapping[object, object], value)
-        return {str(key): _json_value(item) for key, item in items.items()}
+        return {str(key): _json_value(item) for key, item in cast(Mapping[object, object], value).items()}
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in cast(Sequence[object], value)]
     return value
 
 
-def _population_records(population: PymooPopulation) -> list[JsonObject]:
-    records: list[JsonObject] = []
-    for individual in population:
-        objectives = cast(np.ndarray[Any, np.dtype[np.float64]], individual.F)
-        records.append(
-            {
-                "variables": _json_value(individual.X),
-                "objectives": [float(item) for item in objectives],
-                "status": sorted(str(item) for item in individual.evaluated),
-            }
-        )
-    return records
-
-
-def _known_history(algorithm: PymooAlgorithm) -> JsonObject:
-    if algorithm.pop is None:
+def _known_population(algorithm: PymooAlgorithm) -> tuple[KnownPopulationRecord, ...]:
+    population = algorithm.pop
+    if population is None:
         raise AssertionError("completed pymoo generation has no population")
-    return {
-        "generation": cast(int, algorithm.n_gen),
-        "evaluation_count": int(algorithm.evaluator.n_eval),
-        "population": _population_records(algorithm.pop),
-    }
+    output: list[KnownPopulationRecord] = []
+    for individual in population:
+        raw_variables = _json_value(individual.X)
+        if isinstance(raw_variables, list):
+            variables: Scalars = {
+                "x0": float(cast(Any, raw_variables[0])),
+                "x1": float(cast(Any, raw_variables[1])),
+            }
+        else:
+            variables = cast(Scalars, raw_variables)
+        output.append(KnownPopulationRecord(variables=variables, objective=float(individual.F[0])))
+    return tuple(output)
 
 
-def _run_known_case(name: str) -> JsonObject:
-    history: list[JsonObject] = []
+def _run_known_case(name: str) -> KnownRunRecord:
+    history: list[KnownGenerationRecord] = []
     if name == "bounded_continuous_sphere":
-        sampling = np.array(((0.0, 0.0), (-2.0, -2.0), (2.0, 2.0), (1.0, -1.0)), dtype=np.float64)
         problem: ElementwiseProblem = _SphereProblem()
         algorithm: PymooAlgorithm = _GA(
-            pop_size=INITIAL_EVALUATION_BUDGET,
-            sampling=sampling,
+            pop_size=KNOWN_POPULATION_SIZE,
+            sampling=np.asarray(CONTINUOUS_INITIAL_SAMPLES, dtype=np.float64),
             eliminate_duplicates=False,
         )
     elif name == "mixed_integer_real_quadratic":
-        sampling = _POPULATION.new(
-            X=np.array(
-                (
-                    {"count": 3, "scale": 1.25},
-                    {"count": 0, "scale": 0.5},
-                    {"count": 6, "scale": 2.0},
-                    {"count": 2, "scale": 1.0},
-                ),
-                dtype=object,
-            )
-        )
         problem = _MixedKnownProblem()
+        initial = _POPULATION.new(X=np.array(MIXED_INITIAL_SAMPLES, dtype=object))
         algorithm = _MIXED_VARIABLE_GA(
-            pop_size=INITIAL_EVALUATION_BUDGET,
-            sampling=sampling,
+            pop_size=KNOWN_POPULATION_SIZE,
+            sampling=initial,
             eliminate_duplicates=False,
         )
     else:
         raise ValueError(f"unknown known-optimum case: {name}")
-    algorithm.setup(problem, termination=("n_gen", TOTAL_GENERATIONS), seed=SEARCH_SEED, verbose=False)
+    algorithm.setup(problem, termination=("n_gen", KNOWN_GENERATIONS), seed=SEARCH_SEED, verbose=False)
     while algorithm.has_next():
         algorithm.next()
-        history.append(_known_history(algorithm))
+        population = _known_population(algorithm)
+        history.append(
+            KnownGenerationRecord(
+                generation=len(history),
+                evaluation_count=int(algorithm.evaluator.n_eval),
+                minimum_objective=min(item.objective for item in population),
+                population=population,
+            )
+        )
     result = algorithm.result()
-    variables = _json_value(result.X)
-    if name == "bounded_continuous_sphere":
-        sequence = cast(list[object], variables)
-        variables = {"x0": float(cast(Any, sequence[0])), "x1": float(cast(Any, sequence[1]))}
-    objective = float(cast(np.ndarray[Any, np.dtype[np.float64]], result.F)[0])
-    specification = next(case for case in KNOWN_CASES if case["name"] == name)
-    return {
-        "name": name,
-        "known_optimum": _json_value(specification["known_optimum"]),
-        "variables": variables,
-        "objective": objective,
-        "evaluations": int(algorithm.evaluator.n_eval),
-        "history": history,
-        "passed": variables == specification["known_optimum"]["variables"] and objective == 0.0,
-    }
+    raw_variables = _json_value(result.X)
+    if isinstance(raw_variables, list):
+        variables: Scalars = {
+            "x0": float(cast(Any, raw_variables[0])),
+            "x1": float(cast(Any, raw_variables[1])),
+        }
+    else:
+        variables = cast(Scalars, raw_variables)
+    return KnownRunRecord(
+        variables=variables,
+        objective=float(result.F[0]),
+        evaluations=int(algorithm.evaluator.n_eval),
+        initial_minimum_objective=history[0].minimum_objective,
+        history=tuple(history),
+    )
 
 
-def _family_variables(family: ModelFamily, bounds: FamilyBounds) -> dict[str, PymooVariable]:
-    variables: dict[str, PymooVariable] = {}
+def _variable_specs(family: ModelFamily, bounds: FamilyBounds) -> tuple[VariableSpec, ...]:
+    output: list[VariableSpec] = []
     for name in family.gene_names:
         bound = getattr(bounds, name)
         if type(bound) is IntegerBounds:
-            variables[name] = Integer(bounds=(bound.lower, bound.upper))
+            output.append(VariableSpec(name=name, kind="integer", lower=bound.lower, upper=bound.upper))
         elif type(bound) is FloatBounds:
-            variables[name] = Real(bounds=(bound.lower, bound.upper))
+            output.append(VariableSpec(name=name, kind="real", lower=bound.lower, upper=bound.upper))
         else:
             raise TypeError(f"unsupported bounds for {family.name}.{name}")
-    return variables
+    return tuple(output)
 
 
-def _variable_kinds(variables: Mapping[str, PymooVariable]) -> dict[str, str]:
-    return {name: "integer" if isinstance(variable, Integer) else "real" for name, variable in variables.items()}
+def _family_variables(specs: Sequence[VariableSpec]) -> dict[str, PymooVariable]:
+    return {
+        spec.name: Integer(bounds=(spec.lower, spec.upper))
+        if spec.kind == "integer"
+        else Real(bounds=(spec.lower, spec.upper))
+        for spec in specs
+    }
 
 
 def _genes(family: ModelFamily, values: Mapping[str, Any]) -> Genes:
@@ -400,49 +732,53 @@ def _genes(family: ModelFamily, values: Mapping[str, Any]) -> Genes:
     return tuple(output)
 
 
-def _cache_key(family: FamilyName, genes: Genes, context: ValidatedEvaluationContext) -> str:
-    document = {
-        "family": family,
-        "genes": list(genes),
-        "observation_window_seconds": context.window,
-        "trial_seeds": list(context.trial_seeds),
-        "generation_limits": context.trial_limits.model_dump(mode="json"),
-        "similarity": context.similarity.model_dump(mode="json"),
-    }
-    if tuple(document) != CACHE_KEY_FIELDS:
-        raise AssertionError("cache key fields drifted from the predeclared identity")
-    return json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False)
+def _cache_payload(family: FamilyName, genes: Genes, context: ValidatedEvaluationContext) -> CacheKeyRecord:
+    return CacheKeyRecord(
+        family=family,
+        genes=genes,
+        observation_window_seconds=context.window,
+        trial_seeds=context.trial_seeds,
+        generation_limits=context.trial_limits,
+        similarity=context.similarity,
+    )
 
 
-def _candidate_record(candidate: Candidate) -> tuple[JsonObject | None, list[JsonObject]]:
-    failure = None if candidate.invalid is None else candidate.invalid.model_dump(mode="json")
-    trials = [trial.model_dump(mode="json") for trial in candidate.trials]
-    return (failure, trials)
+def _render_cache_key(payload: CacheKeyRecord) -> str:
+    return json.dumps(payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 class _TrafficProblem(ElementwiseProblem):
-    def __init__(self, family: ModelFamily, context: ValidatedEvaluationContext) -> None:
+    def __init__(
+        self,
+        family: ModelFamily,
+        context: ValidatedEvaluationContext,
+        *,
+        population_size: int,
+    ) -> None:
         self.family = family
         self.context = context
+        self.population_size = population_size
         self.cache: dict[str, _CachedOutcome] = {}
-        self.history: list[JsonObject] = []
+        self.history: list[AttemptRecord] = []
+        specs = _variable_specs(family, context.bounds[family.name])
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
-            vars=_family_variables(family, context.bounds[family.name])
+            vars=_family_variables(specs)
         )
 
     def _evaluate(self, values: dict[str, Any], out: dict[str, object], *args: object, **kwargs: object) -> None:
         del args, kwargs
+        evaluation_index = len(self.history) + 1
+        generation = (evaluation_index - 1) // self.population_size
+        birth_index = (evaluation_index - 1) % self.population_size
+        identifier = CandidateId(birth_generation=generation, birth_index=birth_index)
         genes = _genes(self.family, values)
-        key = _cache_key(self.family.name, genes, self.context)
+        payload = _cache_payload(self.family.name, genes, self.context)
+        key = _render_cache_key(payload)
         cached = self.cache.get(key)
         cache_hit = cached is not None
         if cached is None:
-            index = len(self.history)
             pending = Candidate(
-                identifier=CandidateId(
-                    birth_generation=index // INITIAL_EVALUATION_BUDGET,
-                    birth_index=index % INITIAL_EVALUATION_BUDGET,
-                ),
+                identifier=identifier,
                 family=self.family.name,
                 genes=genes,
                 status="pending",
@@ -451,23 +787,20 @@ class _TrafficProblem(ElementwiseProblem):
                 invalid=None,
                 duplicate_diagnostics=(),
             )
-            candidate = evaluate_candidate(pending, self.context)
-            cached = _CachedOutcome(candidate=candidate, objective=1.0 - candidate.fitness)
+            evaluated = evaluate_candidate(pending, self.context)
+            cached = _CachedOutcome(candidate=evaluated, objective=1.0 - evaluated.fitness)
             self.cache[key] = cached
-        failure, trials = _candidate_record(cached.candidate)
+        attempt_candidate = rebuild_genetic_record(cached.candidate, identifier=identifier)
         self.history.append(
-            {
-                "evaluation_index": len(self.history) + 1,
-                "family": self.family.name,
-                "genes": list(cached.candidate.genes if cached.candidate.genes is not None else genes),
-                "objective": cached.objective,
-                "fitness": cached.candidate.fitness,
-                "status": cached.candidate.status,
-                "failure": failure,
-                "trials": trials,
-                "cache_key": key,
-                "cache_hit": cache_hit,
-            }
+            AttemptRecord(
+                evaluation_index=evaluation_index,
+                generation=generation,
+                candidate=attempt_candidate,
+                objective=cached.objective,
+                cache_key_payload=payload,
+                cache_key=key,
+                cache_hit=cache_hit,
+            )
         )
         out["F"] = cached.objective
 
@@ -487,188 +820,334 @@ def _evaluation_context(limits: GenerationLimits = GENERATION_LIMITS) -> Validat
     )
 
 
-def _public_snapshot(algorithm: PymooAlgorithm, *, family: FamilyName, variable_kinds: dict[str, str]) -> JsonObject:
+def _public_population(population: PymooPopulation) -> tuple[PublicPopulationState, ...]:
+    return tuple(
+        PublicPopulationState(
+            variables=cast(Scalars, _json_value(individual.X)),
+            objectives=tuple(float(item) for item in individual.F),
+            status=tuple(sorted(str(item) for item in individual.evaluated)),
+        )
+        for individual in population
+    )
+
+
+def _public_snapshot(
+    algorithm: PymooAlgorithm,
+    *,
+    family: ModelFamily,
+    specs: tuple[VariableSpec, ...],
+    initial_sampling: tuple[Scalars, ...],
+) -> PublicStateSnapshot:
     population = algorithm.pop
     termination = algorithm.termination
     random_state = algorithm.random_state
     if population is None or termination is None or random_state is None:
         raise AssertionError("pymoo public state is incomplete after a generation")
-    snapshot_record = PublicStateSnapshot.model_validate(
-        {
-            "population": _population_records(population),
-            "generation": cast(int, algorithm.n_gen),
-            "evaluation_count": int(algorithm.evaluator.n_eval),
-            "termination": {
-                "kind": type(termination).__name__,
-                "progress": float(termination.perc),
-                "has_terminated": bool(termination.has_terminated()),
-            },
-            "configuration": {
-                "algorithm": "pymoo.core.mixed.MixedVariableGA",
-                "family": family,
-                "population_size": INITIAL_EVALUATION_BUDGET,
-                "generations": TOTAL_GENERATIONS,
-                "eliminate_duplicates": False,
-                "variable_kinds": variable_kinds,
-            },
-            "pymoo_version": pymoo.__version__,
-            "rng": {
-                "engine": type(random_state.bit_generator).__name__,
-                "state": cast(dict[str, object], _json_value(random_state.bit_generator.state)),
-            },
-        }
+    return PublicStateSnapshot(
+        complete=False,
+        missing_fields=REPLAY_MISSING_FIELDS,
+        population=_public_population(population),
+        generation=cast(int, algorithm.n_gen),
+        evaluation_count=int(algorithm.evaluator.n_eval),
+        termination=PublicTerminationState(
+            kind="MaximumGenerationTermination",
+            progress=float(termination.perc),
+            has_terminated=bool(termination.has_terminated()),
+        ),
+        configuration=PublicAlgorithmConfiguration(
+            algorithm="pymoo.core.mixed.MixedVariableGA",
+            family=family.name,
+            search_seed=SEARCH_SEED,
+            variables=specs,
+            initial_sampling=initial_sampling,
+            constructor=ConstructorSettings(
+                pop_size=INITIAL_EVALUATION_BUDGET,
+                n_offsprings=None,
+                sampling="pymoo.core.population.Population",
+                mating="pymoo.core.mixed.MixedVariableMating",
+                eliminate_duplicates=False,
+                survival="pymoo.algorithms.soo.nonconvex.ga.FitnessSurvival",
+                output="pymoo.util.display.single.SingleObjectiveOutput",
+                callback="pymoo.core.callback.Callback",
+                display="pymoo.util.display.display.Display",
+                archive=None,
+                return_least_infeasible=False,
+                save_history=False,
+                verbose=False,
+                evaluator="pymoo.core.evaluator.Evaluator",
+            ),
+            termination=TerminationSettings(kind="n_gen", value=TOTAL_GENERATIONS),
+        ),
+        pymoo_version=cast(Literal["0.6.2"], pymoo.__version__),
+        rng=PublicRngState(
+            engine=cast(Literal["PCG64"], type(random_state.bit_generator).__name__),
+            state=RngState.model_validate(_json_value(random_state.bit_generator.state)),
+        ),
     )
-    snapshot = snapshot_record.model_dump(mode="json")
-    if tuple(snapshot) != CHECKPOINT_FIELDS:
-        raise AssertionError("public checkpoint fields drifted from the predeclared record")
-    return snapshot
 
 
 def _run_family(family_name: FamilyName, context: ValidatedEvaluationContext) -> _FamilyExecution:
     family = context.families[family_name]
-    variables = _family_variables(family, context.bounds[family_name])
-    initial = _POPULATION.new(X=np.array(_INITIAL_VALUES[family_name], dtype=object))
-    problem = _TrafficProblem(family, context)
+    specs = _variable_specs(family, context.bounds[family_name])
+    initial_sampling: tuple[Scalars, ...] = tuple(dict(item) for item in _INITIAL_VALUES[family_name])
+    initial = _POPULATION.new(X=np.array(initial_sampling, dtype=object))
+    problem = _TrafficProblem(family, context, population_size=INITIAL_EVALUATION_BUDGET)
     algorithm: PymooAlgorithm = _MIXED_VARIABLE_GA(
         pop_size=INITIAL_EVALUATION_BUDGET,
         sampling=initial,
         eliminate_duplicates=False,
     )
     algorithm.setup(problem, termination=("n_gen", TOTAL_GENERATIONS), seed=SEARCH_SEED, verbose=False)
-    snapshot: JsonObject | None = None
+    snapshot: PublicStateSnapshot | None = None
     while algorithm.has_next():
         algorithm.next()
         if int(algorithm.evaluator.n_eval) == INITIAL_EVALUATION_BUDGET:
-            snapshot = _public_snapshot(algorithm, family=family_name, variable_kinds=_variable_kinds(variables))
+            snapshot = _public_snapshot(
+                algorithm,
+                family=family,
+                specs=specs,
+                initial_sampling=initial_sampling,
+            )
     if snapshot is None:
         raise AssertionError("pymoo run did not expose the initial evaluated generation")
-    history = problem.history
-    if len(history) != INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS:
-        raise AssertionError("pymoo objective history does not match the configured evaluation budget")
-    best_key = min(
-        problem.cache,
-        key=lambda key: (problem.cache[key].objective, key),
+    history = tuple(problem.history)
+    best = min(problem.cache.values(), key=lambda item: (item.objective, item.candidate.identifier)).candidate
+    run = FamilyRunRecord(
+        optimizer_instance=0,
+        optimizer_class="pymoo.core.mixed.MixedVariableGA",
+        family=family_name,
+        search_seed=SEARCH_SEED,
+        observation_window_seconds=WINDOW_SECONDS,
+        trial_seeds=TRIAL_SEEDS,
+        generation_limits=GENERATION_LIMITS,
+        similarity=SIMILARITY,
+        variables=specs,
+        initial_sampling=initial_sampling,
+        initial_evaluations=INITIAL_EVALUATION_BUDGET,
+        total_attempts=len(history),
+        objective_evaluations=sum(not item.cache_hit for item in history),
+        cache_hits=sum(item.cache_hit for item in history),
+        history=history,
+        best_candidate=best,
     )
-    best = problem.cache[best_key].candidate
-    record = {
-        "family": family_name,
-        "optimizer_id": f"pymoo.MixedVariableGA:{family_name}",
-        "variable_kinds": _variable_kinds(variables),
-        "initial_evaluations": INITIAL_EVALUATION_BUDGET,
-        "total_attempts": len(history),
-        "objective_evaluations": len(problem.cache),
-        "cache_hits": sum(bool(item["cache_hit"]) for item in history),
-        "history": history,
-        "best_genes": list(cast(Genes, best.genes)),
-        "best_fitness": best.fitness,
-    }
-    return _FamilyExecution(record=record, best_candidate=best, checkpoint=snapshot)
+    return _FamilyExecution(algorithm=algorithm, run=run, checkpoint=snapshot)
 
 
-def _invalid_classification_case() -> JsonObject:
-    context = _evaluation_context(GenerationLimits(max_packets=1, max_output_bytes=1_000_000, max_wall_seconds=5.0))
-    candidate = Candidate(
-        identifier=CandidateId(birth_generation=0, birth_index=0),
+def _run_invalid_adapter() -> InvalidClassificationEvidence:
+    limits = GenerationLimits(max_packets=1, max_output_bytes=1_000_000, max_wall_seconds=5.0)
+    context = _evaluation_context(limits)
+    family = context.families["poisson_empirical"]
+    problem = _TrafficProblem(family, context, population_size=1)
+    initial = _POPULATION.new(X=np.array(({"c_lambda": 1.0},), dtype=object))
+    algorithm: PymooAlgorithm = _MIXED_VARIABLE_GA(pop_size=1, sampling=initial, eliminate_duplicates=False)
+    algorithm.setup(problem, termination=("n_gen", 1), seed=SEARCH_SEED, verbose=False)
+    algorithm.next()
+    return InvalidClassificationEvidence(
+        execution="pymoo.MixedVariableGA.next",
         family="poisson_empirical",
-        genes=(1.0,),
-        status="pending",
-        fitness=0.0,
-        trials=(),
-        invalid=None,
-        duplicate_diagnostics=(),
+        limits=limits,
+        pymoo_evaluations=int(algorithm.evaluator.n_eval),
+        history=tuple(problem.history),
     )
-    evaluated = evaluate_candidate(candidate, context)
-    failure, trials = _candidate_record(evaluated)
-    return {
-        "family": evaluated.family,
-        "genes": list(cast(Genes, evaluated.genes)),
-        "objective": 1.0 - evaluated.fitness,
-        "fitness": evaluated.fitness,
-        "status": evaluated.status,
-        "failure": failure,
-        "trials": trials,
-    }
 
 
-def _champion_record(execution: _FamilyExecution, context: ValidatedEvaluationContext) -> JsonObject:
-    trials = evaluate_final(execution.best_candidate, context, CHAMPION_SEED)
-    trial = trials[0]
-    return {
-        "family": execution.best_candidate.family,
-        "genes": list(cast(Genes, execution.best_candidate.genes)),
-        "selection_fitness": execution.best_candidate.fitness,
-        "fresh_seed": CHAMPION_SEED,
-        "fresh_fitness": trial.aggregate_score,
-        "trials": [trial.model_dump(mode="json")],
-    }
+def _champion(execution: _FamilyExecution, context: ValidatedEvaluationContext) -> ChampionRecord:
+    trials = evaluate_final(execution.run.best_candidate, context, CHAMPION_SEED)
+    return ChampionRecord(
+        family=execution.run.family,
+        candidate=execution.run.best_candidate,
+        fresh_seed=CHAMPION_SEED,
+        fresh_fitness=trials[0].aggregate_score,
+        search_attempts_completed=execution.run.total_attempts,
+        trials=trials,
+    )
 
 
 def _count_sloc(path: Path) -> int:
     return sum(bool(line.strip()) and not line.lstrip().startswith("#") for line in path.read_text().splitlines())
 
 
-def _loc_inventory() -> JsonObject:
-    repository = Path(__file__).resolve().parents[3]
-    directory = repository / "src" / "trafficlab" / "genetic"
-    current = tuple(path.name for path in sorted(directory.glob("*.py")))
-    retained = ("__init__.py", "checkpoint.py", "evaluation.py", "types.py")
-    removable = ("coordinates.py", "operators.py", "population.py", "strategy.py")
-    counts = {name: _count_sloc(directory / name) for name in current}
-    current_sloc = sum(counts.values())
-    retained_sloc = sum(counts[name] for name in retained)
-    removable_sloc = sum(counts[name] for name in removable)
-    maximum = removable_sloc * 100.0 / current_sloc
-    return {
-        "method": "nonblank non-comment physical Python lines",
-        "current_files": list(current),
-        "required_retained_files": list(retained),
-        "candidate_removable_files": list(removable),
-        "file_sloc": counts,
-        "current_sloc": current_sloc,
-        "required_retained_sloc": retained_sloc,
-        "candidate_removable_sloc": removable_sloc,
-        "adapter_sloc_assumption": 0,
-        "estimated_replacement_sloc": retained_sloc,
-        "estimated_reduction_percent": maximum,
-        "estimate_kind": "optimistic upper bound assuming a zero-line adapter",
-        "maximum_reduction_percent_before_adapter": maximum,
-        "required_reduction_percent": MINIMUM_LOC_REDUCTION_PERCENT,
-        "gate_passed": maximum >= MINIMUM_LOC_REDUCTION_PERCENT,
-        "reason": "required diagnostic/artifact files alone leave less than 40% removable before any adapter",
-    }
+def _loc_inventory() -> ProductionLocEvidence:
+    directory = Path(__file__).resolve().parents[3] / "src" / "trafficlab" / "genetic"
+    inventory = tuple(LocFileRecord(path=path.name, sloc=_count_sloc(path)) for path in sorted(directory.glob("*.py")))
+    return ProductionLocEvidence(
+        status="indeterminate",
+        method="nonblank non-comment physical Python lines",
+        current_inventory=inventory,
+        current_sloc=sum(item.sloc for item in inventory),
+        estimated_reduction_percent=None,
+        required_reduction_percent=MINIMUM_LOC_REDUCTION_PERCENT,
+        gate_passed=False,
+        reason=(
+            "exact line-level retained/removable attribution requires designing the rejected adapter; "
+            "no defensible production reduction estimate exists after the replay rejection"
+        ),
+    )
 
 
-def _policy() -> JsonObject:
-    return {
-        "production_changed": False,
-        "pymoo_version": pymoo.__version__,
-        "family_names": list(FAMILY_NAMES),
-        "independent_optimizer_per_family": True,
-        "categorical_family_variable": False,
-        "initial_evaluation_budget": INITIAL_EVALUATION_BUDGET,
-        "total_generations": TOTAL_GENERATIONS,
-        "search_seed": SEARCH_SEED,
-        "trial_seeds": list(TRIAL_SEEDS),
-        "champion_seed": CHAMPION_SEED,
-        "window_seconds": WINDOW_SECONDS,
-        "generation_limits": GENERATION_LIMITS.model_dump(mode="json"),
-        "similarity": SIMILARITY.model_dump(mode="json"),
-        "cache_key_fields": list(CACHE_KEY_FIELDS),
-        "checkpoint_fields": list(CHECKPOINT_FIELDS),
-        "replay_history_fields": list(REPLAY_HISTORY_FIELDS),
-        "checkpoint_encoding": "canonical-json",
-        "prohibited_serializers": list(PROHIBITED_SERIALIZERS),
-        "minimum_loc_reduction_percent": MINIMUM_LOC_REDUCTION_PERCENT,
-    }
+def _known_objective(case_name: str, variables: Mapping[str, int | float]) -> float:
+    if case_name == "bounded_continuous_sphere":
+        return float(variables["x0"]) ** 2 + float(variables["x1"]) ** 2
+    return (int(variables["count"]) - 3) ** 2 + (float(variables["scale"]) - 1.25) ** 2
+
+
+def attempt_history_is_complete(run: FamilyRunRecord) -> bool:
+    """Recompute sequential identity, cache, and generation accounting for one run."""
+    history = run.history
+    if len(history) != run.total_attempts:
+        return False
+    if tuple(item.evaluation_index for item in history) != tuple(range(1, run.total_attempts + 1)):
+        return False
+    if any(item.generation != (item.evaluation_index - 1) // run.initial_evaluations for item in history):
+        return False
+    identifiers = tuple(
+        (item.candidate.identifier.birth_generation, item.candidate.identifier.birth_index) for item in history
+    )
+    expected_ids = tuple(
+        ((index - 1) // run.initial_evaluations, (index - 1) % run.initial_evaluations)
+        for index in range(1, run.total_attempts + 1)
+    )
+    if identifiers != expected_ids:
+        return False
+    actual_hits = sum(item.cache_hit for item in history)
+    if actual_hits != run.cache_hits:
+        return False
+    if run.objective_evaluations != run.total_attempts - actual_hits:
+        return False
+    return all(item.cache_key == _render_cache_key(item.cache_key_payload) for item in history)
+
+
+def _known_gate(evidence: ProbeEvidence) -> bool:
+    for case in evidence.known_cases:
+        declared_initial_objectives = tuple(_known_objective(case.name, item) for item in case.initial_sampling)
+        declared_initial_minimum = min(declared_initial_objectives)
+        for run in case.runs:
+            objective = _known_objective(case.name, run.variables)
+            observed_initial = run.history[0].population
+            if not (
+                declared_initial_minimum > case.tolerance
+                and run.initial_minimum_objective == declared_initial_minimum
+                and tuple(item.variables for item in observed_initial) == case.initial_sampling
+                and tuple(item.objective for item in observed_initial) == declared_initial_objectives
+                and run.objective <= case.tolerance
+                and run.objective == objective
+                and run.evaluations == case.population_size * case.generations
+                and len(run.history) == case.generations
+                and run.history[0].minimum_objective == run.initial_minimum_objective
+            ):
+                return False
+    return True
+
+
+def _repeat_gate(evidence: ProbeEvidence) -> bool:
+    known_equal = all(case.runs[0] == case.runs[1] for case in evidence.known_cases)
+    family_equal = all(
+        family.runs[0].history == family.runs[1].history
+        and family.runs[0].best_candidate == family.runs[1].best_candidate
+        for family in evidence.families
+    )
+    return known_equal and family_equal
+
+
+def _fairness_gate(evidence: ProbeEvidence) -> bool:
+    first_runs = tuple(family.runs[0] for family in evidence.families)
+    fairness = evidence.fairness
+    controls_match = all(
+        run.search_seed == evidence.policy.search_seed
+        and run.observation_window_seconds == evidence.policy.window_seconds
+        and run.trial_seeds == evidence.policy.trial_seeds
+        and run.generation_limits == evidence.policy.generation_limits
+        and run.similarity == evidence.policy.similarity
+        and run.initial_evaluations == evidence.policy.initial_evaluation_budget
+        and run.total_attempts == evidence.policy.initial_evaluation_budget * evidence.policy.total_generations
+        for run in first_runs
+    )
+    instances = len({run.optimizer_instance for run in first_runs})
+    champions_match = (
+        tuple(item.family for item in fairness.champion_comparison) == FAMILY_NAMES
+        and all(item.fresh_seed == CHAMPION_SEED for item in fairness.champion_comparison)
+        and all(
+            item.search_attempts_completed >= evidence.policy.initial_evaluation_budget
+            for item in fairness.champion_comparison
+        )
+    )
+    return (
+        tuple(item.family for item in evidence.families) == FAMILY_NAMES
+        and fairness.measured_family_set == FAMILY_NAMES
+        and instances == len(FAMILY_NAMES)
+        and fairness.distinct_optimizer_instances == instances
+        and fairness.common_search_seed == first_runs[0].search_seed
+        and fairness.common_trial_seeds == first_runs[0].trial_seeds
+        and fairness.common_champion_seed == fairness.champion_comparison[0].fresh_seed
+        and fairness.common_window_seconds == first_runs[0].observation_window_seconds
+        and fairness.common_generation_limits == first_runs[0].generation_limits
+        and fairness.common_similarity == first_runs[0].similarity
+        and controls_match
+        and fairness.equal_initial_budget == INITIAL_EVALUATION_BUDGET
+        and fairness.equal_total_budget == INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS
+        and fairness.cache_key_fields == CACHE_KEY_FIELDS
+        and fairness.champions_compared_after_attempts == INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS
+        and champions_match
+    )
+
+
+def _cache_diagnostics_gate(evidence: ProbeEvidence) -> bool:
+    runs = tuple(run for family in evidence.families for run in family.runs)
+    histories_complete = all(attempt_history_is_complete(run) for run in runs)
+    candidates_complete = all(
+        attempt.candidate.family == run.family
+        and attempt.cache_key_payload.family == run.family
+        and (attempt.candidate.status == "invalid" or len(attempt.candidate.trials) == len(evidence.policy.trial_seeds))
+        for run in runs
+        for attempt in run.history
+    )
+    invalid = evidence.invalid_classification
+    invalid_adapter = (
+        invalid.execution == "pymoo.MixedVariableGA.next"
+        and invalid.pymoo_evaluations == 1
+        and len(invalid.history) == 1
+        and invalid.history[0].candidate.status == "invalid"
+        and invalid.history[0].candidate.invalid is not None
+        and invalid.history[0].candidate.invalid.kind == "incomplete_generation"
+        and invalid.history[0].objective == INVALID_OBJECTIVE
+    )
+    return histories_complete and candidates_complete and invalid_adapter
+
+
+def derive_gates(evidence: ProbeEvidence) -> GateRecord:
+    """Derive every adoption gate exclusively from strict measured evidence."""
+    comparison = evidence.checkpoint.comparison
+    replay = (
+        evidence.checkpoint.snapshot.complete
+        and not evidence.checkpoint.snapshot.missing_fields
+        and comparison.exact_history_identity
+        and comparison.resumed_history is not None
+        and comparison.resumed_history == comparison.uninterrupted_history
+    )
+    loc = evidence.production_loc
+    loc_pass = (
+        loc.status != "indeterminate"
+        and loc.estimated_reduction_percent is not None
+        and loc.estimated_reduction_percent >= loc.required_reduction_percent
+    )
+    return GateRecord(
+        known_optima=_known_gate(evidence),
+        deterministic_repeats=_repeat_gate(evidence),
+        family_fairness=_fairness_gate(evidence),
+        cache_and_diagnostics=_cache_diagnostics_gate(evidence),
+        exact_public_state_replay=replay,
+        production_loc_reduction=loc_pass,
+    )
 
 
 def decide_probe(gates: Mapping[str, object]) -> JsonObject:
     """Apply the immutable all-gates adoption rule without changing production."""
     unknown = sorted(set(gates) - set(GATE_NAMES))
-    if unknown:
-        failed = [f"unknown:{name}" for name in unknown]
-    else:
-        failed = [name for name in GATE_NAMES if type(gates.get(name)) is not bool or not gates[name]]
+    failed = (
+        [f"unknown:{name}" for name in unknown]
+        if unknown
+        else [name for name in GATE_NAMES if type(gates.get(name)) is not bool or not gates[name]]
+    )
     return {
         "outcome": "pass" if not failed else "reject",
         "failed_gates": failed,
@@ -677,154 +1156,179 @@ def decide_probe(gates: Mapping[str, object]) -> JsonObject:
     }
 
 
-def _contains_bytes(value: object) -> bool:
-    if isinstance(value, bytes):
-        return True
-    if isinstance(value, Mapping):
-        return any(_contains_bytes(item) for item in cast(Mapping[object, object], value).values())
-    if isinstance(value, Sequence) and not isinstance(value, str):
-        return any(_contains_bytes(item) for item in cast(Sequence[object], value))
-    return False
+def _policy() -> PolicyRecord:
+    return PolicyRecord(
+        production_changed=False,
+        pymoo_version=cast(Literal["0.6.2"], pymoo.__version__),
+        family_names=FAMILY_NAMES,
+        independent_optimizer_per_family=True,
+        categorical_family_variable=False,
+        initial_evaluation_budget=INITIAL_EVALUATION_BUDGET,
+        total_generations=TOTAL_GENERATIONS,
+        search_seed=SEARCH_SEED,
+        trial_seeds=TRIAL_SEEDS,
+        champion_seed=CHAMPION_SEED,
+        window_seconds=WINDOW_SECONDS,
+        generation_limits=GENERATION_LIMITS,
+        similarity=SIMILARITY,
+        cache_key_fields=CACHE_KEY_FIELDS,
+        checkpoint_fields=CHECKPOINT_FIELDS,
+        replay_history_fields=REPLAY_HISTORY_FIELDS,
+        checkpoint_encoding="canonical-json",
+        prohibited_serializers=PROHIBITED_SERIALIZERS,
+        minimum_loc_reduction_percent=MINIMUM_LOC_REDUCTION_PERCENT,
+        known_population_size=KNOWN_POPULATION_SIZE,
+        known_generations=KNOWN_GENERATIONS,
+        known_tolerances=KNOWN_TOLERANCES,
+    )
+
+
+def _known_evidence() -> tuple[KnownCaseEvidence, KnownCaseEvidence]:
+    output: list[KnownCaseEvidence] = []
+    samples = (CONTINUOUS_INITIAL_SAMPLES, MIXED_INITIAL_SAMPLES)
+    for specification, initial in zip(KNOWN_CASES, samples, strict=True):
+        name = specification["name"]
+        run_one = _run_known_case(name)
+        run_two = _run_known_case(name)
+        normalized_initial = tuple(
+            {"x0": item[0], "x1": item[1]} if isinstance(item, tuple) else dict(item) for item in initial
+        )
+        output.append(
+            KnownCaseEvidence(
+                name=cast(Any, name),
+                variable_kinds=cast(Any, specification["variable_kinds"]),
+                bounds=cast(Any, specification["bounds"]),
+                known_optimum=KnownOptimumRecord.model_validate(specification["known_optimum"]),
+                tolerance=KNOWN_TOLERANCES[name],
+                population_size=KNOWN_POPULATION_SIZE,
+                generations=KNOWN_GENERATIONS,
+                initial_sampling=normalized_initial,
+                runs=(run_one, run_two),
+            )
+        )
+    return cast(tuple[KnownCaseEvidence, KnownCaseEvidence], tuple(output))
+
+
+def _checkpoint(execution: _FamilyExecution) -> CheckpointEvidence:
+    return CheckpointEvidence(
+        encoding="canonical-json",
+        snapshot=execution.checkpoint,
+        comparison=ReplayComparison(
+            exact_history_identity=False,
+            checked_fields=REPLAY_HISTORY_FIELDS,
+            uninterrupted_history=execution.run.history,
+            resumed_history=None,
+            reason=(
+                "pymoo 0.6.2 documents ask/tell observation but no transparent restore API; "
+                "its checkpoint guide restores only a serialized whole Algorithm object"
+            ),
+        ),
+        public_api_proof=PublicApiProof(
+            installed_algorithm_methods=("setup", "has_next", "next", "ask", "tell", "result"),
+            installed_observable_state=("pop", "n_gen", "evaluator.n_eval", "termination", "random_state"),
+            documented_checkpoint_transport="dill algorithm serialization",
+            opaque_transport_allowed=False,
+            transparent_restore_api=None,
+            checkpoint_documentation="https://pymoo.org/misc/checkpoint.html",
+            usage_documentation="https://pymoo.org/algorithms/usage.html",
+        ),
+    )
 
 
 def build_probe_evidence() -> JsonObject:
-    """Execute every bounded optimizer gate and return canonical JSON-compatible evidence."""
-    known_records: list[JsonObject] = []
-    known_repeats = True
-    for case in KNOWN_CASES:
-        first = _run_known_case(case["name"])
-        second = _run_known_case(case["name"])
-        repeat_equal = first == second
-        known_repeats &= repeat_equal
-        first["repeat_history_equal"] = repeat_equal
-        known_records.append(first)
-
+    """Execute every bounded optimizer gate and return strict canonical evidence."""
+    known = _known_evidence()
     context = _evaluation_context()
-    first_runs = [_run_family(name, context) for name in FAMILY_NAMES]
-    second_runs = [_run_family(name, context) for name in FAMILY_NAMES]
-    family_records: list[JsonObject] = []
-    family_repeats = True
-    for first, second in zip(first_runs, second_runs, strict=True):
-        repeat_equal = first.record == second.record and first.checkpoint == second.checkpoint
-        family_repeats &= repeat_equal
-        first.record["repeat_history_equal"] = repeat_equal
-        family_records.append(first.record)
-
-    champions = [_champion_record(run, context) for run in first_runs]
-    champion = max(
+    first = [_run_family(name, context) for name in FAMILY_NAMES]
+    second = [_run_family(name, context) for name in FAMILY_NAMES]
+    all_executions = (*first, *second)
+    identity_ordinals = {id(item.algorithm): index + 1 for index, item in enumerate(all_executions)}
+    families: list[FamilyEvidence] = []
+    for first_run, second_run in zip(first, second, strict=True):
+        run_one = first_run.run.model_copy(
+            update={"optimizer_instance": identity_ordinals[id(first_run.algorithm)]},
+        )
+        run_two = second_run.run.model_copy(
+            update={"optimizer_instance": identity_ordinals[id(second_run.algorithm)]},
+        )
+        families.append(FamilyEvidence(family=run_one.family, runs=(run_one, run_two)))
+    family_tuple = cast(tuple[FamilyEvidence, FamilyEvidence, FamilyEvidence], tuple(families))
+    champions = tuple(_champion(item, context) for item in first)
+    winner = max(
         champions,
-        key=lambda item: (cast(float, item["fresh_fitness"]), -FAMILY_NAMES.index(cast(FamilyName, item["family"]))),
+        key=lambda item: (item.fresh_fitness, -FAMILY_NAMES.index(item.family)),
     )
-    loc = _loc_inventory()
-    cache_diagnostics_gate = all(
-        cast(int, record["cache_hits"]) >= 1
-        and cast(int, record["objective_evaluations"]) + cast(int, record["cache_hits"])
-        == cast(int, record["total_attempts"])
-        for record in family_records
+    fairness = FairnessEvidence(
+        measured_family_set=tuple(item.family for item in family_tuple),
+        distinct_optimizer_instances=len({item.runs[0].optimizer_instance for item in family_tuple}),
+        common_search_seed=family_tuple[0].runs[0].search_seed,
+        common_trial_seeds=family_tuple[0].runs[0].trial_seeds,
+        common_champion_seed=champions[0].fresh_seed,
+        common_window_seconds=family_tuple[0].runs[0].observation_window_seconds,
+        common_generation_limits=family_tuple[0].runs[0].generation_limits,
+        common_similarity=family_tuple[0].runs[0].similarity,
+        equal_initial_budget=min(item.runs[0].initial_evaluations for item in family_tuple),
+        equal_total_budget=min(item.runs[0].total_attempts for item in family_tuple),
+        cache_key_fields=CACHE_KEY_FIELDS,
+        champions_compared_after_attempts=min(item.search_attempts_completed for item in champions),
+        champion_comparison=champions,
+        winner_family=winner.family,
     )
-    fairness_gate = (
-        len(first_runs) == len(FAMILY_NAMES)
-        and all(record["initial_evaluations"] == INITIAL_EVALUATION_BUDGET for record in family_records)
-        and all("family" not in cast(dict[str, str], record["variable_kinds"]) for record in family_records)
+    placeholder = GateRecord(
+        known_optima=False,
+        deterministic_repeats=False,
+        family_fairness=False,
+        cache_and_diagnostics=False,
+        exact_public_state_replay=False,
+        production_loc_reduction=False,
     )
-    checkpoint = {
-        "encoding": "canonical-json",
-        "snapshot": first_runs[0].checkpoint,
-        "comparison": {
-            "exact_history_identity": False,
-            "checked_fields": list(REPLAY_HISTORY_FIELDS),
-            "uninterrupted_history": family_records[0]["history"],
-            "resumed_history": None,
-            "missing_public_restore_fields": [
-                "algorithm initialization/iteration state",
-                "operator state",
-                "termination restoration",
-            ],
-            "reason": (
-                "pymoo 0.6.2 documents transparent ask/tell observation but no transparent state restore API; "
-                "its checkpoint guide restores only a serialized whole Algorithm object"
-            ),
-        },
-        "public_api_proof": {
-            "installed_algorithm_methods": ["setup", "has_next", "next", "ask", "tell", "result"],
-            "installed_observable_state": ["pop", "n_gen", "evaluator.n_eval", "termination", "random_state"],
-            "documented_checkpoint_transport": "dill algorithm serialization",
-            "opaque_transport_allowed": False,
-            "transparent_restore_api": None,
-            "checkpoint_documentation": "https://pymoo.org/misc/checkpoint.html",
-            "usage_documentation": "https://pymoo.org/algorithms/usage.html",
-        },
-    }
-    gates: dict[str, bool] = {
-        "known_optima": all(bool(record["passed"]) for record in known_records),
-        "deterministic_repeats": known_repeats and family_repeats,
-        "family_fairness": fairness_gate,
-        "cache_and_diagnostics": cache_diagnostics_gate,
-        "exact_public_state_replay": False,
-        "production_loc_reduction": bool(loc["gate_passed"]),
-    }
-    evidence = {
-        "schema_version": 3,
-        "probe": "pymoo_optimizer",
-        "policy": _policy(),
-        "known_cases": known_records,
-        "family_runs": family_records,
-        "fairness": {
-            "independent_optimizer_count": len(first_runs),
-            "categorical_family_variable": False,
-            "initial_evaluations_by_family": dict.fromkeys(FAMILY_NAMES, INITIAL_EVALUATION_BUDGET),
-            "common_search_seed": SEARCH_SEED,
-            "common_trial_seeds": list(TRIAL_SEEDS),
-            "common_champion_seed": CHAMPION_SEED,
-            "common_window_seconds": WINDOW_SECONDS,
-            "common_generation_limits": GENERATION_LIMITS.model_dump(mode="json"),
-            "common_similarity": SIMILARITY.model_dump(mode="json"),
-            "cache_key_fields": list(CACHE_KEY_FIELDS),
-            "champion_comparison": champions,
-            "winner_family": champion["family"],
-        },
-        "invalid_classification_case": _invalid_classification_case(),
-        "checkpoint": checkpoint,
-        "production_loc": loc,
-        "gates": gates,
-        "decision": decide_probe(gates),
-    }
-    if _contains_bytes(evidence):
-        raise AssertionError("transparent checkpoint evidence must not contain opaque bytes")
-    return evidence
+    provisional = ProbeEvidence(
+        schema_version=3,
+        probe="pymoo_optimizer",
+        policy=_policy(),
+        known_cases=known,
+        families=family_tuple,
+        fairness=fairness,
+        invalid_classification=_run_invalid_adapter(),
+        checkpoint=_checkpoint(first[0]),
+        production_loc=_loc_inventory(),
+        gates=placeholder,
+        decision=DecisionRecord(
+            outcome="reject",
+            failed_gates=GATE_NAMES,
+            production_changed=False,
+            production_strategy="basic_generational",
+        ),
+    )
+    gates = derive_gates(provisional)
+    decision = DecisionRecord.model_validate(decide_probe(gates.model_dump(mode="python")))
+    evidence = provisional.model_copy(update={"gates": gates, "decision": decision})
+    return evidence.model_dump(mode="json")
 
 
 def validate_probe_evidence(evidence: JsonObject) -> JsonObject:
-    """Reject policy drift or a decision inconsistent with the executed gate record."""
-    if evidence.get("schema_version") != 3 or evidence.get("probe") != "pymoo_optimizer":
-        raise ValueError("pymoo probe evidence identity is invalid")
-    if evidence.get("policy") != _policy():
-        raise ValueError("pymoo probe policy does not match the executed controls")
-    gates = evidence.get("gates")
-    if not isinstance(gates, Mapping) or tuple(cast(Mapping[str, object], gates)) != GATE_NAMES:
-        raise ValueError("pymoo probe gates do not match the predeclared gate set")
-    if evidence.get("decision") != decide_probe(cast(Mapping[str, object], gates)):
-        raise ValueError("pymoo probe decision does not match its gates")
-    family_runs = evidence.get("family_runs")
-    family_items = cast(list[object], family_runs) if isinstance(family_runs, list) else []
-    observed_families = [
-        cast(Mapping[str, object], item).get("family") for item in family_items if isinstance(item, dict)
-    ]
-    if not isinstance(family_runs, list) or observed_families != list(FAMILY_NAMES):
-        raise ValueError("pymoo family run order does not match the predeclared families")
-    if _contains_bytes(evidence):
-        raise ValueError("pymoo checkpoint evidence contains opaque bytes")
+    """Strictly parse every section and recompute both gates and decision."""
+    try:
+        parsed = ProbeEvidence.model_validate(evidence)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"invalid strict pymoo probe evidence: {error}") from error
+    derived = derive_gates(parsed)
+    if parsed.gates != derived:
+        raise ValueError("pymoo probe stored gates do not match derived gates")
+    expected_decision = DecisionRecord.model_validate(decide_probe(derived.model_dump(mode="python")))
+    if parsed.decision != expected_decision:
+        raise ValueError("pymoo probe decision does not match derived gates")
+    if parsed.model_dump(mode="json") != evidence:
+        raise ValueError("pymoo probe evidence is not in strict canonical value form")
     return evidence
 
 
 def render_probe_evidence(evidence: JsonObject) -> bytes:
-    """Render sorted compact UTF-8 JSON with one final newline."""
     validated = validate_probe_evidence(evidence)
     return (json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
 
 
 def write_probe_evidence(destination: Path, evidence: JsonObject, *, check: bool) -> bool:
-    """Write canonical evidence or check an existing fixture without mutation."""
     rendered = render_probe_evidence(evidence)
     if check:
         try:

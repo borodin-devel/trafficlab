@@ -8,7 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
@@ -17,19 +17,29 @@ from tests.scientific.probes.pymoo_optimizer import (
     CACHE_KEY_FIELDS,
     CHAMPION_SEED,
     CHECKPOINT_FIELDS,
+    CONTINUOUS_INITIAL_SAMPLES,
     FAMILY_NAMES,
     GENERATION_LIMITS,
     INITIAL_EVALUATION_BUDGET,
     KNOWN_CASES,
+    KNOWN_GENERATIONS,
+    KNOWN_POPULATION_SIZE,
+    KNOWN_TOLERANCES,
+    MIXED_INITIAL_SAMPLES,
     PROHIBITED_SERIALIZERS,
+    REPLAY_MISSING_FIELDS,
     SEARCH_SEED,
     SIMILARITY,
     TOTAL_GENERATIONS,
     TRIAL_SEEDS,
     WINDOW_SECONDS,
+    ProbeEvidence,
     PublicStateSnapshot,
+    VariableSpec,
+    attempt_history_is_complete,
     build_probe_evidence,
     decide_probe,
+    derive_gates,
     render_probe_evidence,
     validate_probe_evidence,
     write_probe_evidence,
@@ -46,8 +56,44 @@ def _walk(value: object) -> tuple[object, ...]:
     return (value,)
 
 
-def test_probe_policy_is_predeclared_before_optimizer_results() -> None:
-    """Changing budgets, seeds, cache identity, or gates after observing runs invalidates the probe."""
+def _objective(case_name: str, variables: Mapping[str, int | float] | tuple[float, float]) -> float:
+    if case_name == "bounded_continuous_sphere":
+        if isinstance(variables, tuple):
+            return variables[0] ** 2 + variables[1] ** 2
+        return float(variables["x0"]) ** 2 + float(variables["x1"]) ** 2
+    assert not isinstance(variables, tuple)
+    return (int(variables["count"]) - 3) ** 2 + (float(variables["scale"]) - 1.25) ** 2
+
+
+def test_revised_known_case_policy_is_fixed_and_excludes_both_optima() -> None:
+    """Seeding an analytical optimum would test retention rather than optimizer behavior."""
+    assert KNOWN_POPULATION_SIZE == 20
+    assert KNOWN_GENERATIONS == 40
+    assert KNOWN_TOLERANCES == {
+        "bounded_continuous_sphere": 0.001,
+        "mixed_integer_real_quadratic": 0.001,
+    }
+    assert len(CONTINUOUS_INITIAL_SAMPLES) == KNOWN_POPULATION_SIZE
+    assert len(MIXED_INITIAL_SAMPLES) == KNOWN_POPULATION_SIZE
+    assert CONTINUOUS_INITIAL_SAMPLES[:4] == (
+        (-1.8, -1.8),
+        (-1.8, -0.9),
+        (-1.8, 0.9),
+        (-1.8, 1.8),
+    )
+    assert MIXED_INITIAL_SAMPLES[:4] == (
+        {"count": 0, "scale": 0.6},
+        {"count": 1, "scale": 0.8},
+        {"count": 2, "scale": 1.0},
+        {"count": 3, "scale": 1.5},
+    )
+    for case, samples in zip(KNOWN_CASES, (CONTINUOUS_INITIAL_SAMPLES, MIXED_INITIAL_SAMPLES), strict=True):
+        tolerance = KNOWN_TOLERANCES[case["name"]]
+        assert min(_objective(case["name"], sample) for sample in samples) > tolerance
+        assert case["known_optimum"]["variables"] not in samples
+
+
+def test_common_traffic_policy_remains_predeclared_and_family_neutral() -> None:
     assert FAMILY_NAMES == ("markov_renewal", "mmpp", "poisson_empirical")
     assert INITIAL_EVALUATION_BUDGET == 4
     assert TOTAL_GENERATIONS == 2
@@ -74,196 +120,74 @@ def test_probe_policy_is_predeclared_before_optimizer_results() -> None:
         "generation_limits",
         "similarity",
     )
-    assert CHECKPOINT_FIELDS == (
-        "population",
-        "generation",
-        "evaluation_count",
-        "termination",
-        "configuration",
-        "pymoo_version",
-        "rng",
-    )
     assert PROHIBITED_SERIALIZERS == ("dill", "pickle", "cloudpickle")
-    assert KNOWN_CASES == (
-        {
-            "name": "bounded_continuous_sphere",
-            "variable_kinds": {"x0": "real", "x1": "real"},
-            "bounds": {"x0": (-2.0, 2.0), "x1": (-2.0, 2.0)},
-            "known_optimum": {"variables": {"x0": 0.0, "x1": 0.0}, "objective": 0.0},
-        },
-        {
-            "name": "mixed_integer_real_quadratic",
-            "variable_kinds": {"count": "integer", "scale": "real"},
-            "bounds": {"count": (0, 6), "scale": (0.5, 2.0)},
-            "known_optimum": {"variables": {"count": 3, "scale": 1.25}, "objective": 0.0},
-        },
-    )
 
 
-def test_known_optima_and_repeated_runs_are_exact() -> None:
-    """A wrong variable type, bound, objective, or seed loses a predeclared analytical optimum."""
+def test_known_cases_start_outside_tolerance_and_converge_through_pymoo() -> None:
     evidence = build_probe_evidence()
-    assert [case["name"] for case in evidence["known_cases"]] == [case["name"] for case in KNOWN_CASES]
     for case in evidence["known_cases"]:
-        assert case["objective"] == 0.0
-        assert case["variables"] == case["known_optimum"]["variables"]
-        assert case["evaluations"] == INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS
-        assert case["repeat_history_equal"] is True
-        assert case["passed"] is True
+        assert len(case["runs"]) == 2
+        first, second = case["runs"]
+        assert first == second
+        assert first["initial_minimum_objective"] > case["tolerance"]
+        assert first["objective"] <= case["tolerance"]
+        assert first["evaluations"] == KNOWN_POPULATION_SIZE * KNOWN_GENERATIONS
+        assert len(first["history"]) == KNOWN_GENERATIONS
+        assert first["history"][0]["minimum_objective"] == first["initial_minimum_objective"]
 
 
-def test_each_traffic_family_has_an_independent_mixed_type_adapter_and_equal_budget() -> None:
-    """One categorical family search or unequal initial work would reintroduce family-order bias."""
+def test_family_runs_retain_two_complete_repeat_histories_with_fresh_attempt_ids() -> None:
     evidence = build_probe_evidence()
-    family_runs = evidence["family_runs"]
-    assert [run["family"] for run in family_runs] == list(FAMILY_NAMES)
-    assert len({run["optimizer_id"] for run in family_runs}) == len(FAMILY_NAMES)
-    assert all(run["initial_evaluations"] == INITIAL_EVALUATION_BUDGET for run in family_runs)
-    assert all(run["total_attempts"] == INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS for run in family_runs)
-    assert all(run["repeat_history_equal"] is True for run in family_runs)
-    assert [run["variable_kinds"] for run in family_runs] == [
-        {"q1": "real", "q2": "real", "alpha": "real", "r": "integer", "c_t": "real"},
-        {"q01": "real", "q10": "real", "lambda0": "real", "lambda1": "real"},
-        {"c_lambda": "real"},
-    ]
-    assert all("family" not in run["variable_kinds"] for run in family_runs)
-    fairness = evidence["fairness"]
-    assert fairness["independent_optimizer_count"] == 3
-    assert fairness["categorical_family_variable"] is False
-    assert fairness["initial_evaluations_by_family"] == dict.fromkeys(FAMILY_NAMES, INITIAL_EVALUATION_BUDGET)
-    assert fairness["common_search_seed"] == SEARCH_SEED
-    assert fairness["common_trial_seeds"] == list(TRIAL_SEEDS)
-    assert fairness["common_champion_seed"] == CHAMPION_SEED
-    assert fairness["common_window_seconds"] == WINDOW_SECONDS
-    assert fairness["common_generation_limits"] == GENERATION_LIMITS.model_dump(mode="json")
-    assert fairness["common_similarity"] == SIMILARITY.model_dump(mode="json")
-    assert [item["family"] for item in fairness["champion_comparison"]] == list(FAMILY_NAMES)
-    assert fairness["winner_family"] in FAMILY_NAMES
+    assert [item["family"] for item in evidence["families"]] == list(FAMILY_NAMES)
+    first_instance_ids: set[int] = set()
+    for family in evidence["families"]:
+        assert len(family["runs"]) == 2
+        first, second = family["runs"]
+        first_instance_ids.add(first["optimizer_instance"])
+        assert first["history"] == second["history"]
+        for run in (first, second):
+            assert run["initial_evaluations"] == INITIAL_EVALUATION_BUDGET
+            assert run["total_attempts"] == INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS
+            assert run["objective_evaluations"] + run["cache_hits"] == run["total_attempts"]
+            identifiers = [tuple(attempt["candidate"]["identifier"].values()) for attempt in run["history"]]
+            assert len(identifiers) == len(set(identifiers)) == run["total_attempts"]
+            assert [attempt["evaluation_index"] for attempt in run["history"]] == list(
+                range(1, run["total_attempts"] + 1)
+            )
+            for attempt in run["history"]:
+                assert set(attempt["candidate"]) == {
+                    "identifier",
+                    "family",
+                    "genes",
+                    "status",
+                    "fitness",
+                    "trials",
+                    "invalid",
+                    "duplicate_diagnostics",
+                }
+                assert set(attempt["cache_key_payload"]) == set(CACHE_KEY_FIELDS)
+        assert first["cache_hits"] >= 1
+    assert len(first_instance_ids) == len(FAMILY_NAMES)
 
 
-def test_trafficlab_cache_invalid_classification_and_diagnostics_remain_owned() -> None:
-    """Counting only pymoo evaluations could hide duplicate work or erase Trafficlab failure evidence."""
+def test_invalid_classification_runs_through_real_pymoo_adapter() -> None:
+    invalid = build_probe_evidence()["invalid_classification"]
+    assert invalid["execution"] == "pymoo.MixedVariableGA.next"
+    assert invalid["pymoo_evaluations"] == 1
+    assert invalid["limits"]["max_packets"] == 1
+    assert len(invalid["history"]) == 1
+    attempt = invalid["history"][0]
+    assert attempt["candidate"]["status"] == "invalid"
+    assert attempt["candidate"]["invalid"]["kind"] == "incomplete_generation"
+    assert attempt["candidate"]["invalid"]["authority"] == "primary"
+    assert attempt["objective"] == 1.0
+    assert attempt["cache_hit"] is False
+
+
+def test_every_gate_is_recomputed_from_measured_evidence() -> None:
     evidence = build_probe_evidence()
-    assert evidence["fairness"]["cache_key_fields"] == list(CACHE_KEY_FIELDS)
-    for run in evidence["family_runs"]:
-        assert run["cache_hits"] >= 1
-        assert run["objective_evaluations"] + run["cache_hits"] == run["total_attempts"]
-        assert all(item["cache_key"] for item in run["history"])
-        assert all(item["status"] in {"valid", "invalid"} for item in run["history"])
-        assert all(item["trials"] is not None for item in run["history"])
-    invalid = evidence["invalid_classification_case"]
-    assert invalid["family"] == "poisson_empirical"
-    assert invalid["status"] == "invalid"
-    assert invalid["objective"] == 1.0
-    assert invalid["failure"]["kind"] == "incomplete_generation"
-    assert invalid["failure"]["authority"] == "primary"
-
-
-def test_public_snapshot_is_transparent_and_replay_reject_is_precise() -> None:
-    """A population-only warm start must not be reported as an exact resumable checkpoint."""
-    evidence = build_probe_evidence()
-    checkpoint = evidence["checkpoint"]
-    snapshot = checkpoint["snapshot"]
-    assert PublicStateSnapshot.model_validate(snapshot).model_dump(mode="json") == snapshot
-    extra_snapshot = deepcopy(snapshot)
-    extra_snapshot["opaque_algorithm"] = "forbidden"
-    with pytest.raises(ValidationError, match="extra_forbidden"):
-        PublicStateSnapshot.model_validate(extra_snapshot)
-    wrong_generation = deepcopy(snapshot)
-    wrong_generation["generation"] = True
-    with pytest.raises(ValidationError, match="int_type"):
-        PublicStateSnapshot.model_validate(wrong_generation)
-    assert tuple(snapshot) == CHECKPOINT_FIELDS
-    assert snapshot["pymoo_version"] == "0.6.2"
-    assert snapshot["generation"] == 2
-    assert snapshot["evaluation_count"] == INITIAL_EVALUATION_BUDGET
-    assert snapshot["population"]
-    assert all(set(item) == {"variables", "objectives", "status"} for item in snapshot["population"])
-    assert snapshot["rng"]["engine"] == "PCG64"
-    assert snapshot["rng"]["state"]["bit_generator"] == "PCG64"
-    assert snapshot["termination"] == {
-        "kind": "MaximumGenerationTermination",
-        "progress": 0.5,
-        "has_terminated": False,
-    }
-    comparison = checkpoint["comparison"]
-    assert comparison["exact_history_identity"] is False
-    assert comparison["uninterrupted_history"]
-    assert comparison["resumed_history"] is None
-    assert comparison["checked_fields"] == [
-        "evaluation_index",
-        "family",
-        "genes",
-        "objective",
-        "fitness",
-        "status",
-        "failure",
-        "trials",
-        "cache_key",
-        "cache_hit",
-    ]
-    assert comparison["missing_public_restore_fields"] == [
-        "algorithm initialization/iteration state",
-        "operator state",
-        "termination restoration",
-    ]
-    assert checkpoint["public_api_proof"]["documented_checkpoint_transport"] == "dill algorithm serialization"
-    assert checkpoint["public_api_proof"]["opaque_transport_allowed"] is False
-    assert checkpoint["public_api_proof"]["transparent_restore_api"] is None
-    assert all(not isinstance(item, bytes) for item in _walk(checkpoint))
-    assert checkpoint["encoding"] == "canonical-json"
-
-
-def test_loc_inventory_proves_the_forty_percent_gate_cannot_pass() -> None:
-    """Removing diagnostics from the denominator must not manufacture a code-reduction pass."""
-    loc = build_probe_evidence()["production_loc"]
-    assert loc["current_files"] == [
-        "__init__.py",
-        "checkpoint.py",
-        "coordinates.py",
-        "evaluation.py",
-        "operators.py",
-        "population.py",
-        "strategy.py",
-        "types.py",
-    ]
-    assert loc["required_retained_files"] == ["__init__.py", "checkpoint.py", "evaluation.py", "types.py"]
-    assert loc["candidate_removable_files"] == ["coordinates.py", "operators.py", "population.py", "strategy.py"]
-    assert loc["current_sloc"] == loc["required_retained_sloc"] + loc["candidate_removable_sloc"]
-    assert loc["adapter_sloc_assumption"] == 0
-    assert loc["estimated_replacement_sloc"] == loc["required_retained_sloc"]
-    assert loc["estimated_reduction_percent"] == loc["maximum_reduction_percent_before_adapter"]
-    assert loc["estimate_kind"] == "optimistic upper bound assuming a zero-line adapter"
-    assert loc["maximum_reduction_percent_before_adapter"] < 40.0
-    assert loc["gate_passed"] is False
-
-
-def test_decision_requires_every_predeclared_gate() -> None:
-    """Replay or LOC failure must deterministically retain the production strategy."""
-    passing = {
-        "known_optima": True,
-        "deterministic_repeats": True,
-        "family_fairness": True,
-        "cache_and_diagnostics": True,
-        "exact_public_state_replay": True,
-        "production_loc_reduction": True,
-    }
-    assert decide_probe(passing)["outcome"] == "pass"
-    assert decide_probe({**passing, "exact_public_state_replay": False}) == {
-        "outcome": "reject",
-        "failed_gates": ["exact_public_state_replay"],
-        "production_changed": False,
-        "production_strategy": "basic_generational",
-    }
-    assert decide_probe({})["failed_gates"] == list(passing)
-    assert decide_probe({**passing, "unexpected": True})["failed_gates"] == ["unknown:unexpected"]
-    assert decide_probe({**passing, "known_optima": 1})["failed_gates"] == ["known_optima"]  # type: ignore[dict-item]
-
-
-def test_evidence_is_deterministic_strict_and_contains_no_opaque_bytes(tmp_path: Path) -> None:
-    """Policy drift, mutable output, or binary algorithm state would make the fixture unauditable."""
-    evidence = build_probe_evidence()
-    assert build_probe_evidence() == evidence
+    model = ProbeEvidence.model_validate(evidence)
+    assert derive_gates(model).model_dump(mode="json") == evidence["gates"]
     assert evidence["gates"] == {
         "known_optima": True,
         "deterministic_repeats": True,
@@ -272,26 +196,239 @@ def test_evidence_is_deterministic_strict_and_contains_no_opaque_bytes(tmp_path:
         "exact_public_state_replay": False,
         "production_loc_reduction": False,
     }
-    assert evidence["decision"] == {
-        "outcome": "reject",
-        "failed_gates": ["exact_public_state_replay", "production_loc_reduction"],
-        "production_changed": False,
-        "production_strategy": "basic_generational",
+    fairness = evidence["fairness"]
+    assert fairness["measured_family_set"] == list(FAMILY_NAMES)
+    assert fairness["distinct_optimizer_instances"] == len(FAMILY_NAMES)
+    assert fairness["champions_compared_after_attempts"] == INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS
+    assert [champion["fresh_seed"] for champion in fairness["champion_comparison"]] == [CHAMPION_SEED] * 3
+
+
+def test_gate_derivation_rejects_each_bad_measurement_and_covers_positive_formulas() -> None:
+    model = ProbeEvidence.model_validate(build_probe_evidence())
+
+    known_case = model.known_cases[0]
+    bad_known_run = known_case.runs[0].model_copy(update={"objective": known_case.tolerance + 1.0})
+    bad_known_case = known_case.model_copy(update={"runs": (bad_known_run, known_case.runs[1])})
+    bad_known = model.model_copy(update={"known_cases": (bad_known_case, model.known_cases[1])})
+    assert derive_gates(bad_known).known_optima is False
+
+    seeded_optimum = known_case.model_copy(
+        update={
+            "initial_sampling": (
+                known_case.known_optimum.variables,
+                *known_case.initial_sampling[1:],
+            )
+        }
+    )
+    seeded_model = model.model_copy(update={"known_cases": (seeded_optimum, model.known_cases[1])})
+    assert derive_gates(seeded_model).known_optima is False
+
+    family = model.families[0]
+    changed_repeat = family.runs[1].model_copy(update={"history": family.runs[1].history[:-1]})
+    repeat_family = family.model_copy(update={"runs": (family.runs[0], changed_repeat)})
+    bad_repeat = model.model_copy(update={"families": (repeat_family, *model.families[1:])})
+    assert derive_gates(bad_repeat).deterministic_repeats is False
+
+    second_family = model.families[1]
+    duplicate_instance = second_family.runs[0].model_copy(
+        update={"optimizer_instance": model.families[0].runs[0].optimizer_instance}
+    )
+    unfair_family = second_family.model_copy(update={"runs": (duplicate_instance, second_family.runs[1])})
+    unfair = model.model_copy(update={"families": (model.families[0], unfair_family, model.families[2])})
+    assert derive_gates(unfair).family_fairness is False
+
+    bad_attempt = family.runs[0].history[0].model_copy(update={"cache_key": "wrong"})
+    bad_cache_run = family.runs[0].model_copy(update={"history": (bad_attempt, *family.runs[0].history[1:])})
+    bad_cache_family = family.model_copy(update={"runs": (bad_cache_run, family.runs[1])})
+    bad_cache = model.model_copy(update={"families": (bad_cache_family, *model.families[1:])})
+    assert derive_gates(bad_cache).cache_and_diagnostics is False
+
+    comparison = model.checkpoint.comparison.model_copy(
+        update={
+            "exact_history_identity": True,
+            "resumed_history": model.checkpoint.comparison.uninterrupted_history,
+        }
+    )
+    snapshot = model.checkpoint.snapshot.model_copy(update={"complete": True, "missing_fields": ()})
+    replay_checkpoint = model.checkpoint.model_copy(update={"snapshot": snapshot, "comparison": comparison})
+    replay_model = model.model_copy(update={"checkpoint": replay_checkpoint})
+    assert derive_gates(replay_model).exact_public_state_replay is True
+
+    measured_loc = model.production_loc.model_copy(update={"status": "measured", "estimated_reduction_percent": 40.0})
+    loc_model = model.model_copy(update={"production_loc": measured_loc})
+    assert derive_gates(loc_model).production_loc_reduction is True
+
+
+def test_history_completeness_helper_covers_each_rejected_mutation() -> None:
+    run = ProbeEvidence.model_validate(build_probe_evidence()).families[0].runs[0]
+    assert attempt_history_is_complete(run) is True
+    assert attempt_history_is_complete(run.model_copy(update={"history": run.history[:-1]})) is False
+    wrong_index = run.history[0].model_copy(update={"evaluation_index": 2})
+    assert attempt_history_is_complete(run.model_copy(update={"history": (wrong_index, *run.history[1:])})) is False
+    wrong_generation = run.history[0].model_copy(update={"generation": 1})
+    assert (
+        attempt_history_is_complete(run.model_copy(update={"history": (wrong_generation, *run.history[1:])})) is False
+    )
+    reused_id = run.history[1].model_copy(update={"candidate": run.history[0].candidate})
+    assert (
+        attempt_history_is_complete(run.model_copy(update={"history": (run.history[0], reused_id, *run.history[2:])}))
+        is False
+    )
+    assert attempt_history_is_complete(run.model_copy(update={"cache_hits": run.cache_hits + 1})) is False
+    assert (
+        attempt_history_is_complete(run.model_copy(update={"objective_evaluations": run.objective_evaluations + 1}))
+        is False
+    )
+    bad_key = run.history[0].model_copy(update={"cache_key": "wrong"})
+    assert attempt_history_is_complete(run.model_copy(update={"history": (bad_key, *run.history[1:])})) is False
+
+
+def test_checkpoint_is_explicitly_incomplete_and_records_replay_inputs() -> None:
+    checkpoint = build_probe_evidence()["checkpoint"]
+    snapshot = checkpoint["snapshot"]
+    assert PublicStateSnapshot.model_validate(snapshot).model_dump(mode="json") == snapshot
+    assert tuple(snapshot) == CHECKPOINT_FIELDS
+    assert snapshot["complete"] is False
+    assert snapshot["missing_fields"] == list(REPLAY_MISSING_FIELDS)
+    configuration = snapshot["configuration"]
+    assert configuration["search_seed"] == SEARCH_SEED
+    assert configuration["initial_sampling"]
+    assert configuration["constructor"] == {
+        "pop_size": INITIAL_EVALUATION_BUDGET,
+        "n_offsprings": None,
+        "sampling": "pymoo.core.population.Population",
+        "mating": "pymoo.core.mixed.MixedVariableMating",
+        "eliminate_duplicates": False,
+        "survival": "pymoo.algorithms.soo.nonconvex.ga.FitnessSurvival",
+        "output": "pymoo.util.display.single.SingleObjectiveOutput",
+        "callback": "pymoo.core.callback.Callback",
+        "display": "pymoo.util.display.display.Display",
+        "archive": None,
+        "return_least_infeasible": False,
+        "save_history": False,
+        "verbose": False,
+        "evaluator": "pymoo.core.evaluator.Evaluator",
     }
-    assert all(not isinstance(item, bytes) for item in _walk(evidence))
+    assert configuration["termination"] == {"kind": "n_gen", "value": TOTAL_GENERATIONS}
+    assert [item["name"] for item in configuration["variables"]] == ["q1", "q2", "alpha", "r", "c_t"]
+    assert checkpoint["comparison"]["exact_history_identity"] is False
+    assert checkpoint["comparison"]["resumed_history"] is None
+    assert all(not isinstance(item, bytes) for item in _walk(checkpoint))
+
+
+def test_loc_gate_is_indeterminate_without_designing_the_rejected_adapter() -> None:
+    loc = build_probe_evidence()["production_loc"]
+    assert loc["status"] == "indeterminate"
+    assert loc["estimated_reduction_percent"] is None
+    assert loc["required_reduction_percent"] == 40.0
+    assert loc["gate_passed"] is False
+    assert loc["current_inventory"]
+    assert "line-level" in loc["reason"]
+    assert "rejected adapter" in loc["reason"]
+    assert "maximum" not in loc
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("known_cases",),
+        ("families",),
+        ("fairness",),
+        ("checkpoint",),
+        ("invalid_classification",),
+        ("production_loc",),
+        ("known_cases", 0),
+        ("families", 0, "runs", 0, "history"),
+    ],
+)
+def test_strict_root_rejects_deleted_evidence_sections(path: tuple[str | int, ...]) -> None:
+    evidence = deepcopy(build_probe_evidence())
+    parent: Any = evidence
+    for key in path[:-1]:
+        parent = parent[key]
+    del parent[path[-1]]
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_validation_is_order_independent_but_recomputes_gates_and_decision() -> None:
+    evidence = build_probe_evidence()
+    evidence["gates"] = dict(reversed(tuple(evidence["gates"].items())))
     assert validate_probe_evidence(evidence) is evidence
-    bad_budget = deepcopy(evidence)
-    bad_budget["policy"]["initial_evaluation_budget"] += 1
-    with pytest.raises(ValueError, match="policy"):
-        validate_probe_evidence(bad_budget)
+    bad_gate = deepcopy(evidence)
+    bad_gate["gates"]["known_optima"] = False
+    with pytest.raises(ValueError, match="derived gates"):
+        validate_probe_evidence(bad_gate)
     bad_decision = deepcopy(evidence)
-    bad_decision["decision"]["outcome"] = "pass"
+    bad_decision["decision"]["failed_gates"] = []
     with pytest.raises(ValueError, match="decision"):
         validate_probe_evidence(bad_decision)
+    unknown_gate = deepcopy(evidence)
+    unknown_gate["gates"]["unexpected"] = True
+    with pytest.raises(ValueError):
+        validate_probe_evidence(unknown_gate)
+    extra_root = deepcopy(evidence)
+    extra_root["opaque_state"] = "forbidden"
+    with pytest.raises(ValueError):
+        validate_probe_evidence(extra_root)
+    noncanonical = deepcopy(build_probe_evidence())
+    noncanonical["policy"]["family_names"] = tuple(noncanonical["policy"]["family_names"])
+    with pytest.raises(ValueError, match="canonical value form"):
+        validate_probe_evidence(noncanonical)
+
+
+def test_strict_schema_rejects_bad_bounds_cardinality_and_evidence_sets() -> None:
+    with pytest.raises(ValidationError, match="exact integers"):
+        VariableSpec(name="r", kind="integer", lower=1.0, upper=4.0)
+    with pytest.raises(ValidationError, match="exact floats"):
+        VariableSpec(name="x", kind="real", lower=1, upper=4)
+    with pytest.raises(ValidationError, match="less than upper"):
+        VariableSpec(name="x", kind="real", lower=2.0, upper=1.0)
+
+    wrong_count = deepcopy(build_probe_evidence())
+    wrong_count["families"][0]["runs"][0]["total_attempts"] += 1
+    with pytest.raises(ValueError, match="history length"):
+        validate_probe_evidence(wrong_count)
+    wrong_known_set = deepcopy(build_probe_evidence())
+    wrong_known_set["known_cases"].reverse()
+    with pytest.raises(ValueError, match="known case set"):
+        validate_probe_evidence(wrong_known_set)
+    wrong_family_set = deepcopy(build_probe_evidence())
+    wrong_family_set["families"].reverse()
+    with pytest.raises(ValueError, match="traffic family set"):
+        validate_probe_evidence(wrong_family_set)
+
+
+def test_decision_requires_exact_boolean_gate_membership() -> None:
+    passing: dict[str, object] = dict.fromkeys(
+        (
+            "known_optima",
+            "deterministic_repeats",
+            "family_fairness",
+            "cache_and_diagnostics",
+            "exact_public_state_replay",
+            "production_loc_reduction",
+        ),
+        True,
+    )
+    assert decide_probe(passing)["outcome"] == "pass"
+    assert decide_probe({**passing, "exact_public_state_replay": False})["failed_gates"] == [
+        "exact_public_state_replay"
+    ]
+    assert decide_probe({})["outcome"] == "reject"
+    assert decide_probe({**passing, "unexpected": True})["failed_gates"] == ["unknown:unexpected"]
+    assert decide_probe({**passing, "known_optima": 1})["failed_gates"] == ["known_optima"]  # type: ignore[dict-item]
+
+
+def test_canonical_evidence_is_deterministic_and_checkable(tmp_path: Path) -> None:
+    evidence = build_probe_evidence()
+    assert build_probe_evidence() == evidence
+    assert validate_probe_evidence(evidence) is evidence
     rendered = render_probe_evidence(evidence)
     assert rendered.endswith(b"\n")
     assert json.loads(rendered) == evidence
     destination = tmp_path / "pymoo_cases.json"
+    assert write_probe_evidence(destination, evidence, check=True) is False
     assert write_probe_evidence(destination, evidence, check=False) is True
     assert destination.read_bytes() == rendered
     assert write_probe_evidence(destination, evidence, check=True) is True
@@ -300,7 +437,6 @@ def test_evidence_is_deterministic_strict_and_contains_no_opaque_bytes(tmp_path:
 
 
 def test_shared_runner_generates_and_checks_the_named_pymoo_probe(tmp_path: Path) -> None:
-    """A runner wired only to the earlier MMPP probe cannot reproduce this decision fixture."""
     repository = Path(__file__).resolve().parents[3]
     destination = tmp_path / "pymoo_cases.json"
     command = [
@@ -313,6 +449,5 @@ def test_shared_runner_generates_and_checks_the_named_pymoo_probe(tmp_path: Path
     ]
     generated = subprocess.run(command, cwd=tmp_path, check=False, capture_output=True, text=True)
     assert generated.returncode == 0, generated.stderr
-    assert json.loads(destination.read_bytes())["probe"] == "pymoo_optimizer"
     checked = subprocess.run([*command, "--check"], cwd=tmp_path, check=False, capture_output=True, text=True)
     assert checked.returncode == 0, checked.stderr
