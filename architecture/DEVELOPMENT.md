@@ -177,6 +177,8 @@ serially and 205.89/214.56 seconds in two four-worker runs. All three reported
 97.73% total branch-aware coverage and exactly identical executed and missing
 line and branch sets for all 42 source files. Repeat that comparison before
 changing the worker count, distribution mode, coverage engine, or selection.
+The commands, versions, normalized digest, and collection manifest are retained
+in the [testing-infrastructure evidence](../docs/TESTING_INFRASTRUCTURE_EVIDENCE.md).
 
 ### External gate
 
@@ -201,6 +203,14 @@ generator with `--check`, the bounded offline validation-study audit, and the
 External gate on a capable host. Each component retains the execution mode and
 resource bounds above; do not combine competing heavy gates in one local scope.
 
+The accepted-study audit is intentionally not run from an arbitrary later
+checkout. Read `source_commit` from the accepted bundle's `environment.json`,
+make a `git clone --no-local --no-hardlinks --no-checkout`, detach that clone at
+the recorded commit, and copy the accepted bundle into the same relative
+evidence path with regular copies rather than links. From that prepared clone,
+run the audit below. A later checkout containing non-evidence changes must fail
+source binding; that failure is not evidence corruption and must not be bypassed.
+
 ```bash
 uv run --locked python scripts/generate_similarity_fixtures.py --check
 uv run --locked python scripts/generate_model_fixtures.py --check
@@ -210,7 +220,7 @@ scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/<study-id>/
+  examples/validation_study/evidence/<study-id>/ --repository .
 ```
 
 ### Process-tree containment

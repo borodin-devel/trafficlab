@@ -15,12 +15,50 @@ from tests.support.validation_study import (
     ScriptedPrerequisiteRunner,
     tree_inventory,
     valid_prerequisite,
-    write_legacy_prerequisite_root,
     write_prerequisite_repository_inputs,
 )
 from trafficlab.compatibility import identify_bytes
 from trafficlab.errors import TrafficlabError
 from trafficlab.run import RunResult
+
+
+def write_legacy_prerequisite_root(
+    repository: Path,
+    *,
+    study_id: str = "study-r4",
+) -> tuple[Path, bytes]:
+    """Create the schema-1 root and markers published before raw archives existed."""
+
+    prerequisite = valid_prerequisite(study_id=study_id)
+    content = study.render_prerequisite_results(prerequisite)
+    root = repository / "examples" / "validation_study" / "prerequisites.json"
+    root.parent.mkdir(parents=True, exist_ok=True)
+    root.write_bytes(content)
+    attempt = root.parent / ".study-work" / "attempts" / study_id
+    attempt.mkdir(parents=True)
+    (attempt / "prerequisites.json").write_bytes(
+        study._canonical_json(  # pyright: ignore[reportPrivateUsage]
+            cast(
+                study.JsonObject,
+                {"phase": "prerequisites", "study_id": study_id, "url": prerequisite.url},
+            )
+        )
+    )
+    (attempt / "prerequisites-success.json").write_bytes(
+        study._canonical_json(  # pyright: ignore[reportPrivateUsage]
+            cast(
+                study.JsonObject,
+                {
+                    "phase": "prerequisites",
+                    "prerequisites_identity": identify_bytes(content).as_dict(),
+                    "study_id": study_id,
+                    "url": prerequisite.url,
+                },
+            )
+        )
+    )
+    assert not (attempt / "prerequisites.raw.json").exists()
+    return root, content
 
 
 def test_prerequisite_attempt_marker_is_written_before_any_later_failure(tmp_path: Path) -> None:

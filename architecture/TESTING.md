@@ -65,7 +65,9 @@ coverage, and produced identical executed/missing line and branch sets for all
 42 package files. The parallel runs took 205.89 and 214.56 seconds instead of
 561.71 seconds serially. Changing worker count, distribution, coverage engine,
 or selection requires the same comparison again; aggregate percentage alone is
-not enough.
+not enough. The durable commands, versions, normalized projection digest, and
+collection manifest are in the
+[testing-infrastructure evidence](../docs/TESTING_INFRASTRUCTURE_EVIDENCE.md).
 
 ## Unit tests
 
@@ -795,9 +797,12 @@ service.
 
 ### Bounded offline audit
 
-From a clean clone with the locked CPython environment already available, run
-the bounded offline audit in the
-[Release gate](DEVELOPMENT.md#release-gate).
+From a no-local, no-hardlink clone detached at the bundle's recorded source
+commit, copy the accepted bundle as regular files into its matching relative
+evidence path and run the bounded offline audit in the
+[Release gate](DEVELOPMENT.md#release-gate). Running the audit from an arbitrary
+later development checkout is invalid: non-evidence changes after the source
+revision must fail source binding rather than being silently trusted.
 
 The command does not invoke Docker, open a network connection, call
 `trafficlab run`, or fetch a missing byte. It fails if the locked environment is

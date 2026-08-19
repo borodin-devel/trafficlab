@@ -20,6 +20,8 @@ Pyright strict mode, Ruff, Bash bounded-process guard, Docker Compose.
 
 **Spec:** `docs/superpowers/specs/2026-08-19-testing-infrastructure-design.md`
 
+**Evidence:** `docs/TESTING_INFRASTRUCTURE_EVIDENCE.md`
+
 ## Global Constraints
 
 - Do not change production behavior, scientific tolerances, seeds, repetition

@@ -140,14 +140,16 @@ in-process capture/run owners and deterministic PCAPNG bytes:
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -q -n 0 \
-  tests/unit/test_validation_study.py \
+  tests/unit/validation_study/ \
   tests/integration/test_validation_study_collection.py \
   tests/integration/test_validation_study_pipeline.py
 
 uv run --locked ruff check scripts/run_validation_study.py \
-  scripts/audit_validation_study.py tests/unit/test_validation_study.py \
+  scripts/audit_validation_study.py tests/support/validation_study.py \
+  tests/unit/validation_study/ \
   tests/integration/test_validation_study_collection.py
 uv run --locked pyright scripts/run_validation_study.py \
-  scripts/audit_validation_study.py tests/unit/test_validation_study.py \
+  scripts/audit_validation_study.py tests/support/validation_study.py \
+  tests/unit/validation_study/ \
   tests/integration/test_validation_study_collection.py
 ```

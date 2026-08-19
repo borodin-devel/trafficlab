@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import platform
+import shutil
 import stat
 import subprocess
 from collections.abc import Sequence
@@ -15,36 +18,201 @@ from scripts import run_validation_study as study
 from tests.support.validation_study import (
     CAPTURE_BYTES,
     CAPTURE_IMAGE_ID,
-    COLLECTION_PHASE_CAPTURE_TAG,
+    HASH,
     IMAGE_ID,
     REFERENCE_BYTES,
-    STUDY_PHASE_CAPTURE_TAG,
+    ROOT,
     OfflinePrimaryBaseline,
     StudyIdentityRunner,
     changed_config_paths,
     frozen,
-    install_primary_orchestration_doubles,
     materialize_offline_primary_baseline,
-    reject_direct_reproduction_mutation,
     response_headers,
     score,
-    source_record_and_config,
     study_result_value,
+    terminal_checkpoint_and_best,
+    transfer_responses,
+    trial_result,
+    valid_prerequisite,
     valid_result_document,
-    write_collection_compatible_inputs,
+    write_checked_configs,
+    write_retained_prerequisite_evidence,
     write_study_inputs,
 )
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import compare_experiment
-from trafficlab.compatibility import identify_bytes
+from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.errors import TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
 from trafficlab.genetic.types import TrialResult
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
+from trafficlab.trace import Direction, TraceEvent
+
+STUDY_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:study-capture"
+
+COLLECTION_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:collection-capture"
+
+
+def write_collection_compatible_inputs(repository_root: Path) -> Path:
+    """Write retained inputs that bind the local revalidation boundary exactly."""
+
+    repository_root.mkdir()
+    shutil.copy2(ROOT / "uv.lock", repository_root / "uv.lock")
+    prerequisite, _contents = write_checked_configs(repository_root, capture_image_id=CAPTURE_IMAGE_ID)
+    tools = cast(study.JsonObject, study._thaw_json(prerequisite.tools))  # pyright: ignore[reportPrivateUsage]
+    tools.update(
+        {
+            "host_architecture": platform.machine(),
+            "kernel_release": platform.release(),
+            "platform": platform.platform(),
+            "python_implementation": platform.python_implementation(),
+            "python_version": platform.python_version(),
+            "uv_lock_sha256": hashlib.sha256((repository_root / "uv.lock").read_bytes()).hexdigest(),
+        }
+    )
+    images = cast(study.JsonObject, study._thaw_json(prerequisite.images))  # pyright: ignore[reportPrivateUsage]
+    images["capture_image_id"] = CAPTURE_IMAGE_ID
+    prerequisite = replace(prerequisite, tools=frozen(tools), images=frozen(images))
+    prerequisite = write_retained_prerequisite_evidence(repository_root, prerequisite)
+    capture_root = repository_root / "docker" / "capture"
+    shutil.copy2(ROOT / "docker" / "capture" / "image-lock.json", capture_root / "image-lock.json")
+    prerequisite_path = repository_root / "examples" / "validation_study" / "prerequisites.json"
+    prerequisite_path.write_bytes(study.render_prerequisite_results(prerequisite))
+    return prerequisite_path
+
+
+def install_primary_orchestration_doubles(
+    monkeypatch: pytest.MonkeyPatch,
+    expected: study.StudyResults,
+    events: list[str],
+) -> None:
+    records = iter(expected.runs)
+
+    def prepare(
+        _root: Path,
+        _study_id: str,
+        run_id: str,
+        _workload: study.WorkloadSpec,
+    ) -> dict[str, tuple[Path, int]]:
+        events.append(f"scratch:{run_id}")
+        return {}
+
+    def archive(
+        _root: Path,
+        _study_id: str,
+        run_id: str,
+        workload: study.WorkloadSpec,
+        _prepared: object,
+        *,
+        object_size_bytes: int,
+    ) -> tuple[study.JsonObject, ...]:
+        assert object_size_bytes == 4_194_304
+        events.append(f"archive:{run_id}")
+        return tuple(cast(study.JsonObject, value) for value in transfer_responses("study-1", run_id, workload.name))
+
+    def extract(
+        _root: Path,
+        spec: study.StudyRunSpec,
+        _workload: study.WorkloadSpec,
+        _result: object,
+        elapsed: float,
+        _responses: tuple[study.JsonObject, ...],
+    ) -> study.StudyRunRecord:
+        events.append(f"extract:{spec.run_id}:{elapsed}")
+        return next(records)
+
+    def load_reference(run_directory: Path) -> tuple[TraceEvent, ...]:
+        events.append(f"trace:{run_directory.name}")
+        return (TraceEvent(0.0, Direction.OUTBOUND, 60), TraceEvent(1.0, Direction.INBOUND, 80))
+
+    def variation(
+        _records: Sequence[study.StudyRunRecord],
+        _traces: object,
+        _settings: object,
+    ) -> tuple[study.FrozenJsonObject, study.FrozenJsonObject, study.FrozenJsonObject]:
+        events.append("variation")
+        return expected.natural_variation
+
+    def summaries(
+        _records: Sequence[study.StudyRunRecord],
+    ) -> tuple[study.FrozenJsonObject, study.FrozenJsonObject, study.FrozenJsonObject]:
+        events.append("summaries")
+        return expected.workload_summaries
+
+    def reproduction(*_args: object, **_kwargs: object) -> study.ReproductionRecord:
+        events.append("reproduction")
+        return expected.reproduction
+
+    def publish(*_args: object, **_kwargs: object) -> None:
+        events.append("publish")
+
+    monkeypatch.setattr(study, "prepare_transfer_scratch", prepare)
+    monkeypatch.setattr(study, "archive_transfer_evidence", archive)
+    monkeypatch.setattr(study, "extract_primary_record", extract)
+    monkeypatch.setattr(study, "_load_reference_trace", load_reference, raising=False)
+    monkeypatch.setattr(study, "natural_variation", variation)
+    monkeypatch.setattr(study, "workload_summaries", summaries)
+    monkeypatch.setattr(study, "_run_cli_reproduction", reproduction, raising=False)
+    monkeypatch.setattr(study, "_publish_results", publish)
+    monkeypatch.setattr(study.platform, "python_version", lambda: "3.12.3")
+    monkeypatch.setattr(study.platform, "platform", lambda: "Linux-test")
+
+
+def source_record_and_config(
+    repository_root: Path,
+) -> tuple[study.StudyRunRecord, study.ExperimentConfig, study.WorkloadSpec]:
+    document = valid_result_document(repository_root)
+    source = study_result_value(document).runs[3]
+    workload = {item.name: item for item in study.workload_specs(valid_prerequisite().url)}["streaming"]
+    base = study.build_base_config(
+        workload,
+        repository_root=repository_root,
+        study_id="study-1",
+        url="https://downloads.example.test/object.bin",
+        capture_image_id=f"sha256:{'d' * 64}",
+    )
+    source_directory = repository_root / source.run_directory
+    source_config = base.model_copy(
+        update={"run": base.run.model_copy(update={"directory": source_directory.resolve()})}
+    )
+    source_directory.mkdir(parents=True)
+    (source_directory / "experiment.toml").write_bytes(study.render_effective_config(source_config))
+    return source, base, workload
+
+
+def reject_direct_reproduction_mutation(mutation: str, repository_root: Path) -> bool:
+    if mutation == "reused-log":
+        with pytest.raises(ValueError, match="reused"):
+            study._fresh_run_log_proofs(  # pyright: ignore[reportPrivateUsage]
+                (
+                    {"event": "capture_published", "stage": "capture", "reused": False},
+                    {"event": "best_model_reused"},
+                    {"event": "comparison_succeeded", "reused": False},
+                    {"event": "run_completed"},
+                )
+            )
+        return True
+    if mutation == "evaluate-final-count":
+        with pytest.raises(ValueError, match="exactly one"):
+            study._sole_final_trial(  # pyright: ignore[reportPrivateUsage]
+                (trial_result(97, 0.5), trial_result(97, 0.5))
+            )
+        return True
+    if mutation == "unbound-published-comparison":
+        _state, _best, comparison = terminal_checkpoint_and_best(repository_root)
+        with pytest.raises(ValueError, match="lineage"):
+            study._require_published_lineage(  # pyright: ignore[reportPrivateUsage]
+                comparison,
+                comparison,
+                {"capture.json": b"capture", "reference.pcapng": b"reference", "generated.pcapng": b"generated"},
+                ContentIdentity(size=1, sha256=HASH),
+            )
+        return True
+    return False
 
 
 def test_study_runs_nine_absent_primaries_serially_in_balanced_order_and_times_only_run_call(
