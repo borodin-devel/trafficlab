@@ -478,27 +478,27 @@ Run Ruff, Pyright, focused probe tests twice, existing genetic integration tests
 - Produces: development-only typed `read_with_scapy()`/`write_with_scapy()` adapters returning `TrafficTrace`, differential and benchmark evidence, and explicit license/adoption decision.
 - Does not modify: production PCAPNG imports or bytes unless every gate and a separate compatibility decision pass.
 
-- [ ] **[STEP-61-cca0725e] Step 1: Write differential, malformed, deadline, and typing tests**
+- [x] **[STEP-61-cca0725e] Step 1: Write differential, malformed, deadline, and typing tests**
 
 Cover Ethernet IPv4/IPv6/ARP, one interface, endian variants, timestamp resolution, padding/options, source-MAC directions, frame lengths, truncated/malformed blocks, and an injected per-packet clock deadline. Compare canonical traces, not Scapy packet reprs.
 
-- [ ] **[STEP-62-f70033a3] Step 2: Run Scapy probe tests and verify missing adapter failure**
+- [x] **[STEP-62-f70033a3] Step 2: Run Scapy probe tests and verify missing adapter failure**
 
 Run the bounded focused Scapy probe module and strict Pyright; expect missing adapter imports.
 
-- [ ] **[STEP-63-20046ce1] Step 3: Implement the narrow development-only adapter**
+- [x] **[STEP-63-20046ce1] Step 3: Implement the narrow development-only adapter**
 
 Confine dynamic Scapy objects behind locally typed protocols and explicit conversions. Reject extra interfaces/link types and apply Trafficlab direction/window/deadline rules. Do not add broad `Any`, blanket ignores, or production imports.
 
-- [ ] **[STEP-64-0be97894] Step 4: Run 100,000- and 1,000,000-frame comparisons**
+- [x] **[STEP-64-0be97894] Step 4: Run 100,000- and 1,000,000-frame comparisons**
 
 In fresh subprocesses, compare production and Scapy adapters for trace identity, median wall time, and peak RSS across five post-warmup runs. Record raw measurements and the predeclared material-regression decision.
 
-- [ ] **[STEP-65-ed5bf94b] Step 5: Record license and adoption outcome**
+- [x] **[STEP-65-ed5bf94b] Step 5: Record license and adoption outcome**
 
 Document that the current change is development-only, copies no GPL code, and makes no production import. Mark production adoption blocked pending a separate compatibility decision even if technical gates pass; retain the current codec on any technical failure.
 
-- [ ] **[STEP-66-ed1b51c3] Step 6: Verify and commit the Scapy probe**
+- [x] **[STEP-66-ed1b51c3] Step 6: Verify and commit the Scapy probe**
 
 Run Ruff, strict Pyright, focused probe tests twice, full production PCAPNG/capture-validation tests, and probe runner `--check`. Commit `test: evaluate scapy pcapng adapter`.
 
