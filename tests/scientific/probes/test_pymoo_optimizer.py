@@ -10,9 +10,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from tests.scientific.probes import pymoo_optimizer as probe
 from tests.scientific.probes.pymoo_optimizer import (
     CACHE_KEY_FIELDS,
     CHAMPION_SEED,
@@ -41,6 +43,7 @@ from tests.scientific.probes.pymoo_optimizer import (
     decide_probe,
     derive_gates,
     render_probe_evidence,
+    semantic_root_is_consistent,
     validate_probe_evidence,
     write_probe_evidence,
 )
@@ -126,6 +129,8 @@ def test_common_traffic_policy_remains_predeclared_and_family_neutral() -> None:
 def test_known_cases_start_outside_tolerance_and_converge_through_pymoo() -> None:
     evidence = build_probe_evidence()
     for case in evidence["known_cases"]:
+        assert case["seed"] == SEARCH_SEED
+        assert case["objective_definition"] in {"sum_squares", "integer_real_quadratic"}
         assert len(case["runs"]) == 2
         first, second = case["runs"]
         assert first == second
@@ -198,7 +203,7 @@ def test_every_gate_is_recomputed_from_measured_evidence() -> None:
     }
     fairness = evidence["fairness"]
     assert fairness["measured_family_set"] == list(FAMILY_NAMES)
-    assert fairness["distinct_optimizer_instances"] == len(FAMILY_NAMES)
+    assert fairness["distinct_optimizer_instances"] == len(FAMILY_NAMES) * 2
     assert fairness["champions_compared_after_attempts"] == INITIAL_EVALUATION_BUDGET * TOTAL_GENERATIONS
     assert [champion["fresh_seed"] for champion in fairness["champion_comparison"]] == [CHAMPION_SEED] * 3
 
@@ -281,6 +286,22 @@ def test_history_completeness_helper_covers_each_rejected_mutation() -> None:
     )
     bad_key = run.history[0].model_copy(update={"cache_key": "wrong"})
     assert attempt_history_is_complete(run.model_copy(update={"history": (bad_key, *run.history[1:])})) is False
+    hit_index = next(index for index, item in enumerate(run.history) if item.cache_hit)
+    hit = run.history[hit_index]
+    changed_candidate = hit.candidate.model_copy(update={"fitness": 0.0})
+    changed_result = hit.model_copy(update={"candidate": changed_candidate})
+    changed_history = (*run.history[:hit_index], changed_result, *run.history[hit_index + 1 :])
+    assert attempt_history_is_complete(run.model_copy(update={"history": changed_history})) is False
+    duplicate_miss = hit.model_copy(update={"cache_hit": False})
+    duplicate_history = (*run.history[:hit_index], duplicate_miss, *run.history[hit_index + 1 :])
+    duplicate_run = run.model_copy(
+        update={
+            "history": duplicate_history,
+            "cache_hits": run.cache_hits - 1,
+            "objective_evaluations": run.objective_evaluations + 1,
+        }
+    )
+    assert attempt_history_is_complete(duplicate_run) is False
 
 
 def test_checkpoint_is_explicitly_incomplete_and_records_replay_inputs() -> None:
@@ -308,7 +329,33 @@ def test_checkpoint_is_explicitly_incomplete_and_records_replay_inputs() -> None
         "save_history": False,
         "verbose": False,
         "evaluator": "pymoo.core.evaluator.Evaluator",
+        "advance_after_initial_infill": False,
+        "algorithm_duplicate_elimination": "pymoo.core.duplicate.NoDuplicateElimination",
     }
+    assert configuration["initialization"] == {
+        "sampling": "pymoo.core.population.Population",
+        "repair": "pymoo.core.repair.NoRepair",
+        "duplicate_elimination": "pymoo.core.duplicate.NoDuplicateElimination",
+    }
+    assert configuration["mating"]["selection"] == "pymoo.operators.selection.rnd.RandomSelection"
+    assert configuration["mating"]["repair"] == "pymoo.core.repair.NoRepair"
+    assert configuration["mating"]["duplicate_elimination"] == {
+        "operator_class": "pymoo.core.mixed.MixedVariableDuplicateElimination",
+        "epsilon": 1e-16,
+    }
+    assert configuration["mating"]["n_max_iterations"] == 100
+    assert [item["variable_type"] for item in configuration["mating"]["crossover"]] == [
+        "pymoo.core.variable.Binary",
+        "pymoo.core.variable.Real",
+        "pymoo.core.variable.Integer",
+        "pymoo.core.variable.Choice",
+    ]
+    assert [item["variable_type"] for item in configuration["mating"]["mutation"]] == [
+        "pymoo.core.variable.Binary",
+        "pymoo.core.variable.Real",
+        "pymoo.core.variable.Integer",
+        "pymoo.core.variable.Choice",
+    ]
     assert configuration["termination"] == {"kind": "n_gen", "value": TOTAL_GENERATIONS}
     assert [item["name"] for item in configuration["variables"]] == ["q1", "q2", "alpha", "r", "c_t"]
     assert checkpoint["comparison"]["exact_history_identity"] is False
@@ -326,6 +373,87 @@ def test_loc_gate_is_indeterminate_without_designing_the_rejected_adapter() -> N
     assert "line-level" in loc["reason"]
     assert "rejected adapter" in loc["reason"]
     assert "maximum" not in loc
+
+
+def test_public_mating_configuration_serializes_exact_classes_and_scalars() -> None:
+    mating = build_probe_evidence()["checkpoint"]["snapshot"]["configuration"]["mating"]
+    assert [(item["variable_type"], item["operator_class"], item["settings"]) for item in mating["crossover"]] == [
+        (
+            "pymoo.core.variable.Binary",
+            "pymoo.operators.crossover.ux.UX",
+            {"prob": 0.9, "n_parents": 2, "n_offsprings": 2},
+        ),
+        (
+            "pymoo.core.variable.Real",
+            "pymoo.operators.crossover.sbx.SBX",
+            {
+                "prob": 0.9,
+                "n_parents": 2,
+                "n_offsprings": 2,
+                "prob_var": 0.5,
+                "eta": 15,
+                "prob_bin": 0.5,
+                "prob_exch": 1.0,
+            },
+        ),
+        (
+            "pymoo.core.variable.Integer",
+            "pymoo.operators.crossover.sbx.SBX",
+            {
+                "prob": 0.9,
+                "n_parents": 2,
+                "n_offsprings": 2,
+                "prob_var": 0.5,
+                "eta": 15,
+                "prob_bin": 0.5,
+                "prob_exch": 1.0,
+            },
+        ),
+        (
+            "pymoo.core.variable.Choice",
+            "pymoo.operators.crossover.ux.UX",
+            {"prob": 0.9, "n_parents": 2, "n_offsprings": 2},
+        ),
+    ]
+    assert [(item["variable_type"], item["operator_class"], item["settings"]) for item in mating["mutation"]] == [
+        (
+            "pymoo.core.variable.Binary",
+            "pymoo.operators.mutation.bitflip.BFM",
+            {"prob": 1.0, "prob_var": None},
+        ),
+        (
+            "pymoo.core.variable.Real",
+            "pymoo.operators.mutation.pm.PM",
+            {"prob": 0.9, "prob_var": None, "eta": 20, "at_least_once": False},
+        ),
+        (
+            "pymoo.core.variable.Integer",
+            "pymoo.operators.mutation.pm.PM",
+            {"prob": 0.9, "prob_var": None, "eta": 20, "at_least_once": False},
+        ),
+        (
+            "pymoo.core.variable.Choice",
+            "pymoo.operators.mutation.rm.ChoiceRandomMutation",
+            {"prob": 1.0, "prob_var": None},
+        ),
+    ]
+
+
+def test_public_config_scalar_and_class_serializers_cover_supported_values() -> None:
+    class Getter:
+        def __init__(self, value: object) -> None:
+            self.value = value
+
+        def get(self) -> object:
+            return self.value
+
+    assert probe._qualified_name(Getter) == f"{__name__}.Getter"  # pyright: ignore[reportPrivateUsage]
+    assert probe._qualified_name(Getter(1)) == f"{__name__}.Getter"  # pyright: ignore[reportPrivateUsage]
+    for value in (None, 1, 1.5, False, np.int64(2), np.float64(2.5)):
+        assert probe._operator_scalar(Getter(value)) == value  # pyright: ignore[reportPrivateUsage]
+        assert probe._operator_scalar(value) == value  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(TypeError, match="deterministic scalar"):
+        probe._operator_scalar(Getter(object()))  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize(
@@ -375,6 +503,149 @@ def test_validation_is_order_independent_but_recomputes_gates_and_decision() -> 
     noncanonical["policy"]["family_names"] = tuple(noncanonical["policy"]["family_names"])
     with pytest.raises(ValueError, match="canonical value form"):
         validate_probe_evidence(noncanonical)
+
+
+def test_adversarial_second_run_champion_invalid_and_cache_mutations_are_rejected() -> None:
+    mutations: list[dict[str, Any]] = []
+
+    second_seed = deepcopy(build_probe_evidence())
+    second_seed["families"][0]["runs"][1]["search_seed"] += 1
+    second_seed_model = ProbeEvidence.model_validate(second_seed)
+    assert derive_gates(second_seed_model).deterministic_repeats is False
+    assert derive_gates(second_seed_model).family_fairness is False
+    mutations.append(second_seed)
+
+    second_config = deepcopy(build_probe_evidence())
+    second_config["families"][0]["runs"][1]["observation_window_seconds"] = 5.5
+    second_config_model = ProbeEvidence.model_validate(second_config)
+    assert derive_gates(second_config_model).deterministic_repeats is False
+    assert derive_gates(second_config_model).family_fairness is False
+    mutations.append(second_config)
+
+    early_champion = deepcopy(build_probe_evidence())
+    early_champion["fairness"]["champion_comparison"][0]["search_attempts_completed"] = INITIAL_EVALUATION_BUDGET
+    assert derive_gates(ProbeEvidence.model_validate(early_champion)).family_fairness is False
+    mutations.append(early_champion)
+
+    wrong_winner = deepcopy(build_probe_evidence())
+    wrong_winner["fairness"]["winner_family"] = "poisson_empirical"
+    assert derive_gates(ProbeEvidence.model_validate(wrong_winner)).family_fairness is False
+    mutations.append(wrong_winner)
+
+    wrong_champion = deepcopy(build_probe_evidence())
+    wrong_champion["fairness"]["champion_comparison"][0]["fresh_fitness"] = 0.0
+    assert derive_gates(ProbeEvidence.model_validate(wrong_champion)).family_fairness is False
+    mutations.append(wrong_champion)
+
+    wrong_selected_winner = deepcopy(build_probe_evidence())
+    wrong_selected_winner["fairness"]["winner"]["fresh_fitness"] = 0.0
+    assert derive_gates(ProbeEvidence.model_validate(wrong_selected_winner)).family_fairness is False
+    mutations.append(wrong_selected_winner)
+
+    wrong_ranking = deepcopy(build_probe_evidence())
+    wrong_ranking["fairness"]["champion_ranking"].reverse()
+    assert derive_gates(ProbeEvidence.model_validate(wrong_ranking)).family_fairness is False
+    mutations.append(wrong_ranking)
+
+    wrong_invalid_limits = deepcopy(build_probe_evidence())
+    wrong_invalid_limits["invalid_classification"]["limits"]["max_packets"] = 2
+    assert derive_gates(ProbeEvidence.model_validate(wrong_invalid_limits)).cache_and_diagnostics is False
+    mutations.append(wrong_invalid_limits)
+
+    wrong_invalid_failure = deepcopy(build_probe_evidence())
+    wrong_invalid_failure["invalid_classification"]["history"][0]["candidate"]["invalid"]["kind"] = "generation"
+    assert derive_gates(ProbeEvidence.model_validate(wrong_invalid_failure)).cache_and_diagnostics is False
+    mutations.append(wrong_invalid_failure)
+
+    unlinked_cache_hit = deepcopy(build_probe_evidence())
+    history = unlinked_cache_hit["families"][0]["runs"][0]["history"]
+    hit = next(item for item in history if item["cache_hit"])
+    hit["cache_key_payload"]["genes"][0] += 0.001
+    hit["cache_key"] = json.dumps(
+        hit["cache_key_payload"],
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    assert derive_gates(ProbeEvidence.model_validate(unlinked_cache_hit)).cache_and_diagnostics is False
+    mutations.append(unlinked_cache_hit)
+
+    for evidence in mutations:
+        with pytest.raises(ValueError):
+            validate_probe_evidence(evidence)
+
+
+def test_adversarial_policy_known_checkpoint_and_loc_mutations_are_rejected() -> None:
+    mutations: list[dict[str, Any]] = []
+
+    reordered_policy = deepcopy(build_probe_evidence())
+    reordered_policy["policy"]["family_names"].reverse()
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(reordered_policy)) is False
+    mutations.append(reordered_policy)
+
+    wrong_known_kind = deepcopy(build_probe_evidence())
+    wrong_known_kind["known_cases"][0]["variable_kinds"]["x1"] = "integer"
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_known_kind)) is False
+    mutations.append(wrong_known_kind)
+
+    wrong_known_bound = deepcopy(build_probe_evidence())
+    wrong_known_bound["known_cases"][0]["bounds"]["x0"] = [-3.0, 2.0]
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_known_bound)) is False
+    mutations.append(wrong_known_bound)
+
+    wrong_known_optimum = deepcopy(build_probe_evidence())
+    wrong_known_optimum["known_cases"][0]["known_optimum"]["variables"]["x0"] = 0.5
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_known_optimum)) is False
+    mutations.append(wrong_known_optimum)
+
+    wrong_known_tolerance = deepcopy(build_probe_evidence())
+    wrong_known_tolerance["known_cases"][0]["tolerance"] = 0.002
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_known_tolerance)) is False
+    mutations.append(wrong_known_tolerance)
+
+    wrong_known_seed = deepcopy(build_probe_evidence())
+    wrong_known_seed["known_cases"][0]["seed"] += 1
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_known_seed)) is False
+    mutations.append(wrong_known_seed)
+
+    wrong_known_definition = deepcopy(build_probe_evidence())
+    wrong_known_definition["known_cases"][0]["objective_definition"] = "integer_real_quadratic"
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_known_definition)) is False
+    mutations.append(wrong_known_definition)
+
+    wrong_known_evaluations = deepcopy(build_probe_evidence())
+    wrong_known_evaluations["known_cases"][0]["runs"][0]["evaluations"] -= 1
+    assert derive_gates(ProbeEvidence.model_validate(wrong_known_evaluations)).known_optima is False
+    mutations.append(wrong_known_evaluations)
+
+    empty_checked_fields = deepcopy(build_probe_evidence())
+    empty_checked_fields["checkpoint"]["comparison"]["checked_fields"] = []
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(empty_checked_fields)) is False
+    mutations.append(empty_checked_fields)
+
+    missing_capability = deepcopy(build_probe_evidence())
+    missing_capability["checkpoint"]["snapshot"]["missing_fields"].pop()
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(missing_capability)) is False
+    mutations.append(missing_capability)
+
+    wrong_operator_setting = deepcopy(build_probe_evidence())
+    wrong_operator_setting["checkpoint"]["snapshot"]["configuration"]["mating"]["crossover"][1]["settings"]["eta"] = 16
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_operator_setting)) is False
+    mutations.append(wrong_operator_setting)
+
+    wrong_loc_total = deepcopy(build_probe_evidence())
+    wrong_loc_total["production_loc"]["current_sloc"] += 1
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_loc_total)) is False
+    mutations.append(wrong_loc_total)
+
+    wrong_loc_path = deepcopy(build_probe_evidence())
+    wrong_loc_path["production_loc"]["current_inventory"][0]["path"] = "other.py"
+    assert semantic_root_is_consistent(ProbeEvidence.model_validate(wrong_loc_path)) is False
+    mutations.append(wrong_loc_path)
+
+    for evidence in mutations:
+        with pytest.raises(ValueError):
+            validate_probe_evidence(evidence)
 
 
 def test_strict_schema_rejects_bad_bounds_cardinality_and_evidence_sets() -> None:
