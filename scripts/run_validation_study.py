@@ -4630,9 +4630,9 @@ def _validate_descriptive(
     *,
     name: str,
     observations: Sequence[int | float] | None = None,
+    historic_schema_one_result: bool = False,
 ) -> JsonObject:
-    keys = (
-        "bootstrap",
+    legacy_keys = (
         "count",
         "mean",
         "minimum",
@@ -4641,40 +4641,45 @@ def _validate_descriptive(
         "sample_variance",
         "sample_standard_deviation",
     )
+    keys = legacy_keys if historic_schema_one_result else ("bootstrap", *legacy_keys)
     document = _exact_object(value, keys, name=name)
     if observations is not None:
+        expected = descriptive_statistics(observations)
+        if historic_schema_one_result:
+            expected.pop("bootstrap")
         _require(
-            document == descriptive_statistics(observations),
+            document == expected,
             f"{name} is stale and does not recompute from its three source observations",
         )
         return cast(JsonObject, document)
-    bootstrap = _exact_object(
-        document["bootstrap"],
-        (
-            "confidence_level",
-            "generator",
-            "generator_state",
-            "lower_bound",
-            "method",
-            "n_resamples",
-            "sample_size",
-            "seed",
-            "statistic",
-            "upper_bound",
-        ),
-        name=f"{name}.bootstrap",
-    )
-    _require(bootstrap["confidence_level"] == 0.95, f"{name}.bootstrap confidence level must be 0.95")
-    _require(bootstrap["generator"] == "PCG64", f"{name}.bootstrap generator must be PCG64")
-    _require(bootstrap["method"] == "percentile", f"{name}.bootstrap method must be percentile")
-    _require(bootstrap["n_resamples"] == 10_000, f"{name}.bootstrap resamples must be 10000")
-    _require(bootstrap["sample_size"] == 3, f"{name}.bootstrap sample size must be three")
-    _require(bootstrap["seed"] == _BOOTSTRAP_SEED, f"{name}.bootstrap seed is not the fixed report seed")
-    _require(bootstrap["statistic"] == "mean", f"{name}.bootstrap statistic must be mean")
-    lower = _strict_float(bootstrap["lower_bound"], name=f"{name}.bootstrap lower bound")
-    upper = _strict_float(bootstrap["upper_bound"], name=f"{name}.bootstrap upper bound")
-    _require(lower <= upper, f"{name}.bootstrap bounds must not be inverted")
-    _require(type(bootstrap["generator_state"]) is dict, f"{name}.bootstrap generator state must be an object")
+    if not historic_schema_one_result:
+        bootstrap = _exact_object(
+            document["bootstrap"],
+            (
+                "confidence_level",
+                "generator",
+                "generator_state",
+                "lower_bound",
+                "method",
+                "n_resamples",
+                "sample_size",
+                "seed",
+                "statistic",
+                "upper_bound",
+            ),
+            name=f"{name}.bootstrap",
+        )
+        _require(bootstrap["confidence_level"] == 0.95, f"{name}.bootstrap confidence level must be 0.95")
+        _require(bootstrap["generator"] == "PCG64", f"{name}.bootstrap generator must be PCG64")
+        _require(bootstrap["method"] == "percentile", f"{name}.bootstrap method must be percentile")
+        _require(bootstrap["n_resamples"] == 10_000, f"{name}.bootstrap resamples must be 10000")
+        _require(bootstrap["sample_size"] == 3, f"{name}.bootstrap sample size must be three")
+        _require(bootstrap["seed"] == _BOOTSTRAP_SEED, f"{name}.bootstrap seed is not the fixed report seed")
+        _require(bootstrap["statistic"] == "mean", f"{name}.bootstrap statistic must be mean")
+        lower = _strict_float(bootstrap["lower_bound"], name=f"{name}.bootstrap lower bound")
+        upper = _strict_float(bootstrap["upper_bound"], name=f"{name}.bootstrap upper bound")
+        _require(lower <= upper, f"{name}.bootstrap bounds must not be inverted")
+        _require(type(bootstrap["generator_state"]) is dict, f"{name}.bootstrap generator state must be an object")
     count = _strict_int(document["count"], name=f"{name}.count")
     _strict_float(document["mean"], name=f"{name}.mean")
     minimum = _strict_float(document["minimum"], name=f"{name}.minimum")
@@ -4688,17 +4693,29 @@ def _validate_descriptive(
     return cast(JsonObject, document)
 
 
-def _validate_score_summary(value: object, *, name: str, observations: Sequence[JsonObject]) -> JsonObject:
+def _validate_score_summary(
+    value: object,
+    *,
+    name: str,
+    observations: Sequence[JsonObject],
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
     document = _exact_object(value, ("aggregate", "methods"), name=name)
     aggregate_values = [cast(float, score["aggregate"]) for score in observations]
     methods = _exact_object(document["methods"], PUBLISHED_METHOD_ORDER, name=f"{name}.methods")
     source_methods = [cast(dict[str, JsonValue], score["methods"]) for score in observations]
-    _validate_descriptive(document["aggregate"], name=f"{name}.aggregate", observations=aggregate_values)
+    _validate_descriptive(
+        document["aggregate"],
+        name=f"{name}.aggregate",
+        observations=aggregate_values,
+        historic_schema_one_result=historic_schema_one_result,
+    )
     for method in PUBLISHED_METHOD_ORDER:
         _validate_descriptive(
             methods[method],
             name=f"{name}.methods.{method}",
             observations=[cast(float, values[method]) for values in source_methods],
+            historic_schema_one_result=historic_schema_one_result,
         )
     return cast(JsonObject, document)
 
@@ -5223,11 +5240,22 @@ def _descriptor_observations(runs: Sequence[JsonObject]) -> dict[str, list[int |
     return result
 
 
-def _validate_descriptors(value: object, *, name: str, runs: Sequence[JsonObject]) -> JsonObject:
+def _validate_descriptors(
+    value: object,
+    *,
+    name: str,
+    runs: Sequence[JsonObject],
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
     document = _exact_object(value, _DESCRIPTOR_KEYS, name=name)
     observations = _descriptor_observations(runs)
     for key in _DESCRIPTOR_KEYS:
-        _validate_descriptive(document[key], name=f"{name}.{key}", observations=observations[key])
+        _validate_descriptive(
+            document[key],
+            name=f"{name}.{key}",
+            observations=observations[key],
+            historic_schema_one_result=historic_schema_one_result,
+        )
     return cast(JsonObject, document)
 
 
@@ -5243,7 +5271,13 @@ def _average_score(forward: JsonObject, reverse: JsonObject) -> JsonObject:
     }
 
 
-def _validate_natural_variation(value: object, *, workload: str, runs: Sequence[JsonObject]) -> JsonObject:
+def _validate_natural_variation(
+    value: object,
+    *,
+    workload: str,
+    runs: Sequence[JsonObject],
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
     document = _exact_object(value, ("workload", "pairs", "reference_descriptors"), name="natural variation")
     name = _strict_string(document["workload"], name="natural variation workload")
     _require(name == workload, "natural variation records must be ordered short, streaming, bursty")
@@ -5267,7 +5301,12 @@ def _validate_natural_variation(value: object, *, workload: str, runs: Sequence[
             symmetric == _average_score(forward, reverse),
             "symmetric pair score must be the arithmetic mean of forward and reverse",
         )
-    _validate_descriptors(document["reference_descriptors"], name="natural reference descriptors", runs=runs)
+    _validate_descriptors(
+        document["reference_descriptors"],
+        name="natural reference descriptors",
+        runs=runs,
+        historic_schema_one_result=historic_schema_one_result,
+    )
     return cast(JsonObject, document)
 
 
@@ -5276,6 +5315,7 @@ def _validate_family_summary(
     *,
     family: str,
     champions: Sequence[JsonObject],
+    historic_schema_one_result: bool = False,
 ) -> JsonObject:
     document = _exact_object(value, ("selection_fitness", "selection_components"), name="family summary")
     fitness_values = [cast(float, champion["selection_fitness"]) for champion in champions]
@@ -5287,18 +5327,28 @@ def _validate_family_summary(
         document["selection_components"], PUBLISHED_METHOD_ORDER, name=f"{family} selection components"
     )
     _validate_descriptive(
-        document["selection_fitness"], name=f"{family} selection fitness", observations=fitness_values
+        document["selection_fitness"],
+        name=f"{family} selection fitness",
+        observations=fitness_values,
+        historic_schema_one_result=historic_schema_one_result,
     )
     for method in PUBLISHED_METHOD_ORDER:
         _validate_descriptive(
             components[method],
             name=f"{family} selection component {method}",
             observations=[cast(float, values[method]) for values in component_maps],
+            historic_schema_one_result=historic_schema_one_result,
         )
     return cast(JsonObject, document)
 
 
-def _validate_workload_summary(value: object, *, workload: str, runs: Sequence[JsonObject]) -> JsonObject:
+def _validate_workload_summary(
+    value: object,
+    *,
+    workload: str,
+    runs: Sequence[JsonObject],
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
     document = _exact_object(value, WORKLOAD_SUMMARY_KEYS, name="workload summary")
     name = _strict_string(document["workload"], name="workload summary name")
     _require(name == workload, "workload summaries must be ordered short, streaming, bursty")
@@ -5325,17 +5375,39 @@ def _validate_workload_summary(value: object, *, workload: str, runs: Sequence[J
         document["runtime"],
         name=f"{name} runtime",
         observations=[cast(float, run["elapsed_seconds"]) for run in runs],
+        historic_schema_one_result=historic_schema_one_result,
     )
     for family in FAMILY_ORDER:
-        _validate_family_summary(families[family], family=family, champions=champions_by_family[family])
+        _validate_family_summary(
+            families[family],
+            family=family,
+            champions=champions_by_family[family],
+            historic_schema_one_result=historic_schema_one_result,
+        )
     _validate_descriptive(
         document["winner_selection_fitness"],
         name=f"{name} winner selection fitness",
         observations=[cast(float, winner["selection_fitness"]) for winner in winners],
+        historic_schema_one_result=historic_schema_one_result,
     )
-    _validate_score_summary(document["fresh_simulation"], name=f"{name} fresh simulation", observations=held_scores)
-    _validate_score_summary(document["published"], name=f"{name} published", observations=published_scores)
-    _validate_descriptors(document["reference_descriptors"], name=f"{name} reference descriptors", runs=runs)
+    _validate_score_summary(
+        document["fresh_simulation"],
+        name=f"{name} fresh simulation",
+        observations=held_scores,
+        historic_schema_one_result=historic_schema_one_result,
+    )
+    _validate_score_summary(
+        document["published"],
+        name=f"{name} published",
+        observations=published_scores,
+        historic_schema_one_result=historic_schema_one_result,
+    )
+    _validate_descriptors(
+        document["reference_descriptors"],
+        name=f"{name} reference descriptors",
+        runs=runs,
+        historic_schema_one_result=historic_schema_one_result,
+    )
     return cast(JsonObject, document)
 
 
@@ -5600,11 +5672,21 @@ def _validate_study_document(document: JsonObject, *, repository_root: Path) -> 
     )
     workloads = ("short", "streaming", "bursty")
     natural = [
-        _validate_natural_variation(item, workload=workload, runs=grouped[workload])
+        _validate_natural_variation(
+            item,
+            workload=workload,
+            runs=grouped[workload],
+            historic_schema_one_result=historic_schema_one_result,
+        )
         for item, workload in zip(natural_items, workloads, strict=True)
     ]
     summaries = [
-        _validate_workload_summary(item, workload=workload, runs=grouped[workload])
+        _validate_workload_summary(
+            item,
+            workload=workload,
+            runs=grouped[workload],
+            historic_schema_one_result=historic_schema_one_result,
+        )
         for item, workload in zip(summary_items, workloads, strict=True)
     ]
     source = grouped["streaming"][1]

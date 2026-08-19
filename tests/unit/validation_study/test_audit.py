@@ -2540,6 +2540,45 @@ def test_historic_schema_one_result_does_not_follow_current_workload_metadata(
     )
 
 
+def test_historic_descriptive_accepts_legacy_shape_without_weakening_current() -> None:
+    """Only the exact retained historic result may omit recomputed bootstrap evidence."""
+    observations = [1, 2, 4]
+    current = study.descriptive_statistics(observations)
+    historic = copy.deepcopy(current)
+    historic.pop("bootstrap")
+
+    assert (
+        study._validate_descriptive(  # pyright: ignore[reportPrivateUsage]
+            historic,
+            name="historic descriptive",
+            observations=observations,
+            historic_schema_one_result=True,
+        )
+        == historic
+    )
+    assert (
+        study._validate_descriptive(  # pyright: ignore[reportPrivateUsage]
+            historic,
+            name="historic descriptive without sources",
+            historic_schema_one_result=True,
+        )
+        == historic
+    )
+    assert (
+        study._validate_descriptive(  # pyright: ignore[reportPrivateUsage]
+            current,
+            name="current descriptive without sources",
+        )
+        == current
+    )
+    with pytest.raises(ValueError, match="bootstrap"):
+        study._validate_descriptive(  # pyright: ignore[reportPrivateUsage]
+            historic,
+            name="current descriptive",
+            observations=observations,
+        )
+
+
 def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
     content = (ROOT / "examples" / "validation_study" / "results.json").read_bytes()
     document = cast(dict[str, object], json.loads(content))
