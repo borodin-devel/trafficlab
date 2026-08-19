@@ -2,10 +2,12 @@
 
 import json
 import math
-from collections.abc import Iterable
-from typing import cast
+from collections.abc import Iterable, Mapping
+from typing import Protocol, cast
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 import trafficlab.similarity.multiscale as multiscale_module
 from trafficlab.errors import TrafficlabError
@@ -16,6 +18,17 @@ from trafficlab.similarity.multiscale import (
     normalized_l1,
 )
 from trafficlab.trace import Direction, TraceEvent
+
+
+class _Bincount(Protocol):
+    """Test-local typed view of the bincount calls made by this kernel."""
+
+    def __call__(
+        self,
+        indices: NDArray[np.intp],
+        weights: NDArray[np.float64] | None = None,
+        minlength: int = 0,
+    ) -> NDArray[np.int64]: ...
 
 
 def _event(
@@ -524,7 +537,9 @@ def test_multiscale_rejects_events_outside_the_shared_closed_window(timestamp: f
         multiscale_rate_similarity(outside, (_event(0.0),), 1.0, (1.0,), (1.0,), 0.5, 0.5, 2)
 
 
-def _scalar_cells(events: tuple[TraceEvent, ...], *, width: float, bins: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
+def _scalar_cells(
+    events: tuple[TraceEvent, ...], *, width: float, bins: int
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """Independently derive snapped directional cells for the vectorization boundary."""
     packets = [0] * (2 * bins)
     bytes_ = [0] * (2 * bins)
@@ -547,17 +562,22 @@ def test_multiscale_cells_match_scalar_oracle_and_use_bincount(monkeypatch: pyte
         _event(1.0, direction=Direction.INBOUND, frame_length=13),
     )
     calls = 0
-    bincount = multiscale_module.np.bincount
+    bincount = cast(_Bincount, multiscale_module.np.bincount)
 
-    def counted_bincount(*args: object, **kwargs: object) -> object:
+    def counted_bincount(
+        indices: NDArray[np.intp],
+        weights: NDArray[np.float64] | None = None,
+        minlength: int = 0,
+    ) -> NDArray[np.int64]:
         nonlocal calls
         calls += 1
-        return bincount(*args, **kwargs)
+        return bincount(indices, weights, minlength)
 
     monkeypatch.setattr(multiscale_module.np, "bincount", counted_bincount)
     result = multiscale_rate_similarity(events, events, 1.0, (0.1,), (1.0,), 0.5, 0.5, 20)
     expected_packets, expected_bytes = _scalar_cells(events, width=0.1, bins=10)
-    scale = result.diagnostics["scales"][0]
+    scales = cast(tuple[object, ...], result.diagnostics["scales"])
+    scale = cast(Mapping[str, object], scales[0])
 
     assert calls == 8
     assert scale["reference_totals"] == {

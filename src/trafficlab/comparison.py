@@ -33,7 +33,7 @@ from trafficlab.similarity.autocorrelation import (
 from trafficlab.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
 from trafficlab.similarity.ks import frame_size_ks, iat_ks
 from trafficlab.similarity.multiscale import multiscale_rate_similarity
-from trafficlab.trace import TraceEvent, align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.trace import TraceEvent, TrafficTrace, align_generated, normalize_reference, parse_capture_metadata
 
 _METHOD_NAMES = ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
 _INPUT_NAMES = ("capture_json", "generated_pcapng", "reference_pcapng", "similarity_settings")
@@ -756,14 +756,14 @@ def similarity_settings_identity(settings: SimilarityConfig) -> ContentIdentity:
 
 
 def compare_traces(
-    reference: Iterable[TraceEvent],
-    generated: Iterable[TraceEvent],
+    reference: Iterable[TraceEvent] | TrafficTrace,
+    generated: Iterable[TraceEvent] | TrafficTrace,
     W: float,
     settings: SimilarityConfig,
 ) -> ComparisonResult:
     """Evaluate all four configured metrics over exactly one observation window."""
-    reference_trace = tuple(reference)
-    generated_trace = tuple(generated)
+    reference_trace = reference if type(reference) is TrafficTrace else TrafficTrace.from_events(reference)
+    generated_trace = generated if type(generated) is TrafficTrace else TrafficTrace.from_events(generated)
     frame_size = frame_size_ks(reference_trace, generated_trace, W)
     interarrival = iat_ks(reference_trace, generated_trace, W, settings.iat_diagnostic_quantile)
     try:

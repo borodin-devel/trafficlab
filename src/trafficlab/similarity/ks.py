@@ -1,8 +1,8 @@
 """Exact frame-size and inter-arrival-time Kolmogorov-Smirnov metrics."""
 
 import math
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Sequence
+from typing import Any, Protocol, cast
 
 from scipy import stats as scipy_stats  # pyright: ignore[reportMissingTypeStubs]
 
@@ -10,7 +10,21 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult, validate_observation_window
 from trafficlab.trace import Direction, TraceEvent
 
-_SCIPY_STATS: Any = scipy_stats
+
+class _KsResult(Protocol):
+    """The descriptive part of SciPy's two-sample KS result."""
+
+    @property
+    def statistic(self) -> float: ...
+
+
+class _Ks2Samp(Protocol):
+    """Typed boundary around SciPy's untyped two-sample KS callable."""
+
+    def __call__(self, left: Sequence[int], right: Sequence[int]) -> _KsResult: ...
+
+
+_ks_2samp = cast(_Ks2Samp, cast(Any, scipy_stats).ks_2samp)
 
 
 def _validated_numeric_sample(values: Iterable[object], *, sample_name: str) -> tuple[int | float, ...]:
@@ -46,8 +60,15 @@ def _ks_statistic(left: Iterable[object], right: Iterable[object]) -> float:
     """Return SciPy's descriptive two-sample KS statistic after local validation."""
     left_values = _validated_numeric_sample(left, sample_name="left")
     right_values = _validated_numeric_sample(right, sample_name="right")
+    ordered_values = sorted((*left_values, *right_values))
+    ranks: dict[int | float, int] = {}
+    for value in ordered_values:
+        if value not in ranks:
+            ranks[value] = len(ranks)
+    left_ranks = tuple(ranks[value] for value in left_values)
+    right_ranks = tuple(ranks[value] for value in right_values)
     try:
-        statistic = float(_SCIPY_STATS.ks_2samp(left_values, right_values).statistic)
+        statistic = float(_ks_2samp(left_ranks, right_ranks).statistic)
     except (TypeError, ValueError) as error:
         raise TrafficlabError(
             "invalid KS sample: values cannot be evaluated safely",

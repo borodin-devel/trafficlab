@@ -2,16 +2,45 @@
 
 import copy
 import math
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import numpy as np
 from scipy import stats as scipy_stats  # pyright: ignore[reportMissingTypeStubs]
 
 from trafficlab.errors import TrafficlabError
 
-_SCIPY_STATS: Any = scipy_stats
+
+class _ConfidenceInterval(Protocol):
+    """The lower and upper values returned by SciPy bootstrap."""
+
+    low: float
+    high: float
+
+
+class _BootstrapResult(Protocol):
+    """The result fields Trafficlab consumes from SciPy bootstrap."""
+
+    confidence_interval: _ConfidenceInterval
+
+
+class _Bootstrap(Protocol):
+    """Typed boundary around the SciPy bootstrap callable."""
+
+    def __call__(
+        self,
+        data: tuple[np.ndarray[tuple[int], np.dtype[np.float64]], ...],
+        statistic: Callable[..., object],
+        *,
+        n_resamples: int,
+        confidence_level: float,
+        method: str,
+        rng: np.random.Generator,
+    ) -> _BootstrapResult: ...
+
+
+_bootstrap = cast(_Bootstrap, cast(Any, scipy_stats).bootstrap)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,15 +89,24 @@ def _validated_sample(values: Iterable[object]) -> tuple[float, ...]:
         )
     sample: list[float] = []
     for value in materialized:
-        if type(value) is int:
-            sample.append(float(value))
-            continue
-        if type(value) is not float or not math.isfinite(value):
+        if type(value) is not int and type(value) is not float:
             raise TrafficlabError(
                 "invalid bootstrap sample: values must be finite numbers",
                 corrective_action="provide a nonempty iterable of finite numeric values",
             )
-        sample.append(value)
+        try:
+            converted = float(value)
+        except OverflowError as error:
+            raise TrafficlabError(
+                "invalid bootstrap sample: values must be finite numbers",
+                corrective_action="provide a nonempty iterable of finite numeric values",
+            ) from error
+        if not math.isfinite(converted):
+            raise TrafficlabError(
+                "invalid bootstrap sample: values must be finite numbers",
+                corrective_action="provide a nonempty iterable of finite numeric values",
+            )
+        sample.append(converted)
     return tuple(sample)
 
 
@@ -114,7 +152,7 @@ def bootstrap_interval(
     try:
         generator = np.random.Generator(np.random.PCG64(validated_seed))
         initial_state = copy.deepcopy(cast(dict[str, object], generator.bit_generator.state))
-        result = _SCIPY_STATS.bootstrap(
+        result = _bootstrap(
             (np.asarray(sample, dtype=np.float64),),
             np.mean,
             n_resamples=validated_resamples,

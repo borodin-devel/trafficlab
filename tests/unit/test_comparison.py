@@ -2,7 +2,7 @@ import copy
 import json
 import math
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
@@ -23,7 +23,7 @@ from trafficlab.config import ExperimentConfig, SimilarityConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity import SimilarityResult
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 def _settings(data: dict[str, object]) -> SimilarityConfig:
@@ -36,6 +36,32 @@ def _trace() -> tuple[TraceEvent, ...]:
         TraceEvent(1.0, Direction.INBOUND, 80),
         TraceEvent(3.0, Direction.OUTBOUND, 100),
     )
+
+
+def test_compare_traces_accepts_equivalent_event_and_traffic_trace_inputs(valid_config_data: dict[str, object]) -> None:
+    events = _trace()
+    settings = _settings(valid_config_data)
+
+    event_result = compare_traces(events, events, 3.0, settings)
+    trace = TrafficTrace.from_events(events)
+    trace_result = compare_traces(trace, trace, 3.0, settings)
+
+    assert trace_result == event_result
+
+
+def test_compare_traces_reuses_exact_traffic_trace_inputs(
+    valid_config_data: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trace = TrafficTrace.from_events(_trace())
+
+    def reject_reconversion(_cls: type[TrafficTrace], _events: Iterable[TraceEvent]) -> TrafficTrace:
+        raise AssertionError("already canonical TrafficTrace inputs must not be reconverted")
+
+    monkeypatch.setattr(TrafficTrace, "from_events", classmethod(reject_reconversion))
+
+    result = compare_traces(trace, trace, 3.0, _settings(valid_config_data))
+
+    assert result.aggregate_score == 1.0
 
 
 def _prepare_comparison_run(
@@ -800,6 +826,7 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
         "multiscale_rate": 0.4,
     }
     assert result.methods["autocorrelation"].diagnostics["method"] == "acf"
+    assert all(type(arguments[0]) is TrafficTrace and type(arguments[1]) is TrafficTrace for _, arguments in calls)
     assert calls == [
         ("frame_size_ks", (reference, generated, 3.0)),
         ("iat_ks", (reference, generated, 3.0, 0.95)),

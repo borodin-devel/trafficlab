@@ -287,7 +287,9 @@ def _binned_features(
     def cells_for(direction: bool) -> tuple[tuple[int, ...], tuple[int, ...]]:
         selected = directions == direction
         direction_indices = indices[selected]
-        direction_lengths = tuple(length for length, selected_value in zip(lengths, selected, strict=True) if selected_value)
+        direction_lengths = tuple(
+            length for length, selected_value in zip(lengths, selected, strict=True) if selected_value
+        )
         packets = tuple(int(value) for value in np.bincount(direction_indices, minlength=bins_per_direction))
         exact = [0] * bins_per_direction
         for index, length in zip(direction_indices, direction_lengths, strict=True):

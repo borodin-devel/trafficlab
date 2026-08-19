@@ -1,10 +1,12 @@
 """Unit tests for documented autocorrelation similarity."""
 
 import math
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import cast
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 import trafficlab.similarity.autocorrelation as autocorrelation_module
 from trafficlab.errors import TrafficlabError
@@ -46,11 +48,13 @@ def test_sample_autocorrelation_returns_zero_for_documented_three_value_example(
     assert sample_autocorrelation([1, 2, 3], 1) == 0.0
 
 
-def test_sample_autocorrelation_matches_scalar_value_through_centered_numpy_dot(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sample_autocorrelation_matches_scalar_value_through_centered_numpy_dot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = 0
-    dot = autocorrelation_module.np.dot
+    dot = cast(Callable[[NDArray[np.float64], NDArray[np.float64]], np.float64], autocorrelation_module.np.dot)
 
-    def counted_dot(left: object, right: object) -> object:
+    def counted_dot(left: NDArray[np.float64], right: NDArray[np.float64]) -> np.float64:
         nonlocal calls
         calls += 1
         return dot(left, right)

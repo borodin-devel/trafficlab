@@ -1,11 +1,15 @@
 """Tests for deterministic descriptive bootstrap intervals."""
 
 import json
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import cast
 
 import pytest
 
+import trafficlab.statistics as statistics
 from trafficlab.errors import TrafficlabError
-from trafficlab.statistics import bootstrap_interval
+from trafficlab.statistics import _validated_sample, bootstrap_interval  # pyright: ignore[reportPrivateUsage]
 
 
 def test_bootstrap_interval_records_literal_pcg64_percentile_metadata_and_bytes() -> None:
@@ -37,3 +41,56 @@ def test_bootstrap_interval_records_literal_pcg64_percentile_metadata_and_bytes(
 def test_bootstrap_interval_rejects_empty_or_nonfinite_samples(values: list[float]) -> None:
     with pytest.raises(TrafficlabError):
         bootstrap_interval(values, seed=1)
+
+
+@pytest.mark.parametrize(
+    "values", [cast(Iterable[object], 1), ["not-a-number"], [10**1000], [float("nan")], [float("inf")]]
+)
+def test_validated_bootstrap_sample_translates_unrepresentable_or_nonfinite_values(values: Iterable[object]) -> None:
+    with pytest.raises(TrafficlabError):
+        _validated_sample(values)
+
+
+@pytest.mark.parametrize(
+    ("seed", "n_resamples", "confidence_level"),
+    [(True, 10_000, 0.95), (-1, 10_000, 0.95), (1, 0, 0.95), (1, 1.0, 0.95), (1, 10_000, 0.0), (1, 10_000, 1.0)],
+)
+def test_bootstrap_interval_rejects_invalid_settings(
+    seed: object, n_resamples: object, confidence_level: object
+) -> None:
+    with pytest.raises(TrafficlabError):
+        bootstrap_interval([1.0], seed=seed, n_resamples=n_resamples, confidence_level=confidence_level)
+
+
+@dataclass(frozen=True)
+class _FakeInterval:
+    low: float
+    high: float
+
+
+@dataclass(frozen=True)
+class _FakeBootstrapResult:
+    confidence_interval: _FakeInterval
+
+
+@pytest.mark.parametrize(("low", "high"), [(float("nan"), 1.0), (2.0, 1.0)])
+def test_bootstrap_interval_rejects_nonfinite_or_inverted_scipy_bounds(
+    low: float, high: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_bootstrap(*_args: object, **_kwargs: object) -> _FakeBootstrapResult:
+        return _FakeBootstrapResult(_FakeInterval(low, high))
+
+    monkeypatch.setattr(statistics, "_bootstrap", fake_bootstrap)
+
+    with pytest.raises(TrafficlabError, match="nonfinite or inverted"):
+        bootstrap_interval([1.0], seed=1)
+
+
+def test_bootstrap_interval_translates_scipy_evaluation_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raising_bootstrap(*_args: object, **_kwargs: object) -> _FakeBootstrapResult:
+        raise ValueError("controlled SciPy failure")
+
+    monkeypatch.setattr(statistics, "_bootstrap", raising_bootstrap)
+
+    with pytest.raises(TrafficlabError, match="could not be evaluated"):
+        bootstrap_interval([1.0], seed=1)

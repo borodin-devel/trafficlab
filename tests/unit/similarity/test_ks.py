@@ -3,15 +3,15 @@
 import json
 import math
 from collections.abc import Iterable, Mapping
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import cast
 
 import pytest
-from scipy.stats import ks_2samp  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
 import trafficlab.similarity.ks as ks_module
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
-from trafficlab.similarity.ks import frame_size_ks, iat_ks
+from trafficlab.similarity.ks import _ks_statistic, frame_size_ks, iat_ks  # pyright: ignore[reportPrivateUsage]
 from trafficlab.trace import Direction, TraceEvent
 
 
@@ -53,21 +53,84 @@ def _merged_ecdf_oracle(left: list[int | float], right: list[int | float]) -> fl
         ([1, 2], [1, 3]),
     ],
 )
-def test_scipy_ks_statistic_matches_the_independent_tied_sample_oracle(
+def test_ks_statistic_matches_the_independent_tied_sample_oracle(
     left: list[int | float], right: list[int | float]
 ) -> None:
-    assert cast(Any, ks_2samp(left, right)).statistic == _merged_ecdf_oracle(left, right)
+    assert _ks_statistic(left, right) == _merged_ecdf_oracle(left, right)
+
+
+def test_ks_statistic_returns_zero_for_identical_tied_samples() -> None:
+    assert _ks_statistic([1, 1, 2], [2, 1, 1]) == 0.0
+
+
+def test_ks_statistic_returns_one_for_disjoint_singletons() -> None:
+    assert _ks_statistic([1], [2]) == 1.0
+
+
+@pytest.mark.parametrize("integer", [2**53, 10**1000])
+def test_ks_statistic_preserves_adjacent_arbitrary_size_integer_values(integer: int) -> None:
+    assert _ks_statistic([integer], [integer + 1]) == 1.0
+
+
+def test_ks_statistic_matches_the_documented_half_difference() -> None:
+    assert _ks_statistic([1, 2], [1, 3]) == 0.5
+
+
+def test_ks_statistic_consumes_all_ties_before_comparing() -> None:
+    assert _ks_statistic([1, 1, 2], [1, 2, 2]) == pytest.approx(1.0 / 3.0)
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [([], [1]), ([1], []), ([1, math.inf], [2]), ([1], ["two"])],
+)
+def test_ks_statistic_rejects_empty_or_nonfinite_or_nonnumeric_samples(left: list[object], right: list[object]) -> None:
+    with pytest.raises(TrafficlabError):
+        _ks_statistic(left, right)
+
+
+def test_ks_statistic_rejects_a_noniterable_sample() -> None:
+    with pytest.raises(TrafficlabError):
+        _ks_statistic(cast(Iterable[object], 1), [1])
+
+
+@dataclass(frozen=True)
+class _FakeKsResult:
+    statistic: float
+
+
+def test_ks_statistic_translates_scipy_evaluation_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raising_ks(_left: tuple[int, ...], _right: tuple[int, ...]) -> ks_module._KsResult:  # pyright: ignore[reportPrivateUsage]
+        raise ValueError("controlled SciPy failure")
+
+    monkeypatch.setattr(ks_module, "_ks_2samp", raising_ks)
+
+    with pytest.raises(TrafficlabError, match="cannot be evaluated safely"):
+        _ks_statistic([1], [2])
+
+
+@pytest.mark.parametrize("statistic", [float("nan"), -0.1, 1.1])
+def test_ks_statistic_rejects_nonfinite_or_out_of_range_scipy_statistics(
+    statistic: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_ks(_left: tuple[int, ...], _right: tuple[int, ...]) -> ks_module._KsResult:  # pyright: ignore[reportPrivateUsage]
+        return _FakeKsResult(statistic)
+
+    monkeypatch.setattr(ks_module, "_ks_2samp", fake_ks)
+
+    with pytest.raises(TrafficlabError, match=r"outside \[0, 1\]"):
+        _ks_statistic([1], [2])
 
 
 def test_metric_uses_only_scipy_ks_statistic_for_tied_frame_and_iat_samples(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[tuple[object, ...], tuple[object, ...]]] = []
-    scipy_ks: Any = cast(Any, ks_2samp)
+    original = ks_module._ks_2samp  # pyright: ignore[reportPrivateUsage]
 
-    def statistic_only(left: object, right: object, **_kwargs: object) -> object:
-        calls.append((tuple(cast(Iterable[object], left)), tuple(cast(Iterable[object], right))))
-        return scipy_ks(left, right)
+    def statistic_only(left: tuple[int, ...], right: tuple[int, ...]) -> ks_module._KsResult:  # pyright: ignore[reportPrivateUsage]
+        calls.append((left, right))
+        return original(left, right)
 
-    monkeypatch.setattr(ks_module.scipy_stats, "ks_2samp", statistic_only)
+    monkeypatch.setattr(ks_module, "_ks_2samp", statistic_only)
 
     frame_result = frame_size_ks(
         _events(0.0, 1.0, 2.0, lengths=(1, 1, 2)),
@@ -78,7 +141,7 @@ def test_metric_uses_only_scipy_ks_statistic_for_tied_frame_and_iat_samples(monk
 
     assert frame_result.diagnostics["distance"] == pytest.approx(1.0 / 3.0)
     assert iat_result.diagnostics["distance"] == 0.0
-    assert calls == [((1, 1, 2), (1, 2, 2)), ((0.0, 1.0, 1.0), (1.0, 0.0, 1.0))]
+    assert calls == [((0, 0, 1), (0, 1, 1)), ((0, 1, 1), (1, 0, 1))]
 
 
 def test_frame_size_ks_returns_identical_score_and_complete_diagnostics() -> None:

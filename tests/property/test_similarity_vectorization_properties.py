@@ -25,7 +25,9 @@ def _merged_ecdf_distance(left: list[int], right: list[int]) -> float:
     st.lists(st.integers(-20, 20), min_size=1, max_size=30),
 )
 @pytest.mark.filterwarnings("ignore:ks_2samp:RuntimeWarning")
-def test_scipy_ks_statistic_matches_independent_merged_ecdf_for_discrete_samples(left: list[int], right: list[int]) -> None:
+def test_scipy_ks_statistic_matches_independent_merged_ecdf_for_discrete_samples(
+    left: list[int], right: list[int]
+) -> None:
     assert cast(Any, ks_2samp(left, right)).statistic == pytest.approx(_merged_ecdf_distance(left, right), abs=1e-15)
 
 
@@ -44,7 +46,13 @@ def test_vectorized_acf_matches_scalar_whole_series_mean_oracle(values: list[flo
         assert sample_autocorrelation(values, lag) == pytest.approx(_scalar_acf(values, lag), abs=1e-12)
 
 
-@given(st.lists(st.tuples(st.integers(min_value=0, max_value=1000), st.integers(min_value=0, max_value=1000)), min_size=1, max_size=20))
+@given(
+    st.lists(
+        st.tuples(st.integers(min_value=0, max_value=1000), st.integers(min_value=0, max_value=1000)),
+        min_size=1,
+        max_size=20,
+    )
+)
 def test_exact_normalized_l1_matches_scalar_integer_accumulation(cells: list[tuple[int, int]]) -> None:
     left = [left for left, _ in cells]
     right = [right for _, right in cells]
