@@ -42,6 +42,13 @@ _STUDY_ROOTS: dict[str, tuple[type[BaseModel], str]] = {
 }
 
 
+def _checked_study_paths(filename: str) -> tuple[Path, ...]:
+    return (
+        _STUDY_FIXTURE / filename,
+        *sorted((REPOSITORY / "examples" / "validation_study" / "evidence").glob(f"*/{filename}")),
+    )
+
+
 def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_documents() -> None:
     """A permissive or runtime-shaped root would fail to describe the checked publication bytes."""
 
@@ -50,17 +57,23 @@ def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_
         assert model.model_config.get("frozen") is True, name
         assert model.model_config.get("strict") is True, name
         assert model.model_config.get("allow_inf_nan") is False, name
-        document = json.loads((_STUDY_FIXTURE / filename).read_bytes())
         schema = model.model_json_schema(mode="validation")
         Draft202012Validator.check_schema(schema)
-        Draft202012Validator(schema).validate(document)  # pyright: ignore[reportUnknownMemberType]
-        rendered = model.model_validate(document).model_dump(mode="json")
-        assert rendered == document
-        assert (
-            json.dumps(rendered, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
-            + b"\n"
-            == (_STUDY_FIXTURE / filename).read_bytes()
-        )
+        paths = _checked_study_paths(filename)
+        assert len(paths) == 2, name
+        for path in paths:
+            content = path.read_bytes()
+            document = json.loads(content)
+            Draft202012Validator(schema).validate(document)  # pyright: ignore[reportUnknownMemberType]
+            rendered = model.model_validate(document).model_dump(mode="json")
+            assert rendered == document, path
+            assert (
+                json.dumps(
+                    rendered, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")
+                ).encode()
+                + b"\n"
+                == content
+            ), path
 
 
 @pytest.mark.parametrize(
@@ -156,6 +169,41 @@ def test_study_model_validation_diagnostic_is_stable_and_root_is_frozen() -> Non
     )
     with pytest.raises(ValidationError):
         environment.source_commit = "0" * 40  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        "training/short/r1/best_model.json",
+        "held_out/short/record.json",
+    ),
+)
+def test_lineage_roots_reject_bogus_repeated_and_held_out_relation_tags(relative: str) -> None:
+    """A shape-correct lineage record must still use its exact canonical relation vocabulary."""
+
+    document = cast(dict[str, object], json.loads((_STUDY_FIXTURE / "index.json").read_bytes()))
+    lineage = cast(dict[str, dict[str, object]], document["lineage"])
+    lineage[relative]["relation"] = "bogus-relation"
+    schema = ValidationStudyLineage.model_json_schema(mode="validation")
+
+    assert not Draft202012Validator(schema).is_valid(document)  # pyright: ignore[reportArgumentType, reportUnknownMemberType]
+    with pytest.raises(ValidationError):
+        ValidationStudyLineage.model_validate(document)
+
+
+@pytest.mark.parametrize("mutation", ("duplicate", "unsorted"))
+def test_manifest_root_rejects_duplicate_and_unsorted_paths(mutation: str) -> None:
+    """Manifest-local path uniqueness and UTF-8 order are validated before index comparison."""
+
+    document = cast(dict[str, object], json.loads((_STUDY_FIXTURE / "manifest.json").read_bytes()))
+    files = cast(list[dict[str, object]], document["files"])
+    if mutation == "duplicate":
+        files[1]["path"] = files[0]["path"]
+    else:
+        files[0], files[1] = files[1], files[0]
+
+    with pytest.raises(ValidationError):
+        ValidationStudyManifest.model_validate(document)
 
 
 def _candidate(tmp_path: Path) -> Path:

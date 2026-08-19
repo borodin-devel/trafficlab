@@ -740,6 +740,96 @@ def test_offline_auditor_rejects_duplicate_study_keys_before_pydantic(
 
 
 @pytest.mark.parametrize(
+    ("root_name", "expected_affected"),
+    (
+        ("index", "index.json"),
+        ("manifest", "manifest.json"),
+        ("report_inputs", "report_inputs.json"),
+        ("report", "report.json"),
+    ),
+)
+def test_offline_auditor_validates_local_root_before_cross_record_mismatch(
+    tmp_path: Path,
+    root_name: str,
+    expected_affected: str,
+) -> None:
+    """Malformed local roots are corruption even when the same mutation also breaks a linked claim."""
+
+    repository, candidate = copy_validation_study_candidate(tmp_path)
+    if root_name == "index":
+        index = candidate_index(candidate)
+        cast(list[dict[str, object]], index["training"])[0]["repeat"] = True
+        cast(dict[str, object], index["ownership"])["environment.json"] = "foreign-owner"
+        write_candidate_index(candidate, index)
+        rewrite_candidate_manifest(candidate)
+    elif root_name == "manifest":
+        manifest_path = candidate / "manifest.json"
+        manifest = cast(dict[str, object], json.loads(manifest_path.read_bytes()))
+        cast(list[dict[str, object]], manifest["files"])[0]["lineage"] = "malformed-lineage"
+        write_canonical_json(manifest_path, manifest)
+    elif root_name == "report_inputs":
+        report_inputs_path = candidate / "report_inputs.json"
+        report_inputs = cast(dict[str, object], json.loads(report_inputs_path.read_bytes()))
+        report_inputs["formula"] = "not-arithmetic"
+        write_canonical_json(report_inputs_path, report_inputs)
+        rewrite_candidate_manifest(candidate)
+    else:
+        report_path = candidate / "report.json"
+        report = cast(dict[str, object], json.loads(report_path.read_bytes()))
+        del report["formula"]
+        write_canonical_json(report_path, report)
+        rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (
+        outcome.kind,
+        outcome.stage,
+        outcome.affected_evidence,
+        outcome.evidence_state,
+        outcome.authority,
+    ) == ("artifact_corrupt", "publication", expected_affected, "not_published", "primary")
+
+
+def test_offline_auditor_preserves_manifest_schema_precedence(tmp_path: Path) -> None:
+    """Manifest version incompatibility is classified before local Pydantic decoding."""
+
+    repository, candidate = copy_validation_study_candidate(tmp_path)
+    manifest_path = candidate / "manifest.json"
+    manifest = cast(dict[str, object], json.loads(manifest_path.read_bytes()))
+    manifest["schema_version"] = 1
+    write_canonical_json(manifest_path, manifest)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == ("artifact_corrupt", "manifest.json")
+
+
+def test_offline_auditor_recomputes_report_after_local_validation(tmp_path: Path) -> None:
+    """A locally valid report with a foreign report-input identity remains a cross-record mismatch."""
+
+    repository, candidate = copy_validation_study_candidate(tmp_path)
+    report_path = candidate / "report.json"
+    report = cast(dict[str, object], json.loads(report_path.read_bytes()))
+    cast(dict[str, object], report["report_inputs_identity"])["sha256"] = "0" * 64
+    write_canonical_json(report_path, report)
+    rewrite_candidate_manifest(candidate)
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert (outcome.kind, outcome.affected_evidence) == ("artifact_foreign", "report.json")
+
+
+@pytest.mark.parametrize(
     "mutation",
     ("schema_version", "phase_cleanup", "phase_inspect", "training_cleanup", "held_out_cleanup"),
 )

@@ -1395,7 +1395,7 @@ def test_offline_auditor_rejects_each_nonoperational_realized_config_mutation(
         ("symlink", "artifact_foreign"),
         ("temporary", "artifact_foreign"),
         ("owner", "artifact_foreign"),
-        ("lineage", "artifact_foreign"),
+        ("lineage", "artifact_corrupt"),
     ),
 )
 def test_offline_bundle_audit_rejects_first_manifest_or_artifact_mismatch(
@@ -1806,19 +1806,23 @@ def test_offline_bundle_audit_covers_training_record_and_reconstruction_boundari
 
 
 @pytest.mark.parametrize(
-    "field",
+    ("field", "expected_kind"),
     (
-        "runtime",
-        "winner",
-        "weights",
-        "invalid_chromosome",
-        "natural_variation",
-        "natural_reverse_null",
-        "natural_reverse_missing",
-        "natural_excluded",
+        ("runtime", "artifact_foreign"),
+        ("winner", "artifact_foreign"),
+        ("weights", "artifact_corrupt"),
+        ("invalid_chromosome", "artifact_foreign"),
+        ("natural_variation", "artifact_corrupt"),
+        ("natural_reverse_null", "artifact_corrupt"),
+        ("natural_reverse_missing", "artifact_corrupt"),
+        ("natural_excluded", "artifact_corrupt"),
     ),
 )
-def test_offline_bundle_audit_recomputes_each_report_input_family(tmp_path: Path, field: str) -> None:
+def test_offline_bundle_audit_recomputes_each_report_input_family(
+    tmp_path: Path,
+    field: str,
+    expected_kind: str,
+) -> None:
     """Report inputs are independently reconstructed rather than trusted as producer output."""
 
     repository, candidate = copy_validation_study_candidate(tmp_path)
@@ -1870,7 +1874,7 @@ def test_offline_bundle_audit_recomputes_each_report_input_family(tmp_path: Path
         outcome.affected_evidence,
         outcome.evidence_state,
         outcome.authority,
-    ) == ("artifact_foreign", "publication", "report_inputs.json", "not_published", "primary")
+    ) == (expected_kind, "publication", "report_inputs.json", "not_published", "primary")
 
 
 @pytest.mark.parametrize(
@@ -2002,8 +2006,8 @@ def test_offline_bundle_audit_covers_independent_held_out_boundaries(
         ("held_type", "artifact_corrupt"),
         ("held_count", "artifact_corrupt"),
         ("held_duplicate", "artifact_foreign"),
-        ("report_inputs", "artifact_foreign"),
-        ("report", "artifact_foreign"),
+        ("report_inputs", "artifact_corrupt"),
+        ("report", "artifact_corrupt"),
     ),
 )
 def test_offline_bundle_audit_covers_complete_index_schema_boundaries(

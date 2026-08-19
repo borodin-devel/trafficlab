@@ -237,13 +237,33 @@ class TransferStudyLineage(_StrictStudyModel):
 
 
 class RepeatedStudyLineage(_StrictStudyModel):
-    relation: NonemptyString
+    relation: Literal[
+        "best_model.json",
+        "capture.json",
+        "checkpoint.json",
+        "experiment.toml",
+        "fresh_simulation",
+        "ga_history.csv",
+        "generated.pcapng",
+        "reference.pcapng",
+        "run.log",
+        "similarity.json",
+    ]
     repeat: Repeat
     workload: Workload
 
 
 class HeldOutStudyLineage(_StrictStudyModel):
-    relation: NonemptyString
+    relation: Literal[
+        "capture.json",
+        "generated.pcapng",
+        "portable.toml",
+        "realized.toml",
+        "record.json",
+        "reference.pcapng",
+        "run.log",
+        "similarity.json",
+    ]
     workload: Workload
 
 
@@ -270,6 +290,15 @@ class ValidationStudyManifest(_StrictStudyModel):
 
     files: Annotated[tuple[StudyManifestEntry, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
     schema_version: Literal[2]
+
+    @model_validator(mode="after")
+    def paths_are_unique_sorted_and_exclude_manifest(self) -> Self:
+        paths = tuple(entry.path for entry in self.files)
+        if "manifest.json" in paths or len(paths) != len(set(paths)):
+            raise ValueError("manifest paths must be unique and exclude manifest.json")
+        if paths != tuple(sorted(paths, key=lambda value: value.encode("utf-8"))):
+            raise ValueError("manifest paths must be ordered by UTF-8 bytes")
+        return self
 
 
 class StudyCaptureLineage(_StrictStudyModel):

@@ -451,35 +451,20 @@ def files_for_candidate(root: Path, *, include_manifest: bool) -> dict[str, Path
 
 
 def _entries(content: bytes) -> tuple[_Entry, ...]:
-    document = _exact(_json(content, name=_MANIFEST), ("files", "schema_version"), name=_MANIFEST)
-    if document["schema_version"] != _SCHEMA or type(document["files"]) is not list:
+    document = _json(content, name=_MANIFEST)
+    if document.get("schema_version") != _SCHEMA:
         _fail(
             "artifact_corrupt",
             _MANIFEST,
             "manifest must use schema version 2 and a file list",
             "restore canonical manifest",
         )
+    document = _validated_study_root(document, ValidationStudyManifest, name=_MANIFEST)
     parsed: list[_Entry] = []
-    seen: set[str] = set()
     for item in cast(list[object], document["files"]):
         entry = _exact(item, ("lineage", "owner", "path", "sha256", "size"), name="manifest file entry")
         relative = _relative(entry["path"], name="manifest path")
-        if relative == _MANIFEST or relative in seen:
-            _fail(
-                "artifact_foreign",
-                _MANIFEST,
-                "manifest paths must be unique and exclude manifest.json",
-                "restore canonical manifest",
-            )
-        seen.add(relative)
         digest = _string(entry["sha256"], name=f"manifest SHA-256 for {relative}")
-        if _HEX64.fullmatch(digest) is None:
-            _fail(
-                "artifact_corrupt",
-                _MANIFEST,
-                f"manifest SHA-256 for {relative} is invalid",
-                "restore canonical manifest",
-            )
         parsed.append(
             _Entry(
                 relative,
@@ -488,13 +473,6 @@ def _entries(content: bytes) -> tuple[_Entry, ...]:
                 _string(entry["owner"], name=f"manifest owner for {relative}"),
                 entry["lineage"],
             )
-        )
-    if tuple(entry.path for entry in parsed) != tuple(sorted(seen, key=_path_key)):
-        _fail(
-            "artifact_corrupt",
-            _MANIFEST,
-            "manifest file entries must be UTF-8-byte sorted",
-            "restore canonical manifest",
         )
     return tuple(parsed)
 
@@ -3020,15 +2998,8 @@ def _audit(
             "evidence index must use schema version 3",
             "rebuild retained evidence under schema 3",
         )
-    if "ownership" not in index or "lineage" not in index:
-        _validated_study_root(index, ValidationStudyLineage, name=_INDEX)
-    _metadata(index, entries)
-    _validated_study_root(
-        _json(_read_regular(bundle / _MANIFEST, affected=_MANIFEST), name=_MANIFEST),
-        ValidationStudyManifest,
-        name=_MANIFEST,
-    )
     index = _validated_study_root(index, ValidationStudyLineage, name=_INDEX)
+    _metadata(index, entries)
     environment_path = _relative(index["environment"], name="index environment")
     protocol_path = _relative(index["protocol"], name="index protocol")
     prerequisites_path = _relative(index["prerequisites"], name="index prerequisites")
@@ -3079,16 +3050,7 @@ def _audit(
         protocol=protocol,
         url=cast(str, prerequisites["url"]),
     )
-    training_values = index["training"]
-    if type(training_values) is not list:
-        _fail(
-            "artifact_corrupt", _INDEX, "index must retain nine training run records", "restore all training evidence"
-        )
-    training_items = cast(list[object], training_values)
-    if len(training_items) != 9:
-        _fail(
-            "artifact_corrupt", _INDEX, "index must retain nine training run records", "restore all training evidence"
-        )
+    training_items = cast(list[object], index["training"])
     training = tuple(
         _training(
             bundle,
@@ -3109,22 +3071,7 @@ def _audit(
             "restore complete training evidence",
         )
     ordered_training = tuple(sorted(training, key=lambda item: (_WORKLOADS.index(item.workload), item.repeat)))
-    fresh_values = index["fresh_simulation"]
-    if type(fresh_values) is not list:
-        _fail(
-            "artifact_corrupt",
-            _INDEX,
-            "index must retain nine fresh_simulation records",
-            "restore fresh simulation evidence",
-        )
-    fresh_items = cast(list[object], fresh_values)
-    if len(fresh_items) != 9:
-        _fail(
-            "artifact_corrupt",
-            _INDEX,
-            "index must retain nine fresh_simulation records",
-            "restore fresh simulation evidence",
-        )
+    fresh_items = cast(list[object], index["fresh_simulation"])
     fresh_paths = {
         _fresh(bundle, value, item, final_seed=cast(int, protocol["final_seed"]))
         for value, item in zip(fresh_items, ordered_training, strict=True)
@@ -3136,22 +3083,7 @@ def _audit(
             "fresh_simulation records must be unique",
             "restore complete fresh simulation evidence",
         )
-    held_values = index["held_out"]
-    if type(held_values) is not list:
-        _fail(
-            "artifact_corrupt",
-            _INDEX,
-            "index must retain three independent held-out records",
-            "restore held-out evidence",
-        )
-    held_items = cast(list[object], held_values)
-    if len(held_items) != 3:
-        _fail(
-            "artifact_corrupt",
-            _INDEX,
-            "index must retain three independent held-out records",
-            "restore held-out evidence",
-        )
+    held_items = cast(list[object], index["held_out"])
     selected = _selected_training(protocol, ordered_training)
     training_references = {identify_bytes(item.contents["reference.pcapng"]).sha256 for item in ordered_training}
     held_evaluations: dict[str, HeldOutEvaluation] = {}
@@ -3206,7 +3138,11 @@ def _audit(
             "remove foreign retained evidence",
         )
     inputs_path = _relative(index["report_inputs"], name="index report inputs")
-    report_inputs = _json(_read_regular(bundle / inputs_path, affected=inputs_path), name=inputs_path)
+    report_inputs = _validated_study_root(
+        _json(_read_regular(bundle / inputs_path, affected=inputs_path), name=inputs_path),
+        ValidationStudyReportInput,
+        name=inputs_path,
+    )
     expected_inputs = _report_inputs(ordered_training, held_evaluations)
     if report_inputs != expected_inputs:
         _fail(
@@ -3215,9 +3151,12 @@ def _audit(
             "report inputs do not match reconstructed evidence arithmetic",
             "restore matching report inputs",
         )
-    report_inputs = _validated_study_root(report_inputs, ValidationStudyReportInput, name=inputs_path)
     report_path = _relative(index["report"], name="index report")
-    report = _json(_read_regular(bundle / report_path, affected=report_path), name=report_path)
+    report = _validated_study_root(
+        _json(_read_regular(bundle / report_path, affected=report_path), name=report_path),
+        ValidationStudyReport,
+        name=report_path,
+    )
     if (
         report["formula"] != "arithmetic_mean"
         or report["report_inputs_identity"] != _identity(_read_regular(bundle / inputs_path, affected=inputs_path))
@@ -3229,7 +3168,6 @@ def _audit(
             "report does not match retained report inputs and arithmetic",
             "restore matching report",
         )
-    _validated_study_root(report, ValidationStudyReport, name=report_path)
     return AuditResult(
         bundle,
         ordered_training[0].directory,
