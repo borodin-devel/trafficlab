@@ -869,3 +869,48 @@ def test_round3_operator_vtype_and_repair_configuration_is_complete() -> None:
             else:
                 assert operator["vtype"] is None
                 assert operator["repair"] is None
+
+
+def test_round4_invalid_adapter_nonzero_fitness_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    evidence["invalid_classification"]["history"][0]["candidate"]["fitness"] = 0.25
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round4_invalid_adapter_trials_are_rejected() -> None:
+    with_trials = deepcopy(build_probe_evidence())
+    poisson_trial = with_trials["families"][2]["runs"][0]["history"][0]["candidate"]["trials"][0]
+    with_trials["invalid_classification"]["history"][0]["candidate"]["trials"] = [poisson_trial]
+    with pytest.raises(ValueError):
+        validate_probe_evidence(with_trials)
+
+
+def test_round4_invalid_adapter_secondary_failure_is_rejected() -> None:
+    secondary = deepcopy(build_probe_evidence())
+    secondary["invalid_classification"]["history"][0]["candidate"]["invalid"]["authority"] = "secondary"
+    with pytest.raises(ValueError):
+        validate_probe_evidence(secondary)
+
+
+def test_round4_checkpoint_population_must_match_declared_initial_sampling() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    runs = evidence["families"][0]["runs"]
+    for run in runs:
+        for index in (0, 1):
+            attempt = run["history"][index]
+            attempt["candidate"]["genes"][0] = 0.21
+            attempt["cache_key_payload"]["genes"][0] = 0.21
+            attempt["cache_key"] = json.dumps(
+                attempt["cache_key_payload"],
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+    evidence["checkpoint"]["comparison"]["uninterrupted_history"] = deepcopy(runs[0]["history"])
+    for index in (0, 1):
+        evidence["checkpoint"]["snapshot"]["population"][index]["variables"]["q1"] = 0.21
+
+    assert evidence["checkpoint"]["snapshot"]["configuration"]["initial_sampling"][0]["q1"] == 0.2
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)

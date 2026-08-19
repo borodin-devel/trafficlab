@@ -1459,7 +1459,10 @@ def _cache_diagnostics_gate(evidence: ProbeEvidence) -> bool:
         and not invalid_attempt.cache_hit
         and invalid_attempt.candidate.status == "invalid"
         and invalid_attempt.candidate.invalid is not None
+        and invalid_attempt.candidate.fitness == 0.0
+        and not invalid_attempt.candidate.trials
         and invalid_attempt.candidate.invalid.kind == "incomplete_generation"
+        and invalid_attempt.candidate.invalid.authority == "primary"
         and invalid_attempt.candidate.invalid.seed == evidence.policy.trial_seeds[0]
         and invalid_attempt.objective == INVALID_OBJECTIVE
     )
@@ -1483,11 +1486,17 @@ def _checkpoint_fields_are_linked(evidence: ProbeEvidence) -> bool:
         )
         for attempt in initial_attempts
     )
-    return (
-        snapshot.generation == 2
-        and snapshot.evaluation_count == policy.initial_evaluation_budget
-        and len(snapshot.population) == policy.initial_evaluation_budget
+    initial_sections_linked = (
+        len(initial_attempts) == policy.initial_evaluation_budget
+        and tuple(attempt.generation for attempt in initial_attempts) == (0,) * policy.initial_evaluation_budget
+        and len(snapshot.population) == len(configuration.initial_sampling) == policy.initial_evaluation_budget
+        and configuration.initial_sampling == tuple(item.variables for item in expected_population)
         and snapshot.population == expected_population
+    )
+    return (
+        initial_sections_linked
+        and snapshot.generation == 2
+        and snapshot.evaluation_count == policy.initial_evaluation_budget
         and snapshot.termination.kind == "MaximumGenerationTermination"
         and snapshot.termination.progress == 1.0 / policy.total_generations
         and not snapshot.termination.has_terminated
