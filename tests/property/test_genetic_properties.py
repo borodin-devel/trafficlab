@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from random import Random
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from hypothesis.strategies import SearchStrategy
 
 from tests.unit.genetic.test_checkpoint import COMPATIBILITY, VALID_STATE
 from trafficlab.config import FloatBounds
-from trafficlab.genetic.checkpoint import parse_checkpoint, render_checkpoint
+from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state, parse_checkpoint, render_checkpoint
 from trafficlab.genetic.coordinates import GeneCoordinate, decode_gene, encode_gene
 
 
@@ -21,5 +25,13 @@ def test_linear_gene_coordinates_round_trip_within_literal_error_bound(coordinat
     )
 
 
-def test_checkpoint_render_parse_round_trip_is_exact() -> None:
-    assert parse_checkpoint(render_checkpoint(VALID_STATE), COMPATIBILITY) == VALID_STATE
+def checkpoint_states() -> SearchStrategy[CheckpointState]:
+    """Return bounded valid states with independent MT19937 continuation inputs."""
+    return st.integers(min_value=0, max_value=2**32 - 1).map(
+        lambda seed: replace(VALID_STATE, rng_state=encode_rng_state(Random(seed).getstate()))
+    )
+
+
+@given(checkpoint_states())
+def test_checkpoint_render_parse_round_trip_is_exact(state: CheckpointState) -> None:
+    assert parse_checkpoint(render_checkpoint(state), COMPATIBILITY) == state
