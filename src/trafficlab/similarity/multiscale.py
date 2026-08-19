@@ -4,6 +4,8 @@ import math
 import sys
 from collections.abc import Iterable
 
+import numpy as np
+
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import FrozenJsonValue, JsonDiagnostics, SimilarityResult, validate_observation_window
 from trafficlab.trace import Direction, TraceEvent
@@ -275,19 +277,37 @@ def _binned_features(
     events: tuple[TraceEvent, ...], *, width: float, bins_per_direction: int
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """Build outbound-then-inbound packet and captured-byte cells for one scale."""
-    packet_cells = [0] * (2 * bins_per_direction)
-    byte_cells = [0] * (2 * bins_per_direction)
-    for event in events:
-        quotient = event.timestamp / width
-        # The observation window is closed.  An event exactly at W belongs to
-        # the final bin, while the direction offset keeps the stable serialized
-        # layout ``outbound bins`` followed by ``inbound bins``.
-        bin_index = min(math.floor(_snap_near_integer(quotient)), bins_per_direction - 1)
-        direction_offset = 0 if event.direction is Direction.OUTBOUND else bins_per_direction
-        cell_index = direction_offset + bin_index
-        packet_cells[cell_index] += 1
-        byte_cells[cell_index] += event.frame_length
-    return tuple(packet_cells), tuple(byte_cells)
+    timestamps = np.asarray([event.timestamp for event in events], dtype=np.float64)
+    lengths = tuple(event.frame_length for event in events)
+    quotients = timestamps / width
+    snapped = np.asarray([_snap_near_integer(float(quotient)) for quotient in quotients], dtype=np.float64)
+    indices = np.minimum(np.floor(snapped).astype(np.intp), bins_per_direction - 1)
+    directions = np.asarray([event.direction is Direction.OUTBOUND for event in events], dtype=bool)
+
+    def cells_for(direction: bool) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        selected = directions == direction
+        direction_indices = indices[selected]
+        direction_lengths = tuple(length for length, selected_value in zip(lengths, selected, strict=True) if selected_value)
+        packets = tuple(int(value) for value in np.bincount(direction_indices, minlength=bins_per_direction))
+        exact = [0] * bins_per_direction
+        for index, length in zip(direction_indices, direction_lengths, strict=True):
+            exact[int(index)] += length
+        try:
+            weighted = tuple(
+                int(value)
+                for value in np.bincount(
+                    direction_indices,
+                    weights=np.asarray(direction_lengths, dtype=np.float64),
+                    minlength=bins_per_direction,
+                )
+            )
+        except OverflowError:
+            weighted = tuple(exact)
+        return packets, weighted if tuple(exact) == weighted else tuple(exact)
+
+    outbound_packets, outbound_bytes = cells_for(True)
+    inbound_packets, inbound_bytes = cells_for(False)
+    return outbound_packets + inbound_packets, outbound_bytes + inbound_bytes
 
 
 def _direction_totals(

@@ -58,6 +58,7 @@ from trafficlab.models.registry import BestModel, get_family, load_best_model, r
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
+from trafficlab.statistics import bootstrap_interval
 from trafficlab.study_evidence import publish_accepted_bundle
 from trafficlab.trace import (
     CaptureMetadata,
@@ -200,6 +201,7 @@ def evaluate_study_held_out(
 
 
 TARGET_REFERENCE = "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
+_BOOTSTRAP_SEED = 20_260_819
 FAMILY_ORDER: tuple[FamilyName, ...] = ("markov_renewal", "mmpp", "poisson_empirical")
 PUBLISHED_METHOD_ORDER = METHOD_ORDER
 ARTIFACT_NAMES = (
@@ -1720,6 +1722,7 @@ def descriptive_statistics(values: Sequence[int | float]) -> JsonObject:
     minimum = min(sample)
     maximum = max(sample)
     return {
+        "bootstrap": cast(JsonValue, bootstrap_interval(sample, seed=_BOOTSTRAP_SEED).as_dict()),
         "count": 3,
         "mean": fmean(sample),
         "minimum": minimum,
@@ -1864,8 +1867,8 @@ class _LoadedRunEvidence:
     metadata: CaptureMetadata
     contents: Mapping[str, bytes]
     artifact_sha256: JsonObject
-    reference: tuple[TraceEvent, ...]
-    generated: tuple[TraceEvent, ...]
+    reference: Sequence[TraceEvent]
+    generated: Sequence[TraceEvent]
     checkpoint: CheckpointState
     best_model: BestModel
     comparison: ComparisonResult
@@ -2155,8 +2158,8 @@ def _require_published_lineage(
 class _ReconstructedScience:
     fresh_simulation: TrialResult
     raw_events: tuple[TraceEvent, ...]
-    reparsed_events: tuple[TraceEvent, ...]
-    aligned_events: tuple[TraceEvent, ...]
+    reparsed_events: Sequence[TraceEvent]
+    aligned_events: Sequence[TraceEvent]
     published: ComparisonResult
 
 
@@ -4630,6 +4633,7 @@ def _validate_descriptive(
     observations: Sequence[int | float] | None = None,
 ) -> JsonObject:
     keys = (
+        "bootstrap",
         "count",
         "mean",
         "minimum",
@@ -4645,6 +4649,33 @@ def _validate_descriptive(
             f"{name} is stale and does not recompute from its three source observations",
         )
         return cast(JsonObject, document)
+    bootstrap = _exact_object(
+        document["bootstrap"],
+        (
+            "confidence_level",
+            "generator",
+            "generator_state",
+            "lower_bound",
+            "method",
+            "n_resamples",
+            "sample_size",
+            "seed",
+            "statistic",
+            "upper_bound",
+        ),
+        name=f"{name}.bootstrap",
+    )
+    _require(bootstrap["confidence_level"] == 0.95, f"{name}.bootstrap confidence level must be 0.95")
+    _require(bootstrap["generator"] == "PCG64", f"{name}.bootstrap generator must be PCG64")
+    _require(bootstrap["method"] == "percentile", f"{name}.bootstrap method must be percentile")
+    _require(bootstrap["n_resamples"] == 10_000, f"{name}.bootstrap resamples must be 10000")
+    _require(bootstrap["sample_size"] == 3, f"{name}.bootstrap sample size must be three")
+    _require(bootstrap["seed"] == _BOOTSTRAP_SEED, f"{name}.bootstrap seed is not the fixed report seed")
+    _require(bootstrap["statistic"] == "mean", f"{name}.bootstrap statistic must be mean")
+    lower = _strict_float(bootstrap["lower_bound"], name=f"{name}.bootstrap lower bound")
+    upper = _strict_float(bootstrap["upper_bound"], name=f"{name}.bootstrap upper bound")
+    _require(lower <= upper, f"{name}.bootstrap bounds must not be inverted")
+    _require(type(bootstrap["generator_state"]) is dict, f"{name}.bootstrap generator state must be an object")
     count = _strict_int(document["count"], name=f"{name}.count")
     _strict_float(document["mean"], name=f"{name}.mean")
     minimum = _strict_float(document["minimum"], name=f"{name}.minimum")
@@ -6376,7 +6407,7 @@ def _audit_primary_record(
     document = _study_run_document(record)
     for name, value in expected.items():
         _require(document[name] == value, f"primary {name} must match locally reconstructed evidence")
-    return evidence.reference
+    return tuple(evidence.reference)
 
 
 def _audit_reproduction_record(

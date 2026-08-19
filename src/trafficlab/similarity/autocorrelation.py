@@ -3,6 +3,8 @@
 import math
 from collections.abc import Iterable
 
+import numpy as np
+
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import FrozenJsonValue, JsonDiagnostics, SimilarityResult, validate_observation_window
 from trafficlab.trace import Direction, TraceEvent
@@ -77,15 +79,11 @@ def sample_autocorrelation(values: Iterable[object], lag: object) -> float:
         if largest_magnitude == 0.0:
             return 0.0
         _, scale_exponent = math.frexp(largest_magnitude)
-        mean = math.fsum(math.ldexp(float(value), -scale_exponent) for value in sample) / len(sample)
-        denominator = math.fsum((math.ldexp(float(value), -scale_exponent) - mean) ** 2 for value in sample)
-        lagged_values = iter(sample)
-        for _ in range(validated_lag):
-            next(lagged_values)
-        numerator = math.fsum(
-            (math.ldexp(float(left), -scale_exponent) - mean) * (math.ldexp(float(right), -scale_exponent) - mean)
-            for left, right in zip(sample, lagged_values, strict=False)
-        )
+        scaled = np.asarray([math.ldexp(float(value), -scale_exponent) for value in sample], dtype=np.float64)
+        mean = math.fsum(float(value) for value in scaled) / len(scaled)
+        centered = scaled - mean
+        denominator = float(np.dot(centered, centered))
+        numerator = float(np.dot(centered[:-validated_lag], centered[validated_lag:]))
     except (OverflowError, ValueError) as error:
         raise TrafficlabError(
             "invalid autocorrelation sample: values cannot be evaluated safely",

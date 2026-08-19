@@ -2,10 +2,15 @@
 
 import math
 from collections.abc import Iterable
+from typing import Any
+
+from scipy import stats as scipy_stats  # pyright: ignore[reportMissingTypeStubs]
 
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult, validate_observation_window
 from trafficlab.trace import Direction, TraceEvent
+
+_SCIPY_STATS: Any = scipy_stats
 
 
 def _validated_numeric_sample(values: Iterable[object], *, sample_name: str) -> tuple[int | float, ...]:
@@ -37,33 +42,23 @@ def _validated_numeric_sample(values: Iterable[object], *, sample_name: str) -> 
     return tuple(numeric)
 
 
-def exact_ecdf_distance(left: Iterable[object], right: Iterable[object]) -> float:
-    """Return the exact ECDF sup distance using one merged scan that consumes ties."""
-    left_values = sorted(_validated_numeric_sample(left, sample_name="left"))
-    right_values = sorted(_validated_numeric_sample(right, sample_name="right"))
-    left_count = len(left_values)
-    right_count = len(right_values)
-    left_index = 0
-    right_index = 0
-    distance = 0.0
-
-    while left_index < left_count or right_index < right_count:
-        if right_index == right_count or (
-            left_index < left_count and left_values[left_index] < right_values[right_index]
-        ):
-            value = left_values[left_index]
-        elif left_index == left_count or right_values[right_index] < left_values[left_index]:
-            value = right_values[right_index]
-        else:
-            value = left_values[left_index]
-
-        while left_index < left_count and left_values[left_index] == value:
-            left_index += 1
-        while right_index < right_count and right_values[right_index] == value:
-            right_index += 1
-        distance = max(distance, abs(left_index / left_count - right_index / right_count))
-
-    return distance
+def _ks_statistic(left: Iterable[object], right: Iterable[object]) -> float:
+    """Return SciPy's descriptive two-sample KS statistic after local validation."""
+    left_values = _validated_numeric_sample(left, sample_name="left")
+    right_values = _validated_numeric_sample(right, sample_name="right")
+    try:
+        statistic = float(_SCIPY_STATS.ks_2samp(left_values, right_values).statistic)
+    except (TypeError, ValueError) as error:
+        raise TrafficlabError(
+            "invalid KS sample: values cannot be evaluated safely",
+            corrective_action="provide nonempty finite numeric samples",
+        ) from error
+    if not math.isfinite(statistic) or not 0.0 <= statistic <= 1.0:
+        raise TrafficlabError(
+            "invalid KS statistic: computation produced a value outside [0, 1]",
+            corrective_action="provide nonempty finite numeric samples",
+        )
+    return statistic
 
 
 def _validated_trace(events: Iterable[TraceEvent], *, minimum_events: int, trace_name: str) -> tuple[TraceEvent, ...]:
@@ -131,7 +126,7 @@ def frame_size_ks(reference: Iterable[TraceEvent], generated: Iterable[TraceEven
     window = validate_observation_window(W)
     reference_lengths = _frame_lengths(reference, trace_name="reference")
     generated_lengths = _frame_lengths(generated, trace_name="generated")
-    distance = exact_ecdf_distance(reference_lengths, generated_lengths)
+    distance = _ks_statistic(reference_lengths, generated_lengths)
     diagnostics: JsonDiagnostics = {
         "observation_window_seconds": window,
         "distance": distance,
@@ -187,7 +182,7 @@ def iat_ks(
     quantile = _validate_diagnostic_quantile(diagnostic_quantile)
     reference_iats = _inter_arrival_times(reference, trace_name="reference")
     generated_iats = _inter_arrival_times(generated, trace_name="generated")
-    distance = exact_ecdf_distance(reference_iats, generated_iats)
+    distance = _ks_statistic(reference_iats, generated_iats)
     diagnostics: JsonDiagnostics = {
         "observation_window_seconds": window,
         "distance": distance,

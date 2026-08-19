@@ -3,13 +3,15 @@
 import json
 import math
 from collections.abc import Iterable, Mapping
-from typing import cast
+from typing import Any, cast
 
 import pytest
+from scipy.stats import ks_2samp  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
+import trafficlab.similarity.ks as ks_module
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
-from trafficlab.similarity.ks import exact_ecdf_distance, frame_size_ks, iat_ks
+from trafficlab.similarity.ks import frame_size_ks, iat_ks
 from trafficlab.trace import Direction, TraceEvent
 
 
@@ -31,48 +33,52 @@ def _invalid_event(*, timestamp: object = 0.0, frame_length: object = 100) -> Tr
     return event
 
 
-def test_exact_ecdf_distance_returns_zero_for_identical_tied_samples() -> None:
-    assert exact_ecdf_distance([1, 1, 2], [2, 1, 1]) == 0.0
-
-
-def test_exact_ecdf_distance_returns_one_for_disjoint_singletons() -> None:
-    assert exact_ecdf_distance([1], [2]) == 1.0
-
-
-def test_exact_ecdf_distance_preserves_adjacent_large_integer_values() -> None:
-    largest_exact_float_integer = 2**53
-
-    assert exact_ecdf_distance([largest_exact_float_integer], [largest_exact_float_integer + 1]) == 1.0
-
-
-def test_exact_ecdf_distance_accepts_arbitrary_size_integers_without_float_coercion() -> None:
-    huge_integer = 10**1000
-
-    assert exact_ecdf_distance([huge_integer], [huge_integer + 1]) == 1.0
-
-
-def test_exact_ecdf_distance_matches_documented_half_difference() -> None:
-    assert exact_ecdf_distance([1, 2], [1, 3]) == 0.5
-
-
-def test_exact_ecdf_distance_consumes_all_ties_before_comparing() -> None:
-    assert exact_ecdf_distance([1, 1, 2], [1, 2, 2]) == pytest.approx(1.0 / 3.0)
+def _merged_ecdf_oracle(left: list[int | float], right: list[int | float]) -> float:
+    """Independently scan the merged ECDF, consuming all tied observations."""
+    left_values = sorted(left)
+    right_values = sorted(right)
+    distance = 0.0
+    for value in sorted(set((*left_values, *right_values))):
+        left_fraction = sum(item <= value for item in left_values) / len(left_values)
+        right_fraction = sum(item <= value for item in right_values) / len(right_values)
+        distance = max(distance, abs(left_fraction - right_fraction))
+    return distance
 
 
 @pytest.mark.parametrize(
     ("left", "right"),
-    [([], [1]), ([1], []), ([1, math.inf], [2]), ([1], ["two"])],
+    [
+        ([1, 1, 2], [1, 2, 2]),
+        ([0.1, 0.1, 0.3, 0.5], [0.1, 0.2, 0.2, 0.5]),
+        ([1, 2], [1, 3]),
+    ],
 )
-def test_exact_ecdf_distance_rejects_empty_or_nonfinite_or_nonnumeric_samples(
-    left: list[object], right: list[object]
+def test_scipy_ks_statistic_matches_the_independent_tied_sample_oracle(
+    left: list[int | float], right: list[int | float]
 ) -> None:
-    with pytest.raises(TrafficlabError):
-        exact_ecdf_distance(left, right)
+    assert cast(Any, ks_2samp(left, right)).statistic == _merged_ecdf_oracle(left, right)
 
 
-def test_exact_ecdf_distance_rejects_a_noniterable_sample() -> None:
-    with pytest.raises(TrafficlabError):
-        exact_ecdf_distance(cast(Iterable[object], 1), [1])
+def test_metric_uses_only_scipy_ks_statistic_for_tied_frame_and_iat_samples(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[tuple[object, ...], tuple[object, ...]]] = []
+    scipy_ks: Any = cast(Any, ks_2samp)
+
+    def statistic_only(left: object, right: object, **_kwargs: object) -> object:
+        calls.append((tuple(cast(Iterable[object], left)), tuple(cast(Iterable[object], right))))
+        return scipy_ks(left, right)
+
+    monkeypatch.setattr(ks_module.scipy_stats, "ks_2samp", statistic_only)
+
+    frame_result = frame_size_ks(
+        _events(0.0, 1.0, 2.0, lengths=(1, 1, 2)),
+        _events(0.0, 1.0, 2.0, lengths=(1, 2, 2)),
+        2.0,
+    )
+    iat_result = iat_ks(_events(0.0, 0.0, 1.0, 2.0), _events(0.0, 1.0, 1.0, 2.0), 2.0, 0.95)
+
+    assert frame_result.diagnostics["distance"] == pytest.approx(1.0 / 3.0)
+    assert iat_result.diagnostics["distance"] == 0.0
+    assert calls == [((1, 1, 2), (1, 2, 2)), ((0.0, 1.0, 1.0), (1.0, 0.0, 1.0))]
 
 
 def test_frame_size_ks_returns_identical_score_and_complete_diagnostics() -> None:

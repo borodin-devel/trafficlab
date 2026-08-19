@@ -522,3 +522,45 @@ def test_multiscale_rejects_events_outside_the_shared_closed_window(timestamp: f
 
     with pytest.raises(TrafficlabError, match=r"\[0, W\]"):
         multiscale_rate_similarity(outside, (_event(0.0),), 1.0, (1.0,), (1.0,), 0.5, 0.5, 2)
+
+
+def _scalar_cells(events: tuple[TraceEvent, ...], *, width: float, bins: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Independently derive snapped directional cells for the vectorization boundary."""
+    packets = [0] * (2 * bins)
+    bytes_ = [0] * (2 * bins)
+    for event in events:
+        quotient = event.timestamp / width
+        nearest = round(quotient)
+        snapped = float(nearest) if abs(quotient - nearest) <= 4.0 * math.ulp(quotient) else quotient
+        direction = 0 if event.direction is Direction.OUTBOUND else bins
+        index = direction + min(math.floor(snapped), bins - 1)
+        packets[index] += 1
+        bytes_[index] += event.frame_length
+    return tuple(packets), tuple(bytes_)
+
+
+def test_multiscale_cells_match_scalar_oracle_and_use_bincount(monkeypatch: pytest.MonkeyPatch) -> None:
+    events = (
+        _event(0.0, frame_length=5),
+        _event(0.3, frame_length=7),
+        _event(0.9, direction=Direction.INBOUND, frame_length=11),
+        _event(1.0, direction=Direction.INBOUND, frame_length=13),
+    )
+    calls = 0
+    bincount = multiscale_module.np.bincount
+
+    def counted_bincount(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        return bincount(*args, **kwargs)
+
+    monkeypatch.setattr(multiscale_module.np, "bincount", counted_bincount)
+    result = multiscale_rate_similarity(events, events, 1.0, (0.1,), (1.0,), 0.5, 0.5, 20)
+    expected_packets, expected_bytes = _scalar_cells(events, width=0.1, bins=10)
+    scale = result.diagnostics["scales"][0]
+
+    assert calls == 8
+    assert scale["reference_totals"] == {
+        "packet": {"outbound": sum(expected_packets[:10]), "inbound": sum(expected_packets[10:])},
+        "byte": {"outbound": sum(expected_bytes[:10]), "inbound": sum(expected_bytes[10:])},
+    }

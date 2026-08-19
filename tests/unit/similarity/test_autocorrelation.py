@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+import trafficlab.similarity.autocorrelation as autocorrelation_module
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.autocorrelation import (
     autocorrelation_similarity,
@@ -43,6 +44,21 @@ def test_sample_autocorrelation_returns_zero_for_a_constant_series() -> None:
 
 def test_sample_autocorrelation_returns_zero_for_documented_three_value_example() -> None:
     assert sample_autocorrelation([1, 2, 3], 1) == 0.0
+
+
+def test_sample_autocorrelation_matches_scalar_value_through_centered_numpy_dot(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+    dot = autocorrelation_module.np.dot
+
+    def counted_dot(left: object, right: object) -> object:
+        nonlocal calls
+        calls += 1
+        return dot(left, right)
+
+    monkeypatch.setattr(autocorrelation_module.np, "dot", counted_dot)
+
+    assert sample_autocorrelation([1.0, 2.0, 1.0, 3.0], 1) == pytest.approx(-21.0 / 44.0)
+    assert calls == 2
 
 
 def test_sample_autocorrelation_preserves_subnormal_serial_dependence() -> None:

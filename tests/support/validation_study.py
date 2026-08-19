@@ -41,6 +41,7 @@ from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
 from trafficlab.models.registry import BestModel, get_family, make_best_model
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
+from trafficlab.statistics import bootstrap_interval
 from trafficlab.trace import Direction, TraceEvent
 
 HASH = "a" * 64
@@ -699,6 +700,7 @@ def _descriptive(values: list[int | float]) -> dict[str, object]:
     maximum = max(numbers)
     sample_variance = variance(numbers)
     return {
+        "bootstrap": bootstrap_interval(numbers, seed=study._BOOTSTRAP_SEED).as_dict(),  # pyright: ignore[reportPrivateUsage]
         "count": 3,
         "mean": fmean(numbers),
         "minimum": minimum,

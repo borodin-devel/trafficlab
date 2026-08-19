@@ -655,6 +655,13 @@ def test_workload_summaries_recompute_runtime_family_score_variance_and_winner_c
     assert summaries == tuple(cast(list[study.JsonObject], document["workload_summaries"]))
     short = summaries[0]
     assert short["runtime"] == study.descriptive_statistics((1.0, 2.0, 3.0))
+    runtime_interval = cast(dict[str, object], cast(dict[str, object], short["runtime"])["bootstrap"])
+    assert runtime_interval["confidence_level"] == 0.95
+    assert runtime_interval["generator"] == "PCG64"
+    assert runtime_interval["method"] == "percentile"
+    assert runtime_interval["n_resamples"] == 10_000
+    assert runtime_interval["sample_size"] == 3
+    assert runtime_interval["statistic"] == "mean"
     families = cast(study.JsonObject, short["family_champions"])
     poisson = cast(study.JsonObject, families["poisson_empirical"])
     assert poisson["selection_fitness"] == study.descriptive_statistics((0.61, 0.62, 0.63))
@@ -1407,7 +1414,9 @@ def test_median_quantile_and_descriptive_statistics_use_published_formulas() -> 
         )["quantile"]
         == 3.0
     )
-    assert study.descriptive_statistics([1, 2, 3]) == {
+    descriptive = study.descriptive_statistics([1, 2, 3])
+    assert descriptive == {
+        "bootstrap": descriptive["bootstrap"],
         "count": 3,
         "mean": 2.0,
         "minimum": 1.0,
@@ -1416,6 +1425,10 @@ def test_median_quantile_and_descriptive_statistics_use_published_formulas() -> 
         "sample_variance": 1.0,
         "sample_standard_deviation": 1.0,
     }
+    bootstrap = cast(dict[str, object], descriptive["bootstrap"])
+    assert bootstrap["seed"] == study._BOOTSTRAP_SEED  # pyright: ignore[reportPrivateUsage]
+    assert bootstrap["lower_bound"] == 1.0
+    assert bootstrap["upper_bound"] == 3.0
 
     for values in ([], [1, 2], [1, 2, 3, 4], [1, True, 3], [1, math.nan, 3]):
         with pytest.raises(ValueError):
