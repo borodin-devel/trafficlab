@@ -91,6 +91,19 @@ def test_traffic_trace_iats_masks_and_slices_do_not_expose_writable_aliases() ->
     assert not iats.flags.writeable
     assert not outbound.flags.writeable
 
+    for values in (
+        trace.timestamps,
+        trace.directions,
+        trace.frame_lengths,
+        sliced.timestamps,
+        sliced.directions,
+        sliced.frame_lengths,
+        iats,
+        outbound,
+    ):
+        with pytest.raises(ValueError):
+            values.setflags(write=True)
+
 
 @pytest.mark.parametrize(
     ("timestamps", "directions", "frame_lengths", "message"),

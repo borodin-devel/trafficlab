@@ -202,6 +202,40 @@ def test_parse_pcapng_trace_round_trips_both_directions_at_declared_resolution(t
     assert isinstance(trace, TrafficTrace)
     assert trace.to_events() == events
     assert not trace.timestamps.flags.writeable
+    assert encode_pcapng(trace.to_events(), _metadata()) == path.read_bytes()
+
+
+@pytest.mark.parametrize(
+    ("resolution", "ticks", "expected"),
+    [(b"\x09", 1_250_000_000, 1.25), (b"\x8a", 1_536, 1.5)],
+    ids=["decimal-nanoseconds", "binary-2^-10"],
+)
+def test_parse_pcapng_trace_reencodes_both_directions_at_declared_timestamp_resolution(
+    tmp_path: Path, resolution: bytes, ticks: int, expected: float
+) -> None:
+    """Parsed resolution must survive trace/event conversion before canonical PCAPNG rendering."""
+    idb = _interface_description(options=_option(9, resolution) + _end_options())
+    frames = (
+        _ethernet_frame(_TARGET_BYTES, frame_length=18),
+        _ethernet_frame(_PEER_BYTES, destination=_TARGET_BYTES, frame_length=22),
+    )
+    source = _write_capture(
+        tmp_path,
+        _capture(
+            _enhanced_packet(frames[0], ticks),
+            _enhanced_packet(frames[1], ticks, interface_id=0),
+            idb=idb,
+        ),
+    )
+
+    trace = parse_pcapng_trace(source, _metadata())
+    rendered = encode_pcapng(trace.to_events(), _metadata())
+    reparsed = parse_pcapng_bytes(rendered, _metadata(), source=tmp_path / "reencoded.pcapng")
+
+    assert reparsed == (
+        TraceEvent(timestamp=expected, direction=Direction.OUTBOUND, frame_length=18),
+        TraceEvent(timestamp=expected, direction=Direction.INBOUND, frame_length=22),
+    )
 
 
 def test_parse_pcapng_packets_returns_immutable_events_with_exact_ethernet_bytes(tmp_path: Path) -> None:

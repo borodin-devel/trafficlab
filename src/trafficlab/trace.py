@@ -90,12 +90,15 @@ class TrafficTrace(Sequence[TraceEvent]):
         if np.any(frame_lengths > np.iinfo(np.uint32).max):
             raise ValueError("frame_lengths must fit in uint32")
 
-        owned_timestamps = np.array(timestamps, dtype=np.float64, copy=True, order="C")
-        owned_directions = np.array(directions, dtype=np.uint8, copy=True, order="C")
-        owned_frame_lengths = np.array(frame_lengths, dtype=np.uint32, copy=True, order="C")
-        owned_timestamps.setflags(write=False)
-        owned_directions.setflags(write=False)
-        owned_frame_lengths.setflags(write=False)
+        owned_timestamps = np.frombuffer(
+            np.array(timestamps, dtype=np.float64, copy=True, order="C").tobytes(), dtype=np.float64
+        )
+        owned_directions = np.frombuffer(
+            np.array(directions, dtype=np.uint8, copy=True, order="C").tobytes(), dtype=np.uint8
+        )
+        owned_frame_lengths = np.frombuffer(
+            np.array(frame_lengths, dtype=np.uint32, copy=True, order="C").tobytes(), dtype=np.uint32
+        )
         object.__setattr__(self, "timestamps", owned_timestamps)
         object.__setattr__(self, "directions", owned_directions)
         object.__setattr__(self, "frame_lengths", owned_frame_lengths)
@@ -136,17 +139,14 @@ class TrafficTrace(Sequence[TraceEvent]):
 
     def iats(self) -> NDArray[np.float64]:
         """Return owned read-only inter-arrival times, retaining zero intervals."""
-        values = np.diff(self.timestamps)
-        values.setflags(write=False)
-        return values
+        return np.frombuffer(np.diff(self.timestamps).tobytes(), dtype=np.float64)
 
     def direction_mask(self, direction: Direction) -> NDArray[np.bool_]:
         """Return an owned read-only mask for one canonical direction."""
         if type(direction) is not Direction:
             raise TypeError("direction must be a Direction member")
         values = self.directions == (0 if direction is Direction.OUTBOUND else 1)
-        values.setflags(write=False)
-        return values
+        return np.frombuffer(values.tobytes(), dtype=np.bool_)
 
     def __len__(self) -> int:
         return len(self.timestamps)
