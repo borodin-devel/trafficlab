@@ -102,6 +102,12 @@ passed 18 Docker plus one Internet test in 434.01 seconds. It used the retained
 credential-free HTTPS object URL and verified project/image cleanup before
 completion.
 
+After review fixes, locked synchronization, Ruff format/lint, and strict
+Pyright passed. The complete 3,503-test Ordinary gate passed in 55.05 seconds;
+the canonical parallel Coverage gate passed the same selection in 201.67
+seconds at 97.73%. Independent final review reported no Critical or Important
+findings. The later marker-incidence clarification changed documentation only.
+
 ## Reproduction requirements
 
 Repeat the serial/parallel comparison before changing pytest, pytest-xdist,

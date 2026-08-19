@@ -236,17 +236,17 @@ Pyright strict mode, Ruff, Bash bounded-process guard, Docker Compose.
 - Consumes: all refactored test infrastructure and the canonical gate table.
 - Produces: clean local commits and final evidence satisfying the approved spec.
 
-- [ ] **[STEP-30-e470728a] Run locked and static gates.** Run `uv sync --locked`,
+- [x] **[STEP-30-e470728a] Run locked and static gates.** Run `uv sync --locked`,
   Ruff format check, Ruff lint, and strict Pyright; retain exact exit status.
-- [ ] **[STEP-31-b79f7aad] Run the complete offline gates.** Execute the canonical
+- [x] **[STEP-31-b79f7aad] Run the complete offline gates.** Execute the canonical
   bounded ordinary and coverage commands, require all tests to pass and branch
   coverage to remain at least 90%.
-- [ ] **[STEP-32-b639b7dd] Run external and audit evidence.** Run the combined
+- [x] **[STEP-32-b639b7dd] Run external and audit evidence.** Run the combined
   serial `docker or internet` gate when available, deterministic generator
   checks, and the regular-copy/no-hardlink validation audit.
-- [ ] **[STEP-33-a049ab78] Obtain independent review.** Request a read-only review
+- [x] **[STEP-33-a049ab78] Obtain independent review.** Request a read-only review
   of the full diff and test evidence; fix every Critical and Important finding
   with focused RED-GREEN verification.
-- [ ] **[STEP-34-713c0040] Close the local delivery.** Mark completed plan boxes,
+- [x] **[STEP-34-713c0040] Close the local delivery.** Mark completed plan boxes,
   commit the verification record, confirm `git status --short` is empty, and
   report commits, timings, coverage, and any unavailable external capability.
