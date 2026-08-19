@@ -7,6 +7,7 @@ import math
 import subprocess
 import sys
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
@@ -20,8 +21,19 @@ from tests.scientific.probes.mmpp_likelihood import (
     EXTREME_CASES,
     HAND_CASES,
     INVALID_OBJECTIVE,
+    LIKELIHOOD_ATOL,
+    LIKELIHOOD_POLISH,
+    LIKELIHOOD_TOL,
+    LIKELIHOOD_UPDATING,
+    LIKELIHOOD_WORKERS,
     OPTIMIZER_STARTS,
     PROBE_BOUNDS,
+    PRODUCTION_BOUNDS,
+    PRODUCTION_DUPLICATE_MUTATION_ATTEMPTS,
+    PRODUCTION_ELITE_COUNT,
+    PRODUCTION_GENERATIONS,
+    PRODUCTION_POPULATION_SIZE,
+    PRODUCTION_TOURNAMENT_SIZE,
     RECOVERY_SEEDS,
     RECOVERY_TOLERANCES,
     TRIAL_PLANS,
@@ -37,6 +49,7 @@ from tests.scientific.probes.mmpp_likelihood import (
     mmpp_log_likelihood,
     render_probe_evidence,
     simulation_evaluation_count,
+    validate_probe_evidence,
     write_probe_evidence,
 )
 from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
@@ -221,7 +234,7 @@ def test_simulation_distance_fit_rejects_an_invalid_final_population(monkeypatch
         del family_priority
         return (invalid,)
 
-    monkeypatch.setattr(probe, "SIMULATION_GENERATIONS", 0)
+    monkeypatch.setattr(probe, "PRODUCTION_GENERATIONS", 0)
     monkeypatch.setattr(probe, "rank_candidates", invalid_rank)
     with pytest.raises(AssertionError, match="no valid winner"):
         probe._simulation_distance_fit(  # pyright: ignore[reportPrivateUsage]
@@ -312,10 +325,31 @@ def test_simulation_history_requires_one_event_slot_per_candidate() -> None:
 def test_probe_evidence_records_recovery_holdouts_and_equal_cost() -> None:
     """Missing held-out inputs or unequal evaluations would make the comparison unauditable."""
     evidence = build_probe_evidence()
-    assert evidence["schema_version"] == 2
+    assert evidence["schema_version"] == 3
     assert evidence["probe"] == "scipy_two_state_mmpp_likelihood"
     assert evidence["policy"]["production_changed"] is False
     assert evidence["policy"]["common_initial_rates"] == [list(rates) for rates in COMMON_START_RATES]
+    assert evidence["policy"]["likelihood_optimizer"] == {
+        "method": "scipy.optimize.differential_evolution",
+        "population_size": len(OPTIMIZER_STARTS),
+        "generations": 14,
+        "tol": LIKELIHOOD_TOL,
+        "atol": LIKELIHOOD_ATOL,
+        "polish": LIKELIHOOD_POLISH,
+        "updating": LIKELIHOOD_UPDATING,
+        "workers": LIKELIHOOD_WORKERS,
+    }
+    assert evidence["policy"]["simulation_distance_optimizer"] == {
+        "method": "trafficlab production genetic operators and similarity",
+        "population_size": PRODUCTION_POPULATION_SIZE,
+        "generations": PRODUCTION_GENERATIONS,
+        "elite_count": PRODUCTION_ELITE_COUNT,
+        "tournament_size": PRODUCTION_TOURNAMENT_SIZE,
+        "duplicate_mutation_attempts": PRODUCTION_DUPLICATE_MUTATION_ATTEMPTS,
+        "crossover_probability": PRODUCTION_BOUNDS.crossover_probability,
+        "mutation_probability": PRODUCTION_BOUNDS.mutation_probability,
+        "mutation_scale": PRODUCTION_BOUNDS.mutation_scale,
+    }
     assert set(evidence["gates"]) == set(AGGREGATE_GATE_NAMES)
     trials = evidence["trials"]
     assert len(trials) == len(RECOVERY_SEEDS)
@@ -340,6 +374,17 @@ def test_probe_evidence_records_recovery_holdouts_and_equal_cost() -> None:
             list(rates) for rates in COMMON_START_RATES
         ]
         seed_plan = trial["seed_limit_plan"]
+        assert set(seed_plan) == {
+            "training_data_seed",
+            "likelihood_search_seed",
+            "production_search_seed",
+            "production_selection_trial_seeds",
+            "production_final_seed",
+            "held_out_data_seed",
+            "training_observation_window_seconds",
+            "held_out_observation_window_seconds",
+            "generation_limits",
+        }
         assert seed_plan["training_data_seed"] == trial["seed"]
         assert seed_plan["production_selection_trial_seeds"]
         assert seed_plan["production_final_seed"] is None
@@ -364,6 +409,27 @@ def test_canonical_evidence_bytes_and_check_mode(tmp_path: Path) -> None:
     """Nondeterministic evidence or a non-checking runner cannot guard the checked fixture."""
     evidence = build_probe_evidence()
     assert build_probe_evidence() == evidence
+    assert validate_probe_evidence(evidence) is evidence
+    mismatched_schema = deepcopy(evidence)
+    mismatched_schema["schema_version"] = 2
+    with pytest.raises(ValueError, match="schema version"):
+        validate_probe_evidence(mismatched_schema)
+    mismatched_likelihood = deepcopy(evidence)
+    mismatched_likelihood["policy"]["likelihood_optimizer"]["tol"] = 0.1
+    with pytest.raises(ValueError, match="likelihood optimizer policy"):
+        validate_probe_evidence(mismatched_likelihood)
+    mismatched_simulation = deepcopy(evidence)
+    mismatched_simulation["policy"]["simulation_distance_optimizer"]["mutation_scale"] = 0.2
+    with pytest.raises(ValueError, match="simulation optimizer policy"):
+        validate_probe_evidence(mismatched_simulation)
+    mismatched_trial_count = deepcopy(evidence)
+    mismatched_trial_count["trials"].pop()
+    with pytest.raises(ValueError, match="plan count"):
+        validate_probe_evidence(mismatched_trial_count)
+    mismatched_trial = deepcopy(evidence)
+    mismatched_trial["trials"][0]["seed_limit_plan"]["generation_limits"]["max_packets"] = 9_999
+    with pytest.raises(ValueError, match="trial seed/limit plan"):
+        validate_probe_evidence(mismatched_trial)
     rendered = render_probe_evidence(evidence)
     assert rendered.endswith(b"\n")
     assert json.loads(rendered) == evidence

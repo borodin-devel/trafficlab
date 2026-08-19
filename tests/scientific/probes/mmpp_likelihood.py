@@ -37,8 +37,19 @@ TRAINING_WINDOW_SECONDS = 180.0
 HELD_OUT_WINDOW_SECONDS = 120.0
 EVALUATION_BUDGET = 120
 INVALID_OBJECTIVE = 1e300
-OPTIMIZER_GENERATIONS = 14
-SIMULATION_GENERATIONS = 16
+LIKELIHOOD_GENERATIONS = 14
+LIKELIHOOD_TOL = 0.0
+LIKELIHOOD_ATOL = 0.0
+LIKELIHOOD_POLISH = False
+LIKELIHOOD_UPDATING = "immediate"
+LIKELIHOOD_WORKERS = 1
+PRODUCTION_GENERATIONS = 16
+PRODUCTION_ELITE_COUNT = 1
+PRODUCTION_TOURNAMENT_SIZE = 2
+PRODUCTION_DUPLICATE_MUTATION_ATTEMPTS = 4
+PRODUCTION_CROSSOVER_PROBABILITY = 0.9
+PRODUCTION_MUTATION_PROBABILITY = 0.25
+PRODUCTION_MUTATION_SCALE = 0.15
 RECOVERY_SEEDS = (4101, 4201, 4301)
 RECOVERY_TOLERANCES: Rates = (1.0, 1.0, 0.5, 0.35)
 TRUE_RATES: Rates = (0.7, 1.9, 1.2, 7.5)
@@ -53,6 +64,7 @@ OPTIMIZER_STARTS: tuple[Coordinates, ...] = (
     (0.25, 0.45, 0.80, 0.60),
     (0.75, 0.55, 0.60, 0.80),
 )
+PRODUCTION_POPULATION_SIZE = len(OPTIMIZER_STARTS)
 
 AGGREGATE_GATE_NAMES = (
     "hand_likelihood",
@@ -161,9 +173,9 @@ PROBE_BOUNDS = ProbeRateBounds(
 )
 
 PRODUCTION_BOUNDS = MmppConfig(
-    crossover_probability=0.9,
-    mutation_probability=0.25,
-    mutation_scale=0.15,
+    crossover_probability=PRODUCTION_CROSSOVER_PROBABILITY,
+    mutation_probability=PRODUCTION_MUTATION_PROBABILITY,
+    mutation_scale=PRODUCTION_MUTATION_SCALE,
     q01=FloatBounds(lower=PROBE_BOUNDS.q01[0], upper=PROBE_BOUNDS.q01[1]),
     q10=FloatBounds(lower=PROBE_BOUNDS.q10[0], upper=PROBE_BOUNDS.q10[1]),
     lambda0=FloatBounds(lower=PROBE_BOUNDS.lambda0[0], upper=PROBE_BOUNDS.lambda0[1]),
@@ -383,6 +395,29 @@ class DecisionRecord(TypedDict):
     production_changed: bool
 
 
+class LikelihoodOptimizerPolicy(TypedDict):
+    method: str
+    population_size: int
+    generations: int
+    tol: float
+    atol: float
+    polish: bool
+    updating: str
+    workers: int
+
+
+class SimulationOptimizerPolicy(TypedDict):
+    method: str
+    population_size: int
+    generations: int
+    elite_count: int
+    tournament_size: int
+    duplicate_mutation_attempts: int
+    crossover_probability: float
+    mutation_probability: float
+    mutation_scale: float
+
+
 class PolicyRecord(TypedDict):
     production_changed: bool
     rng: str
@@ -391,8 +426,8 @@ class PolicyRecord(TypedDict):
     recovery_seeds: list[int]
     recovery_log_rate_tolerances: list[float]
     evaluation_budget: int
-    likelihood_optimizer: dict[str, int | str]
-    simulation_distance_optimizer: dict[str, int | str]
+    likelihood_optimizer: LikelihoodOptimizerPolicy
+    simulation_distance_optimizer: SimulationOptimizerPolicy
     optimizer_starts: list[list[float]]
     common_initial_rates: list[list[float]]
     training_window_seconds: float
@@ -408,13 +443,6 @@ class SeedLimitRecord(TypedDict):
     held_out_data_seed: int
     training_observation_window_seconds: float
     held_out_observation_window_seconds: float
-    likelihood_population_size: int
-    likelihood_generations: int
-    production_population_size: int
-    production_generations: int
-    production_elite_count: int
-    production_tournament_size: int
-    production_duplicate_mutation_attempts: int
     generation_limits: dict[str, int | float]
 
 
@@ -594,13 +622,13 @@ def fit_mmpp_likelihood(
     result = _differential_evolution(
         objective,
         bounds=((0.0, 1.0),) * 4,
-        maxiter=OPTIMIZER_GENERATIONS,
-        tol=0.0,
-        atol=0.0,
+        maxiter=LIKELIHOOD_GENERATIONS,
+        tol=LIKELIHOOD_TOL,
+        atol=LIKELIHOOD_ATOL,
         init=np.asarray(OPTIMIZER_STARTS, dtype=np.float64),
-        polish=False,
-        updating="immediate",
-        workers=1,
+        polish=LIKELIHOOD_POLISH,
+        updating=LIKELIHOOD_UPDATING,
+        workers=LIKELIHOOD_WORKERS,
         rng=np.random.Generator(np.random.PCG64(seed)),
     )
     retained_history = tuple(history)
@@ -709,18 +737,18 @@ def _simulation_distance_fit(
     retained_starts = tuple(cast(Rates, candidate.genes) for candidate in population)
     population, evaluation_indexes = _evaluate_population(population, context, next_evaluation_index=1)
     history = [_simulation_generation_history(0, population, evaluation_indexes)]
-    for generation in range(1, SIMULATION_GENERATIONS + 1):
+    for generation in range(1, PRODUCTION_GENERATIONS + 1):
         population = fill_next_population(
             population,
             generation=generation,
-            population_size=len(OPTIMIZER_STARTS),
-            elite_count=1,
-            tournament_size=2,
+            population_size=PRODUCTION_POPULATION_SIZE,
+            elite_count=PRODUCTION_ELITE_COUNT,
+            tournament_size=PRODUCTION_TOURNAMENT_SIZE,
             context=ReproductionContext(
                 reference=events,
                 family_bounds=bounds,
                 family_priority=priority,
-                duplicate_mutation_attempts=4,
+                duplicate_mutation_attempts=PRODUCTION_DUPLICATE_MUTATION_ATTEMPTS,
             ),
             rng=rng,
         )
@@ -802,18 +830,38 @@ def _seed_limit_record(plan: TrialPlan) -> SeedLimitRecord:
         "held_out_data_seed": plan.held_out_data_seed,
         "training_observation_window_seconds": TRAINING_WINDOW_SECONDS,
         "held_out_observation_window_seconds": HELD_OUT_WINDOW_SECONDS,
-        "likelihood_population_size": len(COMMON_START_RATES),
-        "likelihood_generations": OPTIMIZER_GENERATIONS,
-        "production_population_size": len(COMMON_START_RATES),
-        "production_generations": SIMULATION_GENERATIONS,
-        "production_elite_count": 1,
-        "production_tournament_size": 2,
-        "production_duplicate_mutation_attempts": 4,
         "generation_limits": {
             "max_packets": _GENERATION_LIMITS.max_packets,
             "max_output_bytes": _GENERATION_LIMITS.max_output_bytes,
             "max_wall_seconds": _GENERATION_LIMITS.max_wall_seconds,
         },
+    }
+
+
+def _likelihood_optimizer_policy() -> LikelihoodOptimizerPolicy:
+    return {
+        "method": "scipy.optimize.differential_evolution",
+        "population_size": len(OPTIMIZER_STARTS),
+        "generations": LIKELIHOOD_GENERATIONS,
+        "tol": LIKELIHOOD_TOL,
+        "atol": LIKELIHOOD_ATOL,
+        "polish": LIKELIHOOD_POLISH,
+        "updating": LIKELIHOOD_UPDATING,
+        "workers": LIKELIHOOD_WORKERS,
+    }
+
+
+def _simulation_optimizer_policy() -> SimulationOptimizerPolicy:
+    return {
+        "method": "trafficlab production genetic operators and similarity",
+        "population_size": PRODUCTION_POPULATION_SIZE,
+        "generations": PRODUCTION_GENERATIONS,
+        "elite_count": PRODUCTION_ELITE_COUNT,
+        "tournament_size": PRODUCTION_TOURNAMENT_SIZE,
+        "duplicate_mutation_attempts": PRODUCTION_DUPLICATE_MUTATION_ATTEMPTS,
+        "crossover_probability": PRODUCTION_BOUNDS.crossover_probability,
+        "mutation_probability": PRODUCTION_BOUNDS.mutation_probability,
+        "mutation_scale": PRODUCTION_BOUNDS.mutation_scale,
     }
 
 
@@ -958,23 +1006,15 @@ def build_probe_evidence() -> ProbeEvidence:
         "recovery_seeds": list(RECOVERY_SEEDS),
         "recovery_log_rate_tolerances": _rates_list(RECOVERY_TOLERANCES),
         "evaluation_budget": EVALUATION_BUDGET,
-        "likelihood_optimizer": {
-            "method": "scipy.optimize.differential_evolution",
-            "population_size": len(OPTIMIZER_STARTS),
-            "generations": OPTIMIZER_GENERATIONS,
-        },
-        "simulation_distance_optimizer": {
-            "method": "trafficlab production genetic operators and similarity",
-            "population_size": len(OPTIMIZER_STARTS),
-            "generations": SIMULATION_GENERATIONS,
-        },
+        "likelihood_optimizer": _likelihood_optimizer_policy(),
+        "simulation_distance_optimizer": _simulation_optimizer_policy(),
         "optimizer_starts": [list(start) for start in OPTIMIZER_STARTS],
         "common_initial_rates": [_rates_list(rates) for rates in COMMON_START_RATES],
         "training_window_seconds": TRAINING_WINDOW_SECONDS,
         "held_out_window_seconds": HELD_OUT_WINDOW_SECONDS,
     }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "probe": "scipy_two_state_mmpp_likelihood",
         "policy": policy,
         "hand_cases": hand,
@@ -985,9 +1025,26 @@ def build_probe_evidence() -> ProbeEvidence:
     }
 
 
+def validate_probe_evidence(evidence: ProbeEvidence) -> ProbeEvidence:
+    """Reject optimizer or per-trial policy drift before canonical rendering."""
+    if evidence["schema_version"] != 3:
+        raise ValueError("probe evidence schema version does not match the canonical optimizer policy")
+    if evidence["policy"]["likelihood_optimizer"] != _likelihood_optimizer_policy():
+        raise ValueError("likelihood optimizer policy does not match executed controls")
+    if evidence["policy"]["simulation_distance_optimizer"] != _simulation_optimizer_policy():
+        raise ValueError("simulation optimizer policy does not match executed controls")
+    if len(evidence["trials"]) != len(TRIAL_PLANS):
+        raise ValueError("trial seed/limit plan count does not match the executed trials")
+    for trial, plan in zip(evidence["trials"], TRIAL_PLANS, strict=True):
+        if trial["seed_limit_plan"] != _seed_limit_record(plan):
+            raise ValueError("trial seed/limit plan does not match executed controls")
+    return evidence
+
+
 def render_probe_evidence(evidence: ProbeEvidence) -> bytes:
     """Render canonical UTF-8 JSON with sorted compact keys and one final newline."""
-    return (json.dumps(evidence, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+    validated = validate_probe_evidence(evidence)
+    return (json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
 
 
 def write_probe_evidence(destination: Path, evidence: ProbeEvidence, *, check: bool) -> bool:
