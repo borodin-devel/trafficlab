@@ -8,16 +8,16 @@ from typing import cast
 
 import pytest
 
-from tests.conftest import (
-    DockerTestEnvironment,
-    EndpointDockerCompose,
-    inspect_project_resources,
-)
 from tests.docker.support import (
     capture_lifecycle_positions,
     capture_project_name,
     require_checked_capture_image,
     write_docker_experiment,
+)
+from tests.support.docker import (
+    DockerTestEnvironment,
+    EndpointDockerCompose,
+    inspect_project_resources,
 )
 from trafficlab.capture import capture_experiment, capture_prepared_experiment
 from trafficlab.capture_validation import validate_capture_pair

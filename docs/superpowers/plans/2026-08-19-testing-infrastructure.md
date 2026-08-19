@@ -106,25 +106,25 @@ Pyright strict mode, Ruff, Bash bounded-process guard, Docker Compose.
 - Produces: typed Docker environment, image, tracker, inspection, overlay, and
   adapter helpers imported by fixture wiring and Docker scenarios.
 
-- [ ] **[STEP-8-11eea047] Write RED imports for external support.** Change the
+- [x] **[STEP-8-11eea047] Write RED imports for external support.** Change the
   focused control tests to import the four public functions from
   `tests.support.external`; run them and confirm collection fails because that
   module does not exist.
-- [ ] **[STEP-9-cb886ce8] Move the smallest external implementation.** Create the
+- [x] **[STEP-9-cb886ce8] Move the smallest external implementation.** Create the
   typed support module, delegate the collection hook and Internet fixture to it,
   remove the corresponding implementation from `conftest.py`, then run the
   focused control tests GREEN.
-- [ ] **[STEP-10-6c9708ea] Write RED imports for Docker support.** Redirect the
+- [x] **[STEP-10-6c9708ea] Write RED imports for Docker support.** Redirect the
   Docker fixture-support tests to the intended `tests.support.docker`
   interfaces and confirm the missing imports fail before moving code.
-- [ ] **[STEP-11-996621d8] Move generic Docker machinery.** Extract image
+- [x] **[STEP-11-996621d8] Move generic Docker machinery.** Extract image
   lifecycle, resource inspection/tracking, endpoint overlay, and adapters;
   retain only thin pytest fixtures in `conftest.py`, and keep scenario config
   writers and log readers in `tests/docker/support.py`.
-- [ ] **[STEP-12-7f047a84] Run focused GREEN and branch coverage.** Run both
+- [x] **[STEP-12-7f047a84] Run focused GREEN and branch coverage.** Run both
   helper owner modules serially with branch coverage of their complete helper
   functions, followed by Ruff and strict Pyright.
-- [ ] **[STEP-13-a1d4abab] Prove collection preservation and commit.** Compare
+- [x] **[STEP-13-a1d4abab] Prove collection preservation and commit.** Compare
   total collection, marker counts, and exact node IDs with the baseline, then
   commit with `test: separate external support ownership`.
 

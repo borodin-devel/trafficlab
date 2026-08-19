@@ -15,13 +15,13 @@ import trafficlab.capture as capture_module
 import trafficlab.generation as generation_module
 import trafficlab.genetic.strategy as strategy_module
 import trafficlab.run as run_module
-from tests.conftest import DockerTestEnvironment, EndpointDockerCompose
 from tests.docker.support import (
     assert_tracked_projects_clean,
     capture_log,
     capture_project_name,
     write_run_docker_experiment,
 )
+from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
 from trafficlab.capture import CaptureResult, capture_prepared_experiment
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.cli import main

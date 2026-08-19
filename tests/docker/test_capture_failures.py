@@ -7,8 +7,8 @@ from typing import cast
 
 import pytest
 
-from tests.conftest import DockerTestEnvironment, EndpointDockerCompose
 from tests.docker.support import capture_log, write_docker_experiment
+from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
 from trafficlab.capture import capture_prepared_experiment
 from trafficlab.compose import ComposePaths
 from trafficlab.config import ExperimentConfig

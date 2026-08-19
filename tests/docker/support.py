@@ -8,13 +8,13 @@ from typing import Protocol, cast
 
 import tomli_w
 
-from tests.conftest import (
+from tests.support.docker import (
     REPOSITORY_ROOT,
     DockerProjectTracker,
     DockerTestEnvironment,
     inspect_project_resources,
-    run_external_command,
 )
+from tests.support.external import run_external_command
 from trafficlab.docker_cli import ImageIdentity, load_capture_image_lock, parse_image_inspect
 
 

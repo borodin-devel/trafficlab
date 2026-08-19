@@ -3,15 +3,14 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
-from collections.abc import Callable, Generator
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any, Protocol, Self, cast
+from typing import Protocol, Self, cast
 
 import pytest
 
-from tests import conftest
 from tests.docker import support
+from tests.support import docker as docker_support
 from trafficlab.artifacts import append_run_log
 from trafficlab.compose import ComposePaths, render_production_compose
 from trafficlab.config import ExperimentConfig
@@ -29,7 +28,7 @@ def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
     valid_config_data: dict[str, object],
     tmp_path: Path,
 ) -> None:
-    environment = conftest.DockerTestEnvironment()
+    environment = docker_support.DockerTestEnvironment()
     experiment = support.write_docker_experiment(
         tmp_path / "topology.toml",
         valid_config_data,
@@ -45,7 +44,7 @@ def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
     )
 
     assert set(_services(production)) == {"capture", "target"}
-    overlay_services = _services(conftest.merge_endpoint_overlay(production))
+    overlay_services = _services(docker_support.merge_endpoint_overlay(production))
     assert set(overlay_services) == {
         "capture",
         "endpoint",
@@ -122,7 +121,7 @@ def test_capture_fixture_identity_uses_injected_inspect_result() -> None:
 
 def test_capture_fixture_identity_rejects_mismatch_without_rewriting_lock() -> None:
     reference = "trafficlab-capture:docker-capture-test"
-    lock_path = conftest.REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
+    lock_path = docker_support.REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
     before = lock_path.read_bytes()
 
     def command(
@@ -169,9 +168,9 @@ def test_capture_fixture_build_disables_nondeterministic_provenance(
         calls.append(tuple(argv))
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
+    monkeypatch.setattr(docker_support, "run_external_command", command)
 
-    conftest.build_test_image(
+    docker_support.build_test_image(
         "trafficlab-capture:test",
         tmp_path,
         reproducible_capture=True,
@@ -219,12 +218,8 @@ def test_docker_environment_owns_unique_tags_and_removes_every_built_image(
             values = {"markexpr": "docker", "capture_image": None}
             return values[name]
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
-    fixture = cast(
-        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
-        cast(Any, conftest.docker_test_environment).__wrapped__,
-    )
-    iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
+    monkeypatch.setattr(docker_support, "run_external_command", command)
+    iterator = docker_support.provision_docker_test_environment(cast(pytest.Config, _SelectedDockerConfig()))
     environment = next(iterator)
     iterator.close()
 
@@ -236,7 +231,12 @@ def test_docker_environment_owns_unique_tags_and_removes_every_built_image(
     )
     for image, prefix in zip(
         images,
-        (conftest.CAPTURE_IMAGE, conftest.CLIENT_IMAGE, conftest.ENDPOINT_IMAGE, conftest.NO_SHELL_IMAGE),
+        (
+            docker_support.CAPTURE_IMAGE,
+            docker_support.CLIENT_IMAGE,
+            docker_support.ENDPOINT_IMAGE,
+            docker_support.NO_SHELL_IMAGE,
+        ),
         strict=True,
     ):
         assert image.startswith(f"{prefix}-")
@@ -282,17 +282,13 @@ def test_docker_environment_reuses_a_checked_prerequisite_image_without_building
             values = {"markexpr": marker, "capture_image": reference}
             return values[name]
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
-    fixture = cast(
-        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
-        cast(Any, conftest.docker_test_environment).__wrapped__,
-    )
-    iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
+    monkeypatch.setattr(docker_support, "run_external_command", command)
+    iterator = docker_support.provision_docker_test_environment(cast(pytest.Config, _SelectedDockerConfig()))
     environment = next(iterator)
     iterator.close()
 
     assert environment.capture_image == reference
-    assert environment.client_image.startswith(f"{conftest.CLIENT_IMAGE}-")
+    assert environment.client_image.startswith(f"{docker_support.CLIENT_IMAGE}-")
     assert ("docker", "image", "inspect", reference) in calls
     assert ("docker", "run", "--rm", "--entrypoint", "dumpcap", reference, "--version") in calls
     assert not any(command[:2] == ("docker", "build") and reference in command for command in calls)
@@ -331,19 +327,15 @@ def test_docker_environment_cleans_successful_images_after_a_later_build_failure
             values = {"markexpr": "docker", "capture_image": None}
             return values[name]
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
-    fixture = cast(
-        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
-        cast(Any, conftest.docker_test_environment).__wrapped__,
-    )
+    monkeypatch.setattr(docker_support, "run_external_command", command)
 
     with pytest.raises(pytest.UsageError, match="endpoint build failure"):
-        next(fixture(cast(pytest.Config, _SelectedDockerConfig())))
+        next(docker_support.provision_docker_test_environment(cast(pytest.Config, _SelectedDockerConfig())))
 
     removed = [command[-1] for command in calls if command[:4] == ("docker", "image", "rm", "--force")]
     assert len(removed) == 2
-    assert removed[0].startswith(f"{conftest.CLIENT_IMAGE}-")
-    assert removed[1].startswith(f"{conftest.CAPTURE_IMAGE}-")
+    assert removed[0].startswith(f"{docker_support.CLIENT_IMAGE}-")
+    assert removed[1].startswith(f"{docker_support.CAPTURE_IMAGE}-")
 
 
 def test_docker_environment_attempts_all_image_cleanup_and_preserves_first_failure(
@@ -375,12 +367,8 @@ def test_docker_environment_attempts_all_image_cleanup_and_preserves_first_failu
             values = {"markexpr": "docker", "capture_image": None}
             return values[name]
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
-    fixture = cast(
-        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
-        cast(Any, conftest.docker_test_environment).__wrapped__,
-    )
-    iterator = fixture(cast(pytest.Config, _SelectedDockerConfig()))
+    monkeypatch.setattr(docker_support, "run_external_command", command)
+    iterator = docker_support.provision_docker_test_environment(cast(pytest.Config, _SelectedDockerConfig()))
     environment = next(iterator)
 
     with pytest.raises(pytest.UsageError, match="no-shell") as caught:
@@ -420,14 +408,10 @@ def test_docker_environment_rejects_an_empty_borrowed_capture_image_before_image
             values = {"markexpr": "docker", "capture_image": ""}
             return values[name]
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
-    fixture = cast(
-        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
-        cast(Any, conftest.docker_test_environment).__wrapped__,
-    )
+    monkeypatch.setattr(docker_support, "run_external_command", command)
 
     with pytest.raises(pytest.UsageError, match="nonempty"):
-        next(fixture(cast(pytest.Config, _SelectedDockerConfig())))
+        next(docker_support.provision_docker_test_environment(cast(pytest.Config, _SelectedDockerConfig())))
 
     assert calls == [
         ("docker", "info"),
@@ -488,14 +472,10 @@ def test_docker_environment_rejects_an_unchecked_borrowed_capture_image_before_o
             values = {"markexpr": "docker", "capture_image": reference}
             return values[name]
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
-    fixture = cast(
-        Callable[[pytest.Config], Generator[conftest.DockerTestEnvironment, None, None]],
-        cast(Any, conftest.docker_test_environment).__wrapped__,
-    )
+    monkeypatch.setattr(docker_support, "run_external_command", command)
 
     with pytest.raises(pytest.UsageError, match=diagnostic):
-        next(fixture(cast(pytest.Config, _SelectedDockerConfig())))
+        next(docker_support.provision_docker_test_environment(cast(pytest.Config, _SelectedDockerConfig())))
 
     assert not any(command[:2] == ("docker", "build") for command in calls)
     assert ("docker", "image", "rm", "--force", reference) not in calls
@@ -513,7 +493,7 @@ def test_unavailable_locked_capture_input_fails_without_refreshing_lock(
     monkeypatch: pytest.MonkeyPatch,
     diagnostic: str,
 ) -> None:
-    lock_path = conftest.REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
+    lock_path = docker_support.REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
     before = lock_path.read_bytes()
 
     def command(
@@ -526,10 +506,10 @@ def test_unavailable_locked_capture_input_fails_without_refreshing_lock(
         del argv, purpose, timeout, check
         raise pytest.UsageError(diagnostic)
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
+    monkeypatch.setattr(docker_support, "run_external_command", command)
 
     with pytest.raises(pytest.UsageError) as caught:
-        conftest.build_test_image(
+        docker_support.build_test_image(
             "trafficlab-capture:test",
             tmp_path,
             reproducible_capture=True,
@@ -540,7 +520,7 @@ def test_unavailable_locked_capture_input_fails_without_refreshing_lock(
 
 
 def _load_client() -> ModuleType:
-    path = conftest.DOCKER_FIXTURE_ROOT / "images" / "client" / "client.py"
+    path = docker_support.DOCKER_FIXTURE_ROOT / "images" / "client" / "client.py"
     spec = importlib.util.spec_from_file_location("trafficlab_test_client", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -730,8 +710,8 @@ def test_tracker_aggregates_inventory_and_removal_errors_while_continuing_cleanu
             raise pytest.UsageError("network removal failed")
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    monkeypatch.setattr(conftest, "run_external_command", command)
-    tracker = conftest.DockerProjectTracker(projects={"project"})
+    monkeypatch.setattr(docker_support, "run_external_command", command)
+    tracker = docker_support.DockerProjectTracker(projects={"project"})
 
     with pytest.raises(pytest.fail.Exception) as caught:
         tracker.assert_clean()
@@ -747,16 +727,16 @@ def test_tracker_aggregates_inventory_and_removal_errors_while_continuing_cleanu
 
 def test_tracker_preserves_body_and_cleanup_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     """A teardown failure must augment rather than replace the test's original exception."""
-    tracker = conftest.DockerProjectTracker()
+    tracker = docker_support.DockerProjectTracker()
 
     def cleanup_failure() -> None:
         pytest.fail("cleanup failed", pytrace=False)
 
-    def fail_cleanup(tracker: conftest.DockerProjectTracker) -> None:
+    def fail_cleanup(tracker: docker_support.DockerProjectTracker) -> None:
         del tracker
         cleanup_failure()
 
-    monkeypatch.setattr(conftest.DockerProjectTracker, "assert_clean", fail_cleanup)
+    monkeypatch.setattr(docker_support.DockerProjectTracker, "assert_clean", fail_cleanup)
 
     with pytest.raises(BaseExceptionGroup) as caught:
         tracker.finish(RuntimeError("body failed"))

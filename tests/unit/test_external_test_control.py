@@ -4,7 +4,9 @@ from typing import cast
 
 import pytest
 
-from tests import conftest
+from tests.fixtures.paths import DOCKER_FIXTURE_ROOT
+from tests.support import docker as docker_support
+from tests.support import external
 
 
 class _Config:
@@ -42,7 +44,7 @@ def test_external_request_detection_requires_an_explicit_marker_or_path(
     """Default collection must stay offline while an explicit external selection remains authoritative."""
     config = cast(pytest.Config, _Config(markexpr, *arguments))
 
-    assert conftest.external_tests_requested(config, marker) is expected
+    assert external.external_tests_requested(config, marker) is expected
 
 
 @pytest.mark.parametrize(
@@ -51,11 +53,11 @@ def test_external_request_detection_requires_an_explicit_marker_or_path(
 def test_internet_url_rejects_missing_or_non_https_endpoints(value: str | None) -> None:
     """Accepting an implicit, plaintext, malformed, or credential-bearing URL would make the smoke test unsafe."""
     with pytest.raises(pytest.UsageError, match="--internet-url.*HTTPS"):
-        conftest.validate_internet_url(value)
+        external.validate_internet_url(value)
 
 
 def test_internet_url_accepts_an_explicit_https_endpoint() -> None:
-    assert conftest.validate_internet_url("https://example.test/resource?q=1") == "https://example.test/resource?q=1"
+    assert external.validate_internet_url("https://example.test/resource?q=1") == "https://example.test/resource?q=1"
 
 
 def test_remaining_resource_message_names_every_resource() -> None:
@@ -66,7 +68,7 @@ def test_remaining_resource_message_names_every_resource() -> None:
         "volumes": ("project_data",),
     }
 
-    assert conftest.remaining_resource_message("project", remaining) == (
+    assert docker_support.remaining_resource_message("project", remaining) == (
         "Docker project 'project' still has labelled resources: "
         "containers=[capture-1, target-1]; networks=[project_default]; volumes=[project_data]"
     )
@@ -78,22 +80,22 @@ def test_external_command_absence_is_actionable(monkeypatch: pytest.MonkeyPatch)
     def missing(*args: object, **kwargs: object) -> object:
         raise FileNotFoundError("docker")
 
-    monkeypatch.setattr(conftest.subprocess, "run", missing)
+    monkeypatch.setattr(external.subprocess, "run", missing)
 
     with pytest.raises(pytest.UsageError, match="Docker CLI was not found.*install Docker Engine.*Compose plugin"):
-        conftest.run_external_command(("docker", "info"), purpose="check Docker Engine", timeout=10.0)
+        external.run_external_command(("docker", "info"), purpose="check Docker Engine", timeout=10.0)
 
 
 @pytest.mark.parametrize("numprocesses", [None, 0])
 def test_external_tests_accept_only_a_serial_pytest_session(numprocesses: int | None) -> None:
-    conftest.require_serial_external_tests(cast(pytest.Config, _Config("docker", numprocesses=numprocesses)))
+    external.require_serial_external_tests(cast(pytest.Config, _Config("docker", numprocesses=numprocesses)))
 
 
 def test_external_tests_reject_xdist_workers() -> None:
     with pytest.raises(pytest.UsageError, match="serially.*-n 0"):
-        conftest.require_serial_external_tests(cast(pytest.Config, _Config("docker", numprocesses=4)))
+        external.require_serial_external_tests(cast(pytest.Config, _Config("docker", numprocesses=4)))
 
 
 def test_external_fixture_paths_are_repository_absolute() -> None:
     root = Path(__file__).parents[2]
-    assert conftest.DOCKER_FIXTURE_ROOT == root / "tests" / "fixtures" / "data" / "docker"
+    assert DOCKER_FIXTURE_ROOT == root / "tests" / "fixtures" / "data" / "docker"

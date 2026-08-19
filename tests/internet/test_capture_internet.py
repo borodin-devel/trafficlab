@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import DockerTestEnvironment, TrackedDockerCompose
 from tests.docker.support import write_docker_experiment
+from tests.support.docker import DockerTestEnvironment, TrackedDockerCompose
 from trafficlab import USER_AGENT
 from trafficlab.capture import capture_experiment
 from trafficlab.capture_validation import validate_capture_pair
