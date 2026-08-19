@@ -405,27 +405,27 @@ Run Ruff, Pyright, all model/genetic unit and scientific tests, integration pipe
 - Produces: `mmpp_log_likelihood(iats, terminal_silence, rates) -> float`, bounded transformed-rate optimization, and machine-readable pass/reject evidence.
 - Does not modify: production `MmppFamily.fit` unless all gates pass in a later reviewed adoption commit.
 
-- [ ] **[STEP-49-334f3889] Step 1: Write hand-likelihood, extreme-rate, and recovery tests first**
+- [x] **[STEP-49-334f3889] Step 1: Write hand-likelihood, extreme-rate, and recovery tests first**
 
 Use literal two-state matrix cases independently calculated at high precision, explicit arrival-epoch initialization, terminal silence, extreme positive finite rates, and fixed synthetic seeds with predeclared recovery tolerances.
 
-- [ ] **[STEP-50-b609ac7e] Step 2: Run probe tests and verify missing likelihood failure**
+- [x] **[STEP-50-b609ac7e] Step 2: Run probe tests and verify missing likelihood failure**
 
 Run the bounded focused probe module; expect import failure for `mmpp_log_likelihood`.
 
-- [ ] **[STEP-51-00b3b165] Step 3: Implement scaled forward recursion and bounded optimization**
+- [x] **[STEP-51-00b3b165] Step 3: Implement scaled forward recursion and bounded optimization**
 
 Build `D0 = Q - diag(lambda)` and `D1 = diag(lambda)`, multiply `expm(D0*u) @ D1`, normalize every positive finite forward row, accumulate log scales, and finish with `expm(D0*terminal_silence) @ ones`. Decode transformed rates with `lambda1 > lambda0` and finite configured bounds.
 
-- [ ] **[STEP-52-3e0f5129] Step 4: Compare equal evaluation budgets**
+- [x] **[STEP-52-3e0f5129] Step 4: Compare equal evaluation budgets**
 
 For several fixed seeds, compare synthetic recovery and held-out likelihood or production similarity against simulation-distance fitting using the same objective-evaluation count. Record rates, starts, evaluations, termination, held-out inputs, and results.
 
-- [ ] **[STEP-53-8dfa1ed0] Step 5: Emit deterministic probe fixtures and decision**
+- [x] **[STEP-53-8dfa1ed0] Step 5: Emit deterministic probe fixtures and decision**
 
 Write canonical `mmpp_cases.json` with hand, extreme, recovery, and equal-budget records. The decision is `pass` only if every predeclared gate passes; otherwise it is `reject` with exact failed gates and production remains unchanged.
 
-- [ ] **[STEP-54-9ad4d1c4] Step 6: Verify and commit the MMPP probe**
+- [x] **[STEP-54-9ad4d1c4] Step 6: Verify and commit the MMPP probe**
 
 Run Ruff, Pyright, focused probe tests twice, the existing MMPP scientific suite, and the probe runner `--check`. Commit `test: evaluate scipy mmpp likelihood`.
 
