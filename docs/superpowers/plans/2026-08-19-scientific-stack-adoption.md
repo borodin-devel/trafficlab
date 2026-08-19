@@ -162,27 +162,27 @@ Run Ruff, Pyright, trace/PCAPNG/capture-validation unit suites, property tests, 
 - Consumes: `TrafficTrace` columns and `PCG64`-compatible array values.
 - Produces: vectorized Type 7 boundaries, state encodings, transition/mark counts, and unchanged fitted-model semantics.
 
-- [ ] **[STEP-13-4e73834a] Step 1: Add failing scalar-versus-vector oracle properties**
+- [x] **[STEP-13-4e73834a] Step 1: Add failing scalar-versus-vector oracle properties**
 
 For literal traces and generated finite traces, compare `np.quantile(method="linear")` boundaries to the independent Type 7 oracle, state encodings to scalar bin assignment, transition matrices to scalar pair counts, and mark counts to a `Counter` oracle. Expect failures while scalar-only helpers remain.
 
-- [ ] **[STEP-14-41f7fa82] Step 2: Run focused model properties and record RED output**
+- [x] **[STEP-14-41f7fa82] Step 2: Run focused model properties and record RED output**
 
 Run the bounded focused command for the new property file plus the three model unit modules; confirm the missing vector interfaces or wrong return types cause the failures.
 
-- [ ] **[STEP-15-28681796] Step 3: Implement NumPy quantiles, encoding, and counts**
+- [x] **[STEP-15-28681796] Step 3: Implement NumPy quantiles, encoding, and counts**
 
 Use `np.quantile(..., method="linear")`, `searchsorted` with the documented boundary side, and `bincount` on flattened `(source * K + destination)` indexes. Preserve empty-row smoothing, observed holding-time samples, mark diagnostics, finite checks, and exact integer totals.
 
-- [ ] **[STEP-16-03c229ae] Step 4: Migrate all model fit paths to `TrafficTrace`**
+- [x] **[STEP-16-03c229ae] Step 4: Migrate all model fit paths to `TrafficTrace`**
 
 Poisson derives `(n - 1) / W` from arrays; Markov renewal vectorizes states and transition samples; MMPP consumes columnar IATs without changing arrival-epoch generation. Delete redundant per-model trace validators after shared validation covers the same behavior.
 
-- [ ] **[STEP-17-016119e6] Step 5: Prove scientific tolerances and direct diagnostics**
+- [x] **[STEP-17-016119e6] Step 5: Prove scientific tolerances and direct diagnostics**
 
 Run existing hand examples and scientific recovery tests unchanged, plus exact direction/length/count assertions. Any changed floating result must remain within `1e-12` and be explained by an independently checked vector kernel.
 
-- [ ] **[STEP-18-565142a4] Step 6: Verify and commit vectorized model fitting**
+- [x] **[STEP-18-565142a4] Step 6: Verify and commit vectorized model fitting**
 
 Run Ruff, Pyright, all model unit tests, the new properties, `tests/scientific/test_model_validation.py`, and model-pipeline integration. Commit `perf: vectorize traffic model features`.
 
