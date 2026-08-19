@@ -4,6 +4,7 @@ from typing import cast
 
 import pytest
 
+from tests import conftest
 from tests.fixtures.paths import DOCKER_FIXTURE_ROOT
 from tests.support import docker as docker_support
 from tests.support import external
@@ -99,3 +100,11 @@ def test_external_tests_reject_xdist_workers() -> None:
 def test_external_fixture_paths_are_repository_absolute() -> None:
     root = Path(__file__).parents[2]
     assert DOCKER_FIXTURE_ROOT == root / "tests" / "fixtures" / "data" / "docker"
+
+
+def test_root_conftest_exports_no_accidentally_collectable_test_helpers() -> None:
+    exported_test_helpers = sorted(
+        name for name, value in vars(conftest).items() if name.startswith("test_") and callable(value)
+    )
+
+    assert exported_test_helpers == []

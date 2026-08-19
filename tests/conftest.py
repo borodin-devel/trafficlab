@@ -71,7 +71,7 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
         item.stash[_TEST_BODY_FAILURE] = call.excinfo.value
 
 
-def test_body_failure(request: pytest.FixtureRequest) -> BaseException | None:
+def retained_test_body_failure(request: pytest.FixtureRequest) -> BaseException | None:
     """Return the retained call-phase failure for fixture cleanup arbitration."""
 
     node = cast(_ItemFixtureRequest, request).node
@@ -95,7 +95,7 @@ def docker_project_tracker(request: pytest.FixtureRequest) -> Iterator[DockerPro
     try:
         yield tracker
     finally:
-        tracker.finish(test_body_failure(request))
+        tracker.finish(retained_test_body_failure(request))
 
 
 @pytest.fixture

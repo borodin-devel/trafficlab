@@ -172,27 +172,27 @@ Pyright strict mode, Ruff, Bash bounded-process guard, Docker Compose.
 - Produces: the same test-function and parametrized-case inventory, mapped from
   one old owner path to five explicit behavioral owners.
 
-- [ ] **[STEP-18-47e658dc] Generate the pre-split semantic manifest.** Record test
+- [x] **[STEP-18-47e658dc] Generate the pre-split semantic manifest.** Record test
   function names, parametrized node suffixes, markers, total cases, and the five
   intended path mappings from the current module.
-- [ ] **[STEP-19-bec68188] Write RED shared-support imports.** Redirect the first
+- [x] **[STEP-19-bec68188] Write RED shared-support imports.** Redirect the first
   protocol builder tests to `tests.support.validation_study` and confirm the
   missing interface fails.
-- [ ] **[STEP-20-7c8fd85f] Extract only cross-owner builders and fixtures.** Move
+- [x] **[STEP-20-7c8fd85f] Extract only cross-owner builders and fixtures.** Move
   canonical document builders, repository-copy mechanics, and shared fixtures;
   keep assertion-specific helpers beside their owner tests and run the original
   monolithic module GREEN.
-- [ ] **[STEP-21-b73b9e6a] Split protocol and orchestration owners.** Move complete
+- [x] **[STEP-21-b73b9e6a] Split protocol and orchestration owners.** Move complete
   top-level test/decorator blocks without changing bodies, run both new modules,
   and compare their semantic manifest slice.
-- [ ] **[STEP-22-2f4ff7d6] Split audit, prerequisite, and audit-boundary owners.**
+- [x] **[STEP-22-2f4ff7d6] Split audit, prerequisite, and audit-boundary owners.**
   Move complete top-level blocks and local helpers, install shared autouse
   fixtures in the directory `conftest.py`, and run each owner serially.
-- [ ] **[STEP-23-890d71c5] Remove the monolith and verify equivalence.** Require
+- [x] **[STEP-23-890d71c5] Remove the monolith and verify equivalence.** Require
   equal test names, parametrized case counts, markers, and total collection;
   run the whole validation-study directory with `-n 4 --dist worksteal`, Ruff,
   and strict Pyright.
-- [ ] **[STEP-24-2a5d982f] Commit modularization.** Inspect Git rename/move
+- [x] **[STEP-24-2a5d982f] Commit modularization.** Inspect Git rename/move
   detection and commit with `test: modularize validation study suite`.
 
 ### [TASK-6-a71faf9b] Measure safe speed improvements
