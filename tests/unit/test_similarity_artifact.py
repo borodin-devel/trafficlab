@@ -382,6 +382,39 @@ def test_malformed_nested_method_cannot_render_or_publish(tmp_path: Path) -> Non
     assert list(tmp_path.glob(".similarity.json.*.tmp")) == []
 
 
+def test_parser_and_publication_reject_null_lineage_and_cross_key_diagnostics(tmp_path: Path) -> None:
+    """Only the exact publication wire shape may parse or reach an immutable destination."""
+    document = json.loads((_EXAMPLE_DATA / "similarity.json").read_bytes())
+    missing_lineage = copy.deepcopy(document)
+    missing_lineage["input_identities"] = None
+    with pytest.raises(ValueError, match="input_identities"):
+        comparison.parse_comparison_result(json.dumps(missing_lineage).encode())
+
+    wrong_method = copy.deepcopy(document)
+    wrong_method["methods"]["frame_size_ks"] = copy.deepcopy(wrong_method["methods"]["iat_ks"])
+    with pytest.raises(ValueError, match="frame_size_ks.*wrong method discriminator"):
+        comparison.parse_comparison_result(json.dumps(wrong_method).encode())
+
+    with pytest.raises(ValueError, match="comparison result"):
+        comparison.parse_comparison_result(b"[]")
+
+    non_object_method = copy.deepcopy(document)
+    non_object_method["methods"]["frame_size_ks"] = 1
+    with pytest.raises(ValueError, match="frame_size_ks"):
+        comparison.parse_comparison_result(json.dumps(non_object_method).encode())
+
+    invalid_window = copy.deepcopy(document)
+    invalid_window["methods"]["frame_size_ks"]["diagnostics"]["observation_window_seconds"] = 10
+    with pytest.raises(ValueError, match="finite positive float"):
+        comparison.parse_comparison_result(json.dumps(invalid_window).encode())
+
+    operational = comparison.ComparisonResult.model_validate(missing_lineage)
+    destination = tmp_path / "similarity.json"
+    with pytest.raises(TrafficlabError, match="identities are required"):
+        comparison._publish_comparison_result(destination, operational)  # pyright: ignore[reportPrivateUsage]
+    assert not destination.exists()
+
+
 def test_comparison_renderer_rejects_invalid_outer_methods_and_changed_roundtrip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -395,11 +428,22 @@ def test_comparison_renderer_rejects_invalid_outer_methods_and_changed_roundtrip
     identities = valid.input_identities.as_content_identities()
     identities["capture_json"] = ContentIdentity(size=1, sha256="0" * 64)
     changed = valid.with_input_identities(identities)
+    changed_published = comparison.PublishedComparisonResult.model_validate(changed.as_dict())
+    real_validate = comparison.PublishedComparisonResult.model_validate
+    calls = 0
 
-    def changed_from_dict(_cls: type[comparison.ComparisonResult], _value: object) -> comparison.ComparisonResult:
-        return changed
+    def changed_on_reparse(
+        _cls: type[comparison.PublishedComparisonResult], value: object
+    ) -> comparison.PublishedComparisonResult:
+        nonlocal calls
+        calls += 1
+        return changed_published if calls == 2 else real_validate(value)
 
-    monkeypatch.setattr(comparison.ComparisonResult, "from_dict", classmethod(changed_from_dict))
+    monkeypatch.setattr(
+        comparison.PublishedComparisonResult,
+        "model_validate",
+        classmethod(changed_on_reparse),
+    )
     with pytest.raises(ValueError, match="changed the validated comparison result"):
         comparison.render_comparison_result(valid)
 

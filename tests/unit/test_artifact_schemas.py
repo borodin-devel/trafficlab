@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from types import MappingProxyType
@@ -67,6 +68,21 @@ def test_every_checked_core_artifact_validates_against_its_published_schema() ->
         for document in documents:
             validator.validate(document)  # pyright: ignore[reportUnknownMemberType]
             model.model_validate(document)
+
+
+def test_published_comparison_schema_rejects_nonpublishable_states() -> None:
+    """The publication schema must require lineage and statically bind diagnostics to each method key."""
+    document = json.loads(_SIMILARITY_FIXTURE.read_bytes())
+    schema = PUBLIC_ARTIFACT_MODELS["comparison_result"].model_json_schema(mode="validation")
+    validator = Draft202012Validator(schema)
+
+    missing_lineage = copy.deepcopy(document)
+    missing_lineage["input_identities"] = None
+    assert not validator.is_valid(missing_lineage)  # pyright: ignore[reportUnknownMemberType]
+
+    wrong_method = copy.deepcopy(document)
+    wrong_method["methods"]["frame_size_ks"] = copy.deepcopy(wrong_method["methods"]["iat_ks"])
+    assert not validator.is_valid(wrong_method)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_family_and_method_payloads_publish_union_schemas() -> None:

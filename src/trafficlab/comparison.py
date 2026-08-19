@@ -523,6 +523,94 @@ class ComparisonInputIdentities(_StrictArtifactModel):
         return {name: ContentIdentity(size=identity.size, sha256=identity.sha256) for name, identity in self.items()}
 
 
+def _require_method_score(score: float, discrepancy: float, *, name: str) -> None:
+    _require_close(score, 1.0 - discrepancy, name=f"{name} score")
+
+
+class PublishedAutocorrelationMethod(_StrictArtifactModel):
+    diagnostics: AutocorrelationDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.discrepancy, name="autocorrelation")
+        return self
+
+
+class PublishedFrameSizeMethod(_StrictArtifactModel):
+    diagnostics: FrameSizeDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.distance, name="frame_size_ks")
+        return self
+
+
+class PublishedIatMethod(_StrictArtifactModel):
+    diagnostics: IatDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.distance, name="iat_ks")
+        return self
+
+
+class PublishedMultiscaleMethod(_StrictArtifactModel):
+    diagnostics: MultiscaleDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.discrepancy, name="multiscale_rate")
+        return self
+
+
+type PublishedMethod = (
+    PublishedAutocorrelationMethod | PublishedFrameSizeMethod | PublishedIatMethod | PublishedMultiscaleMethod
+)
+
+
+class PublishedComparisonMethods(_StrictArtifactModel):
+    autocorrelation: PublishedAutocorrelationMethod
+    frame_size_ks: PublishedFrameSizeMethod
+    iat_ks: PublishedIatMethod
+    multiscale_rate: PublishedMultiscaleMethod
+
+    def items(self) -> tuple[tuple[str, PublishedMethod], ...]:
+        return (
+            ("autocorrelation", self.autocorrelation),
+            ("frame_size_ks", self.frame_size_ks),
+            ("iat_ks", self.iat_ks),
+            ("multiscale_rate", self.multiscale_rate),
+        )
+
+
+class PublishedComparisonResult(_StrictArtifactModel):
+    aggregate_score: UnitFloat
+    input_identities: ComparisonInputIdentities
+    methods: PublishedComparisonMethods
+    observation_window_seconds: PositiveFloat
+
+    @model_validator(mode="after")
+    def validate_publication_arithmetic(self) -> Self:
+        for _name, method in self.methods.items():
+            if method.diagnostics.observation_window_seconds != self.observation_window_seconds:
+                raise ValueError("every method diagnostic must contain the shared observation window")
+        weights = tuple(method.weight for _name, method in self.methods.items())
+        if not math.isclose(math.fsum(weights), 1.0, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
+            raise ValueError("method weights must sum to one")
+        expected = math.fsum(method.weight * method.score for _name, method in self.methods.items())
+        if not math.isclose(expected, self.aggregate_score, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
+            raise ValueError("aggregate_score must equal the exact configured weighted sum")
+        return self
+
+
 class ComparisonResult(_StrictArtifactModel):
     """One deeply immutable comparison result, optionally carrying artifact identities."""
 
@@ -602,15 +690,7 @@ class ComparisonResult(_StrictArtifactModel):
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return the exact publishable JSON shape as fresh mutable values."""
-        if self.input_identities is None:
-            raise ValueError("input content identities are required for a similarity artifact")
-        dumped = self.model_dump(mode="json")
-        return {
-            "aggregate_score": cast(float, dumped["aggregate_score"]),
-            "input_identities": cast(dict[str, JsonValue], dumped["input_identities"]),
-            "methods": {name: method.as_dict() for name, method in self.methods.items()},
-            "observation_window_seconds": cast(float, dumped["observation_window_seconds"]),
-        }
+        return cast(dict[str, JsonValue], _published_comparison_result(self).model_dump(mode="json"))
 
     @classmethod
     def from_dict(cls, value: object) -> Self:
@@ -627,6 +707,56 @@ class ComparisonResult(_StrictArtifactModel):
             if field.endswith("reference_count") and first["type"] == "int_type":
                 raise ValueError("reference_count must be an integer") from error
             raise ValueError(f"invalid comparison result {field}: {first['msg']}") from error
+
+
+def _published_comparison_result(result: ComparisonResult) -> PublishedComparisonResult:
+    """Revalidate one operational result as the exact required publication wire root."""
+    if result.input_identities is None:
+        raise ValueError("input content identities are required for a similarity artifact")
+    raw_methods = cast(object, result.methods)
+    if isinstance(raw_methods, ComparisonMethods):
+        methods: Mapping[str, object] = dict(raw_methods.items())
+    elif isinstance(raw_methods, Mapping):
+        methods = cast(Mapping[str, object], raw_methods)
+    else:
+        raise ValueError("comparison methods must be a canonical methods object")
+    raw_identities = cast(object, result.input_identities)
+    identities: object = (
+        raw_identities.model_dump(mode="python")
+        if isinstance(raw_identities, ComparisonInputIdentities)
+        else raw_identities
+    )
+    return PublishedComparisonResult.model_validate(
+        {
+            "aggregate_score": result.aggregate_score,
+            "input_identities": identities,
+            "methods": {
+                name: method.model_dump(mode="python") if isinstance(method, BaseModel) else method
+                for name, method in methods.items()
+            },
+            "observation_window_seconds": result.observation_window_seconds,
+        }
+    )
+
+
+def _operational_comparison_result(published: PublishedComparisonResult) -> ComparisonResult:
+    """Build the in-process comparison value from one validated publication wire root."""
+    return ComparisonResult.model_validate(published.model_dump(mode="python"))
+
+
+def _reject_cross_key_diagnostics(value: object) -> None:
+    if type(value) is not dict:
+        return
+    methods = cast(dict[str, object], value).get("methods")
+    if type(methods) is not dict:
+        return
+    for name, method in cast(dict[str, object], methods).items():
+        if type(method) is not dict:
+            continue
+        diagnostics = cast(dict[str, object], method).get("diagnostics")
+        tag = _diagnostic_discriminator(diagnostics)
+        if tag is not None and tag != name:
+            raise ValueError(f"{name} diagnostics use the wrong method discriminator")
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -649,36 +779,27 @@ def parse_comparison_result(content: bytes) -> ComparisonResult:
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError(f"invalid similarity JSON: {error}") from error
-    return ComparisonResult.from_dict(document)
+    _reject_cross_key_diagnostics(document)
+    try:
+        published = PublishedComparisonResult.model_validate(document)
+    except ValidationError as error:
+        first = error.errors()[0]
+        field = ".".join(str(part) for part in first["loc"])
+        if field.endswith("observation_window_seconds"):
+            raise ValueError("every method diagnostic observation window must be a finite positive float") from error
+        if field.endswith("reference_count") and first["type"] == "int_type":
+            raise ValueError("reference_count must be an integer") from error
+        raise ValueError(f"invalid comparison result {field}: {first['msg']}") from error
+    return _operational_comparison_result(published)
 
 
 def _canonical_comparison_bytes(result: ComparisonResult) -> bytes:
-    raw_methods = cast(object, result.methods)
-    if isinstance(raw_methods, ComparisonMethods):
-        method_values: tuple[tuple[str, object], ...] = cast(tuple[tuple[str, object], ...], raw_methods.items())
-    elif isinstance(raw_methods, Mapping):
-        method_values = tuple(cast(Mapping[str, object], raw_methods).items())
-    else:
-        raise ValueError("comparison methods must be a canonical methods object")
-    input_values: object = result.input_identities
-    if isinstance(result.input_identities, ComparisonInputIdentities):
-        input_values = result.input_identities.model_dump(mode="python")
-    validated = ComparisonResult.model_validate(
-        {
-            "aggregate_score": result.aggregate_score,
-            "observation_window_seconds": result.observation_window_seconds,
-            "methods": {
-                name: method.model_dump(mode="python") if isinstance(method, BaseModel) else method
-                for name, method in method_values
-            },
-            "input_identities": input_values,
-        }
-    )
-    content = (json.dumps(validated.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode(
-        "utf-8"
-    )
-    reparsed = ComparisonResult.from_dict(json.loads(content.decode("utf-8")))
-    if reparsed != validated:
+    published = _published_comparison_result(result)
+    content = (
+        json.dumps(published.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
+    ).encode("utf-8")
+    reparsed = PublishedComparisonResult.model_validate(json.loads(content.decode("utf-8")))
+    if reparsed != published:
         raise ValueError("canonical similarity rendering changed the validated comparison result")
     return content
 
