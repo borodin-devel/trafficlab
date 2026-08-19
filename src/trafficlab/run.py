@@ -259,7 +259,7 @@ def _validate_comparison_result(
     if result.input_identities is None:
         raise _invalid_stage_result("compare", "input lineage is absent")
     try:
-        require_compatible(expected_input_identities, result.input_identities)
+        require_compatible(expected_input_identities, result.input_identities.as_content_identities())
     except TrafficlabError as error:
         raise _invalid_stage_result("compare", f"input lineage is incompatible: {error}") from error
 
@@ -486,7 +486,10 @@ def _validate_final_artifacts(
         raise _final_artifact_error("compare", "similarity.json is not canonical")
     if persisted_comparison != comparison:
         raise _final_artifact_error("compare", "similarity.json does not match the comparison result")
-    if persisted_comparison.input_identities != input_identities:
+    if (
+        persisted_comparison.input_identities is None
+        or persisted_comparison.input_identities.as_content_identities() != input_identities
+    ):
         raise _final_artifact_error("compare", "similarity.json lineage does not match the strict final artifacts")
     for path, (owner, identity) in identities.items():
         try:

@@ -36,7 +36,13 @@ type NonEmptyStrictString = Annotated[StrictStr, Field(min_length=1)]
 class FailureOutcomeRecord(BaseModel):
     """One immutable, serializable expected-failure record."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
 
     kind: FailureKind
     stage: FailureStage
@@ -63,17 +69,18 @@ class FailureOutcomeRecord(BaseModel):
 
     def as_dict(self) -> dict[str, str | int]:
         """Return the canonical JSON-safe representation, omitting an absent status."""
+        validated = type(self).model_validate(self.model_dump(mode="python"))
         document: dict[str, str | int] = {
-            "affected_evidence": self.affected_evidence,
-            "authority": self.authority,
-            "corrective_action": self.corrective_action,
-            "detail": self.detail,
-            "evidence_state": self.evidence_state,
-            "kind": self.kind,
-            "stage": self.stage,
+            "affected_evidence": validated.affected_evidence,
+            "authority": validated.authority,
+            "corrective_action": validated.corrective_action,
+            "detail": validated.detail,
+            "evidence_state": validated.evidence_state,
+            "kind": validated.kind,
+            "stage": validated.stage,
         }
-        if self.status is not None:
-            document["status"] = self.status
+        if validated.status is not None:
+            document["status"] = validated.status
         return document
 
     @classmethod

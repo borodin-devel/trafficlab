@@ -2699,8 +2699,8 @@ def test_study_held_out_evaluator_uses_the_independent_window_with_the_fixed_tra
     assert result.seed == 97
     assert result.reference_identity.sha256 != result.training_model.reference_identity.sha256
     assert comparison.input_identities is not None
-    assert result.generated_identity == comparison.input_identities["generated_pcapng"]
-    assert tuple(comparison.methods) == study.PUBLISHED_METHOD_ORDER
+    assert result.generated_identity == comparison.input_identities.as_content_identities()["generated_pcapng"]
+    assert comparison.methods.keys() == study.PUBLISHED_METHOD_ORDER
 
     with pytest.raises(TrafficlabError, match="independent held-out reference"):
         study.evaluate_study_held_out(

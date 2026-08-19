@@ -87,6 +87,14 @@ def test_failure_outcome_strict_serializers_cover_optional_status_and_object_val
         )
 
 
+def test_failure_outcome_rendering_revalidates_a_mutated_nested_instance() -> None:
+    """Failure rendering must reject an invalid model_copy result before publication or logging."""
+    corrupted = _outcome().model_copy(update={"status": True})
+
+    with pytest.raises(ValueError, match="status"):
+        corrupted.as_dict()
+
+
 def test_trafficlab_error_retains_primary_and_secondary_outcomes_in_order() -> None:
     primary = _outcome()
     secondary = FailureOutcome(

@@ -388,7 +388,7 @@ def test_full_pipeline_resume_after_atomic_checkpoint_is_scientifically_byte_ide
         == uninterrupted.pair.realized.run.final_seed
     )
     assert uninterrupted_result.comparison.aggregate_score == resumed_result.comparison.aggregate_score
-    assert tuple(uninterrupted_result.comparison.methods) == tuple(resumed_result.comparison.methods) == METHOD_ORDER
+    assert uninterrupted_result.comparison.methods.keys() == resumed_result.comparison.methods.keys() == METHOD_ORDER
     for method in METHOD_ORDER:
         assert uninterrupted_result.comparison.methods[method] == resumed_result.comparison.methods[method]
         assert "observation_window_seconds" in uninterrupted_result.comparison.methods[method].diagnostics

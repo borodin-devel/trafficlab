@@ -21,6 +21,7 @@ from trafficlab.models.registry import (
     load_best_model,
     make_best_model,
     render_best_model,
+    runtime_fitted_model,
 )
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "load_best_model",
     "make_best_model",
     "render_best_model",
+    "runtime_fitted_model",
     "validate_fit_inputs",
     "weighted_index",
 ]

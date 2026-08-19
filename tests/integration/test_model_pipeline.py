@@ -21,6 +21,7 @@ from trafficlab.models.registry import (
     load_best_model,
     make_best_model,
     render_best_model,
+    runtime_fitted_model,
 )
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes, parse_pcapng_trace
 from trafficlab.trace import TrafficTrace, normalize_reference, parse_capture_metadata
@@ -89,7 +90,9 @@ def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
             bounds=bounds,
         )
         loaded = load_best_model(render_best_model(artifact), source=Path("best_model.json"))
-        generated = family.generate(loaded.fitted, 54321, loaded.observation_window_seconds, _LIMITS).require_complete()
+        generated = family.generate(
+            runtime_fitted_model(loaded), 54321, loaded.observation_window_seconds, _LIMITS
+        ).require_complete()
         pcapng_content = encode_pcapng(generated, metadata)
         parsed_generated = parse_pcapng_bytes(pcapng_content, metadata, source=Path("generated.pcapng"))
 
@@ -102,7 +105,7 @@ def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
 
         reloaded = load_best_model(render_best_model(loaded), source=Path("best_model.json"))
         reproduced = family.generate(
-            reloaded.fitted,
+            runtime_fitted_model(reloaded),
             54321,
             reloaded.observation_window_seconds,
             _LIMITS,

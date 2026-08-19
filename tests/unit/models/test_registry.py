@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import pytest
 
+import trafficlab.models.registry as registry_module
 from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import (
     FloatBounds,
@@ -470,20 +471,66 @@ def test_best_model_constructor_and_renderer_reject_noncanonical_values(valid_be
         rebuild_best_model(valid_best_model, version=True)
     with pytest.raises(TrafficlabError, match="gene bounds"):
         rebuild_best_model(valid_best_model, gene_bounds={})
-    with pytest.raises(ValueError, match="reference_identity"):
-        rebuild_best_model(valid_best_model, reference_identity=REFERENCE_IDENTITY.as_dict())
+    with pytest.raises((TypeError, ValueError), match="identity"):
+        rebuild_best_model(valid_best_model, reference_identity={"size": True, "sha256": "a" * 64})
     with pytest.raises(ValueError, match="final_seed"):
         rebuild_best_model(valid_best_model, final_seed=True)
-    with pytest.raises(ValueError, match="final_limits"):
-        rebuild_best_model(valid_best_model, final_limits=FINAL_LIMITS.model_dump())
+    with pytest.raises(TrafficlabError, match="final limits"):
+        rebuild_best_model(
+            valid_best_model,
+            final_limits={**FINAL_LIMITS.model_dump(), "max_packets": 0},
+        )
     with pytest.raises(TypeError, match="BestModel"):
         render_best_model(object())  # type: ignore[arg-type]
 
 
-def test_best_model_constructor_and_renderer_reject_mutable_list_genes(valid_best_model: BestModel) -> None:
-    """Accepting a JSON-shaped list in memory would make the supposedly frozen artifact mutable."""
-    with pytest.raises(ValueError, match="genes"):
-        render_best_model(rebuild_best_model(valid_best_model, genes=[1.0]))
+def test_best_model_constructor_freezes_canonical_json_list_genes(valid_best_model: BestModel) -> None:
+    """Canonical JSON arrays must become immutable tuples when validated directly."""
+    rebuilt = rebuild_best_model(valid_best_model, genes=[1.0])
+
+    assert rebuilt.genes == (1.0,)
+    assert type(rebuilt.genes) is tuple
+    assert load_best_model(render_best_model(rebuilt), source=Path("best_model.json")) == rebuilt
+
+
+def test_best_model_reconstruction_and_render_revalidate_nested_model_instances(
+    valid_best_model: BestModel,
+) -> None:
+    """A model_copy-mutated nested limit must not survive reconstruction or canonical rendering."""
+    invalid_limits = valid_best_model.final_limits.model_copy(update={"max_packets": 0})
+
+    with pytest.raises(TrafficlabError, match="final_limits|final limits|max_packets"):
+        rebuild_best_model(valid_best_model, final_limits=invalid_limits)
+
+    corrupted = valid_best_model.model_copy(update={"final_limits": invalid_limits})
+    with pytest.raises(TrafficlabError, match="final limits|max_packets"):
+        render_best_model(corrupted)
+
+
+def test_best_model_renderer_translates_encoding_failure_and_rejects_roundtrip_change(
+    valid_best_model: BestModel,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Canonical rendering must translate encoder errors and reject a changed loader result."""
+    real_dumps = registry_module.json.dumps
+
+    def fail_dumps(*_args: object, **_kwargs: object) -> str:
+        raise TypeError("injected JSON encoder failure")
+
+    monkeypatch.setattr(registry_module.json, "dumps", fail_dumps)
+    with pytest.raises(TrafficlabError, match="JSON rendering.*encoder failure"):
+        render_best_model(valid_best_model)
+
+    monkeypatch.setattr(registry_module.json, "dumps", real_dumps)
+    changed = rebuild_best_model(valid_best_model, final_seed=valid_best_model.final_seed + 1)
+
+    def load_changed(_content: bytes, *, source: Path) -> BestModel:
+        del source
+        return changed
+
+    monkeypatch.setattr(registry_module, "load_best_model", load_changed)
+    with pytest.raises(TrafficlabError, match="round trip changed"):
+        render_best_model(valid_best_model)
 
 
 def test_make_best_model_rejects_a_nonregistry_family_instance() -> None:

@@ -41,6 +41,7 @@ from trafficlab.models import (
     make_best_model,
     mmpp,
     render_best_model,
+    runtime_fitted_model,
 )
 from trafficlab.models.common import GenerationResult, MarkCount, MarkDistribution
 from trafficlab.models.markov_renewal import (
@@ -600,8 +601,12 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
     assert loaded.scientific_artifact_schema == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 2
     assert render_best_model(loaded) == rendered
 
-    first = family.generate(loaded.fitted, 54321, loaded.observation_window_seconds, _LIMITS, clock=lambda: 0.0)
-    second = family.generate(loaded.fitted, 54321, loaded.observation_window_seconds, _LIMITS, clock=lambda: 0.0)
+    first = family.generate(
+        runtime_fitted_model(loaded), 54321, loaded.observation_window_seconds, _LIMITS, clock=lambda: 0.0
+    )
+    second = family.generate(
+        runtime_fitted_model(loaded), 54321, loaded.observation_window_seconds, _LIMITS, clock=lambda: 0.0
+    )
     first_events = _assert_complete_trace(first, window=loaded.observation_window_seconds)
     second_events = _assert_complete_trace(second, window=loaded.observation_window_seconds)
     first_pcapng = encode_pcapng(first_events, metadata)

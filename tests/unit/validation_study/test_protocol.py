@@ -551,7 +551,8 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
         changed = TraceEvent(first.timestamp, first.direction, first.frame_length + 1)
         result = replace(result, generation=replace(result.generation, events=(changed, *remaining)))
     elif mutation == "similarity-lineage-differ":
-        identities = dict(cast(dict[str, ContentIdentity], result.comparison.input_identities))
+        assert result.comparison.input_identities is not None
+        identities = result.comparison.input_identities.as_content_identities()
         identities["capture_json"] = ContentIdentity(size=identities["capture_json"].size, sha256="0" * 64)
         result = replace(result, comparison=result.comparison.with_input_identities(identities))
     elif mutation == "cleanup-not-proven":

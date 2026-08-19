@@ -4,7 +4,6 @@ import math
 import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, cast
 
 import pytest
@@ -12,6 +11,7 @@ import pytest
 import trafficlab.artifacts as artifacts
 import trafficlab.comparison as comparison
 from trafficlab.comparison import (
+    ComparisonMethods,
     ComparisonResult,
     MethodComparison,
     compare_traces,
@@ -819,7 +819,7 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
     )
     assert result.observation_window_seconds == 3.0
     assert result.input_sha256 is None
-    assert tuple(result.methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
     assert {name: method.score for name, method in result.methods.items()} == {
         name: component.score for name, component in components.items()
     }
@@ -881,7 +881,7 @@ def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
     result = compare_traces(_trace(), _trace(), 3.0, _settings(data))
 
     assert calls == ["frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate"]
-    assert tuple(result.methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
     assert {name: method.diagnostics for name, method in result.methods.items()} == {
         name: method.diagnostics for name, method in baseline.methods.items()
     }
@@ -1005,11 +1005,13 @@ def test_compare_traces_clamps_only_accepted_weight_sum_roundoff(
 def test_comparison_result_rejects_an_unbounded_or_nonfinite_aggregate(score: float) -> None:
     """An invalid aggregate must never cross the typed artifact boundary."""
     with pytest.raises(ValueError, match="aggregate_score"):
-        ComparisonResult(
-            aggregate_score=score,
-            observation_window_seconds=3.0,
-            methods={},
-            input_identities=None,
+        ComparisonResult.model_validate(
+            {
+                "aggregate_score": score,
+                "observation_window_seconds": 3.0,
+                "methods": {},
+                "input_identities": None,
+            }
         )
 
 
@@ -1019,7 +1021,7 @@ def test_comparison_result_is_deeply_immutable(valid_config_data: dict[str, obje
 
     with pytest.raises(TypeError):
         result.methods["frame_size_ks"] = result.methods["iat_ks"]  # type: ignore[index]
-    assert isinstance(result.methods, MappingProxyType)
+    assert isinstance(result.methods, ComparisonMethods)
     with pytest.raises(TypeError):
         result.methods["frame_size_ks"].diagnostics["distance"] = 99.0  # type: ignore[index]
 
@@ -1030,12 +1032,14 @@ def test_comparison_result_requires_exact_method_names(valid_config_data: dict[s
     incomplete = dict(result.methods)
     incomplete.pop("iat_ks")
 
-    with pytest.raises(ValueError, match="methods must contain exactly"):
-        ComparisonResult(
-            aggregate_score=result.aggregate_score,
-            observation_window_seconds=3.0,
-            methods=incomplete,
-            input_identities=None,
+    with pytest.raises(ValueError, match="methods.iat_ks"):
+        ComparisonResult.model_validate(
+            {
+                "aggregate_score": result.aggregate_score,
+                "observation_window_seconds": 3.0,
+                "methods": incomplete,
+                "input_identities": None,
+            }
         )
 
 
@@ -1045,12 +1049,14 @@ def test_comparison_result_requires_typed_method_values(valid_config_data: dict[
     invalid_methods: dict[str, object] = dict(result.methods)
     invalid_methods["iat_ks"] = {"score": 1.0, "weight": 0.25, "diagnostics": {}}
 
-    with pytest.raises(ValueError, match="methods.iat_ks.method"):
-        ComparisonResult(
-            aggregate_score=result.aggregate_score,
-            observation_window_seconds=3.0,
-            methods=invalid_methods,  # type: ignore[arg-type]
-            input_identities=None,
+    with pytest.raises(ValueError, match="methods.iat_ks"):
+        ComparisonResult.model_validate(
+            {
+                "aggregate_score": result.aggregate_score,
+                "observation_window_seconds": 3.0,
+                "methods": invalid_methods,
+                "input_identities": None,
+            }
         )
 
 
@@ -1061,24 +1067,19 @@ def test_comparison_result_defensively_rejects_corrupted_method_windows(
     """A corrupted in-memory method object must not bypass the finite positive diagnostic-W invariant."""
     result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
     original = result.methods["autocorrelation"]
-    corrupted = object.__new__(MethodComparison)
-    object.__setattr__(corrupted, "method", original.method)
-    object.__setattr__(corrupted, "score", original.score)
-    object.__setattr__(corrupted, "weight", original.weight)
-    object.__setattr__(
-        corrupted,
-        "diagnostics",
-        MappingProxyType({"observation_window_seconds": diagnostic_window}),
-    )
+    corrupted_diagnostics = original.diagnostics.model_copy(update={"observation_window_seconds": diagnostic_window})
+    corrupted = original.model_copy(update={"diagnostics": corrupted_diagnostics})
     methods = dict(result.methods)
     methods["autocorrelation"] = corrupted
 
-    with pytest.raises(ValueError, match="diagnostics.*discriminator"):
-        ComparisonResult(
-            aggregate_score=result.aggregate_score,
-            observation_window_seconds=3.0,
-            methods=methods,
-            input_identities=None,
+    with pytest.raises(ValueError, match="observation_window_seconds|finite"):
+        ComparisonResult.model_validate(
+            {
+                "aggregate_score": result.aggregate_score,
+                "observation_window_seconds": 3.0,
+                "methods": methods,
+                "input_identities": None,
+            }
         )
 
 
@@ -1106,11 +1107,13 @@ def test_comparison_result_defensively_rejects_invalid_identity_mappings(
     result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
 
     with pytest.raises(ValueError, match="input_identities"):
-        ComparisonResult(
-            aggregate_score=result.aggregate_score,
-            observation_window_seconds=3.0,
-            methods=result.methods,
-            input_identities=identities,  # type: ignore[arg-type]
+        ComparisonResult.model_validate(
+            {
+                "aggregate_score": result.aggregate_score,
+                "observation_window_seconds": 3.0,
+                "methods": result.methods,
+                "input_identities": identities,
+            }
         )
 
 
@@ -1374,7 +1377,7 @@ def test_publication_rejects_renderer_bytes_for_a_different_valid_result_before_
     destination = tmp_path / "similarity.json"
     expected = _valid_result()
     assert expected.input_identities is not None
-    different_inputs = dict(expected.input_identities)
+    different_inputs = expected.input_identities.as_content_identities()
     different_inputs["capture_json"] = ContentIdentity(size=1, sha256="d" * 64)
     rendered_result = expected.with_input_identities(different_inputs)
     rendered_content = render_comparison_result(rendered_result)
@@ -1419,7 +1422,7 @@ def test_publication_preserves_a_valid_existing_result_with_different_lineage(tm
     destination = tmp_path / "similarity.json"
     expected = _valid_result()
     assert expected.input_identities is not None
-    different_inputs = dict(expected.input_identities)
+    different_inputs = expected.input_identities.as_content_identities()
     different_inputs["capture_json"] = ContentIdentity(size=1, sha256="f" * 64)
     different = expected.with_input_identities(different_inputs)
     different_content = render_comparison_result(different)
@@ -1444,7 +1447,7 @@ def test_publication_preserves_a_valid_existing_result_with_a_different_score(
         TraceEvent(3.0, Direction.OUTBOUND, 100),
     )
     different = compare_traces(_trace(), changed_trace, 3.0, _settings(valid_config_data)).with_input_identities(
-        expected.input_identities
+        expected.input_identities.as_content_identities()
     )
     different_content = render_comparison_result(different)
     assert different.aggregate_score != expected.aggregate_score
@@ -1467,7 +1470,7 @@ def test_publication_rejects_a_canonical_entry_replaced_immediately_after_its_va
     expected = _valid_result()
     expected_content = render_comparison_result(expected)
     assert expected.input_identities is not None
-    replacement_inputs = dict(expected.input_identities)
+    replacement_inputs = expected.input_identities.as_content_identities()
     replacement_inputs["capture_json"] = ContentIdentity(size=1, sha256="a" * 64)
     replacement_content = render_comparison_result(expected.with_input_identities(replacement_inputs))
     if not collision:
@@ -1515,7 +1518,7 @@ def test_publication_link_race_reuses_only_an_identical_winner_and_preserves_bot
         winner = expected_content
     else:
         assert expected.input_identities is not None
-        different_inputs = dict(expected.input_identities)
+        different_inputs = expected.input_identities.as_content_identities()
         different_inputs["capture_json"] = ContentIdentity(size=1, sha256="e" * 64)
         winner = render_comparison_result(expected.with_input_identities(different_inputs))
     real_link = os.link

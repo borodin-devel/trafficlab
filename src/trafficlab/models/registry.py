@@ -9,7 +9,18 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Annotated, Any, Literal, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Tag, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Discriminator,
+    Field,
+    StrictInt,
+    Tag,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import (
@@ -22,10 +33,10 @@ from trafficlab.config import (
     PoissonConfig,
 )
 from trafficlab.errors import TrafficlabError
-from trafficlab.models.common import FamilyBounds, Gene, Genes, ModelFamily, ReferenceTrace
-from trafficlab.models.markov_renewal import MarkovRenewalFamily, MarkovRenewalModel
-from trafficlab.models.mmpp import MmppFamily, MmppModel
-from trafficlab.models.poisson import PoissonFamily, PoissonModel
+from trafficlab.models.common import FamilyBounds, FittedModel, Gene, Genes, ModelFamily, ReferenceTrace
+from trafficlab.models.markov_renewal import MarkovRenewalFamily
+from trafficlab.models.mmpp import MmppFamily
+from trafficlab.models.poisson import PoissonFamily
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION, require_current_scientific_schema
 
 _OUTER_KEYS = {
@@ -80,12 +91,124 @@ def _family_name(name: str) -> FamilyName:
     return cast(FamilyName, name)
 
 
+def _exact_float_input(value: object) -> object:
+    if type(value) is not float:
+        raise ValueError("value must be an exact float")
+    return value
+
+
+def _tuple_input(value: object) -> object:
+    if type(value) is list:
+        return tuple(cast(list[object], value))
+    return value
+
+
+type ExactFloat = Annotated[float, BeforeValidator(_exact_float_input)]
+type PositiveFloat = Annotated[ExactFloat, Field(gt=0.0)]
+type NonnegativeFloat = Annotated[ExactFloat, Field(ge=0.0)]
+type PositiveInt = Annotated[StrictInt, Field(gt=0)]
+type NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
+type FloatVector = Annotated[tuple[ExactFloat, ...], BeforeValidator(_tuple_input)]
+type FloatMatrix = Annotated[tuple[FloatVector, ...], BeforeValidator(_tuple_input)]
+type FloatCube = Annotated[tuple[FloatMatrix, ...], BeforeValidator(_tuple_input)]
+type IntVector = Annotated[tuple[StrictInt, ...], BeforeValidator(_tuple_input)]
+type DirectionName = Literal["outbound", "inbound"]
+type TimingTierName = Literal["transition", "source", "global"]
+type TimingTierVector = Annotated[tuple[TimingTierName, ...], BeforeValidator(_tuple_input)]
+type TimingTierMatrix = Annotated[tuple[TimingTierVector, ...], BeforeValidator(_tuple_input)]
+
+
+class _StrictWireModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
+
+
+class MarkPayload(_StrictWireModel):
+    direction: DirectionName
+    frame_length: Annotated[StrictInt, Field(ge=14, le=2**32 - 1)]
+    count: PositiveInt
+
+
+type MarkPayloads = Annotated[tuple[MarkPayload, ...], BeforeValidator(_tuple_input)]
+
+
+class PoissonPayload(_StrictWireModel):
+    base_rate: PositiveFloat
+    rate: PositiveFloat
+    marks: MarkPayloads
+
+    @model_validator(mode="after")
+    def marks_are_nonempty_and_unique(self) -> Self:
+        if not self.marks:
+            raise ValueError("marks must not be empty")
+        if len({(mark.direction, mark.frame_length) for mark in self.marks}) != len(self.marks):
+            raise ValueError("marks must be unique")
+        return self
+
+
+class MmppPayload(_StrictWireModel):
+    q01: PositiveFloat
+    q10: PositiveFloat
+    lambda0: PositiveFloat
+    lambda1: PositiveFloat
+    marks: MarkPayloads
+
+    @model_validator(mode="after")
+    def rates_and_marks_are_ordered(self) -> Self:
+        if self.lambda0 >= self.lambda1:
+            raise ValueError("lambda0 must be strictly less than lambda1")
+        if not self.marks:
+            raise ValueError("marks must not be empty")
+        if len({(mark.direction, mark.frame_length) for mark in self.marks}) != len(self.marks):
+            raise ValueError("marks must be unique")
+        return self
+
+
+class MarkovStatePayload(_StrictWireModel):
+    direction: DirectionName
+    frame_lengths: IntVector
+    size_bin: Annotated[StrictInt, Field(ge=0, le=2)]
+    source_iats: FloatVector
+
+
+type MarkovStatePayloads = Annotated[tuple[MarkovStatePayload, ...], BeforeValidator(_tuple_input)]
+
+
+class TimingUsageCountsPayload(_StrictWireModel):
+    global_: NonnegativeInt = Field(alias="global")
+    source: NonnegativeInt
+    transition: NonnegativeInt
+
+
+class MarkovTimingPayload(_StrictWireModel):
+    reference_usage_counts: TimingUsageCountsPayload
+    transition_tiers: TimingTierMatrix
+    unobserved_rows: IntVector
+
+
+class MarkovRenewalPayload(_StrictWireModel):
+    alpha: NonnegativeFloat
+    conditional_iats: FloatCube
+    global_iats: FloatVector
+    minimum_support: PositiveInt
+    states: MarkovStatePayloads
+    thresholds: Annotated[tuple[ExactFloat, ExactFloat], BeforeValidator(_tuple_input)]
+    time_scale: PositiveFloat
+    timing_diagnostics: MarkovTimingPayload
+    transition_rows: FloatMatrix
+
+
 def _family_payload_discriminator(value: object) -> str | None:
-    if isinstance(value, PoissonModel):
+    if isinstance(value, PoissonPayload):
         return "poisson_empirical"
-    if isinstance(value, MarkovRenewalModel):
+    if isinstance(value, MarkovRenewalPayload):
         return "markov_renewal"
-    if isinstance(value, MmppModel):
+    if isinstance(value, MmppPayload):
         return "mmpp"
     if isinstance(value, Mapping):
         if "base_rate" in value:
@@ -98,17 +221,34 @@ def _family_payload_discriminator(value: object) -> str | None:
 
 
 type FamilyPayload = Annotated[
-    Annotated[PoissonModel, Tag("poisson_empirical")]
-    | Annotated[MarkovRenewalModel, Tag("markov_renewal")]
-    | Annotated[MmppModel, Tag("mmpp")],
+    Annotated[PoissonPayload, Tag("poisson_empirical")]
+    | Annotated[MarkovRenewalPayload, Tag("markov_renewal")]
+    | Annotated[MmppPayload, Tag("mmpp")],
     Discriminator(_family_payload_discriminator),
 ]
+
+
+def _validate_family_payload(value: object) -> FamilyPayload:
+    discriminator = _family_payload_discriminator(value)
+    if discriminator == "poisson_empirical":
+        return PoissonPayload.model_validate(value)
+    if discriminator == "markov_renewal":
+        return MarkovRenewalPayload.model_validate(value)
+    if discriminator == "mmpp":
+        return MmppPayload.model_validate(value)
+    raise ValueError("fitted payload does not identify one registered family")
 
 
 class BestModel(BaseModel):
     """One fully self-contained, lineage-bound fitted traffic model."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
 
     version: Literal[1]
     scientific_artifact_schema: int
@@ -120,7 +260,7 @@ class BestModel(BaseModel):
     final_seed: int
     final_limits: GenerationLimits
     observation_window_seconds: float
-    gene_bounds: dict[str, FloatBounds | IntegerBounds]
+    gene_bounds: dict[str, IntegerBounds | FloatBounds]
     estimator_choices: dict[str, str | int | float]
     seed_policy: dict[str, str]
 
@@ -131,11 +271,39 @@ class BestModel(BaseModel):
             raise ValueError("version must be exact integer 1")
         return value
 
+    @field_validator("genes", mode="before")
+    @classmethod
+    def genes_use_immutable_runtime_shape(cls, value: object) -> object:
+        return _tuple_input(value)
+
+    @field_validator("reference_identity", "capture_identity", mode="before")
+    @classmethod
+    def identities_are_reconstructed_from_primitives(cls, value: object) -> object:
+        raw = value.as_dict() if type(value) is ContentIdentity else value
+        return ContentIdentity.from_dict(raw)
+
     @field_validator("final_limits", mode="before")
     @classmethod
-    def final_limits_are_already_typed(cls, value: object) -> object:
-        if type(value) is not GenerationLimits:
-            raise ValueError("final_limits must be a GenerationLimits")
+    def final_limits_are_reconstructed_from_primitives(cls, value: object) -> object:
+        raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
+        return _parse_final_limits(raw)
+
+    @field_validator("gene_bounds", mode="before")
+    @classmethod
+    def gene_bounds_are_reconstructed_from_primitives(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            return value
+        bounds = cast(Mapping[str, object], value)
+        return {
+            name: bound.model_dump(mode="python") if isinstance(bound, BaseModel) else bound
+            for name, bound in bounds.items()
+        }
+
+    @field_validator("fitted", mode="before")
+    @classmethod
+    def fitted_payload_is_reconstructed_from_primitives(cls, value: object) -> object:
+        if isinstance(value, BaseModel):
+            return value.model_dump(mode="python", by_alias=True)
         return value
 
     @model_validator(mode="after")
@@ -156,8 +324,17 @@ class BestModel(BaseModel):
 
 def rebuild_best_model(model: BestModel, **changes: object) -> BestModel:
     """Reconstruct and fully revalidate a best model with explicit field changes."""
-    values = {name: getattr(model, name) for name in type(model).model_fields}
-    values.update(changes)
+    values = model.model_dump(mode="python", by_alias=True)
+    values.update(
+        {
+            name: value.model_dump(mode="python", by_alias=True)
+            if isinstance(value, BaseModel)
+            else value.as_dict()
+            if type(value) is ContentIdentity
+            else value
+            for name, value in changes.items()
+        }
+    )
     return type(model).model_validate(values)
 
 
@@ -390,6 +567,23 @@ def _exact_mapping(value: object, expected: Mapping[str, str | int | float], *, 
     return cast(dict[str, Any], dict(actual))
 
 
+def _payload_from_runtime(family: ModelFamily, fitted: FittedModel) -> FamilyPayload:
+    """Validate one registered runtime model as its canonical fitted wire payload."""
+    return _validate_family_payload(family.dump_fitted(fitted))
+
+
+def runtime_fitted_model(model: BestModel) -> FittedModel:
+    """Reconstruct the registered runtime model from one validated fitted wire payload."""
+    family = get_family(model.family)
+    bounds = _config_from_bound_mapping(family, model.gene_bounds)
+    genes = _validate_genes(family, model.genes, _bounds_from_config(family, bounds))
+    return family.load_fitted(
+        model.fitted.model_dump(mode="json", by_alias=True),
+        genes=genes,
+        bounds=bounds,
+    )
+
+
 def _validate_best_model(model: BestModel) -> None:
     if type(model.version) is not int or model.version != 1:
         raise _invalid("invalid best-model version", corrective_action="use integer best-model version 1")
@@ -407,18 +601,17 @@ def _validate_best_model(model: BestModel) -> None:
     _exact_mapping(model.estimator_choices, dict(family.estimator_choices), name="estimator choices")
     _exact_mapping(model.seed_policy, _SEED_POLICY, name="seed policy")
     try:
-        payload = family.dump_fitted(model.fitted)
-        reloaded = family.load_fitted(payload, genes=genes, bounds=_config_from_bound_mapping(family, bounds))
+        reloaded = family.load_fitted(
+            model.fitted.model_dump(mode="json", by_alias=True),
+            genes=genes,
+            bounds=_config_from_bound_mapping(family, bounds),
+        )
     except (TypeError, ValueError, TrafficlabError) as error:
         raise _invalid(
             f"invalid fitted {family.name} model: {error}",
             corrective_action="fit or load parameters consistent with the outer genes and bounds",
         ) from error
-    if reloaded != model.fitted:
-        raise _invalid(
-            f"invalid fitted {family.name} model",
-            corrective_action="fit or load parameters consistent with the outer genes and bounds",
-        )
+    _payload_from_runtime(family, reloaded)
 
 
 def _config_from_bound_mapping(family: ModelFamily, bounds: dict[str, FloatBounds | IntegerBounds]) -> FamilyBounds:
@@ -490,7 +683,7 @@ def make_best_model(
         scientific_artifact_schema=SCIENTIFIC_ARTIFACT_SCHEMA_VERSION,
         family=family.name,
         genes=repaired,
-        fitted=cast(FamilyPayload, fitted),
+        fitted=_payload_from_runtime(family, fitted),
         reference_identity=reference_identity,
         capture_identity=capture_identity,
         final_seed=final_seed,
@@ -565,8 +758,9 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
     )
     seed_policy = _exact_mapping(document["seed_policy"], _SEED_POLICY, name="seed policy")
     try:
-        fitted = family.load_fitted(document["fitted"], genes=genes, bounds=bounds)
-    except (TypeError, ValueError, TrafficlabError) as error:
+        fitted = _validate_family_payload(document["fitted"])
+        family.load_fitted(fitted.model_dump(mode="json", by_alias=True), genes=genes, bounds=bounds)
+    except (TypeError, ValueError, ValidationError, TrafficlabError) as error:
         raise _invalid(
             f"invalid fitted {family.name} model: {error}",
             corrective_action="restore fitted parameters consistent with the outer genes and bounds",
@@ -576,7 +770,7 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
         scientific_artifact_schema=cast(int, document["scientific_artifact_schema"]),
         family=_family_name(family_value),
         genes=genes,
-        fitted=cast(FamilyPayload, fitted),
+        fitted=fitted,
         reference_identity=reference_identity,
         capture_identity=capture_identity,
         final_seed=final_seed,
@@ -593,14 +787,13 @@ def render_best_model(model: BestModel) -> bytes:
     if type(model) is not BestModel:
         raise TypeError("model must be a BestModel")
     _validate_best_model(model)
-    family = get_family(model.family)
     dumped = model.model_dump(mode="json")
     document: dict[str, object] = {
         "version": dumped["version"],
         "scientific_artifact_schema": dumped["scientific_artifact_schema"],
         "family": dumped["family"],
         "genes": dumped["genes"],
-        "fitted": family.dump_fitted(model.fitted),
+        "fitted": model.fitted.model_dump(mode="json", by_alias=True),
         "reference_identity": dumped["reference_identity"],
         "capture_identity": dumped["capture_identity"],
         "final_seed": dumped["final_seed"],
@@ -611,9 +804,16 @@ def render_best_model(model: BestModel) -> bytes:
         "seed_policy": dumped["seed_policy"],
     }
     try:
-        return (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+        content = (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
     except (TypeError, ValueError) as error:
         raise _invalid(
             f"invalid best model for JSON rendering: {error}",
             corrective_action="fit or load a finite canonical best model",
         ) from error
+    loaded = load_best_model(content, source=Path("best_model.json"))
+    if loaded != model:
+        raise _invalid(
+            "invalid best model for JSON rendering: canonical round trip changed the model",
+            corrective_action="fit or load a finite canonical best model",
+        )
+    return content

@@ -77,6 +77,11 @@ type _Scenario = Literal[
     "target_23_capture_42_total_timeout",
 ]
 
+
+def _runtime_model_double(_best: object) -> object:
+    return object()
+
+
 _SCENARIOS: tuple[_Scenario, ...] = (
     "config_invalid",
     "docker_unavailable",
@@ -1617,6 +1622,7 @@ def test_generation_maps_missing_capture_after_a_validated_model(
     monkeypatch.setattr(generation, "_read_required_bytes", read)
     monkeypatch.setattr(generation, "load_best_model", load_best)
     monkeypatch.setattr(generation, "get_family", get_family)
+    monkeypatch.setattr(generation, "runtime_fitted_model", _runtime_model_double)
 
     with pytest.raises(TrafficlabError) as caught:
         generation.generate_experiment(prepared.source)
@@ -1711,6 +1717,7 @@ def test_generation_preserves_published_bytes_when_post_publication_parse_fails(
     monkeypatch.setattr(generation, "_read_required_bytes", read)
     monkeypatch.setattr(generation, "load_best_model", load_best)
     monkeypatch.setattr(generation, "get_family", get_family)
+    monkeypatch.setattr(generation, "runtime_fitted_model", _runtime_model_double)
     monkeypatch.setattr(generation, "parse_capture_metadata", parse_metadata)
     monkeypatch.setattr(generation, "quantize_generated_events", quantize)
     monkeypatch.setattr(generation, "encode_pcapng", encode)

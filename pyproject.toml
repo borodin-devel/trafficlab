@@ -25,6 +25,7 @@ build-backend = "hatchling.build"
 # fitting installations do not acquire test runners or static analyzers.
 dev = [
     "hypothesis>=6,<7",
+    "jsonschema>=4,<5",
     "pymoo==0.6.2",
     "pyright",
     "pytest",

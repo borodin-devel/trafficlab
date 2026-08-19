@@ -80,7 +80,7 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     assert published == result
     assert result.aggregate_score == _EXPECTED_AGGREGATE_SCORE
     assert result.observation_window_seconds == 10.0
-    assert tuple(result.methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
     assert {name: method.score for name, method in result.methods.items()} == pytest.approx(_EXPECTED_METHOD_SCORES)
     assert all(method.diagnostics["observation_window_seconds"] == 10.0 for method in result.methods.values())
     assert result.input_sha256 == {

@@ -16,7 +16,7 @@ from trafficlab.errors import (
     attach_failure_outcome,
     failure_outcome_from_error,
 )
-from trafficlab.models.registry import BestModel, get_family, load_best_model
+from trafficlab.models.registry import BestModel, get_family, load_best_model, runtime_fitted_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
@@ -44,7 +44,7 @@ def reproduce_generated_pcapng(
     """Reproduce the exact final trace and PCAPNG bytes bound into a best model."""
     family = get_family(best.family)
     events = family.generate(
-        best.fitted,
+        runtime_fitted_model(best),
         best.final_seed,
         best.observation_window_seconds,
         best.final_limits,

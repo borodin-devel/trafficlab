@@ -26,6 +26,7 @@ from trafficlab.models.registry import (
     load_best_model,
     make_best_model,
     render_best_model,
+    runtime_fitted_model,
 )
 from trafficlab.trace import Direction, TraceEvent
 
@@ -96,8 +97,8 @@ def test_every_family_round_trips_and_reproduces(case: FamilyCase) -> None:
         bounds=case.bounds,
     )
     loaded = load_best_model(render_best_model(artifact), source=Path("best_model.json"))
-    first = case.family.generate(loaded.fitted, 2468, WINDOW, COMPLETE_LIMITS).require_complete()
-    second = case.family.generate(loaded.fitted, 2468, WINDOW, COMPLETE_LIMITS).require_complete()
+    first = case.family.generate(runtime_fitted_model(loaded), 2468, WINDOW, COMPLETE_LIMITS).require_complete()
+    second = case.family.generate(runtime_fitted_model(loaded), 2468, WINDOW, COMPLETE_LIMITS).require_complete()
     assert first == second
     assert first[0].timestamp == 0.0
     assert all(left.timestamp <= right.timestamp for left, right in zip(first, first[1:], strict=False))

@@ -17,9 +17,9 @@ from pydantic import (
     Discriminator,
     Field,
     StrictInt,
+    StrictStr,
     Tag,
     ValidationError,
-    field_serializer,
     field_validator,
     model_validator,
 )
@@ -94,7 +94,13 @@ def _snap_near_integer(quotient: float) -> float:
 
 
 class _StrictArtifactModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
 
 
 class _DiagnosticModel(_StrictArtifactModel):
@@ -387,7 +393,6 @@ def _bounded_weighted_score(value: float) -> float:
 class MethodComparison(_StrictArtifactModel):
     """One configured method's immutable score, weight, and retained diagnostics."""
 
-    method: MethodName = Field(exclude=True)
     score: UnitFloat
     weight: UnitFloat
     diagnostics: MethodDiagnostic
@@ -400,16 +405,16 @@ class MethodComparison(_StrictArtifactModel):
         return SimilarityResult(0.0, cast(Mapping[str, object], value)).as_dict()["diagnostics"]
 
     @model_validator(mode="after")
-    def diagnostics_match_method_and_score(self) -> Self:
+    def score_matches_diagnostics(self) -> Self:
         diagnostic_tag = _diagnostic_discriminator(self.diagnostics)
-        if diagnostic_tag != self.method:
-            raise ValueError(f"{self.method} diagnostics use the wrong method discriminator")
+        if diagnostic_tag is None:
+            raise ValueError("diagnostics must identify one supported method")
         discrepancy = (
             self.diagnostics.distance
             if isinstance(self.diagnostics, (FrameSizeDiagnostic, IatDiagnostic))
             else self.diagnostics.discrepancy
         )
-        _require_close(self.score, 1.0 - discrepancy, name=f"{self.method} score")
+        _require_close(self.score, 1.0 - discrepancy, name=f"{diagnostic_tag} score")
         return self
 
     def as_dict(self) -> dict[str, JsonValue]:
@@ -430,9 +435,12 @@ class MethodComparison(_StrictArtifactModel):
             fields = dict(cast(dict[str, object], value))
             if "method" in fields:
                 fields["_persisted_method"] = fields.pop("method")
-            prepared = {"method": method_name, **fields}
+            prepared = fields
         try:
-            return cls.model_validate(prepared)
+            result = cls.model_validate(prepared)
+            if _diagnostic_discriminator(result.diagnostics) != method_name:
+                raise ValueError(f"{method_name} diagnostics use the wrong method discriminator")
+            return result
         except ValidationError as error:
             first = error.errors()[0]
             field = ".".join(str(part) for part in first["loc"])
@@ -445,6 +453,76 @@ class MethodComparison(_StrictArtifactModel):
             raise ValueError(f"invalid method result {field}: {first['msg']}") from error
 
 
+class ComparisonMethods(_StrictArtifactModel):
+    autocorrelation: MethodComparison
+    frame_size_ks: MethodComparison
+    iat_ks: MethodComparison
+    multiscale_rate: MethodComparison
+
+    @field_validator("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate", mode="before")
+    @classmethod
+    def methods_are_reconstructed_from_primitives(cls, value: object) -> object:
+        if isinstance(value, BaseModel):
+            return value.model_dump(mode="python")
+        return value
+
+    @model_validator(mode="after")
+    def mapping_keys_match_diagnostics(self) -> Self:
+        for name, method in self.items():
+            if _diagnostic_discriminator(method.diagnostics) != name:
+                raise ValueError(f"{name} diagnostics use the wrong method discriminator")
+        return self
+
+    def __getitem__(self, name: str) -> MethodComparison:
+        if name not in _METHOD_NAMES:
+            raise KeyError(name)
+        return cast(MethodComparison, getattr(self, name))
+
+    def keys(self) -> tuple[str, ...]:
+        return _METHOD_NAMES
+
+    def items(self) -> tuple[tuple[str, MethodComparison], ...]:
+        return tuple((name, self[name]) for name in _METHOD_NAMES)
+
+    def values(self) -> tuple[MethodComparison, ...]:
+        return tuple(self[name] for name in _METHOD_NAMES)
+
+
+class ContentIdentityPayload(_StrictArtifactModel):
+    size: NonnegativeInt
+    sha256: Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class ComparisonInputIdentities(_StrictArtifactModel):
+    capture_json: ContentIdentityPayload
+    generated_pcapng: ContentIdentityPayload
+    reference_pcapng: ContentIdentityPayload
+    similarity_settings: ContentIdentityPayload
+
+    @field_validator("capture_json", "generated_pcapng", "reference_pcapng", "similarity_settings", mode="before")
+    @classmethod
+    def identities_are_reconstructed_from_primitives(cls, value: object) -> object:
+        if type(value) is ContentIdentity:
+            return value.as_dict()
+        if isinstance(value, BaseModel):
+            return value.model_dump(mode="python")
+        return value
+
+    def __getitem__(self, name: str) -> ContentIdentityPayload:
+        if name not in _INPUT_NAMES:
+            raise KeyError(name)
+        return cast(ContentIdentityPayload, getattr(self, name))
+
+    def keys(self) -> tuple[str, ...]:
+        return _INPUT_NAMES
+
+    def items(self) -> tuple[tuple[str, ContentIdentityPayload], ...]:
+        return tuple((name, self[name]) for name in _INPUT_NAMES)
+
+    def as_content_identities(self) -> dict[str, ContentIdentity]:
+        return {name: ContentIdentity(size=identity.size, sha256=identity.sha256) for name, identity in self.items()}
+
+
 class ComparisonResult(_StrictArtifactModel):
     """One deeply immutable comparison result, optionally carrying artifact identities."""
 
@@ -454,51 +532,51 @@ class ComparisonResult(_StrictArtifactModel):
 
     aggregate_score: UnitFloat
     observation_window_seconds: PositiveFloat
-    methods: Mapping[str, MethodComparison]
-    input_identities: Mapping[str, ContentIdentity] | None
+    methods: ComparisonMethods
+    input_identities: ComparisonInputIdentities | None
 
-    @field_serializer("methods")
-    def serialize_methods(self, value: Mapping[str, MethodComparison]) -> dict[str, JsonValue]:
-        return {name: cast(JsonValue, method.as_dict()) for name, method in value.items()}
+    @field_validator("methods", mode="before")
+    @classmethod
+    def methods_are_reconstructed_from_primitives(cls, value: object) -> object:
+        if isinstance(value, ComparisonMethods):
+            return value.model_dump(mode="python")
+        if isinstance(value, Mapping):
+            methods = cast(Mapping[str, object], value)
+            return {
+                name: method.model_dump(mode="python") if isinstance(method, BaseModel) else method
+                for name, method in methods.items()
+            }
+        return value
 
-    @field_serializer("input_identities")
-    def serialize_input_identities(self, value: Mapping[str, ContentIdentity] | None) -> dict[str, JsonValue] | None:
-        if value is None:
-            return None
-        return {name: cast(JsonValue, identity.as_dict()) for name, identity in value.items()}
+    @field_validator("input_identities", mode="before")
+    @classmethod
+    def input_identities_are_reconstructed_from_primitives(cls, value: object) -> object:
+        if isinstance(value, ComparisonInputIdentities):
+            return value.model_dump(mode="python")
+        if isinstance(value, Mapping):
+            identities = cast(Mapping[str, object], value)
+            return {
+                name: identity.as_dict()
+                if type(identity) is ContentIdentity
+                else identity.model_dump(mode="python")
+                if isinstance(identity, BaseModel)
+                else identity
+                for name, identity in identities.items()
+            }
+        return value
 
     @model_validator(mode="after")
     def validate_local_arithmetic(self) -> Self:
-        if set(self.methods) != set(_METHOD_NAMES):
-            raise ValueError(f"methods must contain exactly: {', '.join(_METHOD_NAMES)}")
-        ordered_methods: dict[str, MethodComparison] = {}
-        for name in _METHOD_NAMES:
-            method = self.methods[name]
+        for _name, method in self.methods.items():
             diagnostic_window = method.diagnostics.get("observation_window_seconds")
             if diagnostic_window != self.observation_window_seconds:
                 raise ValueError("every method diagnostic must contain the shared observation window")
-            if method.method != name:
-                raise ValueError("every method must use its mapping-key discriminator")
-            ordered_methods[name] = method
-        weight_sum = math.fsum(method.weight for method in ordered_methods.values())
+        weight_sum = math.fsum(method.weight for method in self.methods.values())
         if not math.isclose(weight_sum, 1.0, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
             raise ValueError("method weights must sum to one")
-        weighted_score = math.fsum(method.weight * method.score for method in ordered_methods.values())
+        weighted_score = math.fsum(method.weight * method.score for method in self.methods.values())
         if not math.isclose(weighted_score, self.aggregate_score, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
             raise ValueError("aggregate_score must equal the exact configured weighted sum")
-
-        frozen_inputs: Mapping[str, ContentIdentity] | None = None
-        if self.input_identities is not None:
-            if set(self.input_identities) != set(_INPUT_NAMES):
-                raise ValueError(f"input_identities must contain exactly: {', '.join(_INPUT_NAMES)}")
-            ordered_inputs: dict[str, ContentIdentity] = {}
-            for name in _INPUT_NAMES:
-                identity = self.input_identities[name]
-                ordered_inputs[name] = identity
-            frozen_inputs = MappingProxyType(ordered_inputs)
-
-        object.__setattr__(self, "methods", MappingProxyType(ordered_methods))
-        object.__setattr__(self, "input_identities", frozen_inputs)
         return self
 
     @property
@@ -508,13 +586,18 @@ class ComparisonResult(_StrictArtifactModel):
             return None
         return MappingProxyType({name: identity.sha256 for name, identity in self.input_identities.items()})
 
-    def with_input_identities(self, identities: Mapping[str, ContentIdentity]) -> Self:
+    def with_input_identities(
+        self,
+        identities: Mapping[str, ContentIdentity | ContentIdentityPayload] | ComparisonInputIdentities,
+    ) -> Self:
         """Return the same scientific result with exact file and settings identities."""
-        return type(self)(
-            aggregate_score=self.aggregate_score,
-            observation_window_seconds=self.observation_window_seconds,
-            methods=self.methods,
-            input_identities=identities,
+        return type(self).model_validate(
+            {
+                "aggregate_score": self.aggregate_score,
+                "observation_window_seconds": self.observation_window_seconds,
+                "methods": self.methods,
+                "input_identities": identities,
+            }
         )
 
     def as_dict(self) -> dict[str, JsonValue]:
@@ -525,37 +608,24 @@ class ComparisonResult(_StrictArtifactModel):
         return {
             "aggregate_score": cast(float, dumped["aggregate_score"]),
             "input_identities": cast(dict[str, JsonValue], dumped["input_identities"]),
-            "methods": cast(dict[str, JsonValue], dumped["methods"]),
+            "methods": {name: method.as_dict() for name, method in self.methods.items()},
             "observation_window_seconds": cast(float, dumped["observation_window_seconds"]),
         }
 
     @classmethod
     def from_dict(cls, value: object) -> Self:
         """Strictly validate the documented similarity artifact object."""
-        prepared: object = value
-        if type(value) is dict:
-            document = dict(cast(dict[str, object], value))
-            methods_value = document.get("methods")
-            if type(methods_value) is dict:
-                methods_document = cast(dict[str, object], methods_value)
-                document["methods"] = {
-                    name: MethodComparison.from_dict(name, method) for name, method in methods_document.items()
-                }
-            identities_value = document.get("input_identities")
-            if type(identities_value) is dict:
-                try:
-                    document["input_identities"] = {
-                        name: ContentIdentity.from_dict(identity, name=f"comparison input {name}")
-                        for name, identity in cast(dict[str, object], identities_value).items()
-                    }
-                except (TypeError, ValueError) as error:
-                    raise ValueError(str(error)) from error
-            prepared = document
         try:
-            return cls.model_validate(prepared)
+            return cls.model_validate(value)
         except ValidationError as error:
             first = error.errors()[0]
             field = ".".join(str(part) for part in first["loc"])
+            if field.endswith("observation_window_seconds"):
+                raise ValueError(
+                    "every method diagnostic observation window must be a finite positive float"
+                ) from error
+            if field.endswith("reference_count") and first["type"] == "int_type":
+                raise ValueError("reference_count must be an integer") from error
             raise ValueError(f"invalid comparison result {field}: {first['msg']}") from error
 
 
@@ -583,7 +653,34 @@ def parse_comparison_result(content: bytes) -> ComparisonResult:
 
 
 def _canonical_comparison_bytes(result: ComparisonResult) -> bytes:
-    return (json.dumps(result.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+    raw_methods = cast(object, result.methods)
+    if isinstance(raw_methods, ComparisonMethods):
+        method_values: tuple[tuple[str, object], ...] = cast(tuple[tuple[str, object], ...], raw_methods.items())
+    elif isinstance(raw_methods, Mapping):
+        method_values = tuple(cast(Mapping[str, object], raw_methods).items())
+    else:
+        raise ValueError("comparison methods must be a canonical methods object")
+    input_values: object = result.input_identities
+    if isinstance(result.input_identities, ComparisonInputIdentities):
+        input_values = result.input_identities.model_dump(mode="python")
+    validated = ComparisonResult.model_validate(
+        {
+            "aggregate_score": result.aggregate_score,
+            "observation_window_seconds": result.observation_window_seconds,
+            "methods": {
+                name: method.model_dump(mode="python") if isinstance(method, BaseModel) else method
+                for name, method in method_values
+            },
+            "input_identities": input_values,
+        }
+    )
+    content = (json.dumps(validated.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode(
+        "utf-8"
+    )
+    reparsed = ComparisonResult.from_dict(json.loads(content.decode("utf-8")))
+    if reparsed != validated:
+        raise ValueError("canonical similarity rendering changed the validated comparison result")
+    return content
 
 
 def render_comparison_result(result: ComparisonResult) -> bytes:
@@ -725,7 +822,6 @@ def compare_traces(
         methods = {
             name: MethodComparison.model_validate(
                 {
-                    "method": name,
                     "score": component_results[name].score,
                     "weight": configured_weights[name],
                     "diagnostics": component_results[name].diagnostics,
@@ -734,11 +830,13 @@ def compare_traces(
             for name in _METHOD_NAMES
         }
         aggregate = _bounded_weighted_score(math.fsum(method.weight * method.score for method in methods.values()))
-        return ComparisonResult(
-            aggregate_score=aggregate,
-            observation_window_seconds=W,
-            methods=methods,
-            input_identities=None,
+        return ComparisonResult.model_validate(
+            {
+                "aggregate_score": aggregate,
+                "observation_window_seconds": W,
+                "methods": methods,
+                "input_identities": None,
+            }
         )
     except ValueError as error:
         raise TrafficlabError(

@@ -27,7 +27,14 @@ from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
 from trafficlab.generation import GenerationStageResult, generate_experiment
 from trafficlab.models.common import GenerationResult, ModelFamily
-from trafficlab.models.registry import BestModel, get_family, load_best_model, make_best_model, render_best_model
+from trafficlab.models.registry import (
+    BestModel,
+    get_family,
+    load_best_model,
+    make_best_model,
+    render_best_model,
+    runtime_fitted_model,
+)
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, normalize_reference, parse_capture_metadata
@@ -988,7 +995,7 @@ def test_stage_uses_only_stored_family_window_and_configured_final_seed_and_limi
         clock: Callable[[], float],
     ) -> GenerationResult:
         calls.append((model, seed, W, limits, clock))
-        return real_family.generate(best.fitted, seed, W, config.generation.final, clock=clock)
+        return real_family.generate(runtime_fitted_model(best), seed, W, config.generation.final, clock=clock)
 
     observed_family = cast(
         ModelFamily,
@@ -1012,7 +1019,13 @@ def test_stage_uses_only_stored_family_window_and_configured_final_seed_and_limi
 
     assert result.observation_window_seconds == best.observation_window_seconds
     assert calls == [
-        (best.fitted, config.run.final_seed, best.observation_window_seconds, config.generation.final, supplied_clock)
+        (
+            runtime_fitted_model(best),
+            config.run.final_seed,
+            best.observation_window_seconds,
+            config.generation.final,
+            supplied_clock,
+        )
     ]
 
 
@@ -1628,7 +1641,7 @@ def test_cli_generated_capture_matches_checked_traffic_model_fixture_and_final_s
     reproduced = (
         get_family(best.family)
         .generate(
-            best.fitted,
+            runtime_fitted_model(best),
             config.run.final_seed,
             best.observation_window_seconds,
             config.generation.final,

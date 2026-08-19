@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import MappingProxyType
 
 import pytest
+from jsonschema import Draft202012Validator
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
@@ -13,7 +15,9 @@ from trafficlab.comparison import ComparisonResult, MethodComparison, MethodDiag
 from trafficlab.errors import FailureOutcomeRecord
 from trafficlab.models.registry import FamilyPayload
 
+_ROOT = Path(__file__).parents[2]
 _SIMILARITY_FIXTURE = Path(__file__).parents[2] / "examples" / "data" / "similarity.json"
+_FAILURE_FIXTURE = _ROOT / "tests" / "fixtures" / "data" / "diagnostics" / "failure-outcomes.jsonl"
 
 
 def test_public_core_artifact_roots_are_strict_frozen_pydantic_models() -> None:
@@ -36,6 +40,33 @@ def test_public_core_artifact_schemas_are_draft_2020_12_compatible() -> None:
         assert schema["type"] == "object", name
         assert schema["additionalProperties"] is False, name
         assert schema["properties"], name
+
+
+def test_every_checked_core_artifact_validates_against_its_published_schema() -> None:
+    """A public schema must describe canonical persisted bytes rather than internal runtime fields."""
+    checked = {
+        "best_model": [
+            json.loads(path.read_bytes())
+            for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")
+            for path in sorted(root.glob("**/best_model.json"))
+        ],
+        "comparison_result": [
+            json.loads(path.read_bytes())
+            for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")
+            for path in sorted(root.glob("**/similarity.json"))
+        ],
+        "failure_outcome": [json.loads(line) for line in _FAILURE_FIXTURE.read_text(encoding="utf-8").splitlines()],
+    }
+
+    assert all(checked.values())
+    for name, documents in checked.items():
+        model = PUBLIC_ARTIFACT_MODELS[name]
+        schema = model.model_json_schema(mode="validation")
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
+        for document in documents:
+            validator.validate(document)  # pyright: ignore[reportUnknownMemberType]
+            model.model_validate(document)
 
 
 def test_family_and_method_payloads_publish_union_schemas() -> None:
@@ -75,19 +106,20 @@ def test_method_union_accepts_a_validated_variant_and_rejects_a_wrong_mapping_di
     frame_size = result.methods["frame_size_ks"]
 
     rebuilt = MethodComparison(
-        method="frame_size_ks",
         score=frame_size.score,
         weight=frame_size.weight,
         diagnostics=frame_size.diagnostics,
     )
     assert rebuilt == frame_size
 
+    wrong_methods = result.methods.model_dump(mode="python")
+    wrong_methods["frame_size_ks"] = wrong_methods["iat_ks"]
     with pytest.raises(ValidationError, match="wrong method discriminator"):
-        MethodComparison(
-            method="iat_ks",
-            score=frame_size.score,
-            weight=frame_size.weight,
-            diagnostics=frame_size.diagnostics,
+        ComparisonResult.model_validate(
+            {
+                **result.model_dump(mode="python"),
+                "methods": wrong_methods,
+            }
         )
 
 

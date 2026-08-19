@@ -483,7 +483,7 @@ def test_run_experiment_strictly_reloads_every_owned_artifact_before_completion(
             changed_content = changed_path.read_bytes().rstrip(b"\n") + b" \n"
         else:
             assert comparison.input_identities is not None
-            identities = dict(comparison.input_identities)
+            identities = comparison.input_identities.as_content_identities()
             identities["generated_pcapng"] = ContentIdentity(
                 size=identities["generated_pcapng"].size,
                 sha256="0" * 64,
@@ -1442,7 +1442,7 @@ def test_run_experiment_rejects_nested_and_lineage_corruption_before_the_next_ca
             )
         else:
             assert comparison.input_identities is not None
-            identities = dict(comparison.input_identities)
+            identities = comparison.input_identities.as_content_identities()
             identity_name = {
                 "lineage-capture": "capture_json",
                 "lineage-reference": "reference_pcapng",

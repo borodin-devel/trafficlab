@@ -10,7 +10,14 @@ from trafficlab.artifacts import quantize_generated_events
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config_io import load_experiment
 from trafficlab.errors import TrafficlabError
-from trafficlab.models.registry import POISSON_FAMILY, get_family, load_best_model, make_best_model, render_best_model
+from trafficlab.models.registry import (
+    POISSON_FAMILY,
+    get_family,
+    load_best_model,
+    make_best_model,
+    render_best_model,
+    runtime_fitted_model,
+)
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
@@ -60,7 +67,7 @@ def _build_fixture() -> tuple[bytes, bytes]:
     generated = (
         get_family(loaded.family)
         .generate(
-            loaded.fitted,
+            runtime_fitted_model(loaded),
             config.run.final_seed,
             loaded.observation_window_seconds,
             config.generation.final,

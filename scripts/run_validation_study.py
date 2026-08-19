@@ -55,7 +55,13 @@ from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, ren
 from trafficlab.genetic.evaluation import evaluate_final, validate_evaluation_context
 from trafficlab.genetic.strategy import StrategyContext, make_strategy_context
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, TrialResult
-from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model
+from trafficlab.models.registry import (
+    BestModel,
+    get_family,
+    load_best_model,
+    render_best_model,
+    runtime_fitted_model,
+)
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
@@ -166,7 +172,7 @@ def evaluate_study_held_out(
     raw_generated = (
         get_family(model.family)
         .generate(
-            model.fitted,
+            runtime_fitted_model(model),
             model.final_seed,
             W,
             model.final_limits,
@@ -1751,7 +1757,7 @@ def _score_from_comparison(result: ComparisonResult) -> JsonObject:
     _require_type(type(result) is ComparisonResult, "published score source must be a ComparisonResult")
     _bounded_score(result.aggregate_score, name="comparison aggregate score")
     _require(
-        tuple(result.methods) == PUBLISHED_METHOD_ORDER,
+        result.methods.keys() == PUBLISHED_METHOD_ORDER,
         "comparison methods must use published method order",
     )
     return {
@@ -2085,7 +2091,7 @@ def _trace_summary(
 def _comparison_equals_trial(comparison: ComparisonResult, trial: TrialResult) -> bool:
     return (
         comparison.aggregate_score == trial.aggregate_score
-        and tuple(comparison.methods) == tuple(method.name for method in trial.methods)
+        and comparison.methods.keys() == tuple(method.name for method in trial.methods)
         and all(
             comparison.methods[method.name].score == method.score
             and comparison.methods[method.name].diagnostics.model_dump(mode="json") == _thaw_json(method.diagnostics)
@@ -2149,7 +2155,10 @@ def _require_published_lineage(
         "generated_pcapng": identify_bytes(artifact_contents["generated.pcapng"]),
         "similarity_settings": settings_identity,
     }
-    _require(input_identities == expected, "published comparison input lineage must match exact artifact identities")
+    _require(
+        input_identities.as_content_identities() == expected,
+        "published comparison input lineage must match exact artifact identities",
+    )
     _require(rebuilt == persisted, "published comparison must equal strict persisted similarity evidence")
 
 
@@ -2171,10 +2180,10 @@ def _reconstruct_science(
     window = evidence.best_model.observation_window_seconds
     family = get_family(evidence.best_model.family)
     raw_trial = family.generate(
-        evidence.best_model.fitted, 97, window, evidence.config.generation.trial
+        runtime_fitted_model(evidence.best_model), 97, window, evidence.config.generation.trial
     ).require_complete()
     raw_final = family.generate(
-        evidence.best_model.fitted, 97, window, evidence.config.generation.final
+        runtime_fitted_model(evidence.best_model), 97, window, evidence.config.generation.final
     ).require_complete()
     _require(raw_trial == raw_final, "trial and final guards must produce one exact raw seed-97 sequence")
     raw_comparison = compare_traces(evidence.reference, raw_trial, window, evidence.config.similarity)

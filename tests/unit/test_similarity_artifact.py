@@ -11,6 +11,7 @@ import trafficlab.comparison as comparison
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import append_run_log, create_run_directory
 from trafficlab.comparison import compare_experiment
+from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
@@ -358,6 +359,49 @@ def test_serialization_failure_before_temp_creation_is_reported_without_cleanup_
     assert unowned.read_text(encoding="utf-8") == "keep"
     assert not (run_directory / "similarity.json").exists()
     assert list(run_directory.glob(".similarity.json.*.tmp")) == []
+
+
+def test_malformed_nested_method_cannot_render_or_publish(tmp_path: Path) -> None:
+    """A model_copy-mutated diagnostic must fail before bytes or a destination become visible."""
+    source = _EXAMPLE_DATA / "similarity.json"
+    valid = comparison.parse_comparison_result(source.read_bytes())
+    original = valid.methods["frame_size_ks"]
+    corrupted_diagnostics = original.diagnostics.model_copy(update={"reference_count": 0})
+    corrupted_method = original.model_copy(update={"diagnostics": corrupted_diagnostics})
+    methods = dict(valid.methods)
+    methods["frame_size_ks"] = corrupted_method
+    corrupted = valid.model_copy(update={"methods": methods})
+
+    with pytest.raises(ValueError, match="reference_count"):
+        comparison.render_comparison_result(corrupted)
+
+    destination = tmp_path / "similarity.json"
+    with pytest.raises(TrafficlabError, match="reference_count"):
+        comparison._publish_comparison_result(destination, corrupted)  # pyright: ignore[reportPrivateUsage]
+    assert not destination.exists()
+    assert list(tmp_path.glob(".similarity.json.*.tmp")) == []
+
+
+def test_comparison_renderer_rejects_invalid_outer_methods_and_changed_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Renderer validation must reject invalid outer state and a parser result that changes identity."""
+    valid = comparison.parse_comparison_result((_EXAMPLE_DATA / "similarity.json").read_bytes())
+    invalid = valid.model_copy(update={"methods": object()})
+    with pytest.raises(ValueError, match="canonical methods object"):
+        comparison.render_comparison_result(invalid)
+
+    assert valid.input_identities is not None
+    identities = valid.input_identities.as_content_identities()
+    identities["capture_json"] = ContentIdentity(size=1, sha256="0" * 64)
+    changed = valid.with_input_identities(identities)
+
+    def changed_from_dict(_cls: type[comparison.ComparisonResult], _value: object) -> comparison.ComparisonResult:
+        return changed
+
+    monkeypatch.setattr(comparison.ComparisonResult, "from_dict", classmethod(changed_from_dict))
+    with pytest.raises(ValueError, match="changed the validated comparison result"):
+        comparison.render_comparison_result(valid)
 
 
 def test_input_failure_remains_primary_when_failure_logging_also_fails(

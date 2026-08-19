@@ -52,7 +52,7 @@ from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model
+from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model, runtime_fitted_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.trace import TraceEvent, align_generated, normalize_reference, parse_capture_metadata
 
@@ -2396,7 +2396,7 @@ def _rebuild_held_out(
     raw_generated = (
         get_family(model.family)
         .generate(
-            model.fitted,
+            runtime_fitted_model(model),
             model.final_seed,
             W,
             model.final_limits,
