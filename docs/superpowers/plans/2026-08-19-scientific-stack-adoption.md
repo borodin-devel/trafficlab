@@ -55,7 +55,7 @@
 - Produces: pytest profile `trafficlab_locked`; reusable `trace_events()`, `pcapng_cases()`, and `json_documents()` Hypothesis strategies.
 - Preserves: every existing hand-calculated and scientific-validation test.
 
-- [ ] **[STEP-1-3d95c8d5] Step 1: Write dependency/profile tests that fail before installation**
+- [x] **[STEP-1-3d95c8d5] Step 1: Write dependency/profile tests that fail before installation**
 
 ```python
 def test_locked_hypothesis_profile() -> None:
@@ -70,11 +70,11 @@ def test_locked_hypothesis_profile() -> None:
 
 Also add import/version-placement assertions proving NumPy and SciPy are runtime dependencies while Hypothesis, pymoo, and Scapy are development-only.
 
-- [ ] **[STEP-2-84858edd] Step 2: Run the new tests and observe the expected import/profile failure**
+- [x] **[STEP-2-84858edd] Step 2: Run the new tests and observe the expected import/profile failure**
 
 Run the focused bounded command for `tests/property/test_trace_properties.py` and `tests/unit/test_package.py`; expect failure because Hypothesis and the profile do not exist.
 
-- [ ] **[STEP-3-89aa37a9] Step 3: Add dependencies with uv and register the locked profile**
+- [x] **[STEP-3-89aa37a9] Step 3: Add dependencies with uv and register the locked profile**
 
 ```bash
 uv add 'numpy>=2,<3' 'scipy>=1.16,<2'
@@ -83,15 +83,15 @@ uv add --dev 'hypothesis>=6,<7' 'pymoo==0.6.2' 'scapy==2.7.0'
 
 Register and load `trafficlab_locked` in `tests/conftest.py`; reject a mutable examples directory by setting `database=None`.
 
-- [ ] **[STEP-4-55b7a059] Step 4: Add real property tests around existing behavior**
+- [x] **[STEP-4-55b7a059] Step 4: Add real property tests around existing behavior**
 
 Generate finite nondecreasing traces, malformed/valid PCAPNG blocks, strict JSON documents, gene coordinates, and checkpoint render/parse inputs. Assertions use literal invariants and real production functions: round-trip identity, nondecreasing timestamps, deterministic rejection, and coordinate error bounds.
 
-- [ ] **[STEP-5-a7013717] Step 5: Prove deterministic repeated outcomes and runtime budget**
+- [x] **[STEP-5-a7013717] Step 5: Prove deterministic repeated outcomes and runtime budget**
 
 Run the property selection twice from separate empty temporary directories with the locked profile; record identical collection and pass counts. Run the Fast gate three times before and after the property selection is included and retain median wall times showing no more than 20% increase.
 
-- [ ] **[STEP-6-3e7315ca] Step 6: Verify and commit the safety net**
+- [x] **[STEP-6-3e7315ca] Step 6: Verify and commit the safety net**
 
 Run Ruff format/check, strict Pyright, the focused property selection, existing parser/schema/trace/genetic unit suites, and the bounded Fast gate. Commit `test: add deterministic property safety net`.
 
