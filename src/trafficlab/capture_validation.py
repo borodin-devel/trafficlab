@@ -11,7 +11,7 @@ from types import MappingProxyType
 
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
 from trafficlab.pcapng import PacketObservation, parse_pcapng_packets
-from trafficlab.trace import CaptureMetadata, Direction, load_capture_metadata
+from trafficlab.trace import CaptureMetadata, Direction, TrafficTrace, load_capture_metadata
 
 _CAPTURE_ACTION = "replace the capture output with a complete valid capture pair"
 
@@ -22,6 +22,7 @@ class CaptureInspection:
 
     metadata: CaptureMetadata
     packets: tuple[PacketObservation, ...]
+    trace: TrafficTrace
     packet_count: int
     direction_counts: Mapping[Direction, int]
     source_mac_counts: Mapping[str, int]
@@ -132,6 +133,7 @@ def _inspect(
     return CaptureInspection(
         metadata=metadata,
         packets=packets,
+        trace=TrafficTrace.from_events(packet.event for packet in packets),
         packet_count=len(packets),
         direction_counts=_frozen_counts(directions),
         source_mac_counts=_frozen_counts(source_macs),

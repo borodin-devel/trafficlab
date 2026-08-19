@@ -6555,7 +6555,7 @@ class _CandidateTraining:
     config: ExperimentConfig
     contents: Mapping[str, bytes]
     metadata: CaptureMetadata
-    reference: tuple[TraceEvent, ...]
+    reference: Sequence[TraceEvent]
     observation_window_seconds: float
     runtime_seconds: float
     checkpoint: CheckpointState

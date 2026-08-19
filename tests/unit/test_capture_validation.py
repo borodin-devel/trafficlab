@@ -94,6 +94,8 @@ def test_inspect_capture_reports_ethernet_addresses_protocols_and_directions_in_
     inspection = inspect_capture(metadata_path, pcapng_path, deadline=None, clock=lambda: 0.0)
 
     assert inspection.packet_count == 7
+    assert inspection.trace.to_events() == tuple(packet.event for packet in inspection.packets)
+    assert not inspection.trace.timestamps.flags.writeable
     assert inspection.direction_counts == {Direction.OUTBOUND: 3, Direction.INBOUND: 4}
     assert inspection.source_mac_counts == {
         "02:42:ac:11:00:02": 3,

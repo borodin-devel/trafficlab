@@ -15,8 +15,13 @@ Experiment TOML
   -> component metrics and weighted similarity.json
 ```
 
-The canonical trace is an ordered sequence of packet timestamp `t_i`, direction
-`d_i`, and captured frame length `l_i`. Direction has exactly two values:
+The canonical scientific trace is an owned read-only `TrafficTrace` with three
+one-dimensional equal-length NumPy columns: finite, nonnegative,
+nondecreasing `float64` timestamps `t_i`; `uint8` directions `d_i` (`0` for
+outbound and `1` for inbound); and strictly positive `uint32` captured frame
+lengths `l_i`. Construction validates every column before narrowing integers,
+copies into C-contiguous owned arrays, and marks each array non-writable.
+Direction has exactly two values:
 
 ```text
 d_i = outbound  when Ethernet source MAC equals capture.json target_mac
@@ -28,11 +33,15 @@ For a reference with `n >= 2` finite, nondecreasing timestamps, define
 as `t'_i = t_i - t_1`, so the reference occupies the closed interval `[0, W]`.
 Packets at both endpoints are included.
 
+`TrafficTrace.from_events()` and `TrafficTrace.to_events()` are the
+compatibility boundary for immutable `TraceEvent` records. PCAPNG path parsing
+produces `TrafficTrace` for the scientific core; the event-returning PCAPNG APIs
+remain thin boundary adapters while existing consumers migrate.
+
 Before comparison, require a nonempty generated trace, shift it to its first
 packet, and retain only events in `[0, W]`. The same W is passed explicitly to
 fitting, generation, genetic evaluation, and every similarity method. Silence
-outside the reference's first and last packets is outside MVP scope. These are
-ordinary event sequences plus one scalar `W`, not a trace wrapper object.
+outside the reference's first and last packets is outside MVP scope.
 
 The rule applies to valid Ethernet frames captured on the target's
 non-promiscuous `eth0`. Parsing requires the accompanying `capture.json`; a

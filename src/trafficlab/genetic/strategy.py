@@ -119,7 +119,7 @@ def _genetic_settings(config: ExperimentConfig) -> GeneticCheckpointSettings:
 
 def make_strategy_context(
     config: ExperimentConfig,
-    reference: tuple[TraceEvent, ...],
+    reference: Sequence[TraceEvent],
     window: float,
     run_directory: Path,
     *,
@@ -133,7 +133,7 @@ def make_strategy_context(
     registered: dict[FamilyName, ModelFamily] = {name: get_family(name) for name in families}
     bounds = _enabled_bounds(config, families)
     evaluation = EvaluationContext(
-        reference=reference,
+        reference=tuple(reference),
         window=window,
         families=MappingProxyType(registered),
         bounds=MappingProxyType(bounds),

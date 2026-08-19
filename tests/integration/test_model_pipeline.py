@@ -22,8 +22,8 @@ from trafficlab.models.registry import (
     make_best_model,
     render_best_model,
 )
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
-from trafficlab.trace import normalize_reference, parse_capture_metadata
+from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes, parse_pcapng_trace
+from trafficlab.trace import TrafficTrace, normalize_reference, parse_capture_metadata
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DATA = _ROOT / "examples" / "data"
@@ -70,8 +70,9 @@ def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
     capture_content = capture_path.read_bytes()
     reference_content = reference_path.read_bytes()
     metadata = parse_capture_metadata(capture_content, source=capture_path)
-    parsed_reference = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
+    parsed_reference = parse_pcapng_trace(reference_path, metadata)
     normalized_reference, window = normalize_reference(parsed_reference)
+    assert isinstance(normalized_reference, TrafficTrace)
     capture_identity = identify_bytes(capture_content)
     reference_identity = identify_bytes(reference_content)
 

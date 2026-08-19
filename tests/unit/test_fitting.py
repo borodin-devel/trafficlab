@@ -31,7 +31,7 @@ from trafficlab.models.registry import POISSON_FAMILY, load_best_model, make_bes
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreflightReport, PreparedExperiment, open_or_prepare_experiment
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
 
 RAW_REFERENCE = (
     TraceEvent(10.0, Direction.OUTBOUND, 64),
@@ -341,7 +341,7 @@ def test_fit_hashes_exact_bytes_and_passes_one_normalized_window(
     normalizations = 0
     original_normalize = fitting.normalize_reference
 
-    def normalize(events: object) -> tuple[tuple[TraceEvent, ...], float]:
+    def normalize(events: object) -> tuple[TrafficTrace, float]:
         nonlocal normalizations
         normalizations += 1
         return original_normalize(cast(Any, events))

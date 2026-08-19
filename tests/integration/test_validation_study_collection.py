@@ -27,7 +27,7 @@ from trafficlab.generation import generate_experiment
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.trace import TraceEvent, parse_capture_metadata
+from trafficlab.trace import TraceEvent, TrafficTrace, parse_capture_metadata
 
 pytestmark = pytest.mark.integration
 
@@ -742,7 +742,7 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
         assert [item.repeat for item in training] == [1, 2, 3]
         alignment_index = 0
 
-        def underflow_generated(events: Sequence[TraceEvent], window: float) -> tuple[TraceEvent, ...]:
+        def underflow_generated(events: Sequence[TraceEvent], window: float) -> TrafficTrace:
             nonlocal alignment_index, targeted_underflows
             alignment_index += 1
             aligned = original_align_generated(events, window)

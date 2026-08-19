@@ -12,9 +12,10 @@ from trafficlab.pcapng import (
     parse_pcapng,
     parse_pcapng_bytes,
     parse_pcapng_packets,
+    parse_pcapng_trace,
     write_pcapng,
 )
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 
 Endian = Literal["<", ">"]
 
@@ -186,6 +187,21 @@ def test_parse_pcapng_bytes_matches_the_path_boundary_without_reopening_it(tmp_p
     events = parse_pcapng_bytes(content, _metadata(), source=source)
 
     assert events == (TraceEvent(timestamp=1.25, direction=Direction.OUTBOUND, frame_length=18),)
+
+
+def test_parse_pcapng_trace_round_trips_both_directions_at_declared_resolution(tmp_path: Path) -> None:
+    """The scientific parser must retain the encoder's directions and nanosecond timestamps."""
+    events = (
+        TraceEvent(timestamp=0.25, direction=Direction.OUTBOUND, frame_length=18),
+        TraceEvent(timestamp=1.5, direction=Direction.INBOUND, frame_length=22),
+    )
+    path = _write_capture(tmp_path, encode_pcapng(events, _metadata()))
+
+    trace = parse_pcapng_trace(path, _metadata())
+
+    assert isinstance(trace, TrafficTrace)
+    assert trace.to_events() == events
+    assert not trace.timestamps.flags.writeable
 
 
 def test_parse_pcapng_packets_returns_immutable_events_with_exact_ethernet_bytes(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@ from time import monotonic
 from typing import BinaryIO, Literal
 
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, deterministic_peer_mac
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, deterministic_peer_mac
 
 _SECTION_HEADER_BLOCK = 0x0A0D0D0A
 _INTERFACE_DESCRIPTION_BLOCK = 1
@@ -328,11 +328,23 @@ def parse_pcapng_bytes(
     deadline: float | None = None,
     clock: Callable[[], float] = monotonic,
 ) -> tuple[TraceEvent, ...]:
-    """Parse exact PCAPNG bytes without reopening their source path."""
+    """Parse exact PCAPNG bytes at the immutable event-record boundary."""
+    return _parse_pcapng_bytes_trace(content, metadata, source=source, deadline=deadline, clock=clock).to_events()
+
+
+def _parse_pcapng_bytes_trace(
+    content: bytes,
+    metadata: CaptureMetadata,
+    *,
+    source: Path,
+    deadline: float | None = None,
+    clock: Callable[[], float] = monotonic,
+) -> TrafficTrace:
+    """Parse exact PCAPNG bytes into the scientific-core trace representation."""
     del source
     with BytesIO(content) as stream:
         packets = _parse_pcapng_stream(stream, metadata, deadline=deadline, clock=clock)
-    return tuple(packet.event for packet in packets)
+    return TrafficTrace.from_events(packet.event for packet in packets)
 
 
 def parse_pcapng_packets(
@@ -361,9 +373,20 @@ def parse_pcapng(
     deadline: float | None = None,
     clock: Callable[[], float] = monotonic,
 ) -> tuple[TraceEvent, ...]:
-    """Parse one supported Ethernet PCAPNG incrementally from its live file stream."""
+    """Parse one supported Ethernet PCAPNG at the immutable event-record boundary."""
+    return parse_pcapng_trace(path, metadata, deadline=deadline, clock=clock).to_events()
+
+
+def parse_pcapng_trace(
+    path: Path,
+    metadata: CaptureMetadata,
+    *,
+    deadline: float | None = None,
+    clock: Callable[[], float] = monotonic,
+) -> TrafficTrace:
+    """Parse one supported Ethernet PCAPNG into an owned scientific-core trace."""
     packets = parse_pcapng_packets(path, metadata, deadline=deadline, clock=clock)
-    return tuple(packet.event for packet in packets)
+    return TrafficTrace.from_events(packet.event for packet in packets)
 
 
 def _encode_block(block_type: int, body: bytes) -> bytes:
