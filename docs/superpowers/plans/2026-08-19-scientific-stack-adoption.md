@@ -441,27 +441,27 @@ Run Ruff, Pyright, focused probe tests twice, the existing MMPP scientific suite
 - Produces: one independent public-interface pymoo adapter per family, explicit public-state snapshot, resume comparison, and pass/reject evidence.
 - Preserves: Trafficlab evaluation cache, invalid classification, common seeds/window/limits/weights, minimum family budget, and champion comparison.
 
-- [ ] **[STEP-55-bdd22e80] Step 1: Write known-optimum, fairness, cache, and replay tests**
+- [x] **[STEP-55-bdd22e80] Step 1: Write known-optimum, fairness, cache, and replay tests**
 
 Predeclare a bounded continuous sphere optimum, mixed integer/real optimum, three-family initial budgets, common trial seeds, cache keys, uninterrupted history, and checkpoint-resumed history. Assert no dill/pickle bytes occur.
 
-- [ ] **[STEP-56-3feb49d7] Step 2: Run pymoo probe tests and verify RED**
+- [x] **[STEP-56-3feb49d7] Step 2: Run pymoo probe tests and verify RED**
 
 Run the bounded focused pymoo probe module; expect missing adapter/state extraction failures.
 
-- [ ] **[STEP-57-3bf92809] Step 3: Implement independent family adapters through public pymoo APIs**
+- [x] **[STEP-57-3bf92809] Step 3: Implement independent family adapters through public pymoo APIs**
 
 Map exact Trafficlab gene bounds/types, execute sequential seeded algorithms, allocate equal initial evaluations, and retain Trafficlab objective/caching/diagnostics. Do not construct a categorical model-family variable.
 
-- [ ] **[STEP-58-f472849e] Step 4: Implement transparent state extraction and replay**
+- [x] **[STEP-58-f472849e] Step 4: Implement transparent state extraction and replay**
 
 Extract population genes/objectives, generation, evaluation count, termination, configuration, pymoo version, and RNG state into strict records. Resume and compare every trial-history field to the uninterrupted locked run.
 
-- [ ] **[STEP-59-ac2fc38b] Step 5: Measure adoption gate and record decision**
+- [x] **[STEP-59-ac2fc38b] Step 5: Measure adoption gate and record decision**
 
 Record known optima, deterministic repeats, fairness/cache results, replay equality, and estimated production genetic LOC reduction. Mark `pass` only if exact public-state replay works and a production replacement would remove at least 40% without losing diagnostics; otherwise retain the existing strategy.
 
-- [ ] **[STEP-60-337f7bfd] Step 6: Verify and commit the pymoo probe**
+- [x] **[STEP-60-337f7bfd] Step 6: Verify and commit the pymoo probe**
 
 Run Ruff, Pyright, focused probe tests twice, existing genetic integration tests, and probe runner `--check`. Commit `test: evaluate pymoo optimizer`.
 
