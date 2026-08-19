@@ -245,27 +245,27 @@ Run Ruff, Pyright, all similarity/statistics unit and property tests, comparison
 - Produces: strict frozen Pydantic roots `ComparisonResult`, `FailureOutcomeRecord`, `BestModel`, family payload union, method diagnostic union, and `PUBLIC_ARTIFACT_MODELS`.
 - Preserves: duplicate-key hooks, canonical render bytes, identity recomputation, atomic publication, and existing error categories.
 
-- [ ] **[STEP-25-528d71a3] Step 1: Write failing strict-schema and JSON-Schema tests**
+- [x] **[STEP-25-528d71a3] Step 1: Write failing strict-schema and JSON-Schema tests**
 
 Mutate valid fixtures with booleans-as-integers, NaN/Inf, unknown/missing keys, wrong discriminators, inconsistent aggregate arithmetic, and duplicate keys. Assert each public root appears in `PUBLIC_ARTIFACT_MODELS` and emits a Draft 2020-12-compatible schema.
 
-- [ ] **[STEP-26-c17625a0] Step 2: Run artifact tests and confirm missing registry/strict failures**
+- [x] **[STEP-26-c17625a0] Step 2: Run artifact tests and confirm missing registry/strict failures**
 
 Run the focused bounded selection for similarity, failure outcome, best-model, and artifact schema tests; record failures caused by the missing registry and manual validators accepting paths Pydantic must own.
 
-- [ ] **[STEP-27-01ac7967] Step 3: Convert owning records to strict frozen models**
+- [x] **[STEP-27-01ac7967] Step 3: Convert owning records to strict frozen models**
 
 Use `ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)`, constrained numeric fields, and discriminated unions. Model validators enforce local score/weight/row consistency; helper functions translate `ValidationError` into stable `TrafficlabError` messages.
 
-- [ ] **[STEP-28-d8705169] Step 4: Keep canonical and cross-artifact policy outside Pydantic**
+- [x] **[STEP-28-d8705169] Step 4: Keep canonical and cross-artifact policy outside Pydantic**
 
 Parse bytes with duplicate-key rejection before `model_validate`, render explicit canonical key order from `model_dump(mode="json")`, and recompute aggregate scores, content identities, observation windows, and bounds at the owning cross-artifact boundary.
 
-- [ ] **[STEP-29-40063905] Step 5: Prove valid round trips and deterministic corrupt rejection**
+- [x] **[STEP-29-40063905] Step 5: Prove valid round trips and deterministic corrupt rejection**
 
 Run every checked best-model, similarity, and failure fixture through parse/render/parse equality; retain exact rejection categories for the corruption matrix and integration publication/reuse behavior.
 
-- [ ] **[STEP-30-a40f80d8] Step 6: Verify and commit core artifact schemas**
+- [x] **[STEP-30-a40f80d8] Step 6: Verify and commit core artifact schemas**
 
 Run Ruff, Pyright, focused artifacts, model registry, comparison pipeline, failure public matrix, and coverage for changed schema functions. Commit `refactor: validate core artifacts with pydantic`.
 
