@@ -1,16 +1,161 @@
 from __future__ import annotations
 
 import errno
+import json
 import subprocess
+from copy import deepcopy
 from pathlib import Path
+from typing import cast
 
 import pytest
+from jsonschema import Draft202012Validator
+from pydantic import BaseModel, ValidationError
 
 import trafficlab.study_evidence as study_evidence
 from trafficlab.errors import TrafficlabError
-from trafficlab.study_evidence import publish_accepted_bundle
+from trafficlab.study_evidence import (
+    StudyContentIdentity,
+    ValidationStudyEnvironment,
+    ValidationStudyLifecycle,
+    ValidationStudyLineage,
+    ValidationStudyManifest,
+    ValidationStudyPrerequisite,
+    ValidationStudyProtocol,
+    ValidationStudyReport,
+    ValidationStudyReportInput,
+    publish_accepted_bundle,
+    validate_study_model,
+)
 
 REPOSITORY = Path(__file__).resolve().parents[2]
+_STUDY_FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"
+
+_STUDY_ROOTS: dict[str, tuple[type[BaseModel], str]] = {
+    "study_environment": (ValidationStudyEnvironment, "environment.json"),
+    "study_lifecycle": (ValidationStudyLifecycle, "lifecycle.json"),
+    "study_lineage": (ValidationStudyLineage, "index.json"),
+    "study_manifest": (ValidationStudyManifest, "manifest.json"),
+    "study_prerequisite": (ValidationStudyPrerequisite, "prerequisites.json"),
+    "study_protocol": (ValidationStudyProtocol, "protocol.json"),
+    "study_report": (ValidationStudyReport, "report.json"),
+    "study_report_input": (ValidationStudyReportInput, "report_inputs.json"),
+}
+
+
+def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_documents() -> None:
+    """A permissive or runtime-shaped root would fail to describe the checked publication bytes."""
+
+    for name, (model, filename) in _STUDY_ROOTS.items():
+        assert model.model_config.get("extra") == "forbid", name
+        assert model.model_config.get("frozen") is True, name
+        assert model.model_config.get("strict") is True, name
+        assert model.model_config.get("allow_inf_nan") is False, name
+        document = json.loads((_STUDY_FIXTURE / filename).read_bytes())
+        schema = model.model_json_schema(mode="validation")
+        Draft202012Validator.check_schema(schema)
+        Draft202012Validator(schema).validate(document)  # pyright: ignore[reportUnknownMemberType]
+        rendered = model.model_validate(document).model_dump(mode="json")
+        assert rendered == document
+        assert (
+            json.dumps(rendered, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+            + b"\n"
+            == (_STUDY_FIXTURE / filename).read_bytes()
+        )
+
+
+@pytest.mark.parametrize(
+    ("root_name", "case"),
+    (
+        ("study_environment", "schema_type"),
+        ("study_environment", "unknown"),
+        ("study_prerequisite", "schema_version"),
+        ("study_prerequisite", "exit_status_type"),
+        ("study_manifest", "schema_version"),
+        ("study_manifest", "hash"),
+        ("study_manifest", "blank_owner"),
+        ("study_lineage", "schema_version"),
+        ("study_lineage", "repeat_type"),
+        ("study_lifecycle", "cleanup_type"),
+        ("study_protocol", "seed_type"),
+        ("study_report_input", "formula"),
+        ("study_report", "size"),
+    ),
+)
+def test_public_validation_study_roots_reject_wire_type_key_version_hash_and_count_mutations(
+    root_name: str,
+    case: str,
+) -> None:
+    """Each root must reject a representative mutation before cross-record audit policy runs."""
+
+    model, filename = _STUDY_ROOTS[root_name]
+    document = cast(dict[str, object], json.loads((_STUDY_FIXTURE / filename).read_bytes()))
+    changed = deepcopy(document)
+    if case == "schema_type":
+        changed["scientific_artifact_schema"] = True
+    elif case == "unknown":
+        changed["unknown"] = "field"
+    elif case == "schema_version":
+        changed["schema_version"] = 3 if root_name == "study_manifest" else 2
+    elif case == "exit_status_type":
+        cast(list[dict[str, object]], changed["commands"])[0]["exit_status"] = False
+    elif case == "hash":
+        cast(list[dict[str, object]], changed["files"])[0]["sha256"] = "0" * 63
+    elif case == "blank_owner":
+        cast(list[dict[str, object]], changed["files"])[0]["owner"] = " "
+    elif case == "repeat_type":
+        cast(list[dict[str, object]], changed["training"])[0]["repeat"] = True
+    elif case == "cleanup_type":
+        cast(list[dict[str, object]], changed["training"])[0]["cleanup_verified"] = 1
+    elif case == "seed_type":
+        changed["final_seed"] = 97.0
+    elif case == "formula":
+        changed["formula"] = "median"
+    else:
+        cast(dict[str, object], changed["report_inputs_identity"])["size"] = -1
+
+    if case != "seed_type":
+        assert not Draft202012Validator(model.model_json_schema(mode="validation")).is_valid(changed)  # pyright: ignore[reportArgumentType, reportUnknownMemberType]
+    with pytest.raises(ValidationError):
+        model.model_validate(changed)
+
+
+def test_study_model_validation_rejects_unsafe_paths_exact_numeric_aliases_and_poisoned_instances() -> None:
+    """Path traversal, int-as-float, and constructed invalid children must not bypass a public root."""
+
+    protocol = cast(dict[str, object], json.loads((_STUDY_FIXTURE / "protocol.json").read_bytes()))
+    protocol["prerequisite_path"] = "../prerequisites.json"
+    with pytest.raises(ValidationError):
+        ValidationStudyProtocol.model_validate(protocol)
+
+    report_input = cast(dict[str, object], json.loads((_STUDY_FIXTURE / "report_inputs.json").read_bytes()))
+    cast(list[dict[str, object]], report_input["controlled_weight_analysis"])[0]["alternative_aggregate"] = 1
+    with pytest.raises(ValidationError):
+        ValidationStudyReportInput.model_validate(report_input)
+
+    report = cast(dict[str, object], json.loads((_STUDY_FIXTURE / "report.json").read_bytes()))
+    report["report_inputs_identity"] = StudyContentIdentity.model_construct(size=-1, sha256="0" * 64)
+    with pytest.raises(ValidationError):
+        ValidationStudyReport.model_validate(report)
+
+
+def test_study_model_validation_diagnostic_is_stable_and_root_is_frozen() -> None:
+    """Public validation must omit persisted input and Pydantic URLs, then expose immutable results."""
+
+    marker = "persisted-secret-marker"
+    with pytest.raises(ValueError) as error:
+        validate_study_model(
+            ValidationStudyEnvironment,
+            {"unknown": marker},
+            name="study environment",
+        )
+    assert marker not in str(error.value)
+    assert "pydantic.dev" not in str(error.value)
+
+    environment = ValidationStudyEnvironment.model_validate(
+        json.loads((_STUDY_FIXTURE / "environment.json").read_bytes())
+    )
+    with pytest.raises(ValidationError):
+        environment.source_commit = "0" * 40  # type: ignore[misc]
 
 
 def _candidate(tmp_path: Path) -> Path:

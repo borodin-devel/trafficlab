@@ -66,7 +66,11 @@ from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
 from trafficlab.statistics import bootstrap_interval
-from trafficlab.study_evidence import publish_accepted_bundle
+from trafficlab.study_evidence import (
+    ValidationStudyPrerequisite,
+    publish_accepted_bundle,
+    validate_study_model,
+)
 from trafficlab.trace import (
     CaptureMetadata,
     Direction,
@@ -3497,23 +3501,20 @@ def _retained_identity(value: object, *, name: str) -> JsonObject:
 
 
 def _retained_output(value: object, *, name: str, expected_path: str) -> JsonObject:
-    document = _exact_object(value, ("identity", "path"), name=name)
-    path = _strict_string(document["path"], name=f"{name} path")
-    _require(path == expected_path, f"{name} path must be exactly {expected_path}")
-    return {"identity": _retained_identity(document["identity"], name=name), "path": path}
+    document = cast(JsonObject, value)
+    _require(document["path"] == expected_path, f"{name} path must be exactly {expected_path}")
+    return document
 
 
 def _retained_prerequisite_environment(value: object) -> JsonObject:
-    document = _exact_object(value, _RETAINED_PREREQUISITE_ENVIRONMENT_KEYS, name="retained prerequisite environment")
-    source_commit = _git_commit(document["source_commit"])
-    source_tree = _git_commit(document["source_tree"])
-    target_reference = _strict_string(document["target_image_reference"], name="retained target image reference")
+    document = cast(JsonObject, value)
+    target_reference = cast(str, document["target_image_reference"])
     _require(
         target_reference == TARGET_REFERENCE,
         "retained target image reference must equal the approved digest-pinned target",
     )
-    capture_id = _image_id(document["capture_image_id"], name="retained capture image ID")
-    capture_reference = _strict_string(document["capture_image_reference"], name="retained capture image reference")
+    capture_id = cast(str, document["capture_image_id"])
+    capture_reference = cast(str, document["capture_image_reference"])
     _require(
         capture_reference == capture_id
         or (
@@ -3522,67 +3523,49 @@ def _retained_prerequisite_environment(value: object) -> JsonObject:
         ),
         "retained capture image reference must be its immutable image ID or digest reference",
     )
-    return {
-        "capture_image_id": capture_id,
-        "capture_image_reference": capture_reference,
-        "capture_tool_version": _strict_string(document["capture_tool_version"], name="retained capture tool version"),
-        "source_commit": source_commit,
-        "source_tree": source_tree,
-        "target_image_id": _image_id(document["target_image_id"], name="retained target image ID"),
-        "target_image_reference": target_reference,
-        "uv_lock_identity": _retained_identity(document["uv_lock_identity"], name="retained uv.lock"),
-    }
+    return document
 
 
 def _retained_prerequisite_capability(value: object) -> JsonObject:
-    document = _exact_object(value, _RETAINED_PREREQUISITE_CAPABILITY_KEYS, name="retained prerequisite capability")
-    object_size = _strict_int(document["object_size_bytes"], name="retained capability object size", minimum=1)
+    document = cast(JsonObject, value)
+    object_size = cast(int, document["object_size_bytes"])
     _require(
         4 * 1024 * 1024 <= object_size <= 16 * 1024 * 1024,
         "retained capability object size must be from 4 MiB through 16 MiB",
     )
-    status = _strict_int(document["status"], name="retained capability status")
-    length = _strict_int(document["content_length"], name="retained capability content length")
+    status = cast(int, document["status"])
+    length = cast(int, document["content_length"])
     _require((status, length) == (206, 1), "retained capability must record one 206 byte-range response")
-    content_range = _strict_string(document["content_range"], name="retained capability content range")
+    content_range = cast(str, document["content_range"])
     _require(
         content_range == f"bytes 0-0/{object_size}",
         "retained capability content range must bind the recorded object size",
     )
-    canary_sha256 = _sha256(document["canary_sha256"], name="retained capability header SHA-256")
-    return {
-        "canary_sha256": canary_sha256,
-        "content_length": 1,
-        "content_range": content_range,
-        "object_size_bytes": object_size,
-        "status": 206,
-    }
+    return document
 
 
 def _retained_prerequisite_document(value: object) -> dict[str, object]:
-    root = _exact_object(
-        value,
-        ("capability", "commands", "environment", "schema_version", "study_id", "url"),
-        name="retained prerequisite evidence",
-    )
+    _require(type(value) is dict, "retained prerequisite evidence must be a JSON object")
+    raw = cast(dict[str, object], value)
     _require(
-        _strict_int(root["schema_version"], name="retained prerequisite schema version") == 3,
+        raw.get("schema_version") == 3,
         "retained prerequisite schema version must be exactly 3",
     )
+    validated = validate_study_model(
+        ValidationStudyPrerequisite,
+        raw,
+        name="retained prerequisite evidence",
+    )
+    root = cast(dict[str, object], validated.model_dump(mode="json"))
     study_id = validate_study_id(_strict_string(root["study_id"], name="retained prerequisite study ID"))
     url = validate_endpoint_url(_strict_string(root["url"], name="retained prerequisite URL"))
-    values = _strict_list(root["commands"], name="retained prerequisite commands")
-    _require(len(values) == 2, "retained prerequisite commands must contain docker_matrix then internet_smoke")
+    values = cast(list[object], root["commands"])
     commands: list[JsonObject] = []
     for value, expected_kind in zip(values, ("docker_matrix", "internet_smoke"), strict=True):
-        document = _exact_object(
-            value,
-            ("argv", "command", "exit_status", "junit", "kind", "status", "stderr", "stdout", "tests"),
-            name=f"retained {expected_kind} command",
-        )
-        kind = _strict_string(document["kind"], name="retained prerequisite command kind")
+        document = cast(dict[str, object], value)
+        kind = cast(str, document["kind"])
         _require(kind == expected_kind, "retained prerequisite commands must use the fixed kind order")
-        argv = _string_array(document["argv"], name=f"retained {kind} argv", nonempty=True)
+        argv = tuple(cast(list[str], document["argv"]))
         validate_frozen_prerequisite_command(
             kind,
             argv,
@@ -3615,7 +3598,7 @@ def _retained_prerequisite_document(value: object) -> dict[str, object]:
                 "stdout": _retained_output(
                     document["stdout"], name=f"retained {kind} stdout", expected_path=f"prerequisites/{kind}.stdout"
                 ),
-                "tests": _validate_test_counts(document["tests"]),
+                "tests": cast(JsonObject, document["tests"]),
             }
         )
     return {

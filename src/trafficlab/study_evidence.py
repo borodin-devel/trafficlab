@@ -11,11 +11,532 @@ import stat
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal, Self, cast
 
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    model_validator,
+)
+
+from trafficlab.comparison import (
+    AutocorrelationDiagnostic,
+    FrameSizeDiagnostic,
+    IatDiagnostic,
+    MultiscaleDiagnostic,
+)
 from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
 
 type BundleAudit = Callable[[Path], None]
+
+
+def _tuple_input(value: object) -> object:
+    return tuple(cast(list[object], value)) if type(value) is list else value
+
+
+def _exact_float_input(value: object) -> object:
+    if type(value) is not float:
+        raise ValueError("value must be an exact float")
+    return value
+
+
+def _relative_path(value: str) -> str:
+    path = Path(value)
+    if (
+        not value
+        or "\\" in value
+        or path.is_absolute()
+        or value != path.as_posix()
+        or any(part in ("", ".", "..") for part in path.parts)
+    ):
+        raise ValueError("value must be a normalized relative POSIX path")
+    return value
+
+
+type ExactFloat = Annotated[StrictFloat, BeforeValidator(_exact_float_input)]
+type NonnegativeFloat = Annotated[ExactFloat, Field(ge=0.0)]
+type PositiveFloat = Annotated[ExactFloat, Field(gt=0.0)]
+type UnitFloat = Annotated[ExactFloat, Field(ge=0.0, le=1.0)]
+type NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
+type PositiveInt = Annotated[StrictInt, Field(gt=0)]
+type NonemptyString = Annotated[StrictStr, Field(min_length=1, pattern=r"\S")]
+type Sha256 = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
+type GitIdentity = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{40}$")]
+type ImageIdentity = Annotated[StrictStr, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
+type RelativePath = Annotated[StrictStr, AfterValidator(_relative_path)]
+type Workload = Literal["short", "streaming", "bursty"]
+type Repeat = Annotated[StrictInt, Field(ge=1, le=3)]
+type ExactNumber = StrictInt | ExactFloat
+
+
+class _StrictStudyModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
+
+
+def validate_study_model[ModelT: BaseModel](
+    model: type[ModelT],
+    value: object,
+    *,
+    name: str,
+) -> ModelT:
+    """Validate primitives with stable diagnostics that omit persisted input values."""
+
+    try:
+        return model.model_validate(value)
+    except ValidationError as error:
+        first = error.errors(include_url=False, include_input=False)[0]
+        location = ".".join(str(part) for part in first["loc"]) or "root"
+        raise ValueError(f"{name} has invalid {location}: {first['msg']} [{first['type']}]") from error
+
+
+class StudyContentIdentity(_StrictStudyModel):
+    sha256: Sha256
+    size: NonnegativeInt
+
+
+class StudyCompatibilityDecision(_StrictStudyModel):
+    reason: NonemptyString
+    status: Literal["compatible"]
+
+
+class ValidationStudyEnvironment(_StrictStudyModel):
+    """Checked source, runtime, and image identity record for one accepted study."""
+
+    capture_image_id: ImageIdentity
+    capture_image_reference: NonemptyString
+    capture_tool_version: NonemptyString
+    compatibility_decision: StudyCompatibilityDecision
+    docker_compose_version: NonemptyString
+    docker_engine_version: NonemptyString
+    host_architecture: NonemptyString
+    kernel_release: NonemptyString
+    python_implementation: Literal["CPython"]
+    python_version: Literal["3.12.3"]
+    scientific_artifact_schema: Literal[2]
+    source_commit: GitIdentity
+    source_tree: GitIdentity
+    target_image_id: ImageIdentity
+    target_image_reference: NonemptyString
+    uv_lock_identity: StudyContentIdentity
+
+
+class StudyPrerequisiteEnvironment(_StrictStudyModel):
+    capture_image_id: ImageIdentity
+    capture_image_reference: NonemptyString
+    capture_tool_version: NonemptyString
+    source_commit: GitIdentity
+    source_tree: GitIdentity
+    target_image_id: ImageIdentity
+    target_image_reference: NonemptyString
+    uv_lock_identity: StudyContentIdentity
+
+
+class StudyCapability(_StrictStudyModel):
+    canary_sha256: Sha256
+    content_length: PositiveInt
+    content_range: NonemptyString
+    object_size_bytes: PositiveInt
+    status: PositiveInt
+
+
+class StudyRetainedOutput(_StrictStudyModel):
+    identity: StudyContentIdentity
+    path: RelativePath
+
+
+class StudyTestCounts(_StrictStudyModel):
+    errors: NonnegativeInt
+    failed: NonnegativeInt
+    passed: PositiveInt
+    skipped: NonnegativeInt
+    total: PositiveInt
+
+    @model_validator(mode="after")
+    def successful_counts_are_consistent(self) -> Self:
+        if self.failed != 0 or self.errors != 0 or self.skipped != 0 or self.passed != self.total:
+            raise ValueError("prerequisite test counts must describe a non-skipped successful selection")
+        return self
+
+
+class StudyPrerequisiteCommand(_StrictStudyModel):
+    argv: Annotated[tuple[NonemptyString, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
+    command: StudyRetainedOutput
+    exit_status: Annotated[StrictInt, Field(ge=0, le=0)]
+    junit: StudyRetainedOutput
+    kind: Literal["docker_matrix", "internet_smoke"]
+    status: StudyRetainedOutput
+    stderr: StudyRetainedOutput
+    stdout: StudyRetainedOutput
+    tests: StudyTestCounts
+
+
+class ValidationStudyPrerequisite(_StrictStudyModel):
+    """Retained successful Docker and Internet prerequisite evidence."""
+
+    capability: StudyCapability
+    commands: Annotated[
+        tuple[StudyPrerequisiteCommand, ...], Field(min_length=2, max_length=2), BeforeValidator(_tuple_input)
+    ]
+    environment: StudyPrerequisiteEnvironment
+    schema_version: Literal[3]
+    study_id: NonemptyString
+    url: Annotated[StrictStr, Field(pattern=r"^https://")]
+
+    @model_validator(mode="after")
+    def command_kinds_are_unique(self) -> Self:
+        if tuple(command.kind for command in self.commands) != ("docker_matrix", "internet_smoke"):
+            raise ValueError("prerequisite commands must be ordered Docker matrix then Internet smoke")
+        return self
+
+
+class SimpleStudyLineage(_StrictStudyModel):
+    relation: Literal[
+        "study-index",
+        "protocol",
+        "environment",
+        "prerequisites",
+        "report_inputs",
+        "report",
+        "lifecycle",
+    ]
+
+
+class PrerequisiteStudyLineage(_StrictStudyModel):
+    relation: Literal["prerequisite"]
+    record: NonemptyString
+
+
+class ConfigurationStudyLineage(_StrictStudyModel):
+    relation: Literal["configuration"]
+    name: NonemptyString
+
+
+class TransferStudyLineage(_StrictStudyModel):
+    filename: NonemptyString
+    relation: Literal["transfer-header", "external-observation"]
+    requested_end: NonnegativeInt
+    requested_start: NonnegativeInt
+    run_id: NonemptyString
+    scope: Literal["prerequisites", "training", "held_out"]
+    transfer_index: NonnegativeInt
+    workload: Workload | Literal["prerequisites"]
+
+
+class RepeatedStudyLineage(_StrictStudyModel):
+    relation: NonemptyString
+    repeat: Repeat
+    workload: Workload
+
+
+class HeldOutStudyLineage(_StrictStudyModel):
+    relation: NonemptyString
+    workload: Workload
+
+
+type StudyLineage = (
+    SimpleStudyLineage
+    | PrerequisiteStudyLineage
+    | ConfigurationStudyLineage
+    | TransferStudyLineage
+    | RepeatedStudyLineage
+    | HeldOutStudyLineage
+)
+
+
+class StudyManifestEntry(_StrictStudyModel):
+    lineage: StudyLineage
+    owner: NonemptyString
+    path: RelativePath
+    sha256: Sha256
+    size: NonnegativeInt
+
+
+class ValidationStudyManifest(_StrictStudyModel):
+    """Canonical inventory root; file bytes and modes remain auditor-owned policy."""
+
+    files: Annotated[tuple[StudyManifestEntry, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
+    schema_version: Literal[2]
+
+
+class StudyCaptureLineage(_StrictStudyModel):
+    capture_identity: StudyContentIdentity
+    capture_image_id: ImageIdentity
+    capture_image_reference: NonemptyString
+    capture_tool_version: NonemptyString
+    target_image_id: ImageIdentity
+    target_image_reference: NonemptyString
+
+
+class StudyTrainingLineage(_StrictStudyModel):
+    capture_lineage: StudyCaptureLineage
+    directory: RelativePath
+    portable_config: RelativePath
+    portable_config_identity: StudyContentIdentity
+    realized_config: RelativePath
+    realized_config_identity: StudyContentIdentity
+    reference_identity: StudyContentIdentity
+    repeat: Repeat
+    run_config_identity: StudyContentIdentity
+    workload: Workload
+
+
+class StudyFreshSimulationLineage(_StrictStudyModel):
+    comparison_identity: StudyContentIdentity
+    generated_identity: StudyContentIdentity
+    path: RelativePath
+    reference_identity: StudyContentIdentity
+    repeat: Repeat
+    seed: NonnegativeInt
+    training_directory: RelativePath
+    training_model_identity: StudyContentIdentity
+    workload: Workload
+
+
+class StudyHeldOutLineage(_StrictStudyModel):
+    capture_lineage: StudyCaptureLineage
+    directory: RelativePath
+    training_directory: RelativePath
+    workload: Workload
+
+
+class ValidationStudyLineage(_StrictStudyModel):
+    """Accepted evidence index and its complete typed lineage maps."""
+
+    environment: RelativePath
+    fresh_simulation: Annotated[
+        tuple[StudyFreshSimulationLineage, ...], Field(min_length=9, max_length=9), BeforeValidator(_tuple_input)
+    ]
+    held_out: Annotated[
+        tuple[StudyHeldOutLineage, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+    lifecycle: RelativePath
+    lineage: dict[RelativePath, StudyLineage]
+    ownership: dict[RelativePath, NonemptyString]
+    prerequisites: RelativePath
+    protocol: RelativePath
+    report: RelativePath
+    report_inputs: RelativePath
+    schema_version: Literal[3]
+    training: Annotated[
+        tuple[StudyTrainingLineage, ...], Field(min_length=9, max_length=9), BeforeValidator(_tuple_input)
+    ]
+
+
+class StudyLifecycleRow(_StrictStudyModel):
+    cleanup_verified: StrictBool
+    directory: RelativePath
+    project_name: NonemptyString
+    run_id: NonemptyString
+
+
+class StudyPhaseImageLifecycle(_StrictStudyModel):
+    capture_image_id: ImageIdentity
+    cleanup_verified: StrictBool
+    post_cleanup_inspect_exit_status: StrictInt
+    tag: NonemptyString
+
+
+class ValidationStudyLifecycle(_StrictStudyModel):
+    """Complete cleanup proof for training, held-out, and phase image resources."""
+
+    held_out: Annotated[tuple[StudyLifecycleRow, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)]
+    phase_capture_image: StudyPhaseImageLifecycle
+    schema_version: Literal[1]
+    study_id: NonemptyString
+    training: Annotated[tuple[StudyLifecycleRow, ...], Field(min_length=9, max_length=9), BeforeValidator(_tuple_input)]
+
+
+class StudySelectedModel(_StrictStudyModel):
+    best_model_identity: StudyContentIdentity
+    repeat: Repeat
+    training_directory: RelativePath
+    workload: Workload
+
+
+class StudyModelSelection(_StrictStudyModel):
+    rule: Literal["highest_best_fitness_then_lowest_repeat"]
+    selected: Annotated[
+        tuple[StudySelectedModel, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+
+
+class ValidationStudyProtocol(_StrictStudyModel):
+    """Frozen study identity, seed, repetition, and model-selection protocol."""
+
+    candidate_id: NonemptyString
+    destination_id: NonemptyString
+    final_seed: NonnegativeInt
+    model_selection: StudyModelSelection
+    prerequisite_path: RelativePath
+    schema_version: Literal[3]
+    selection_seeds: Annotated[tuple[NonnegativeInt, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
+    study_id: NonemptyString
+    training_repetitions: PositiveInt
+    workloads: Annotated[tuple[Workload, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)]
+
+
+class StudyMethodValues(_StrictStudyModel):
+    autocorrelation: UnitFloat
+    frame_size_ks: UnitFloat
+    iat_ks: UnitFloat
+    multiscale_rate: UnitFloat
+
+
+class StudyScore(_StrictStudyModel):
+    aggregate: UnitFloat
+    methods: StudyMethodValues
+
+
+class StudyDiagnostics(_StrictStudyModel):
+    autocorrelation: AutocorrelationDiagnostic
+    frame_size_ks: FrameSizeDiagnostic
+    iat_ks: IatDiagnostic
+    multiscale_rate: MultiscaleDiagnostic
+
+
+class StudyControlledWeightAnalysis(_StrictStudyModel):
+    alternative_aggregate: UnitFloat
+    alternative_weights: StudyMethodValues
+    baseline_aggregate: UnitFloat
+    baseline_weights: StudyMethodValues
+    components: StudyMethodValues
+    diagnostics: StudyDiagnostics
+    executed_methods: Annotated[
+        tuple[NonemptyString, ...], Field(min_length=4, max_length=4), BeforeValidator(_tuple_input)
+    ]
+    training_directory: RelativePath
+    workload: Workload
+
+
+class StudyWorkloadScore(_StrictStudyModel):
+    score: StudyScore
+    workload: Workload
+
+
+class StudyHeldOutScore(StudyWorkloadScore):
+    observation_window_seconds: PositiveFloat
+
+
+class StudyCandidateIdentifier(_StrictStudyModel):
+    birth_generation: NonnegativeInt
+    birth_index: NonnegativeInt
+
+
+class StudyInvalidCandidate(_StrictStudyModel):
+    affected_evidence: NonemptyString
+    authority: Literal["primary", "secondary"]
+    corrective_action: NonemptyString
+    detail: NonemptyString
+    evidence_state: Literal["not_published", "diagnostic_only", "preserved", "possibly_remaining"]
+    family: Literal["markov_renewal", "mmpp", "poisson_empirical"]
+    genes: Annotated[tuple[ExactNumber, ...], BeforeValidator(_tuple_input)] | None
+    identifier: StudyCandidateIdentifier
+    kind: Literal["repair", "fit", "generation", "incomplete_generation", "similarity_precondition", "nonfinite_score"]
+    seed: NonnegativeInt | None
+    stage: NonemptyString
+
+
+class StudyTrialLimits(_StrictStudyModel):
+    max_output_bytes: PositiveInt
+    max_packets: PositiveInt
+    max_wall_seconds: PositiveFloat
+
+
+class StudyInvalidChromosomeDiagnostics(_StrictStudyModel):
+    invalid_candidates: Annotated[tuple[StudyInvalidCandidate, ...], BeforeValidator(_tuple_input)]
+    repeat: Repeat
+    training_directory: RelativePath
+    trial_limits: StudyTrialLimits
+    workload: Workload
+
+
+class StudyNaturalVariationPair(_StrictStudyModel):
+    forward: StudyScore
+    left_repeat: Repeat
+    reverse: StudyScore
+    right_repeat: Repeat
+    symmetric_mean: StudyScore
+
+
+class StudyNaturalVariation(_StrictStudyModel):
+    pairs: Annotated[
+        tuple[StudyNaturalVariationPair, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+    symmetric_mean: StudyScore
+    workload: Workload
+
+
+class StudyDescriptive(_StrictStudyModel):
+    mean: NonnegativeFloat
+    sample_variance: NonnegativeFloat
+
+
+class StudyWinnerCounts(_StrictStudyModel):
+    markov_renewal: NonnegativeInt
+    mmpp: NonnegativeInt
+    poisson_empirical: NonnegativeInt
+
+
+class StudyTrainingSummary(_StrictStudyModel):
+    runtime_seconds: StudyDescriptive
+    selection_fitness: StudyDescriptive
+    winner_family_count_variance: ExactNumber
+    winner_family_counts: StudyWinnerCounts
+    workload: Workload
+
+
+class ValidationStudyReportInput(_StrictStudyModel):
+    """Typed report arithmetic inputs; the auditor still independently recomputes every value."""
+
+    controlled_weight_analysis: Annotated[
+        tuple[StudyControlledWeightAnalysis, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+    formula: Literal["arithmetic_mean"]
+    fresh_simulation: Annotated[
+        tuple[StudyWorkloadScore, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+    held_out: Annotated[tuple[StudyHeldOutScore, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)]
+    invalid_chromosome_diagnostics: Annotated[
+        tuple[StudyInvalidChromosomeDiagnostics, ...],
+        Field(min_length=9, max_length=9),
+        BeforeValidator(_tuple_input),
+    ]
+    natural_variation: Annotated[
+        tuple[StudyNaturalVariation, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+    runtime_winner_variance: Annotated[
+        tuple[StudyTrainingSummary, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+    training: Annotated[
+        tuple[StudyTrainingSummary, ...], Field(min_length=3, max_length=3), BeforeValidator(_tuple_input)
+    ]
+
+
+class ValidationStudyReport(_StrictStudyModel):
+    """Published report root bound to the exact report-input bytes."""
+
+    formula: Literal["arithmetic_mean"]
+    report_inputs_identity: StudyContentIdentity
+    summary: ValidationStudyReportInput
+
+
+# Explicit plural aliases match the persisted filenames without adding another model path.
+ValidationStudyPrerequisites = ValidationStudyPrerequisite
+ValidationStudyReportInputs = ValidationStudyReportInput
 
 _AT_FDCWD = -100
 _RENAME_NOREPLACE = 1

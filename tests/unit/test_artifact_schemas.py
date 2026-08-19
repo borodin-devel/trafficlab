@@ -21,10 +21,31 @@ _SIMILARITY_FIXTURE = Path(__file__).parents[2] / "examples" / "data" / "similar
 _FAILURE_FIXTURE = _ROOT / "tests" / "fixtures" / "data" / "diagnostics" / "failure-outcomes.jsonl"
 
 
+def _checked_study_artifacts(filename: str) -> list[object]:
+    paths = [
+        *sorted((_ROOT / "examples" / "validation_study" / "evidence").glob(f"*/{filename}")),
+        _ROOT / "tests" / "fixtures" / "data" / "validation_study" / "candidate" / filename,
+    ]
+    return [json.loads(path.read_bytes()) for path in paths]
+
+
 def test_public_core_artifact_roots_are_strict_frozen_pydantic_models() -> None:
     """Replacing a root with a permissive record would re-admit coercion and mutation."""
     assert type(PUBLIC_ARTIFACT_MODELS) is MappingProxyType
-    assert tuple(PUBLIC_ARTIFACT_MODELS) == ("best_model", "checkpoint", "comparison_result", "failure_outcome")
+    assert tuple(PUBLIC_ARTIFACT_MODELS) == (
+        "best_model",
+        "checkpoint",
+        "comparison_result",
+        "failure_outcome",
+        "study_environment",
+        "study_lifecycle",
+        "study_lineage",
+        "study_manifest",
+        "study_prerequisite",
+        "study_protocol",
+        "study_report",
+        "study_report_input",
+    )
 
     for model in PUBLIC_ARTIFACT_MODELS.values():
         assert issubclass(model, BaseModel)
@@ -62,6 +83,19 @@ def test_every_checked_core_artifact_validates_against_its_published_schema() ->
             for path in sorted(root.glob("**/checkpoint.json"))
         ],
         "failure_outcome": [json.loads(line) for line in _FAILURE_FIXTURE.read_text(encoding="utf-8").splitlines()],
+        **{
+            f"study_{name}": _checked_study_artifacts(filename)
+            for name, filename in {
+                "environment": "environment.json",
+                "lifecycle": "lifecycle.json",
+                "lineage": "index.json",
+                "manifest": "manifest.json",
+                "prerequisite": "prerequisites.json",
+                "protocol": "protocol.json",
+                "report": "report.json",
+                "report_input": "report_inputs.json",
+            }.items()
+        },
     }
 
     assert all(checked.values())

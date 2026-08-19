@@ -710,6 +710,35 @@ def test_offline_auditor_rejects_a_wrong_collection_lifecycle_schema_version(tmp
     ) == ("artifact_corrupt", "publication", "lifecycle.json", "not_published", "primary")
 
 
+def test_offline_auditor_rejects_duplicate_study_keys_before_pydantic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The JSON decoder, not Pydantic's last-key-wins parser, owns duplicate-key rejection."""
+
+    repository, candidate = copy_validation_study_candidate(tmp_path)
+    environment_path = candidate / "environment.json"
+    content = environment_path.read_bytes()
+    environment_path.write_bytes(
+        content.replace(b'"source_commit":', b'"source_commit":"duplicate","source_commit":', 1)
+    )
+    rewrite_candidate_manifest(candidate)
+
+    def unexpected_validation(_cls: type[object], _value: object) -> object:
+        raise AssertionError("Pydantic must not observe duplicate-key JSON")
+
+    monkeypatch.setattr(auditor.ValidationStudyEnvironment, "model_validate", classmethod(unexpected_validation))
+
+    with pytest.raises(TrafficlabError) as error:
+        auditor.audit_bundle(candidate, repository=repository)
+
+    outcome = error.value.failure_outcome
+    assert outcome is not None
+    assert outcome.kind == "artifact_corrupt"
+    assert outcome.affected_evidence == "environment.json"
+    assert "duplicate JSON key" in outcome.detail
+
+
 @pytest.mark.parametrize(
     "mutation",
     ("schema_version", "phase_cleanup", "phase_inspect", "training_cleanup", "held_out_cleanup"),

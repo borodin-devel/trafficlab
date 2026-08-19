@@ -20,6 +20,8 @@ from pathlib import Path, PurePosixPath
 from statistics import fmean, variance
 from typing import NoReturn, cast
 
+from pydantic import BaseModel, ValidationError
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -54,6 +56,15 @@ from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model, runtime_fitted_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.study_evidence import (
+    ValidationStudyEnvironment,
+    ValidationStudyLifecycle,
+    ValidationStudyLineage,
+    ValidationStudyManifest,
+    ValidationStudyProtocol,
+    ValidationStudyReport,
+    ValidationStudyReportInput,
+)
 from trafficlab.trace import TraceEvent, align_generated, normalize_reference, parse_capture_metadata
 
 _MANIFEST = "manifest.json"
@@ -314,6 +325,29 @@ def _json(content: bytes, *, name: str, canonical: bool = True) -> dict[str, obj
     if canonical and _canonical(document) != content:
         _fail("artifact_corrupt", name, f"{name} is not canonical JSON", "restore canonical retained JSON")
     return document
+
+
+def _validated_study_root(
+    document: dict[str, object],
+    model: type[BaseModel],
+    *,
+    name: str,
+    affected: str | None = None,
+) -> dict[str, object]:
+    """Validate one public study shape after duplicate-free canonical JSON decoding."""
+
+    try:
+        validated = model.model_validate(document)
+    except ValidationError as error:
+        first = error.errors(include_url=False, include_input=False)[0]
+        location = ".".join(str(part) for part in first["loc"]) or "root"
+        _fail(
+            "artifact_corrupt",
+            affected or name,
+            f"{name} has invalid {location}: {first['msg']} [{first['type']}]",
+            "restore canonical evidence",
+        )
+    return cast(dict[str, object], validated.model_dump(mode="json"))
 
 
 def _exact(value: object, keys: tuple[str, ...], *, name: str) -> dict[str, object]:
@@ -1053,45 +1087,42 @@ def _require_permitted_relocated_worktree(
 
 
 def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
-    document = _exact(
-        _json(content, name="environment.json"),
-        (
-            "capture_image_id",
-            "capture_image_reference",
-            "capture_tool_version",
-            "compatibility_decision",
-            "docker_compose_version",
-            "docker_engine_version",
-            "host_architecture",
-            "kernel_release",
-            "python_implementation",
-            "python_version",
-            "scientific_artifact_schema",
-            "source_commit",
-            "source_tree",
-            "target_image_id",
-            "target_image_reference",
-            "uv_lock_identity",
-        ),
-        name="environment.json",
-    )
-    if document["scientific_artifact_schema"] != 2:
+    document = _json(content, name="environment.json")
+    if document.get("scientific_artifact_schema") != 2:
         _fail(
             "scientific_semantics_incompatible",
             "environment",
             "environment must record scientific schema 2",
             "recreate evidence under schema 2",
         )
-    if document["python_implementation"] != "CPython" or document["python_version"] != platform.python_version():
+    if ("python_implementation" in document and document["python_implementation"] != "CPython") or (
+        "python_version" in document and document["python_version"] != platform.python_version()
+    ):
         _fail(
             "scientific_semantics_incompatible",
             "environment",
             "environment Python runtime does not match the locked auditor",
             "audit with the retained CPython patch",
         )
-    for field, width in (("source_commit", 40), ("source_tree", 40)):
-        value = _string(document[field], name=f"environment {field}")
-        if (width == 40 and _HEX40.fullmatch(value) is None) or set(value) == {"0"}:
+    expected_decision = {
+        "reason": "source, lock, and image-lock identities are compatible",
+        "status": "compatible",
+    }
+    raw_decision = document.get("compatibility_decision")
+    if type(raw_decision) is dict and set(cast(dict[str, object], raw_decision)) == {"reason", "status"}:
+        if raw_decision != expected_decision:
+            _fail(
+                "scientific_semantics_incompatible",
+                "environment",
+                "environment compatibility decision does not match recomputed locked compatibility",
+                "restore the recomputed compatible environment decision",
+            )
+    document = _validated_study_root(
+        document, ValidationStudyEnvironment, name="environment.json", affected="environment"
+    )
+    for field in ("source_commit", "source_tree"):
+        value = cast(str, document[field])
+        if set(value) == {"0"}:
             _fail(
                 "artifact_corrupt",
                 "environment",
@@ -1113,15 +1144,6 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             "environment target_image_reference must be an immutable digest reference",
             "restore image lock evidence",
         )
-    for field in ("target_image_id", "capture_image_id"):
-        value = _string(document[field], name=f"environment {field}")
-        if not value.startswith("sha256:") or _HEX64.fullmatch(value.removeprefix("sha256:")) is None:
-            _fail(
-                "artifact_corrupt",
-                "environment",
-                f"environment {field} must be an immutable image ID",
-                "restore image identity evidence",
-            )
     capture_reference = _string(document["capture_image_reference"], name="environment capture_image_reference")
     if capture_reference != document["capture_image_id"] and (
         "@sha256:" not in capture_reference or _HEX64.fullmatch(capture_reference.rsplit("@sha256:", 1)[-1]) is None
@@ -1132,17 +1154,7 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             "environment capture_image_reference must be its immutable image ID or digest reference",
             "restore image lock evidence",
         )
-    decision = _exact(
-        document["compatibility_decision"], ("reason", "status"), name="environment compatibility decision"
-    )
-    for field in (
-        "capture_tool_version",
-        "docker_compose_version",
-        "docker_engine_version",
-        "host_architecture",
-        "kernel_release",
-    ):
-        _string(document[field], name=f"environment {field}")
+    decision = cast(dict[str, object], document["compatibility_decision"])
     source_commit = _string(document["source_commit"], name="environment source_commit")
     source_tree = _string(document["source_tree"], name="environment source_tree")
     current_head = _git_identity(repository, ("rev-parse", "HEAD"), name="relocated Git HEAD")
@@ -1247,10 +1259,6 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
             "environment image identities do not match the checked image locks",
             "restore image-lock-bound environment evidence",
         )
-    expected_decision = {
-        "reason": "source, lock, and image-lock identities are compatible",
-        "status": "compatible",
-    }
     if decision != expected_decision:
         _fail(
             "scientific_semantics_incompatible",
@@ -1262,50 +1270,35 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
 
 
 def _protocol(content: bytes) -> dict[str, object]:
-    document = _exact(
-        _json(content, name="protocol.json"),
-        (
-            "candidate_id",
-            "destination_id",
-            "final_seed",
-            "model_selection",
-            "prerequisite_path",
-            "schema_version",
-            "selection_seeds",
-            "study_id",
-            "training_repetitions",
-            "workloads",
-        ),
-        name="protocol.json",
-    )
-    if document["schema_version"] != 3 or _integer(document["final_seed"], name="protocol final seed") != 97:
+    document = _json(content, name="protocol.json")
+    if document.get("schema_version") != 3 or document.get("final_seed") != 97:
         _fail(
             "scientific_semantics_incompatible",
             "protocol",
             "protocol must freeze schema 3 and final seed 97",
             "restore frozen protocol",
         )
-    if _integer(document["training_repetitions"], name="protocol training repetitions") != 3:
+    raw_selection = document.get("model_selection")
+    if type(raw_selection) is dict and cast(dict[str, object], raw_selection).get("rule") not in (
+        None,
+        "highest_best_fitness_then_lowest_repeat",
+    ):
+        _fail(
+            "scientific_semantics_incompatible",
+            "protocol",
+            "protocol model selection rule must retain the frozen training-only rule",
+            "restore frozen protocol",
+        )
+    document = _validated_study_root(document, ValidationStudyProtocol, name="protocol.json", affected="protocol")
+    if cast(int, document["training_repetitions"]) != 3:
         _fail(
             "artifact_corrupt",
             "protocol",
             "protocol must retain exactly three training repetitions",
             "restore full protocol",
         )
-    seeds = document["selection_seeds"]
-    if (
-        type(seeds) is not list
-        or not seeds
-        or any(type(seed) is not int or seed < 0 for seed in cast(list[object], seeds))
-    ):
-        _fail(
-            "artifact_corrupt",
-            "protocol",
-            "protocol selection seeds must be nonempty nonnegative integers",
-            "restore frozen protocol",
-        )
     workloads = document["workloads"]
-    if type(workloads) is not list or tuple(cast(list[object], workloads)) != _WORKLOADS:
+    if tuple(cast(list[object], workloads)) != _WORKLOADS:
         _fail(
             "artifact_corrupt",
             "protocol",
@@ -2798,17 +2791,7 @@ def _lifecycle_rows(value: object, *, expected: Sequence[dict[str, object]], nam
 
     if type(value) is not list:
         _fail("artifact_corrupt", "lifecycle.json", f"{name} lifecycle rows must be a list", "restore lifecycle proof")
-    rows = [
-        _exact(item, ("cleanup_verified", "directory", "project_name", "run_id"), name=f"{name} lifecycle row")
-        for item in cast(list[object], value)
-    ]
-    if any(type(row["cleanup_verified"]) is not bool for row in rows):
-        _fail(
-            "artifact_corrupt",
-            "lifecycle.json",
-            f"{name} lifecycle cleanup verification must be a boolean",
-            "restore canonical collection cleanup evidence",
-        )
+    rows = cast(list[dict[str, object]], value)
     if rows != expected:
         _fail(
             "artifact_foreign",
@@ -2828,18 +2811,18 @@ def _lifecycle(
 ) -> None:
     """Independently validate candidate-owned capture and phase-image cleanup proof."""
 
-    document = _exact(
-        value,
-        ("held_out", "phase_capture_image", "schema_version", "study_id", "training"),
-        name="lifecycle.json",
-    )
-    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
+    if (
+        type(value) is not dict
+        or type(cast(dict[str, object], value).get("schema_version")) is not int
+        or cast(dict[str, object], value).get("schema_version") != 1
+    ):
         _fail(
             "artifact_corrupt",
             "lifecycle.json",
             "collection lifecycle must use schema version 1",
             "restore canonical collection cleanup evidence",
         )
+    document = _validated_study_root(cast(dict[str, object], value), ValidationStudyLifecycle, name="lifecycle.json")
     study_id = _string(document["study_id"], name="lifecycle study ID")
     if study_id != protocol["study_id"] or study_id != bundle.name:
         _fail(
@@ -2848,18 +2831,7 @@ def _lifecycle(
             "collection lifecycle study ID does not match frozen protocol identity",
             "restore matching collection cleanup evidence",
         )
-    phase = _exact(
-        document["phase_capture_image"],
-        ("capture_image_id", "cleanup_verified", "post_cleanup_inspect_exit_status", "tag"),
-        name="collection phase capture image lifecycle",
-    )
-    if type(phase["cleanup_verified"]) is not bool or type(phase["post_cleanup_inspect_exit_status"]) is not int:
-        _fail(
-            "artifact_corrupt",
-            "lifecycle.json",
-            "collection phase capture image lifecycle has invalid scalar types",
-            "restore canonical collection cleanup evidence",
-        )
+    phase = cast(dict[str, object], document["phase_capture_image"])
     expected_phase = {
         "capture_image_id": environment["capture_image_id"],
         "cleanup_verified": True,
@@ -3032,39 +3004,31 @@ def _audit(
     source_candidate: Path | None = None,
 ) -> AuditResult:
     _require_permitted_relocated_worktree(repository, candidate=bundle, source_candidate=source_candidate)
-    index = _exact(
-        _json(_read_regular(bundle / _INDEX, affected=_INDEX), name=_INDEX),
-        (
-            "environment",
-            "fresh_simulation",
-            "held_out",
-            "lifecycle",
-            "lineage",
-            "ownership",
-            "prerequisites",
-            "protocol",
-            "report",
-            "report_inputs",
-            "schema_version",
-            "training",
-        ),
-        name=_INDEX,
-    )
-    if type(index["schema_version"]) is not int:
+    index = _json(_read_regular(bundle / _INDEX, affected=_INDEX), name=_INDEX)
+    index_version = index.get("schema_version")
+    if type(index_version) is not int:
         _fail(
             "artifact_corrupt",
             _INDEX,
             "evidence index schema version must be an integer",
             "restore canonical evidence index",
         )
-    if index["schema_version"] != _INDEX_SCHEMA:
+    if index_version != _INDEX_SCHEMA:
         _fail(
             "scientific_semantics_incompatible",
             _INDEX,
             "evidence index must use schema version 3",
             "rebuild retained evidence under schema 3",
         )
+    if "ownership" not in index or "lineage" not in index:
+        _validated_study_root(index, ValidationStudyLineage, name=_INDEX)
     _metadata(index, entries)
+    _validated_study_root(
+        _json(_read_regular(bundle / _MANIFEST, affected=_MANIFEST), name=_MANIFEST),
+        ValidationStudyManifest,
+        name=_MANIFEST,
+    )
+    index = _validated_study_root(index, ValidationStudyLineage, name=_INDEX)
     environment_path = _relative(index["environment"], name="index environment")
     protocol_path = _relative(index["protocol"], name="index protocol")
     prerequisites_path = _relative(index["prerequisites"], name="index prerequisites")
@@ -3251,12 +3215,9 @@ def _audit(
             "report inputs do not match reconstructed evidence arithmetic",
             "restore matching report inputs",
         )
+    report_inputs = _validated_study_root(report_inputs, ValidationStudyReportInput, name=inputs_path)
     report_path = _relative(index["report"], name="index report")
-    report = _exact(
-        _json(_read_regular(bundle / report_path, affected=report_path), name=report_path),
-        ("formula", "report_inputs_identity", "summary"),
-        name=report_path,
-    )
+    report = _json(_read_regular(bundle / report_path, affected=report_path), name=report_path)
     if (
         report["formula"] != "arithmetic_mean"
         or report["report_inputs_identity"] != _identity(_read_regular(bundle / inputs_path, affected=inputs_path))
@@ -3268,6 +3229,7 @@ def _audit(
             "report does not match retained report inputs and arithmetic",
             "restore matching report",
         )
+    _validated_study_root(report, ValidationStudyReport, name=report_path)
     return AuditResult(
         bundle,
         ordered_training[0].directory,
