@@ -2,16 +2,20 @@
 
 ## Mission
 
-Implement every checked requirement in `architecture/ROADMAP.md`, including
-source code, unit tests, in-process integration tests, Docker integration tests,
-example configurations, checked-in deterministic fixtures, and the real-program
-validation report. Continue until every roadmap phase satisfies its `Done when`
-condition and the final verification gate passes.
+Implement the current user request. When the user asks to execute an active
+implementation plan in `TASK.md`, include its source code, unit tests,
+in-process integration tests, Docker integration tests, example configurations,
+checked-in deterministic fixtures, and real-program validation evidence. Continue
+until every in-scope plan requirement and its final verification gate pass.
 
 The approved architecture in `architecture/` is authoritative. Keep the project
 a simple one-person research prototype: one Python process, two production
 containers for capture, classical models only, no security subsystem, no Node.js
 application dependencies, and no speculative infrastructure.
+
+`architecture/` describes intended behavior, scientific definitions, stable
+constraints, and verification standards. It must not contain implementation
+plans, task lists, progress checkboxes, completion ledgers, or status tracking.
 
 ## Output and generated-task identity
 
@@ -53,7 +57,7 @@ Classify every development problem by both impact and difficulty:
   change the scientific purpose or committed scope; required credentials or
   authority that are not available; an irreversible external action; or a hard
   external blocker for which no safe implementation or valid test substitute
-  can satisfy the roadmap. Only [PROBLEM-C5] permits asking the human a question.
+  can satisfy the active task. Only [PROBLEM-C5] permits asking the human a question.
 
 The human has pre-approved recommended choices for [PROBLEM-C1] through [PROBLEM-C4]. Do not pause for
 routine confirmations, status choices, dependency approval, expected test
@@ -65,9 +69,9 @@ under this policy.
 
 At the start of every resumed or compacted context:
 
-1. Read this file, `architecture/README.md`, `architecture/ROADMAP.md`, and the
-   active full-implementation plan under `docs/superpowers/plans/`.
-2. Inspect `git status`, recent commits, and the first unchecked roadmap item.
+1. Read this file, `architecture/README.md`, and `TASK.md` when it exists. If
+   `TASK.md` names another active implementation plan, read that plan too.
+2. Inspect `git status`, recent commits, and the first unchecked active-plan item.
 3. Run the narrow verification for the last completed task before changing it.
 4. Resume the active task; do not restart completed work or ask whether to
    continue.
@@ -95,7 +99,7 @@ state and continue from it. An incomplete tool call is not a reason to stop.
 - Use deterministic seeds and checked-in small fixtures. Never make ordinary
   tests depend on the public Internet.
 - Keep Docker resources uniquely project-scoped and always run bounded cleanup.
-- Request independent review after each roadmap phase and fix all Critical and
+- Request independent review after each active implementation phase and fix all Critical and
   Important findings before proceeding.
 - Maintain at least 90% branch-aware coverage for the non-Docker Python package.
   Core mathematics, configuration validation, orchestration arbitration, and
@@ -107,9 +111,9 @@ state and continue from it. An incomplete tool call is not a reason to stop.
 
 ## Completion gate
 
-Do not stop merely because one phase passes. Stop only after:
+For implementation work, do not stop merely because one phase passes. Stop only after:
 
-- every Roadmap checkbox is implemented and accurately marked;
+- every in-scope active-plan checkbox is implemented and accurately marked;
 - all example configurations and deterministic example data are checked in;
 - locked sync, format, lint, strict typing, unit, in-process integration,
   coverage, and available Docker integration commands pass;

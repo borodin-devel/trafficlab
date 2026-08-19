@@ -15,8 +15,8 @@ Closure reassessment date: 2026-08-18 (Europe/Moscow)
 This document applies the 37 independent anchors in the
 [research-fitness rubric](../architecture/RESEARCH_FITNESS_CRITERIA.md) to the declared one-process research
 prototype. The 2026-08-18 closure reviews all 37 criteria against the current implementation and final r21 evidence,
-and reassesses the 17 criteria formally reopened by the Roadmap against the unchanged rubric. The other 20 criteria
-retain their Acceptable grades after that current-state review. Enterprise hardening, multi-user operation,
+and reassesses the 17 criteria selected for the completed remediation effort against the unchanged rubric. The other
+20 criteria retain their Acceptable grades after that current-state review. Enterprise hardening, multi-user operation,
 distributed execution, hosted deployment, and feature breadth remain excluded unless they directly affect scientific
 evidence.
 

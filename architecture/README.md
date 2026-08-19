@@ -26,22 +26,6 @@ The complete `trafficlab run` command performs this sequence. Each stage is also
 available separately so a researcher can iterate on a model or metric without
 repeating a real capture.
 
-## Research fitness closure
-
-The [research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) records
-the 2026-08-18 current-state review of all 37 criteria and unchanged-rubric
-reassessment of the 17 criteria reopened by the [Roadmap](ROADMAP.md). Every
-criterion is Acceptable, backed by the accepted
-[r21 Validation Study](../examples/validation_study/REPORT.md), final local
-gates, offline clean-clone reconstruction, and an independent staged-evidence
-review with no Critical or Important findings.
-
-The completed work tightens scientific correctness, configurability, robustness,
-and reproducibility while preserving the same one-process MVP workflow. It adds
-no new model, metric, service, security subsystem, enterprise infrastructure, or
-multi-user scope. The approved remediation design and earlier evidence remain
-development history rather than current status.
-
 ## Principles
 
 - One Python program owns the pipeline; stages call one another in process.
@@ -54,7 +38,8 @@ development history rather than current status.
 - Only implemented algorithms receive architecture documents.
 - Mathematical documents cite authoritative sources and label local design
   choices explicitly.
-- One readable roadmap owns the implementation sequence.
+- Architecture documents describe intended behavior and stable boundaries; they
+  never track implementation sequence, task state, or completion progress.
 
 ## Documents
 
@@ -64,14 +49,9 @@ development history rather than current status.
   commands, and Git workspace policy.
 - [Capture](CAPTURE.md) defines the Docker topology and reliable lifecycle.
 - [Testing](TESTING.md) defines unit and integration evidence.
-- [Roadmap](ROADMAP.md) gives the ordered MVP implementation path.
 - [Research fitness criteria](RESEARCH_FITNESS_CRITERIA.md) defines a five-level
   rubric for scientific correctness, configurability, robustness, and
   reproducibility without grading the current implementation.
-- [Research fitness assessment](../docs/RESEARCH_FITNESS_ASSESSMENT.md) records
-  the original assessment and the 2026-08-18 current-state closure reassessment.
-- [Remediation design](../docs/superpowers/specs/2026-08-14-research-fitness-remediation-design.md)
-  defines the minimum Acceptable target and targeted phase reopenings.
 - [Genetic models](genetic_models/README.md) describes model-family competition
   and the enabled evolutionary strategy.
 - [Traffic models](traffic_models/README.md) owns the common model interface and
@@ -97,4 +77,5 @@ Edit the document that owns the affected behavior and rely on Git history for
 past decisions. Add an algorithm document only with its implementation, tests,
 and registry entry; remove the document when the algorithm is removed. Do not
 create amendments, versioned design documents, SAD/SRS document sets, or empty
-algorithm placeholders.
+algorithm placeholders. Keep implementation plans, task checklists, completion
+evidence, and progress state outside `architecture/`.

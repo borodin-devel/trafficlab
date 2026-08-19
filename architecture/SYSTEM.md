@@ -62,9 +62,9 @@ trafficlab run EXPERIMENT
 
 `EXPERIMENT` is a TOML file path. The bracketed option is accepted only by
 `preflight`; every other command rejects it. These commands are the final public
-surface, but the roadmap implements each one with its owning subsystem. Every
-command calls an in-process stage function. `run` composes those same functions
-and does not implement an alternate path.
+surface, and each is owned by its corresponding subsystem. Every command calls
+an in-process stage function. `run` composes those same functions and does not
+implement an alternate path.
 
 ### `preflight`
 
