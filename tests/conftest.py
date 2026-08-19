@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 import pytest
+from hypothesis import settings
 
 from tests.support.config import valid_config_data as build_valid_config_data
 from tests.support.docker import (
@@ -21,6 +22,15 @@ from tests.support.external import (
 )
 
 _TEST_BODY_FAILURE = pytest.StashKey[BaseException]()
+
+settings.register_profile(
+    "trafficlab_locked",
+    derandomize=True,
+    database=None,
+    deadline=None,
+    max_examples=100,
+)
+settings.load_profile("trafficlab_locked")
 
 
 class _ItemFixtureRequest(Protocol):

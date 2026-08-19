@@ -4,9 +4,11 @@ import os
 import runpy
 import subprocess
 import sys
+import tomllib
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
+import numpy
 import pytest
 
 import trafficlab
@@ -18,6 +20,28 @@ from trafficlab.errors import TrafficlabError
 
 def test_version_is_project_version() -> None:
     assert __version__ == "0.1.0"
+
+
+def test_scientific_dependencies_are_in_their_intended_installation_groups() -> None:
+    project = tomllib.loads(Path("pyproject.toml").read_text())
+    runtime = project["project"]["dependencies"]
+    development = project["dependency-groups"]["dev"]
+
+    assert any(requirement.startswith("numpy>=2,<3") for requirement in runtime)
+    assert any(requirement.startswith("scipy>=1.16,<2") for requirement in runtime)
+    assert any(requirement.startswith("hypothesis>=6,<7") for requirement in development)
+    assert "pymoo==0.6.2" in development
+    assert "scapy==2.7.0" in development
+
+
+def test_installed_package_exposes_only_runtime_scientific_dependencies() -> None:
+    runtime_requirements = importlib.metadata.requires("trafficlab") or []
+    runtime_names = {requirement.split("<", 1)[0].split(">", 1)[0] for requirement in runtime_requirements}
+
+    assert int(numpy.__version__.split(".", 1)[0]) >= 2
+    assert tuple(int(part) for part in importlib.metadata.version("scipy").split(".")[:2]) >= (1, 16)
+    assert {"numpy", "scipy"} <= runtime_names
+    assert not {"hypothesis", "pymoo", "scapy"} & runtime_names
 
 
 def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:

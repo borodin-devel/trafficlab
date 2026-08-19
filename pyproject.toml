@@ -5,9 +5,11 @@ description = "Research prototype for fitting and comparing network traffic mode
 readme = "architecture/README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "numpy>=2,<3",
     # Runtime remains intentionally small: validated configuration plus
     # deterministic TOML serialization are the only non-stdlib requirements.
     "pydantic>=2.11,<3",
+    "scipy>=1.16,<2",
     "tomli-w>=1.2,<2",
 ]
 
@@ -22,11 +24,14 @@ build-backend = "hatchling.build"
 # Development tools stay outside the production dependency set so capture and
 # fitting installations do not acquire test runners or static analyzers.
 dev = [
+    "hypothesis>=6,<7",
+    "pymoo==0.6.2",
     "pyright",
     "pytest",
     "pytest-cov",
     "pytest-xdist",
     "ruff",
+    "scapy==2.7.0",
 ]
 
 [tool.pytest.ini_options]
