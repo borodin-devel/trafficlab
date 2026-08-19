@@ -308,7 +308,7 @@ def test_run_experiment_appends_one_exact_completion_record(
     completions = [record for record in _records(prepared) if record.get("event") == "run_completed"]
     assert completions == [
         {
-            "aggregate_score": 0.5956427487361957,
+            "aggregate_score": 0.5662202380952381,
             "event": "run_completed",
             "family": "poisson_empirical",
             "fitness": 0.8,
@@ -609,7 +609,7 @@ def test_final_reload_preserves_the_generic_checkpoint_error_boundary(
 
     def replace_checkpoint_after_compare(path: Path) -> ComparisonResult:
         result = original_compare(path)
-        checkpoint_path.write_bytes(b'{"scientific_artifact_schema":2}\n')
+        checkpoint_path.write_bytes(b'{"scientific_artifact_schema":3}\n')
         return result
 
     object.__setattr__(dependencies, "compare", replace_checkpoint_after_compare)

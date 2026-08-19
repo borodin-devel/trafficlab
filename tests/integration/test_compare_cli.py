@@ -33,12 +33,9 @@ _REFERENCE_EVENTS = (
     TraceEvent(20.0, Direction.OUTBOUND, 60),
 )
 _GENERATED_EVENTS = (
-    TraceEvent(0.0, Direction.INBOUND, 100),
-    TraceEvent(3.812583265, Direction.OUTBOUND, 60),
-    TraceEvent(4.513747989, Direction.OUTBOUND, 60),
-    TraceEvent(6.525780057, Direction.INBOUND, 100),
-    TraceEvent(7.007390402, Direction.INBOUND, 100),
-    TraceEvent(8.814041505, Direction.INBOUND, 100),
+    TraceEvent(0.0, Direction.OUTBOUND, 60),
+    TraceEvent(3.522005794, Direction.INBOUND, 100),
+    TraceEvent(5.802501672, Direction.INBOUND, 100),
 )
 _NORMALIZED_REFERENCE = (
     TraceEvent(0.0, Direction.OUTBOUND, 60),
@@ -48,12 +45,9 @@ _NORMALIZED_REFERENCE = (
     TraceEvent(10.0, Direction.OUTBOUND, 60),
 )
 _ALIGNED_GENERATED = (
-    TraceEvent(0.0, Direction.INBOUND, 100),
-    TraceEvent(3.812583265, Direction.OUTBOUND, 60),
-    TraceEvent(4.513747989, Direction.OUTBOUND, 60),
-    TraceEvent(6.525780057, Direction.INBOUND, 100),
-    TraceEvent(7.007390402, Direction.INBOUND, 100),
-    TraceEvent(8.814041505, Direction.INBOUND, 100),
+    TraceEvent(0.0, Direction.OUTBOUND, 60),
+    TraceEvent(3.522005794, Direction.INBOUND, 100),
+    TraceEvent(5.802501672, Direction.INBOUND, 100),
 )
 
 
@@ -219,13 +213,13 @@ def test_checked_in_fixture_round_trip_preserves_canonical_values_and_one_shared
     assert all(method.diagnostics["observation_window_seconds"] == window for method in result.methods.values())
     assert {name: method.score for name, method in result.methods.items()} == pytest.approx(
         {
-            "autocorrelation": 0.8100292509744677,
+            "autocorrelation": 0.756547619047619,
             "frame_size_ks": 0.8,
-            "iat_ks": 0.6,
-            "multiscale_rate": 0.1725417439703154,
+            "iat_ks": 0.5,
+            "multiscale_rate": 0.20833333333333326,
         }
     )
-    assert result.aggregate_score == pytest.approx(0.5956427487361957)
+    assert result.aggregate_score == pytest.approx(0.5662202380952381)
 
 
 def test_checked_in_similarity_artifact_keeps_the_fixed_four_method_json_shape() -> None:

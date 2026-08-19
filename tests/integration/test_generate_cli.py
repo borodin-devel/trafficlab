@@ -1684,6 +1684,6 @@ def test_installed_generate_reproduces_checked_fixture_from_isolated_working_dir
 
     generated = (run_directory / "generated.pcapng").read_bytes()
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout == f"generate: packets=6 output={run_directory / 'generated.pcapng'}\n"
+    assert completed.stdout == f"generate: packets=3 output={run_directory / 'generated.pcapng'}\n"
     assert completed.stderr == ""
     assert generated == (_EXAMPLE_DATA / "models" / "generated.pcapng").read_bytes()

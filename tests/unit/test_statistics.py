@@ -37,6 +37,20 @@ def test_bootstrap_interval_records_literal_pcg64_percentile_metadata_and_bytes(
     )
 
 
+def test_bootstrap_interval_returns_the_exact_constant_sample_interval_without_scipy_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A degenerate empirical distribution has a finite exact percentile interval."""
+
+    def forbidden_bootstrap(*_args: object, **_kwargs: object) -> _FakeBootstrapResult:
+        pytest.fail("constant sample reached SciPy's undefined standard-error path")
+
+    monkeypatch.setattr(statistics, "_bootstrap", forbidden_bootstrap)
+    interval = bootstrap_interval([0.25, 0.25, 0.25], seed=20260819)
+
+    assert (interval.lower_bound, interval.upper_bound, interval.sample_size) == (0.25, 0.25, 3)
+
+
 @pytest.mark.parametrize("values", [[], [1.0, float("nan")], [1.0, float("inf")]])
 def test_bootstrap_interval_rejects_empty_or_nonfinite_samples(values: list[float]) -> None:
     with pytest.raises(TrafficlabError):
@@ -83,7 +97,7 @@ def test_bootstrap_interval_rejects_nonfinite_or_inverted_scipy_bounds(
     monkeypatch.setattr(statistics, "_bootstrap", fake_bootstrap)
 
     with pytest.raises(TrafficlabError, match="nonfinite or inverted"):
-        bootstrap_interval([1.0], seed=1)
+        bootstrap_interval([1.0, 2.0], seed=1)
 
 
 def test_bootstrap_interval_translates_scipy_evaluation_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,4 +107,4 @@ def test_bootstrap_interval_translates_scipy_evaluation_errors(monkeypatch: pyte
     monkeypatch.setattr(statistics, "_bootstrap", raising_bootstrap)
 
     with pytest.raises(TrafficlabError, match="could not be evaluated"):
-        bootstrap_interval([1.0], seed=1)
+        bootstrap_interval([1.0, 2.0], seed=1)

@@ -19,12 +19,12 @@ pytestmark = pytest.mark.integration
 
 _REPOSITORY = Path(__file__).parents[2]
 _EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
-_EXPECTED_AGGREGATE_SCORE = 0.5956427487361957
+_EXPECTED_AGGREGATE_SCORE = 0.5662202380952381
 _EXPECTED_METHOD_SCORES = {
-    "autocorrelation": 0.8100292509744677,
+    "autocorrelation": 0.756547619047619,
     "frame_size_ks": 0.8,
-    "iat_ks": 0.6,
-    "multiscale_rate": 0.1725417439703154,
+    "iat_ks": 0.5,
+    "multiscale_rate": 0.20833333333333326,
 }
 
 

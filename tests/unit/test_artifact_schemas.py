@@ -22,11 +22,17 @@ _FAILURE_FIXTURE = _ROOT / "tests" / "fixtures" / "data" / "diagnostics" / "fail
 
 
 def _checked_study_artifacts(filename: str) -> list[object]:
-    paths = [
-        *sorted((_ROOT / "examples" / "validation_study" / "evidence").glob(f"*/{filename}")),
-        _ROOT / "tests" / "fixtures" / "data" / "validation_study" / "candidate" / filename,
-    ]
+    paths = [_ROOT / "tests" / "fixtures" / "data" / "validation_study" / "candidate" / filename]
     return [json.loads(path.read_bytes()) for path in paths]
+
+
+def _current_artifacts(root: Path, filename: str) -> list[object]:
+    historical = (_ROOT / "examples" / "validation_study" / "evidence").resolve()
+    return [
+        json.loads(path.read_bytes())
+        for path in sorted(root.glob(f"**/{filename}"))
+        if not path.resolve().is_relative_to(historical)
+    ]
 
 
 def test_public_core_artifact_roots_are_strict_frozen_pydantic_models() -> None:
@@ -68,9 +74,9 @@ def test_every_checked_core_artifact_validates_against_its_published_schema() ->
     """A public schema must describe canonical persisted bytes rather than internal runtime fields."""
     checked = {
         "best_model": [
-            json.loads(path.read_bytes())
+            document
             for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")
-            for path in sorted(root.glob("**/best_model.json"))
+            for document in _current_artifacts(root, "best_model.json")
         ],
         "comparison_result": [
             json.loads(path.read_bytes())
@@ -78,9 +84,9 @@ def test_every_checked_core_artifact_validates_against_its_published_schema() ->
             for path in sorted(root.glob("**/similarity.json"))
         ],
         "checkpoint": [
-            json.loads(path.read_bytes())
+            document
             for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")
-            for path in sorted(root.glob("**/checkpoint.json"))
+            for document in _current_artifacts(root, "checkpoint.json")
         ],
         "failure_outcome": [json.loads(line) for line in _FAILURE_FIXTURE.read_text(encoding="utf-8").splitlines()],
         **{

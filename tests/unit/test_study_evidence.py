@@ -43,10 +43,7 @@ _STUDY_ROOTS: dict[str, tuple[type[BaseModel], str]] = {
 
 
 def _checked_study_paths(filename: str) -> tuple[Path, ...]:
-    return (
-        _STUDY_FIXTURE / filename,
-        *sorted((REPOSITORY / "examples" / "validation_study" / "evidence").glob(f"*/{filename}")),
-    )
+    return (_STUDY_FIXTURE / filename,)
 
 
 def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_documents() -> None:
@@ -60,7 +57,7 @@ def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_
         schema = model.model_json_schema(mode="validation")
         Draft202012Validator.check_schema(schema)
         paths = _checked_study_paths(filename)
-        assert len(paths) == 2, name
+        assert len(paths) == 1, name
         for path in paths:
             content = path.read_bytes()
             document = json.loads(content)
@@ -74,6 +71,22 @@ def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_
                 + b"\n"
                 == content
             ), path
+
+
+def test_historical_schema_v2_evidence_is_retained_for_its_recorded_source_checkout() -> None:
+    """Current roots reject old semantics while the retained bundle still names an available source commit."""
+    historical = REPOSITORY / "examples" / "validation_study" / "evidence" / "2026-08-18-research-fitness-r21"
+    environment = json.loads((historical / "environment.json").read_bytes())
+
+    assert environment["scientific_artifact_schema"] == 2
+    with pytest.raises(ValidationError):
+        ValidationStudyEnvironment.model_validate(environment)
+    subprocess.run(
+        ["git", "cat-file", "-e", f"{environment['source_commit']}^{{commit}}"],
+        cwd=REPOSITORY,
+        check=True,
+        capture_output=True,
+    )
 
 
 @pytest.mark.parametrize(

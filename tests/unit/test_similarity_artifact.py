@@ -24,7 +24,7 @@ from trafficlab.trace import (
 
 _REPOSITORY = Path(__file__).parents[2]
 _EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
-_EXPECTED_AGGREGATE_SCORE = 0.5956427487361957
+_EXPECTED_AGGREGATE_SCORE = 0.5662202380952381
 
 
 def _prepare_run(valid_config_data: dict[str, object], tmp_path: Path) -> tuple[Path, Path, ExperimentConfig]:
