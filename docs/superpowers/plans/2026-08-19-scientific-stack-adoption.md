@@ -325,27 +325,27 @@ Run Ruff, Pyright, checkpoint/types/property suites, genetic-fitting integration
 - Produces: strict roots for environment, prerequisite, manifest, lineage, lifecycle, protocol, report-input, and report artifacts.
 - Preserves: file modes/hashes, source binding, no-hardlink reconstruction, arithmetic recomputation, and atomic candidate publication.
 
-- [ ] **[STEP-37-44d511e5] Step 1: Write failing strict study-root tests**
+- [x] **[STEP-37-44d511e5] Step 1: Write failing strict study-root tests**
 
 For each public root, start from a valid literal and mutate exact type, key set, schema version, hash, mode, relative path, count, phase transition, and linked identity. Assert duplicate keys fail before Pydantic and cross-record mismatches fail after local validation.
 
-- [ ] **[STEP-38-8841a9fa] Step 2: Run protocol/audit RED selection**
+- [x] **[STEP-38-8841a9fa] Step 2: Run protocol/audit RED selection**
 
 Run the bounded focused protocol, audit-boundary, study-evidence, and schema registry tests; record missing roots and manual-parse paths.
 
-- [ ] **[STEP-39-e3b6ca38] Step 3: Implement strict study models in the package**
+- [x] **[STEP-39-e3b6ca38] Step 3: Implement strict study models in the package**
 
 Move reusable artifact shape decisions from scripts into typed frozen models in `study_evidence.py`; keep filesystem reads, subprocess collection, and publication orchestration in scripts.
 
-- [ ] **[STEP-40-49ca7950] Step 4: Rewire collection and audit to validate then recompute**
+- [x] **[STEP-40-49ca7950] Step 4: Rewire collection and audit to validate then recompute**
 
 Use the models for structure, then independently recompute manifests, hashes, counts, scores, bootstrap intervals, lifecycle transitions, and lineage. Do not accept persisted derived values merely because they satisfy field constraints.
 
-- [ ] **[STEP-41-bf74a66d] Step 5: Prove standalone and in-process compatibility**
+- [x] **[STEP-41-bf74a66d] Step 5: Prove standalone and in-process compatibility**
 
 Run the standalone copied-script test, candidate fixture generator/check, full in-process validation-study pipeline, and corruption matrix with unchanged deterministic rejection classes.
 
-- [ ] **[STEP-42-c0557b94] Step 6: Verify and commit study schemas**
+- [x] **[STEP-42-c0557b94] Step 6: Verify and commit study schemas**
 
 Run Ruff, Pyright, all validation-study unit/integration selections, schema generation, and manual-validation reduction measurement. Commit `refactor: validate study artifacts with pydantic`.
 
