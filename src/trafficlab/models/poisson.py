@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from random import Random
 from time import monotonic
 from typing import Protocol, cast
 
@@ -21,6 +20,7 @@ from trafficlab.models.common import (
     MarkCount,
     MarkDistribution,
     ReferenceTrace,
+    make_rng,
     validate_fit_inputs,
 )
 from trafficlab.trace import Direction, TraceEvent
@@ -115,28 +115,13 @@ def _validate_model(model: object) -> PoissonModel:
 
 
 class _PoissonRng(Protocol):
-    def expovariate(self, lambd: float) -> float:
-        """Return one exponential delay with the supplied positive rate."""
+    def exponential(self, scale: float) -> float:
+        """Return one exponential delay with the supplied positive scale."""
         ...
 
-    def randrange(self, stop: int) -> int:
-        """Return one integer mark draw below the supplied population total."""
+    def choice(self, a: int) -> int:
+        """Return one mark index below the supplied population total."""
         ...
-
-
-@dataclass(frozen=True, slots=True)
-class _RandomPoissonRng:
-    """Adapt Random's general randrange signature to empirical-mark sampling's one-stop draw."""
-
-    random: Random
-
-    def expovariate(self, lambd: float) -> float:
-        """Draw one standard-library exponential variate."""
-        return self.random.expovariate(lambd)
-
-    def randrange(self, stop: int) -> int:
-        """Draw one standard-library empirical-mark index."""
-        return self.random.randrange(stop)
 
 
 def _validate_delay(delay: object) -> float:
@@ -181,7 +166,7 @@ def _generate_with_rng(
         reason = guard.pre_draw_reason(len(events), output_bytes)
         if reason is not None:
             return GenerationResult(complete=False, events=tuple(events), reason=reason)
-        raw_delay = rng.expovariate(checked_model.rate)
+        raw_delay = rng.exponential(1.0 / checked_model.rate)
         reason = guard.post_draw_reason()
         if reason is not None:
             return GenerationResult(complete=False, events=tuple(events), reason=reason)
@@ -252,9 +237,7 @@ class PoissonFamily:
                 "invalid Poisson seed: it must be a nonnegative exact integer",
                 corrective_action="provide a nonnegative integer generation seed",
             )
-        return _generate_with_rng(
-            cast(PoissonModel, model), _RandomPoissonRng(Random(seed)), W=W, limits=limits, clock=clock
-        )
+        return _generate_with_rng(cast(PoissonModel, model), make_rng(seed), W=W, limits=limits, clock=clock)
 
     def dump_fitted(self, model: FittedModel) -> dict[str, object]:
         """Return exactly the JSON primitives that define a fitted Poisson model."""

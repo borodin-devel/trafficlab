@@ -9,7 +9,6 @@ from collections.abc import Iterator
 from dataclasses import FrozenInstanceError
 from dataclasses import replace as replace_dataclass
 from pathlib import Path
-from random import Random
 from typing import Any, cast
 
 import pytest
@@ -37,7 +36,7 @@ from trafficlab.genetic.checkpoint import (
 )
 from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
-from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
+from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
 from trafficlab.models.registry import POISSON_FAMILY, make_best_model, rebuild_best_model, render_best_model
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
@@ -223,7 +222,7 @@ def _stage_results(
         generation=prepared.config.genetic.generation_count,
         population=population_tuple,
         history=history,
-        rng_state=encode_rng_state(Random(prepared.config.run.master_seed).getstate()),
+        rng_state=encode_rng_state(make_rng(prepared.config.run.master_seed)),
         best_identifier=fit.outcome.winner.identifier,
         best_fitness=fit.outcome.winner.fitness,
         consecutive_stagnation=prepared.config.genetic.generation_count,

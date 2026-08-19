@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 from dataclasses import replace as replace_dataclass
 from pathlib import Path
-from random import Random
 from typing import Any, cast
 
 import pytest
@@ -33,7 +32,7 @@ from trafficlab.genetic.types import (
     MethodTrialResult,
     TrialResult,
 )
-from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
+from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
 from trafficlab.trace import Direction, TraceEvent
 
 
@@ -530,9 +529,8 @@ def test_context_resolves_lexical_families_and_exact_effective_settings_once(
     assert context.compatibility.similarity == config.similarity
     assert context.compatibility.similarity is not config.similarity
     names = tuple(spec.name for spec in context.compatibility.families)
-    assert context.compatibility.family_priority == tuple(
-        Random(config.run.master_seed).sample(sorted(names), len(names))
-    )
+    assert names == ("markov_renewal", "mmpp", "poisson_empirical")
+    assert context.compatibility.family_priority == ("markov_renewal", "poisson_empirical", "mmpp")
 
 
 @pytest.mark.parametrize("master_seed", (4, 0, 6))
@@ -557,27 +555,26 @@ def test_context_persists_each_documented_priority_seed_without_advancing_search
         capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
     context.run_directory.mkdir(parents=True)
-    expected_priority = tuple(
-        Random(master_seed).sample(
-            sorted(spec.name for spec in context.compatibility.families),
-            len(context.compatibility.families),
-        )
-    )
+    expected_priority = {
+        4: ("markov_renewal", "mmpp", "poisson_empirical"),
+        0: ("poisson_empirical", "markov_renewal", "mmpp"),
+        6: ("markov_renewal", "mmpp", "poisson_empirical"),
+    }[master_seed]
     assert context.compatibility.family_priority == expected_priority
 
     search_states: list[object] = []
     original_initial_population = strategy.initial_population
 
     def record_search_state(*args: object, **kwargs: object) -> tuple[Candidate, ...]:
-        rng = cast(Random, kwargs["rng"])
-        search_states.append(rng.getstate())
+        rng = cast(Any, kwargs["rng"])
+        search_states.append(rng.bit_generator.state)
         return original_initial_population(*args, **kwargs)  # pyright: ignore[reportArgumentType]
 
     monkeypatch.setattr(strategy, "initial_population", record_search_state)
     _install_scoring(monkeypatch, {0: (0.5, 0.4, 0.3, 0.2, 0.1, 0.0)})
     run_strategy(context)
 
-    assert search_states == [Random(master_seed).getstate()]
+    assert search_states == [make_rng(master_seed).bit_generator.state]
 
 
 class _StopAfterPublishedGeneration(RuntimeError):
@@ -593,7 +590,7 @@ def test_higher_priority_equal_catch_up_replaces_lower_priority_incumbent_and_ro
     context = _matrix_context(
         valid_config_data,
         tmp_path / "run",
-        master_seed=6,
+        master_seed=2,
         generation_count=1,
         population_size=3,
         enabled=("poisson_empirical", "mmpp"),
@@ -641,8 +638,8 @@ def test_higher_priority_equal_catch_up_replaces_lower_priority_incumbent_and_ro
     ("master_seed", "expected_priority"),
     (
         (4, ("markov_renewal", "mmpp", "poisson_empirical")),
-        (0, ("mmpp", "poisson_empirical", "markov_renewal")),
-        (6, ("poisson_empirical", "markov_renewal", "mmpp")),
+        (0, ("poisson_empirical", "markov_renewal", "mmpp")),
+        (6, ("markov_renewal", "mmpp", "poisson_empirical")),
     ),
 )
 @pytest.mark.parametrize("invalid", (False, True), ids=("all-equal", "symmetric-invalid"))

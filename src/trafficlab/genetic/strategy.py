@@ -6,9 +6,10 @@ import platform
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from random import Random
 from types import MappingProxyType
 from typing import Literal, cast
+
+import numpy as np
 
 from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig, FamilyName, FamilyOperators
@@ -42,7 +43,7 @@ from trafficlab.genetic.population import (
     rank_candidates,
 )
 from trafficlab.genetic.types import Candidate, CandidateId, FamilyPriority, TerminalReason, TrialResult
-from trafficlab.models.common import FamilyBounds, ModelFamily
+from trafficlab.models.common import FamilyBounds, ModelFamily, make_rng
 from trafficlab.models.registry import get_family
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.trace import TraceEvent
@@ -239,7 +240,7 @@ def _evaluate_population(
 
 def _finish_evaluated_generation(
     population: Sequence[Candidate],
-    rng: Random,
+    rng: np.random.Generator,
     *,
     generation: int,
     previous: CheckpointState | None,
@@ -292,7 +293,7 @@ def _finish_evaluated_generation(
         generation=generation,
         population=evaluated,
         history=history,
-        rng_state=encode_rng_state(rng.getstate()),
+        rng_state=encode_rng_state(rng),
         best_identifier=best_identifier,
         best_fitness=best_fitness,
         consecutive_stagnation=consecutive_stagnation,
@@ -305,7 +306,7 @@ def _reproduce_then_evaluate(
     state: CheckpointState,
     context: StrategyContext,
     evaluation: ValidatedEvaluationContext,
-    rng: Random,
+    rng: np.random.Generator,
     family_priority: FamilyPriority,
 ) -> CheckpointState:
     genetic = context.compatibility.genetic
@@ -349,9 +350,9 @@ def run_strategy(context: StrategyContext) -> FitOutcome:
     state = initialize_or_resume(context)
     if state is not None:
         family_priority = state.family_priority
-    rng: Random | None = None
+    rng: np.random.Generator | None = None
     if state is None:
-        rng = Random(context.compatibility.genetic.master_seed)
+        rng = make_rng(context.compatibility.genetic.master_seed)
         population = initial_population(
             family_priority,
             population_size=context.compatibility.genetic.population_size,
@@ -371,8 +372,7 @@ def run_strategy(context: StrategyContext) -> FitOutcome:
         publish_generation(context.run_directory, state)
     while state.terminal_reason == "running":
         if rng is None:
-            rng = Random()
-            rng.setstate(decode_rng_state(state.rng_state))
+            rng = decode_rng_state(state.rng_state)
         state = _reproduce_then_evaluate(state, context, evaluation, rng, family_priority)
         publish_generation(context.run_directory, state)
     winner = _candidate_by_id(state.population, state.best_identifier)

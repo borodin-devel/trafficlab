@@ -60,9 +60,9 @@ MMPP_BOUNDS = MmppConfig(
     lambda1=FloatBounds(lower=0.1, upper=1000.0),
 )
 SEED_POLICY = {
-    "empirical": "randrange",
-    "exponential": "expovariate",
-    "generator": "random.Random",
+    "empirical": "choice_scalar_index",
+    "exponential": "exponential_scale_inverse_rate",
+    "generator": "numpy.random.Generator/PCG64",
     "weighted": "random_cumulative",
 }
 REFERENCE_IDENTITY = ContentIdentity(size=1_024, sha256="a" * 64)
@@ -119,7 +119,7 @@ def test_make_best_model_repairs_and_owns_all_outer_metadata() -> None:
         bounds=POISSON_BOUNDS,
     )
     assert artifact.version == 1
-    assert artifact.scientific_artifact_schema == 2
+    assert artifact.scientific_artifact_schema == 3
     assert artifact.family == "poisson_empirical"
     assert artifact.genes == (4.0,)
     assert artifact.reference_identity == REFERENCE_IDENTITY
@@ -235,7 +235,7 @@ def test_best_model_rejects_noncanonical_version(valid_best_model: BestModel, ve
         (False, None),
         (True, None),
         (True, 1),
-        (True, 3),
+        (True, 4),
         (True, True),
         (True, "2"),
         (True, 2.0),

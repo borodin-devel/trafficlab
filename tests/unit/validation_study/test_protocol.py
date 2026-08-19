@@ -13,7 +13,6 @@ from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
-from random import Random
 from typing import Any, Literal, cast
 
 import pytest
@@ -51,7 +50,7 @@ from trafficlab.genetic.evaluation import ValidatedEvaluationContext, evaluate_c
 from trafficlab.genetic.population import derive_family_priority, initial_population
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import Candidate, TrialResult, rebuild_genetic_record
-from trafficlab.models.common import FittedModel, GenerationResult
+from trafficlab.models.common import FittedModel, GenerationResult, make_rng
 from trafficlab.models.registry import get_family
 from trafficlab.trace import Direction, TraceEvent, align_generated, normalize_reference
 
@@ -951,7 +950,7 @@ def test_validation_study_mmpp_bounds_retain_a_valid_candidate_for_a_short_obser
         population_size=config.genetic.population_size,
         bounds=validated.bounds,
         reference=validated.reference,
-        rng=Random(config.run.master_seed),
+        rng=make_rng(config.run.master_seed),
     )
     evaluated = tuple(evaluate_candidate(candidate, validated) for candidate in pending)
 

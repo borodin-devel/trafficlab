@@ -55,9 +55,9 @@ _OUTER_KEYS = {
     "seed_policy",
 }
 _SEED_POLICY = {
-    "empirical": "randrange",
-    "exponential": "expovariate",
-    "generator": "random.Random",
+    "empirical": "choice_scalar_index",
+    "exponential": "exponential_scale_inverse_rate",
+    "generator": "numpy.random.Generator/PCG64",
     "weighted": "random_cumulative",
 }
 
@@ -251,7 +251,7 @@ class BestModel(BaseModel):
     )
 
     version: Literal[1]
-    scientific_artifact_schema: int
+    scientific_artifact_schema: Literal[3]
     family: FamilyName
     genes: Genes
     fitted: FamilyPayload
@@ -767,7 +767,7 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
         ) from error
     return BestModel(
         version=1,
-        scientific_artifact_schema=cast(int, document["scientific_artifact_schema"]),
+        scientific_artifact_schema=cast(Literal[3], document["scientific_artifact_schema"]),
         family=_family_name(family_value),
         genes=genes,
         fitted=fitted,

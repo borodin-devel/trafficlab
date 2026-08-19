@@ -118,6 +118,13 @@ If a packet-count, output-size, or wall-time reliability guard is reached before
 that comparison establishes full-window completion, return incomplete
 generation.
 
+Schema 3 uses one local PCG64 generator. The exact scalar order is `random()`
+for the arrival-epoch regime, `choice(total_mark_count)` for the time-zero mark,
+then `exponential(scale=1.0/lambda_z)` followed by
+`exponential(scale=1.0/q_z,1-z)` for every competing-clock race. An arrival
+inside `[0, W]` then consumes `choice(total_mark_count)`; a regime transition or
+out-of-window race consumes no mark draw. Choices use half-open scalar indexes.
+
 A candidate that generates too few packets for a mandatory similarity method
 receives invalid candidate fitness. Zero or nonfinite rates, a missing mark
 distribution, or a derived time-stationary or arrival-epoch probability outside

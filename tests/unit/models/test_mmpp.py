@@ -50,12 +50,12 @@ class ScriptedMmppRng:
         self.calls.append(("random", None))
         return next(self._random_values)
 
-    def randrange(self, stop: int) -> int:
-        self.calls.append(("randrange", stop))
+    def choice(self, a: int) -> int:
+        self.calls.append(("choice", a))
         return next(self._indices)
 
-    def expovariate(self, lambd: float) -> float:
-        self.calls.append(("expovariate", lambd))
+    def exponential(self, scale: float) -> float:
+        self.calls.append(("exponential", scale))
         return next(self._exponentials)
 
 
@@ -270,12 +270,12 @@ def test_generate_races_arrival_before_transition_and_resamples_both_clocks(mode
     )
     assert rng.calls == [
         ("random", None),
-        ("randrange", model.marks.total_count),
-        ("expovariate", model.lambda0),
-        ("expovariate", model.q01),
-        ("randrange", model.marks.total_count),
-        ("expovariate", model.lambda0),
-        ("expovariate", model.q01),
+        ("choice", model.marks.total_count),
+        ("exponential", 1.0 / model.lambda0),
+        ("exponential", 1.0 / model.q01),
+        ("choice", model.marks.total_count),
+        ("exponential", 1.0 / model.lambda0),
+        ("exponential", 1.0 / model.q01),
     ]
 
 
@@ -298,11 +298,11 @@ def test_generate_exact_race_tie_changes_regime_without_emission(model: MmppMode
     assert result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert rng.calls[:4] == [
         ("random", None),
-        ("randrange", model.marks.total_count),
-        ("expovariate", model.lambda0),
-        ("expovariate", model.q01),
+        ("choice", model.marks.total_count),
+        ("exponential", 1.0 / model.lambda0),
+        ("exponential", 1.0 / model.q01),
     ]
-    assert ("randrange", model.marks.total_count) not in rng.calls[2:]
+    assert ("choice", model.marks.total_count) not in rng.calls[2:]
 
 
 def test_generate_starts_in_high_regime_from_arrival_epoch_draw(model: MmppModel) -> None:
@@ -311,7 +311,7 @@ def test_generate_starts_in_high_regime_from_arrival_epoch_draw(model: MmppModel
     result = _generate_with_rng(model, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 20))
 
     assert result.require_complete()[1] == TraceEvent(0.25, Direction.INBOUND, 80)
-    assert rng.calls[2:4] == [("expovariate", model.lambda1), ("expovariate", model.q10)]
+    assert rng.calls[2:4] == [("exponential", 1.0 / model.lambda1), ("exponential", 1.0 / model.q10)]
 
 
 def test_generate_arrival_epoch_threshold_selects_regime_one(model: MmppModel) -> None:
@@ -322,7 +322,7 @@ def test_generate_arrival_epoch_threshold_selects_regime_one(model: MmppModel) -
     result = _generate_with_rng(conditioned, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 12))
 
     assert result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
-    assert rng.calls[2:4] == [("expovariate", conditioned.lambda1), ("expovariate", conditioned.q10)]
+    assert rng.calls[2:4] == [("exponential", 1.0 / conditioned.lambda1), ("exponential", 1.0 / conditioned.q10)]
 
 
 def test_generate_samples_the_conditioned_time_zero_mark_before_later_clocks(model: MmppModel) -> None:
@@ -335,9 +335,9 @@ def test_generate_samples_the_conditioned_time_zero_mark_before_later_clocks(mod
     assert result.require_complete() == (TraceEvent(0.0, Direction.INBOUND, 80),)
     assert rng.calls == [
         ("random", None),
-        ("randrange", conditioned.marks.total_count),
-        ("expovariate", conditioned.lambda0),
-        ("expovariate", conditioned.q01),
+        ("choice", conditioned.marks.total_count),
+        ("exponential", 1.0 / conditioned.lambda0),
+        ("exponential", 1.0 / conditioned.q01),
     ]
 
 
@@ -351,11 +351,11 @@ def test_generate_arrival_epoch_tie_still_changes_regime_without_emission(model:
     assert result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert rng.calls == [
         ("random", None),
-        ("randrange", conditioned.marks.total_count),
-        ("expovariate", conditioned.lambda1),
-        ("expovariate", conditioned.q10),
-        ("expovariate", conditioned.lambda0),
-        ("expovariate", conditioned.q01),
+        ("choice", conditioned.marks.total_count),
+        ("exponential", 1.0 / conditioned.lambda1),
+        ("exponential", 1.0 / conditioned.q10),
+        ("exponential", 1.0 / conditioned.lambda0),
+        ("exponential", 1.0 / conditioned.q01),
     ]
 
 
@@ -370,11 +370,11 @@ def test_generate_processes_closed_window_endpoint_and_completes_only_after_sele
     assert switched_result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert switches.calls == [
         ("random", None),
-        ("randrange", model.marks.total_count),
-        ("expovariate", model.lambda0),
-        ("expovariate", model.q01),
-        ("expovariate", model.lambda1),
-        ("expovariate", model.q10),
+        ("choice", model.marks.total_count),
+        ("exponential", 1.0 / model.lambda0),
+        ("exponential", 1.0 / model.q01),
+        ("exponential", 1.0 / model.lambda1),
+        ("exponential", 1.0 / model.q10),
     ]
 
 
@@ -393,9 +393,9 @@ def test_generate_checks_following_pre_draw_guard_after_nonemitting_regime_switc
     assert result.reason == "max_wall_seconds"
     assert rng.calls == [
         ("random", None),
-        ("randrange", model.marks.total_count),
-        ("expovariate", model.lambda0),
-        ("expovariate", model.q01),
+        ("choice", model.marks.total_count),
+        ("exponential", 1.0 / model.lambda0),
+        ("exponential", 1.0 / model.q01),
     ]
 
 

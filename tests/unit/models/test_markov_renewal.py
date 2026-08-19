@@ -55,8 +55,8 @@ class ScriptedMarkovRng:
         self.calls.append(("random", None))
         return next(self._random_values)
 
-    def randrange(self, stop: int) -> int:
-        self.calls.append(("randrange", stop))
+    def choice(self, a: int) -> int:
+        self.calls.append(("choice", a))
         return next(self._indices)
 
 
@@ -786,12 +786,12 @@ def test_generation_uses_exact_draw_order_and_emits_the_closed_endpoint() -> Non
     )
     assert rng.calls == [
         ("random", None),
-        ("randrange", 1),
+        ("choice", 1),
         ("random", None),
-        ("randrange", 1),
-        ("randrange", 1),
+        ("choice", 1),
+        ("choice", 1),
         ("random", None),
-        ("randrange", 1),
+        ("choice", 1),
     ]
 
 
@@ -812,7 +812,7 @@ def test_final_only_state_uses_uniform_row_and_global_iat() -> None:
         clock=ScriptedClock([0.0] * 12),
     )
     assert result.require_complete() == (TraceEvent(0.0, Direction.INBOUND, 80),)
-    assert rng.calls == [("random", None), ("randrange", 1), ("random", None), ("randrange", 2)]
+    assert rng.calls == [("random", None), ("choice", 1), ("random", None), ("choice", 2)]
     assert dict(result.model_diagnostics) == {
         "timing_tier_transition_count": 0,
         "timing_tier_source_count": 0,
@@ -860,7 +860,7 @@ def test_generation_completes_without_destination_frame_draw_after_window() -> N
         clock=ScriptedClock([0.0] * 12),
     )
     assert result.require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
-    assert rng.calls == [("random", None), ("randrange", 1), ("random", None), ("randrange", 1)]
+    assert rng.calls == [("random", None), ("choice", 1), ("random", None), ("choice", 1)]
 
 
 def test_generation_allows_zero_iats_until_a_reliability_guard_stops_it() -> None:

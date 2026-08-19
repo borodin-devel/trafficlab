@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import math
-import random
 import sys
 from collections import Counter
 from collections.abc import Callable
@@ -12,6 +11,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
@@ -325,7 +325,7 @@ class _Race:
 class _RecordingMmppRng:
     """Delegate to the production-seeded RNG while recording latent race draws."""
 
-    def __init__(self, random_source: random.Random) -> None:
+    def __init__(self, random_source: np.random.Generator) -> None:
         self._random_source = random_source
         self.initial_draw: float | None = None
         self.races: list[_Race] = []
@@ -336,24 +336,25 @@ class _RecordingMmppRng:
         self.initial_draw = value
         return value
 
-    def randrange(self, stop: int) -> int:
-        return self._random_source.randrange(stop)
+    def choice(self, a: int) -> int:
+        return int(self._random_source.choice(a))
 
-    def expovariate(self, lambd: float) -> float:
-        value = self._random_source.expovariate(lambd)
+    def exponential(self, scale: float) -> float:
+        value = self._random_source.exponential(scale)
+        rate = 1.0 / scale
         if self._pending is None:
-            if lambd == _MMPP_MODEL.lambda0:
+            if rate == _MMPP_MODEL.lambda0:
                 regime = 0
-            elif lambd == _MMPP_MODEL.lambda1:
+            elif rate == _MMPP_MODEL.lambda1:
                 regime = 1
             else:
-                raise AssertionError(f"unexpected MMPP arrival rate {lambd}")
+                raise AssertionError(f"unexpected MMPP arrival rate {rate}")
             self._pending = (regime, value)
         else:
             regime, arrival_delay = self._pending
             expected_rate = _MMPP_MODEL.q01 if regime == 0 else _MMPP_MODEL.q10
-            if lambd != expected_rate:
-                raise AssertionError(f"unexpected MMPP transition rate {lambd}")
+            if rate != expected_rate:
+                raise AssertionError(f"unexpected MMPP transition rate {rate}")
             self.races.append(_Race(regime, arrival_delay, value))
             self._pending = None
         return value
@@ -397,12 +398,12 @@ def test_mmpp_matches_arrival_epoch_ctmc_rate_covariance_and_mark_oracles(
     """Production MMPP races must satisfy independent MAP and CTMC moments."""
     recorders: list[_RecordingMmppRng] = []
 
-    def recording_rng(random_source: random.Random) -> _RecordingMmppRng:
-        recorder = _RecordingMmppRng(random_source)
+    def recording_rng(seed: int) -> _RecordingMmppRng:
+        recorder = _RecordingMmppRng(np.random.Generator(np.random.PCG64(seed)))
         recorders.append(recorder)
         return recorder
 
-    monkeypatch.setattr(mmpp, "_RandomMmppRng", recording_rng)
+    monkeypatch.setattr(mmpp, "make_rng", recording_rng)
     events = _assert_complete_trace(
         MmppFamily().generate(
             _MMPP_MODEL,
@@ -598,7 +599,7 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
     )
     rendered = render_best_model(best)
     loaded = load_best_model(rendered, source=Path(f"{family_name}-best_model.json"))
-    assert loaded.scientific_artifact_schema == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 2
+    assert loaded.scientific_artifact_schema == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 3
     assert render_best_model(loaded) == rendered
 
     first = family.generate(

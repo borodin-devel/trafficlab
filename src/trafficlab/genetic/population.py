@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from random import Random
 from typing import cast
+
+import numpy as np
 
 from trafficlab.config import FamilyName
 from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.coordinates import CandidateEvaluationError, initialize_candidate
+from trafficlab.genetic.coordinates import CandidateEvaluationError, GeneticRng, initialize_candidate
 from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
-from trafficlab.models.common import FamilyBounds
+from trafficlab.models.common import FamilyBounds, make_rng
 from trafficlab.models.registry import get_family
 from trafficlab.trace import TraceEvent
 
@@ -45,7 +46,8 @@ def derive_family_priority(master_seed: int, family_names: Iterable[FamilyName])
     if type(master_seed) is not int or master_seed < 0:
         raise ValueError("master seed must be a nonnegative exact integer")
     names = validate_family_priority(tuple(family_names))
-    return tuple(Random(master_seed).sample(sorted(names), len(names)))
+    ordered = np.asarray(sorted(names), dtype=np.str_)
+    return tuple(str(name) for name in make_rng(master_seed).permutation(ordered))
 
 
 def family_quotas(population_size: int, family_priority: FamilyPriority) -> dict[FamilyName, int]:
@@ -63,7 +65,7 @@ def initial_population(
     population_size: int,
     bounds: Mapping[FamilyName, FamilyBounds],
     reference: Sequence[TraceEvent],
-    rng: Random,
+    rng: GeneticRng,
 ) -> tuple[Candidate, ...]:
     """Initialize contiguous priority family slots with stable generation-zero IDs."""
     priority = validate_family_priority(family_priority, enabled_families=bounds)
@@ -157,7 +159,7 @@ def tournament_select(
     candidates: Sequence[Candidate],
     *,
     tournament_size: int,
-    rng: Random,
+    rng: GeneticRng,
     family_priority: FamilyPriority,
 ) -> Candidate:
     """Sample with replacement and return the priority-ranked tournament member."""
@@ -165,7 +167,7 @@ def tournament_select(
     if type(tournament_size) is not int or not 2 <= tournament_size <= len(values):
         raise ValueError("tournament size must be an exact integer within the population")
     priority = validate_family_priority(family_priority, enabled_families=(candidate.family for candidate in values))
-    selected = tuple(values[rng.randrange(len(values))] for _ in range(tournament_size))
+    selected = tuple(values[int(rng.integers(0, len(values), endpoint=False))] for _ in range(tournament_size))
     return min(
         selected,
         key=lambda item: priority_rank_key(

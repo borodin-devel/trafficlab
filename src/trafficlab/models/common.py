@@ -258,10 +258,17 @@ class MarkCount:
             raise ValueError("mark count must be positive")
 
 
-class _Randrange(Protocol):
-    def randrange(self, stop: int) -> int:
-        """Return a uniform integer below one positive stop."""
+class _Choice(Protocol):
+    def choice(self, a: int) -> int:
+        """Return one uniform index below a positive population size."""
         ...
+
+
+def make_rng(seed: int) -> np.random.Generator:
+    """Construct the one production random stream explicitly owned by its caller."""
+    if type(seed) is not int or seed < 0:
+        raise ValueError("random seed must be a nonnegative exact integer")
+    return np.random.Generator(np.random.PCG64(seed))
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,9 +338,9 @@ class MarkDistribution:
         """Return the exact integer population used by the empirical sampler."""
         return sum(entry.count for entry in self.entries)
 
-    def sample(self, rng: _Randrange) -> tuple[Direction, int]:
-        """Sample one joint mark using exactly one integer cumulative draw."""
-        draw = rng.randrange(self.total_count)
+    def sample(self, rng: _Choice) -> tuple[Direction, int]:
+        """Sample one joint mark using exactly one scalar choice draw."""
+        draw = rng.choice(self.total_count)
         if type(draw) is not int or not 0 <= draw < self.total_count:
             raise _invalid(
                 "invalid empirical random draw",

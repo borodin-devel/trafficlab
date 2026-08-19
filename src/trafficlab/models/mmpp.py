@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from random import Random
 from time import monotonic
 from typing import Protocol, cast
 
@@ -21,6 +20,7 @@ from trafficlab.models.common import (
     MarkCount,
     MarkDistribution,
     ReferenceTrace,
+    make_rng,
     validate_fit_inputs,
 )
 from trafficlab.trace import Direction, TraceEvent
@@ -214,32 +214,13 @@ class _MmppRng(Protocol):
         """Return a uniform draw in [0, 1)."""
         ...
 
-    def randrange(self, stop: int) -> int:
-        """Return an empirical-mark index below stop."""
+    def choice(self, a: int) -> int:
+        """Return an empirical-mark index below a positive population size."""
         ...
 
-    def expovariate(self, lambd: float) -> float:
-        """Return a finite nonnegative exponential delay."""
+    def exponential(self, scale: float) -> float:
+        """Return a finite nonnegative exponential delay for a positive scale."""
         ...
-
-
-@dataclass(frozen=True, slots=True)
-class _RandomMmppRng:
-    """Adapt one local standard-library RNG to the narrow MMPP protocol."""
-
-    random_source: Random
-
-    def random(self) -> float:
-        """Draw the initial arrival-epoch regime variate."""
-        return self.random_source.random()
-
-    def randrange(self, stop: int) -> int:
-        """Draw one empirical-mark index."""
-        return self.random_source.randrange(stop)
-
-    def expovariate(self, lambd: float) -> float:
-        """Draw one exponential arrival or transition clock."""
-        return self.random_source.expovariate(lambd)
 
 
 def _validate_unit_draw(draw: object) -> float:
@@ -275,7 +256,7 @@ def _mark_from_draw(marks: MarkDistribution, draw: object) -> tuple[Direction, i
 
 
 def _sample_mark(marks: MarkDistribution, rng: _MmppRng, guard: GenerationGuard) -> tuple[Direction, int] | None:
-    raw_draw = rng.randrange(marks.total_count)
+    raw_draw = rng.choice(marks.total_count)
     if guard.post_draw_reason() is not None:
         return None
     return _mark_from_draw(marks, raw_draw)
@@ -334,12 +315,12 @@ def _generate_with_rng(
             return GenerationResult(complete=False, events=tuple(events), reason=reason)
         arrival_rate = checked_model.lambda0 if regime == 0 else checked_model.lambda1
         transition_rate = checked_model.q01 if regime == 0 else checked_model.q10
-        raw_arrival_delay = rng.expovariate(arrival_rate)
+        raw_arrival_delay = rng.exponential(1.0 / arrival_rate)
         reason = guard.post_draw_reason()
         if reason is not None:
             return GenerationResult(complete=False, events=tuple(events), reason=reason)
         arrival_time = _next_time(current_time, _validate_delay(raw_arrival_delay), clock_name="arrival")
-        raw_transition_delay = rng.expovariate(transition_rate)
+        raw_transition_delay = rng.exponential(1.0 / transition_rate)
         reason = guard.post_draw_reason()
         if reason is not None:
             return GenerationResult(complete=False, events=tuple(events), reason=reason)
@@ -420,7 +401,7 @@ class MmppFamily:
                 "invalid MMPP seed: it must be a nonnegative exact integer",
                 corrective_action="provide a nonnegative integer generation seed",
             )
-        return _generate_with_rng(cast(MmppModel, model), _RandomMmppRng(Random(seed)), W=W, limits=limits, clock=clock)
+        return _generate_with_rng(cast(MmppModel, model), make_rng(seed), W=W, limits=limits, clock=clock)
 
     def dump_fitted(self, model: FittedModel) -> dict[str, object]:
         """Return exactly the persisted MMPP rates and empirical marks."""

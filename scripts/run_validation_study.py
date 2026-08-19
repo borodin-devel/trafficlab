@@ -8502,7 +8502,7 @@ def _collection_inputs_from_prerequisites(
             "kernel_release": current_host["kernel_release"],
             "python_implementation": current_host["python_implementation"],
             "python_version": current_host["python_version"],
-            "scientific_artifact_schema": 2,
+            "scientific_artifact_schema": 3,
             "source_commit": source_commit,
             "source_tree": source_tree,
             "target_image_id": target_image_id,

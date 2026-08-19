@@ -1066,12 +1066,12 @@ def _require_permitted_relocated_worktree(
 
 def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
     document = _json(content, name="environment.json")
-    if document.get("scientific_artifact_schema") != 2:
+    if document.get("scientific_artifact_schema") != 3:
         _fail(
             "scientific_semantics_incompatible",
             "environment",
-            "environment must record scientific schema 2",
-            "recreate evidence under schema 2",
+            "environment must record scientific schema 3",
+            "recreate evidence under schema 3",
         )
     if ("python_implementation" in document and document["python_implementation"] != "CPython") or (
         "python_version" in document and document["python_version"] != platform.python_version()

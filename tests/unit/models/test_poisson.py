@@ -29,12 +29,12 @@ class ScriptedPoissonRng:
         self._delays = iter(delays)
         self.calls: list[tuple[str, float | int]] = []
 
-    def randrange(self, stop: int) -> int:
-        self.calls.append(("randrange", stop))
+    def choice(self, a: int) -> int:
+        self.calls.append(("choice", a))
         return next(self._marks)
 
-    def expovariate(self, lambd: float) -> float:
-        self.calls.append(("expovariate", lambd))
+    def exponential(self, scale: float) -> float:
+        self.calls.append(("exponential", scale))
         return next(self._delays)
 
 
@@ -228,10 +228,10 @@ def test_generation_draw_order_and_closed_endpoint(model: PoissonModel) -> None:
         TraceEvent(2.0, Direction.INBOUND, 80),
     )
     assert rng.calls == [
-        ("randrange", model.marks.total_count),
-        ("expovariate", model.rate),
-        ("randrange", model.marks.total_count),
-        ("expovariate", model.rate),
+        ("choice", model.marks.total_count),
+        ("exponential", 1.0 / model.rate),
+        ("choice", model.marks.total_count),
+        ("exponential", 1.0 / model.rate),
     ]
 
 
@@ -242,7 +242,7 @@ def test_generation_completes_naturally_after_first_out_of_window_delay(model: P
     assert _generate_with_rng(
         model, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 8)
     ).require_complete() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
-    assert rng.calls == [("randrange", 2), ("expovariate", 2.0)]
+    assert rng.calls == [("choice", 2), ("exponential", 0.5)]
 
 
 def test_generation_checks_pre_draw_packet_limit_before_another_delay(model: PoissonModel) -> None:
@@ -258,7 +258,7 @@ def test_generation_checks_pre_draw_packet_limit_before_another_delay(model: Poi
     )
     assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_packets"
-    assert rng.calls == [("randrange", 2)]
+    assert rng.calls == [("choice", 2)]
 
 
 def test_generation_checks_pre_draw_output_exhaustion_before_another_delay(model: PoissonModel) -> None:
@@ -269,7 +269,7 @@ def test_generation_checks_pre_draw_output_exhaustion_before_another_delay(model
     result = _generate_with_rng(model, rng, W=1.0, limits=limits, clock=ScriptedClock([0.0] * 8))
     assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_output_bytes"
-    assert rng.calls == [("randrange", 2)]
+    assert rng.calls == [("choice", 2)]
 
 
 def test_generation_accepts_the_initial_packet_at_exact_packet_and_output_boundaries(model: PoissonModel) -> None:
@@ -280,7 +280,7 @@ def test_generation_accepts_the_initial_packet_at_exact_packet_and_output_bounda
     result = _generate_with_rng(model, rng, W=1.0, limits=limits, clock=ScriptedClock([0.0] * 8))
     assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_packets"
-    assert rng.calls == [("randrange", 2)]
+    assert rng.calls == [("choice", 2)]
 
 
 def test_guard_rejects_a_prospective_packet_at_the_packet_cap() -> None:
@@ -306,7 +306,7 @@ def test_generation_checks_prospective_output_limit_before_in_window_emission(mo
     )
     assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_output_bytes"
-    assert rng.calls == [("randrange", 2), ("expovariate", 2.0), ("randrange", 2)]
+    assert rng.calls == [("choice", 2), ("exponential", 0.5), ("choice", 2)]
 
 
 def test_generation_checks_wall_time_before_the_next_exponential_draw(model: PoissonModel) -> None:
@@ -322,7 +322,7 @@ def test_generation_checks_wall_time_before_the_next_exponential_draw(model: Poi
     )
     assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_wall_seconds"
-    assert rng.calls == [("randrange", 2)]
+    assert rng.calls == [("choice", 2)]
 
 
 def test_generation_checks_wall_time_at_initial_prospective_emission(model: PoissonModel) -> None:
@@ -338,7 +338,7 @@ def test_generation_checks_wall_time_at_initial_prospective_emission(model: Pois
     )
     assert result.events == ()
     assert result.reason == "max_wall_seconds"
-    assert rng.calls == [("randrange", 2)]
+    assert rng.calls == [("choice", 2)]
 
 
 def test_generation_checks_wall_time_at_later_prospective_emission(model: PoissonModel) -> None:
@@ -354,7 +354,7 @@ def test_generation_checks_wall_time_at_later_prospective_emission(model: Poisso
     )
     assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_wall_seconds"
-    assert rng.calls == [("randrange", 2), ("expovariate", 2.0), ("randrange", 2)]
+    assert rng.calls == [("choice", 2), ("exponential", 0.5), ("choice", 2)]
 
 
 def test_generation_checks_wall_time_after_a_later_mark_draw(model: PoissonModel) -> None:
@@ -370,7 +370,7 @@ def test_generation_checks_wall_time_after_a_later_mark_draw(model: PoissonModel
     )
     assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_wall_seconds"
-    assert rng.calls == [("randrange", 2), ("expovariate", 2.0), ("randrange", 2)]
+    assert rng.calls == [("choice", 2), ("exponential", 0.5), ("choice", 2)]
 
 
 def test_generation_checks_wall_time_after_exponential_and_mark_draws(model: PoissonModel) -> None:

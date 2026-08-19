@@ -40,8 +40,8 @@ class ScriptedRandrange:
         self._values = iter(values)
         self.stops: list[int] = []
 
-    def randrange(self, stop: int) -> int:
-        self.stops.append(stop)
+    def choice(self, a: int) -> int:
+        self.stops.append(a)
         return next(self._values)
 
 

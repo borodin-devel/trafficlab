@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import csv
 import json
 import math
@@ -10,9 +9,9 @@ import re
 from collections.abc import Mapping, Sequence
 from io import StringIO
 from pathlib import Path
-from random import Random
 from typing import Annotated, Literal, Self, cast
 
+import numpy as np
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -44,83 +43,16 @@ from trafficlab.genetic.types import (
     TrialResult,
     rebuild_genetic_record,
 )
-from trafficlab.models.common import Genes
+from trafficlab.models.common import Genes, make_rng
 from trafficlab.models.registry import get_family
 from trafficlab.scientific_schema import require_current_scientific_schema
 from trafficlab.similarity.common import FrozenJsonValue
 
-RNG_ENGINE: Literal["python.random.Random/MT19937"] = "python.random.Random/MT19937"
-_RNG_STATE_VERSION = Random().getstate()[0]
+RNG_ENGINE: Literal["numpy.random.Generator/PCG64"] = "numpy.random.Generator/PCG64"
 _FAMILY_NAMES = frozenset(("markov_renewal", "mmpp", "poisson_empirical"))
 _COORDINATE_KINDS = frozenset(("linear", "log", "integer"))
-_FAILURE_KINDS = frozenset(
-    ("repair", "fit", "generation", "incomplete_generation", "similarity_precondition", "nonfinite_score")
-)
-_FAILURE_KEYS = (
-    "kind",
-    "seed",
-    "detail",
-    "stage",
-    "affected_evidence",
-    "evidence_state",
-    "corrective_action",
-    "authority",
-)
-_LEGACY_FAILURE_KEYS = ("kind", "seed", "detail")
-_LEGACY_FAILURE_PROVENANCE: dict[str, tuple[str, str, EvidenceState, str, FailureAuthority]] = {
-    "repair": ("fit", "candidate genes", "diagnostic_only", "repair the candidate genes", "primary"),
-    "fit": ("fit", "candidate model", "diagnostic_only", "repair the candidate model", "primary"),
-    "generation": (
-        "fit",
-        "candidate trace",
-        "diagnostic_only",
-        "repair the candidate model or generation settings",
-        "primary",
-    ),
-    "incomplete_generation": (
-        "fit",
-        "candidate trace",
-        "diagnostic_only",
-        "increase generation limits or repair the candidate model",
-        "primary",
-    ),
-    "similarity_precondition": (
-        "fit",
-        "candidate similarity",
-        "diagnostic_only",
-        "repair the candidate model to generate sufficient comparable events",
-        "primary",
-    ),
-    "nonfinite_score": (
-        "fit",
-        "candidate similarity",
-        "diagnostic_only",
-        "repair the candidate model or similarity computation",
-        "primary",
-    ),
-}
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _TERMINAL_REASONS = frozenset(("running", "hard_limit", "early_stop"))
-_ROOT_KEYS = (
-    "scientific_artifact_schema",
-    "experiment_identity",
-    "reference_identity",
-    "capture_identity",
-    "observation_window_seconds",
-    "trial_seeds",
-    "trial_limits",
-    "families",
-    "family_priority",
-    "genetic",
-    "similarity",
-    "rng",
-    "generation",
-    "population",
-    "history",
-    "best",
-    "consecutive_stagnation",
-    "terminal_reason",
-)
 _GENETIC_KEYS = (
     "master_seed",
     "final_seed",
@@ -133,20 +65,6 @@ _GENETIC_KEYS = (
     "early_stopping_tolerance",
     "resume",
 )
-_SIMILARITY_KEYS = (
-    "iat_diagnostic_quantile",
-    "acf_lags",
-    "acf_lag_weights",
-    "acf_iat_weight",
-    "acf_size_weight",
-    "multiscale_widths_seconds",
-    "multiscale_scale_weights",
-    "multiscale_packet_weight",
-    "multiscale_byte_weight",
-    "max_direction_bin_cells",
-    "method_weights",
-)
-_METHOD_WEIGHT_KEYS = ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
 _HISTORY_HEADER = (
     "generation",
     "scope",
@@ -216,23 +134,20 @@ class GeneticCheckpointSettings(_StrictCheckpointModel):
     resume: StrictBool
 
 
+class Pcg64CoreState(_StrictCheckpointModel):
+    """The two exact unsigned 128-bit PCG64 state integers."""
+
+    state: Annotated[StrictInt, Field(ge=0, le=2**128 - 1)]
+    inc: Annotated[StrictInt, Field(ge=0, le=2**128 - 1)]
+
+
 class RngState(_StrictCheckpointModel):
-    """Lossless JSON decomposition of the dedicated CPython MT19937 state."""
+    """Exact JSON-compatible state returned by NumPy's PCG64 bit generator."""
 
-    state_version: NonnegativeInt
-    mt_state: Annotated[
-        tuple[Annotated[StrictInt, Field(ge=0, le=2**32 - 1)], ...],
-        Field(min_length=624, max_length=624),
-        BeforeValidator(_tuple_input),
-    ]
-    index: Annotated[StrictInt, Field(ge=0, le=624)]
-    gauss_next: None
-
-    @model_validator(mode="after")
-    def state_version_is_current(self) -> Self:
-        if self.state_version != _RNG_STATE_VERSION:
-            raise ValueError(f"rng state_version must equal the current Python value {_RNG_STATE_VERSION}")
-        return self
+    bit_generator: Literal["PCG64"]
+    state: Pcg64CoreState
+    has_uint32: Annotated[StrictInt, Field(ge=0, le=1)]
+    uinteger: Annotated[StrictInt, Field(ge=0, le=2**32 - 1)]
 
 
 class CheckpointCompatibility(_StrictCheckpointModel):
@@ -250,7 +165,7 @@ class CheckpointCompatibility(_StrictCheckpointModel):
     genetic: GeneticCheckpointSettings
     similarity: SimilarityConfig
     python_version: NonemptyString
-    rng_engine: Literal["python.random.Random/MT19937"]
+    rng_engine: Literal["numpy.random.Generator/PCG64"]
 
     @field_validator("experiment_identity", "reference_identity", "capture_identity", mode="before")
     @classmethod
@@ -448,7 +363,7 @@ class HistoryRecord(_StrictCheckpointModel):
 
 
 class NamedRngState(_StrictCheckpointModel):
-    engine: Literal["python.random.Random/MT19937"]
+    engine: Literal["numpy.random.Generator/PCG64"]
     python_version: NonemptyString
     state: RngState
 
@@ -461,7 +376,7 @@ class BestCandidateRecord(_StrictCheckpointModel):
 class CheckpointArtifact(_StrictCheckpointModel):
     """Exact public checkpoint JSON root before cross-artifact compatibility checks."""
 
-    scientific_artifact_schema: Literal[2]
+    scientific_artifact_schema: Literal[3]
     experiment_identity: ContentIdentityRecord
     reference_identity: ContentIdentityRecord
     capture_identity: ContentIdentityRecord
@@ -491,13 +406,6 @@ class CheckpointArtifact(_StrictCheckpointModel):
     def similarity_is_rebuilt_from_primitives(cls, value: object) -> object:
         raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
         return SimilarityConfig.model_validate(raw)
-
-
-def rebuild_checkpoint_record[Record: BaseModel](record: Record, **changes: object) -> Record:
-    """Reconstruct and fully revalidate one immutable checkpoint record."""
-    values = record.model_dump(mode="python")
-    values.update(changes)
-    return type(record).model_validate(values)
 
 
 class CheckpointCorruptionError(TrafficlabError):
@@ -793,58 +701,35 @@ def validate_compatibility(stored: CheckpointCompatibility, expected: Checkpoint
 def _validate_rng_state(value: RngState) -> None:
     if type(value) is not RngState:
         raise TypeError("rng state must be RngState")
-    state_version = _integer(value.state_version, name="rng state_version")
-    if state_version != _RNG_STATE_VERSION:
-        raise ValueError(f"rng state_version must equal the current Python value {_RNG_STATE_VERSION}")
-    if type(value.mt_state) is not tuple or len(value.mt_state) != 624:
-        raise ValueError("rng mt_state must contain exactly 624 words")
-    for word in value.mt_state:
-        _integer(word, name="rng MT word", maximum=2**32 - 1)
-    _integer(value.index, name="rng index", maximum=624)
-    if value.gauss_next is not None:
-        raise ValueError("rng gauss_next must be null")
+    RngState.model_validate(value.model_dump(mode="python"))
 
 
-def encode_rng_state(state: object) -> RngState:
-    """Losslessly decompose a `Random.getstate()` tuple into strict immutable values."""
+def encode_rng_state(rng: object) -> RngState:
+    """Validate and detach the exact JSON-compatible state of one PCG64 generator."""
     try:
-        if type(state) is not tuple:
-            raise ValueError("RNG state must be a three-item tuple")
-        state_values = cast(tuple[object, ...], state)
-        if len(state_values) != 3:
-            raise ValueError("RNG state must be a three-item tuple")
-        version, internal, gauss_next = state_values
-        if type(internal) is not tuple:
-            raise ValueError("RNG internal state must contain 624 words and one index")
-        internal_values = cast(tuple[object, ...], internal)
-        if len(internal_values) != 625:
-            raise ValueError("RNG internal state must contain 624 words and one index")
-        result = RngState(
-            state_version=_integer(version, name="rng state_version"),
-            mt_state=tuple(_integer(word, name="rng MT word", maximum=2**32 - 1) for word in internal_values[:-1]),
-            index=_integer(internal_values[-1], name="rng index", maximum=624),
-            gauss_next=cast(None, gauss_next),
-        )
+        if type(rng) is not np.random.Generator or type(rng.bit_generator) is not np.random.PCG64:
+            raise ValueError("RNG must be numpy.random.Generator with PCG64")
+        result = RngState.model_validate(rng.bit_generator.state)
         _validate_rng_state(result)
         return result
-    except (TypeError, ValueError) as error:
+    except (TypeError, ValueError, ValidationError) as error:
+        if isinstance(error, ValidationError):
+            raise _invalid(_validation_error_detail(error)) from error
         raise _invalid(str(error)) from error
 
 
-def decode_rng_state(state: RngState) -> tuple[int, tuple[int, ...], None]:
-    """Reconstruct the exact tuple accepted by `Random.setstate()`."""
+def decode_rng_state(state: RngState) -> np.random.Generator:
+    """Restore one explicit PCG64 generator from its exact validated state."""
     try:
         _validate_rng_state(state)
+        validated = RngState.model_validate(state.model_dump(mode="python"))
+        rng = make_rng(0)
+        rng.bit_generator.state = validated.model_dump(mode="python")
+        return rng
+    except ValidationError as error:
+        raise _invalid(_validation_error_detail(error)) from error
     except (TypeError, ValueError) as error:
         raise _invalid(str(error)) from error
-    return (state.state_version, (*state.mt_state, state.index), None)
-
-
-def _is_legacy_failure_document(value: object) -> bool:
-    if type(value) is not dict:
-        return False
-    document = cast(dict[object, object], value)
-    return all(type(key) is str for key in document) and set(document) == set(_LEGACY_FAILURE_KEYS)
 
 
 def _parse_gene(value: object, coordinate: GeneCoordinate, *, family: FamilyName) -> float | int:
@@ -1260,10 +1145,10 @@ def _checkpoint_document(state: CheckpointState) -> dict[str, object]:
             "engine": compatibility.rng_engine,
             "python_version": compatibility.python_version,
             "state": {
-                "state_version": rng.state_version,
-                "mt_state": list(rng.mt_state),
-                "index": rng.index,
-                "gauss_next": rng.gauss_next,
+                "bit_generator": rng.bit_generator,
+                "state": {"state": rng.state.state, "inc": rng.state.inc},
+                "has_uint32": rng.has_uint32,
+                "uinteger": rng.uinteger,
             },
         },
         "generation": state.generation,
@@ -1347,35 +1232,6 @@ def _compatibility_from_artifact(artifact: CheckpointArtifact) -> CheckpointComp
     )
 
 
-def _with_complete_failure_records(document: dict[str, object]) -> dict[str, object]:
-    """Upgrade accepted schema-2 legacy failures before strict model validation."""
-    upgraded = copy.deepcopy(document)
-    population = cast(list[object], upgraded.get("population"))
-    for raw_candidate in population:
-        if type(raw_candidate) is not dict:
-            continue
-        candidate = cast(dict[str, object], raw_candidate)
-        invalid = candidate.get("invalid")
-        if not _is_legacy_failure_document(invalid):
-            continue
-        failure = cast(dict[str, object], invalid)
-        kind = cast(str, failure["kind"])
-        provenance = _LEGACY_FAILURE_PROVENANCE.get(kind)
-        if provenance is None:
-            continue
-        stage, affected_evidence, evidence_state, corrective_action, authority = provenance
-        failure.update(
-            {
-                "stage": stage,
-                "affected_evidence": affected_evidence,
-                "evidence_state": evidence_state,
-                "corrective_action": corrective_action,
-                "authority": authority,
-            }
-        )
-    return upgraded
-
-
 def render_checkpoint(state: CheckpointState) -> bytes:
     """Render one validated checkpoint as sorted compact finite JSON with a trailing newline."""
     try:
@@ -1410,7 +1266,7 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
             engine = cast(dict[str, object], raw_rng).get("engine")
             if _is_rng_engine_identifier(engine) and engine != compatibility.rng_engine:
                 raise _compatibility_error("RNG engine")
-        artifact = CheckpointArtifact.model_validate(_with_complete_failure_records(document))
+        artifact = CheckpointArtifact.model_validate(document)
         stored_compatibility = _compatibility_from_artifact(artifact)
         validate_compatibility(stored_compatibility, compatibility)
         state = CheckpointState(
@@ -1427,20 +1283,7 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         )
         _validate_state(state)
         if render_checkpoint(state) != content:
-            population_value = document.get("population")
-            population = cast(list[object], population_value) if type(population_value) is list else []
-            accepts_legacy = any(
-                type(candidate) is dict
-                and _is_legacy_failure_document(cast(dict[str, object], candidate).get("invalid"))
-                for candidate in population
-            )
-            legacy_content = (
-                f"{json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False)}\n".encode()
-            )
-            if not accepts_legacy or legacy_content != content:
-                raise ValueError(
-                    "checkpoint JSON must use the canonical sorted compact encoding with one final newline"
-                )
+            raise ValueError("checkpoint JSON must use the canonical sorted compact encoding with one final newline")
         return state
     except TrafficlabError:
         raise

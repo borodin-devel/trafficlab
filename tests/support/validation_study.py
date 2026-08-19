@@ -12,7 +12,6 @@ from collections.abc import Callable, Iterator, Sequence
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
-from random import Random
 from statistics import fmean, variance
 from typing import Any, Literal, cast
 
@@ -37,7 +36,7 @@ from trafficlab.generation import generate_experiment
 from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import Candidate, CandidateId, MethodTrialResult, TrialResult, rebuild_genetic_record
-from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
+from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
 from trafficlab.models.registry import BestModel, get_family, make_best_model
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
@@ -1219,7 +1218,7 @@ def terminal_checkpoint_and_best(tmp_path: Path) -> tuple[CheckpointState, BestM
         generation=2,
         population=population,
         history=(),
-        rng_state=encode_rng_state(Random(73).getstate()),
+        rng_state=encode_rng_state(make_rng(73)),
         best_identifier=CandidateId(birth_generation=2, birth_index=5),
         best_fitness=0.9,
         consecutive_stagnation=0,

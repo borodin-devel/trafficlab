@@ -135,8 +135,9 @@ example. Important fixed expectations include:
   including the documented fixed RNG draw order.
 - Genetic reproduction: a stub RNG covers every uniform parent choice, the
   fitter clone, and the stable-ID tie when same-family crossover is disabled.
-- Genetic RNG: exact `random.Random` primitive calls and lossless
-  `getstate()`/`setstate()` checkpoint round trips reproduce subsequent draws.
+- Genetic RNG: exact PCG64 scalar `random`, endpoint-explicit `integers`,
+  `normal`, and array `permutation` calls plus JSON bit-generator-state round
+  trips reproduce subsequent draws.
 - Mandatory integer mutation: stub Gaussian signs cover an unchanged decode,
   exact zero's positive direction, and reflection at both integer endpoints.
 - Genetic repair: Poisson, Markov Renewal, and MMPP cover ordering, named bounds,
@@ -261,9 +262,9 @@ fallback, boundary, and guard tests remain separate from the statistical rows.
 The matrix is a bounded test suite, not a benchmark or general statistical
 testing framework.
 
-The priority expectations are the CPython 3.12.3 results of the exact temporary
-`random.Random(master_seed).sample(...)` contract; the test also calculates
-them directly rather than storing implementation output as an oracle.
+The priority expectations are literal locked results of the exact temporary
+`Generator(PCG64(master_seed)).permutation(...)` contract. Separate tests prove
+that the discarded priority stream does not advance the search stream.
 
 ## In-process integration tests
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from random import Random
 from typing import Any, cast
 
 import pytest
@@ -14,6 +13,7 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.coordinates import (
     CandidateEvaluationError,
     GeneCoordinate,
+    GeneticRng,
     bernoulli,
     decode_gene,
     encode_gene,
@@ -38,8 +38,8 @@ class ScriptedRandom:
         self.calls.append(("random",))
         return self.random_values.pop(0)
 
-    def randrange(self, start: int, stop: int | None = None) -> int:
-        self.calls.append(("randrange", start, stop))
+    def integers(self, low: int, high: int | None = None, *, endpoint: bool = False) -> int:
+        self.calls.append(("integers", low, high, endpoint))
         return self.ranges.pop(0)
 
 
@@ -100,14 +100,14 @@ def test_initialization_uses_the_documented_rng_primitives() -> None:
     """Changing an initialization primitive changes every later master-RNG draw."""
     rng = ScriptedRandom(random_values=[0.25, 0.5, 0.75, 0.0], ranges=[3])
 
-    assert initialize_candidate(MARKOV_RENEWAL_FAMILY, MARKOV_BOUNDS, REFERENCE, cast(Random, rng)) == (
+    assert initialize_candidate(MARKOV_RENEWAL_FAMILY, MARKOV_BOUNDS, REFERENCE, cast(GeneticRng, rng)) == (
         0.1 + 0.25 * (0.4 - 0.1),
         0.75,
         1.5,
         3,
         0.5,
     )
-    assert rng.calls == [("random",), ("random",), ("random",), ("randrange", 1, 6), ("random",)]
+    assert rng.calls == [("random",), ("random",), ("random",), ("integers", 1, 5, True), ("random",)]
 
 
 def test_initialize_candidate_translates_only_registered_repair_errors() -> None:
@@ -119,7 +119,7 @@ def test_initialize_candidate_translates_only_registered_repair_errors() -> None
             MARKOV_RENEWAL_FAMILY,
             MARKOV_BOUNDS,
             invalid_reference,
-            cast(Random, ScriptedRandom([0.0] * 4, [1])),
+            cast(GeneticRng, ScriptedRandom([0.0] * 4, [1])),
         )
 
     assert (raised.value.kind, raised.value.seed) == ("repair", None)
@@ -136,7 +136,7 @@ def test_bernoulli_consumes_a_draw_at_both_probability_endpoints() -> None:
     """Skipping endpoint draws would desynchronize every subsequent genetic action."""
     rng = ScriptedRandom(random_values=[0.99, 0.0])
 
-    assert (bernoulli(cast(Random, rng), 0.0), bernoulli(cast(Random, rng), 1.0)) == (False, True)
+    assert (bernoulli(cast(GeneticRng, rng), 0.0), bernoulli(cast(GeneticRng, rng), 1.0)) == (False, True)
     assert rng.calls == [("random",), ("random",)]
 
 
@@ -187,5 +187,5 @@ def test_bernoulli_rejects_invalid_probability_without_consuming_a_draw(probabil
     rng = ScriptedRandom(random_values=[0.5])
 
     with pytest.raises(TrafficlabError, match="Bernoulli"):
-        bernoulli(cast(Random, rng), probability)
+        bernoulli(cast(GeneticRng, rng), probability)
     assert rng.calls == []

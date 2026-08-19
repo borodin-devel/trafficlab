@@ -5,8 +5,9 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from random import Random
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
+
+import numpy as np
 
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds
 from trafficlab.errors import EvidenceState, FailureAuthority, TrafficlabError
@@ -16,6 +17,22 @@ from trafficlab.models.registry import MARKOV_RENEWAL_FAMILY, REGISTRY, get_fami
 from trafficlab.trace import TraceEvent
 
 type CoordinateKind = Literal["linear", "log", "integer"]
+
+
+class GeneticRng(Protocol):
+    """NumPy draw surface used directly by genetic initialization and reproduction."""
+
+    def random(self) -> float:
+        """Return one scalar uniform draw in the half-open unit interval."""
+        ...
+
+    def integers(self, low: int, high: int | None = None, *, endpoint: bool = False) -> int | np.integer:
+        """Return one scalar integer with the requested endpoint semantics."""
+        ...
+
+    def normal(self, loc: float, scale: float) -> float:
+        """Return one scalar Gaussian draw."""
+        ...
 
 
 def _invalid(detail: str) -> TrafficlabError:
@@ -148,7 +165,7 @@ def _registered_family(family: ModelFamily) -> ModelFamily:
 
 
 def initialize_candidate(
-    family: ModelFamily, bounds: FamilyBounds, reference: Sequence[TraceEvent], rng: Random
+    family: ModelFamily, bounds: FamilyBounds, reference: Sequence[TraceEvent], rng: GeneticRng
 ) -> Genes:
     """Draw one chromosome in family order, then repair it once without further RNG."""
     checked_family = _registered_family(family)
@@ -156,7 +173,7 @@ def initialize_candidate(
     for coordinate in family_coordinates(checked_family.name, bounds):
         if coordinate.kind == "integer":
             integer_bounds = cast(IntegerBounds, coordinate.bounds)
-            raw_genes.append(rng.randrange(integer_bounds.lower, integer_bounds.upper + 1))
+            raw_genes.append(int(rng.integers(integer_bounds.lower, integer_bounds.upper, endpoint=True)))
         else:
             raw_genes.append(decode_gene(coordinate, rng.random()))
     try:
@@ -174,7 +191,7 @@ def initialize_candidate(
         ) from error
 
 
-def bernoulli(rng: Random, probability: float) -> bool:
+def bernoulli(rng: GeneticRng, probability: float) -> bool:
     """Draw the one required endpoint-preserving Bernoulli variate."""
     if type(probability) is not float or not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
         raise _invalid("Bernoulli probability must be a finite float in [0, 1]")

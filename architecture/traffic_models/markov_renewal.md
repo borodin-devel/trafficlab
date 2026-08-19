@@ -165,6 +165,13 @@ the next-timestamp comparison establishes full-window completion, return
 incomplete generation. The RNG is local to one generation call. A row must sum
 to one within numerical tolerance after construction and loading.
 
+Schema 3 uses a local PCG64 generator and the exact scalar order: `random()` for
+the initial weighted state, `choice(frame_count)` for its frame, then on each
+iteration `random()` for the destination row and `choice(holding_count)` for the
+selected timing tier. Only an in-window next timestamp consumes the final
+`choice(destination_frame_count)`. All `choice` calls are scalar and sample the
+half-open index range; an omitted conditional step consumes no draw.
+
 ## Trafficlab-specific choices
 
 Quantile-based size states, additive smoothing, the exact sparse fallback,

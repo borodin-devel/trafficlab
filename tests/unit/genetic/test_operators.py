@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from dataclasses import replace as replace_dataclass
-from random import Random
 from typing import Any, cast
 
 import pytest
@@ -13,6 +12,7 @@ from pydantic import BaseModel
 
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
 from trafficlab.errors import TrafficlabError
+from trafficlab.genetic.coordinates import GeneticRng
 from trafficlab.genetic.operators import ReproductionContext, fill_next_population, reproduce_child
 from trafficlab.genetic.population import initial_population
 from trafficlab.genetic.types import (
@@ -23,7 +23,7 @@ from trafficlab.genetic.types import (
     CandidateStatus,
     DuplicateDiagnostic,
 )
-from trafficlab.models.common import FamilyBounds, Genes
+from trafficlab.models.common import FamilyBounds, Genes, make_rng
 from trafficlab.models.registry import POISSON_FAMILY
 from trafficlab.trace import Direction, TraceEvent
 
@@ -50,12 +50,12 @@ class ScriptedRandom:
         self.calls.append(("random",))
         return self.random_values.pop(0)
 
-    def randrange(self, start: int, stop: int | None = None) -> int:
-        self.calls.append(("randrange", start) if stop is None else ("randrange", start, stop))
+    def integers(self, low: int, high: int | None = None, *, endpoint: bool = False) -> int:
+        self.calls.append(("integers", low, high, endpoint))
         return self.ranges.pop(0)
 
-    def normalvariate(self, mu: float, sigma: float) -> float:
-        self.calls.append(("normalvariate", mu, sigma))
+    def normal(self, loc: float, scale: float) -> float:
+        self.calls.append(("normal", loc, scale))
         return self.normal_values.pop(0)
 
 
@@ -192,7 +192,7 @@ def test_same_family_crossover_then_mutation_uses_exact_draw_order() -> None:
         parent_b,
         context=context(("poisson_empirical", POISSON)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.family == "poisson_empirical"
@@ -201,7 +201,7 @@ def test_same_family_crossover_then_mutation_uses_exact_draw_order() -> None:
         ("random",),
         ("random",),
         ("random",),
-        ("normalvariate", 0.0, 0.1),
+        ("normal", 0.0, 0.1),
     ]
 
 
@@ -216,7 +216,7 @@ def test_uniform_crossover_makes_one_parent_choice_per_gene_before_mutation_deci
         parent_b,
         context=context(("mmpp", MMPP_CROSSOVER)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == (0.2, 1.3, 0.4, 4.0)
@@ -237,13 +237,13 @@ def test_multi_gene_mutation_draws_all_decisions_before_selected_gaussians() -> 
         other,
         context=context(("mmpp", MMPP_MUTATION)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == pytest.approx((0.28102316529672927, 0.3, 0.31773129361652736, 3.0))
     assert rng.calls == [("random",)] * 5 + [
-        ("normalvariate", 0.0, 0.1),
-        ("normalvariate", 0.0, 0.1),
+        ("normal", 0.0, 0.1),
+        ("normal", 0.0, 0.1),
     ]
 
 
@@ -258,7 +258,7 @@ def test_same_family_no_crossover_clones_stable_fitter_tie_and_consumes_endpoint
         lower_id,
         context=context(("poisson_empirical", POISSON_NO_MUTATION)),
         identifier=CandidateId(birth_generation=1, birth_index=2),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == lower_id.genes
@@ -276,7 +276,7 @@ def test_missing_fitter_genes_create_invalid_child_without_operator_draws() -> N
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert (child.identifier, child.family, child.genes, child.status, child.fitness) == (
@@ -311,7 +311,7 @@ def test_same_family_missing_nonfitter_clones_fitter_after_no_crossover_draw() -
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION)),
         identifier=CandidateId(birth_generation=1, birth_index=1),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert (child.family, child.genes, child.status) == ("poisson_empirical", fitter.genes, "pending")
@@ -330,7 +330,7 @@ def test_same_family_selected_crossover_with_missing_parent_is_invalid_after_dec
         other,
         context=context(("poisson_empirical", POISSON)),
         identifier=CandidateId(birth_generation=1, birth_index=2),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert (child.family, child.genes, child.status, child.fitness) == (
@@ -363,13 +363,13 @@ def test_cross_family_clone_forces_mutation_when_no_gene_is_selected() -> None:
         mmpp,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), ("mmpp", MMPP_CROSSOVER)),
         identifier=CandidateId(birth_generation=1, birth_index=3),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.family == "poisson_empirical"
     assert child.genes == pytest.approx((1.148698354997035,))
     assert child.duplicate_diagnostics == ()
-    assert rng.calls == [("random",), ("randrange", 1), ("normalvariate", 0.0, 0.1)]
+    assert rng.calls == [("random",), ("integers", 0, 1, False), ("normal", 0.0, 0.1)]
 
 
 def test_cross_family_priority_tie_selects_the_priority_source_and_retains_zero_retry_diagnostic() -> None:
@@ -387,7 +387,7 @@ def test_cross_family_priority_tie_selects_the_priority_source_and_retains_zero_
             family_priority=("mmpp", "poisson_empirical"),
         ),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.family == "mmpp"
@@ -395,7 +395,7 @@ def test_cross_family_priority_tie_selects_the_priority_source_and_retains_zero_
     assert child.duplicate_diagnostics == (
         DuplicateDiagnostic(attempt=0, outcome="exhausted", detail="source-equal child"),
     )
-    assert rng.calls == [("random",)] * 4 + [("randrange", 4), ("normalvariate", 0.0, 0.1)]
+    assert rng.calls == [("random",)] * 4 + [("integers", 0, 4, False), ("normal", 0.0, 0.1)]
 
 
 def test_reproduction_context_rejects_duplicate_missing_and_foreign_priority_names() -> None:
@@ -443,13 +443,13 @@ def test_cross_family_clone_ignores_missing_nonsource_parent_genes() -> None:
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), ("mmpp", MMPP_CROSSOVER)),
         identifier=CandidateId(birth_generation=1, birth_index=3),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.family == "poisson_empirical"
     assert child.genes == pytest.approx((1.148698354997035,))
     assert child.status == "pending"
-    assert rng.calls == [("random",), ("randrange", 1), ("normalvariate", 0.0, 0.1)]
+    assert rng.calls == [("random",), ("integers", 0, 1, False), ("normal", 0.0, 0.1)]
 
 
 def test_zero_retries_retains_source_equal_cross_family_child_even_when_source_is_not_a_survivor() -> None:
@@ -463,14 +463,14 @@ def test_zero_retries_retains_source_equal_cross_family_child_even_when_source_i
         other_family,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), ("mmpp", MMPP_CROSSOVER)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == source.genes
     assert child.duplicate_diagnostics == (
         DuplicateDiagnostic(attempt=0, outcome="exhausted", detail="source-equal child"),
     )
-    assert rng.calls == [("random",), ("randrange", 1), ("normalvariate", 0.0, 0.1)]
+    assert rng.calls == [("random",), ("integers", 0, 1, False), ("normal", 0.0, 0.1)]
 
 
 @pytest.mark.parametrize(
@@ -490,11 +490,11 @@ def test_cross_family_mandatory_integer_mutation_moves_unchanged_decode_by_signe
         poisson,
         context=context(("markov_renewal", MARKOV_NO_MUTATION), ("poisson_empirical", POISSON_NO_MUTATION)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == (0.2, 0.7, 1.0, expected_r, 1.0)
-    assert rng.calls == [("random",)] * 5 + [("randrange", 5), ("normalvariate", 0.0, 0.1)]
+    assert rng.calls == [("random",)] * 5 + [("integers", 0, 5, False), ("normal", 0.0, 0.1)]
 
 
 def test_ordinary_same_family_integer_mutation_may_decode_unchanged() -> None:
@@ -511,11 +511,11 @@ def test_ordinary_same_family_integer_mutation_may_decode_unchanged() -> None:
         other,
         context=context(("markov_renewal", MARKOV_INTEGER_MUTATION)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == parent.genes
-    assert rng.calls == [("random",)] * 6 + [("normalvariate", 0.0, 0.1)]
+    assert rng.calls == [("random",)] * 6 + [("normal", 0.0, 0.1)]
 
 
 def test_direct_repair_error_creates_invalid_child_without_duplicate_draws(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -534,7 +534,7 @@ def test_direct_repair_error_creates_invalid_child_without_duplicate_draws(monke
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=2, existing=(survivor,)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert (child.status, child.fitness, child.genes) == ("invalid", 0.0, None)
@@ -558,7 +558,7 @@ def test_non_trafficlab_repair_exception_propagates(monkeypatch: pytest.MonkeyPa
             parent,
             context=context(("poisson_empirical", POISSON_NO_MUTATION)),
             identifier=CandidateId(birth_generation=1, birth_index=0),
-            rng=cast(Random, ScriptedRandom(random_values=[0.9, 0.9])),
+            rng=cast(GeneticRng, ScriptedRandom(random_values=[0.9, 0.9])),
         )
 
 
@@ -577,7 +577,7 @@ def test_duplicate_attempts_repeat_selection_then_forced_draws_and_accept_first_
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=2, existing=(survivor,)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == pytest.approx((1.148698354997035,))
@@ -588,11 +588,11 @@ def test_duplicate_attempts_repeat_selection_then_forced_draws_and_accept_first_
         ("random",),
         ("random",),
         ("random",),
-        ("randrange", 1),
-        ("normalvariate", 0.0, 0.1),
+        ("integers", 0, 1, False),
+        ("normal", 0.0, 0.1),
         ("random",),
-        ("randrange", 1),
-        ("normalvariate", 0.0, 0.1),
+        ("integers", 0, 1, False),
+        ("normal", 0.0, 0.1),
     ]
 
 
@@ -632,7 +632,7 @@ def test_evaluation_invalid_survivor_with_repaired_genes_remains_a_duplicate(
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=1, existing=(survivor,)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == parent.genes
@@ -643,8 +643,8 @@ def test_evaluation_invalid_survivor_with_repaired_genes_remains_a_duplicate(
         ("random",),
         ("random",),
         ("random",),
-        ("randrange", 1),
-        ("normalvariate", 0.0, 0.1),
+        ("integers", 0, 1, False),
+        ("normal", 0.0, 0.1),
     ]
 
 
@@ -662,7 +662,7 @@ def test_repair_invalid_survivor_without_canonical_genes_is_not_a_duplicate() ->
             existing=(missing_genes(4, "poisson_empirical"),),
         ),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.status == "pending"
@@ -697,7 +697,7 @@ def test_invalid_duplicate_attempt_keeps_last_valid_base_and_terminates(
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=2, existing=(survivor,)),
         identifier=CandidateId(birth_generation=1, birth_index=2),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.status == "pending"
@@ -732,7 +732,7 @@ def test_final_invalid_duplicate_attempt_records_exhaustion_and_retains_original
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=1, existing=(survivor,)),
         identifier=CandidateId(birth_generation=1, birth_index=0),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert child.genes == parent.genes
@@ -759,7 +759,7 @@ def test_fill_next_population_retains_without_draws_then_assigns_children_in_cre
         elite_count=1,
         tournament_size=2,
         context=context(("poisson_empirical", POISSON_NO_MUTATION)),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert tuple(item.identifier for item in next_population) == (
@@ -774,13 +774,13 @@ def test_fill_next_population_retains_without_draws_then_assigns_children_in_cre
         for item in next_population[1:]
     )
     assert rng.calls == [
-        *(("randrange", 4),) * 4,
+        *(("integers", 0, 4, False),) * 4,
         ("random",),
         ("random",),
-        *(("randrange", 4),) * 4,
+        *(("integers", 0, 4, False),) * 4,
         ("random",),
         ("random",),
-        *(("randrange", 4),) * 4,
+        *(("integers", 0, 4, False),) * 4,
         ("random",),
         ("random",),
     ]
@@ -807,7 +807,7 @@ def test_fill_next_population_places_missing_family_champions_in_priority_order(
             ("markov_renewal", MARKOV_NO_MUTATION),
             family_priority=("mmpp", "markov_renewal", "poisson_empirical"),
         ),
-        rng=Random(11),
+        rng=make_rng(11),
     )
 
     assert tuple(item.identifier for item in next_population[:3]) == (
@@ -826,7 +826,7 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
         population_size=3,
         bounds={"markov_renewal": MARKOV_NO_MUTATION},
         reference=INVALID_MARKOV_REFERENCE,
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     next_population = fill_next_population(
@@ -841,7 +841,7 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
             family_priority=("markov_renewal",),
             duplicate_mutation_attempts=0,
         ),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert tuple(item.identifier for item in next_population) == (
@@ -879,11 +879,11 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
             ("random",),
             ("random",),
             ("random",),
-            ("randrange", 1, 6),
+            ("integers", 1, 5, True),
             ("random",),
         )
     ]
-    assert rng.calls == initializer_calls + [("randrange", 3)] * 8
+    assert rng.calls == initializer_calls + [("integers", 0, 3, False)] * 8
 
 
 def test_mixed_initialized_population_selected_invalid_parents_fill_without_operator_draws() -> None:
@@ -894,7 +894,7 @@ def test_mixed_initialized_population_selected_invalid_parents_fill_without_oper
         population_size=4,
         bounds={"markov_renewal": MARKOV_NO_MUTATION, "poisson_empirical": POISSON_NO_MUTATION},
         reference=INVALID_MARKOV_REFERENCE,
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
     population = tuple(
         replace(candidate, status="valid") if candidate.status == "pending" else candidate for candidate in initialized
@@ -912,7 +912,7 @@ def test_mixed_initialized_population_selected_invalid_parents_fill_without_oper
             family_priority=("poisson_empirical", "markov_renewal"),
             duplicate_mutation_attempts=0,
         ),
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert tuple(item.identifier for item in next_population) == (
@@ -930,11 +930,11 @@ def test_mixed_initialized_population_selected_invalid_parents_fill_without_oper
             ("random",),
             ("random",),
             ("random",),
-            ("randrange", 1, 6),
+            ("integers", 1, 5, True),
             ("random",),
         )
     ]
-    assert rng.calls == initializer_calls + [("randrange", 4)] * 8
+    assert rng.calls == initializer_calls + [("integers", 0, 4, False)] * 8
 
 
 @pytest.mark.parametrize(
@@ -957,7 +957,7 @@ def test_fill_next_population_rejects_mismatched_size_and_nonpositive_generation
             elite_count=1,
             tournament_size=2,
             context=context(("poisson_empirical", POISSON_NO_MUTATION)),
-            rng=cast(Random, rng),
+            rng=cast(GeneticRng, rng),
         )
     assert rng.calls == []
 
@@ -995,7 +995,7 @@ def test_reproduction_context_and_parent_validation_fail_before_draws() -> None:
             pending,
             context=configured,
             identifier=CandidateId(birth_generation=1, birth_index=0),
-            rng=cast(Random, rng),
+            rng=cast(GeneticRng, rng),
         )
     assert rng.calls == []
 

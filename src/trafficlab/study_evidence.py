@@ -126,7 +126,7 @@ class ValidationStudyEnvironment(_StrictStudyModel):
     kernel_release: NonemptyString
     python_implementation: Literal["CPython"]
     python_version: Literal["3.12.3"]
-    scientific_artifact_schema: Literal[2]
+    scientific_artifact_schema: Literal[3]
     source_commit: GitIdentity
     source_tree: GitIdentity
     target_image_id: ImageIdentity

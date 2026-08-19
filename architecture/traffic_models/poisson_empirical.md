@@ -68,6 +68,13 @@ returns them; timestamps remain nondecreasing. A result too small for a
 mandatory similarity method is a valid generation but an invalid fitness
 candidate.
 
+For schema 3 the local PCG64 generator makes these scalar draws in exact order:
+`choice(total_mark_count)` for the time-zero empirical mark; then
+`exponential(scale=1.0/lambda_g)`; and, only when the resulting timestamp is in
+`[0, W]`, `choice(total_mark_count)` for that arrival's mark. `choice` samples a
+scalar index in `[0, total_mark_count)`. An out-of-window delay consumes no
+following mark draw.
+
 ## Trafficlab-specific choices
 
 - The GA scales the direct rate estimate instead of evolving an unconstrained

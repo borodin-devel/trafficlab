@@ -86,30 +86,31 @@ Before any search draw, Trafficlab derives one neutral priority from the sorted
 enabled family names exactly as follows:
 
 ```python
-priority_rng = random.Random(master_seed)
-family_priority = tuple(priority_rng.sample(sorted_family_names, len(sorted_family_names)))
+priority_rng = numpy.random.Generator(numpy.random.PCG64(master_seed))
+family_priority = tuple(priority_rng.permutation(sorted_family_names_array))
 ```
 
-`sorted_family_names` makes the result invariant to configuration and registry
+`sorted_family_names_array` makes the result invariant to configuration and registry
 input order. The temporary `priority_rng` is then discarded. The dedicated
-search RNG is initialized separately as `rng = random.Random(master_seed)`, so
+search RNG is initialized separately as
+`rng = numpy.random.Generator(numpy.random.PCG64(master_seed))`, so
 priority sampling consumes none of the existing search draw stream.
 
-All genetic search randomness comes from that dedicated search RNG under the
-project's pinned CPython version. Its checkpoint engine identifier is
-`python.random.Random/MT19937`. Trafficlab implements its sampling primitives
-exactly as follows:
+All genetic search randomness comes from that dedicated search RNG. Its
+checkpoint engine identifier is `numpy.random.Generator/PCG64`, and its bit
+generator name is `PCG64`. Trafficlab implements its scalar primitives exactly:
 
 - continuous initialization: `rng.random()`;
 - Bernoulli probability `p`: one `rng.random()` call and the test `u < p`;
-- inclusive integer initialization: `rng.randrange(L, U + 1)`;
-- a uniform chromosome index: `rng.randrange(d)`;
-- Gaussian mutation: `rng.normalvariate(0.0, sigma)`.
+- inclusive integer initialization: `rng.integers(L, U, endpoint=True)`;
+- a uniform chromosome index or tournament index:
+  `rng.integers(0, d, endpoint=False)`;
+- Gaussian mutation: `rng.normal(loc=0.0, scale=sigma)`.
 
 Uniform parent choice is the Bernoulli primitive with `p = 0.5`. The strategy
-does not use module-global randomness or the cached `rng.gauss()` method. Each
-abstract draw below means one call to the named primitive; a primitive may
-consume multiple internal Mersenne Twister values.
+does not use module-global randomness or `default_rng`. Every call above is a
+scalar draw with shape `()`; the family permutation is the sole one-dimensional
+array result and preserves the sorted input's exact cardinality.
 
 Mutation reflects, rather than clamps, a finite normalized value back into its
 bounds. For `v`, let `r = v mod 2`, where modulo returns `r` in `[0, 2)`, and
@@ -162,8 +163,8 @@ uses the lexicographically smaller stable candidate ID. This competition rule
 also ranks global elites, chooses fitter parents and the overall winner, and
 handles symmetric invalid candidates with fitness `0`. Tournament size is an
 integer in `[2, P]`. For each open child slot in ascending order, two parent
-tournaments run in parent A, then parent B order; each sample uses
-`rng.randrange(P)`.
+tournaments run in parent A, then parent B order; each scalar sample uses
+`rng.integers(0, P, endpoint=False)`.
 
 ## Reproduction
 
@@ -266,11 +267,10 @@ effective experiment hash, generation number, complete population and
 diagnostics, common trial seeds, family registry names, `family_priority`,
 resolved family operator values, gene bounds, coordinate kinds, chromosome
 order, remaining genetic settings, and history through that generation. It also
-stores the exact Python version, search RNG engine name, and a lossless JSON
-encoding of the complete search `rng.getstate()` tuple, including its state
-version and Gaussian cache field. Because `rng.gauss()` is forbidden, the
-encoded `gauss_next` cache must be null. The discarded priority RNG has no saved
-state. The file is written atomically only after the entire generation is
+stores the exact Python version, search RNG engine and bit-generator names, and
+the exact JSON-compatible `rng.bit_generator.state`: `bit_generator`, unsigned
+128-bit `state` and `inc`, `has_uint32`, and `uinteger`. The discarded priority
+RNG has no saved state. The file is written atomically only after the entire generation is
 evaluated. Checkpoint publication completes before derived `ga_history.csv`
 repair or publication; family rows are lexical for presentation, followed by
 one overall row.
@@ -284,8 +284,8 @@ experiment hash, enabled families, derived and stored
 `family_priority`, bounds, coordinate kinds, chromosome order, operator values,
 Python version, search RNG engine, fitness methods and weights, population size,
 and trial seeds. Trafficlab checks every compatibility field before another
-random draw or child, then restores the losslessly decoded tuple with
-`rng.setstate()` before reproduction. An uninterrupted run and a resumed run
+random draw or child, then creates an explicit PCG64 generator and assigns the
+validated bit-generator state before reproduction. An uninterrupted run and a resumed run
 must produce the same priority, children, history, winner, and search RNG state.
 This guarantee applies to the same locked Trafficlab and Python runtime, not to
 arbitrary RNG implementations.

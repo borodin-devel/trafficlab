@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from random import Random
 from types import MappingProxyType
 from typing import cast
 
@@ -13,6 +12,7 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.coordinates import (
     CandidateEvaluationError,
     GeneCoordinate,
+    GeneticRng,
     bernoulli,
     family_coordinates,
     mutate_coordinate,
@@ -148,7 +148,7 @@ def _mutate_genes(
     *,
     family: FamilyName,
     context: ReproductionContext,
-    rng: Random,
+    rng: GeneticRng,
     force_if_none: bool,
     mandatory_integers: bool,
 ) -> Genes:
@@ -161,7 +161,7 @@ def _mutate_genes(
     for index, is_selected in enumerate(selected):
         if not is_selected:
             continue
-        epsilon = rng.normalvariate(0.0, operators.mutation_scale)
+        epsilon = rng.normal(0.0, operators.mutation_scale)
         mutated = mutate_coordinate(coordinates[index], values[index], epsilon)
         values[index] = (
             _mandatory_integer_step(coordinates[index], values[index], epsilon, mutated)
@@ -169,8 +169,8 @@ def _mutate_genes(
             else mutated
         )
     if force_if_none and not any(selected):
-        index = rng.randrange(len(coordinates))
-        epsilon = rng.normalvariate(0.0, operators.mutation_scale)
+        index = int(rng.integers(0, len(coordinates), endpoint=False))
+        epsilon = rng.normal(0.0, operators.mutation_scale)
         mutated = mutate_coordinate(coordinates[index], values[index], epsilon)
         values[index] = _mandatory_integer_step(coordinates[index], values[index], epsilon, mutated)
     return tuple(values)
@@ -248,7 +248,7 @@ def _retry_duplicate(
     source: Candidate,
     cross_family: bool,
     context: ReproductionContext,
-    rng: Random,
+    rng: GeneticRng,
 ) -> Candidate:
     if child.genes is None or child.status != "pending":
         return child
@@ -331,7 +331,7 @@ def reproduce_child(
     *,
     context: ReproductionContext,
     identifier: CandidateId,
-    rng: Random,
+    rng: GeneticRng,
 ) -> Candidate:
     """Reproduce one child with the architecture's exact conditional draw sequence."""
     source = _fitter(parent_a, parent_b, family_priority=context.family_priority)
@@ -376,7 +376,7 @@ def fill_next_population(
     elite_count: int,
     tournament_size: int,
     context: ReproductionContext,
-    rng: Random,
+    rng: GeneticRng,
 ) -> tuple[Candidate, ...]:
     """Retain elites/champions, then fill ascending child slots by paired tournaments."""
     current = tuple(candidates)

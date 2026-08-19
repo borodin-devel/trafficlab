@@ -6,7 +6,6 @@ import math
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from random import Random
 from time import monotonic
 from typing import Literal, Protocol, cast
 
@@ -26,6 +25,7 @@ from trafficlab.models.common import (
     IncompleteReason,
     ReferenceTrace,
     coerce_reference_trace,
+    make_rng,
     validate_fit_inputs,
 )
 from trafficlab.trace import Direction, TraceEvent, TrafficTrace
@@ -261,22 +261,9 @@ class _MarkovRng(Protocol):
         """Return one uniform continuous draw."""
         ...
 
-    def randrange(self, stop: int) -> int:
-        """Return one empirical sample index below stop."""
+    def choice(self, a: int) -> int:
+        """Return one empirical sample index below a positive population size."""
         ...
-
-
-@dataclass(frozen=True, slots=True)
-class _RandomMarkovRng:
-    random_source: Random
-
-    def random(self) -> float:
-        """Draw one standard-library uniform variate."""
-        return self.random_source.random()
-
-    def randrange(self, stop: int) -> int:
-        """Draw one standard-library empirical index."""
-        return self.random_source.randrange(stop)
 
 
 def _weighted_index_from_draw(weights: tuple[float, ...], draw: object) -> int:
@@ -342,7 +329,7 @@ def sample_transition(probabilities: tuple[float, ...], rng: _MarkovRng) -> int:
 
 def sample_empirical(values: tuple[int, ...] | tuple[float, ...], rng: _MarkovRng) -> int | float:
     """Sample one ordered empirical value with one integer draw."""
-    return values[_empirical_index_from_draw(len(values), rng.randrange(len(values)))]
+    return values[_empirical_index_from_draw(len(values), rng.choice(len(values)))]
 
 
 def _validate_window(window: object) -> float:
@@ -714,7 +701,7 @@ def _generate_with_rng(
     )
     state = checked_model.states[state_index]
 
-    raw_frame_draw = rng.randrange(len(state.frame_lengths))
+    raw_frame_draw = rng.choice(len(state.frame_lengths))
     reason = guard.post_draw_reason()
     if reason is not None:
         return generation_result(complete=False, result_events=(), reason=reason)
@@ -747,7 +734,7 @@ def _generate_with_rng(
         if state_index in checked_model.timing_diagnostics.unobserved_rows:
             timing_counts["uniform_unobserved_row_count"] += 1
 
-        raw_holding_draw = rng.randrange(len(holding_sample))
+        raw_holding_draw = rng.choice(len(holding_sample))
         reason = guard.post_draw_reason()
         if reason is not None:
             return generation_result(complete=False, result_events=tuple(events), reason=reason)
@@ -763,7 +750,7 @@ def _generate_with_rng(
             return generation_result(complete=True, result_events=tuple(events))
 
         destination = checked_model.states[destination_index]
-        raw_destination_frame_draw = rng.randrange(len(destination.frame_lengths))
+        raw_destination_frame_draw = rng.choice(len(destination.frame_lengths))
         reason = guard.post_draw_reason()
         if reason is not None:
             return generation_result(complete=False, result_events=tuple(events), reason=reason)
@@ -909,13 +896,7 @@ class MarkovRenewalFamily:
                 "invalid Markov renewal seed: it must be a nonnegative exact integer",
                 corrective_action="provide a nonnegative integer generation seed",
             )
-        return _generate_with_rng(
-            cast(MarkovRenewalModel, model),
-            _RandomMarkovRng(Random(seed)),
-            W=W,
-            limits=limits,
-            clock=clock,
-        )
+        return _generate_with_rng(cast(MarkovRenewalModel, model), make_rng(seed), W=W, limits=limits, clock=clock)
 
     def dump_fitted(self, model: FittedModel) -> dict[str, object]:
         """Return the strict JSON-compatible fitted payload."""

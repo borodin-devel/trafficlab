@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import replace as replace_dataclass
 from pathlib import Path
-from random import Random
 from typing import Any, cast
 
 import pytest
@@ -27,6 +26,7 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.generation import generate_experiment
 from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint, render_history_csv
+from trafficlab.genetic.coordinates import GeneticRng
 from trafficlab.genetic.evaluation import ValidatedEvaluationContext
 from trafficlab.genetic.operators import ReproductionContext
 from trafficlab.genetic.population import rank_candidates
@@ -341,7 +341,11 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
     real_mutate = genetic_operators._mutate_genes  # pyright: ignore[reportPrivateUsage]
 
     def scripted_select(
-        candidates: Sequence[Candidate], *, tournament_size: int, rng: Random, family_priority: tuple[FamilyName, ...]
+        candidates: Sequence[Candidate],
+        *,
+        tournament_size: int,
+        rng: GeneticRng,
+        family_priority: tuple[FamilyName, ...],
     ) -> Candidate:
         del tournament_size, rng
         nonlocal selection_call
@@ -364,7 +368,7 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
         )
         return choices[side]
 
-    def traced_bernoulli(rng: Random, probability: float) -> bool:
+    def traced_bernoulli(rng: GeneticRng, probability: float) -> bool:
         assert active is not None
         active.probabilities.append(probability)
         return real_bernoulli(rng, probability)
@@ -374,7 +378,7 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
         *,
         family: FamilyName,
         context: ReproductionContext,
-        rng: Random,
+        rng: GeneticRng,
         force_if_none: bool,
         mandatory_integers: bool,
     ) -> Genes:
@@ -405,7 +409,7 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
         *,
         context: ReproductionContext,
         identifier: CandidateId,
-        rng: Random,
+        rng: GeneticRng,
     ) -> Candidate:
         nonlocal active
         trace = _ReproductionTrace((parent_a.family, parent_b.family), [], [])
@@ -567,8 +571,8 @@ def test_configuration_and_registry_permutations_keep_priority_population_childr
     ("master_seed", "expected_priority"),
     (
         (4, ("markov_renewal", "mmpp", "poisson_empirical")),
-        (0, ("mmpp", "poisson_empirical", "markov_renewal")),
-        (6, ("poisson_empirical", "markov_renewal", "mmpp")),
+        (0, ("poisson_empirical", "markov_renewal", "mmpp")),
+        (6, ("markov_renewal", "mmpp", "poisson_empirical")),
     ),
 )
 def test_in_process_fairness_matrix_preserves_slots_children_and_mixed_mmpp_winner_across_orders(

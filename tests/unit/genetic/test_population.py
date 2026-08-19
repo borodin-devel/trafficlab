@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from random import Random
 from typing import cast
 
 import pytest
 
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
 from trafficlab.genetic import population as population_module
+from trafficlab.genetic.coordinates import GeneticRng
 from trafficlab.genetic.population import (
     family_champions,
     family_quotas,
@@ -20,7 +20,7 @@ from trafficlab.genetic.population import (
     tournament_select,
 )
 from trafficlab.genetic.types import Candidate, CandidateId, CandidateStatus
-from trafficlab.models.common import FamilyBounds
+from trafficlab.models.common import FamilyBounds, make_rng
 from trafficlab.trace import Direction, TraceEvent
 
 
@@ -36,8 +36,8 @@ class ScriptedRandom:
         self.calls.append(("random",))
         return self.random_values.pop(0)
 
-    def randrange(self, start: int, stop: int | None = None) -> int:
-        self.calls.append(("randrange", start, stop))
+    def integers(self, low: int, high: int | None = None, *, endpoint: bool = False) -> int:
+        self.calls.append(("integers", low, high, endpoint))
         return self.ranges.pop(0)
 
 
@@ -94,8 +94,8 @@ POPULATION = (
     ("master_seed", "expected_priority"),
     [
         (4, ("markov_renewal", "mmpp", "poisson_empirical")),
-        (0, ("mmpp", "poisson_empirical", "markov_renewal")),
-        (6, ("poisson_empirical", "markov_renewal", "mmpp")),
+        (0, ("poisson_empirical", "markov_renewal", "mmpp")),
+        (6, ("markov_renewal", "mmpp", "poisson_empirical")),
     ],
 )
 def test_derive_family_priority_is_seeded_permutation_invariant_and_separate_from_search_rng(
@@ -103,12 +103,11 @@ def test_derive_family_priority_is_seeded_permutation_invariant_and_separate_fro
 ) -> None:
     """A temporary priority sampler must not privilege input order or advance search draws."""
     names = ("poisson_empirical", "mmpp", "markov_renewal")
-    expected = tuple(Random(master_seed).sample(sorted(names), len(names)))
-    search_rng = Random(master_seed)
+    search_rng = make_rng(master_seed)
 
-    assert population_module.derive_family_priority(master_seed, names) == expected_priority == expected
+    assert population_module.derive_family_priority(master_seed, names) == expected_priority
     assert population_module.derive_family_priority(master_seed, tuple(reversed(names))) == expected_priority
-    assert search_rng.random() == Random(master_seed).random()
+    assert search_rng.random() == make_rng(master_seed).random()
 
 
 def test_quotas_assign_remainder_in_family_priority_order() -> None:
@@ -158,7 +157,7 @@ def test_initial_population_uses_contiguous_priority_slots_and_stable_ids() -> N
         population_size=4,
         bounds=BOUNDS,
         reference=REFERENCE,
-        rng=Random(17),
+        rng=make_rng(17),
     )
 
     assert tuple(item.family for item in population) == (
@@ -186,7 +185,7 @@ def test_initial_population_classifies_registered_initializer_repair_failure() -
         population_size=1,
         bounds={"markov_renewal": MARKOV},
         reference=invalid_reference,
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
     )
 
     assert population[0].status == "invalid"
@@ -204,7 +203,7 @@ def test_initial_population_requires_exact_enabled_bounds() -> None:
             population_size=1,
             bounds={},
             reference=REFERENCE,
-            rng=cast(Random, rng),
+            rng=cast(GeneticRng, rng),
         )
     assert rng.calls == []
 
@@ -271,10 +270,10 @@ def test_tournament_uses_replacement_and_family_priority_for_cross_family_ties()
     assert tournament_select(
         tied,
         tournament_size=3,
-        rng=cast(Random, rng),
+        rng=cast(GeneticRng, rng),
         family_priority=("mmpp", "markov_renewal", "poisson_empirical"),
     ).identifier == CandidateId(birth_generation=0, birth_index=1)
-    assert rng.calls == [("randrange", 3, None), ("randrange", 3, None), ("randrange", 3, None)]
+    assert rng.calls == [("integers", 0, 3, False), ("integers", 0, 3, False), ("integers", 0, 3, False)]
 
 
 def test_priority_validation_rejects_duplicate_missing_and_foreign_names() -> None:
@@ -298,7 +297,7 @@ def test_pending_candidates_cannot_enter_ranking_or_selection() -> None:
         tournament_select(
             pending,
             tournament_size=1,
-            rng=Random(1),
+            rng=make_rng(1),
             family_priority=("poisson_empirical",),
         )
 
@@ -322,7 +321,7 @@ def test_tournament_requires_architecture_bounds_and_exact_integer(tournament_si
         tournament_select(
             POPULATION,
             tournament_size=cast(int, tournament_size),
-            rng=Random(1),
+            rng=make_rng(1),
             family_priority=("markov_renewal", "mmpp", "poisson_empirical"),
         )
 

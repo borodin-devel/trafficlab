@@ -3,9 +3,9 @@ import math
 import platform
 from dataclasses import replace as replace_dataclass
 from pathlib import Path
-from random import Random
 from typing import Any, cast
 
+import numpy as np
 import pytest
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel
@@ -28,6 +28,8 @@ from trafficlab.genetic.checkpoint import (
     CheckpointState,
     FamilyCheckpointSpec,
     GeneticCheckpointSettings,
+    Pcg64CoreState,
+    RngState,
     decode_rng_state,
     encode_rng_state,
     load_checkpoint,
@@ -55,7 +57,7 @@ from trafficlab.genetic.types import (
     MethodTrialResult,
     TrialResult,
 )
-from trafficlab.models.common import Genes
+from trafficlab.models.common import Genes, make_rng
 from trafficlab.models.registry import MMPP_FAMILY
 from trafficlab.trace import Direction, TraceEvent
 
@@ -213,7 +215,7 @@ GENETIC = GeneticCheckpointSettings(
     resume=True,
 )
 COMPATIBILITY = CheckpointCompatibility(
-    scientific_artifact_schema=2,
+    scientific_artifact_schema=3,
     experiment_identity=ContentIdentity(size=101, sha256="a" * 64),
     reference_identity=ContentIdentity(size=102, sha256="b" * 64),
     capture_identity=ContentIdentity(size=103, sha256="c" * 64),
@@ -225,14 +227,14 @@ COMPATIBILITY = CheckpointCompatibility(
     genetic=GENETIC,
     similarity=SIMILARITY,
     python_version=platform.python_version(),
-    rng_engine="python.random.Random/MT19937",
+    rng_engine="numpy.random.Generator/PCG64",
 )
 VALID_STATE = CheckpointState(
     compatibility=COMPATIBILITY,
     generation=0,
     population=POPULATION,
     history=(MMPP_ROW, POISSON_ROW, OVERALL_ROW),
-    rng_state=encode_rng_state(Random(73).getstate()),
+    rng_state=encode_rng_state(make_rng(73)),
     best_identifier=CandidateId(birth_generation=0, birth_index=2),
     best_fitness=POISSON_TRIAL.aggregate_score,
     consecutive_stagnation=0,
@@ -278,14 +280,17 @@ def test_checkpoint_publication_root_is_strict_and_schema_describes_every_varian
         "nonfinite_score",
     ):
         assert f'"const": "{kind}"' in schema_text
-    assert '"const": "python.random.Random/MT19937"' in schema_text
+    assert '"const": "numpy.random.Generator/PCG64"' in schema_text
 
 
 @pytest.mark.parametrize(
     "mutation",
     (
-        "mt-623",
-        "mt-625",
+        "negative-core-state",
+        "core-state-overflow",
+        "invalid-has-uint32",
+        "uinteger-overflow",
+        "bit-generator",
         "empty-trial-seeds",
         "empty-families",
         "empty-family-priority",
@@ -293,7 +298,7 @@ def test_checkpoint_publication_root_is_strict_and_schema_describes_every_varian
         "empty-history",
         "empty-gene-order",
         "empty-coordinates",
-        "schema-3",
+        "schema-2",
     ),
 )
 def test_independent_checkpoint_schema_rejects_invalid_required_array_cardinality_and_schema(
@@ -301,17 +306,32 @@ def test_independent_checkpoint_schema_rejects_invalid_required_array_cardinalit
 ) -> None:
     """Draft 2020-12 readers must enforce the same fixed and nonempty wire arrays as Pydantic."""
     document = _decoded()
-    if mutation.startswith("mt-"):
+    if mutation in {
+        "negative-core-state",
+        "core-state-overflow",
+        "invalid-has-uint32",
+        "uinteger-overflow",
+        "bit-generator",
+    }:
         rng = cast(dict[str, object], document["rng"])
         state = cast(dict[str, object], rng["state"])
-        words = cast(list[object], state["mt_state"])
-        state["mt_state"] = words[:-1] if mutation == "mt-623" else [*words, 0]
+        core = cast(dict[str, object], state["state"])
+        if mutation == "negative-core-state":
+            core["state"] = -1
+        elif mutation == "core-state-overflow":
+            core["state"] = 2**128
+        elif mutation == "invalid-has-uint32":
+            state["has_uint32"] = 2
+        elif mutation == "uinteger-overflow":
+            state["uinteger"] = 2**32
+        else:
+            state["bit_generator"] = "Philox"
     elif mutation == "empty-gene-order":
         cast(list[dict[str, object]], document["families"])[0]["gene_order"] = []
     elif mutation == "empty-coordinates":
         cast(list[dict[str, object]], document["families"])[0]["coordinates"] = []
-    elif mutation == "schema-3":
-        document["scientific_artifact_schema"] = 3
+    elif mutation == "schema-2":
+        document["scientific_artifact_schema"] = 2
     else:
         document[mutation.removeprefix("empty-").replace("-", "_")] = []
 
@@ -542,25 +562,22 @@ def _markov_state(genes: tuple[float, float, float, int, float]) -> CheckpointSt
 
 
 def test_rng_state_round_trip_reproduces_all_next_primitives() -> None:
-    rng = Random(73)
-    _ = (rng.random(), rng.randrange(9), rng.normalvariate(0.0, 0.1))
-    restored = decode_rng_state(encode_rng_state(rng.getstate()))
-    clone = Random()
-    clone.setstate(restored)
-    assert (clone.random(), clone.randrange(9), clone.normalvariate(0.0, 0.1)) == (
+    rng = make_rng(73)
+    _ = (rng.random(), rng.integers(0, 9, endpoint=False), rng.normal(0.0, 0.1))
+    clone = decode_rng_state(encode_rng_state(rng))
+    assert (clone.random(), int(clone.integers(0, 9, endpoint=False)), clone.normal(0.0, 0.1)) == (
         rng.random(),
-        rng.randrange(9),
-        rng.normalvariate(0.0, 0.1),
+        int(rng.integers(0, 9, endpoint=False)),
+        rng.normal(0.0, 0.1),
     )
 
 
-def test_rng_codec_requires_the_exact_runtime_state_version() -> None:
-    current = Random().getstate()
-    assert decode_rng_state(encode_rng_state(current)) == current
+def test_rng_codec_requires_the_exact_named_generator_and_bit_generator() -> None:
+    current = make_rng(0)
+    assert encode_rng_state(decode_rng_state(encode_rng_state(current))) == encode_rng_state(current)
 
-    version, internal, gaussian = current
-    with pytest.raises(TrafficlabError, match="state_version"):
-        encode_rng_state((version + 1, internal, gaussian))
+    with pytest.raises(TrafficlabError, match="PCG64"):
+        encode_rng_state(np.random.Generator(np.random.Philox(0)))
 
 
 def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnostics() -> None:
@@ -570,7 +587,7 @@ def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnost
     assert content.endswith(b"\n")
     decoded = json.loads(content)
     assert content == (json.dumps(decoded, sort_keys=True, separators=(",", ":")) + "\n").encode()
-    assert decoded["scientific_artifact_schema"] == 2
+    assert decoded["scientific_artifact_schema"] == 3
     assert tuple(method.name for method in loaded.population[0].trials[0].methods) == METHOD_ORDER
     with pytest.raises(TypeError):
         cast(dict[str, object], loaded.population[0].trials[0].methods[0].diagnostics)["changed"] = True
@@ -677,7 +694,7 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
         raise TrafficlabError("offspring repair failed", corrective_action="retain invalid evidence")
 
     monkeypatch.setattr(type(MMPP_FAMILY), "repair", fail_repair)
-    rng = Random(35)
+    rng = make_rng(35)
     child = reproduce_child(
         parent,
         other,
@@ -703,7 +720,7 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
         generation=1,
         population=current_population,
         history=history,
-        rng_state=encode_rng_state(rng.getstate()),
+        rng_state=encode_rng_state(rng),
         consecutive_stagnation=1,
     )
 
@@ -760,76 +777,34 @@ def test_checkpoint_round_trip_preserves_candidate_failure_scientific_diagnostic
 
 
 @pytest.mark.parametrize(
-    ("kind", "seed", "detail", "affected_evidence", "corrective_action"),
+    ("kind", "seed", "detail"),
     [
-        ("repair", None, "legacy repair", "candidate genes", "repair the candidate genes"),
-        ("fit", None, "legacy fit", "candidate model", "repair the candidate model"),
-        ("generation", 7, "legacy generation", "candidate trace", "repair the candidate model or generation settings"),
-        (
-            "incomplete_generation",
-            7,
-            "legacy incomplete generation",
-            "candidate trace",
-            "increase generation limits or repair the candidate model",
-        ),
-        (
-            "similarity_precondition",
-            7,
-            "legacy similarity precondition",
-            "candidate similarity",
-            "repair the candidate model to generate sufficient comparable events",
-        ),
-        (
-            "nonfinite_score",
-            7,
-            "legacy nonfinite score",
-            "candidate similarity",
-            "repair the candidate model or similarity computation",
-        ),
+        ("repair", None, "legacy repair"),
+        ("fit", None, "legacy fit"),
+        ("generation", 7, "legacy generation"),
+        ("incomplete_generation", 7, "legacy incomplete generation"),
+        ("similarity_precondition", 7, "legacy similarity precondition"),
+        ("nonfinite_score", 7, "legacy nonfinite score"),
     ],
 )
-def test_checkpoint_derives_complete_provenance_for_legacy_candidate_failure(
+def test_schema_v3_checkpoint_rejects_incomplete_legacy_candidate_failure(
     kind: str,
     seed: int | None,
     detail: str,
-    affected_evidence: str,
-    corrective_action: str,
 ) -> None:
-    """A same-version three-field invalid diagnostic upgrades deterministically when read."""
+    """Current checkpoints cannot silently upgrade pre-v3 diagnostic semantics."""
     document = _decoded()
     invalid = cast(dict[str, object], cast(list[dict[str, object]], document["population"])[1]["invalid"])
     invalid.clear()
     invalid.update({"kind": kind, "seed": seed, "detail": detail})
-    legacy = _encoded(document)
 
-    loaded = parse_checkpoint(legacy, COMPATIBILITY)
-
-    assert loaded.population[1].invalid == CandidateFailure(
-        kind=cast(Any, kind),
-        seed=seed,
-        detail=detail,
-        stage="fit",
-        affected_evidence=affected_evidence,
-        evidence_state="diagnostic_only",
-        corrective_action=corrective_action,
-        authority="primary",
-    )
-    rewritten = _decoded(render_checkpoint(loaded))
-    assert cast(list[dict[str, object]], rewritten["population"])[1]["invalid"] == {
-        "kind": kind,
-        "seed": seed,
-        "detail": detail,
-        "stage": "fit",
-        "affected_evidence": affected_evidence,
-        "evidence_state": "diagnostic_only",
-        "corrective_action": corrective_action,
-        "authority": "primary",
-    }
+    with pytest.raises(TrafficlabError, match="invalid checkpoint"):
+        parse_checkpoint(_encoded(document), COMPATIBILITY)
 
 
-def test_checkpoint_rejects_non_null_gaussian_cache_and_duplicate_candidate_ids() -> None:
-    with pytest.raises(TrafficlabError, match="gauss_next"):
-        parse_checkpoint(_changed(("rng", "state", "gauss_next"), 0.5), COMPATIBILITY)
+def test_checkpoint_rejects_wrong_bit_generator_and_duplicate_candidate_ids() -> None:
+    with pytest.raises(TrafficlabError, match="bit_generator"):
+        parse_checkpoint(_changed(("rng", "state", "bit_generator"), "Philox"), COMPATIBILITY)
 
     duplicate = _decoded()
     population = cast(list[dict[str, object]], duplicate["population"])
@@ -950,7 +925,7 @@ def test_checkpoint_rejects_noncanonical_but_equivalent_json() -> None:
         (False, None),
         (True, None),
         (True, 1),
-        (True, 3),
+        (True, 4),
         (True, True),
         (True, "2"),
         (True, 2.0),
@@ -1000,7 +975,7 @@ def test_checkpoint_priority_is_strict_and_rejected_before_rng_parsing(
 
 
 def test_checkpoint_rejects_missing_or_expected_mismatched_priority_before_rng_parsing() -> None:
-    """Schema-2 checkpoints without priority have no migration path."""
+    """Schema-v3 checkpoints without priority have no migration path."""
     document = _decoded()
     assert document["family_priority"] == list(COMPATIBILITY.family_priority)
     missing = dict(document)
@@ -1055,10 +1030,11 @@ def test_checkpoint_state_priority_must_match_its_compatibility() -> None:
         (("similarity", "multiscale_widths_seconds"), [0.0]),
         (("rng", "engine"), "other"),
         (("rng", "python_version"), ""),
-        (("rng", "state", "state_version"), True),
-        (("rng", "state", "mt_state"), [0] * 623),
-        (("rng", "state", "mt_state", 0), -1),
-        (("rng", "state", "index"), 625),
+        (("rng", "state", "bit_generator"), "Philox"),
+        (("rng", "state", "state", "state"), -1),
+        (("rng", "state", "state", "inc"), 2**128),
+        (("rng", "state", "has_uint32"), True),
+        (("rng", "state", "uinteger"), 2**32),
     ],
 )
 def test_checkpoint_rejects_strict_compatibility_metadata_and_rng_corruption(
@@ -1488,7 +1464,7 @@ def test_checkpoint_priority_ties_unify_current_history_and_retained_winners() -
         generation=1,
         population=current_population,
         history=history,
-        rng_state=encode_rng_state(Random(73).getstate()),
+        rng_state=encode_rng_state(make_rng(73)),
         best_identifier=current_mmpp.identifier,
         best_fitness=current_mmpp.fitness,
         consecutive_stagnation=0,
@@ -1550,7 +1526,7 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
         generation=0,
         population=candidates,
         history=rows,
-        rng_state=encode_rng_state(Random(73).getstate()),
+        rng_state=encode_rng_state(make_rng(73)),
         best_identifier=winner.identifier,
         best_fitness=winner.fitness,
         consecutive_stagnation=0,
@@ -1560,23 +1536,21 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
     assert parse_checkpoint(render_checkpoint(state), compatibility) == state
 
 
-def test_rng_codec_rejects_wrong_outer_internal_word_index_and_gaussian_shapes() -> None:
-    valid = Random(73).getstate()
-    version, internal, _ = valid
-    cases: tuple[object, ...] = (
-        [],
-        (version, tuple(internal[:-1]), None),
-        (True, internal, None),
-        (version, (True, *internal[1:]), None),
-        (version, (*internal[:-1], 625), None),
-        (version, internal, 0.5),
-    )
-    for state in cases:
+def test_rng_codec_rejects_foreign_generators_and_malformed_pcg64_state() -> None:
+    for rng in (object(), np.random.Generator(np.random.Philox(73))):
         with pytest.raises(TrafficlabError, match="checkpoint"):
-            encode_rng_state(state)
+            encode_rng_state(rng)
 
     with pytest.raises(TrafficlabError, match="rng state"):
         decode_rng_state(cast(Any, None))
+    malformed = RngState.model_construct(
+        bit_generator="PCG64",
+        state=Pcg64CoreState.model_construct(state=-1, inc=1),
+        has_uint32=0,
+        uinteger=0,
+    )
+    with pytest.raises(TrafficlabError, match="state.state"):
+        decode_rng_state(malformed)
 
 
 def test_compatibility_reports_each_scientifically_relevant_difference_specifically() -> None:
@@ -2094,7 +2068,7 @@ def test_experiment_hash_mismatch_precedes_redundant_operator_mismatch() -> None
 
 def test_experiment_hash_mismatch_precedes_rng_engine_and_engine_mismatch_is_specific() -> None:
     engine_only = _decoded()
-    cast(dict[str, object], engine_only["rng"])["engine"] = "alternate.random/MT19937"
+    cast(dict[str, object], engine_only["rng"])["engine"] = "alternate.random/PCG64"
     with pytest.raises(TrafficlabError, match="RNG engine"):
         parse_checkpoint(_encoded(engine_only), COMPATIBILITY)
 
@@ -2113,13 +2087,13 @@ def test_experiment_hash_mismatch_precedes_rng_engine_and_engine_mismatch_is_spe
         {},
         "",
         " ",
-        "python.random.Random//MT19937",
-        "/MT19937",
-        "python.random.Random/",
-        "python.random.Random /MT19937",
-        "python-random/MT19937",
-        "python.random.Random\\MT19937",
-        "pythön.random/MT19937",
+        "numpy.random.Generator//PCG64",
+        "/PCG64",
+        "numpy.random.Generator/",
+        "numpy.random.Generator /PCG64",
+        "numpy-random/PCG64",
+        "numpy.random.Generator\\PCG64",
+        "nümpy.random/PCG64",
     ),
     ids=(
         "null",

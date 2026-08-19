@@ -111,9 +111,9 @@ flushes capture only while it remains alive, validates `capture.json` and
 
 Parse and normalize the reference once, derive `W`, and give every candidate the
 same W. Family display order remains lexical. Search priority is one master-seed
-permutation of sorted enabled families, derived by one temporary
-`random.Random(master_seed).sample(sorted_family_names, len(sorted_family_names))`
-call that does not consume the search RNG stream. The priority controls quota
+permutation of sorted enabled families, derived by one temporary explicit PCG64
+generator's `permutation(sorted_family_names_array)` call. It does not consume
+the separate PCG64 search stream. The priority controls quota
 remainders, initial family order, and exact cross-family ties; checkpoint state
 retains it. Build candidates from every enabled model family and evolve them
 under common selection trial seeds and `generation.trial` limits. A generation

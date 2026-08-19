@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from random import Random
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -13,6 +11,7 @@ from tests.unit.genetic.test_checkpoint import COMPATIBILITY, VALID_STATE, repla
 from trafficlab.config import FloatBounds
 from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state, parse_checkpoint, render_checkpoint
 from trafficlab.genetic.coordinates import GeneCoordinate, decode_gene, encode_gene
+from trafficlab.models.common import make_rng
 
 
 @given(st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False))
@@ -25,9 +24,9 @@ def test_linear_gene_coordinates_round_trip_within_literal_error_bound(coordinat
 
 
 def checkpoint_states() -> SearchStrategy[CheckpointState]:
-    """Return bounded valid states with independent MT19937 continuation inputs."""
+    """Return bounded valid states with independent PCG64 continuation inputs."""
     return st.integers(min_value=0, max_value=2**32 - 1).map(
-        lambda seed: replace(VALID_STATE, rng_state=encode_rng_state(Random(seed).getstate()))
+        lambda seed: replace(VALID_STATE, rng_state=encode_rng_state(make_rng(seed)))
     )
 
 

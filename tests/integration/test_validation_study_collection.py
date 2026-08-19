@@ -173,7 +173,7 @@ def _collection_inputs(
         "kernel_release": "fixture-kernel-1",
         "python_implementation": "CPython",
         "python_version": platform.python_version(),
-        "scientific_artifact_schema": 2,
+        "scientific_artifact_schema": 3,
         "source_commit": commit,
         "source_tree": tree,
         "target_image_id": f"sha256:{study.TARGET_REFERENCE.rsplit(':', 1)[-1]}",
