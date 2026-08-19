@@ -4,8 +4,19 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from typing import Literal
+from functools import total_ordering
+from typing import Annotated, Literal, Self, cast
+
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictInt,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from trafficlab.config import FamilyName
 from trafficlab.errors import EvidenceState, FailureAuthority
@@ -15,7 +26,7 @@ from trafficlab.models.common import (
     ModelDiagnostics,
     freeze_model_diagnostics,
 )
-from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
+from trafficlab.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
 
 type CandidateStatus = Literal["pending", "valid", "invalid"]
 type FamilyPriority = tuple[str, ...]
@@ -39,6 +50,33 @@ _FAMILY_NAMES = frozenset(("poisson_empirical", "markov_renewal", "mmpp"))
 _MARKOV_MODEL_DIAGNOSTIC_NAMES = frozenset(MARKOV_MODEL_DIAGNOSTIC_KEYS)
 
 
+def _exact_float(value: object) -> object:
+    if type(value) is not float:
+        raise ValueError("value must be an exact float")
+    return value
+
+
+def _tuple_input(value: object) -> object:
+    if type(value) is list:
+        return tuple(cast(list[object], value))
+    return value
+
+
+type UnitFloat = Annotated[float, BeforeValidator(_exact_float), Field(ge=0.0, le=1.0)]
+type NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
+type NonemptyString = Annotated[str, Field(min_length=1)]
+
+
+class _StrictGeneticModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
+
+
 def _empty_model_diagnostics() -> dict[str, int]:
     return {}
 
@@ -56,12 +94,20 @@ def validate_model_diagnostics_for_family(family: FamilyName, diagnostics: Model
         raise ValueError(f"model diagnostics for family {family} do not match its canonical counter namespace")
 
 
-@dataclass(frozen=True, order=True, slots=True)
-class CandidateId:
+@total_ordering
+class CandidateId(_StrictGeneticModel):
     """Stable lexical identity assigned at candidate creation."""
 
-    birth_generation: int
-    birth_index: int
+    birth_generation: NonnegativeInt
+    birth_index: NonnegativeInt
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, CandidateId):
+            return NotImplemented
+        return (self.birth_generation, self.birth_index) < (other.birth_generation, other.birth_index)
+
+    def __hash__(self) -> int:
+        return hash((self.birth_generation, self.birth_index))
 
 
 def validate_candidate_id(identifier: CandidateId) -> CandidateId:
@@ -75,159 +121,161 @@ def validate_candidate_id(identifier: CandidateId) -> CandidateId:
     return identifier
 
 
-def _finite_score(value: object, *, name: str) -> float:
-    if type(value) is not float or not math.isfinite(value) or not 0.0 <= value <= 1.0:
-        raise ValueError(f"{name} must be a finite float in [0, 1]")
-    return value
-
-
-@dataclass(frozen=True, slots=True, init=False)
-class MethodTrialResult:
+class MethodTrialResult(_StrictGeneticModel):
     """One named similarity result retained with recursively frozen diagnostics."""
 
     name: MethodName
-    score: float
-    diagnostics: JsonDiagnostics
+    score: UnitFloat
+    diagnostics: Mapping[str, JsonValue]
 
-    def __init__(self, name: MethodName, score: float, diagnostics: Mapping[str, object]) -> None:
-        if name not in _METHOD_NAMES:
-            raise ValueError("method name must be one of the published similarity methods")
-        frozen = SimilarityResult(0.0, diagnostics).diagnostics
-        object.__setattr__(self, "name", name)
-        object.__setattr__(self, "score", _finite_score(score, name="method score"))
+    @field_validator("diagnostics", mode="before")
+    @classmethod
+    def diagnostics_are_finite_json(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            raise ValueError("method diagnostics must be an object")
+        frozen = SimilarityResult(0.0, cast(Mapping[str, object], value)).diagnostics
+        return _thaw_json(cast(FrozenJsonValue, frozen))
+
+    @model_validator(mode="after")
+    def freeze_diagnostics(self) -> Self:
+        frozen = SimilarityResult(0.0, cast(Mapping[str, object], self.diagnostics)).diagnostics
         object.__setattr__(self, "diagnostics", frozen)
+        return self
+
+    @field_serializer("diagnostics")
+    def serialize_diagnostics(self, value: Mapping[str, JsonValue]) -> object:
+        return _thaw_json(cast(FrozenJsonValue, value))
 
 
-@dataclass(frozen=True, slots=True)
-class TrialResult:
+class TrialResult(_StrictGeneticModel):
     """All four scores from one deterministic generated-trace seed."""
 
-    seed: int
-    aggregate_score: float
-    methods: tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult]
-    model_diagnostics: ModelDiagnostics = field(default_factory=_empty_model_diagnostics)
+    seed: NonnegativeInt
+    aggregate_score: UnitFloat
+    methods: Annotated[
+        tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
+        BeforeValidator(_tuple_input),
+    ]
+    model_diagnostics: ModelDiagnostics = Field(default_factory=_empty_model_diagnostics)
 
-    def __post_init__(self) -> None:
-        if type(self.seed) is not int or self.seed < 0:
-            raise ValueError("trial seed must be a nonnegative exact integer")
-        _finite_score(self.aggregate_score, name="aggregate score")
-        if type(self.methods) is not tuple or len(self.methods) != len(METHOD_ORDER):
+    @field_validator("model_diagnostics", mode="before")
+    @classmethod
+    def model_diagnostics_are_rebuilt_from_primitives(cls, value: object) -> object:
+        try:
+            return dict(freeze_model_diagnostics(value))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"candidate trial model diagnostics are invalid: {error}") from error
+
+    @model_validator(mode="after")
+    def validate_trial(self) -> Self:
+        if len(self.methods) != len(METHOD_ORDER):
             raise ValueError("trial methods must contain every published method in published order")
-        if any(type(method) is not MethodTrialResult for method in self.methods):
-            raise TypeError("trial methods must be MethodTrialResult values")
         if tuple(method.name for method in self.methods) != METHOD_ORDER:
             raise ValueError("trial methods must contain every published method in published order")
         diagnostics = freeze_model_diagnostics(self.model_diagnostics)
         _validate_model_diagnostic_shape(diagnostics)
         object.__setattr__(self, "model_diagnostics", diagnostics)
+        return self
+
+    @field_serializer("model_diagnostics")
+    def serialize_model_diagnostics(self, value: ModelDiagnostics) -> object:
+        return dict(value)
 
 
-@dataclass(frozen=True, slots=True)
-class CandidateFailure:
+class CandidateFailure(_StrictGeneticModel):
     """A classified mathematical evaluation failure with optional trial seed."""
 
     kind: CandidateFailureKind
-    seed: int | None
-    detail: str
-    stage: str = field(kw_only=True)
-    affected_evidence: str = field(kw_only=True)
-    evidence_state: EvidenceState = field(kw_only=True)
-    corrective_action: str = field(kw_only=True)
-    authority: FailureAuthority = field(kw_only=True)
+    seed: NonnegativeInt | None
+    detail: NonemptyString
+    stage: NonemptyString
+    affected_evidence: NonemptyString
+    evidence_state: EvidenceState
+    corrective_action: NonemptyString
+    authority: FailureAuthority
 
-    def __post_init__(self) -> None:
-        if self.kind not in _FAILURE_KINDS:
-            raise ValueError("candidate failure kind is not recognized")
-        if self.seed is not None and (type(self.seed) is not int or self.seed < 0):
-            raise ValueError("candidate failure seed must be a nonnegative exact integer or None")
+    @model_validator(mode="after")
+    def values_are_recognized_and_nonblank(self) -> Self:
         for name in ("detail", "stage", "affected_evidence", "corrective_action"):
             value = getattr(self, name)
-            if type(value) is not str or not value.strip():
+            if not value.strip():
                 raise ValueError(f"candidate failure {name} must be a nonempty string")
-        if self.evidence_state not in _EVIDENCE_STATES:
-            raise ValueError("candidate failure evidence state is not recognized")
-        if self.authority not in _FAILURE_AUTHORITIES:
-            raise ValueError("candidate failure authority is not recognized")
+        return self
 
 
-@dataclass(frozen=True, slots=True)
-class DuplicateDiagnostic:
+class DuplicateDiagnostic(_StrictGeneticModel):
     """One bounded duplicate-retry decision."""
 
-    attempt: int
+    attempt: NonnegativeInt
     outcome: DuplicateOutcome
-    detail: str
-
-    def __post_init__(self) -> None:
-        if type(self.attempt) is not int or self.attempt < 0:
-            raise ValueError("duplicate attempt must be a nonnegative exact integer")
-        if self.outcome not in _DUPLICATE_OUTCOMES:
-            raise ValueError("duplicate outcome is not recognized")
-        if type(self.detail) is not str or not self.detail:
-            raise ValueError("duplicate detail must be a nonempty string")
+    detail: NonemptyString
 
 
-@dataclass(frozen=True, slots=True)
-class Candidate:
+class Candidate(_StrictGeneticModel):
     """One immutable population member and its evaluated or invalid state."""
 
     identifier: CandidateId
     family: FamilyName
-    genes: Genes | None
+    genes: Annotated[Genes, BeforeValidator(_tuple_input)] | None
     status: CandidateStatus
-    fitness: float
-    trials: tuple[TrialResult, ...]
+    fitness: UnitFloat
+    trials: Annotated[tuple[TrialResult, ...], BeforeValidator(_tuple_input)]
     invalid: CandidateFailure | None
-    duplicate_diagnostics: tuple[DuplicateDiagnostic, ...]
+    duplicate_diagnostics: Annotated[tuple[DuplicateDiagnostic, ...], BeforeValidator(_tuple_input)]
 
-    def __post_init__(self) -> None:
+    @field_validator("genes", mode="before")
+    @classmethod
+    def genes_are_exact_finite_numbers(cls, value: object) -> object:
+        if value is None:
+            return None
+        values = _tuple_input(value)
+        if type(values) is not tuple:
+            raise ValueError("candidate genes must be a tuple or array")
+        genes = cast(tuple[object, ...], values)
+        if any(type(gene) not in (int, float) or not math.isfinite(cast(float, gene)) for gene in genes):
+            raise ValueError("candidate genes must contain exact finite integers or floats")
+        return genes
+
+    @model_validator(mode="after")
+    def validate_candidate(self) -> Self:
         validate_candidate_id(self.identifier)
-        if type(self.family) is not str or self.family not in _FAMILY_NAMES:
-            raise ValueError("candidate family must be a registered family")
-        if self.genes is not None:
-            if type(self.genes) is not tuple:
-                raise TypeError("candidate genes must be a tuple or None")
-            if any(type(gene) not in (int, float) or not math.isfinite(gene) for gene in self.genes):
-                raise ValueError("candidate genes must contain exact finite integers or floats")
-        if self.status not in _CANDIDATE_STATUSES:
-            raise ValueError("candidate status is not recognized")
-        _finite_score(self.fitness, name="candidate fitness")
-        if type(self.trials) is not tuple or any(type(trial) is not TrialResult for trial in self.trials):
-            raise TypeError("candidate trials must be a tuple of TrialResult values")
         for trial in self.trials:
             validate_model_diagnostics_for_family(self.family, trial.model_diagnostics)
-        if self.invalid is not None and type(self.invalid) is not CandidateFailure:
-            raise TypeError("candidate invalid value must be a CandidateFailure or None")
-        if type(self.duplicate_diagnostics) is not tuple or any(
-            type(item) is not DuplicateDiagnostic for item in self.duplicate_diagnostics
-        ):
-            raise TypeError("candidate duplicate diagnostics must be a tuple of DuplicateDiagnostic values")
+        return self
 
 
-@dataclass(frozen=True, slots=True)
-class HistoryRow:
+class HistoryRow(_StrictGeneticModel):
     """A serializable family or overall generation summary."""
 
-    generation: int
+    generation: NonnegativeInt
     scope: Literal["family", "overall"]
     family: FamilyName | None
-    candidate_count: int
-    valid_count: int
-    best_fitness: float
-    mean_fitness: float
+    candidate_count: NonnegativeInt
+    valid_count: NonnegativeInt
+    best_fitness: UnitFloat
+    mean_fitness: UnitFloat
     best_identifier: CandidateId
 
-    def __post_init__(self) -> None:
-        if type(self.generation) is not int or self.generation < 0:
-            raise ValueError("history generation must be a nonnegative exact integer")
-        if self.scope not in {"family", "overall"}:
-            raise ValueError("history scope must be family or overall")
+    @model_validator(mode="after")
+    def validate_history_row(self) -> Self:
         if (self.scope == "family") != (self.family is not None):
             raise ValueError("family history rows require a family and overall rows require none")
-        if any(type(value) is not int or value < 0 for value in (self.candidate_count, self.valid_count)):
-            raise ValueError("history counts must be nonnegative exact integers")
         if self.valid_count > self.candidate_count:
             raise ValueError("history valid count must not exceed candidate count")
-        _finite_score(self.best_fitness, name="history best fitness")
-        _finite_score(self.mean_fitness, name="history mean fitness")
         validate_candidate_id(self.best_identifier)
+        return self
+
+
+def _thaw_json(value: FrozenJsonValue) -> object:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if type(value) is tuple:
+        return [_thaw_json(item) for item in value]
+    return value
+
+
+def rebuild_genetic_record[Record: BaseModel](record: Record, **changes: object) -> Record:
+    """Reconstruct and fully revalidate one immutable genetic record."""
+    values = record.model_dump(mode="python")
+    values.update(changes)
+    return type(record).model_validate(values)

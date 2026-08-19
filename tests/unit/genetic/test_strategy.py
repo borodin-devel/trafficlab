@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
+from dataclasses import replace as replace_dataclass
 from pathlib import Path
 from random import Random
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 
 from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig
@@ -34,6 +35,16 @@ from trafficlab.genetic.types import (
 )
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
 from trafficlab.trace import Direction, TraceEvent
+
+
+def replace[Record](record: Record, **changes: object) -> Record:
+    """Build deliberate model states at this test boundary."""
+    if isinstance(record, BaseModel):
+        values = {name: getattr(record, name) for name in type(record).model_fields}
+        values.update(changes)
+        return cast(Record, type(record).model_construct(**values))
+    return cast(Record, replace_dataclass(cast(Any, record), **changes))
+
 
 REFERENCE = (
     TraceEvent(0.0, Direction.OUTBOUND, 64),
@@ -159,9 +170,9 @@ def _matrix_context(
 
 
 def _trial(seed: int, score: float, *, family: str = "poisson_empirical") -> TrialResult:
-    methods = tuple(MethodTrialResult(name, score, {"literal": score}) for name in METHOD_ORDER)
+    methods = tuple(MethodTrialResult(name=name, score=score, diagnostics={"literal": score}) for name in METHOD_ORDER)
     diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
-    return TrialResult(seed, score, cast(Any, methods), diagnostics)
+    return TrialResult(seed=seed, aggregate_score=score, methods=cast(Any, methods), model_diagnostics=diagnostics)
 
 
 def _install_scoring(
@@ -214,9 +225,9 @@ def _install_family_scoring(
                 fitness=0.0,
                 trials=(),
                 invalid=CandidateFailure(
-                    "fit",
-                    None,
-                    "controlled symmetric fit failure",
+                    kind="fit",
+                    seed=None,
+                    detail="controlled symmetric fit failure",
                     stage="fit",
                     affected_evidence="candidate model",
                     evidence_state="diagnostic_only",
@@ -516,7 +527,8 @@ def test_context_resolves_lexical_families_and_exact_effective_settings_once(
     assert context.compatibility.genetic.final_seed == config.run.final_seed
     assert context.compatibility.genetic.early_stopping_tolerance == 0.0
     assert context.evaluation.trial_limits is config.generation.trial
-    assert context.compatibility.similarity is config.similarity
+    assert context.compatibility.similarity == config.similarity
+    assert context.compatibility.similarity is not config.similarity
     names = tuple(spec.name for spec in context.compatibility.families)
     assert context.compatibility.family_priority == tuple(
         Random(config.run.master_seed).sample(sorted(names), len(names))
@@ -678,7 +690,9 @@ def test_public_strategy_fairness_matrix_directs_equal_and_invalid_results_by_pr
     expected_slots = tuple(family for family in expected_priority for _ in range(2))
 
     assert tuple(candidate.family for candidate in initial[0]) == expected_slots
-    assert tuple(candidate.identifier for candidate in initial[0]) == tuple(CandidateId(0, index) for index in range(6))
+    assert tuple(candidate.identifier for candidate in initial[0]) == tuple(
+        CandidateId(birth_generation=0, birth_index=index) for index in range(6)
+    )
     assert context.evaluation.trial_seeds == (17, 29)
     assert context.compatibility.observation_window_seconds == 10.0
     assert winner.family == expected_priority[0]

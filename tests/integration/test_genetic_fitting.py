@@ -5,12 +5,14 @@ import math
 import subprocess
 import tomllib
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
+from dataclasses import replace as replace_dataclass
 from pathlib import Path
 from random import Random
-from typing import cast
+from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 
 import trafficlab.docker_cli as docker_cli
 import trafficlab.genetic.evaluation as genetic_evaluation
@@ -37,6 +39,16 @@ from trafficlab.preflight import PreflightReport, PreparedExperiment
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 pytestmark = pytest.mark.integration
+
+
+def replace[Record](record: Record, **changes: object) -> Record:
+    """Build controlled in-process model states for integration fixtures."""
+    if isinstance(record, BaseModel):
+        values = {name: getattr(record, name) for name in type(record).model_fields}
+        values.update(changes)
+        return cast(Record, type(record).model_construct(**values))
+    return cast(Record, replace_dataclass(cast(Any, record), **changes))
+
 
 _ROOT = Path(__file__).resolve().parents[2]
 _FIT_DIRECTORY = _ROOT / "examples" / "data" / "fit"
@@ -170,13 +182,16 @@ def _mixed_trial(family: FamilyName, seed: int) -> TrialResult:
     components = _MIXED_COMPONENT_SCORES[family]
     methods = cast(
         tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
-        tuple(MethodTrialResult(name, components[name], {"matrix_family": family}) for name in METHOD_ORDER),
+        tuple(
+            MethodTrialResult(name=name, score=components[name], diagnostics={"matrix_family": family})
+            for name in METHOD_ORDER
+        ),
     )
     return TrialResult(
-        seed,
-        math.fsum(_MIXED_METHOD_WEIGHTS[name] * components[name] for name in METHOD_ORDER),
-        methods,
-        {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {},
+        seed=seed,
+        aggregate_score=math.fsum(_MIXED_METHOD_WEIGHTS[name] * components[name] for name in METHOD_ORDER),
+        methods=methods,
+        model_diagnostics={name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {},
     )
 
 
@@ -616,7 +631,7 @@ def test_in_process_fairness_matrix_preserves_slots_children_and_mixed_mmpp_winn
     first_state = load_checkpoint(first_directory / "checkpoint.json", first_context.compatibility)
     second_state = load_checkpoint(second_directory / "checkpoint.json", second_context.compatibility)
     expected_slots = tuple(family for family in expected_priority for _ in range(2))
-    expected_children = tuple(CandidateId(1, index) for index in range(3))
+    expected_children = tuple(CandidateId(birth_generation=1, birth_index=index) for index in range(3))
     expected_mmpp_score = math.fsum(
         _MIXED_METHOD_WEIGHTS[name] * _MIXED_COMPONENT_SCORES["mmpp"][name] for name in METHOD_ORDER
     )
@@ -633,7 +648,8 @@ def test_in_process_fairness_matrix_preserves_slots_children_and_mixed_mmpp_winn
         tuple(candidate.family for candidate in population) == expected_slots for population in initial_populations
     )
     assert all(
-        tuple(candidate.identifier for candidate in population) == tuple(CandidateId(0, index) for index in range(6))
+        tuple(candidate.identifier for candidate in population)
+        == tuple(CandidateId(birth_generation=0, birth_index=index) for index in range(6))
         for population in initial_populations
     )
     assert all(

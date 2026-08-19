@@ -70,14 +70,14 @@ BOUNDS: dict[FamilyName, FamilyBounds] = {
 def candidate(index: int, family: FamilyName, fitness: float, *, status: CandidateStatus = "valid") -> Candidate:
     """Build a literal evaluated candidate for pure ordering examples."""
     return Candidate(
-        CandidateId(0, index),
-        family,
-        (float(index + 1),),
-        status,
-        fitness,
-        (),
-        None,
-        (),
+        identifier=CandidateId(birth_generation=0, birth_index=index),
+        family=family,
+        genes=(float(index + 1),),
+        status=status,
+        fitness=fitness,
+        trials=(),
+        invalid=None,
+        duplicate_diagnostics=(),
     )
 
 
@@ -167,7 +167,9 @@ def test_initial_population_uses_contiguous_priority_slots_and_stable_ids() -> N
         "markov_renewal",
         "mmpp",
     )
-    assert tuple(item.identifier for item in population) == tuple(CandidateId(0, index) for index in range(4))
+    assert tuple(item.identifier for item in population) == tuple(
+        CandidateId(birth_generation=0, birth_index=index) for index in range(4)
+    )
     assert all(item.status == "pending" and item.fitness == 0.0 for item in population)
 
 
@@ -217,26 +219,26 @@ def test_ranking_retention_and_champions_use_priority_across_families_and_ids_wi
     )
 
     assert tuple(item.identifier for item in rank_candidates(tied, family_priority=priority)[:5]) == (
-        CandidateId(0, 5),
-        CandidateId(0, 7),
-        CandidateId(0, 6),
-        CandidateId(0, 1),
-        CandidateId(0, 0),
+        CandidateId(birth_generation=0, birth_index=5),
+        CandidateId(birth_generation=0, birth_index=7),
+        CandidateId(birth_generation=0, birth_index=6),
+        CandidateId(birth_generation=0, birth_index=1),
+        CandidateId(birth_generation=0, birth_index=0),
     )
     assert tuple(item.identifier for item in global_elites(tied, elite_count=2, family_priority=priority)) == (
-        CandidateId(0, 5),
-        CandidateId(0, 7),
+        CandidateId(birth_generation=0, birth_index=5),
+        CandidateId(birth_generation=0, birth_index=7),
     )
     assert tuple(item.identifier for item in family_champions(tied, family_priority=priority)) == (
-        CandidateId(0, 5),
-        CandidateId(0, 6),
-        CandidateId(0, 1),
+        CandidateId(birth_generation=0, birth_index=5),
+        CandidateId(birth_generation=0, birth_index=6),
+        CandidateId(birth_generation=0, birth_index=1),
     )
     assert tuple(item.identifier for item in retained_population(tied, elite_count=2, family_priority=priority)) == (
-        CandidateId(0, 5),
-        CandidateId(0, 7),
-        CandidateId(0, 6),
-        CandidateId(0, 1),
+        CandidateId(birth_generation=0, birth_index=5),
+        CandidateId(birth_generation=0, birth_index=7),
+        CandidateId(birth_generation=0, birth_index=6),
+        CandidateId(birth_generation=0, birth_index=1),
     )
 
     symmetric_invalids = (
@@ -250,7 +252,11 @@ def test_ranking_retention_and_champions_use_priority_across_families_and_ids_wi
             symmetric_invalids,
             family_priority=("poisson_empirical", "mmpp", "markov_renewal"),
         )
-    ) == (CandidateId(0, 10), CandidateId(0, 9), CandidateId(0, 8))
+    ) == (
+        CandidateId(birth_generation=0, birth_index=10),
+        CandidateId(birth_generation=0, birth_index=9),
+        CandidateId(birth_generation=0, birth_index=8),
+    )
 
 
 def test_tournament_uses_replacement_and_family_priority_for_cross_family_ties() -> None:
@@ -267,7 +273,7 @@ def test_tournament_uses_replacement_and_family_priority_for_cross_family_ties()
         tournament_size=3,
         rng=cast(Random, rng),
         family_priority=("mmpp", "markov_renewal", "poisson_empirical"),
-    ).identifier == CandidateId(0, 1)
+    ).identifier == CandidateId(birth_generation=0, birth_index=1)
     assert rng.calls == [("randrange", 3, None), ("randrange", 3, None), ("randrange", 3, None)]
 
 

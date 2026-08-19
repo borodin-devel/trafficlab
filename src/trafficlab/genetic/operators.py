@@ -111,23 +111,23 @@ def _parent_genes(candidate: Candidate, *, coordinate_count: int) -> Genes:
 
 def _missing_parent_genes(identifier: CandidateId, family: FamilyName) -> Candidate:
     return Candidate(
-        identifier,
-        family,
-        None,
-        "invalid",
-        0.0,
-        (),
-        CandidateFailure(
-            "repair",
-            None,
-            "selected parent has no canonical genes",
+        identifier=identifier,
+        family=family,
+        genes=None,
+        status="invalid",
+        fitness=0.0,
+        trials=(),
+        invalid=CandidateFailure(
+            kind="repair",
+            seed=None,
+            detail="selected parent has no canonical genes",
             stage="fit",
             affected_evidence="candidate genes",
             evidence_state="diagnostic_only",
             corrective_action="select a parent with canonical genes",
             authority="primary",
         ),
-        (),
+        duplicate_diagnostics=(),
     )
 
 
@@ -205,25 +205,34 @@ def _pending_or_invalid(
         repaired = _repair(family, genes, context=context)
     except CandidateEvaluationError as error:
         return Candidate(
-            identifier,
-            family,
-            None,
-            "invalid",
-            0.0,
-            (),
-            CandidateFailure(
-                error.kind,
-                error.seed,
-                error.detail,
+            identifier=identifier,
+            family=family,
+            genes=None,
+            status="invalid",
+            fitness=0.0,
+            trials=(),
+            invalid=CandidateFailure(
+                kind=error.kind,
+                seed=error.seed,
+                detail=error.detail,
                 stage=error.stage,
                 affected_evidence=error.affected_evidence,
                 evidence_state=error.evidence_state,
                 corrective_action=error.corrective_action,
                 authority=error.authority,
             ),
-            diagnostics,
+            duplicate_diagnostics=diagnostics,
         )
-    return Candidate(identifier, family, repaired, "pending", 0.0, (), None, diagnostics)
+    return Candidate(
+        identifier=identifier,
+        family=family,
+        genes=repaired,
+        status="pending",
+        fitness=0.0,
+        trials=(),
+        invalid=None,
+        duplicate_diagnostics=diagnostics,
+    )
 
 
 def _is_population_duplicate(candidate: Candidate, existing: Sequence[Candidate]) -> bool:
@@ -253,14 +262,14 @@ def _retry_duplicate(
     if context.duplicate_mutation_attempts == 0:
         detail = "source-equal child" if source_equal else "duplicate attempts exhausted"
         return Candidate(
-            child.identifier,
-            child.family,
-            child.genes,
-            child.status,
-            child.fitness,
-            child.trials,
-            child.invalid,
-            (DuplicateDiagnostic(0, "exhausted", detail),),
+            identifier=child.identifier,
+            family=child.family,
+            genes=child.genes,
+            status=child.status,
+            fitness=child.fitness,
+            trials=child.trials,
+            invalid=child.invalid,
+            duplicate_diagnostics=(DuplicateDiagnostic(attempt=0, outcome="exhausted", detail=detail),),
         )
 
     for attempt in range(1, context.duplicate_mutation_attempts + 1):
@@ -276,30 +285,43 @@ def _retry_duplicate(
             repaired = _repair(child.family, mutated, context=context)
         except CandidateEvaluationError:
             if attempt < context.duplicate_mutation_attempts:
-                diagnostics.append(DuplicateDiagnostic(attempt, "invalid", "repair failed"))
+                diagnostics.append(DuplicateDiagnostic(attempt=attempt, outcome="invalid", detail="repair failed"))
                 continue
-            diagnostics.append(DuplicateDiagnostic(attempt, "exhausted", "duplicate attempts exhausted"))
+            diagnostics.append(
+                DuplicateDiagnostic(attempt=attempt, outcome="exhausted", detail="duplicate attempts exhausted")
+            )
             break
 
-        retry = Candidate(child.identifier, child.family, repaired, "pending", 0.0, (), None, tuple(diagnostics))
+        retry = Candidate(
+            identifier=child.identifier,
+            family=child.family,
+            genes=repaired,
+            status="pending",
+            fitness=0.0,
+            trials=(),
+            invalid=None,
+            duplicate_diagnostics=tuple(diagnostics),
+        )
         retry_source_equal = cross_family and source.genes == repaired
         if not retry_source_equal and not _is_population_duplicate(retry, context.existing_candidates):
             return retry
         base_genes = repaired
         if attempt < context.duplicate_mutation_attempts:
-            diagnostics.append(DuplicateDiagnostic(attempt, "duplicate", "duplicate child"))
+            diagnostics.append(DuplicateDiagnostic(attempt=attempt, outcome="duplicate", detail="duplicate child"))
         else:
-            diagnostics.append(DuplicateDiagnostic(attempt, "exhausted", "duplicate attempts exhausted"))
+            diagnostics.append(
+                DuplicateDiagnostic(attempt=attempt, outcome="exhausted", detail="duplicate attempts exhausted")
+            )
 
     return Candidate(
-        original.identifier,
-        original.family,
-        original.genes,
-        original.status,
-        original.fitness,
-        original.trials,
-        original.invalid,
-        tuple(diagnostics),
+        identifier=original.identifier,
+        family=original.family,
+        genes=original.genes,
+        status=original.status,
+        fitness=original.fitness,
+        trials=original.trials,
+        invalid=original.invalid,
+        duplicate_diagnostics=tuple(diagnostics),
     )
 
 
@@ -382,7 +404,7 @@ def fill_next_population(
             parent_a,
             parent_b,
             context=context.with_existing(next_population),
-            identifier=CandidateId(generation, birth_index),
+            identifier=CandidateId(birth_generation=generation, birth_index=birth_index),
             rng=rng,
         )
         next_population.append(child)

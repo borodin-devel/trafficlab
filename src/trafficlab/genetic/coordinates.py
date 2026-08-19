@@ -46,9 +46,9 @@ class CandidateEvaluationError(Exception):
 
     def __post_init__(self) -> None:
         CandidateFailure(
-            self.kind,
-            self.seed,
-            self.detail,
+            kind=self.kind,
+            seed=self.seed,
+            detail=self.detail,
             stage=self.stage,
             affected_evidence=self.affected_evidence,
             evidence_state=self.evidence_state,

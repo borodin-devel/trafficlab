@@ -6,11 +6,13 @@ from pydantic import BaseModel
 
 from trafficlab.comparison import PublishedComparisonResult
 from trafficlab.errors import FailureOutcomeRecord
+from trafficlab.genetic.checkpoint import CheckpointArtifact
 from trafficlab.models.registry import BestModel
 
 PUBLIC_ARTIFACT_MODELS: MappingProxyType[str, type[BaseModel]] = MappingProxyType(
     {
         "best_model": BestModel,
+        "checkpoint": CheckpointArtifact,
         "comparison_result": PublishedComparisonResult,
         "failure_outcome": FailureOutcomeRecord,
     }

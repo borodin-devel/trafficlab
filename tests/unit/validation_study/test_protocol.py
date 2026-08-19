@@ -50,7 +50,7 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.evaluation import ValidatedEvaluationContext, evaluate_candidate, validate_evaluation_context
 from trafficlab.genetic.population import derive_family_priority, initial_population
 from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.genetic.types import Candidate, TrialResult
+from trafficlab.genetic.types import Candidate, TrialResult, rebuild_genetic_record
 from trafficlab.models.common import FittedModel, GenerationResult
 from trafficlab.models.registry import get_family
 from trafficlab.trace import Direction, TraceEvent, align_generated, normalize_reference
@@ -509,7 +509,7 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
         with (spec.run_directory / "best_model.json").open("ab") as stream:
             stream.write(b" ")
     elif mutation == "held-out-wrong-seed":
-        trial = replace(result.fit.outcome.final_trials[0], seed=17)
+        trial = rebuild_genetic_record(result.fit.outcome.final_trials[0], seed=17)
         result = replace(result, fit=replace(result.fit, outcome=replace(result.fit.outcome, final_trials=(trial,))))
     elif mutation == "raw-trial-final-differ":
         original_family = get_family(result.fit.best_model.family)
@@ -544,7 +544,7 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
     elif mutation == "raw-score-differ":
         original = result.fit.outcome.final_trials[0]
         aggregate = 0.0 if original.aggregate_score != 0.0 else 1.0
-        trial = replace(original, aggregate_score=aggregate)
+        trial = rebuild_genetic_record(original, aggregate_score=aggregate)
         result = replace(result, fit=replace(result.fit, outcome=replace(result.fit.outcome, final_trials=(trial,))))
     elif mutation == "quantized-events-differ":
         first, *remaining = result.generation.events

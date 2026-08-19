@@ -36,7 +36,7 @@ from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
 from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state
 from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.genetic.types import Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.genetic.types import Candidate, CandidateId, MethodTrialResult, TrialResult, rebuild_genetic_record
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
 from trafficlab.models.registry import BestModel, get_family, make_best_model
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
@@ -1142,14 +1142,16 @@ def study_result_value(document: dict[str, object]) -> study.StudyResults:
 def trial_result(seed: int, value: float) -> TrialResult:
     methods = tuple(
         MethodTrialResult(
-            name,
-            value,
-            {"observation_window_seconds": 3.0, "seed": seed},
+            name=name,
+            score=value,
+            diagnostics={"observation_window_seconds": 3.0, "seed": seed},
         )
         for name in study.PUBLISHED_METHOD_ORDER
     )
     return TrialResult(
-        seed, value, cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods)
+        seed=seed,
+        aggregate_score=value,
+        methods=cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
     )
 
 
@@ -1162,18 +1164,18 @@ def _evaluated_candidate(
 ) -> Candidate:
     diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
     trials = (
-        replace(trial_result(17, first_score), model_diagnostics=diagnostics),
-        replace(trial_result(29, second_score), model_diagnostics=diagnostics),
+        rebuild_genetic_record(trial_result(17, first_score), model_diagnostics=diagnostics),
+        rebuild_genetic_record(trial_result(29, second_score), model_diagnostics=diagnostics),
     )
     return Candidate(
-        identifier,
-        family,
-        genes,
-        "valid",
-        math.fsum(trial.aggregate_score for trial in trials) / 2.0,
-        trials,
-        None,
-        (),
+        identifier=identifier,
+        family=family,
+        genes=genes,
+        status="valid",
+        fitness=math.fsum(trial.aggregate_score for trial in trials) / 2.0,
+        trials=trials,
+        invalid=None,
+        duplicate_diagnostics=(),
     )
 
 
@@ -1201,24 +1203,28 @@ def terminal_checkpoint_and_best(tmp_path: Path) -> tuple[CheckpointState, BestM
         capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
     population = (
-        _evaluated_candidate(CandidateId(2, 3), "markov_renewal", (0.2, 0.7, 1.0, 4, 1.0), 0.5, 0.7),
-        _evaluated_candidate(CandidateId(2, 0), "markov_renewal", (0.25, 0.75, 0.5, 3, 1.2), 0.6, 0.6),
-        _evaluated_candidate(CandidateId(2, 4), "mmpp", (1.0, 2.0, 10.0, 20.0), 0.6, 0.8),
-        _evaluated_candidate(CandidateId(2, 1), "mmpp", (1.5, 2.5, 12.0, 24.0), 0.6, 0.7),
-        _evaluated_candidate(CandidateId(2, 5), "poisson_empirical", (1.0,), 0.8, 1.0),
-        _evaluated_candidate(CandidateId(2, 2), "poisson_empirical", (1.5,), 0.7, 0.9),
+        _evaluated_candidate(
+            CandidateId(birth_generation=2, birth_index=3), "markov_renewal", (0.2, 0.7, 1.0, 4, 1.0), 0.5, 0.7
+        ),
+        _evaluated_candidate(
+            CandidateId(birth_generation=2, birth_index=0), "markov_renewal", (0.25, 0.75, 0.5, 3, 1.2), 0.6, 0.6
+        ),
+        _evaluated_candidate(CandidateId(birth_generation=2, birth_index=4), "mmpp", (1.0, 2.0, 10.0, 20.0), 0.6, 0.8),
+        _evaluated_candidate(CandidateId(birth_generation=2, birth_index=1), "mmpp", (1.5, 2.5, 12.0, 24.0), 0.6, 0.7),
+        _evaluated_candidate(CandidateId(birth_generation=2, birth_index=5), "poisson_empirical", (1.0,), 0.8, 1.0),
+        _evaluated_candidate(CandidateId(birth_generation=2, birth_index=2), "poisson_empirical", (1.5,), 0.7, 0.9),
     )
     state = CheckpointState(
-        context.compatibility,
-        2,
-        population,
-        (),
-        encode_rng_state(Random(73).getstate()),
-        CandidateId(2, 5),
-        0.9,
-        0,
-        "hard_limit",
-        context.compatibility.family_priority,
+        compatibility=context.compatibility,
+        generation=2,
+        population=population,
+        history=(),
+        rng_state=encode_rng_state(Random(73).getstate()),
+        best_identifier=CandidateId(birth_generation=2, birth_index=5),
+        best_fitness=0.9,
+        consecutive_stagnation=0,
+        terminal_reason="hard_limit",
+        family_priority=context.compatibility.family_priority,
     )
     bounds = config.models.poisson_empirical
     assert bounds is not None

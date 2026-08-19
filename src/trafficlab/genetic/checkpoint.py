@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
 from io import StringIO
 from pathlib import Path
 from random import Random
-from typing import Literal, cast
+from typing import Annotated, Literal, Self, cast
 
-from pydantic import ValidationError
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from trafficlab.artifacts import atomic_replace as _atomic_replace
 from trafficlab.compatibility import ContentIdentity, require_compatible
@@ -21,7 +31,6 @@ from trafficlab.errors import EvidenceState, FailureAuthority, FailureOutcome, T
 from trafficlab.genetic.coordinates import GeneCoordinate
 from trafficlab.genetic.population import priority_rank_key, rank_candidates, validate_family_priority
 from trafficlab.genetic.types import (
-    METHOD_ORDER,
     Candidate,
     CandidateFailure,
     CandidateId,
@@ -32,9 +41,9 @@ from trafficlab.genetic.types import (
     MethodTrialResult,
     TerminalReason,
     TrialResult,
-    validate_model_diagnostics_for_family,
+    rebuild_genetic_record,
 )
-from trafficlab.models.common import ModelDiagnostics, freeze_model_diagnostics
+from trafficlab.models.common import Genes
 from trafficlab.models.registry import get_family
 from trafficlab.scientific_schema import require_current_scientific_schema
 from trafficlab.similarity.common import FrozenJsonValue
@@ -150,61 +159,115 @@ _HISTORY_HEADER = (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class FamilyCheckpointSpec:
+def _exact_float_input(value: object) -> object:
+    if type(value) is not float:
+        raise ValueError("value must be an exact float")
+    return value
+
+
+def _tuple_input(value: object) -> object:
+    if type(value) is list:
+        return tuple(cast(list[object], value))
+    return value
+
+
+type ExactFloat = Annotated[float, BeforeValidator(_exact_float_input)]
+type PositiveFloat = Annotated[ExactFloat, Field(gt=0.0)]
+type UnitFloat = Annotated[ExactFloat, Field(ge=0.0, le=1.0)]
+type NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
+type PositiveInt = Annotated[StrictInt, Field(gt=0)]
+type NonemptyString = Annotated[str, Field(min_length=1)]
+
+
+class _StrictCheckpointModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        allow_inf_nan=False,
+        revalidate_instances="always",
+    )
+
+
+class FamilyCheckpointSpec(_StrictCheckpointModel):
     """Resolved chromosome and operator metadata for one enabled family."""
 
     name: FamilyName
-    gene_order: tuple[str, ...]
-    coordinates: tuple[GeneCoordinate, ...]
-    crossover_probability: float
-    mutation_probability: float
-    mutation_scale: float
+    gene_order: Annotated[tuple[NonemptyString, ...], BeforeValidator(_tuple_input)]
+    coordinates: Annotated[tuple[GeneCoordinate, ...], BeforeValidator(_tuple_input)]
+    crossover_probability: UnitFloat
+    mutation_probability: UnitFloat
+    mutation_scale: Annotated[UnitFloat, Field(gt=0.0)]
 
 
-@dataclass(frozen=True, slots=True)
-class GeneticCheckpointSettings:
+class GeneticCheckpointSettings(_StrictCheckpointModel):
     """All genetic settings that can alter selection, reproduction, or termination."""
 
-    master_seed: int
-    final_seed: int
-    population_size: int
-    generation_count: int
-    tournament_size: int
-    elite_count: int
-    duplicate_mutation_attempts: int
-    early_stopping_generations: int
-    early_stopping_tolerance: float
-    resume: bool
+    master_seed: NonnegativeInt
+    final_seed: NonnegativeInt
+    population_size: Annotated[StrictInt, Field(ge=2)]
+    generation_count: NonnegativeInt
+    tournament_size: Annotated[StrictInt, Field(ge=2)]
+    elite_count: PositiveInt
+    duplicate_mutation_attempts: NonnegativeInt
+    early_stopping_generations: NonnegativeInt
+    early_stopping_tolerance: UnitFloat
+    resume: StrictBool
 
 
-@dataclass(frozen=True, slots=True)
-class RngState:
+class RngState(_StrictCheckpointModel):
     """Lossless JSON decomposition of the dedicated CPython MT19937 state."""
 
-    state_version: int
-    mt_state: tuple[int, ...]
-    index: int
+    state_version: NonnegativeInt
+    mt_state: Annotated[
+        tuple[Annotated[StrictInt, Field(ge=0, le=2**32 - 1)], ...],
+        BeforeValidator(_tuple_input),
+        Field(min_length=624, max_length=624),
+    ]
+    index: Annotated[StrictInt, Field(ge=0, le=624)]
     gauss_next: None
 
+    @model_validator(mode="after")
+    def state_version_is_current(self) -> Self:
+        if self.state_version != _RNG_STATE_VERSION:
+            raise ValueError(f"rng state_version must equal the current Python value {_RNG_STATE_VERSION}")
+        return self
 
-@dataclass(frozen=True, slots=True)
-class CheckpointCompatibility:
+
+class CheckpointCompatibility(_StrictCheckpointModel):
     """Exact inputs and effective settings that must match before resume."""
 
     scientific_artifact_schema: int
     experiment_identity: ContentIdentity
     reference_identity: ContentIdentity
     capture_identity: ContentIdentity
-    observation_window_seconds: float
-    trial_seeds: tuple[int, ...]
+    observation_window_seconds: PositiveFloat
+    trial_seeds: Annotated[tuple[NonnegativeInt, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
     trial_limits: GenerationLimits
-    families: tuple[FamilyCheckpointSpec, ...]
-    family_priority: FamilyPriority
+    families: Annotated[tuple[FamilyCheckpointSpec, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    family_priority: Annotated[FamilyPriority, BeforeValidator(_tuple_input)]
     genetic: GeneticCheckpointSettings
     similarity: SimilarityConfig
-    python_version: str
+    python_version: NonemptyString
     rng_engine: Literal["python.random.Random/MT19937"]
+
+    @field_validator("experiment_identity", "reference_identity", "capture_identity", mode="before")
+    @classmethod
+    def identities_are_rebuilt_from_primitives(cls, value: object) -> object:
+        raw = value.as_dict() if type(value) is ContentIdentity else value
+        return ContentIdentity.from_dict(raw)
+
+    @field_validator("trial_limits", mode="before")
+    @classmethod
+    def limits_are_rebuilt_from_primitives(cls, value: object) -> object:
+        raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
+        return GenerationLimits.model_validate(raw)
+
+    @field_validator("similarity", mode="before")
+    @classmethod
+    def similarity_is_rebuilt_from_primitives(cls, value: object) -> object:
+        raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
+        return SimilarityConfig.model_validate(raw)
 
     @property
     def experiment_sha256(self) -> str:
@@ -219,20 +282,221 @@ class CheckpointCompatibility:
         return self.capture_identity.sha256
 
 
-@dataclass(frozen=True, slots=True)
-class CheckpointState:
+class CheckpointState(_StrictCheckpointModel):
     """One complete evaluated generation and every value needed for exact continuation."""
 
     compatibility: CheckpointCompatibility
-    generation: int
-    population: tuple[Candidate, ...]
-    history: tuple[HistoryRow, ...]
+    generation: NonnegativeInt
+    population: Annotated[tuple[Candidate, ...], BeforeValidator(_tuple_input)]
+    history: Annotated[tuple[HistoryRow, ...], BeforeValidator(_tuple_input)]
     rng_state: RngState
     best_identifier: CandidateId
-    best_fitness: float
-    consecutive_stagnation: int
+    best_fitness: UnitFloat
+    consecutive_stagnation: NonnegativeInt
     terminal_reason: TerminalReason
-    family_priority: FamilyPriority
+    family_priority: Annotated[FamilyPriority, BeforeValidator(_tuple_input)]
+
+
+class ContentIdentityRecord(_StrictCheckpointModel):
+    size: NonnegativeInt
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+    def to_runtime(self) -> ContentIdentity:
+        return ContentIdentity(size=self.size, sha256=self.sha256)
+
+
+class LinearCoordinateRecord(_StrictCheckpointModel):
+    name: NonemptyString
+    kind: Literal["linear"]
+    lower: ExactFloat
+    upper: ExactFloat
+
+
+class LogCoordinateRecord(_StrictCheckpointModel):
+    name: NonemptyString
+    kind: Literal["log"]
+    lower: PositiveFloat
+    upper: PositiveFloat
+
+
+class IntegerCoordinateRecord(_StrictCheckpointModel):
+    name: NonemptyString
+    kind: Literal["integer"]
+    lower: StrictInt
+    upper: StrictInt
+
+
+type CoordinateRecord = Annotated[
+    LinearCoordinateRecord | LogCoordinateRecord | IntegerCoordinateRecord,
+    Field(discriminator="kind"),
+]
+
+
+class FamilyOperatorsRecord(_StrictCheckpointModel):
+    crossover_probability: UnitFloat
+    mutation_probability: UnitFloat
+    mutation_scale: Annotated[UnitFloat, Field(gt=0.0)]
+
+
+class FamilyCheckpointRecord(_StrictCheckpointModel):
+    name: FamilyName
+    gene_order: Annotated[tuple[NonemptyString, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    coordinates: Annotated[tuple[CoordinateRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    operators: FamilyOperatorsRecord
+
+
+class _CandidateFailureRecord(_StrictCheckpointModel):
+    seed: NonnegativeInt | None
+    detail: NonemptyString
+    stage: NonemptyString
+    affected_evidence: NonemptyString
+    evidence_state: EvidenceState
+    corrective_action: NonemptyString
+    authority: FailureAuthority
+
+
+class RepairFailure(_CandidateFailureRecord):
+    kind: Literal["repair"]
+
+
+class FitFailure(_CandidateFailureRecord):
+    kind: Literal["fit"]
+
+
+class GenerationFailure(_CandidateFailureRecord):
+    kind: Literal["generation"]
+
+
+class IncompleteGenerationFailure(_CandidateFailureRecord):
+    kind: Literal["incomplete_generation"]
+
+
+class SimilarityPreconditionFailure(_CandidateFailureRecord):
+    kind: Literal["similarity_precondition"]
+
+
+class NonfiniteScoreFailure(_CandidateFailureRecord):
+    kind: Literal["nonfinite_score"]
+
+
+type CandidateFailureRecord = Annotated[
+    RepairFailure
+    | FitFailure
+    | GenerationFailure
+    | IncompleteGenerationFailure
+    | SimilarityPreconditionFailure
+    | NonfiniteScoreFailure,
+    Field(discriminator="kind"),
+]
+type CandidateIdentifierRecord = Annotated[
+    tuple[NonnegativeInt, NonnegativeInt],
+    BeforeValidator(_tuple_input),
+]
+
+
+class _CandidateRecord(_StrictCheckpointModel):
+    identifier: CandidateIdentifierRecord
+    family: FamilyName
+    fitness: UnitFloat
+    trials: Annotated[tuple[TrialResult, ...], BeforeValidator(_tuple_input)]
+    duplicate_diagnostics: Annotated[tuple[DuplicateDiagnostic, ...], BeforeValidator(_tuple_input)]
+
+
+class PendingCandidateRecord(_CandidateRecord):
+    genes: Annotated[Genes, BeforeValidator(_tuple_input)] | None
+    status: Literal["pending"]
+    invalid: None
+
+
+class ValidCandidateRecord(_CandidateRecord):
+    genes: Annotated[Genes, BeforeValidator(_tuple_input)]
+    status: Literal["valid"]
+    invalid: None
+
+
+class InvalidCandidateRecord(_CandidateRecord):
+    genes: Annotated[Genes, BeforeValidator(_tuple_input)] | None
+    status: Literal["invalid"]
+    fitness: Annotated[ExactFloat, Field(ge=0.0, le=0.0)]
+    invalid: CandidateFailureRecord
+
+
+type CandidateRecord = Annotated[
+    PendingCandidateRecord | ValidCandidateRecord | InvalidCandidateRecord,
+    Field(discriminator="status"),
+]
+
+
+class HistoryRecord(_StrictCheckpointModel):
+    generation: NonnegativeInt
+    scope: Literal["family", "overall"]
+    family: FamilyName | None
+    candidate_count: PositiveInt
+    valid_count: NonnegativeInt
+    best_fitness: UnitFloat
+    mean_fitness: UnitFloat
+    best_identifier: CandidateIdentifierRecord
+
+    @model_validator(mode="after")
+    def scope_matches_family(self) -> Self:
+        if (self.scope == "family") != (self.family is not None):
+            raise ValueError("family history rows require a family and overall rows require none")
+        if self.valid_count > self.candidate_count:
+            raise ValueError("history valid_count must not exceed candidate_count")
+        return self
+
+
+class NamedRngState(_StrictCheckpointModel):
+    engine: Literal["python.random.Random/MT19937"]
+    python_version: NonemptyString
+    state: RngState
+
+
+class BestCandidateRecord(_StrictCheckpointModel):
+    identifier: CandidateIdentifierRecord
+    fitness: UnitFloat
+
+
+class CheckpointArtifact(_StrictCheckpointModel):
+    """Exact public checkpoint JSON root before cross-artifact compatibility checks."""
+
+    scientific_artifact_schema: NonnegativeInt
+    experiment_identity: ContentIdentityRecord
+    reference_identity: ContentIdentityRecord
+    capture_identity: ContentIdentityRecord
+    observation_window_seconds: PositiveFloat
+    trial_seeds: Annotated[tuple[NonnegativeInt, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    trial_limits: GenerationLimits
+    families: Annotated[tuple[FamilyCheckpointRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    family_priority: Annotated[FamilyPriority, BeforeValidator(_tuple_input), Field(min_length=1)]
+    genetic: GeneticCheckpointSettings
+    similarity: SimilarityConfig
+    rng: NamedRngState
+    generation: NonnegativeInt
+    population: Annotated[tuple[CandidateRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    history: Annotated[tuple[HistoryRecord, ...], BeforeValidator(_tuple_input), Field(min_length=1)]
+    best: BestCandidateRecord
+    consecutive_stagnation: NonnegativeInt
+    terminal_reason: TerminalReason
+
+    @field_validator("trial_limits", mode="before")
+    @classmethod
+    def limits_are_rebuilt_from_primitives(cls, value: object) -> object:
+        raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
+        return GenerationLimits.model_validate(raw)
+
+    @field_validator("similarity", mode="before")
+    @classmethod
+    def similarity_is_rebuilt_from_primitives(cls, value: object) -> object:
+        raw = value.model_dump(mode="python") if isinstance(value, BaseModel) else value
+        return SimilarityConfig.model_validate(raw)
+
+
+def rebuild_checkpoint_record[Record: BaseModel](record: Record, **changes: object) -> Record:
+    """Reconstruct and fully revalidate one immutable checkpoint record."""
+    values = record.model_dump(mode="python")
+    values.update(changes)
+    return type(record).model_validate(values)
 
 
 class CheckpointCorruptionError(TrafficlabError):
@@ -267,32 +531,6 @@ def atomic_replace(path: Path, content: bytes) -> None:
     _atomic_replace(path, content, validator=validate)
 
 
-def _exact_object(value: object, keys: Sequence[str], *, name: str) -> dict[str, object]:
-    if type(value) is not dict:
-        raise ValueError(f"{name} must be an object")
-    document = cast(dict[object, object], value)
-    if any(type(key) is not str for key in document):
-        raise ValueError(f"{name} keys must be strings")
-    result = cast(dict[str, object], document)
-    expected = set(keys)
-    if set(result) != expected:
-        missing = sorted(expected - set(result))
-        unknown = sorted(set(result) - expected)
-        detail: list[str] = []
-        if missing:
-            detail.append(f"missing {', '.join(missing)}")
-        if unknown:
-            detail.append(f"unknown {', '.join(unknown)}")
-        raise ValueError(f"{name} has {' and '.join(detail)}")
-    return result
-
-
-def _array(value: object, *, name: str) -> list[object]:
-    if type(value) is not list:
-        raise ValueError(f"{name} must be an array")
-    return cast(list[object], value)
-
-
 def _string(value: object, *, name: str, nonempty: bool = False) -> str:
     if type(value) is not str or (nonempty and not value):
         qualifier = "nonempty string" if nonempty else "string"
@@ -317,34 +555,11 @@ def _float(value: object, *, name: str, positive: bool = False, bounded: bool = 
     return value
 
 
-def _boolean(value: object, *, name: str) -> bool:
-    if type(value) is not bool:
-        raise ValueError(f"{name} must be a boolean")
-    return value
-
-
 def _family_name(value: object, *, name: str) -> FamilyName:
     result = _string(value, name=name)
     if result not in _FAMILY_NAMES:
         raise ValueError(f"{name} must be a registered family name")
     return result
-
-
-def _frozen_json(value: object, *, name: str) -> FrozenJsonValue:
-    if value is None or type(value) in (str, bool, int):
-        return cast(FrozenJsonValue, value)
-    if type(value) is float:
-        if not math.isfinite(value):
-            raise ValueError(f"{name} contains a nonfinite float")
-        return value
-    if type(value) is list:
-        return tuple(_frozen_json(item, name=name) for item in cast(list[object], value))
-    if type(value) is dict:
-        document = cast(dict[object, object], value)
-        if any(type(key) is not str for key in document):
-            raise ValueError(f"{name} object keys must be strings")
-        return {cast(str, key): _frozen_json(item, name=name) for key, item in document.items()}
-    raise ValueError(f"{name} contains a non-JSON value")
 
 
 def _thaw_json(value: FrozenJsonValue) -> object:
@@ -431,7 +646,8 @@ def _validate_genetic(settings: GeneticCheckpointSettings, *, family_count: int,
     _integer(settings.duplicate_mutation_attempts, name="genetic duplicate_mutation_attempts")
     early_limit = _integer(settings.early_stopping_generations, name="genetic early_stopping_generations")
     _float(settings.early_stopping_tolerance, name="genetic early_stopping_tolerance", bounded=True)
-    _boolean(settings.resume, name="genetic resume")
+    if type(settings.resume) is not bool:
+        raise ValueError("genetic resume must be a boolean")
     if tournament_size > population_size:
         raise ValueError("genetic tournament_size must not exceed population_size")
     if elite_count >= population_size:
@@ -481,170 +697,6 @@ def _validate_compatibility_shape(value: CheckpointCompatibility, *, require_cur
     _string(value.rng_engine, name="rng_engine", nonempty=True)
     if require_current_rng_engine and value.rng_engine != RNG_ENGINE:
         raise ValueError(f"rng_engine must be {RNG_ENGINE}")
-
-
-def _parse_coordinate(value: object, *, family: FamilyName) -> GeneCoordinate:
-    document = _exact_object(value, ("name", "kind", "lower", "upper"), name=f"coordinate for family {family}")
-    name = _string(document["name"], name=f"coordinate name for family {family}", nonempty=True)
-    kind_value = _string(document["kind"], name=f"coordinate kind for family {family}")
-    if kind_value not in _COORDINATE_KINDS:
-        raise ValueError(f"invalid coordinate kind for family {family}")
-    kind = kind_value
-    if kind == "integer":
-        bounds: FloatBounds | IntegerBounds = IntegerBounds(
-            lower=_integer(document["lower"], name=f"coordinate lower for family {family}", minimum=-(2**63)),
-            upper=_integer(document["upper"], name=f"coordinate upper for family {family}", minimum=-(2**63)),
-        )
-    else:
-        bounds = FloatBounds(
-            lower=_float(document["lower"], name=f"coordinate lower for family {family}"),
-            upper=_float(document["upper"], name=f"coordinate upper for family {family}"),
-        )
-    coordinate = GeneCoordinate(name, kind, bounds)
-    _validate_coordinate(coordinate, family=family)
-    return coordinate
-
-
-def _parse_family(value: object) -> FamilyCheckpointSpec:
-    document = _exact_object(value, ("name", "gene_order", "coordinates", "operators"), name="family metadata")
-    family = _family_name(document["name"], name="family name")
-    gene_order = tuple(
-        _string(item, name=f"gene order for family {family}", nonempty=True)
-        for item in _array(document["gene_order"], name=f"gene order for family {family}")
-    )
-    coordinates = tuple(
-        _parse_coordinate(item, family=family)
-        for item in _array(document["coordinates"], name=f"coordinates for family {family}")
-    )
-    operators = _exact_object(
-        document["operators"],
-        ("crossover_probability", "mutation_probability", "mutation_scale"),
-        name=f"operators for family {family}",
-    )
-    spec = FamilyCheckpointSpec(
-        family,
-        gene_order,
-        coordinates,
-        _float(operators["crossover_probability"], name=f"crossover probability for family {family}", bounded=True),
-        _float(operators["mutation_probability"], name=f"mutation probability for family {family}", bounded=True),
-        _float(operators["mutation_scale"], name=f"mutation scale for family {family}", bounded=True),
-    )
-    _validate_family_spec(spec)
-    return spec
-
-
-def _parse_genetic(value: object) -> GeneticCheckpointSettings:
-    document = _exact_object(value, _GENETIC_KEYS, name="genetic settings")
-    return GeneticCheckpointSettings(
-        master_seed=_integer(document["master_seed"], name="genetic master_seed"),
-        final_seed=_integer(document["final_seed"], name="genetic final_seed"),
-        population_size=_integer(document["population_size"], name="genetic population_size", minimum=2),
-        generation_count=_integer(document["generation_count"], name="genetic generation_count"),
-        tournament_size=_integer(document["tournament_size"], name="genetic tournament_size", minimum=2),
-        elite_count=_integer(document["elite_count"], name="genetic elite_count", minimum=1),
-        duplicate_mutation_attempts=_integer(
-            document["duplicate_mutation_attempts"], name="genetic duplicate_mutation_attempts"
-        ),
-        early_stopping_generations=_integer(
-            document["early_stopping_generations"], name="genetic early_stopping_generations"
-        ),
-        early_stopping_tolerance=_float(
-            document["early_stopping_tolerance"], name="genetic early_stopping_tolerance", bounded=True
-        ),
-        resume=_boolean(document["resume"], name="genetic resume"),
-    )
-
-
-def _parse_generation_limits(value: object, *, name: str) -> GenerationLimits:
-    document = _exact_object(
-        value,
-        ("max_packets", "max_output_bytes", "max_wall_seconds"),
-        name=name,
-    )
-    try:
-        return GenerationLimits(
-            max_packets=_integer(document["max_packets"], name=f"{name} max_packets", minimum=1),
-            max_output_bytes=_integer(document["max_output_bytes"], name=f"{name} max_output_bytes", minimum=1),
-            max_wall_seconds=_float(document["max_wall_seconds"], name=f"{name} max_wall_seconds", positive=True),
-        )
-    except ValidationError as error:
-        raise ValueError(f"invalid {name}: {error}") from error
-
-
-def _float_array(value: object, *, name: str) -> list[float]:
-    return [_float(item, name=f"{name} item") for item in _array(value, name=name)]
-
-
-def _integer_array(value: object, *, name: str) -> list[int]:
-    return [_integer(item, name=f"{name} item") for item in _array(value, name=name)]
-
-
-def _parse_similarity(value: object) -> SimilarityConfig:
-    document = _exact_object(value, _SIMILARITY_KEYS, name="similarity settings")
-    weights = _exact_object(document["method_weights"], _METHOD_WEIGHT_KEYS, name="similarity method_weights")
-    strict_data = {
-        "iat_diagnostic_quantile": _float(
-            document["iat_diagnostic_quantile"], name="similarity iat_diagnostic_quantile"
-        ),
-        "acf_lags": _integer_array(document["acf_lags"], name="similarity acf_lags"),
-        "acf_lag_weights": _float_array(document["acf_lag_weights"], name="similarity acf_lag_weights"),
-        "acf_iat_weight": _float(document["acf_iat_weight"], name="similarity acf_iat_weight"),
-        "acf_size_weight": _float(document["acf_size_weight"], name="similarity acf_size_weight"),
-        "multiscale_widths_seconds": _float_array(
-            document["multiscale_widths_seconds"], name="similarity multiscale_widths_seconds"
-        ),
-        "multiscale_scale_weights": _float_array(
-            document["multiscale_scale_weights"], name="similarity multiscale_scale_weights"
-        ),
-        "multiscale_packet_weight": _float(
-            document["multiscale_packet_weight"], name="similarity multiscale_packet_weight"
-        ),
-        "multiscale_byte_weight": _float(document["multiscale_byte_weight"], name="similarity multiscale_byte_weight"),
-        "max_direction_bin_cells": _integer(
-            document["max_direction_bin_cells"], name="similarity max_direction_bin_cells", minimum=2
-        ),
-        "method_weights": {
-            name: _float(weights[name], name=f"similarity method weight {name}", bounded=True)
-            for name in _METHOD_WEIGHT_KEYS
-        },
-    }
-    try:
-        return SimilarityConfig.model_validate(strict_data)
-    except ValidationError as error:
-        raise ValueError(f"invalid similarity settings: {error}") from error
-
-
-def _parse_compatibility(document: dict[str, object]) -> CheckpointCompatibility:
-    require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="checkpoint")
-    compatibility = CheckpointCompatibility(
-        scientific_artifact_schema=cast(int, document["scientific_artifact_schema"]),
-        experiment_identity=ContentIdentity.from_dict(document["experiment_identity"], name="experiment"),
-        reference_identity=ContentIdentity.from_dict(document["reference_identity"], name="reference"),
-        capture_identity=ContentIdentity.from_dict(document["capture_identity"], name="capture"),
-        observation_window_seconds=_float(
-            document["observation_window_seconds"], name="observation_window_seconds", positive=True
-        ),
-        trial_seeds=tuple(_integer_array(document["trial_seeds"], name="trial_seeds")),
-        trial_limits=_parse_generation_limits(document["trial_limits"], name="trial limits"),
-        families=tuple(_parse_family(item) for item in _array(document["families"], name="families")),
-        family_priority=tuple(
-            _family_name(item, name="family_priority")
-            for item in _array(document["family_priority"], name="family_priority")
-        ),
-        genetic=_parse_genetic(document["genetic"]),
-        similarity=_parse_similarity(document["similarity"]),
-        python_version=_string(
-            _exact_object(document["rng"], ("engine", "python_version", "state"), name="rng")["python_version"],
-            name="rng python_version",
-            nonempty=True,
-        ),
-        rng_engine=cast(
-            Literal["python.random.Random/MT19937"],
-            _string(cast(dict[str, object], document["rng"])["engine"], name="rng engine"),
-        ),
-    )
-    _validate_compatibility_shape(compatibility, require_current_rng_engine=False)
-    return compatibility
 
 
 def validate_compatibility(stored: CheckpointCompatibility, expected: CheckpointCompatibility) -> None:
@@ -753,10 +805,10 @@ def encode_rng_state(state: object) -> RngState:
         if len(internal_values) != 625:
             raise ValueError("RNG internal state must contain 624 words and one index")
         result = RngState(
-            _integer(version, name="rng state_version"),
-            tuple(_integer(word, name="rng MT word", maximum=2**32 - 1) for word in internal_values[:-1]),
-            _integer(internal_values[-1], name="rng index", maximum=624),
-            cast(None, gauss_next),
+            state_version=_integer(version, name="rng state_version"),
+            mt_state=tuple(_integer(word, name="rng MT word", maximum=2**32 - 1) for word in internal_values[:-1]),
+            index=_integer(internal_values[-1], name="rng index", maximum=624),
+            gauss_next=cast(None, gauss_next),
         )
         _validate_rng_state(result)
         return result
@@ -773,135 +825,11 @@ def decode_rng_state(state: RngState) -> tuple[int, tuple[int, ...], None]:
     return (state.state_version, (*state.mt_state, state.index), None)
 
 
-def _parse_rng(value: object) -> RngState:
-    rng = _exact_object(value, ("engine", "python_version", "state"), name="rng")
-    state = _exact_object(rng["state"], ("state_version", "mt_state", "index", "gauss_next"), name="rng state")
-    if state["gauss_next"] is not None:
-        raise ValueError("rng gauss_next must be null")
-    result = RngState(
-        _integer(state["state_version"], name="rng state_version"),
-        tuple(_integer_array(state["mt_state"], name="rng mt_state")),
-        _integer(state["index"], name="rng index", maximum=624),
-        None,
-    )
-    _validate_rng_state(result)
-    return result
-
-
-def _parse_identifier(value: object, *, name: str) -> CandidateId:
-    items = _array(value, name=name)
-    if len(items) != 2:
-        raise ValueError(f"{name} must contain exactly two integers")
-    return CandidateId(
-        _integer(items[0], name=f"{name} birth_generation"),
-        _integer(items[1], name=f"{name} birth_index"),
-    )
-
-
-def _parse_method(value: object, *, expected_name: MethodName) -> MethodTrialResult:
-    document = _exact_object(value, ("name", "score", "diagnostics"), name=f"{expected_name} method")
-    name = _string(document["name"], name="method name")
-    if name != expected_name:
-        raise ValueError("checkpoint trial methods must be in METHOD_ORDER")
-    diagnostics = _frozen_json(document["diagnostics"], name=f"{name} diagnostics")
-    if not isinstance(diagnostics, Mapping):
-        raise ValueError(f"{name} diagnostics must be an object")
-    return MethodTrialResult(
-        expected_name,
-        _float(document["score"], name=f"{name} score", bounded=True),
-        cast(Mapping[str, object], diagnostics),
-    )
-
-
-def _parse_trial(value: object, *, family: FamilyName) -> TrialResult:
-    document = _exact_object(
-        value,
-        ("seed", "aggregate_score", "methods", "model_diagnostics"),
-        name="candidate trial",
-    )
-    method_values = _array(document["methods"], name="trial methods")
-    if len(method_values) != len(METHOD_ORDER):
-        raise ValueError("trial methods must contain exactly four methods")
-    methods = tuple(
-        _parse_method(item, expected_name=name) for name, item in zip(METHOD_ORDER, method_values, strict=True)
-    )
-    try:
-        model_diagnostics: ModelDiagnostics = freeze_model_diagnostics(document["model_diagnostics"])
-        validate_model_diagnostics_for_family(family, model_diagnostics)
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"candidate trial model diagnostics are invalid: {error}") from error
-    return TrialResult(
-        _integer(document["seed"], name="trial seed"),
-        _float(document["aggregate_score"], name="trial aggregate_score", bounded=True),
-        cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
-        model_diagnostics,
-    )
-
-
 def _is_legacy_failure_document(value: object) -> bool:
     if type(value) is not dict:
         return False
     document = cast(dict[object, object], value)
     return all(type(key) is str for key in document) and set(document) == set(_LEGACY_FAILURE_KEYS)
-
-
-def _parse_failure(value: object) -> CandidateFailure:
-    legacy = _is_legacy_failure_document(value)
-    document = _exact_object(
-        value,
-        _LEGACY_FAILURE_KEYS if legacy else _FAILURE_KEYS,
-        name="candidate invalid diagnostic",
-    )
-    kind_value = _string(document["kind"], name="candidate failure kind")
-    if kind_value not in _FAILURE_KINDS:
-        raise ValueError("candidate failure kind is not recognized")
-    seed_value = document["seed"]
-    seed = None if seed_value is None else _integer(seed_value, name="candidate failure seed")
-    detail = _string(document["detail"], name="candidate failure detail", nonempty=True)
-    if legacy:
-        stage, affected_evidence, evidence_state, corrective_action, authority = _LEGACY_FAILURE_PROVENANCE[kind_value]
-        return CandidateFailure(
-            kind_value,
-            seed,
-            detail,
-            stage=stage,
-            affected_evidence=affected_evidence,
-            evidence_state=evidence_state,
-            corrective_action=corrective_action,
-            authority=authority,
-        )
-    return CandidateFailure(
-        kind_value,
-        seed,
-        detail,
-        stage=_string(document["stage"], name="candidate failure stage", nonempty=True),
-        affected_evidence=_string(
-            document["affected_evidence"], name="candidate failure affected_evidence", nonempty=True
-        ),
-        evidence_state=cast(
-            EvidenceState,
-            _string(document["evidence_state"], name="candidate failure evidence_state", nonempty=True),
-        ),
-        corrective_action=_string(
-            document["corrective_action"], name="candidate failure corrective_action", nonempty=True
-        ),
-        authority=cast(
-            FailureAuthority,
-            _string(document["authority"], name="candidate failure authority", nonempty=True),
-        ),
-    )
-
-
-def _parse_duplicate(value: object) -> DuplicateDiagnostic:
-    document = _exact_object(value, ("attempt", "outcome", "detail"), name="duplicate diagnostic")
-    outcome_value = _string(document["outcome"], name="duplicate outcome")
-    if outcome_value not in _DUPLICATE_OUTCOMES:
-        raise ValueError("duplicate outcome is not recognized")
-    return DuplicateDiagnostic(
-        _integer(document["attempt"], name="duplicate attempt"),
-        outcome_value,
-        _string(document["detail"], name="duplicate detail", nonempty=True),
-    )
 
 
 def _parse_gene(value: object, coordinate: GeneCoordinate, *, family: FamilyName) -> float | int:
@@ -912,88 +840,6 @@ def _parse_gene(value: object, coordinate: GeneCoordinate, *, family: FamilyName
     if not coordinate.bounds.lower <= gene <= coordinate.bounds.upper:
         raise ValueError(f"{coordinate.name} gene for family {family} is outside its coordinate bounds")
     return gene
-
-
-def _parse_candidate(value: object, *, families: Mapping[FamilyName, FamilyCheckpointSpec]) -> Candidate:
-    document = _exact_object(
-        value,
-        ("identifier", "family", "genes", "status", "fitness", "trials", "invalid", "duplicate_diagnostics"),
-        name="candidate",
-    )
-    family = _family_name(document["family"], name="candidate family")
-    if family not in families:
-        raise ValueError(f"candidate family {family} is not enabled")
-    genes_value = document["genes"]
-    genes: tuple[float | int, ...] | None
-    if genes_value is None:
-        genes = None
-    else:
-        gene_values = _array(genes_value, name="candidate genes")
-        coordinates = families[family].coordinates
-        if len(gene_values) != len(coordinates):
-            raise ValueError(f"candidate genes for family {family} have the wrong arity")
-        genes = tuple(
-            _parse_gene(gene, coordinate, family=family)
-            for gene, coordinate in zip(gene_values, coordinates, strict=True)
-        )
-    status = _string(document["status"], name="candidate status")
-    if status not in {"valid", "invalid"}:
-        raise ValueError("checkpoint candidate status must be valid or invalid")
-    invalid_value = document["invalid"]
-    invalid = None if invalid_value is None else _parse_failure(invalid_value)
-    return Candidate(
-        _parse_identifier(document["identifier"], name="candidate identifier"),
-        family,
-        genes,
-        cast(Literal["valid", "invalid"], status),
-        _float(document["fitness"], name="candidate fitness", bounded=True),
-        tuple(_parse_trial(item, family=family) for item in _array(document["trials"], name="candidate trials")),
-        invalid,
-        tuple(
-            _parse_duplicate(item)
-            for item in _array(document["duplicate_diagnostics"], name="candidate duplicate_diagnostics")
-        ),
-    )
-
-
-def _parse_history_row(value: object, *, families: frozenset[FamilyName]) -> HistoryRow:
-    document = _exact_object(
-        value,
-        (
-            "generation",
-            "scope",
-            "family",
-            "candidate_count",
-            "valid_count",
-            "best_fitness",
-            "mean_fitness",
-            "best_identifier",
-        ),
-        name="history row",
-    )
-    scope_value = _string(document["scope"], name="history scope")
-    if scope_value not in {"family", "overall"}:
-        raise ValueError("history scope must be family or overall")
-    family_value = document["family"]
-    family: FamilyName | None
-    if scope_value == "overall":
-        if family_value is not None:
-            raise ValueError("overall history family must be null")
-        family = None
-    else:
-        family = _family_name(family_value, name="history family")
-        if family not in families:
-            raise ValueError(f"history family {family} is not enabled")
-    return HistoryRow(
-        _integer(document["generation"], name="history generation"),
-        cast(Literal["family", "overall"], scope_value),
-        family,
-        _integer(document["candidate_count"], name="history candidate_count", minimum=1),
-        _integer(document["valid_count"], name="history valid_count"),
-        _float(document["best_fitness"], name="history best_fitness", bounded=True),
-        _float(document["mean_fitness"], name="history mean_fitness", bounded=True),
-        _parse_identifier(document["best_identifier"], name="history best_identifier"),
-    )
 
 
 def _method_weights(similarity: SimilarityConfig) -> dict[MethodName, float]:
@@ -1093,14 +939,14 @@ def summarize_generation(
             else rank_candidates(candidates, family_priority=(family,))[0]
         )
         return HistoryRow(
-            generation,
-            "overall" if family is None else "family",
-            family,
-            len(candidates),
-            sum(candidate.status == "valid" for candidate in candidates),
-            best.fitness,
-            math.fsum(candidate.fitness for candidate in candidates) / len(candidates),
-            best.identifier,
+            generation=generation,
+            scope="overall" if family is None else "family",
+            family=family,
+            candidate_count=len(candidates),
+            valid_count=sum(candidate.status == "valid" for candidate in candidates),
+            best_fitness=best.fitness,
+            mean_fitness=math.fsum(candidate.fitness for candidate in candidates) / len(candidates),
+            best_identifier=best.identifier,
         )
 
     complete = tuple(population)
@@ -1110,7 +956,7 @@ def summarize_generation(
     ]
     overall = make_row(complete, None)
     grouped_mean = math.fsum(row.mean_fitness * row.candidate_count for row in rows) / len(complete)
-    rows.append(replace(overall, mean_fitness=grouped_mean))
+    rows.append(rebuild_genetic_record(overall, mean_fitness=grouped_mean))
     return tuple(rows)
 
 
@@ -1319,7 +1165,11 @@ def _similarity_document(similarity: SimilarityConfig) -> dict[str, object]:
 
 
 def _method_document(method: MethodTrialResult) -> dict[str, object]:
-    return {"name": method.name, "score": method.score, "diagnostics": _thaw_json(method.diagnostics)}
+    return {
+        "name": method.name,
+        "score": method.score,
+        "diagnostics": _thaw_json(cast(FrozenJsonValue, method.diagnostics)),
+    }
 
 
 def _trial_document(trial: TrialResult) -> dict[str, object]:
@@ -1410,12 +1260,119 @@ def _checkpoint_document(state: CheckpointState) -> dict[str, object]:
     }
 
 
+def _coordinate_from_record(record: CoordinateRecord) -> GeneCoordinate:
+    bounds: FloatBounds | IntegerBounds
+    if record.kind == "integer":
+        bounds = IntegerBounds(lower=record.lower, upper=record.upper)
+    else:
+        bounds = FloatBounds(lower=record.lower, upper=record.upper)
+    return GeneCoordinate(record.name, record.kind, bounds)
+
+
+def _family_from_record(record: FamilyCheckpointRecord) -> FamilyCheckpointSpec:
+    operators = record.operators
+    return FamilyCheckpointSpec(
+        name=record.name,
+        gene_order=record.gene_order,
+        coordinates=tuple(_coordinate_from_record(coordinate) for coordinate in record.coordinates),
+        crossover_probability=operators.crossover_probability,
+        mutation_probability=operators.mutation_probability,
+        mutation_scale=operators.mutation_scale,
+    )
+
+
+def _identifier_from_record(record: CandidateIdentifierRecord) -> CandidateId:
+    return CandidateId(birth_generation=record[0], birth_index=record[1])
+
+
+def _candidate_from_record(record: CandidateRecord) -> Candidate:
+    invalid = (
+        None if record.invalid is None else CandidateFailure.model_validate(record.invalid.model_dump(mode="python"))
+    )
+    return Candidate(
+        identifier=_identifier_from_record(record.identifier),
+        family=record.family,
+        genes=record.genes,
+        status=record.status,
+        fitness=record.fitness,
+        trials=record.trials,
+        invalid=invalid,
+        duplicate_diagnostics=record.duplicate_diagnostics,
+    )
+
+
+def _history_from_record(record: HistoryRecord) -> HistoryRow:
+    return HistoryRow(
+        generation=record.generation,
+        scope=record.scope,
+        family=record.family,
+        candidate_count=record.candidate_count,
+        valid_count=record.valid_count,
+        best_fitness=record.best_fitness,
+        mean_fitness=record.mean_fitness,
+        best_identifier=_identifier_from_record(record.best_identifier),
+    )
+
+
+def _compatibility_from_artifact(artifact: CheckpointArtifact) -> CheckpointCompatibility:
+    return CheckpointCompatibility(
+        scientific_artifact_schema=artifact.scientific_artifact_schema,
+        experiment_identity=artifact.experiment_identity.to_runtime(),
+        reference_identity=artifact.reference_identity.to_runtime(),
+        capture_identity=artifact.capture_identity.to_runtime(),
+        observation_window_seconds=artifact.observation_window_seconds,
+        trial_seeds=artifact.trial_seeds,
+        trial_limits=artifact.trial_limits,
+        families=tuple(_family_from_record(family) for family in artifact.families),
+        family_priority=artifact.family_priority,
+        genetic=artifact.genetic,
+        similarity=artifact.similarity,
+        python_version=artifact.rng.python_version,
+        rng_engine=artifact.rng.engine,
+    )
+
+
+def _with_complete_failure_records(document: dict[str, object]) -> dict[str, object]:
+    """Upgrade accepted schema-2 legacy failures before strict model validation."""
+    upgraded = copy.deepcopy(document)
+    population = cast(list[object], upgraded.get("population"))
+    for raw_candidate in population:
+        if type(raw_candidate) is not dict:
+            continue
+        candidate = cast(dict[str, object], raw_candidate)
+        invalid = candidate.get("invalid")
+        if not _is_legacy_failure_document(invalid):
+            continue
+        failure = cast(dict[str, object], invalid)
+        kind = cast(str, failure["kind"])
+        provenance = _LEGACY_FAILURE_PROVENANCE.get(kind)
+        if provenance is None:
+            continue
+        stage, affected_evidence, evidence_state, corrective_action, authority = provenance
+        failure.update(
+            {
+                "stage": stage,
+                "affected_evidence": affected_evidence,
+                "evidence_state": evidence_state,
+                "corrective_action": corrective_action,
+                "authority": authority,
+            }
+        )
+    return upgraded
+
+
 def render_checkpoint(state: CheckpointState) -> bytes:
     """Render one validated checkpoint as sorted compact finite JSON with a trailing newline."""
     try:
         _validate_state(state)
-        text = json.dumps(_checkpoint_document(state), sort_keys=True, separators=(",", ":"), allow_nan=False)
-    except (TypeError, ValueError) as error:
+        document = _checkpoint_document(state)
+        wire_document = json.loads(json.dumps(document, allow_nan=False))
+        artifact = CheckpointArtifact.model_validate(wire_document)
+        validated_document = artifact.model_dump(mode="json")
+        if validated_document != wire_document:
+            raise ValueError("checkpoint schema validation changed the canonical document")
+        text = json.dumps(validated_document, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (KeyError, TypeError, ValueError, ValidationError) as error:
         raise _invalid(str(error)) from error
     return f"{text}\n".encode()
 
@@ -1427,40 +1384,32 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
     document = _load_json(content)
     try:
         require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="checkpoint")
-        document = _exact_object(document, _ROOT_KEYS, name="checkpoint root")
         experiment_identity = ContentIdentity.from_dict(document["experiment_identity"], name="experiment")
         _validate_compatibility_shape(compatibility)
         if experiment_identity != compatibility.experiment_identity:
             raise _compatibility_error("experiment snapshot SHA-256/size identity")
-        stored_compatibility = _parse_compatibility(document)
+        raw_rng = document.get("rng")
+        if type(raw_rng) is dict and cast(dict[str, object], raw_rng).get("engine") != compatibility.rng_engine:
+            raise _compatibility_error("RNG engine")
+        artifact = CheckpointArtifact.model_validate(_with_complete_failure_records(document))
+        stored_compatibility = _compatibility_from_artifact(artifact)
         validate_compatibility(stored_compatibility, compatibility)
-        family_names: frozenset[FamilyName] = frozenset(family.name for family in stored_compatibility.families)
-        families: dict[FamilyName, FamilyCheckpointSpec] = {
-            family.name: family for family in stored_compatibility.families
-        }
-        best = _exact_object(document["best"], ("identifier", "fitness"), name="best")
-        terminal_value = _string(document["terminal_reason"], name="terminal_reason")
-        if terminal_value not in _TERMINAL_REASONS:
-            raise ValueError("terminal_reason is not recognized")
         state = CheckpointState(
-            stored_compatibility,
-            _integer(document["generation"], name="generation"),
-            tuple(
-                _parse_candidate(item, families=families) for item in _array(document["population"], name="population")
-            ),
-            tuple(
-                _parse_history_row(item, families=family_names) for item in _array(document["history"], name="history")
-            ),
-            _parse_rng(document["rng"]),
-            _parse_identifier(best["identifier"], name="best identifier"),
-            _float(best["fitness"], name="best fitness", bounded=True),
-            _integer(document["consecutive_stagnation"], name="consecutive_stagnation"),
-            terminal_value,
-            stored_compatibility.family_priority,
+            compatibility=stored_compatibility,
+            generation=artifact.generation,
+            population=tuple(_candidate_from_record(candidate) for candidate in artifact.population),
+            history=tuple(_history_from_record(row) for row in artifact.history),
+            rng_state=artifact.rng.state,
+            best_identifier=_identifier_from_record(artifact.best.identifier),
+            best_fitness=artifact.best.fitness,
+            consecutive_stagnation=artifact.consecutive_stagnation,
+            terminal_reason=artifact.terminal_reason,
+            family_priority=stored_compatibility.family_priority,
         )
         _validate_state(state)
         if render_checkpoint(state) != content:
-            population = _array(document["population"], name="population")
+            population_value = document.get("population")
+            population = cast(list[object], population_value) if type(population_value) is list else []
             accepts_legacy = any(
                 type(candidate) is dict
                 and _is_legacy_failure_document(cast(dict[str, object], candidate).get("invalid"))
@@ -1476,7 +1425,7 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         return state
     except TrafficlabError:
         raise
-    except (TypeError, ValueError, ValidationError) as error:
+    except (KeyError, TypeError, ValueError, ValidationError) as error:
         raise _invalid(str(error)) from error
 
 
@@ -1546,16 +1495,16 @@ def _parse_history_csv(content: bytes, family_names: frozenset[FamilyName]) -> t
                 raise ValueError("history CSV family is not enabled")
         parsed.append(
             HistoryRow(
-                _parse_decimal(generation, name="history CSV generation"),
-                cast(Literal["family", "overall"], scope),
-                family,
-                _parse_decimal(candidate_count, name="history CSV candidate_count"),
-                _parse_decimal(valid_count, name="history CSV valid_count"),
-                _parse_repr_float(best, name="history CSV best_fitness"),
-                _parse_repr_float(mean, name="history CSV mean_fitness"),
-                CandidateId(
-                    _parse_decimal(birth_generation, name="history CSV best_birth_generation"),
-                    _parse_decimal(birth_index, name="history CSV best_birth_index"),
+                generation=_parse_decimal(generation, name="history CSV generation"),
+                scope=cast(Literal["family", "overall"], scope),
+                family=family,
+                candidate_count=_parse_decimal(candidate_count, name="history CSV candidate_count"),
+                valid_count=_parse_decimal(valid_count, name="history CSV valid_count"),
+                best_fitness=_parse_repr_float(best, name="history CSV best_fitness"),
+                mean_fitness=_parse_repr_float(mean, name="history CSV mean_fitness"),
+                best_identifier=CandidateId(
+                    birth_generation=_parse_decimal(birth_generation, name="history CSV best_birth_generation"),
+                    birth_index=_parse_decimal(birth_index, name="history CSV best_birth_index"),
                 ),
             )
         )

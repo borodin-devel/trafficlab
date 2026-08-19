@@ -90,12 +90,12 @@ def _family_specs(
         operators = cast(FamilyOperators, bounds[name])
         specs.append(
             FamilyCheckpointSpec(
-                name,
-                family.gene_names,
-                family_coordinates(name, bounds[name]),
-                operators.crossover_probability,
-                operators.mutation_probability,
-                operators.mutation_scale,
+                name=name,
+                gene_order=family.gene_names,
+                coordinates=family_coordinates(name, bounds[name]),
+                crossover_probability=operators.crossover_probability,
+                mutation_probability=operators.mutation_probability,
+                mutation_scale=operators.mutation_scale,
             )
         )
     return tuple(specs)

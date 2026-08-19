@@ -74,33 +74,44 @@ def initial_population(
         family = get_family(family_name)
         family_bounds = bounds[family_name]
         for _ in range(quota):
-            identifier = CandidateId(0, len(population))
+            identifier = CandidateId(birth_generation=0, birth_index=len(population))
             try:
                 genes = initialize_candidate(family, family_bounds, materialized_reference, rng)
             except CandidateEvaluationError as error:
                 population.append(
                     Candidate(
-                        identifier,
-                        family_name,
-                        None,
-                        "invalid",
-                        0.0,
-                        (),
-                        CandidateFailure(
-                            error.kind,
-                            error.seed,
-                            error.detail,
+                        identifier=identifier,
+                        family=family_name,
+                        genes=None,
+                        status="invalid",
+                        fitness=0.0,
+                        trials=(),
+                        invalid=CandidateFailure(
+                            kind=error.kind,
+                            seed=error.seed,
+                            detail=error.detail,
                             stage=error.stage,
                             affected_evidence=error.affected_evidence,
                             evidence_state=error.evidence_state,
                             corrective_action=error.corrective_action,
                             authority=error.authority,
                         ),
-                        (),
+                        duplicate_diagnostics=(),
                     )
                 )
             else:
-                population.append(Candidate(identifier, family_name, genes, "pending", 0.0, (), None, ()))
+                population.append(
+                    Candidate(
+                        identifier=identifier,
+                        family=family_name,
+                        genes=genes,
+                        status="pending",
+                        fitness=0.0,
+                        trials=(),
+                        invalid=None,
+                        duplicate_diagnostics=(),
+                    )
+                )
     return tuple(population)
 
 

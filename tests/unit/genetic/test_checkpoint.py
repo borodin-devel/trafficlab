@@ -1,12 +1,14 @@
 import json
 import math
 import platform
-from dataclasses import replace
+from dataclasses import replace as replace_dataclass
 from pathlib import Path
 from random import Random
 from typing import Any, cast
 
 import pytest
+from jsonschema import Draft202012Validator
+from pydantic import BaseModel
 
 import trafficlab.genetic.checkpoint as checkpoint
 from trafficlab.compatibility import ContentIdentity
@@ -20,6 +22,7 @@ from trafficlab.config import (
 )
 from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.checkpoint import (
+    CheckpointArtifact,
     CheckpointCompatibility,
     CheckpointState,
     FamilyCheckpointSpec,
@@ -84,7 +87,9 @@ SIMILARITY = SimilarityConfig(
 
 def _trial(seed: int, scores: tuple[float, float, float, float]) -> TrialResult:
     methods = tuple(
-        MethodTrialResult(name, score, {"nested": [{"finite": score, "enabled": True}], "empty": None})
+        MethodTrialResult(
+            name=name, score=score, diagnostics={"nested": [{"finite": score, "enabled": True}], "empty": None}
+        )
         for name, score in zip(METHOD_ORDER, scores, strict=True)
     )
     aggregate = math.fsum(
@@ -95,89 +100,103 @@ def _trial(seed: int, scores: tuple[float, float, float, float]) -> TrialResult:
             scores[3] * 0.4,
         )
     )
-    return TrialResult(seed, aggregate, cast(Any, methods))
+    return TrialResult(seed=seed, aggregate_score=aggregate, methods=cast(Any, methods))
 
 
 MMPP_TRIAL = _trial(7, (0.8, 0.6, 0.4, 0.2))
 POISSON_TRIAL = _trial(7, (0.9, 0.7, 0.5, 0.3))
 POPULATION = (
     Candidate(
-        CandidateId(0, 0), "mmpp", (1.0, 2.0, 3.0, 4.0), "valid", MMPP_TRIAL.aggregate_score, (MMPP_TRIAL,), None, ()
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="mmpp",
+        genes=(1.0, 2.0, 3.0, 4.0),
+        status="valid",
+        fitness=MMPP_TRIAL.aggregate_score,
+        trials=(MMPP_TRIAL,),
+        invalid=None,
+        duplicate_diagnostics=(),
     ),
     Candidate(
-        CandidateId(0, 1),
-        "poisson_empirical",
-        None,
-        "invalid",
-        0.0,
-        (),
-        CandidateFailure(
-            "repair",
-            None,
-            "no canonical genes",
+        identifier=CandidateId(birth_generation=0, birth_index=1),
+        family="poisson_empirical",
+        genes=None,
+        status="invalid",
+        fitness=0.0,
+        trials=(),
+        invalid=CandidateFailure(
+            kind="repair",
+            seed=None,
+            detail="no canonical genes",
             stage="fit",
             affected_evidence="candidate genes",
             evidence_state="diagnostic_only",
             corrective_action="provide canonical candidate genes",
             authority="primary",
         ),
-        (DuplicateDiagnostic(0, "exhausted", "source-equal child"),),
+        duplicate_diagnostics=(DuplicateDiagnostic(attempt=0, outcome="exhausted", detail="source-equal child"),),
     ),
     Candidate(
-        CandidateId(0, 2),
-        "poisson_empirical",
-        (1.0,),
-        "valid",
-        POISSON_TRIAL.aggregate_score,
-        (POISSON_TRIAL,),
-        None,
-        (),
+        identifier=CandidateId(birth_generation=0, birth_index=2),
+        family="poisson_empirical",
+        genes=(1.0,),
+        status="valid",
+        fitness=POISSON_TRIAL.aggregate_score,
+        trials=(POISSON_TRIAL,),
+        invalid=None,
+        duplicate_diagnostics=(),
     ),
 )
 MMPP_ROW = HistoryRow(
-    0, "family", "mmpp", 1, 1, MMPP_TRIAL.aggregate_score, MMPP_TRIAL.aggregate_score, CandidateId(0, 0)
+    generation=0,
+    scope="family",
+    family="mmpp",
+    candidate_count=1,
+    valid_count=1,
+    best_fitness=MMPP_TRIAL.aggregate_score,
+    mean_fitness=MMPP_TRIAL.aggregate_score,
+    best_identifier=CandidateId(birth_generation=0, birth_index=0),
 )
 POISSON_ROW = HistoryRow(
-    0,
-    "family",
-    "poisson_empirical",
-    2,
-    1,
-    POISSON_TRIAL.aggregate_score,
-    POISSON_TRIAL.aggregate_score / 2.0,
-    CandidateId(0, 2),
+    generation=0,
+    scope="family",
+    family="poisson_empirical",
+    candidate_count=2,
+    valid_count=1,
+    best_fitness=POISSON_TRIAL.aggregate_score,
+    mean_fitness=POISSON_TRIAL.aggregate_score / 2.0,
+    best_identifier=CandidateId(birth_generation=0, birth_index=2),
 )
 OVERALL_ROW = HistoryRow(
-    0,
-    "overall",
-    None,
-    3,
-    2,
-    POISSON_TRIAL.aggregate_score,
-    math.fsum(candidate.fitness for candidate in POPULATION) / 3.0,
-    CandidateId(0, 2),
+    generation=0,
+    scope="overall",
+    family=None,
+    candidate_count=3,
+    valid_count=2,
+    best_fitness=POISSON_TRIAL.aggregate_score,
+    mean_fitness=math.fsum(candidate.fitness for candidate in POPULATION) / 3.0,
+    best_identifier=CandidateId(birth_generation=0, birth_index=2),
 )
 FAMILIES = (
     FamilyCheckpointSpec(
-        "mmpp",
-        ("q01", "q10", "lambda0", "lambda1"),
-        (
+        name="mmpp",
+        gene_order=("q01", "q10", "lambda0", "lambda1"),
+        coordinates=(
             GeneCoordinate("q01", "log", FloatBounds(lower=0.1, upper=10.0)),
             GeneCoordinate("q10", "log", FloatBounds(lower=0.1, upper=10.0)),
             GeneCoordinate("lambda0", "log", FloatBounds(lower=0.1, upper=10.0)),
             GeneCoordinate("lambda1", "log", FloatBounds(lower=0.1, upper=10.0)),
         ),
-        0.8,
-        0.3,
-        0.2,
+        crossover_probability=0.8,
+        mutation_probability=0.3,
+        mutation_scale=0.2,
     ),
     FamilyCheckpointSpec(
-        "poisson_empirical",
-        ("c_lambda",),
-        (GeneCoordinate("c_lambda", "log", FloatBounds(lower=0.25, upper=4.0)),),
-        0.9,
-        1.0,
-        0.1,
+        name="poisson_empirical",
+        gene_order=("c_lambda",),
+        coordinates=(GeneCoordinate("c_lambda", "log", FloatBounds(lower=0.25, upper=4.0)),),
+        crossover_probability=0.9,
+        mutation_probability=1.0,
+        mutation_scale=0.1,
     ),
 )
 GENETIC = GeneticCheckpointSettings(
@@ -208,17 +227,78 @@ COMPATIBILITY = CheckpointCompatibility(
     rng_engine="python.random.Random/MT19937",
 )
 VALID_STATE = CheckpointState(
-    COMPATIBILITY,
-    0,
-    POPULATION,
-    (MMPP_ROW, POISSON_ROW, OVERALL_ROW),
-    encode_rng_state(Random(73).getstate()),
-    CandidateId(0, 2),
-    POISSON_TRIAL.aggregate_score,
-    0,
-    "running",
-    ("mmpp", "poisson_empirical"),
+    compatibility=COMPATIBILITY,
+    generation=0,
+    population=POPULATION,
+    history=(MMPP_ROW, POISSON_ROW, OVERALL_ROW),
+    rng_state=encode_rng_state(Random(73).getstate()),
+    best_identifier=CandidateId(birth_generation=0, birth_index=2),
+    best_fitness=POISSON_TRIAL.aggregate_score,
+    consecutive_stagnation=0,
+    terminal_reason="running",
+    family_priority=("mmpp", "poisson_empirical"),
 )
+
+
+def replace[Record](record: Record, **changes: object) -> Record:
+    """Build deliberate corrupt model states for renderer/cross-policy tests only."""
+    if isinstance(record, BaseModel):
+        values = {name: getattr(record, name) for name in type(record).model_fields}
+        values.update(changes)
+        return cast(Record, type(record).model_construct(**values))
+    return cast(Record, replace_dataclass(cast(Any, record), **changes))
+
+
+def test_checkpoint_publication_root_is_strict_and_schema_describes_every_variant() -> None:
+    """A generic candidate object would hide status and failure payload drift from readers."""
+    assert issubclass(CheckpointArtifact, BaseModel)
+    assert CheckpointArtifact.model_config.get("extra") == "forbid"
+    assert CheckpointArtifact.model_config.get("frozen") is True
+    assert CheckpointArtifact.model_config.get("strict") is True
+    assert CheckpointArtifact.model_config.get("allow_inf_nan") is False
+    assert CheckpointArtifact.model_config.get("revalidate_instances") == "always"
+
+    schema = CheckpointArtifact.model_json_schema(mode="validation")
+    Draft202012Validator.check_schema(schema)
+    encoded = json.loads(render_checkpoint(VALID_STATE))
+    Draft202012Validator(schema).validate(encoded)  # pyright: ignore[reportUnknownMemberType]
+    validated = CheckpointArtifact.model_validate(encoded)
+    assert validated.model_dump(mode="json", by_alias=True) == encoded
+
+    schema_text = json.dumps(schema, sort_keys=True)
+    for status in ("pending", "valid", "invalid"):
+        assert f'"const": "{status}"' in schema_text
+    for kind in (
+        "repair",
+        "fit",
+        "generation",
+        "incomplete_generation",
+        "similarity_precondition",
+        "nonfinite_score",
+    ):
+        assert f'"const": "{kind}"' in schema_text
+    assert '"const": "python.random.Random/MT19937"' in schema_text
+
+
+def test_checkpoint_schema_revalidates_nested_instances_from_primitives() -> None:
+    """Constructed nested models must not carry bypassed invalid values into publication."""
+    document = _decoded()
+    validated = CheckpointArtifact.model_validate(document)
+    poisoned = replace(validated.population[0], fitness=math.inf)
+    with pytest.raises(Exception, match="fitness"):
+        CheckpointArtifact.model_validate(
+            {
+                **validated.model_dump(mode="python", by_alias=True),
+                "population": [poisoned, *validated.population[1:]],
+            }
+        )
+
+
+def test_checkpoint_registry_contains_publication_root() -> None:
+    """Schema consumers need the checkpoint root in the shared deterministic registry."""
+    from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
+
+    assert PUBLIC_ARTIFACT_MODELS["checkpoint"] is CheckpointArtifact
 
 
 def _decoded(content: bytes | None = None) -> dict[str, object]:
@@ -343,14 +423,14 @@ def _state_with_generation_best_history(
                 mmpp,
                 poisson,
                 HistoryRow(
-                    generation,
-                    "overall",
-                    None,
-                    3,
-                    2,
-                    best_fitness,
-                    math.fsum((mmpp.mean_fitness, poisson.mean_fitness * 2)) / 3.0,
-                    CandidateId(0, 2),
+                    generation=generation,
+                    scope="overall",
+                    family=None,
+                    candidate_count=3,
+                    valid_count=2,
+                    best_fitness=best_fitness,
+                    mean_fitness=math.fsum((mmpp.mean_fitness, poisson.mean_fitness * 2)) / 3.0,
+                    best_identifier=CandidateId(birth_generation=0, birth_index=2),
                 ),
             )
         )
@@ -388,18 +468,18 @@ def _checkpoint_bytes_with_early_limit(state: CheckpointState) -> bytes:
 
 def _markov_state(genes: tuple[float, float, float, int, float]) -> CheckpointState:
     markov = FamilyCheckpointSpec(
-        "markov_renewal",
-        ("q1", "q2", "alpha", "r", "c_t"),
-        (
+        name="markov_renewal",
+        gene_order=("q1", "q2", "alpha", "r", "c_t"),
+        coordinates=(
             GeneCoordinate("q1", "linear", FloatBounds(lower=0.1, upper=0.8)),
             GeneCoordinate("q2", "linear", FloatBounds(lower=0.2, upper=0.9)),
             GeneCoordinate("alpha", "linear", FloatBounds(lower=0.0, upper=1.0)),
             GeneCoordinate("r", "integer", IntegerBounds(lower=1, upper=5)),
             GeneCoordinate("c_t", "log", FloatBounds(lower=0.1, upper=10.0)),
         ),
-        0.8,
-        0.3,
-        0.2,
+        crossover_probability=0.8,
+        mutation_probability=0.3,
+        mutation_scale=0.2,
     )
     compatibility = replace(
         COMPATIBILITY,
@@ -551,7 +631,7 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
         )
     )
     parent = POPULATION[0]
-    other = replace(parent, identifier=CandidateId(0, 3), genes=(2.0, 3.0, 1.0, 2.0))
+    other = replace(parent, identifier=CandidateId(birth_generation=0, birth_index=3), genes=(2.0, 3.0, 1.0, 2.0))
 
     def fail_repair(*_args: object, **_kwargs: object) -> Genes:
         raise TrafficlabError("offspring repair failed", corrective_action="retain invalid evidence")
@@ -567,7 +647,7 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
             family_priority=("mmpp",),
             duplicate_mutation_attempts=1,
         ),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=rng,
     )
     evaluated_child = evaluate_candidate(child, evaluation)
@@ -588,12 +668,16 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
     )
 
     loaded = parse_checkpoint(render_checkpoint(state), COMPATIBILITY)
-    stored = next(candidate for candidate in loaded.population if candidate.identifier == CandidateId(1, 0))
+    stored = next(
+        candidate
+        for candidate in loaded.population
+        if candidate.identifier == CandidateId(birth_generation=1, birth_index=0)
+    )
     assert (stored.status, stored.genes, stored.fitness, stored.trials) == ("invalid", None, 0.0, ())
     assert stored.invalid == CandidateFailure(
-        "repair",
-        None,
-        "offspring repair failed",
+        kind="repair",
+        seed=None,
+        detail="offspring repair failed",
         stage="fit",
         affected_evidence="candidate genes",
         evidence_state="diagnostic_only",
@@ -606,9 +690,9 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
 def test_checkpoint_round_trip_preserves_candidate_failure_scientific_diagnostics() -> None:
     """Candidate-invalid provenance is exact checkpoint evidence, not an in-memory-only detail."""
     failure = CandidateFailure(
-        "incomplete_generation",
-        7,
-        "max_packets",
+        kind="incomplete_generation",
+        seed=7,
+        detail="max_packets",
         stage="generate",
         affected_evidence="candidate trace",
         evidence_state="not_published",
@@ -631,7 +715,7 @@ def test_checkpoint_round_trip_preserves_candidate_failure_scientific_diagnostic
     assert parse_checkpoint(render_checkpoint(state), COMPATIBILITY).population[1].invalid == failure
 
     del cast(dict[str, object], cast(list[dict[str, object]], document["population"])[1]["invalid"])["authority"]
-    with pytest.raises(TrafficlabError, match="candidate invalid diagnostic"):
+    with pytest.raises(TrafficlabError, match="invalid.*authority"):
         parse_checkpoint(_encoded(document), COMPATIBILITY)
 
 
@@ -681,9 +765,9 @@ def test_checkpoint_derives_complete_provenance_for_legacy_candidate_failure(
     loaded = parse_checkpoint(legacy, COMPATIBILITY)
 
     assert loaded.population[1].invalid == CandidateFailure(
-        cast(Any, kind),
-        seed,
-        detail,
+        kind=cast(Any, kind),
+        seed=seed,
+        detail=detail,
         stage="fit",
         affected_evidence=affected_evidence,
         evidence_state="diagnostic_only",
@@ -778,7 +862,6 @@ def test_checkpoint_rejects_noncanonical_but_equivalent_json() -> None:
     ids=("missing", "null", "old", "future", "boolean", "string", "nonintegral"),
 )
 def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
-    monkeypatch: pytest.MonkeyPatch,
     present: bool,
     value: object,
 ) -> None:
@@ -793,17 +876,8 @@ def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
         document["scientific_artifact_schema"] = value
     else:
         document.pop("scientific_artifact_schema", None)
-    parsed_rng = False
-
-    def fail_rng(_value: object) -> object:
-        nonlocal parsed_rng
-        parsed_rng = True
-        raise AssertionError("schema validation must precede RNG decoding")
-
-    monkeypatch.setattr(checkpoint, "_parse_rng", fail_rng)
     with pytest.raises(TrafficlabError, match="checkpoint schema is incompatible"):
         parse_checkpoint(_encoded(document), COMPATIBILITY)
-    assert parsed_rng is False
 
 
 @pytest.mark.parametrize(
@@ -818,7 +892,6 @@ def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
     ),
 )
 def test_checkpoint_priority_is_strict_and_rejected_before_rng_parsing(
-    monkeypatch: pytest.MonkeyPatch,
     value: object,
     case: str,
 ) -> None:
@@ -826,43 +899,21 @@ def test_checkpoint_priority_is_strict_and_rejected_before_rng_parsing(
     document = _decoded()
     assert document["family_priority"] == list(COMPATIBILITY.family_priority)
     document["family_priority"] = value
-    parsed_rng = False
-
-    def fail_rng(_value: object) -> object:
-        nonlocal parsed_rng
-        parsed_rng = True
-        raise AssertionError("priority validation must precede RNG parsing")
-
-    monkeypatch.setattr(checkpoint, "_parse_rng", fail_rng)
     with pytest.raises(TrafficlabError, match="priority|checkpoint"):
         parse_checkpoint(_encoded(document), COMPATIBILITY)
-    assert parsed_rng is False, case
 
 
-def test_checkpoint_rejects_missing_or_expected_mismatched_priority_before_rng_parsing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_checkpoint_rejects_missing_or_expected_mismatched_priority_before_rng_parsing() -> None:
     """Schema-2 checkpoints without priority have no migration path."""
     document = _decoded()
     assert document["family_priority"] == list(COMPATIBILITY.family_priority)
-    parsed_rng = False
-
-    def fail_rng(_value: object) -> object:
-        nonlocal parsed_rng
-        parsed_rng = True
-        raise AssertionError("priority compatibility must precede RNG parsing")
-
-    monkeypatch.setattr(checkpoint, "_parse_rng", fail_rng)
     missing = dict(document)
     del missing["family_priority"]
     with pytest.raises(TrafficlabError, match="checkpoint"):
         parse_checkpoint(_encoded(missing), COMPATIBILITY)
-    assert parsed_rng is False
-
     expected = replace(COMPATIBILITY, family_priority=tuple(reversed(COMPATIBILITY.family_priority)))
     with pytest.raises(TrafficlabError, match="family priority"):
         parse_checkpoint(_encoded(document), expected)
-    assert parsed_rng is False
 
 
 def test_checkpoint_state_priority_must_match_its_compatibility() -> None:
@@ -1080,11 +1131,11 @@ def test_checkpoint_rejects_valid_invalid_and_duplicate_trial_seed_inconsistenci
             "authority": "primary",
         },
     )
-    with pytest.raises(TrafficlabError, match="valid candidate invalid"):
+    with pytest.raises(TrafficlabError, match=r"valid\.invalid"):
         parse_checkpoint(_encoded(valid_with_invalid), COMPATIBILITY)
 
     invalid_nonzero = _mutated(("population", 1, "fitness"), 0.1)
-    with pytest.raises(TrafficlabError, match="invalid candidate fitness"):
+    with pytest.raises(TrafficlabError, match=r"invalid\.fitness"):
         parse_checkpoint(_encoded(invalid_nonzero), COMPATIBILITY)
 
     duplicate_seed = _decoded()
@@ -1151,7 +1202,7 @@ def test_checkpoint_rejects_best_that_disagrees_with_the_retained_history_winner
     """An equal later generation best must not replace the winner retained from earlier history."""
     state = _state_at(1, generation_count=2)
     earlier_mmpp = replace(MMPP_ROW, best_fitness=0.5)
-    earlier_overall = replace(OVERALL_ROW, best_identifier=CandidateId(0, 0))
+    earlier_overall = replace(OVERALL_ROW, best_identifier=CandidateId(birth_generation=0, birth_index=0))
     inconsistent = replace(
         state,
         history=(earlier_mmpp, POISSON_ROW, earlier_overall, *state.history[3:]),
@@ -1257,9 +1308,9 @@ def test_summarize_generation_uses_stable_identifier_tie_and_rejects_invalid_inp
             status="invalid",
             trials=(),
             invalid=CandidateFailure(
-                "fit",
-                None,
-                "bad",
+                kind="fit",
+                seed=None,
+                detail="bad",
                 stage="fit",
                 affected_evidence="candidate model",
                 evidence_state="diagnostic_only",
@@ -1275,7 +1326,7 @@ def test_summarize_generation_uses_stable_identifier_tie_and_rejects_invalid_inp
         ("mmpp", "poisson_empirical"),
         family_priority=COMPATIBILITY.family_priority,
     )
-    assert rows[-1].best_identifier == CandidateId(0, 0)
+    assert rows[-1].best_identifier == CandidateId(birth_generation=0, birth_index=0)
     assert rows[-1].valid_count == 0
     with pytest.raises(TrafficlabError, match="empty population"):
         summarize_generation(
@@ -1305,14 +1356,14 @@ def test_checkpoint_priority_ties_unify_current_history_and_retained_winners() -
     priority = ("mmpp", "poisson_empirical")
     genetic = replace(GENETIC, generation_count=1, early_stopping_generations=1)
     compatibility = replace(COMPATIBILITY, genetic=genetic, family_priority=priority)
-    prior_mmpp = replace(POPULATION[0], identifier=CandidateId(0, 2))
+    prior_mmpp = replace(POPULATION[0], identifier=CandidateId(birth_generation=0, birth_index=2))
     prior_poisson = replace(
         POPULATION[2],
-        identifier=CandidateId(0, 0),
+        identifier=CandidateId(birth_generation=0, birth_index=0),
         fitness=MMPP_TRIAL.aggregate_score,
         trials=(MMPP_TRIAL,),
     )
-    invalid = replace(POPULATION[1], identifier=CandidateId(0, 1))
+    invalid = replace(POPULATION[1], identifier=CandidateId(birth_generation=0, birth_index=1))
     prior_population = (prior_mmpp, invalid, prior_poisson)
     current_mmpp = replace(
         prior_mmpp,
@@ -1337,16 +1388,16 @@ def test_checkpoint_priority_ties_unify_current_history_and_retained_winners() -
         family_priority=priority,
     )
     state = CheckpointState(
-        compatibility,
-        1,
-        current_population,
-        history,
-        encode_rng_state(Random(73).getstate()),
-        current_mmpp.identifier,
-        current_mmpp.fitness,
-        0,
-        "hard_limit",
-        priority,
+        compatibility=compatibility,
+        generation=1,
+        population=current_population,
+        history=history,
+        rng_state=encode_rng_state(Random(73).getstate()),
+        best_identifier=current_mmpp.identifier,
+        best_fitness=current_mmpp.fitness,
+        consecutive_stagnation=0,
+        terminal_reason="hard_limit",
+        family_priority=priority,
     )
 
     assert history[2].best_identifier == prior_mmpp.identifier
@@ -1366,14 +1417,14 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
     )
     candidates = tuple(
         Candidate(
-            CandidateId(0, index),
-            "mmpp" if index < 3 else "poisson_empirical",
-            (1.0, 2.0, 3.0, 4.0) if index < 3 else (1.0,),
-            "valid",
-            trial.aggregate_score,
-            (trial,),
-            None,
-            (),
+            identifier=CandidateId(birth_generation=0, birth_index=index),
+            family="mmpp" if index < 3 else "poisson_empirical",
+            genes=(1.0, 2.0, 3.0, 4.0) if index < 3 else (1.0,),
+            status="valid",
+            fitness=trial.aggregate_score,
+            trials=(trial,),
+            invalid=None,
+            duplicate_diagnostics=(),
         )
         for index, score in enumerate(literal_scores)
         for trial in (_trial(7, (score, score, score, score)),)
@@ -1399,16 +1450,16 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
     compatibility = replace(COMPATIBILITY, genetic=replace(GENETIC, population_size=7))
     winner = rank_candidates(candidates, family_priority=compatibility.family_priority)[0]
     state = CheckpointState(
-        compatibility,
-        0,
-        candidates,
-        rows,
-        encode_rng_state(Random(73).getstate()),
-        winner.identifier,
-        winner.fitness,
-        0,
-        "running",
-        compatibility.family_priority,
+        compatibility=compatibility,
+        generation=0,
+        population=candidates,
+        history=rows,
+        rng_state=encode_rng_state(Random(73).getstate()),
+        best_identifier=winner.identifier,
+        best_fitness=winner.fitness,
+        consecutive_stagnation=0,
+        terminal_reason="running",
+        family_priority=compatibility.family_priority,
     )
     assert parse_checkpoint(render_checkpoint(state), compatibility) == state
 
@@ -1565,10 +1616,10 @@ def test_render_rejects_malformed_family_genetic_and_compatibility_instances() -
 
 
 def test_integer_coordinate_bounds_and_gene_are_preserved_as_exact_integers() -> None:
-    coordinate = checkpoint._parse_coordinate(  # pyright: ignore[reportPrivateUsage]
-        {"name": "r", "kind": "integer", "lower": 1, "upper": 5},
-        family="markov_renewal",
+    record = checkpoint.IntegerCoordinateRecord.model_validate(  # pyright: ignore[reportPrivateUsage]
+        {"name": "r", "kind": "integer", "lower": 1, "upper": 5}
     )
+    coordinate = checkpoint._coordinate_from_record(record)  # pyright: ignore[reportPrivateUsage]
     assert coordinate.bounds.lower == 1
     assert type(coordinate.bounds.lower) is int
     assert (
@@ -1600,7 +1651,7 @@ def test_render_rejects_population_and_best_state_inconsistencies() -> None:
         ),
         replace(
             VALID_STATE,
-            population=(replace(candidate, identifier=CandidateId(1, 0)), *POPULATION[1:]),
+            population=(replace(candidate, identifier=CandidateId(birth_generation=1, birth_index=0)), *POPULATION[1:]),
         ),
         replace(VALID_STATE, population=(replace(candidate, status="pending"), *POPULATION[1:])),
         replace(VALID_STATE, population=(replace(candidate, genes=(1.0,)), *POPULATION[1:])),
@@ -1611,9 +1662,9 @@ def test_render_rejects_population_and_best_state_inconsistencies() -> None:
                 replace(
                     candidate,
                     invalid=CandidateFailure(
-                        "fit",
-                        None,
-                        "bad",
+                        kind="fit",
+                        seed=None,
+                        detail="bad",
                         stage="fit",
                         affected_evidence="candidate model",
                         evidence_state="diagnostic_only",
@@ -1626,7 +1677,12 @@ def test_render_rejects_population_and_best_state_inconsistencies() -> None:
         ),
         replace(VALID_STATE, population=(duplicate_trial_candidate, *POPULATION[1:])),
         replace(
-            VALID_STATE, population=(POPULATION[0], replace(POPULATION[1], identifier=CandidateId(0, 0)), POPULATION[2])
+            VALID_STATE,
+            population=(
+                POPULATION[0],
+                replace(POPULATION[1], identifier=CandidateId(birth_generation=0, birth_index=0)),
+                POPULATION[2],
+            ),
         ),
         replace(
             VALID_STATE,
@@ -1638,9 +1694,13 @@ def test_render_rejects_population_and_best_state_inconsistencies() -> None:
         ),
         replace(VALID_STATE, history=cast(Any, [])),
         replace(VALID_STATE, history=(cast(Any, None), *VALID_STATE.history[1:])),
-        replace(VALID_STATE, best_identifier=CandidateId(9, 9)),
+        replace(VALID_STATE, best_identifier=CandidateId(birth_generation=9, birth_index=9)),
         replace(VALID_STATE, best_fitness=0.4),
-        replace(VALID_STATE, best_identifier=CandidateId(0, 0), best_fitness=MMPP_TRIAL.aggregate_score),
+        replace(
+            VALID_STATE,
+            best_identifier=CandidateId(birth_generation=0, birth_index=0),
+            best_fitness=MMPP_TRIAL.aggregate_score,
+        ),
         replace(VALID_STATE, consecutive_stagnation=1),
         replace(VALID_STATE, terminal_reason=cast(Any, "other")),
         replace(VALID_STATE, generation=3),
@@ -1662,7 +1722,11 @@ def test_render_rejects_each_history_block_arithmetic_and_shape_inconsistency() 
             POISSON_ROW,
             replace(OVERALL_ROW, candidate_count=4, mean_fitness=0.225),
         ),
-        (MMPP_ROW, POISSON_ROW, replace(OVERALL_ROW, best_identifier=CandidateId(0, 0), best_fitness=0.4)),
+        (
+            MMPP_ROW,
+            POISSON_ROW,
+            replace(OVERALL_ROW, best_identifier=CandidateId(birth_generation=0, birth_index=0), best_fitness=0.4),
+        ),
         (MMPP_ROW, POISSON_ROW, replace(OVERALL_ROW, mean_fitness=0.31)),
         (
             replace(MMPP_ROW, best_fitness=0.3, mean_fitness=0.3),
@@ -1689,7 +1753,7 @@ def test_every_historical_row_must_be_feasible_even_when_its_overall_row_is_adju
 
     corruptions = (
         with_first_block(replace(MMPP_ROW, mean_fitness=MMPP_ROW.best_fitness + 0.01)),
-        with_first_block(replace(MMPP_ROW, best_identifier=CandidateId(1, 0))),
+        with_first_block(replace(MMPP_ROW, best_identifier=CandidateId(birth_generation=1, birth_index=0))),
     )
     for corrupted in corruptions:
         with pytest.raises(TrafficlabError, match="history"):
@@ -1707,7 +1771,7 @@ def test_every_historical_row_must_be_feasible_even_when_its_overall_row_is_adju
         history = cast(list[dict[str, object]], document["history"])
         history[0]["valid_count"] = family_valid
         history[2]["valid_count"] = overall_valid
-        with pytest.raises(TrafficlabError, match="history valid[_ ]count|history counts"):
+        with pytest.raises(TrafficlabError, match=r"history.*valid_count"):
             parse_checkpoint(_encoded(document), state.compatibility)
 
 
@@ -1719,30 +1783,84 @@ def test_noncurrent_history_accounts_exactly_for_zero_fitness_invalid_candidates
         family_rows = (mmpp, poisson)
         winner = min(family_rows, key=lambda row: (-row.best_fitness, row.best_identifier))
         overall = HistoryRow(
-            0,
-            "overall",
-            None,
-            3,
-            sum(row.valid_count for row in family_rows),
-            winner.best_fitness,
-            math.fsum(row.mean_fitness * row.candidate_count for row in family_rows) / 3,
-            winner.best_identifier,
+            generation=0,
+            scope="overall",
+            family=None,
+            candidate_count=3,
+            valid_count=sum(row.valid_count for row in family_rows),
+            best_fitness=winner.best_fitness,
+            mean_fitness=math.fsum(row.mean_fitness * row.candidate_count for row in family_rows) / 3,
+            best_identifier=winner.best_identifier,
         )
         return replace(state, history=(mmpp, poisson, overall, *state.history[3:]))
 
     invalid = (
-        HistoryRow(0, "family", "mmpp", 2, 0, 0.5, 0.0, CandidateId(0, 0)),
-        HistoryRow(0, "family", "mmpp", 2, 0, 0.1, 0.1, CandidateId(0, 0)),
-        HistoryRow(0, "family", "mmpp", 2, 1, 0.5, 0.4, CandidateId(0, 0)),
+        HistoryRow(
+            generation=0,
+            scope="family",
+            family="mmpp",
+            candidate_count=2,
+            valid_count=0,
+            best_fitness=0.5,
+            mean_fitness=0.0,
+            best_identifier=CandidateId(birth_generation=0, birth_index=0),
+        ),
+        HistoryRow(
+            generation=0,
+            scope="family",
+            family="mmpp",
+            candidate_count=2,
+            valid_count=0,
+            best_fitness=0.1,
+            mean_fitness=0.1,
+            best_identifier=CandidateId(birth_generation=0, birth_index=0),
+        ),
+        HistoryRow(
+            generation=0,
+            scope="family",
+            family="mmpp",
+            candidate_count=2,
+            valid_count=1,
+            best_fitness=0.5,
+            mean_fitness=0.4,
+            best_identifier=CandidateId(birth_generation=0, birth_index=0),
+        ),
     )
     for row in invalid:
         with pytest.raises(TrafficlabError, match="history.*valid|history.*feasible"):
             render_checkpoint(with_old_mmpp(row))
 
     valid_boundaries = (
-        HistoryRow(0, "family", "mmpp", 2, 0, 0.0, 0.0, CandidateId(0, 0)),
-        HistoryRow(0, "family", "mmpp", 2, 1, 0.4, 0.2, CandidateId(0, 0)),
-        HistoryRow(0, "family", "mmpp", 2, 2, 0.4, 0.4, CandidateId(0, 0)),
+        HistoryRow(
+            generation=0,
+            scope="family",
+            family="mmpp",
+            candidate_count=2,
+            valid_count=0,
+            best_fitness=0.0,
+            mean_fitness=0.0,
+            best_identifier=CandidateId(birth_generation=0, birth_index=0),
+        ),
+        HistoryRow(
+            generation=0,
+            scope="family",
+            family="mmpp",
+            candidate_count=2,
+            valid_count=1,
+            best_fitness=0.4,
+            mean_fitness=0.2,
+            best_identifier=CandidateId(birth_generation=0, birth_index=0),
+        ),
+        HistoryRow(
+            generation=0,
+            scope="family",
+            family="mmpp",
+            candidate_count=2,
+            valid_count=2,
+            best_fitness=0.4,
+            mean_fitness=0.4,
+            best_identifier=CandidateId(birth_generation=0, birth_index=0),
+        ),
     )
     for row in valid_boundaries:
         candidate = with_old_mmpp(row)

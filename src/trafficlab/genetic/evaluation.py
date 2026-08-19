@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import cast
 
@@ -20,6 +20,7 @@ from trafficlab.genetic.types import (
     CandidateFailure,
     MethodTrialResult,
     TrialResult,
+    rebuild_genetic_record,
 )
 from trafficlab.models.common import (
     FamilyBounds,
@@ -266,14 +267,14 @@ def _trial_from_comparison(
         tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
         tuple(
             MethodTrialResult(
-                name,
-                _score(result.methods[name].score, name=f"{name} score", seed=seed),
-                result.methods[name].diagnostics.model_dump(mode="json"),
+                name=name,
+                score=_score(result.methods[name].score, name=f"{name} score", seed=seed),
+                diagnostics=result.methods[name].diagnostics.model_dump(mode="json"),
             )
             for name in METHOD_ORDER
         ),
     )
-    return TrialResult(seed, aggregate_score, methods, model_diagnostics)
+    return TrialResult(seed=seed, aggregate_score=aggregate_score, methods=methods, model_diagnostics=model_diagnostics)
 
 
 def _evaluate_trial(
@@ -302,15 +303,15 @@ def _evaluate_trial(
 
 
 def _invalid_candidate(candidate: Candidate, error: CandidateEvaluationError) -> Candidate:
-    return replace(
+    return rebuild_genetic_record(
         candidate,
         status="invalid",
         fitness=0.0,
         trials=(),
         invalid=CandidateFailure(
-            error.kind,
-            error.seed,
-            error.detail,
+            kind=error.kind,
+            seed=error.seed,
+            detail=error.detail,
             stage=error.stage,
             affected_evidence=error.affected_evidence,
             evidence_state=error.evidence_state,
@@ -347,7 +348,7 @@ def evaluate_candidate(candidate: Candidate, context: ValidatedEvaluationContext
     repaired_candidate = candidate
     try:
         repaired = _repair_candidate(candidate, checked_context)
-        repaired_candidate = replace(candidate, genes=repaired)
+        repaired_candidate = rebuild_genetic_record(candidate, genes=repaired)
         model = _fit_candidate(repaired_candidate, checked_context)
         trials = tuple(
             _evaluate_trial(repaired_candidate, model, seed, checked_context) for seed in checked_context.trial_seeds
@@ -355,7 +356,7 @@ def evaluate_candidate(candidate: Candidate, context: ValidatedEvaluationContext
     except CandidateEvaluationError as error:
         return _invalid_candidate(repaired_candidate, error)
     fitness = math.fsum(trial.aggregate_score for trial in trials) / len(trials)
-    return replace(repaired_candidate, status="valid", fitness=fitness, trials=trials, invalid=None)
+    return rebuild_genetic_record(repaired_candidate, status="valid", fitness=fitness, trials=trials, invalid=None)
 
 
 def _final_validation_error(error: CandidateEvaluationError) -> TrafficlabError:

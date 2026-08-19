@@ -24,7 +24,7 @@ _FAILURE_FIXTURE = _ROOT / "tests" / "fixtures" / "data" / "diagnostics" / "fail
 def test_public_core_artifact_roots_are_strict_frozen_pydantic_models() -> None:
     """Replacing a root with a permissive record would re-admit coercion and mutation."""
     assert type(PUBLIC_ARTIFACT_MODELS) is MappingProxyType
-    assert tuple(PUBLIC_ARTIFACT_MODELS) == ("best_model", "comparison_result", "failure_outcome")
+    assert tuple(PUBLIC_ARTIFACT_MODELS) == ("best_model", "checkpoint", "comparison_result", "failure_outcome")
 
     for model in PUBLIC_ARTIFACT_MODELS.values():
         assert issubclass(model, BaseModel)
@@ -55,6 +55,11 @@ def test_every_checked_core_artifact_validates_against_its_published_schema() ->
             json.loads(path.read_bytes())
             for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")
             for path in sorted(root.glob("**/similarity.json"))
+        ],
+        "checkpoint": [
+            json.loads(path.read_bytes())
+            for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")
+            for path in sorted(root.glob("**/checkpoint.json"))
         ],
         "failure_outcome": [json.loads(line) for line in _FAILURE_FIXTURE.read_text(encoding="utf-8").splitlines()],
     }

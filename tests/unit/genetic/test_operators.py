@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
+from dataclasses import replace as replace_dataclass
 from random import Random
-from typing import cast
+from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 
 from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
 from trafficlab.errors import TrafficlabError
@@ -24,6 +26,15 @@ from trafficlab.genetic.types import (
 from trafficlab.models.common import FamilyBounds, Genes
 from trafficlab.models.registry import POISSON_FAMILY
 from trafficlab.trace import Direction, TraceEvent
+
+
+def replace[Record](record: Record, **changes: object) -> Record:
+    """Build deliberate model states at this test boundary."""
+    if isinstance(record, BaseModel):
+        values = {name: getattr(record, name) for name in type(record).model_fields}
+        values.update(changes)
+        return cast(Record, type(record).model_construct(**values))
+    return cast(Record, replace_dataclass(cast(Any, record), **changes))
 
 
 @dataclass
@@ -119,7 +130,16 @@ def evaluated(
     status: CandidateStatus = "valid",
 ) -> Candidate:
     """Build one evaluated parent or survivor with literal genes."""
-    return Candidate(CandidateId(generation, index), family, genes, status, fitness, (), None, ())
+    return Candidate(
+        identifier=CandidateId(birth_generation=generation, birth_index=index),
+        family=family,
+        genes=genes,
+        status=status,
+        fitness=fitness,
+        trials=(),
+        invalid=None,
+        duplicate_diagnostics=(),
+    )
 
 
 def context(
@@ -141,23 +161,23 @@ def context(
 def missing_genes(index: int, family: FamilyName) -> Candidate:
     """Build an evaluated repair-invalid candidate with no canonical chromosome."""
     return Candidate(
-        CandidateId(0, index),
-        family,
-        None,
-        "invalid",
-        0.0,
-        (),
-        CandidateFailure(
-            "repair",
-            None,
-            "initializer repair failed",
+        identifier=CandidateId(birth_generation=0, birth_index=index),
+        family=family,
+        genes=None,
+        status="invalid",
+        fitness=0.0,
+        trials=(),
+        invalid=CandidateFailure(
+            kind="repair",
+            seed=None,
+            detail="initializer repair failed",
             stage="fit",
             affected_evidence="candidate genes",
             evidence_state="diagnostic_only",
             corrective_action="repair candidate initialization",
             authority="primary",
         ),
-        (),
+        duplicate_diagnostics=(),
     )
 
 
@@ -171,7 +191,7 @@ def test_same_family_crossover_then_mutation_uses_exact_draw_order() -> None:
         parent_a,
         parent_b,
         context=context(("poisson_empirical", POISSON)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
@@ -195,7 +215,7 @@ def test_uniform_crossover_makes_one_parent_choice_per_gene_before_mutation_deci
         parent_a,
         parent_b,
         context=context(("mmpp", MMPP_CROSSOVER)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
@@ -216,7 +236,7 @@ def test_multi_gene_mutation_draws_all_decisions_before_selected_gaussians() -> 
         parent,
         other,
         context=context(("mmpp", MMPP_MUTATION)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
@@ -237,7 +257,7 @@ def test_same_family_no_crossover_clones_stable_fitter_tie_and_consumes_endpoint
         higher_id,
         lower_id,
         context=context(("poisson_empirical", POISSON_NO_MUTATION)),
-        identifier=CandidateId(1, 2),
+        identifier=CandidateId(birth_generation=1, birth_index=2),
         rng=cast(Random, rng),
     )
 
@@ -255,21 +275,21 @@ def test_missing_fitter_genes_create_invalid_child_without_operator_draws() -> N
         fitter,
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
     assert (child.identifier, child.family, child.genes, child.status, child.fitness) == (
-        CandidateId(1, 0),
+        CandidateId(birth_generation=1, birth_index=0),
         "poisson_empirical",
         None,
         "invalid",
         0.0,
     )
     assert child.invalid == CandidateFailure(
-        "repair",
-        None,
-        "selected parent has no canonical genes",
+        kind="repair",
+        seed=None,
+        detail="selected parent has no canonical genes",
         stage="fit",
         affected_evidence="candidate genes",
         evidence_state="diagnostic_only",
@@ -290,7 +310,7 @@ def test_same_family_missing_nonfitter_clones_fitter_after_no_crossover_draw() -
         fitter,
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION)),
-        identifier=CandidateId(1, 1),
+        identifier=CandidateId(birth_generation=1, birth_index=1),
         rng=cast(Random, rng),
     )
 
@@ -309,7 +329,7 @@ def test_same_family_selected_crossover_with_missing_parent_is_invalid_after_dec
         fitter,
         other,
         context=context(("poisson_empirical", POISSON)),
-        identifier=CandidateId(1, 2),
+        identifier=CandidateId(birth_generation=1, birth_index=2),
         rng=cast(Random, rng),
     )
 
@@ -320,9 +340,9 @@ def test_same_family_selected_crossover_with_missing_parent_is_invalid_after_dec
         0.0,
     )
     assert child.invalid == CandidateFailure(
-        "repair",
-        None,
-        "selected parent has no canonical genes",
+        kind="repair",
+        seed=None,
+        detail="selected parent has no canonical genes",
         stage="fit",
         affected_evidence="candidate genes",
         evidence_state="diagnostic_only",
@@ -342,7 +362,7 @@ def test_cross_family_clone_forces_mutation_when_no_gene_is_selected() -> None:
         poisson,
         mmpp,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), ("mmpp", MMPP_CROSSOVER)),
-        identifier=CandidateId(1, 3),
+        identifier=CandidateId(birth_generation=1, birth_index=3),
         rng=cast(Random, rng),
     )
 
@@ -366,13 +386,15 @@ def test_cross_family_priority_tie_selects_the_priority_source_and_retains_zero_
             ("mmpp", MMPP_CROSSOVER),
             family_priority=("mmpp", "poisson_empirical"),
         ),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
     assert child.family == "mmpp"
     assert child.genes == mmpp.genes
-    assert child.duplicate_diagnostics == (DuplicateDiagnostic(0, "exhausted", "source-equal child"),)
+    assert child.duplicate_diagnostics == (
+        DuplicateDiagnostic(attempt=0, outcome="exhausted", detail="source-equal child"),
+    )
     assert rng.calls == [("random",)] * 4 + [("randrange", 4), ("normalvariate", 0.0, 0.1)]
 
 
@@ -420,7 +442,7 @@ def test_cross_family_clone_ignores_missing_nonsource_parent_genes() -> None:
         source,
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), ("mmpp", MMPP_CROSSOVER)),
-        identifier=CandidateId(1, 3),
+        identifier=CandidateId(birth_generation=1, birth_index=3),
         rng=cast(Random, rng),
     )
 
@@ -440,12 +462,14 @@ def test_zero_retries_retains_source_equal_cross_family_child_even_when_source_i
         source,
         other_family,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), ("mmpp", MMPP_CROSSOVER)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
     assert child.genes == source.genes
-    assert child.duplicate_diagnostics == (DuplicateDiagnostic(0, "exhausted", "source-equal child"),)
+    assert child.duplicate_diagnostics == (
+        DuplicateDiagnostic(attempt=0, outcome="exhausted", detail="source-equal child"),
+    )
     assert rng.calls == [("random",), ("randrange", 1), ("normalvariate", 0.0, 0.1)]
 
 
@@ -465,7 +489,7 @@ def test_cross_family_mandatory_integer_mutation_moves_unchanged_decode_by_signe
         markov,
         poisson,
         context=context(("markov_renewal", MARKOV_NO_MUTATION), ("poisson_empirical", POISSON_NO_MUTATION)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
@@ -486,7 +510,7 @@ def test_ordinary_same_family_integer_mutation_may_decode_unchanged() -> None:
         parent,
         other,
         context=context(("markov_renewal", MARKOV_INTEGER_MUTATION)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
@@ -509,7 +533,7 @@ def test_direct_repair_error_creates_invalid_child_without_duplicate_draws(monke
         parent,
         other,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=2, existing=(survivor,)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
@@ -533,7 +557,7 @@ def test_non_trafficlab_repair_exception_propagates(monkeypatch: pytest.MonkeyPa
             parent,
             parent,
             context=context(("poisson_empirical", POISSON_NO_MUTATION)),
-            identifier=CandidateId(1, 0),
+            identifier=CandidateId(birth_generation=1, birth_index=0),
             rng=cast(Random, ScriptedRandom(random_values=[0.9, 0.9])),
         )
 
@@ -552,12 +576,14 @@ def test_duplicate_attempts_repeat_selection_then_forced_draws_and_accept_first_
         parent,
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=2, existing=(survivor,)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
     assert child.genes == pytest.approx((1.148698354997035,))
-    assert child.duplicate_diagnostics == (DuplicateDiagnostic(1, "duplicate", "duplicate child"),)
+    assert child.duplicate_diagnostics == (
+        DuplicateDiagnostic(attempt=1, outcome="duplicate", detail="duplicate child"),
+    )
     assert rng.calls == [
         ("random",),
         ("random",),
@@ -581,23 +607,23 @@ def test_evaluation_invalid_survivor_with_repaired_genes_remains_a_duplicate(
     """Later evaluation status must not erase the exact identity of a repaired survivor."""
     parent = evaluated(0, 0, "poisson_empirical", (1.0,), 0.9)
     survivor = Candidate(
-        CandidateId(0, 4),
-        "poisson_empirical",
-        (1.0,),
-        "invalid",
-        0.0,
-        (),
-        CandidateFailure(
-            kind,
-            seed,
-            "candidate evaluation failed",
+        identifier=CandidateId(birth_generation=0, birth_index=4),
+        family="poisson_empirical",
+        genes=(1.0,),
+        status="invalid",
+        fitness=0.0,
+        trials=(),
+        invalid=CandidateFailure(
+            kind=kind,
+            seed=seed,
+            detail="candidate evaluation failed",
             stage="fit",
             affected_evidence="candidate diagnostic",
             evidence_state="diagnostic_only",
             corrective_action="repair candidate evidence",
             authority="primary",
         ),
-        (),
+        duplicate_diagnostics=(),
     )
     rng = ScriptedRandom(random_values=[0.9, 0.9, 0.9], ranges=[0], normal_values=[0.0])
 
@@ -605,12 +631,14 @@ def test_evaluation_invalid_survivor_with_repaired_genes_remains_a_duplicate(
         parent,
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=1, existing=(survivor,)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
     assert child.genes == parent.genes
-    assert child.duplicate_diagnostics == (DuplicateDiagnostic(1, "exhausted", "duplicate attempts exhausted"),)
+    assert child.duplicate_diagnostics == (
+        DuplicateDiagnostic(attempt=1, outcome="exhausted", detail="duplicate attempts exhausted"),
+    )
     assert rng.calls == [
         ("random",),
         ("random",),
@@ -633,7 +661,7 @@ def test_repair_invalid_survivor_without_canonical_genes_is_not_a_duplicate() ->
             attempts=1,
             existing=(missing_genes(4, "poisson_empirical"),),
         ),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
@@ -668,15 +696,15 @@ def test_invalid_duplicate_attempt_keeps_last_valid_base_and_terminates(
         parent,
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=2, existing=(survivor,)),
-        identifier=CandidateId(1, 2),
+        identifier=CandidateId(birth_generation=1, birth_index=2),
         rng=cast(Random, rng),
     )
 
     assert child.status == "pending"
     assert child.genes == parent.genes
     assert child.duplicate_diagnostics == (
-        DuplicateDiagnostic(1, "invalid", "repair failed"),
-        DuplicateDiagnostic(2, "exhausted", "duplicate attempts exhausted"),
+        DuplicateDiagnostic(attempt=1, outcome="invalid", detail="repair failed"),
+        DuplicateDiagnostic(attempt=2, outcome="exhausted", detail="duplicate attempts exhausted"),
     )
     assert repair_calls == 3
 
@@ -703,12 +731,14 @@ def test_final_invalid_duplicate_attempt_records_exhaustion_and_retains_original
         parent,
         parent,
         context=context(("poisson_empirical", POISSON_NO_MUTATION), attempts=1, existing=(survivor,)),
-        identifier=CandidateId(1, 0),
+        identifier=CandidateId(birth_generation=1, birth_index=0),
         rng=cast(Random, rng),
     )
 
     assert child.genes == parent.genes
-    assert child.duplicate_diagnostics == (DuplicateDiagnostic(1, "exhausted", "duplicate attempts exhausted"),)
+    assert child.duplicate_diagnostics == (
+        DuplicateDiagnostic(attempt=1, outcome="exhausted", detail="duplicate attempts exhausted"),
+    )
     assert repair_calls == 2
 
 
@@ -733,13 +763,14 @@ def test_fill_next_population_retains_without_draws_then_assigns_children_in_cre
     )
 
     assert tuple(item.identifier for item in next_population) == (
-        CandidateId(0, 0),
-        CandidateId(1, 0),
-        CandidateId(1, 1),
-        CandidateId(1, 2),
+        CandidateId(birth_generation=0, birth_index=0),
+        CandidateId(birth_generation=1, birth_index=0),
+        CandidateId(birth_generation=1, birth_index=1),
+        CandidateId(birth_generation=1, birth_index=2),
     )
     assert all(
-        item.duplicate_diagnostics == (DuplicateDiagnostic(0, "exhausted", "duplicate attempts exhausted"),)
+        item.duplicate_diagnostics
+        == (DuplicateDiagnostic(attempt=0, outcome="exhausted", detail="duplicate attempts exhausted"),)
         for item in next_population[1:]
     )
     assert rng.calls == [
@@ -780,11 +811,11 @@ def test_fill_next_population_places_missing_family_champions_in_priority_order(
     )
 
     assert tuple(item.identifier for item in next_population[:3]) == (
-        CandidateId(0, 0),
-        CandidateId(0, 1),
-        CandidateId(0, 2),
+        CandidateId(birth_generation=0, birth_index=0),
+        CandidateId(birth_generation=0, birth_index=1),
+        CandidateId(birth_generation=0, birth_index=2),
     )
-    assert next_population[3].identifier == CandidateId(1, 0)
+    assert next_population[3].identifier == CandidateId(birth_generation=1, birth_index=0)
 
 
 def test_all_invalid_initialized_population_fills_generation_with_only_tournament_draws() -> None:
@@ -814,16 +845,16 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
     )
 
     assert tuple(item.identifier for item in next_population) == (
-        CandidateId(0, 0),
-        CandidateId(1, 0),
-        CandidateId(1, 1),
+        CandidateId(birth_generation=0, birth_index=0),
+        CandidateId(birth_generation=1, birth_index=0),
+        CandidateId(birth_generation=1, birth_index=1),
     )
     assert all(item.status == "invalid" and item.fitness == 0.0 for item in next_population)
     assert tuple(item.invalid for item in next_population[1:]) == (
         CandidateFailure(
-            "repair",
-            None,
-            "selected parent has no canonical genes",
+            kind="repair",
+            seed=None,
+            detail="selected parent has no canonical genes",
             stage="fit",
             affected_evidence="candidate genes",
             evidence_state="diagnostic_only",
@@ -831,9 +862,9 @@ def test_all_invalid_initialized_population_fills_generation_with_only_tournamen
             authority="primary",
         ),
         CandidateFailure(
-            "repair",
-            None,
-            "selected parent has no canonical genes",
+            kind="repair",
+            seed=None,
+            detail="selected parent has no canonical genes",
             stage="fit",
             affected_evidence="candidate genes",
             evidence_state="diagnostic_only",
@@ -885,10 +916,10 @@ def test_mixed_initialized_population_selected_invalid_parents_fill_without_oper
     )
 
     assert tuple(item.identifier for item in next_population) == (
-        CandidateId(0, 0),
-        CandidateId(0, 2),
-        CandidateId(1, 0),
-        CandidateId(1, 1),
+        CandidateId(birth_generation=0, birth_index=0),
+        CandidateId(birth_generation=0, birth_index=2),
+        CandidateId(birth_generation=1, birth_index=0),
+        CandidateId(birth_generation=1, birth_index=1),
     )
     assert tuple(item.family for item in next_population[2:]) == ("markov_renewal", "markov_renewal")
     assert all(item.status == "invalid" and item.genes is None for item in next_population[2:])
@@ -947,14 +978,29 @@ def test_reproduction_context_and_parent_validation_fail_before_draws() -> None:
     with pytest.raises(ValueError, match="missing"):
         configured.bounds_for("mmpp")
 
-    pending = Candidate(CandidateId(0, 0), "poisson_empirical", (1.0,), "pending", 0.0, (), None, ())
+    pending = Candidate(
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="poisson_empirical",
+        genes=(1.0,),
+        status="pending",
+        fitness=0.0,
+        trials=(),
+        invalid=None,
+        duplicate_diagnostics=(),
+    )
     rng = ScriptedRandom()
     with pytest.raises(ValueError, match="evaluated"):
-        reproduce_child(pending, pending, context=configured, identifier=CandidateId(1, 0), rng=cast(Random, rng))
+        reproduce_child(
+            pending,
+            pending,
+            context=configured,
+            identifier=CandidateId(birth_generation=1, birth_index=0),
+            rng=cast(Random, rng),
+        )
     assert rng.calls == []
 
 
 def test_reproduction_rejects_nonfinite_parent_fitness_before_any_draw() -> None:
     """Defensive operator validation must fail before consuming the dedicated RNG."""
-    with pytest.raises(ValueError, match="candidate fitness"):
+    with pytest.raises(ValueError, match="fitness"):
         evaluated(0, 0, "poisson_empirical", (1.0,), math.nan)

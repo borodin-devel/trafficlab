@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import replace as replace_dataclass
 from types import MappingProxyType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 
 import trafficlab.comparison as comparison
 from trafficlab.config import (
@@ -30,8 +31,18 @@ from trafficlab.genetic.evaluation import (
     validate_evaluation_context,
 )
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateFailure, CandidateId
-from trafficlab.models.common import FamilyBounds, FittedModel, Gene, GenerationResult, Genes
+from trafficlab.models.common import FamilyBounds, FittedModel, Gene, GenerationResult, Genes, ModelFamily
 from trafficlab.trace import Direction, TraceEvent
+
+
+def replace[Record](record: Record, **changes: object) -> Record:
+    """Build deliberate model states at this test boundary."""
+    if isinstance(record, BaseModel):
+        values = {name: getattr(record, name) for name in type(record).model_fields}
+        values.update(changes)
+        return cast(Record, type(record).model_construct(**values))
+    return cast(Record, replace_dataclass(cast(Any, record), **changes))
+
 
 W = 2.0
 BOUNDS = PoissonConfig(c_lambda=FloatBounds(lower=0.25, upper=4.0))
@@ -64,7 +75,16 @@ SIMILARITY = SimilarityConfig(
         multiscale_rate=0.25,
     ),
 )
-PENDING_POISSON = Candidate(CandidateId(0, 0), "poisson_empirical", (1.0,), "pending", 0.0, (), None, ())
+PENDING_POISSON = Candidate(
+    identifier=CandidateId(birth_generation=0, birth_index=0),
+    family="poisson_empirical",
+    genes=(1.0,),
+    status="pending",
+    fitness=0.0,
+    trials=(),
+    invalid=None,
+    duplicate_diagnostics=(),
+)
 VALID_COMPARISON = comparison.compare_traces(REFERENCE, GENERATED, W, SIMILARITY)
 
 
@@ -236,9 +256,9 @@ def test_incomplete_generation_is_invalid_candidate_not_infrastructure_abort(fam
     assert evaluated.fitness == 0.0
     assert evaluated.trials == ()
     assert evaluated.invalid == CandidateFailure(
-        "incomplete_generation",
-        7,
-        "max_packets",
+        kind="incomplete_generation",
+        seed=7,
+        detail="max_packets",
         stage="fit",
         affected_evidence="candidate trace",
         evidence_state="diagnostic_only",
@@ -316,9 +336,9 @@ def test_only_direct_family_trafficlab_errors_are_invalid_candidates(
 
     assert evaluated.status == "invalid"
     assert evaluated.invalid == CandidateFailure(
-        cast(Any, kind),
-        seed,
-        f"{boundary} rejected",
+        kind=cast(Any, kind),
+        seed=seed,
+        detail=f"{boundary} rejected",
         stage="fit",
         affected_evidence=affected_evidence,
         evidence_state="diagnostic_only",
@@ -389,9 +409,9 @@ def test_aggregate_score_is_checked_separately(family: RecordingFamily, monkeypa
     evaluated = evaluate_candidate(PENDING_POISSON, validated)
 
     assert evaluated.invalid == CandidateFailure(
-        "nonfinite_score",
-        7,
-        "aggregate score must be a finite float in [0, 1]",
+        kind="nonfinite_score",
+        seed=7,
+        detail="aggregate score must be a finite float in [0, 1]",
         stage="fit",
         affected_evidence="candidate similarity",
         evidence_state="diagnostic_only",
@@ -449,9 +469,9 @@ def test_already_invalid_candidate_never_calls_a_family(family: RecordingFamily)
         genes=None,
         status="invalid",
         invalid=CandidateFailure(
-            "repair",
-            None,
-            "initialization failed",
+            kind="repair",
+            seed=None,
+            detail="initialization failed",
             stage="fit",
             affected_evidence="candidate genes",
             evidence_state="diagnostic_only",
@@ -656,9 +676,9 @@ def test_zero_weight_component_failure_invalidates_a_complete_candidate(
     assert evaluated.fitness == 0.0
     assert evaluated.trials == ()
     assert evaluated.invalid == CandidateFailure(
-        "similarity_precondition",
-        7,
-        f"{zero_weight_method} component failed",
+        kind="similarity_precondition",
+        seed=7,
+        detail=f"{zero_weight_method} component failed",
         stage="fit",
         affected_evidence="candidate similarity",
         evidence_state="diagnostic_only",
@@ -675,9 +695,9 @@ def test_pending_candidate_without_genes_is_invalid_without_family_call(family: 
     evaluated = evaluate_candidate(pending, validate_evaluation_context(_context(family)))
 
     assert evaluated.invalid == CandidateFailure(
-        "repair",
-        None,
-        "candidate has no genes",
+        kind="repair",
+        seed=None,
+        detail="candidate has no genes",
         stage="fit",
         affected_evidence="candidate genes",
         evidence_state="diagnostic_only",
@@ -692,7 +712,13 @@ def test_candidate_input_state_and_family_membership_are_not_silently_coerced(fa
     validated = validate_evaluation_context(_context(family))
     with pytest.raises(ValueError, match="pending"):
         evaluate_candidate(replace(PENDING_POISSON, status="valid", fitness=0.5), validated)
-    other_context = replace(validated, families=MappingProxyType({}), bounds=MappingProxyType({}))
+    empty_families: dict[FamilyName, ModelFamily] = {}
+    empty_bounds: dict[FamilyName, FamilyBounds] = {}
+    other_context = replace(
+        validated,
+        families=MappingProxyType(empty_families),
+        bounds=MappingProxyType(empty_bounds),
+    )
     with pytest.raises(ValueError, match="enabled"):
         evaluate_candidate(PENDING_POISSON, other_context)
     with pytest.raises(TypeError, match="candidate must be"):

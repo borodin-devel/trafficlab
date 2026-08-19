@@ -6,13 +6,15 @@ import json
 import os
 import struct
 from collections.abc import Iterator
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError
+from dataclasses import replace as replace_dataclass
 from pathlib import Path
 from random import Random
 from typing import Any, cast
 
 import pytest
 import tomli_w
+from pydantic import BaseModel
 
 import trafficlab.capture as capture_module
 import trafficlab.run as run_module
@@ -43,6 +45,15 @@ from trafficlab.run import RunDependencies, RunResult, run_experiment
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 
+def replace[Record](record: Record, **changes: object) -> Record:
+    """Build deliberate model states at this test boundary."""
+    if isinstance(record, BaseModel):
+        values = {name: getattr(record, name) for name in type(record).model_fields}
+        values.update(changes)
+        return cast(Record, type(record).model_construct(**values))
+    return cast(Record, replace_dataclass(cast(Any, record), **changes))
+
+
 def _prepared_experiment(valid_config_data: dict[str, object], tmp_path: Path) -> tuple[Path, PreparedExperiment]:
     experiment_path = tmp_path / "experiment.toml"
     experiment_path.write_text(tomli_w.dumps(valid_config_data), encoding="utf-8")
@@ -50,9 +61,9 @@ def _prepared_experiment(valid_config_data: dict[str, object], tmp_path: Path) -
 
 
 def _trial(seed: int, score: float = 0.8, *, family: FamilyName = "poisson_empirical") -> TrialResult:
-    methods = tuple(MethodTrialResult(name, score, {"literal": score}) for name in METHOD_ORDER)
+    methods = tuple(MethodTrialResult(name=name, score=score, diagnostics={"literal": score}) for name in METHOD_ORDER)
     diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
-    return TrialResult(seed, score, cast(Any, methods), diagnostics)
+    return TrialResult(seed=seed, aggregate_score=score, methods=cast(Any, methods), model_diagnostics=diagnostics)
 
 
 def _fit_outcome(
@@ -62,14 +73,14 @@ def _fit_outcome(
     trial_seeds: tuple[int, ...] = (101, 102),
 ) -> FitOutcome:
     winner = Candidate(
-        CandidateId(0, 0),
-        "poisson_empirical",
-        genes,
-        "valid",
-        0.8,
-        tuple(_trial(seed) for seed in trial_seeds),
-        None,
-        (),
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="poisson_empirical",
+        genes=genes,
+        status="valid",
+        fitness=0.8,
+        trials=tuple(_trial(seed) for seed in trial_seeds),
+        invalid=None,
+        duplicate_diagnostics=(),
     )
     return FitOutcome(winner, (_trial(final_seed),), 0, "hard_limit", ("poisson_empirical",))
 
@@ -186,14 +197,14 @@ def _stage_results(
         family = family_names[(index - 1) % len(family_names)]
         population.append(
             Candidate(
-                CandidateId(0, index),
-                family,
-                cast(Any, family_genes[family]),
-                "valid",
-                0.7,
-                tuple(_trial(seed, 0.7, family=family) for seed in prepared.config.genetic.trial_seeds),
-                None,
-                (),
+                identifier=CandidateId(birth_generation=0, birth_index=index),
+                family=family,
+                genes=cast(Any, family_genes[family]),
+                status="valid",
+                fitness=0.7,
+                trials=tuple(_trial(seed, 0.7, family=family) for seed in prepared.config.genetic.trial_seeds),
+                invalid=None,
+                duplicate_diagnostics=(),
             )
         )
     population_tuple = tuple(population)
@@ -208,16 +219,16 @@ def _stage_results(
         )
     )
     checkpoint = CheckpointState(
-        context.compatibility,
-        prepared.config.genetic.generation_count,
-        population_tuple,
-        history,
-        encode_rng_state(Random(prepared.config.run.master_seed).getstate()),
-        fit.outcome.winner.identifier,
-        fit.outcome.winner.fitness,
-        prepared.config.genetic.generation_count,
-        "hard_limit",
-        context.compatibility.family_priority,
+        compatibility=context.compatibility,
+        generation=prepared.config.genetic.generation_count,
+        population=population_tuple,
+        history=history,
+        rng_state=encode_rng_state(Random(prepared.config.run.master_seed).getstate()),
+        best_identifier=fit.outcome.winner.identifier,
+        best_fitness=fit.outcome.winner.fitness,
+        consecutive_stagnation=prepared.config.genetic.generation_count,
+        terminal_reason="hard_limit",
+        family_priority=context.compatibility.family_priority,
     )
     (run_directory / "checkpoint.json").write_bytes(render_checkpoint(checkpoint))
     (run_directory / "ga_history.csv").write_bytes(render_history_csv(checkpoint))

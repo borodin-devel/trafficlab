@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel, ValidationError
 
 from trafficlab.genetic.types import (
     METHOD_ORDER,
@@ -30,7 +31,7 @@ _MARKOV_MODEL_DIAGNOSTICS = {
 
 def test_method_trial_diagnostics_are_recursively_frozen_and_ordered() -> None:
     """A mutable nested diagnostic must not leak across the evaluator boundary."""
-    method = MethodTrialResult("autocorrelation", 1.0, {"nested": [{"value": 1.0}]})
+    method = MethodTrialResult(name="autocorrelation", score=1.0, diagnostics={"nested": [{"value": 1.0}]})
 
     assert method.name == METHOD_ORDER[0]
     with pytest.raises(TypeError):
@@ -41,21 +42,61 @@ def test_method_trial_diagnostics_are_recursively_frozen_and_ordered() -> None:
         cast(dict[str, object], nested)["changed"] = True
 
 
+def test_checkpoint_value_records_are_strict_frozen_pydantic_models() -> None:
+    """Dataclass-only records would bypass the one strict checkpoint schema path."""
+    for model in (
+        CandidateId,
+        MethodTrialResult,
+        TrialResult,
+        CandidateFailure,
+        DuplicateDiagnostic,
+        Candidate,
+        HistoryRow,
+    ):
+        assert issubclass(model, BaseModel)
+        assert model.model_config.get("extra") == "forbid"
+        assert model.model_config.get("frozen") is True
+        assert model.model_config.get("strict") is True
+        assert model.model_config.get("allow_inf_nan") is False
+        assert model.model_config.get("revalidate_instances") == "always"
+
+    with pytest.raises(TypeError):
+        CandidateId(0, 0)  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        CandidateId.model_validate({"birth_generation": True, "birth_index": 0})
+
+
 @pytest.mark.parametrize("value", [object(), math.inf, math.nan])
 def test_method_trial_rejects_nested_non_json_or_nonfinite_diagnostics(value: object) -> None:
     """Invalid diagnostic leaves must not be serializable genetic state."""
     with pytest.raises(ValueError, match="diagnostic"):
-        MethodTrialResult("autocorrelation", 1.0, {"nested": {"value": value}})
+        MethodTrialResult(
+            name="autocorrelation",
+            score=1.0,
+            diagnostics=cast(Any, {"nested": {"value": value}}),
+        )
 
 
-@pytest.mark.parametrize("identifier", [CandidateId(-1, 0), CandidateId(0, -1)])
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        CandidateId.model_construct(birth_generation=-1, birth_index=0),
+        CandidateId.model_construct(birth_generation=0, birth_index=-1),
+    ],
+)
 def test_candidate_id_rejects_negative_components(identifier: CandidateId) -> None:
     """Negative lineage coordinates would break stable lexical identity."""
     with pytest.raises(ValueError, match="nonnegative"):
         validate_candidate_id(identifier)
 
 
-@pytest.mark.parametrize("identifier", [CandidateId(cast(Any, 0.0), 0), CandidateId(0, cast(Any, True))])
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        CandidateId.model_construct(birth_generation=cast(Any, 0.0), birth_index=0),
+        CandidateId.model_construct(birth_generation=0, birth_index=cast(Any, True)),
+    ],
+)
 def test_candidate_id_requires_exact_integer_components(identifier: CandidateId) -> None:
     """Boolean or float lineage coordinates must not silently serialize as integers."""
     with pytest.raises(TypeError, match="integer"):
@@ -70,19 +111,21 @@ def test_candidate_id_rejects_an_unrelated_value() -> None:
 
 def test_trial_result_requires_each_method_once_in_published_order() -> None:
     """A reordered or partial metric tuple would make checkpoint scores ambiguous."""
-    methods = tuple(MethodTrialResult(name, 0.5, {}) for name in METHOD_ORDER)
+    methods = tuple(MethodTrialResult(name=name, score=0.5, diagnostics={}) for name in METHOD_ORDER)
 
     with pytest.raises(ValueError, match="published order"):
         TrialResult(
-            3,
-            0.5,
-            cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods[::-1]),
+            seed=3,
+            aggregate_score=0.5,
+            methods=cast(
+                tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods[::-1]
+            ),
         )
 
 
 def test_trial_result_freezes_model_diagnostic_counts() -> None:
     """Per-seed model diagnostics must remain immutable checkpoint evidence."""
-    trial = TrialResult(3, 0.5, _methods(), _MARKOV_MODEL_DIAGNOSTICS)
+    trial = TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=_MARKOV_MODEL_DIAGNOSTICS)
 
     assert dict(trial.model_diagnostics) == _MARKOV_MODEL_DIAGNOSTICS
     with pytest.raises(TypeError):
@@ -98,37 +141,46 @@ def test_trial_result_freezes_model_diagnostic_counts() -> None:
         {**_MARKOV_MODEL_DIAGNOSTICS, "invented": 1},
     ):
         with pytest.raises((TypeError, ValueError), match="diagnostic"):
-            TrialResult(3, 0.5, _methods(), diagnostics)  # type: ignore[arg-type]
+            TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=diagnostics)  # type: ignore[arg-type]
 
 
 def test_candidate_requires_model_diagnostics_owned_by_its_family() -> None:
     """A complete Markov namespace remains invalid evidence for another family."""
-    trial = TrialResult(3, 0.5, _methods(), _MARKOV_MODEL_DIAGNOSTICS)
+    trial = TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=_MARKOV_MODEL_DIAGNOSTICS)
     markov = Candidate(
-        CandidateId(0, 0),
-        "markov_renewal",
-        (0.2, 0.7, 0.5, 2, 1.0),
-        "valid",
-        0.5,
-        (trial,),
-        None,
-        (),
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="markov_renewal",
+        genes=(0.2, 0.7, 0.5, 2, 1.0),
+        status="valid",
+        fitness=0.5,
+        trials=(trial,),
+        invalid=None,
+        duplicate_diagnostics=(),
     )
 
     assert dict(markov.trials[0].model_diagnostics) == _MARKOV_MODEL_DIAGNOSTICS
     for family in ("poisson_empirical", "mmpp"):
         with pytest.raises(ValueError, match=f"model diagnostics.*{family}"):
-            Candidate(CandidateId(0, 1), family, (1.0,), "valid", 0.5, (trial,), None, ())
+            Candidate(
+                identifier=CandidateId(birth_generation=0, birth_index=1),
+                family=family,
+                genes=(1.0,),
+                status="valid",
+                fitness=0.5,
+                trials=(trial,),
+                invalid=None,
+                duplicate_diagnostics=(),
+            )
 
 
 @pytest.mark.parametrize(
     ("factory", "message"),
     [
-        (lambda: MethodTrialResult(cast(Any, "unknown"), 0.5, {}), "method name"),
-        (lambda: MethodTrialResult("autocorrelation", math.inf, {}), "method score"),
-        (lambda: TrialResult(-1, 0.5, _methods()), "trial seed"),
-        (lambda: TrialResult(1, 0.5, cast(Any, ())), "trial methods"),
-        (lambda: TrialResult(1, 0.5, cast(Any, (object(),) * 4)), "MethodTrialResult"),
+        (lambda: MethodTrialResult(name=cast(Any, "unknown"), score=0.5, diagnostics={}), "name"),
+        (lambda: MethodTrialResult(name="autocorrelation", score=math.inf, diagnostics={}), "score"),
+        (lambda: TrialResult(seed=-1, aggregate_score=0.5, methods=_methods()), "seed"),
+        (lambda: TrialResult(seed=1, aggregate_score=0.5, methods=cast(Any, ())), "methods"),
+        (lambda: TrialResult(seed=1, aggregate_score=0.5, methods=cast(Any, (object(),) * 4)), "MethodTrialResult"),
     ],
 )
 def test_method_and_trial_contracts_reject_invalid_scalar_or_method_values(factory: object, message: str) -> None:
@@ -140,7 +192,7 @@ def test_method_and_trial_contracts_reject_invalid_scalar_or_method_values(facto
 def _methods() -> tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult]:
     return cast(
         tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
-        tuple(MethodTrialResult(name, 0.5, {}) for name in METHOD_ORDER),
+        tuple(MethodTrialResult(name=name, score=0.5, diagnostics={}) for name in METHOD_ORDER),
     )
 
 
@@ -149,61 +201,61 @@ def _methods() -> tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult,
     [
         (
             lambda: CandidateFailure(
-                cast(Any, "wrong"),
-                None,
-                "detail",
+                kind=cast(Any, "wrong"),
+                seed=None,
+                detail="detail",
                 stage="fit",
                 affected_evidence="candidate evidence",
                 evidence_state="diagnostic_only",
                 corrective_action="repair candidate evidence",
                 authority="primary",
             ),
-            "failure kind",
+            "kind",
         ),
         (
             lambda: CandidateFailure(
-                "repair",
-                -1,
-                "detail",
+                kind="repair",
+                seed=-1,
+                detail="detail",
                 stage="fit",
                 affected_evidence="candidate evidence",
                 evidence_state="diagnostic_only",
                 corrective_action="repair candidate evidence",
                 authority="primary",
             ),
-            "failure seed",
+            "seed",
         ),
         (
             lambda: CandidateFailure(
-                "repair",
-                None,
-                "",
+                kind="repair",
+                seed=None,
+                detail="",
                 stage="fit",
                 affected_evidence="candidate evidence",
                 evidence_state="diagnostic_only",
                 corrective_action="repair candidate evidence",
                 authority="primary",
             ),
-            "failure detail",
+            "detail",
         ),
         (
             lambda: CandidateFailure(
-                "repair",
-                None,
-                "detail",
+                kind="repair",
+                seed=None,
+                detail="detail",
                 stage="",
                 affected_evidence="candidate evidence",
                 evidence_state="diagnostic_only",
                 corrective_action="repair candidate evidence",
                 authority="primary",
             ),
-            "failure stage",
+            "stage",
         ),
         (
             lambda: CandidateFailure(
-                "repair",
-                None,
-                "detail",
+                kind="repair",
+                seed=None,
+                detail="detail",
                 stage="fit",
                 affected_evidence="",
                 evidence_state="diagnostic_only",
@@ -214,22 +266,22 @@ def _methods() -> tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult,
         ),
         (
             lambda: CandidateFailure(
-                "repair",
-                None,
-                "detail",
+                kind="repair",
+                seed=None,
+                detail="detail",
                 stage="fit",
                 affected_evidence="candidate evidence",
                 evidence_state=cast(Any, "wrong"),
                 corrective_action="repair candidate evidence",
                 authority="primary",
             ),
-            "evidence state",
+            "evidence_state",
         ),
         (
             lambda: CandidateFailure(
-                "repair",
-                None,
-                "detail",
+                kind="repair",
+                seed=None,
+                detail="detail",
                 stage="fit",
                 affected_evidence="candidate evidence",
                 evidence_state="diagnostic_only",
@@ -240,9 +292,9 @@ def _methods() -> tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult,
         ),
         (
             lambda: CandidateFailure(
-                "repair",
-                None,
-                "detail",
+                kind="repair",
+                seed=None,
+                detail="detail",
                 stage="fit",
                 affected_evidence="candidate evidence",
                 evidence_state="diagnostic_only",
@@ -251,9 +303,9 @@ def _methods() -> tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult,
             ),
             "authority",
         ),
-        (lambda: DuplicateDiagnostic(-1, "duplicate", "detail"), "attempt"),
-        (lambda: DuplicateDiagnostic(0, cast(Any, "wrong"), "detail"), "outcome"),
-        (lambda: DuplicateDiagnostic(0, "duplicate", ""), "detail"),
+        (lambda: DuplicateDiagnostic(attempt=-1, outcome="duplicate", detail="detail"), "attempt"),
+        (lambda: DuplicateDiagnostic(attempt=0, outcome=cast(Any, "wrong"), detail="detail"), "outcome"),
+        (lambda: DuplicateDiagnostic(attempt=0, outcome="duplicate", detail=""), "detail"),
     ],
 )
 def test_failure_and_duplicate_records_reject_invalid_values(factory: object, message: str) -> None:
@@ -264,24 +316,44 @@ def test_failure_and_duplicate_records_reject_invalid_values(factory: object, me
 
 def test_candidate_related_records_preserve_valid_immutable_values() -> None:
     """Population/history contracts retain typed, immutable candidate state."""
-    identifier = CandidateId(2, 4)
-    methods = tuple(MethodTrialResult(name, 0.5, {}) for name in METHOD_ORDER)
+    identifier = CandidateId(birth_generation=2, birth_index=4)
+    methods = tuple(MethodTrialResult(name=name, score=0.5, diagnostics={}) for name in METHOD_ORDER)
     trial = TrialResult(
-        7, 0.5, cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods)
+        seed=7,
+        aggregate_score=0.5,
+        methods=cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
     )
-    candidate = Candidate(identifier, "poisson_empirical", (1.0,), "valid", 0.5, (trial,), None, ())
+    candidate = Candidate(
+        identifier=identifier,
+        family="poisson_empirical",
+        genes=(1.0,),
+        status="valid",
+        fitness=0.5,
+        trials=(trial,),
+        invalid=None,
+        duplicate_diagnostics=(),
+    )
     failure = CandidateFailure(
-        "repair",
-        None,
-        "cannot repair",
+        kind="repair",
+        seed=None,
+        detail="cannot repair",
         stage="fit",
         affected_evidence="candidate model",
         evidence_state="diagnostic_only",
         corrective_action="repair the candidate model",
         authority="primary",
     )
-    diagnostic = DuplicateDiagnostic(1, "duplicate", "same genes")
-    history = HistoryRow(2, "family", "poisson_empirical", 3, 2, 0.5, 0.25, identifier)
+    diagnostic = DuplicateDiagnostic(attempt=1, outcome="duplicate", detail="same genes")
+    history = HistoryRow(
+        generation=2,
+        scope="family",
+        family="poisson_empirical",
+        candidate_count=3,
+        valid_count=2,
+        best_fitness=0.5,
+        mean_fitness=0.25,
+        best_identifier=identifier,
+    )
 
     assert candidate.identifier == identifier
     assert failure.detail == "cannot repair"
@@ -292,9 +364,9 @@ def test_candidate_related_records_preserve_valid_immutable_values() -> None:
 def test_candidate_failure_retains_canonical_scientific_diagnostics() -> None:
     """Candidate-invalid records keep the same provenance fields as failure outcomes."""
     failure = CandidateFailure(
-        "incomplete_generation",
-        7,
-        "max_packets",
+        kind="incomplete_generation",
+        seed=7,
+        detail="max_packets",
         stage="generate",
         affected_evidence="candidate trace",
         evidence_state="not_published",
@@ -319,25 +391,34 @@ def test_candidate_failure_retains_canonical_scientific_diagnostics() -> None:
 
 def test_candidate_accepts_immutable_exact_integer_and_float_genes() -> None:
     """Exact finite numeric tuples remain valid without imposing family arity here."""
-    candidate = Candidate(CandidateId(0, 0), "poisson_empirical", (1, 1.0), "pending", 0.0, (), None, ())
+    candidate = Candidate(
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="poisson_empirical",
+        genes=(1, 1.0),
+        status="pending",
+        fitness=0.0,
+        trials=(),
+        invalid=None,
+        duplicate_diagnostics=(),
+    )
     invalid = Candidate(
-        CandidateId(0, 1),
-        "mmpp",
-        None,
-        "invalid",
-        0.0,
-        (),
-        CandidateFailure(
-            "repair",
-            None,
-            "x",
+        identifier=CandidateId(birth_generation=0, birth_index=1),
+        family="mmpp",
+        genes=None,
+        status="invalid",
+        fitness=0.0,
+        trials=(),
+        invalid=CandidateFailure(
+            kind="repair",
+            seed=None,
+            detail="x",
             stage="fit",
             affected_evidence="candidate genes",
             evidence_state="diagnostic_only",
             corrective_action="repair candidate genes",
             authority="primary",
         ),
-        (),
+        duplicate_diagnostics=(),
     )
 
     assert candidate.genes == (1, 1.0)
@@ -348,7 +429,6 @@ def test_candidate_accepts_immutable_exact_integer_and_float_genes() -> None:
     ("family", "genes", "message"),
     [
         (cast(Any, "unknown"), (1.0,), "family"),
-        ("poisson_empirical", cast(Any, [1.0]), "genes"),
         ("poisson_empirical", (True,), "exact finite"),
         ("poisson_empirical", (math.nan,), "exact finite"),
         ("poisson_empirical", (math.inf,), "exact finite"),
@@ -357,28 +437,59 @@ def test_candidate_accepts_immutable_exact_integer_and_float_genes() -> None:
 def test_candidate_rejects_noncanonical_family_or_genes(family: object, genes: object, message: str) -> None:
     """Mutable, nonfinite, or foreign chromosome data must not enter population state."""
     with pytest.raises((TypeError, ValueError), match=message):
-        Candidate(CandidateId(0, 0), cast(Any, family), cast(Any, genes), "pending", 0.0, (), None, ())
+        Candidate(
+            identifier=CandidateId(birth_generation=0, birth_index=0),
+            family=cast(Any, family),
+            genes=cast(Any, genes),
+            status="pending",
+            fitness=0.0,
+            trials=(),
+            invalid=None,
+            duplicate_diagnostics=(),
+        )
 
 
 @pytest.mark.parametrize(
     ("factory", "message"),
     [
         (
-            lambda: Candidate(CandidateId(0, 0), "poisson_empirical", (), cast(Any, "wrong"), 0.0, (), None, ()),
+            lambda: Candidate(
+                identifier=CandidateId(birth_generation=0, birth_index=0),
+                family="poisson_empirical",
+                genes=(),
+                status=cast(Any, "wrong"),
+                fitness=0.0,
+                trials=(),
+                invalid=None,
+                duplicate_diagnostics=(),
+            ),
             "status",
         ),
-        (lambda: Candidate(CandidateId(0, 0), "poisson_empirical", (), "pending", 2.0, (), None, ()), "fitness"),
         (
-            lambda: Candidate(CandidateId(0, 0), "poisson_empirical", (), "pending", 0.0, cast(Any, []), None, ()),
-            "trials",
+            lambda: Candidate(
+                identifier=CandidateId(birth_generation=0, birth_index=0),
+                family="poisson_empirical",
+                genes=(),
+                status="pending",
+                fitness=2.0,
+                trials=(),
+                invalid=None,
+                duplicate_diagnostics=(),
+            ),
+            "fitness",
         ),
         (
-            lambda: Candidate(CandidateId(0, 0), "poisson_empirical", (), "pending", 0.0, (), cast(Any, object()), ()),
+            lambda: Candidate(
+                identifier=CandidateId(birth_generation=0, birth_index=0),
+                family="poisson_empirical",
+                genes=(),
+                status="pending",
+                fitness=0.0,
+                trials=(),
+                invalid=cast(Any, object()),
+                duplicate_diagnostics=(),
+            ),
             "invalid",
-        ),
-        (
-            lambda: Candidate(CandidateId(0, 0), "poisson_empirical", (), "pending", 0.0, (), None, cast(Any, [])),
-            "diagnostics",
         ),
     ],
 )
@@ -391,11 +502,71 @@ def test_candidate_rejects_invalid_population_fields(factory: object, message: s
 @pytest.mark.parametrize(
     ("factory", "message"),
     [
-        (lambda: HistoryRow(-1, "overall", None, 0, 0, 0.0, 0.0, CandidateId(0, 0)), "generation"),
-        (lambda: HistoryRow(0, cast(Any, "bad"), None, 0, 0, 0.0, 0.0, CandidateId(0, 0)), "scope"),
-        (lambda: HistoryRow(0, "overall", "mmpp", 0, 0, 0.0, 0.0, CandidateId(0, 0)), "family history"),
-        (lambda: HistoryRow(0, "overall", None, -1, 0, 0.0, 0.0, CandidateId(0, 0)), "counts"),
-        (lambda: HistoryRow(0, "overall", None, 0, 1, 0.0, 0.0, CandidateId(0, 0)), "valid count"),
+        (
+            lambda: HistoryRow(
+                generation=-1,
+                scope="overall",
+                family=None,
+                candidate_count=0,
+                valid_count=0,
+                best_fitness=0.0,
+                mean_fitness=0.0,
+                best_identifier=CandidateId(birth_generation=0, birth_index=0),
+            ),
+            "generation",
+        ),
+        (
+            lambda: HistoryRow(
+                generation=0,
+                scope=cast(Any, "bad"),
+                family=None,
+                candidate_count=0,
+                valid_count=0,
+                best_fitness=0.0,
+                mean_fitness=0.0,
+                best_identifier=CandidateId(birth_generation=0, birth_index=0),
+            ),
+            "scope",
+        ),
+        (
+            lambda: HistoryRow(
+                generation=0,
+                scope="overall",
+                family="mmpp",
+                candidate_count=0,
+                valid_count=0,
+                best_fitness=0.0,
+                mean_fitness=0.0,
+                best_identifier=CandidateId(birth_generation=0, birth_index=0),
+            ),
+            "family history",
+        ),
+        (
+            lambda: HistoryRow(
+                generation=0,
+                scope="overall",
+                family=None,
+                candidate_count=-1,
+                valid_count=0,
+                best_fitness=0.0,
+                mean_fitness=0.0,
+                best_identifier=CandidateId(birth_generation=0, birth_index=0),
+            ),
+            "candidate_count",
+        ),
+        (
+            lambda: HistoryRow(
+                generation=0,
+                scope="overall",
+                family=None,
+                candidate_count=0,
+                valid_count=1,
+                best_fitness=0.0,
+                mean_fitness=0.0,
+                best_identifier=CandidateId(birth_generation=0, birth_index=0),
+            ),
+            "valid count",
+        ),
     ],
 )
 def test_history_rejects_incoherent_generation_summaries(factory: object, message: str) -> None:

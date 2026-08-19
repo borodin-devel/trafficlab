@@ -1271,24 +1271,24 @@ def _fit_config(valid_config_data: dict[str, object], run_directory: Path) -> Ex
 
 
 def _fit_trial(seed: int) -> TrialResult:
-    methods = tuple(MethodTrialResult(name, 0.75, {"literal": 0.75}) for name in METHOD_ORDER)
+    methods = tuple(MethodTrialResult(name=name, score=0.75, diagnostics={"literal": 0.75}) for name in METHOD_ORDER)
     return TrialResult(
-        seed,
-        0.75,
-        cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
+        seed=seed,
+        aggregate_score=0.75,
+        methods=cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
     )
 
 
 def _fit_success_outcome(config: ExperimentConfig) -> FitOutcome:
     winner = Candidate(
-        CandidateId(0, 0),
-        "poisson_empirical",
-        (20.5,),
-        "valid",
-        0.75,
-        (_fit_trial(config.genetic.trial_seeds[0]),),
-        None,
-        (),
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="poisson_empirical",
+        genes=(20.5,),
+        status="valid",
+        fitness=0.75,
+        trials=(_fit_trial(config.genetic.trial_seeds[0]),),
+        invalid=None,
+        duplicate_diagnostics=(),
     )
     from trafficlab.genetic.population import derive_family_priority
 

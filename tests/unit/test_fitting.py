@@ -7,11 +7,12 @@ import hashlib
 import json
 import os
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import replace as replace_dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 
 import trafficlab.artifacts as artifacts
 import trafficlab.fitting as fitting
@@ -32,6 +33,16 @@ from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreflightReport, PreparedExperiment, open_or_prepare_experiment
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
+
+
+def replace[Record](record: Record, **changes: object) -> Record:
+    """Build deliberate model states at this test boundary."""
+    if isinstance(record, BaseModel):
+        values = {name: getattr(record, name) for name in type(record).model_fields}
+        values.update(changes)
+        return cast(Record, type(record).model_construct(**values))
+    return cast(Record, replace_dataclass(cast(Any, record), **changes))
+
 
 RAW_REFERENCE = (
     TraceEvent(10.0, Direction.OUTBOUND, 64),
@@ -66,20 +77,20 @@ def _prepared(config: ExperimentConfig, experiment_path: Path) -> PreparedExperi
 
 
 def _trial(seed: int, score: float = 0.75) -> TrialResult:
-    methods = tuple(MethodTrialResult(name, score, {"literal": score}) for name in METHOD_ORDER)
-    return TrialResult(seed, score, cast(Any, methods))
+    methods = tuple(MethodTrialResult(name=name, score=score, diagnostics={"literal": score}) for name in METHOD_ORDER)
+    return TrialResult(seed=seed, aggregate_score=score, methods=cast(Any, methods))
 
 
 def _outcome(config: ExperimentConfig, *, genes: tuple[float, ...] = (1.0,)) -> FitOutcome:
     winner = Candidate(
-        CandidateId(0, 0),
-        "poisson_empirical",
-        genes,
-        "valid",
-        0.75,
-        (_trial(config.genetic.trial_seeds[0]),),
-        None,
-        (),
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="poisson_empirical",
+        genes=genes,
+        status="valid",
+        fitness=0.75,
+        trials=(_trial(config.genetic.trial_seeds[0]),),
+        invalid=None,
+        duplicate_diagnostics=(),
     )
     return FitOutcome(winner, (_trial(config.run.final_seed),), 0, "hard_limit", ("poisson_empirical",))
 
@@ -1086,14 +1097,14 @@ def test_strategy_contract_violation_with_missing_winner_genes_never_publishes(
     config = _config(valid_config_data, run_directory)
     inputs = _inputs(config)
     malformed_winner = Candidate(
-        CandidateId(0, 0),
-        "poisson_empirical",
-        None,
-        "valid",
-        0.75,
-        (_trial(config.genetic.trial_seeds[0]),),
-        None,
-        (),
+        identifier=CandidateId(birth_generation=0, birth_index=0),
+        family="poisson_empirical",
+        genes=None,
+        status="valid",
+        fitness=0.75,
+        trials=(_trial(config.genetic.trial_seeds[0]),),
+        invalid=None,
+        duplicate_diagnostics=(),
     )
     outcome = FitOutcome(
         malformed_winner,

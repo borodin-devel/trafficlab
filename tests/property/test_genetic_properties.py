@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from random import Random
 
 import pytest
@@ -10,7 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
-from tests.unit.genetic.test_checkpoint import COMPATIBILITY, VALID_STATE
+from tests.unit.genetic.test_checkpoint import COMPATIBILITY, VALID_STATE, replace
 from trafficlab.config import FloatBounds
 from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state, parse_checkpoint, render_checkpoint
 from trafficlab.genetic.coordinates import GeneCoordinate, decode_gene, encode_gene
