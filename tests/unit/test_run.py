@@ -36,7 +36,7 @@ from trafficlab.genetic.checkpoint import (
 from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS
-from trafficlab.models.registry import POISSON_FAMILY, make_best_model, render_best_model
+from trafficlab.models.registry import POISSON_FAMILY, make_best_model, rebuild_best_model, render_best_model
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
@@ -453,7 +453,7 @@ def test_run_experiment_strictly_reloads_every_owned_artifact_before_completion(
         changed_content = b"not the checkpoint projection\n"
     elif corruption in {"best-model", "best-model-lineage"}:
         changed_path = run_directory / "best_model.json"
-        changed_model = replace(
+        changed_model = rebuild_best_model(
             fit.best_model,
             capture_identity=ContentIdentity(size=fit.best_model.capture_identity.size, sha256="0" * 64),
         )
@@ -1435,10 +1435,10 @@ def test_run_experiment_rejects_nested_and_lineage_corruption_before_the_next_ca
             object.__setattr__(comparison, "observation_window_seconds", 10)
         elif corruption == "lineage-none":
             comparison = ComparisonResult(
-                comparison.aggregate_score,
-                comparison.observation_window_seconds,
-                comparison.methods,
-                None,
+                aggregate_score=comparison.aggregate_score,
+                observation_window_seconds=comparison.observation_window_seconds,
+                methods=comparison.methods,
+                input_identities=None,
             )
         else:
             assert comparison.input_identities is not None

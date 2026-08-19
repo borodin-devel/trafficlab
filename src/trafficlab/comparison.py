@@ -6,10 +6,23 @@ import math
 import os
 import tempfile
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Self, cast
+from typing import Annotated, Any, Literal, Self, cast
+
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Discriminator,
+    Field,
+    StrictInt,
+    Tag,
+    ValidationError,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from trafficlab.artifacts import append_run_log, fsync_published_artifact
 from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
@@ -40,260 +53,37 @@ _INPUT_NAMES = ("capture_json", "generated_pcapng", "reference_pcapng", "similar
 _WEIGHT_TOLERANCE = 1e-12
 
 
-def _strict_float(value: object, *, name: str, positive: bool = False) -> float:
-    if type(value) is not float or not math.isfinite(value):
-        qualifier = "finite positive float" if positive else "finite float"
-        raise ValueError(f"{name} must be a {qualifier}")
-    if positive and value <= 0.0:
-        raise ValueError(f"{name} must be a finite positive float")
+def _exact_float_input(value: object) -> object:
+    if type(value) is not float:
+        raise ValueError("value must be an exact float")
     return value
 
 
-def _bounded_float(value: object, *, name: str) -> float:
-    result = _strict_float(value, name=name)
-    if not 0.0 <= result <= 1.0:
-        raise ValueError(f"{name} must be a finite float in [0, 1]")
-    return result
-
-
-def _bounded_weighted_score(value: float) -> float:
-    """Clamp only the weight-sum tolerance already accepted by configuration."""
-    if -_WEIGHT_TOLERANCE <= value < 0.0:
-        return 0.0
-    if 1.0 < value <= 1.0 + _WEIGHT_TOLERANCE:
-        return 1.0
-    return _bounded_float(value, name="aggregate_score")
-
-
-def _exact_keys(value: object, expected: tuple[str, ...], *, name: str) -> dict[str, object]:
-    if type(value) is not dict:
-        raise ValueError(f"{name} must be a JSON object")
-    document = cast(dict[object, object], value)
-    if any(type(key) is not str for key in document):
-        raise ValueError(f"{name} keys must be strings")
-    string_document = cast(dict[str, object], document)
-    if set(string_document) != set(expected):
-        raise ValueError(f"{name} must contain exactly: {', '.join(expected)}")
-    return string_document
-
-
-def _strict_int(value: object, *, name: str, positive: bool = False) -> int:
-    if type(value) is not int:
-        raise ValueError(f"{name} must be an integer")
-    if positive and value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    if not positive and value < 0:
-        raise ValueError(f"{name} must be a nonnegative integer")
+def _tuple_input(value: object) -> object:
+    if type(value) is list:
+        return tuple(cast(list[object], value))
     return value
 
 
-def _ranged_float(value: object, *, name: str, lower: float, upper: float) -> float:
-    result = _strict_float(value, name=name)
-    if not lower <= result <= upper:
-        raise ValueError(f"{name} must be a finite float in [{lower}, {upper}]")
-    return result
-
-
-def _float_list(value: object, *, name: str, lower: float, upper: float) -> tuple[float, ...]:
-    if type(value) is not list:
-        raise ValueError(f"{name} must be a JSON list")
-    items = cast(list[object], value)
-    return tuple(_ranged_float(item, name=f"{name} item", lower=lower, upper=upper) for item in items)
-
-
-def _normalized_weights(value: object, *, name: str, expected_length: int) -> tuple[float, ...]:
-    weights = _float_list(value, name=name, lower=0.0, upper=1.0)
-    if len(weights) != expected_length:
-        raise ValueError(f"{name} length must be {expected_length}")
-    if not math.isclose(math.fsum(weights), 1.0, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
-        raise ValueError(f"{name} must sum to one")
-    return weights
+type ExactFloat = Annotated[float, BeforeValidator(_exact_float_input)]
+type PositiveFloat = Annotated[ExactFloat, Field(gt=0.0)]
+type NonnegativeFloat = Annotated[ExactFloat, Field(ge=0.0)]
+type UnitFloat = Annotated[ExactFloat, Field(ge=0.0, le=1.0)]
+type PositiveInt = Annotated[StrictInt, Field(gt=0)]
+type NonnegativeInt = Annotated[StrictInt, Field(ge=0)]
+type FloatTuple = Annotated[tuple[ExactFloat, ...], BeforeValidator(_tuple_input)]
+type IntTuple = Annotated[tuple[StrictInt, ...], BeforeValidator(_tuple_input)]
+type MethodName = Literal["autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate"]
 
 
 def _require_close(actual: float, expected: float, *, name: str) -> None:
-    # Persisted diagnostics are treated as scientific evidence, not display
-    # metadata.  Reconstructing each documented equation prevents a forged
-    # aggregate from remaining internally plausible but numerically unrelated.
     if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
         raise ValueError(f"{name} is inconsistent with its documented components")
 
 
-def _validate_score_discrepancy(score: float, discrepancy: float, *, method_name: str) -> None:
-    _require_close(score, 1.0 - discrepancy, name=f"{method_name} score")
-
-
-def _validate_frame_size_diagnostics(value: object, *, score: float) -> dict[str, object]:
-    name = "frame_size_ks diagnostics"
-    document = _exact_keys(
-        value,
-        (
-            "observation_window_seconds",
-            "distance",
-            "reference_count",
-            "generated_count",
-            "reference_minimum_length",
-            "reference_maximum_length",
-            "generated_minimum_length",
-            "generated_maximum_length",
-        ),
-        name=name,
-    )
-    _strict_float(document["observation_window_seconds"], name=f"{name}.observation_window_seconds", positive=True)
-    distance = _bounded_float(document["distance"], name=f"{name}.distance")
-    _strict_int(document["reference_count"], name=f"{name}.reference_count", positive=True)
-    _strict_int(document["generated_count"], name=f"{name}.generated_count", positive=True)
-    reference_minimum = _strict_int(
-        document["reference_minimum_length"], name=f"{name}.reference_minimum_length", positive=True
-    )
-    reference_maximum = _strict_int(
-        document["reference_maximum_length"], name=f"{name}.reference_maximum_length", positive=True
-    )
-    generated_minimum = _strict_int(
-        document["generated_minimum_length"], name=f"{name}.generated_minimum_length", positive=True
-    )
-    generated_maximum = _strict_int(
-        document["generated_maximum_length"], name=f"{name}.generated_maximum_length", positive=True
-    )
-    if reference_minimum > reference_maximum or generated_minimum > generated_maximum:
-        raise ValueError(f"{name} minimum lengths must not exceed maximum lengths")
-    _validate_score_discrepancy(score, distance, method_name="frame_size_ks")
-    return document
-
-
-def _validate_iat_diagnostics(value: object, *, score: float) -> dict[str, object]:
-    name = "iat_ks diagnostics"
-    document = _exact_keys(
-        value,
-        (
-            "observation_window_seconds",
-            "distance",
-            "diagnostic_quantile",
-            "reference_iat_count",
-            "generated_iat_count",
-            "reference_zero_iat_count",
-            "generated_zero_iat_count",
-            "reference_median_iat_seconds",
-            "generated_median_iat_seconds",
-            "reference_quantile_iat_seconds",
-            "generated_quantile_iat_seconds",
-        ),
-        name=name,
-    )
-    _strict_float(document["observation_window_seconds"], name=f"{name}.observation_window_seconds", positive=True)
-    distance = _bounded_float(document["distance"], name=f"{name}.distance")
-    quantile = _strict_float(document["diagnostic_quantile"], name=f"{name}.diagnostic_quantile")
-    if not 0.0 < quantile < 1.0:
-        raise ValueError(f"{name}.diagnostic_quantile must be strictly between zero and one")
-    reference_count = _strict_int(document["reference_iat_count"], name=f"{name}.reference_iat_count", positive=True)
-    generated_count = _strict_int(document["generated_iat_count"], name=f"{name}.generated_iat_count", positive=True)
-    reference_zero_count = _strict_int(document["reference_zero_iat_count"], name=f"{name}.reference_zero_iat_count")
-    generated_zero_count = _strict_int(document["generated_zero_iat_count"], name=f"{name}.generated_zero_iat_count")
-    if reference_zero_count > reference_count or generated_zero_count > generated_count:
-        raise ValueError(f"{name} zero-IAT counts must not exceed their sample counts")
-    for field in (
-        "reference_median_iat_seconds",
-        "generated_median_iat_seconds",
-        "reference_quantile_iat_seconds",
-        "generated_quantile_iat_seconds",
-    ):
-        _ranged_float(document[field], name=f"{name}.{field}", lower=0.0, upper=math.inf)
-    _validate_score_discrepancy(score, distance, method_name="iat_ks")
-    return document
-
-
-def _validate_acf_feature(
-    value: object,
-    *,
-    name: str,
-    lags: tuple[int, ...],
-    lag_weights: tuple[float, ...],
-) -> float:
-    document = _exact_keys(
-        value,
-        (
-            "reference_sample_count",
-            "generated_sample_count",
-            "reference_acf",
-            "generated_acf",
-            "absolute_differences",
-            "discrepancy",
-        ),
-        name=name,
-    )
-    reference_count = _strict_int(
-        document["reference_sample_count"], name=f"{name}.reference_sample_count", positive=True
-    )
-    generated_count = _strict_int(
-        document["generated_sample_count"], name=f"{name}.generated_sample_count", positive=True
-    )
-    if any(lag >= reference_count or lag >= generated_count for lag in lags):
-        raise ValueError(f"{name} sample counts must exceed every configured lag")
-    reference_acf = _float_list(document["reference_acf"], name=f"{name}.reference_acf", lower=-1.0, upper=1.0)
-    generated_acf = _float_list(document["generated_acf"], name=f"{name}.generated_acf", lower=-1.0, upper=1.0)
-    differences = _float_list(
-        document["absolute_differences"], name=f"{name}.absolute_differences", lower=0.0, upper=2.0
-    )
-    if not len(reference_acf) == len(generated_acf) == len(differences) == len(lags):
-        raise ValueError(f"{name} ACF vectors must match the configured lag count")
-    for index, (reference_value, generated_value, difference) in enumerate(
-        zip(reference_acf, generated_acf, differences, strict=True)
-    ):
-        _require_close(difference, abs(reference_value - generated_value), name=f"{name} difference {index}")
-    discrepancy = _bounded_float(document["discrepancy"], name=f"{name}.discrepancy")
-    expected = math.fsum(weight * difference / 2.0 for weight, difference in zip(lag_weights, differences, strict=True))
-    _require_close(discrepancy, expected, name=f"{name}.discrepancy")
-    return discrepancy
-
-
-def _validate_autocorrelation_diagnostics(value: object, *, score: float) -> dict[str, object]:
-    name = "autocorrelation diagnostics"
-    document = _exact_keys(
-        value,
-        (
-            "observation_window_seconds",
-            "lags",
-            "lag_weights",
-            "feature_weights",
-            "iat",
-            "size",
-            "discrepancy",
-        ),
-        name=name,
-    )
-    _strict_float(document["observation_window_seconds"], name=f"{name}.observation_window_seconds", positive=True)
-    if type(document["lags"]) is not list:
-        raise ValueError(f"{name}.lags must be a JSON list")
-    lag_items = cast(list[object], document["lags"])
-    lags = tuple(_strict_int(lag, name=f"{name}.lags item", positive=True) for lag in lag_items)
-    if not lags or len(lags) != len(set(lags)):
-        raise ValueError(f"{name}.lags must contain unique positive integers")
-    lag_weights = _normalized_weights(document["lag_weights"], name=f"{name}.lag_weights", expected_length=len(lags))
-    feature_weights_document = _exact_keys(document["feature_weights"], ("iat", "size"), name=f"{name}.feature_weights")
-    feature_weights = tuple(
-        _bounded_float(feature_weights_document[feature], name=f"{name}.feature_weights.{feature}")
-        for feature in ("iat", "size")
-    )
-    if not math.isclose(math.fsum(feature_weights), 1.0, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
-        raise ValueError(f"{name}.feature_weights must sum to one")
-    iat_discrepancy = _validate_acf_feature(document["iat"], name=f"{name}.iat", lags=lags, lag_weights=lag_weights)
-    size_discrepancy = _validate_acf_feature(document["size"], name=f"{name}.size", lags=lags, lag_weights=lag_weights)
-    discrepancy = _bounded_float(document["discrepancy"], name=f"{name}.discrepancy")
-    expected = math.fsum((feature_weights[0] * iat_discrepancy, feature_weights[1] * size_discrepancy))
-    _require_close(discrepancy, expected, name=f"{name}.discrepancy")
-    _validate_score_discrepancy(score, discrepancy, method_name="autocorrelation")
-    return document
-
-
-def _validate_direction_totals(value: object, *, name: str) -> tuple[int, int, int, int]:
-    document = _exact_keys(value, ("packet", "byte"), name=name)
-    totals: list[int] = []
-    for feature in ("packet", "byte"):
-        feature_document = _exact_keys(document[feature], ("outbound", "inbound"), name=f"{name}.{feature}")
-        totals.extend(
-            _strict_int(feature_document[direction], name=f"{name}.{feature}.{direction}")
-            for direction in ("outbound", "inbound")
-        )
-    return cast(tuple[int, int, int, int], tuple(totals))
+def _require_normalized(values: tuple[float, ...], *, name: str) -> None:
+    if not math.isclose(math.fsum(values), 1.0, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
+        raise ValueError(f"{name} must sum to one")
 
 
 def _snap_near_integer(quotient: float) -> float:
@@ -303,199 +93,329 @@ def _snap_near_integer(quotient: float) -> float:
     return quotient
 
 
-def _validate_multiscale_diagnostics(value: object, *, score: float) -> dict[str, object]:
-    name = "multiscale_rate diagnostics"
-    document = _exact_keys(
-        value,
-        (
-            "observation_window_seconds",
-            "widths",
-            "scale_weights",
-            "feature_weights",
-            "direction_bin_cell_counts",
-            "total_direction_bin_cells",
-            "scales",
-            "scale_discrepancies",
-            "feature_discrepancies",
-            "discrepancy",
-        ),
-        name=name,
-    )
-    window = _strict_float(
-        document["observation_window_seconds"], name=f"{name}.observation_window_seconds", positive=True
-    )
-    widths = _float_list(document["widths"], name=f"{name}.widths", lower=0.0, upper=window)
-    if (
-        not widths
-        or any(width <= 0.0 for width in widths)
-        or any(current <= previous for previous, current in zip(widths, widths[1:], strict=False))
-    ):
-        raise ValueError(f"{name}.widths must be nonempty, positive, and strictly increasing")
-    scale_weights = _normalized_weights(
-        document["scale_weights"], name=f"{name}.scale_weights", expected_length=len(widths)
-    )
-    feature_weights_document = _exact_keys(
-        document["feature_weights"], ("packet", "byte"), name=f"{name}.feature_weights"
-    )
-    feature_weights = tuple(
-        _bounded_float(feature_weights_document[feature], name=f"{name}.feature_weights.{feature}")
-        for feature in ("packet", "byte")
-    )
-    if not math.isclose(math.fsum(feature_weights), 1.0, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
-        raise ValueError(f"{name}.feature_weights must sum to one")
-    if type(document["direction_bin_cell_counts"]) is not list:
-        raise ValueError(f"{name}.direction_bin_cell_counts must be a JSON list")
-    direction_count_items = cast(list[object], document["direction_bin_cell_counts"])
-    direction_counts = tuple(
-        _strict_int(count, name=f"{name}.direction_bin_cell_counts item", positive=True)
-        for count in direction_count_items
-    )
-    expected_counts: list[int] = []
-    for width in widths:
-        quotient = window / width
-        if not math.isfinite(quotient):
-            raise ValueError(f"{name}: W divided by a width must be finite")
-        expected_counts.append(2 * math.ceil(_snap_near_integer(quotient)))
-    if direction_counts != tuple(expected_counts):
-        raise ValueError(f"{name}.direction_bin_cell_counts are inconsistent with widths and W")
-    total_direction_cells = _strict_int(
-        document["total_direction_bin_cells"], name=f"{name}.total_direction_bin_cells", positive=True
-    )
-    if total_direction_cells != sum(direction_counts):
-        raise ValueError(f"{name}.total_direction_bin_cells must equal the direction cell count sum")
-    if type(document["scales"]) is not list:
-        raise ValueError(f"{name}.scales must be a JSON list matching the width count")
-    scales = cast(list[object], document["scales"])
-    if len(scales) != len(widths):
-        raise ValueError(f"{name}.scales must be a JSON list matching the width count")
+class _StrictArtifactModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 
-    packet_discrepancies: list[float] = []
-    byte_discrepancies: list[float] = []
-    scale_discrepancies: list[float] = []
-    reference_totals: tuple[int, int, int, int] | None = None
-    generated_totals: tuple[int, int, int, int] | None = None
-    for index, scale_value in enumerate(scales):
-        scale_name = f"{name}.scales[{index}]"
-        scale = _exact_keys(
-            scale_value,
-            (
-                "width_seconds",
-                "bins_per_direction",
-                "direction_bin_cell_count",
-                "reference_totals",
-                "generated_totals",
-                "feature_discrepancies",
-                "discrepancy",
-            ),
-            name=scale_name,
+
+class _DiagnosticModel(_StrictArtifactModel):
+    """A typed diagnostic record that retains the existing mapping interface."""
+
+    def __getitem__(self, key: str) -> FrozenJsonValue:
+        return cast(FrozenJsonValue, getattr(self, key))
+
+    def get(self, key: str) -> FrozenJsonValue | None:
+        return cast(FrozenJsonValue | None, getattr(self, key, None))
+
+    def __contains__(self, key: object) -> bool:
+        return type(key) is str and key in type(self).model_fields
+
+
+class FrameSizeDiagnostic(_DiagnosticModel):
+    observation_window_seconds: PositiveFloat
+    distance: UnitFloat
+    reference_count: PositiveInt
+    generated_count: PositiveInt
+    reference_minimum_length: PositiveInt
+    reference_maximum_length: PositiveInt
+    generated_minimum_length: PositiveInt
+    generated_maximum_length: PositiveInt
+
+    @model_validator(mode="after")
+    def minima_do_not_exceed_maxima(self) -> Self:
+        if (
+            self.reference_minimum_length > self.reference_maximum_length
+            or self.generated_minimum_length > self.generated_maximum_length
+        ):
+            raise ValueError("frame_size_ks diagnostics minimum lengths must not exceed maximum lengths")
+        return self
+
+
+class IatDiagnostic(_DiagnosticModel):
+    observation_window_seconds: PositiveFloat
+    distance: UnitFloat
+    diagnostic_quantile: Annotated[ExactFloat, Field(gt=0.0, lt=1.0)]
+    reference_iat_count: PositiveInt
+    generated_iat_count: PositiveInt
+    reference_zero_iat_count: NonnegativeInt
+    generated_zero_iat_count: NonnegativeInt
+    reference_median_iat_seconds: NonnegativeFloat
+    generated_median_iat_seconds: NonnegativeFloat
+    reference_quantile_iat_seconds: NonnegativeFloat
+    generated_quantile_iat_seconds: NonnegativeFloat
+
+    @model_validator(mode="after")
+    def zero_counts_do_not_exceed_samples(self) -> Self:
+        if (
+            self.reference_zero_iat_count > self.reference_iat_count
+            or self.generated_zero_iat_count > self.generated_iat_count
+        ):
+            raise ValueError("iat_ks diagnostics zero-IAT counts must not exceed their sample counts")
+        return self
+
+
+class AcfFeatureDiagnostic(_StrictArtifactModel):
+    reference_sample_count: PositiveInt
+    generated_sample_count: PositiveInt
+    reference_acf: FloatTuple
+    generated_acf: FloatTuple
+    absolute_differences: FloatTuple
+    discrepancy: UnitFloat
+
+
+class AcfFeatureWeights(_StrictArtifactModel):
+    iat: UnitFloat
+    size: UnitFloat
+
+
+class AutocorrelationDiagnostic(_DiagnosticModel):
+    observation_window_seconds: PositiveFloat
+    lags: IntTuple
+    lag_weights: FloatTuple
+    feature_weights: AcfFeatureWeights
+    iat: AcfFeatureDiagnostic
+    size: AcfFeatureDiagnostic
+    discrepancy: UnitFloat
+
+    @model_validator(mode="after")
+    def validate_acf_arithmetic(self) -> Self:
+        if not self.lags or any(lag <= 0 for lag in self.lags) or len(self.lags) != len(set(self.lags)):
+            raise ValueError("autocorrelation diagnostics.lags must contain unique positive integers")
+        if len(self.lag_weights) != len(self.lags):
+            raise ValueError("autocorrelation diagnostics.lag_weights length must match lags")
+        if any(not 0.0 <= weight <= 1.0 for weight in self.lag_weights):
+            raise ValueError("autocorrelation diagnostics.lag_weights must be in [0, 1]")
+        _require_normalized(self.lag_weights, name="autocorrelation diagnostics.lag_weights")
+        feature_weights = (self.feature_weights.iat, self.feature_weights.size)
+        _require_normalized(feature_weights, name="autocorrelation diagnostics.feature_weights")
+        feature_discrepancies: list[float] = []
+        for name, feature in (("iat", self.iat), ("size", self.size)):
+            if any(lag >= feature.reference_sample_count or lag >= feature.generated_sample_count for lag in self.lags):
+                raise ValueError(f"autocorrelation diagnostics.{name} sample counts must exceed every configured lag")
+            if not (
+                len(feature.reference_acf)
+                == len(feature.generated_acf)
+                == len(feature.absolute_differences)
+                == len(self.lags)
+            ):
+                raise ValueError(f"autocorrelation diagnostics.{name} ACF vectors must match the configured lag count")
+            if any(not -1.0 <= value <= 1.0 for value in (*feature.reference_acf, *feature.generated_acf)):
+                raise ValueError(f"autocorrelation diagnostics.{name} ACF values must be in [-1, 1]")
+            if any(not 0.0 <= value <= 2.0 for value in feature.absolute_differences):
+                raise ValueError(f"autocorrelation diagnostics.{name} differences must be in [0, 2]")
+            for index, (reference, generated, difference) in enumerate(
+                zip(feature.reference_acf, feature.generated_acf, feature.absolute_differences, strict=True)
+            ):
+                _require_close(
+                    difference,
+                    abs(reference - generated),
+                    name=f"autocorrelation diagnostics.{name} difference {index}",
+                )
+            expected = math.fsum(
+                weight * difference / 2.0
+                for weight, difference in zip(self.lag_weights, feature.absolute_differences, strict=True)
+            )
+            _require_close(feature.discrepancy, expected, name=f"autocorrelation diagnostics.{name}.discrepancy")
+            feature_discrepancies.append(feature.discrepancy)
+        expected = math.fsum(
+            weight * discrepancy for weight, discrepancy in zip(feature_weights, feature_discrepancies, strict=True)
         )
-        width = _strict_float(scale["width_seconds"], name=f"{scale_name}.width_seconds", positive=True)
-        if width != widths[index]:
-            raise ValueError(f"{scale_name}.width_seconds must equal its configured width")
-        bins = _strict_int(scale["bins_per_direction"], name=f"{scale_name}.bins_per_direction", positive=True)
-        if bins * 2 != direction_counts[index]:
-            raise ValueError(f"{scale_name}.bins_per_direction is inconsistent with its direction cell count")
-        direction_count = _strict_int(
-            scale["direction_bin_cell_count"], name=f"{scale_name}.direction_bin_cell_count", positive=True
+        _require_close(self.discrepancy, expected, name="autocorrelation diagnostics.discrepancy")
+        return self
+
+
+class DirectionValues(_StrictArtifactModel):
+    outbound: NonnegativeInt
+    inbound: NonnegativeInt
+
+
+class DirectionTotals(_StrictArtifactModel):
+    packet: DirectionValues
+    byte: DirectionValues
+
+
+class MultiscaleFeatureWeights(_StrictArtifactModel):
+    packet: UnitFloat
+    byte: UnitFloat
+
+
+class MultiscaleScaleDiagnostic(_StrictArtifactModel):
+    width_seconds: PositiveFloat
+    bins_per_direction: PositiveInt
+    direction_bin_cell_count: PositiveInt
+    reference_totals: DirectionTotals
+    generated_totals: DirectionTotals
+    feature_discrepancies: MultiscaleFeatureWeights
+    discrepancy: UnitFloat
+
+
+class MultiscaleDiagnostic(_DiagnosticModel):
+    observation_window_seconds: PositiveFloat
+    widths: FloatTuple
+    scale_weights: FloatTuple
+    feature_weights: MultiscaleFeatureWeights
+    direction_bin_cell_counts: IntTuple
+    total_direction_bin_cells: PositiveInt
+    scales: Annotated[tuple[MultiscaleScaleDiagnostic, ...], BeforeValidator(_tuple_input)]
+    scale_discrepancies: FloatTuple
+    feature_discrepancies: MultiscaleFeatureWeights
+    discrepancy: UnitFloat
+
+    @model_validator(mode="after")
+    def validate_scale_arithmetic(self) -> Self:
+        if (
+            not self.widths
+            or any(width <= 0.0 or width > self.observation_window_seconds for width in self.widths)
+            or any(current <= previous for previous, current in zip(self.widths, self.widths[1:], strict=False))
+        ):
+            raise ValueError("multiscale_rate diagnostics.widths must be positive and strictly increasing within W")
+        if len(self.scale_weights) != len(self.widths):
+            raise ValueError("multiscale_rate diagnostics.scale_weights length must match widths")
+        if any(not 0.0 <= weight <= 1.0 for weight in self.scale_weights):
+            raise ValueError("multiscale_rate diagnostics.scale_weights must be in [0, 1]")
+        _require_normalized(self.scale_weights, name="multiscale_rate diagnostics.scale_weights")
+        feature_weights = (self.feature_weights.packet, self.feature_weights.byte)
+        _require_normalized(feature_weights, name="multiscale_rate diagnostics.feature_weights")
+        expected_counts: list[int] = []
+        for width in self.widths:
+            quotient = self.observation_window_seconds / width
+            if not math.isfinite(quotient):
+                raise ValueError("multiscale_rate diagnostics: W divided by a width must be finite")
+            expected_counts.append(2 * math.ceil(_snap_near_integer(quotient)))
+        if any(count <= 0 for count in self.direction_bin_cell_counts):
+            raise ValueError("multiscale_rate diagnostics direction cell counts must be positive")
+        if self.direction_bin_cell_counts != tuple(expected_counts):
+            raise ValueError("multiscale_rate diagnostics.direction_bin_cell_counts are inconsistent with widths and W")
+        if self.total_direction_bin_cells != sum(self.direction_bin_cell_counts):
+            raise ValueError(
+                "multiscale_rate diagnostics.total_direction_bin_cells must equal the direction cell count sum"
+            )
+        if len(self.scales) != len(self.widths):
+            raise ValueError("multiscale_rate diagnostics.scales must match the width count")
+
+        packet_discrepancies: list[float] = []
+        byte_discrepancies: list[float] = []
+        scale_discrepancies: list[float] = []
+        reference_totals: DirectionTotals | None = None
+        generated_totals: DirectionTotals | None = None
+        for index, scale in enumerate(self.scales):
+            if scale.width_seconds != self.widths[index]:
+                raise ValueError(f"multiscale_rate diagnostics.scales[{index}].width_seconds must equal its width")
+            if scale.bins_per_direction * 2 != self.direction_bin_cell_counts[index]:
+                raise ValueError(f"multiscale_rate diagnostics.scales[{index}].bins_per_direction is inconsistent")
+            if scale.direction_bin_cell_count != self.direction_bin_cell_counts[index]:
+                raise ValueError(
+                    f"multiscale_rate diagnostics.scales[{index}].direction_bin_cell_count is inconsistent"
+                )
+            if reference_totals is None:
+                reference_totals = scale.reference_totals
+                generated_totals = scale.generated_totals
+            elif scale.reference_totals != reference_totals or scale.generated_totals != generated_totals:
+                raise ValueError("multiscale_rate diagnostics packet and byte totals must be consistent across scales")
+            packet = scale.feature_discrepancies.packet
+            byte = scale.feature_discrepancies.byte
+            expected = math.fsum((feature_weights[0] * packet, feature_weights[1] * byte))
+            _require_close(scale.discrepancy, expected, name=f"multiscale_rate diagnostics.scales[{index}].discrepancy")
+            packet_discrepancies.append(packet)
+            byte_discrepancies.append(byte)
+            scale_discrepancies.append(scale.discrepancy)
+        if self.scale_discrepancies != tuple(scale_discrepancies):
+            raise ValueError("multiscale_rate diagnostics.scale_discrepancies must match retained scales")
+        packet_total = math.fsum(
+            weight * value for weight, value in zip(self.scale_weights, packet_discrepancies, strict=True)
         )
-        if direction_count != direction_counts[index]:
-            raise ValueError(f"{scale_name}.direction_bin_cell_count must equal its configured count")
-        current_reference_totals = _validate_direction_totals(
-            scale["reference_totals"], name=f"{scale_name}.reference_totals"
+        byte_total = math.fsum(
+            weight * value for weight, value in zip(self.scale_weights, byte_discrepancies, strict=True)
         )
-        current_generated_totals = _validate_direction_totals(
-            scale["generated_totals"], name=f"{scale_name}.generated_totals"
-        )
-        if reference_totals is None:
-            reference_totals = current_reference_totals
-            generated_totals = current_generated_totals
-        elif current_reference_totals != reference_totals or current_generated_totals != generated_totals:
-            raise ValueError(f"{scale_name} packet and byte totals must be consistent across scales")
-        feature_document = _exact_keys(
-            scale["feature_discrepancies"], ("packet", "byte"), name=f"{scale_name}.feature_discrepancies"
-        )
-        packet_discrepancy = _bounded_float(
-            feature_document["packet"], name=f"{scale_name}.feature_discrepancies.packet"
-        )
-        byte_discrepancy = _bounded_float(feature_document["byte"], name=f"{scale_name}.feature_discrepancies.byte")
-        scale_discrepancy = _bounded_float(scale["discrepancy"], name=f"{scale_name}.discrepancy")
         _require_close(
-            scale_discrepancy,
-            math.fsum((feature_weights[0] * packet_discrepancy, feature_weights[1] * byte_discrepancy)),
-            name=f"{scale_name}.discrepancy",
+            self.feature_discrepancies.packet,
+            packet_total,
+            name="multiscale_rate diagnostics.feature_discrepancies.packet",
         )
-        packet_discrepancies.append(packet_discrepancy)
-        byte_discrepancies.append(byte_discrepancy)
-        scale_discrepancies.append(scale_discrepancy)
-
-    retained_scale_discrepancies = _float_list(
-        document["scale_discrepancies"], name=f"{name}.scale_discrepancies", lower=0.0, upper=1.0
-    )
-    if retained_scale_discrepancies != tuple(scale_discrepancies):
-        raise ValueError(f"{name}.scale_discrepancies must match every retained scale")
-    feature_document = _exact_keys(
-        document["feature_discrepancies"], ("packet", "byte"), name=f"{name}.feature_discrepancies"
-    )
-    packet_total = _bounded_float(feature_document["packet"], name=f"{name}.feature_discrepancies.packet")
-    byte_total = _bounded_float(feature_document["byte"], name=f"{name}.feature_discrepancies.byte")
-    _require_close(
-        packet_total,
-        math.fsum(weight * item for weight, item in zip(scale_weights, packet_discrepancies, strict=True)),
-        name=f"{name}.feature_discrepancies.packet",
-    )
-    _require_close(
-        byte_total,
-        math.fsum(weight * item for weight, item in zip(scale_weights, byte_discrepancies, strict=True)),
-        name=f"{name}.feature_discrepancies.byte",
-    )
-    discrepancy = _bounded_float(document["discrepancy"], name=f"{name}.discrepancy")
-    _require_close(
-        discrepancy,
-        math.fsum((feature_weights[0] * packet_total, feature_weights[1] * byte_total)),
-        name=f"{name}.discrepancy",
-    )
-    _require_close(
-        discrepancy,
-        math.fsum(weight * item for weight, item in zip(scale_weights, scale_discrepancies, strict=True)),
-        name=f"{name}.scale-weighted discrepancy",
-    )
-    _validate_score_discrepancy(score, discrepancy, method_name="multiscale_rate")
-    return document
+        _require_close(
+            self.feature_discrepancies.byte,
+            byte_total,
+            name="multiscale_rate diagnostics.feature_discrepancies.byte",
+        )
+        expected = math.fsum((feature_weights[0] * packet_total, feature_weights[1] * byte_total))
+        _require_close(self.discrepancy, expected, name="multiscale_rate diagnostics.discrepancy")
+        scale_expected = math.fsum(
+            weight * value for weight, value in zip(self.scale_weights, scale_discrepancies, strict=True)
+        )
+        _require_close(self.discrepancy, scale_expected, name="multiscale_rate diagnostics.scale-weighted discrepancy")
+        return self
 
 
-def _validate_method_diagnostics(method_name: str, value: object, *, score: float) -> dict[str, object]:
-    if method_name == "frame_size_ks":
-        return _validate_frame_size_diagnostics(value, score=score)
-    if method_name == "iat_ks":
-        return _validate_iat_diagnostics(value, score=score)
-    if method_name == "autocorrelation":
-        return _validate_autocorrelation_diagnostics(value, score=score)
-    if method_name == "multiscale_rate":
-        return _validate_multiscale_diagnostics(value, score=score)
-    raise ValueError(f"unsupported comparison method {method_name!r}")
+def _diagnostic_discriminator(value: object) -> str | None:
+    if isinstance(value, FrameSizeDiagnostic) or isinstance(value, IatDiagnostic):
+        return "iat_ks" if isinstance(value, IatDiagnostic) else "frame_size_ks"
+    if isinstance(value, AutocorrelationDiagnostic):
+        return "autocorrelation"
+    if isinstance(value, MultiscaleDiagnostic):
+        return "multiscale_rate"
+    if isinstance(value, Mapping):
+        if "lags" in value:
+            return "autocorrelation"
+        if "widths" in value:
+            return "multiscale_rate"
+        if "diagnostic_quantile" in value:
+            return "iat_ks"
+        if "distance" in value:
+            return "frame_size_ks"
+    return None
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class MethodComparison:
+type MethodDiagnostic = Annotated[
+    Annotated[AutocorrelationDiagnostic, Tag("autocorrelation")]
+    | Annotated[FrameSizeDiagnostic, Tag("frame_size_ks")]
+    | Annotated[IatDiagnostic, Tag("iat_ks")]
+    | Annotated[MultiscaleDiagnostic, Tag("multiscale_rate")],
+    Discriminator(_diagnostic_discriminator),
+]
+
+
+def _bounded_weighted_score(value: float) -> float:
+    """Clamp only the weight-sum tolerance already accepted by configuration."""
+    if -_WEIGHT_TOLERANCE <= value < 0.0:
+        return 0.0
+    if 1.0 < value <= 1.0 + _WEIGHT_TOLERANCE:
+        return 1.0
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError("aggregate_score must be a finite float in [0, 1]")
+    return value
+
+
+class MethodComparison(_StrictArtifactModel):
     """One configured method's immutable score, weight, and retained diagnostics."""
 
-    score: float
-    weight: float
-    diagnostics: Mapping[str, FrozenJsonValue]
+    method: MethodName = Field(exclude=True)
+    score: UnitFloat
+    weight: UnitFloat
+    diagnostics: MethodDiagnostic
 
-    def __init__(self, score: float, weight: float, diagnostics: Mapping[str, object]) -> None:
-        bounded_score = _bounded_float(score, name="method score")
-        bounded_weight = _bounded_float(weight, name="method weight")
-        frozen = SimilarityResult(bounded_score, diagnostics).diagnostics
-        object.__setattr__(self, "score", bounded_score)
-        object.__setattr__(self, "weight", bounded_weight)
-        object.__setattr__(self, "diagnostics", frozen)
+    @field_validator("diagnostics", mode="before")
+    @classmethod
+    def thaw_diagnostics(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            return value
+        return SimilarityResult(0.0, cast(Mapping[str, object], value)).as_dict()["diagnostics"]
+
+    @model_validator(mode="after")
+    def diagnostics_match_method_and_score(self) -> Self:
+        diagnostic_tag = _diagnostic_discriminator(self.diagnostics)
+        if diagnostic_tag != self.method:
+            raise ValueError(f"{self.method} diagnostics use the wrong method discriminator")
+        discrepancy = (
+            self.diagnostics.distance
+            if isinstance(self.diagnostics, (FrameSizeDiagnostic, IatDiagnostic))
+            else self.diagnostics.discrepancy
+        )
+        _require_close(self.score, 1.0 - discrepancy, name=f"{self.method} score")
+        return self
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return a fresh ordinary JSON representation."""
-        similarity = SimilarityResult(self.score, self.diagnostics).as_dict()
         return {
-            "diagnostics": similarity["diagnostics"],
+            "diagnostics": cast(dict[str, JsonValue], self.diagnostics.model_dump(mode="json")),
             "score": self.score,
             "weight": self.weight,
         }
@@ -503,78 +423,83 @@ class MethodComparison:
     @classmethod
     def from_dict(cls, method_name: str, value: object) -> Self:
         """Strictly validate one method object from parsed JSON."""
-        document = _exact_keys(value, ("diagnostics", "score", "weight"), name="method result")
-        score = _bounded_float(document["score"], name="method score")
-        diagnostics = _validate_method_diagnostics(method_name, document["diagnostics"], score=score)
-        return cls(
-            score,
-            _bounded_float(document["weight"], name="method weight"),
-            diagnostics,
-        )
+        if method_name not in _METHOD_NAMES:
+            raise ValueError(f"unsupported comparison method {method_name!r}")
+        prepared: object = value
+        if type(value) is dict:
+            fields = dict(cast(dict[str, object], value))
+            if "method" in fields:
+                fields["_persisted_method"] = fields.pop("method")
+            prepared = {"method": method_name, **fields}
+        try:
+            return cls.model_validate(prepared)
+        except ValidationError as error:
+            first = error.errors()[0]
+            field = ".".join(str(part) for part in first["loc"])
+            if field.endswith("observation_window_seconds"):
+                raise ValueError(
+                    "every method diagnostic observation window must be a finite positive float"
+                ) from error
+            if field.endswith("reference_count") and first["type"] == "int_type":
+                raise ValueError("reference_count must be an integer") from error
+            raise ValueError(f"invalid method result {field}: {first['msg']}") from error
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class ComparisonResult:
+class ComparisonResult(_StrictArtifactModel):
     """One deeply immutable comparison result, optionally carrying artifact identities."""
 
     # Construction copies nested method and identity mappings before exposing
     # them.  Callers can safely retain this object as publication evidence even
     # if the dictionaries used to build it are later mutated.
 
-    aggregate_score: float
-    observation_window_seconds: float
+    aggregate_score: UnitFloat
+    observation_window_seconds: PositiveFloat
     methods: Mapping[str, MethodComparison]
     input_identities: Mapping[str, ContentIdentity] | None
 
-    def __init__(
-        self,
-        aggregate_score: float,
-        observation_window_seconds: float,
-        methods: Mapping[str, MethodComparison],
-        input_identities: Mapping[str, ContentIdentity] | None,
-    ) -> None:
-        aggregate = _bounded_float(aggregate_score, name="aggregate_score")
-        window = _strict_float(
-            observation_window_seconds,
-            name="observation_window_seconds",
-            positive=True,
-        )
-        if set(methods) != set(_METHOD_NAMES):
+    @field_serializer("methods")
+    def serialize_methods(self, value: Mapping[str, MethodComparison]) -> dict[str, JsonValue]:
+        return {name: cast(JsonValue, method.as_dict()) for name, method in value.items()}
+
+    @field_serializer("input_identities")
+    def serialize_input_identities(self, value: Mapping[str, ContentIdentity] | None) -> dict[str, JsonValue] | None:
+        if value is None:
+            return None
+        return {name: cast(JsonValue, identity.as_dict()) for name, identity in value.items()}
+
+    @model_validator(mode="after")
+    def validate_local_arithmetic(self) -> Self:
+        if set(self.methods) != set(_METHOD_NAMES):
             raise ValueError(f"methods must contain exactly: {', '.join(_METHOD_NAMES)}")
         ordered_methods: dict[str, MethodComparison] = {}
         for name in _METHOD_NAMES:
-            method = methods[name]
-            if type(method) is not MethodComparison:
-                raise ValueError("every method must be a MethodComparison")
+            method = self.methods[name]
             diagnostic_window = method.diagnostics.get("observation_window_seconds")
-            if type(diagnostic_window) is not float or not math.isfinite(diagnostic_window) or diagnostic_window <= 0.0:
-                raise ValueError("every method diagnostic observation window must be a finite positive float")
-            if diagnostic_window != window:
+            if diagnostic_window != self.observation_window_seconds:
                 raise ValueError("every method diagnostic must contain the shared observation window")
+            if method.method != name:
+                raise ValueError("every method must use its mapping-key discriminator")
             ordered_methods[name] = method
         weight_sum = math.fsum(method.weight for method in ordered_methods.values())
         if not math.isclose(weight_sum, 1.0, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
             raise ValueError("method weights must sum to one")
         weighted_score = math.fsum(method.weight * method.score for method in ordered_methods.values())
-        if not math.isclose(weighted_score, aggregate, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
+        if not math.isclose(weighted_score, self.aggregate_score, rel_tol=0.0, abs_tol=_WEIGHT_TOLERANCE):
             raise ValueError("aggregate_score must equal the exact configured weighted sum")
 
         frozen_inputs: Mapping[str, ContentIdentity] | None = None
-        if input_identities is not None:
-            if set(input_identities) != set(_INPUT_NAMES):
+        if self.input_identities is not None:
+            if set(self.input_identities) != set(_INPUT_NAMES):
                 raise ValueError(f"input_identities must contain exactly: {', '.join(_INPUT_NAMES)}")
             ordered_inputs: dict[str, ContentIdentity] = {}
             for name in _INPUT_NAMES:
-                identity = input_identities[name]
-                if type(identity) is not ContentIdentity:
-                    raise ValueError(f"input_identities.{name} must be a ContentIdentity")
+                identity = self.input_identities[name]
                 ordered_inputs[name] = identity
             frozen_inputs = MappingProxyType(ordered_inputs)
 
-        object.__setattr__(self, "aggregate_score", aggregate)
-        object.__setattr__(self, "observation_window_seconds", window)
         object.__setattr__(self, "methods", MappingProxyType(ordered_methods))
         object.__setattr__(self, "input_identities", frozen_inputs)
+        return self
 
     @property
     def input_sha256(self) -> Mapping[str, str] | None:
@@ -586,53 +511,52 @@ class ComparisonResult:
     def with_input_identities(self, identities: Mapping[str, ContentIdentity]) -> Self:
         """Return the same scientific result with exact file and settings identities."""
         return type(self)(
-            self.aggregate_score,
-            self.observation_window_seconds,
-            self.methods,
-            identities,
+            aggregate_score=self.aggregate_score,
+            observation_window_seconds=self.observation_window_seconds,
+            methods=self.methods,
+            input_identities=identities,
         )
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return the exact publishable JSON shape as fresh mutable values."""
         if self.input_identities is None:
             raise ValueError("input content identities are required for a similarity artifact")
+        dumped = self.model_dump(mode="json")
         return {
-            "aggregate_score": self.aggregate_score,
-            "input_identities": {
-                name: cast(dict[str, JsonValue], identity.as_dict()) for name, identity in self.input_identities.items()
-            },
-            "methods": {name: method.as_dict() for name, method in self.methods.items()},
-            "observation_window_seconds": self.observation_window_seconds,
+            "aggregate_score": cast(float, dumped["aggregate_score"]),
+            "input_identities": cast(dict[str, JsonValue], dumped["input_identities"]),
+            "methods": cast(dict[str, JsonValue], dumped["methods"]),
+            "observation_window_seconds": cast(float, dumped["observation_window_seconds"]),
         }
 
     @classmethod
     def from_dict(cls, value: object) -> Self:
         """Strictly validate the documented similarity artifact object."""
-        document = _exact_keys(
-            value,
-            ("aggregate_score", "input_identities", "methods", "observation_window_seconds"),
-            name="comparison result",
-        )
-        methods_document = _exact_keys(document["methods"], _METHOD_NAMES, name="methods")
-        methods = {name: MethodComparison.from_dict(name, methods_document[name]) for name in _METHOD_NAMES}
-        inputs_document = _exact_keys(document["input_identities"], _INPUT_NAMES, name="input_identities")
+        prepared: object = value
+        if type(value) is dict:
+            document = dict(cast(dict[str, object], value))
+            methods_value = document.get("methods")
+            if type(methods_value) is dict:
+                methods_document = cast(dict[str, object], methods_value)
+                document["methods"] = {
+                    name: MethodComparison.from_dict(name, method) for name, method in methods_document.items()
+                }
+            identities_value = document.get("input_identities")
+            if type(identities_value) is dict:
+                try:
+                    document["input_identities"] = {
+                        name: ContentIdentity.from_dict(identity, name=f"comparison input {name}")
+                        for name, identity in cast(dict[str, object], identities_value).items()
+                    }
+                except (TypeError, ValueError) as error:
+                    raise ValueError(str(error)) from error
+            prepared = document
         try:
-            identities = {
-                name: ContentIdentity.from_dict(inputs_document[name], name=f"comparison input {name}")
-                for name in _INPUT_NAMES
-            }
-        except (TypeError, ValueError) as error:
-            raise ValueError(str(error)) from error
-        return cls(
-            _bounded_float(document["aggregate_score"], name="aggregate_score"),
-            _strict_float(
-                document["observation_window_seconds"],
-                name="observation_window_seconds",
-                positive=True,
-            ),
-            methods,
-            identities,
-        )
+            return cls.model_validate(prepared)
+        except ValidationError as error:
+            first = error.errors()[0]
+            field = ".".join(str(part) for part in first["loc"])
+            raise ValueError(f"invalid comparison result {field}: {first['msg']}") from error
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -799,13 +723,23 @@ def compare_traces(
     configured_weights = settings.method_weights.model_dump()
     try:
         methods = {
-            name: MethodComparison(
-                component_results[name].score, configured_weights[name], component_results[name].diagnostics
+            name: MethodComparison.model_validate(
+                {
+                    "method": name,
+                    "score": component_results[name].score,
+                    "weight": configured_weights[name],
+                    "diagnostics": component_results[name].diagnostics,
+                }
             )
             for name in _METHOD_NAMES
         }
         aggregate = _bounded_weighted_score(math.fsum(method.weight * method.score for method in methods.values()))
-        return ComparisonResult(aggregate, W, methods, None)
+        return ComparisonResult(
+            aggregate_score=aggregate,
+            observation_window_seconds=W,
+            methods=methods,
+            input_identities=None,
+        )
     except ValueError as error:
         raise TrafficlabError(
             f"invalid comparison result: {error}",

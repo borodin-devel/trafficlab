@@ -51,7 +51,7 @@ from trafficlab.config_io import load_configuration_pair, render_effective_confi
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
-from trafficlab.models.registry import load_best_model, render_best_model
+from trafficlab.models.registry import load_best_model, rebuild_best_model, render_best_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunDependencies, run_experiment
@@ -1578,7 +1578,7 @@ def test_offline_bundle_audit_derives_w_from_the_normalized_reference(tmp_path: 
     model_path = candidate / "training" / "short" / "r1" / "best_model.json"
     model = load_best_model(model_path.read_bytes(), source=model_path)
     model_path.write_bytes(
-        render_best_model(replace(model, observation_window_seconds=model.observation_window_seconds + 1.0))
+        render_best_model(rebuild_best_model(model, observation_window_seconds=model.observation_window_seconds + 1.0))
     )
     rewrite_candidate_manifest(candidate)
 

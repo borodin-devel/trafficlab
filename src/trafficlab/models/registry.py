@@ -5,12 +5,11 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, Self, cast
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Discriminator, Tag, ValidationError, field_validator, model_validator
 
 from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import (
@@ -23,10 +22,10 @@ from trafficlab.config import (
     PoissonConfig,
 )
 from trafficlab.errors import TrafficlabError
-from trafficlab.models.common import FamilyBounds, FittedModel, Gene, Genes, ModelFamily, ReferenceTrace
-from trafficlab.models.markov_renewal import MarkovRenewalFamily
-from trafficlab.models.mmpp import MmppFamily
-from trafficlab.models.poisson import PoissonFamily
+from trafficlab.models.common import FamilyBounds, Gene, Genes, ModelFamily, ReferenceTrace
+from trafficlab.models.markov_renewal import MarkovRenewalFamily, MarkovRenewalModel
+from trafficlab.models.mmpp import MmppFamily, MmppModel
+from trafficlab.models.poisson import PoissonFamily, PoissonModel
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION, require_current_scientific_schema
 
 _OUTER_KEYS = {
@@ -81,15 +80,41 @@ def _family_name(name: str) -> FamilyName:
     return cast(FamilyName, name)
 
 
-@dataclass(frozen=True, slots=True)
-class BestModel:
+def _family_payload_discriminator(value: object) -> str | None:
+    if isinstance(value, PoissonModel):
+        return "poisson_empirical"
+    if isinstance(value, MarkovRenewalModel):
+        return "markov_renewal"
+    if isinstance(value, MmppModel):
+        return "mmpp"
+    if isinstance(value, Mapping):
+        if "base_rate" in value:
+            return "poisson_empirical"
+        if "transition_rows" in value:
+            return "markov_renewal"
+        if "q01" in value:
+            return "mmpp"
+    return None
+
+
+type FamilyPayload = Annotated[
+    Annotated[PoissonModel, Tag("poisson_empirical")]
+    | Annotated[MarkovRenewalModel, Tag("markov_renewal")]
+    | Annotated[MmppModel, Tag("mmpp")],
+    Discriminator(_family_payload_discriminator),
+]
+
+
+class BestModel(BaseModel):
     """One fully self-contained, lineage-bound fitted traffic model."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 
     version: Literal[1]
     scientific_artifact_schema: int
     family: FamilyName
     genes: Genes
-    fitted: FittedModel
+    fitted: FamilyPayload
     reference_identity: ContentIdentity
     capture_identity: ContentIdentity
     final_seed: int
@@ -99,8 +124,24 @@ class BestModel:
     estimator_choices: dict[str, str | int | float]
     seed_policy: dict[str, str]
 
-    def __post_init__(self) -> None:
+    @field_validator("version", mode="before")
+    @classmethod
+    def version_is_exact_integer_one(cls, value: object) -> object:
+        if type(value) is not int or value != 1:
+            raise ValueError("version must be exact integer 1")
+        return value
+
+    @field_validator("final_limits", mode="before")
+    @classmethod
+    def final_limits_are_already_typed(cls, value: object) -> object:
+        if type(value) is not GenerationLimits:
+            raise ValueError("final_limits must be a GenerationLimits")
+        return value
+
+    @model_validator(mode="after")
+    def validate_local_consistency(self) -> Self:
         _validate_best_model(self)
+        return self
 
     @property
     def reference_sha256(self) -> str:
@@ -111,6 +152,13 @@ class BestModel:
     def capture_sha256(self) -> str:
         """Expose the capture-metadata digest for existing comparison callers."""
         return self.capture_identity.sha256
+
+
+def rebuild_best_model(model: BestModel, **changes: object) -> BestModel:
+    """Reconstruct and fully revalidate a best model with explicit field changes."""
+    values = {name: getattr(model, name) for name in type(model).model_fields}
+    values.update(changes)
+    return type(model).model_validate(values)
 
 
 def _invalid(detail: str, *, corrective_action: str) -> TrafficlabError:
@@ -442,7 +490,7 @@ def make_best_model(
         scientific_artifact_schema=SCIENTIFIC_ARTIFACT_SCHEMA_VERSION,
         family=family.name,
         genes=repaired,
-        fitted=fitted,
+        fitted=cast(FamilyPayload, fitted),
         reference_identity=reference_identity,
         capture_identity=capture_identity,
         final_seed=final_seed,
@@ -528,7 +576,7 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
         scientific_artifact_schema=cast(int, document["scientific_artifact_schema"]),
         family=_family_name(family_value),
         genes=genes,
-        fitted=fitted,
+        fitted=cast(FamilyPayload, fitted),
         reference_identity=reference_identity,
         capture_identity=capture_identity,
         final_seed=final_seed,
@@ -546,26 +594,21 @@ def render_best_model(model: BestModel) -> bytes:
         raise TypeError("model must be a BestModel")
     _validate_best_model(model)
     family = get_family(model.family)
+    dumped = model.model_dump(mode="json")
     document: dict[str, object] = {
-        "version": model.version,
-        "scientific_artifact_schema": model.scientific_artifact_schema,
-        "family": model.family,
-        "genes": list(model.genes),
+        "version": dumped["version"],
+        "scientific_artifact_schema": dumped["scientific_artifact_schema"],
+        "family": dumped["family"],
+        "genes": dumped["genes"],
         "fitted": family.dump_fitted(model.fitted),
-        "reference_identity": model.reference_identity.as_dict(),
-        "capture_identity": model.capture_identity.as_dict(),
-        "final_seed": model.final_seed,
-        "final_limits": {
-            "max_packets": model.final_limits.max_packets,
-            "max_output_bytes": model.final_limits.max_output_bytes,
-            "max_wall_seconds": model.final_limits.max_wall_seconds,
-        },
-        "observation_window_seconds": model.observation_window_seconds,
-        "gene_bounds": {
-            name: {"lower": bound.lower, "upper": bound.upper} for name, bound in model.gene_bounds.items()
-        },
-        "estimator_choices": dict(model.estimator_choices),
-        "seed_policy": dict(model.seed_policy),
+        "reference_identity": dumped["reference_identity"],
+        "capture_identity": dumped["capture_identity"],
+        "final_seed": dumped["final_seed"],
+        "final_limits": dumped["final_limits"],
+        "observation_window_seconds": dumped["observation_window_seconds"],
+        "gene_bounds": dumped["gene_bounds"],
+        "estimator_choices": dumped["estimator_choices"],
+        "seed_policy": dumped["seed_policy"],
     }
     try:
         return (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")

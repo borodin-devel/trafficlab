@@ -65,6 +65,7 @@ SIMILARITY = SimilarityConfig(
     ),
 )
 PENDING_POISSON = Candidate(CandidateId(0, 0), "poisson_empirical", (1.0,), "pending", 0.0, (), None, ())
+VALID_COMPARISON = comparison.compare_traces(REFERENCE, GENERATED, W, SIMILARITY)
 
 
 class RecordingModel:
@@ -350,7 +351,10 @@ def test_component_scores_must_be_exact_finite_bounded_floats(
     """Malformed evaluator scores must become the explicit nonfinite-score candidate category."""
     validated = validate_evaluation_context(_context(family))
     methods = {
-        name: SimpleNamespace(score=score if name == "iat_ks" else 1.0, diagnostics={"nested": [1.0]})
+        name: SimpleNamespace(
+            score=score if name == "iat_ks" else 1.0,
+            diagnostics=VALID_COMPARISON.methods[name].diagnostics,
+        )
         for name in METHOD_ORDER
     }
     result = SimpleNamespace(aggregate_score=1.0, methods=methods)
@@ -372,7 +376,10 @@ def test_component_scores_must_be_exact_finite_bounded_floats(
 def test_aggregate_score_is_checked_separately(family: RecordingFamily, monkeypatch: pytest.MonkeyPatch) -> None:
     """A finite method set cannot legitimize a nonfinite aggregate supplied by the evaluator."""
     validated = validate_evaluation_context(_context(family))
-    methods = {name: SimpleNamespace(score=1.0, diagnostics={}) for name in METHOD_ORDER}
+    methods = {
+        name: SimpleNamespace(score=1.0, diagnostics=VALID_COMPARISON.methods[name].diagnostics)
+        for name in METHOD_ORDER
+    }
 
     def compare_scores(*_args: object) -> Any:
         return SimpleNamespace(aggregate_score=math.nan, methods=methods)
@@ -404,7 +411,10 @@ def test_fitness_uses_math_fsum_across_all_trials(
 
     def compare_scores(*_args: object) -> Any:
         score = next(remaining_scores)
-        methods = {name: SimpleNamespace(score=score, diagnostics={}) for name in METHOD_ORDER}
+        methods = {
+            name: SimpleNamespace(score=score, diagnostics=VALID_COMPARISON.methods[name].diagnostics)
+            for name in METHOD_ORDER
+        }
         return SimpleNamespace(aggregate_score=score, methods=methods)
 
     monkeypatch.setattr(evaluation, "compare_traces", compare_scores)

@@ -617,14 +617,16 @@ def test_stage_adapters_preserve_explicit_boundary_outcomes(
     failure_kind: str | None,
 ) -> None:
     """Adapters must retain owning-boundary semantics rather than infer a coarse stage default."""
-    outcome = FailureOutcome(
-        kind=outcome_kind,
-        stage=stage,
-        detail=f"{stage} injected failure",
-        affected_evidence=affected_evidence,
-        evidence_state=evidence_state,  # type: ignore[arg-type]
-        corrective_action=f"repair {stage}",
-        authority="primary",
+    outcome = FailureOutcome.model_validate(
+        {
+            "kind": outcome_kind,
+            "stage": stage,
+            "detail": f"{stage} injected failure",
+            "affected_evidence": affected_evidence,
+            "evidence_state": evidence_state,
+            "corrective_action": f"repair {stage}",
+            "authority": "primary",
+        }
     )
     error = TrafficlabError(
         f"{stage} injected failure",
@@ -870,14 +872,16 @@ def test_existing_stage_failure_log_adapters_render_canonical_outcomes(
 
     assert (
         records[0]["failure_outcome"]
-        == FailureOutcome(
-            kind=kind,
-            stage=stage,
-            detail=f"{stage} injected failure",
-            affected_evidence=affected_evidence,
-            evidence_state=evidence_state,  # type: ignore[arg-type]
-            corrective_action=f"repair {stage}",
-            authority="primary",
+        == FailureOutcome.model_validate(
+            {
+                "kind": kind,
+                "stage": stage,
+                "detail": f"{stage} injected failure",
+                "affected_evidence": affected_evidence,
+                "evidence_state": evidence_state,
+                "corrective_action": f"repair {stage}",
+                "authority": "primary",
+            }
         ).as_dict()
     )
 

@@ -11,15 +11,17 @@ from trafficlab.errors import FailureOutcome, TrafficlabError, append_failure_ou
 
 
 def _outcome(*, kind: str = "metric_infeasible", stage: str = "compare") -> FailureOutcome:
-    return FailureOutcome(
-        kind=kind,
-        stage=stage,
-        affected_evidence="similarity.json",
-        evidence_state="not_published",
-        detail="metric cannot be computed",
-        corrective_action="correct the metric input and retry comparison",
-        status=None,
-        authority="primary",
+    return FailureOutcome.model_validate(
+        {
+            "kind": kind,
+            "stage": stage,
+            "affected_evidence": "similarity.json",
+            "evidence_state": "not_published",
+            "detail": "metric cannot be computed",
+            "corrective_action": "correct the metric input and retry comparison",
+            "status": None,
+            "authority": "primary",
+        }
     )
 
 
@@ -51,7 +53,7 @@ def test_failure_outcome_from_json_rejects_duplicate_keys() -> None:
         (b"\xff", ValueError),
         (1, TypeError),
         ("{", ValueError),
-        ("[]", TypeError),
+        ("[]", ValueError),
     ],
 )
 def test_failure_outcome_from_json_rejects_invalid_raw_documents(document: object, error: type[Exception]) -> None:
@@ -72,11 +74,11 @@ def test_failure_outcome_strict_serializers_cover_optional_status_and_object_val
     )
 
     assert FailureOutcome.from_json(json.dumps(outcome.as_dict()).encode("utf-8")) == outcome
-    with pytest.raises(TypeError, match="JSON object"):
+    with pytest.raises(ValueError, match="canonical field"):
         FailureOutcome.from_dict([])
-    with pytest.raises(ValueError, match="exactly"):
+    with pytest.raises(ValueError, match="canonical field"):
         FailureOutcome.from_dict({"kind": "metric_infeasible"})
-    with pytest.raises(TypeError, match="kind"):
+    with pytest.raises(ValueError, match="kind"):
         FailureOutcome.from_dict(
             {
                 **_outcome().as_dict(),

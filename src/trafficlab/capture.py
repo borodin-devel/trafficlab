@@ -911,7 +911,9 @@ def _normalize_capture_pair_evidence_states(
     if not pair_is_not_reusable:
         return outcomes
     return tuple(
-        replace(item, evidence_state="not_published") if item.affected_evidence == "capture pair" else item
+        FailureOutcome.model_validate({**item.model_dump(mode="python"), "evidence_state": "not_published"})
+        if item.affected_evidence == "capture pair"
+        else item
         for item in outcomes
     )
 

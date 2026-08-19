@@ -784,22 +784,27 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
     generated = _trace()
     window = 3.0
     calls: list[tuple[str, tuple[object, ...]]] = []
+    baseline = compare_traces(reference, generated, window, settings)
+    components = {
+        name: SimilarityResult(method.score, cast(dict[str, object], method.as_dict()["diagnostics"]))
+        for name, method in baseline.methods.items()
+    }
 
     def frame_size(reference_arg: object, generated_arg: object, window_arg: object) -> SimilarityResult:
         calls.append(("frame_size_ks", (reference_arg, generated_arg, window_arg)))
-        return SimilarityResult(0.2, {"method": "frame", "observation_window_seconds": 3.0})
+        return components["frame_size_ks"]
 
     def iat(reference_arg: object, generated_arg: object, window_arg: object, quantile: object) -> SimilarityResult:
         calls.append(("iat_ks", (reference_arg, generated_arg, window_arg, quantile)))
-        return SimilarityResult(0.4, {"method": "iat", "observation_window_seconds": 3.0})
+        return components["iat_ks"]
 
     def acf(*args: object) -> SimilarityResult:
         calls.append(("autocorrelation", args))
-        return SimilarityResult(0.6, {"method": "acf", "observation_window_seconds": 3.0})
+        return components["autocorrelation"]
 
     def multiscale(*args: object) -> SimilarityResult:
         calls.append(("multiscale_rate", args))
-        return SimilarityResult(0.8, {"method": "multiscale", "observation_window_seconds": 3.0})
+        return components["multiscale_rate"]
 
     monkeypatch.setattr(comparison, "frame_size_ks", frame_size)
     monkeypatch.setattr(comparison, "iat_ks", iat)
@@ -809,15 +814,14 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
     result = compare_traces(reference, generated, window, settings)
 
     assert isinstance(result, ComparisonResult)
-    assert result.aggregate_score == pytest.approx(0.6)
+    assert result.aggregate_score == pytest.approx(
+        math.fsum(settings.method_weights.model_dump()[name] * components[name].score for name in components)
+    )
     assert result.observation_window_seconds == 3.0
     assert result.input_sha256 is None
     assert tuple(result.methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
     assert {name: method.score for name, method in result.methods.items()} == {
-        "autocorrelation": 0.6,
-        "frame_size_ks": 0.2,
-        "iat_ks": 0.4,
-        "multiscale_rate": 0.8,
+        name: component.score for name, component in components.items()
     }
     assert {name: method.weight for name, method in result.methods.items()} == {
         "autocorrelation": 0.3,
@@ -825,7 +829,7 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
         "iat_ks": 0.2,
         "multiscale_rate": 0.4,
     }
-    assert result.methods["autocorrelation"].diagnostics["method"] == "acf"
+    assert result.methods["autocorrelation"].diagnostics == baseline.methods["autocorrelation"].diagnostics
     assert all(type(arguments[0]) is TrafficTrace and type(arguments[1]) is TrafficTrace for _, arguments in calls)
     assert calls == [
         ("frame_size_ks", (reference, generated, 3.0)),
@@ -857,13 +861,15 @@ def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
     """Aggregation weights must never choose which mandatory comparisons execute or appear in the artifact."""
     data = copy.deepcopy(valid_config_data)
     cast(dict[str, object], data["similarity"])["method_weights"] = method_weights
-    scores = {"frame_size_ks": 0.2, "iat_ks": 0.4, "autocorrelation": 0.6, "multiscale_rate": 0.8}
+    baseline = compare_traces(_trace(), _trace(), 3.0, _settings(data))
+    scores = {name: method.score for name, method in baseline.methods.items()}
     calls: list[str] = []
 
     def component(name: str) -> Callable[..., SimilarityResult]:
         def evaluate(*_args: object) -> SimilarityResult:
             calls.append(name)
-            return SimilarityResult(scores[name], {"component": name, "observation_window_seconds": 3.0})
+            method = baseline.methods[name]
+            return SimilarityResult(method.score, cast(dict[str, object], method.as_dict()["diagnostics"]))
 
         return evaluate
 
@@ -876,8 +882,8 @@ def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
 
     assert calls == ["frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate"]
     assert tuple(result.methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
-    assert {name: method.diagnostics["component"] for name, method in result.methods.items()} == {
-        name: name for name in result.methods
+    assert {name: method.diagnostics for name, method in result.methods.items()} == {
+        name: method.diagnostics for name, method in baseline.methods.items()
     }
     expected_aggregate = math.fsum(method_weights[name] * scores[name] for name in scores)
     assert result.aggregate_score == expected_aggregate
@@ -976,13 +982,19 @@ def test_compare_traces_clamps_only_accepted_weight_sum_roundoff(
         "multiscale_rate": 0.2500000000005,
     }
 
-    def identical(*_args: object) -> SimilarityResult:
-        return SimilarityResult(1.0, {"observation_window_seconds": 3.0})
+    baseline = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
 
-    monkeypatch.setattr(comparison, "frame_size_ks", identical)
-    monkeypatch.setattr(comparison, "iat_ks", identical)
-    monkeypatch.setattr(comparison, "autocorrelation_similarity", identical)
-    monkeypatch.setattr(comparison, "multiscale_rate_similarity", identical)
+    def identical(name: str) -> Callable[..., SimilarityResult]:
+        def evaluate(*_args: object) -> SimilarityResult:
+            method = baseline.methods[name]
+            return SimilarityResult(method.score, cast(dict[str, object], method.as_dict()["diagnostics"]))
+
+        return evaluate
+
+    monkeypatch.setattr(comparison, "frame_size_ks", identical("frame_size_ks"))
+    monkeypatch.setattr(comparison, "iat_ks", identical("iat_ks"))
+    monkeypatch.setattr(comparison, "autocorrelation_similarity", identical("autocorrelation"))
+    monkeypatch.setattr(comparison, "multiscale_rate_similarity", identical("multiscale_rate"))
 
     result = compare_traces(_trace(), _trace(), 3.0, _settings(data))
 
@@ -993,7 +1005,12 @@ def test_compare_traces_clamps_only_accepted_weight_sum_roundoff(
 def test_comparison_result_rejects_an_unbounded_or_nonfinite_aggregate(score: float) -> None:
     """An invalid aggregate must never cross the typed artifact boundary."""
     with pytest.raises(ValueError, match="aggregate_score"):
-        ComparisonResult(score, 3.0, {}, None)
+        ComparisonResult(
+            aggregate_score=score,
+            observation_window_seconds=3.0,
+            methods={},
+            input_identities=None,
+        )
 
 
 def test_comparison_result_is_deeply_immutable(valid_config_data: dict[str, object]) -> None:
@@ -1014,7 +1031,12 @@ def test_comparison_result_requires_exact_method_names(valid_config_data: dict[s
     incomplete.pop("iat_ks")
 
     with pytest.raises(ValueError, match="methods must contain exactly"):
-        ComparisonResult(result.aggregate_score, 3.0, incomplete, None)
+        ComparisonResult(
+            aggregate_score=result.aggregate_score,
+            observation_window_seconds=3.0,
+            methods=incomplete,
+            input_identities=None,
+        )
 
 
 def test_comparison_result_requires_typed_method_values(valid_config_data: dict[str, object]) -> None:
@@ -1023,8 +1045,13 @@ def test_comparison_result_requires_typed_method_values(valid_config_data: dict[
     invalid_methods: dict[str, object] = dict(result.methods)
     invalid_methods["iat_ks"] = {"score": 1.0, "weight": 0.25, "diagnostics": {}}
 
-    with pytest.raises(ValueError, match="every method must be a MethodComparison"):
-        ComparisonResult(result.aggregate_score, 3.0, invalid_methods, None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="methods.iat_ks.method"):
+        ComparisonResult(
+            aggregate_score=result.aggregate_score,
+            observation_window_seconds=3.0,
+            methods=invalid_methods,  # type: ignore[arg-type]
+            input_identities=None,
+        )
 
 
 @pytest.mark.parametrize("diagnostic_window", [0.0, math.nan], ids=["nonpositive", "nonfinite"])
@@ -1035,6 +1062,7 @@ def test_comparison_result_defensively_rejects_corrupted_method_windows(
     result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
     original = result.methods["autocorrelation"]
     corrupted = object.__new__(MethodComparison)
+    object.__setattr__(corrupted, "method", original.method)
     object.__setattr__(corrupted, "score", original.score)
     object.__setattr__(corrupted, "weight", original.weight)
     object.__setattr__(
@@ -1045,8 +1073,13 @@ def test_comparison_result_defensively_rejects_corrupted_method_windows(
     methods = dict(result.methods)
     methods["autocorrelation"] = corrupted
 
-    with pytest.raises(ValueError, match="diagnostic.*finite positive float"):
-        ComparisonResult(result.aggregate_score, 3.0, methods, None)
+    with pytest.raises(ValueError, match="diagnostics.*discriminator"):
+        ComparisonResult(
+            aggregate_score=result.aggregate_score,
+            observation_window_seconds=3.0,
+            methods=methods,
+            input_identities=None,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1073,7 +1106,12 @@ def test_comparison_result_defensively_rejects_invalid_identity_mappings(
     result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
 
     with pytest.raises(ValueError, match="input_identities"):
-        ComparisonResult(result.aggregate_score, 3.0, result.methods, identities)  # type: ignore[arg-type]
+        ComparisonResult(
+            aggregate_score=result.aggregate_score,
+            observation_window_seconds=3.0,
+            methods=result.methods,
+            input_identities=identities,  # type: ignore[arg-type]
+        )
 
 
 def test_strict_result_json_round_trip_has_the_documented_sorted_compact_shape() -> None:

@@ -268,7 +268,7 @@ def _trial_from_comparison(
             MethodTrialResult(
                 name,
                 _score(result.methods[name].score, name=f"{name} score", seed=seed),
-                result.methods[name].diagnostics,
+                result.methods[name].diagnostics.model_dump(mode="json"),
             )
             for name in METHOD_ORDER
         ),

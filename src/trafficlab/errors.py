@@ -1,74 +1,65 @@
 """Errors and canonical expected-failure evidence exposed by the trafficlab package."""
 
 import json
-from dataclasses import dataclass
-from typing import Literal, Self, cast
+from typing import Annotated, Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, ValidationError, field_validator
 
 type EvidenceState = Literal["not_published", "diagnostic_only", "preserved", "possibly_remaining"]
 type FailureAuthority = Literal["primary", "secondary"]
 type FailureStatus = int | str | None
 
-_EVIDENCE_STATES = frozenset(("not_published", "diagnostic_only", "preserved", "possibly_remaining"))
-_FAILURE_AUTHORITIES = frozenset(("primary", "secondary"))
-_FAILURE_KINDS = frozenset(
-    (
-        "configuration_invalid",
-        "docker_preflight_failed",
-        "target_failed",
-        "capture_failed",
-        "stage_timeout",
-        "interrupted",
-        "capture_malformed",
-        "artifact_missing",
-        "artifact_changed",
-        "artifact_foreign",
-        "artifact_stale",
-        "artifact_corrupt",
-        "scientific_semantics_incompatible",
-        "metric_infeasible",
-        "generation_incomplete",
-        "publication_collision",
-        "publication_failed",
-        "cleanup_failed",
-    )
-)
-_FAILURE_STAGES = frozenset(("preflight", "capture", "fit", "generate", "compare", "publication"))
+type FailureKind = Literal[
+    "configuration_invalid",
+    "docker_preflight_failed",
+    "target_failed",
+    "capture_failed",
+    "stage_timeout",
+    "interrupted",
+    "capture_malformed",
+    "artifact_missing",
+    "artifact_changed",
+    "artifact_foreign",
+    "artifact_stale",
+    "artifact_corrupt",
+    "scientific_semantics_incompatible",
+    "metric_infeasible",
+    "generation_incomplete",
+    "publication_collision",
+    "publication_failed",
+    "cleanup_failed",
+]
+type FailureStage = Literal["preflight", "capture", "fit", "generate", "compare", "publication"]
+type NonEmptyStrictString = Annotated[StrictStr, Field(min_length=1)]
 
 
-def _nonempty_string(value: object, *, name: str) -> str:
-    if type(value) is not str:
-        raise TypeError(f"{name} must be a nonempty string")
-    if not value.strip():
-        raise ValueError(f"{name} must be a nonempty string")
-    return value
-
-
-@dataclass(frozen=True, slots=True)
-class FailureOutcome:
+class FailureOutcomeRecord(BaseModel):
     """One immutable, serializable expected-failure record."""
 
-    kind: str
-    stage: str
-    detail: str
-    affected_evidence: str
-    evidence_state: EvidenceState
-    corrective_action: str
-    authority: FailureAuthority
-    status: FailureStatus = None
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, allow_inf_nan=False)
 
-    def __post_init__(self) -> None:
-        for name in ("kind", "stage", "detail", "affected_evidence", "corrective_action"):
-            _nonempty_string(getattr(self, name), name=name)
-        if self.kind not in _FAILURE_KINDS:
-            raise ValueError(f"kind must be a canonical failure kind, got {self.kind!r}")
-        if self.stage not in _FAILURE_STAGES:
-            raise ValueError(f"stage must be a canonical failure stage, got {self.stage!r}")
-        if self.evidence_state not in _EVIDENCE_STATES:
-            raise ValueError("evidence_state must be a canonical evidence state")
-        if self.authority not in _FAILURE_AUTHORITIES:
-            raise ValueError("authority must be primary or secondary")
-        if self.status is not None and (type(self.status) not in (int, str) or not str(self.status).strip()):
-            raise TypeError("status must be an exact integer, nonempty string, or None")
+    kind: FailureKind
+    stage: FailureStage
+    detail: NonEmptyStrictString
+    affected_evidence: NonEmptyStrictString
+    evidence_state: EvidenceState
+    corrective_action: NonEmptyStrictString
+    authority: FailureAuthority
+    status: StrictInt | StrictStr | None = None
+
+    @field_validator("detail", "affected_evidence", "corrective_action")
+    @classmethod
+    def string_is_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value must be a nonempty string")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def status_string_is_not_blank(cls, value: int | str | None) -> int | str | None:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("status must be an exact integer, nonempty string, or None")
+        return value
 
     def as_dict(self) -> dict[str, str | int]:
         """Return the canonical JSON-safe representation, omitting an absent status."""
@@ -88,30 +79,12 @@ class FailureOutcome:
     @classmethod
     def from_dict(cls, value: object) -> Self:
         """Strictly parse one fixture or persisted canonical failure outcome."""
-        if type(value) is not dict:
-            raise TypeError("failure outcome must be a JSON object")
-        document = cast(dict[str, object], value)
-        expected = {
-            "affected_evidence",
-            "authority",
-            "corrective_action",
-            "detail",
-            "evidence_state",
-            "kind",
-            "stage",
-        }
-        if set(document) not in (expected, expected | {"status"}):
-            raise ValueError("failure outcome must contain exactly the canonical fields")
-        return cls(
-            kind=cast(str, document["kind"]),
-            stage=cast(str, document["stage"]),
-            detail=cast(str, document["detail"]),
-            affected_evidence=cast(str, document["affected_evidence"]),
-            evidence_state=cast(EvidenceState, document["evidence_state"]),
-            corrective_action=cast(str, document["corrective_action"]),
-            authority=cast(FailureAuthority, document["authority"]),
-            status=cast(FailureStatus, document.get("status")),
-        )
+        try:
+            return cls.model_validate(value)
+        except ValidationError as error:
+            first = error.errors()[0]
+            field = ".".join(str(part) for part in first["loc"])
+            raise ValueError(f"invalid failure outcome canonical field {field}: {first['msg']}") from error
 
     @classmethod
     def from_json(cls, document: str | bytes) -> Self:
@@ -128,6 +101,11 @@ class FailureOutcome:
         except json.JSONDecodeError as error:
             raise ValueError(f"invalid failure outcome JSON: {error.msg}") from error
         return cls.from_dict(parsed)
+
+
+# The short name remains the construction and exception API while the explicit
+# record name identifies the public schema root.
+FailureOutcome = FailureOutcomeRecord
 
 
 def _strict_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -150,15 +128,17 @@ def failure_outcome_from_error(
     status: FailureStatus = None,
 ) -> FailureOutcome:
     """Preserve an existing structured error while rendering its canonical evidence record."""
-    return FailureOutcome(
-        kind=kind,
-        stage=stage,
-        detail=str(error),
-        affected_evidence=affected_evidence,
-        evidence_state=evidence_state,
-        corrective_action=error.corrective_action,
-        authority=authority,
-        status=status,
+    return FailureOutcome.model_validate(
+        {
+            "kind": kind,
+            "stage": stage,
+            "detail": str(error),
+            "affected_evidence": affected_evidence,
+            "evidence_state": evidence_state,
+            "corrective_action": error.corrective_action,
+            "authority": authority,
+            "status": status,
+        }
     )
 
 

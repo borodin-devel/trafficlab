@@ -39,6 +39,7 @@ from trafficlab.capture import CaptureResult, capture_experiment
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import (
     ComparisonResult,
+    MultiscaleDiagnostic,
     compare_traces,
     parse_comparison_result,
     render_comparison_result,
@@ -2049,12 +2050,10 @@ def _trace_summary(
     packet_totals = _direction_values(trace, bytes_=False)
     byte_totals = _direction_values(trace, bytes_=True)
     multiscale = result.methods["multiscale_rate"].diagnostics
-    scale_values = multiscale.get("scales")
-    _require_type(type(scale_values) is tuple, "multiscale diagnostics scales must be a tuple")
+    _require_type(isinstance(multiscale, MultiscaleDiagnostic), "multiscale diagnostics must be typed")
     scales: list[JsonValue] = []
-    for value in cast(tuple[object, ...], scale_values):
-        _require_type(isinstance(value, Mapping), "multiscale scale diagnostics must be a mapping")
-        scale = cast(Mapping[str, object], value)
+    for value in multiscale.scales:
+        scale = value.model_dump(mode="json")
         totals_value = scale.get(f"{role}_totals")
         _require_type(isinstance(totals_value, Mapping), "multiscale direction totals must be a mapping")
         totals = cast(Mapping[str, object], totals_value)
@@ -2089,7 +2088,7 @@ def _comparison_equals_trial(comparison: ComparisonResult, trial: TrialResult) -
         and tuple(comparison.methods) == tuple(method.name for method in trial.methods)
         and all(
             comparison.methods[method.name].score == method.score
-            and comparison.methods[method.name].diagnostics == method.diagnostics
+            and comparison.methods[method.name].diagnostics.model_dump(mode="json") == _thaw_json(method.diagnostics)
             for method in trial.methods
         )
     )

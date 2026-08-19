@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import json
 import math
-from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
@@ -32,6 +31,7 @@ from trafficlab.models.registry import (
     get_family,
     load_best_model,
     make_best_model,
+    rebuild_best_model,
     render_best_model,
 )
 from trafficlab.trace import Direction, TraceEvent
@@ -335,8 +335,8 @@ def test_best_model_rejects_noncanonical_genes(valid_best_model: BestModel, gene
 
 @pytest.mark.parametrize("gene", [math.nan, math.inf])
 def test_best_model_constructor_rejects_nonfinite_tuple_genes(valid_best_model: BestModel, gene: float) -> None:
-    with pytest.raises(TrafficlabError, match="genes"):
-        replace(valid_best_model, genes=(gene,))
+    with pytest.raises(ValueError, match="genes"):
+        rebuild_best_model(valid_best_model, genes=(gene,))
 
 
 def test_best_model_rejects_mismatched_bound_names_and_types(valid_best_model: BestModel) -> None:
@@ -466,24 +466,24 @@ def test_best_model_rejects_unrepaired_ordered_genes(
 
 def test_best_model_constructor_and_renderer_reject_noncanonical_values(valid_best_model: BestModel) -> None:
     """In-memory construction must enforce the same boundary as JSON loading."""
-    with pytest.raises(TrafficlabError, match="version"):
-        replace(valid_best_model, version=True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="version"):
+        rebuild_best_model(valid_best_model, version=True)
     with pytest.raises(TrafficlabError, match="gene bounds"):
-        replace(valid_best_model, gene_bounds={})
-    with pytest.raises(TrafficlabError, match="reference identity"):
-        replace(valid_best_model, reference_identity=cast(Any, REFERENCE_IDENTITY.as_dict()))
-    with pytest.raises(TrafficlabError, match="final seed"):
-        replace(valid_best_model, final_seed=True)  # type: ignore[arg-type]
-    with pytest.raises(TrafficlabError, match="final limits"):
-        replace(valid_best_model, final_limits=cast(Any, FINAL_LIMITS.model_dump()))
+        rebuild_best_model(valid_best_model, gene_bounds={})
+    with pytest.raises(ValueError, match="reference_identity"):
+        rebuild_best_model(valid_best_model, reference_identity=REFERENCE_IDENTITY.as_dict())
+    with pytest.raises(ValueError, match="final_seed"):
+        rebuild_best_model(valid_best_model, final_seed=True)
+    with pytest.raises(ValueError, match="final_limits"):
+        rebuild_best_model(valid_best_model, final_limits=FINAL_LIMITS.model_dump())
     with pytest.raises(TypeError, match="BestModel"):
         render_best_model(object())  # type: ignore[arg-type]
 
 
 def test_best_model_constructor_and_renderer_reject_mutable_list_genes(valid_best_model: BestModel) -> None:
     """Accepting a JSON-shaped list in memory would make the supposedly frozen artifact mutable."""
-    with pytest.raises(TrafficlabError, match="genes"):
-        render_best_model(replace(valid_best_model, genes=[1.0]))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="genes"):
+        render_best_model(rebuild_best_model(valid_best_model, genes=[1.0]))
 
 
 def test_make_best_model_rejects_a_nonregistry_family_instance() -> None:

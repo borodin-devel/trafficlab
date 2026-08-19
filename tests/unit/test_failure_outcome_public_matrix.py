@@ -27,7 +27,7 @@ from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import FitDependencies
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
-from trafficlab.models.registry import load_best_model, render_best_model
+from trafficlab.models.registry import load_best_model, rebuild_best_model, render_best_model
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
@@ -1404,7 +1404,7 @@ def _run_fit_boundary_case(
     elif case.scenario == "best_model_collision":
         best_model_path = run_directory / "best_model.json"
         existing = load_best_model(_MODEL_FIXTURE.read_bytes(), source=_MODEL_FIXTURE)
-        existing_best_model = render_best_model(replace(existing, final_seed=existing.final_seed + 1))
+        existing_best_model = render_best_model(rebuild_best_model(existing, final_seed=existing.final_seed + 1))
         best_model_path.write_bytes(existing_best_model)
 
         dependencies = _fit_dependencies(
@@ -1535,7 +1535,7 @@ def _run_generation_boundary_case(
     if case.scenario == "packet_limit":
         best = load_best_model(best_content, source=_MODEL_FIXTURE)
         limits = best.final_limits.model_copy(update={"max_packets": 1})
-        best_content = render_best_model(replace(best, final_limits=limits))
+        best_content = render_best_model(rebuild_best_model(best, final_limits=limits))
         trial_limits = config.generation.trial.model_copy(update={"max_packets": 1})
         config = config.model_copy(
             update={"generation": config.generation.model_copy(update={"trial": trial_limits, "final": limits})}

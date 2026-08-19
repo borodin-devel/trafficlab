@@ -320,28 +320,32 @@ def _publisher_outcomes(
         outcomes = error.failure_outcomes
     else:
         outcomes = (
-            FailureOutcome(
-                kind="publication_collision" if isinstance(error, FileExistsError) else "publication_failed",
-                stage=stage,
-                detail=detail,
-                affected_evidence=affected_evidence,
-                evidence_state="preserved" if isinstance(error, FileExistsError) else "not_published",
-                corrective_action=corrective_action,
-                authority="primary",
+            FailureOutcome.model_validate(
+                {
+                    "kind": "publication_collision" if isinstance(error, FileExistsError) else "publication_failed",
+                    "stage": stage,
+                    "detail": detail,
+                    "affected_evidence": affected_evidence,
+                    "evidence_state": "preserved" if isinstance(error, FileExistsError) else "not_published",
+                    "corrective_action": corrective_action,
+                    "authority": "primary",
+                }
             ),
         )
     if cleanup_error is None:
         return outcomes
     return (
         *outcomes,
-        FailureOutcome(
-            kind="cleanup_failed",
-            stage=stage,
-            detail=f"owned temporary file cleanup failed: {cleanup_error}",
-            affected_evidence="inventory",
-            evidence_state="possibly_remaining",
-            corrective_action="remove the owned temporary file after preserving diagnostics",
-            authority="secondary",
+        FailureOutcome.model_validate(
+            {
+                "kind": "cleanup_failed",
+                "stage": stage,
+                "detail": f"owned temporary file cleanup failed: {cleanup_error}",
+                "affected_evidence": "inventory",
+                "evidence_state": "possibly_remaining",
+                "corrective_action": "remove the owned temporary file after preserving diagnostics",
+                "authority": "secondary",
+            }
         ),
     )
 
