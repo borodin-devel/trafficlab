@@ -284,27 +284,27 @@ Run Ruff, Pyright, focused artifacts, model registry, comparison pipeline, failu
 - Produces: strict checkpoint root with discriminated candidate status/failure records, population/trial/history records, and named RNG state.
 - Preserves: canonical checkpoint bytes, exact resume semantics, arithmetic/lineage checks, atomic publication, and incompatibility errors.
 
-- [ ] **[STEP-31-c7042437] Step 1: Add failing checkpoint schema and corruption properties**
+- [x] **[STEP-31-c7042437] Step 1: Add failing checkpoint schema and corruption properties**
 
 Cover every candidate status, invalid family payload, nonfinite score, malformed ID, inconsistent history/evaluation count, duplicate key, altered input identity, and RNG discriminator/state mutation. Assert generated schema contains all variants.
 
-- [ ] **[STEP-32-ca233ecb] Step 2: Run checkpoint RED selection**
+- [x] **[STEP-32-ca233ecb] Step 2: Run checkpoint RED selection**
 
 Run the bounded focused checkpoint/types/property tests; confirm failures identify absent Pydantic roots or manual structural paths targeted for removal.
 
-- [ ] **[STEP-33-f7b34f27] Step 3: Model checkpoint structures and canonical decode**
+- [x] **[STEP-33-f7b34f27] Step 3: Model checkpoint structures and canonical decode**
 
 Replace manual type/key parsing with strict frozen models and discriminators. Keep generation/population arithmetic, family registry checks, configuration identities, and resume compatibility as explicit post-parse validators.
 
-- [ ] **[STEP-34-5c1ac82f] Step 4: Preserve exact rendering and resume equivalence**
+- [x] **[STEP-34-5c1ac82f] Step 4: Preserve exact rendering and resume equivalence**
 
 Render from validated records in canonical key order, parse back before publish, and prove uninterrupted versus checkpoint-resumed histories/candidates/artifacts are identical for locked seeds.
 
-- [ ] **[STEP-35-3afee253] Step 5: Measure manual validation reduction**
+- [x] **[STEP-35-3afee253] Step 5: Measure manual validation reduction**
 
 Add the checkpoint functions to the source-measurement inventory and require at least 30% fewer manual parse/type/key-validation executable lines without counting tests or generated schemas.
 
-- [ ] **[STEP-36-b597c830] Step 6: Verify and commit checkpoint schemas**
+- [x] **[STEP-36-b597c830] Step 6: Verify and commit checkpoint schemas**
 
 Run Ruff, Pyright, checkpoint/types/property suites, genetic-fitting integration, deterministic fit fixture check, and changed-function coverage. Commit `refactor: model checkpoints with pydantic`.
 
