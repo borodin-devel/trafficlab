@@ -10,23 +10,42 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tests.scientific.probes.mmpp_likelihood import build_probe_evidence, write_probe_evidence
+from tests.scientific.probes.mmpp_likelihood import (
+    build_probe_evidence as build_mmpp_evidence,
+)
+from tests.scientific.probes.mmpp_likelihood import (
+    write_probe_evidence as write_mmpp_evidence,
+)
+from tests.scientific.probes.pymoo_optimizer import (
+    build_probe_evidence as build_pymoo_evidence,
+)
+from tests.scientific.probes.pymoo_optimizer import (
+    write_probe_evidence as write_pymoo_evidence,
+)
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
-_DEFAULT_OUTPUT = _REPOSITORY / "examples" / "scientific_stack" / "mmpp_cases.json"
+_DEFAULT_OUTPUTS = {
+    "mmpp": _REPOSITORY / "examples" / "scientific_stack" / "mmpp_cases.json",
+    "pymoo": _REPOSITORY / "examples" / "scientific_stack" / "pymoo_cases.json",
+}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="fail unless checked evidence is already canonical")
-    parser.add_argument("--output", type=Path, default=_DEFAULT_OUTPUT)
+    parser.add_argument("--probe", choices=("mmpp", "pymoo"), default="mmpp")
+    parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
-    matched = write_probe_evidence(arguments.output, build_probe_evidence(), check=arguments.check)
+    output = _DEFAULT_OUTPUTS[arguments.probe] if arguments.output is None else arguments.output
+    if arguments.probe == "mmpp":
+        matched = write_mmpp_evidence(output, build_mmpp_evidence(), check=arguments.check)
+    else:
+        matched = write_pymoo_evidence(output, build_pymoo_evidence(), check=arguments.check)
     if arguments.check and not matched:
-        print(f"scientific probe evidence is stale: {arguments.output}")
+        print(f"scientific probe evidence is stale: {output}")
         return 1
     action = "verified" if arguments.check else "wrote"
-    print(f"{action} {arguments.output}")
+    print(f"{action} {output}")
     return 0
 
 
