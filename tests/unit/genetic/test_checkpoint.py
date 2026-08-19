@@ -2104,7 +2104,39 @@ def test_experiment_hash_mismatch_precedes_rng_engine_and_engine_mismatch_is_spe
         parse_checkpoint(_encoded(engine_and_experiment), COMPATIBILITY)
 
 
-@pytest.mark.parametrize("engine", (None, True, 7, {}), ids=("null", "boolean", "integer", "object"))
+@pytest.mark.parametrize(
+    "engine",
+    (
+        None,
+        True,
+        7,
+        {},
+        "",
+        " ",
+        "python.random.Random//MT19937",
+        "/MT19937",
+        "python.random.Random/",
+        "python.random.Random /MT19937",
+        "python-random/MT19937",
+        "python.random.Random\\MT19937",
+        "pythön.random/MT19937",
+    ),
+    ids=(
+        "null",
+        "boolean",
+        "integer",
+        "object",
+        "empty",
+        "whitespace",
+        "double-separator",
+        "leading-separator",
+        "trailing-separator",
+        "embedded-whitespace",
+        "punctuation",
+        "backslash",
+        "non-ascii",
+    ),
+)
 def test_malformed_rng_engine_is_corruption_not_experiment_incompatibility(engine: object) -> None:
     document = _decoded()
     cast(dict[str, object], document["rng"])["engine"] = engine

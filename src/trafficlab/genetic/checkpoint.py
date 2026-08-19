@@ -6,6 +6,7 @@ import copy
 import csv
 import json
 import math
+import re
 from collections.abc import Mapping, Sequence
 from io import StringIO
 from pathlib import Path
@@ -517,6 +518,11 @@ def _validation_error_detail(error: ValidationError) -> str:
         location = ".".join(str(component) for component in item["loc"])
         details.append(f"{location}: {item['msg']} [{item['type']}]")
     return "; ".join(details)
+
+
+def _is_rng_engine_identifier(value: object) -> bool:
+    """Return whether a named RNG engine uses nonempty ASCII slash-separated segments."""
+    return type(value) is str and re.fullmatch(r"[A-Za-z0-9_.]+(?:/[A-Za-z0-9_.]+)+", value) is not None
 
 
 def _compatibility_error(detail: str) -> TrafficlabError:
@@ -1402,7 +1408,7 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         raw_rng = document.get("rng")
         if type(raw_rng) is dict:
             engine = cast(dict[str, object], raw_rng).get("engine")
-            if type(engine) is str and engine != compatibility.rng_engine:
+            if _is_rng_engine_identifier(engine) and engine != compatibility.rng_engine:
                 raise _compatibility_error("RNG engine")
         artifact = CheckpointArtifact.model_validate(_with_complete_failure_records(document))
         stored_compatibility = _compatibility_from_artifact(artifact)
