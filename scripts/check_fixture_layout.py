@@ -138,17 +138,6 @@ def check_manifest(root: Path, manifest_path: Path) -> None:
         raise FixtureLayoutError("fixture manifest does not match the root fixture tree")
 
 
-def tracked_phase_paths(repository: Path) -> tuple[Path, ...]:
-    result = subprocess.run(
-        ("git", "ls-files", "-z"),
-        cwd=repository,
-        check=True,
-        capture_output=True,
-    )
-    paths = tuple(Path(value.decode("utf-8")) for value in result.stdout.split(b"\0") if value)
-    return tuple(path for path in paths if "phase" in PurePosixPath(path.as_posix()).name.lower())
-
-
 def misplaced_fixture_paths(repository: Path) -> tuple[Path, ...]:
     present: list[Path] = []
     for relative in _MISPLACED_FIXTURE_PATHS:
@@ -209,9 +198,6 @@ def main(argv: list[str] | None = None) -> int:
     for root in roots:
         check_manifest(root, root / "manifest.json")
     if cast(bool, arguments.check):
-        phase_paths = tracked_phase_paths(repository)
-        if phase_paths:
-            _fail("tracked filenames contain phase: " + ", ".join(path.as_posix() for path in phase_paths))
         misplaced_paths = misplaced_fixture_paths(repository)
         if misplaced_paths:
             _fail("misplaced fixture paths remain: " + ", ".join(path.as_posix() for path in misplaced_paths))

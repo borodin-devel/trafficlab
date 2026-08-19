@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,8 @@ import pytest
 import trafficlab.study_evidence as study_evidence
 from trafficlab.errors import TrafficlabError
 from trafficlab.study_evidence import publish_accepted_bundle
+
+REPOSITORY = Path(__file__).resolve().parents[2]
 
 
 def _candidate(tmp_path: Path) -> Path:
@@ -24,6 +27,24 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
 
 def _temporary_siblings(evidence_root: Path, study_id: str) -> list[Path]:
     return list(evidence_root.glob(f".{study_id}.*.tmp")) if evidence_root.exists() else []
+
+
+def _git_ignores(relative_path: str) -> bool:
+    result = subprocess.run(
+        ("git", "check-ignore", "--no-index", "--quiet", relative_path),
+        cwd=REPOSITORY,
+        check=False,
+    )
+    assert result.returncode in {0, 1}
+    return result.returncode == 0
+
+
+def test_only_completed_accepted_evidence_is_trackable() -> None:
+    assert _git_ignores("runs/scratch/result.json")
+    assert _git_ignores("examples/validation_study/.study-work/candidate/manifest.json")
+    assert _git_ignores("examples/validation_study/evidence/.candidates/study-1/manifest.json")
+    assert _git_ignores("examples/validation_study/evidence/.study-1.random.tmp/manifest.json")
+    assert not _git_ignores("examples/validation_study/evidence/study-1/manifest.json")
 
 
 @pytest.mark.parametrize(

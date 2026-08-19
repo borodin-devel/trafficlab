@@ -172,13 +172,12 @@ scripts/run_bounded.sh \
   --cov-fail-under=90 --durations=50
 ```
 
-On 2026-08-19, the same commit and 3,503-test selection took 561.71 seconds
-serially and 205.89/214.56 seconds in two four-worker runs. All three reported
-97.73% total branch-aware coverage and exactly identical executed and missing
-line and branch sets for all 42 source files. Repeat that comparison before
-changing the worker count, distribution mode, coverage engine, or selection.
-The commands, versions, normalized digest, and collection manifest are retained
-in the [testing-infrastructure evidence](../docs/TESTING_INFRASTRUCTURE_EVIDENCE.md).
+The four-worker mode is backed by a serial/parallel equivalence record. Repeat
+that comparison before changing worker count, distribution mode, or coverage
+engine; ordinary evolution of the selected tests does not change this execution
+contract. Historical commands, measurements, normalized digest, and collection
+manifest are retained in the
+[testing-infrastructure evidence](../docs/TESTING_INFRASTRUCTURE_EVIDENCE.md).
 
 ### External gate
 

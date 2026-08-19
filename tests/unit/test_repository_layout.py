@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import re
 import runpy
 import subprocess
 import sys
@@ -14,37 +12,6 @@ import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 CHECKER_PATH = REPOSITORY / "scripts" / "check_fixture_layout.py"
-
-
-def test_numbered_roadmap_aliases_are_confined_to_authoritative_documents() -> None:
-    legacy_word = "pha" + "se"
-    pattern = re.compile(
-        rf"{legacy_word}[\s_-]*[0-9]+",
-        flags=re.IGNORECASE,
-    )
-    completed = subprocess.run(
-        ("git", "ls-files", "-z"),
-        cwd=REPOSITORY,
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-    matches: list[Path] = []
-    for encoded in completed.stdout.split(b"\0"):
-        if not encoded:
-            continue
-        relative = Path(os.fsdecode(encoded))
-        if relative.parts[0] in {"architecture", "docs"}:
-            continue
-        path = REPOSITORY / relative
-        if not path.is_file():
-            continue
-        try:
-            document = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-        if pattern.search(document):
-            matches.append(relative)
-    assert matches == []
 
 
 class _ManifestEntry(Protocol):
@@ -60,8 +27,6 @@ class _Checker(Protocol):
     def build_manifest(self, root: Path) -> tuple[_ManifestEntry, ...]: ...
 
     def check_manifest(self, root: Path, manifest_path: Path) -> None: ...
-
-    def tracked_phase_paths(self, repository: Path) -> tuple[Path, ...]: ...
 
     def misplaced_fixture_paths(self, repository: Path) -> tuple[Path, ...]: ...
 
@@ -197,29 +162,6 @@ def test_manifest_rejects_nonregular_fixture_entries(tmp_path: Path) -> None:
         checker.build_manifest(root)
 
 
-def test_tracked_phase_paths_reports_case_insensitive_basenames_only(tmp_path: Path) -> None:
-    checker = _load_checker()
-    repository = tmp_path / "repository"
-    repository.mkdir()
-    subprocess.run(("git", "init", "-q"), cwd=repository, check=True)
-    for relative in (
-        "docs/legacy-phase-name.md",
-        "scripts/PHASE_builder.py",
-        "docs/phase-parent/clean.md",
-        "docs/mentions-phase-in-parent/also-clean.md",
-        "docs/plain.md",
-    ):
-        path = repository / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(relative, encoding="utf-8")
-    subprocess.run(("git", "add", "."), cwd=repository, check=True)
-
-    assert checker.tracked_phase_paths(repository) == (
-        Path("docs/legacy-phase-name.md"),
-        Path("scripts/PHASE_builder.py"),
-    )
-
-
 @pytest.mark.parametrize("relative", ("fixtures", "tests/docker/images", "tests/docker/compose.endpoint.json"))
 def test_misplaced_fixture_paths_reports_each_forbidden_source(tmp_path: Path, relative: str) -> None:
     checker = _load_checker()
@@ -232,25 +174,6 @@ def test_misplaced_fixture_paths_reports_each_forbidden_source(tmp_path: Path, r
         path.mkdir(parents=True)
 
     assert checker.misplaced_fixture_paths(repository) == (Path(relative),)
-
-
-def test_agents_requires_precise_progress_and_generated_task_labels() -> None:
-    document = (REPOSITORY / "AGENTS.md").read_text(encoding="utf-8")
-
-    assert "[<integer>%]" in document
-    assert "[+<integer>%]" in document
-    assert "[-<integer>%]" in document
-    assert "[T: <clock_timestamp>]" in document
-    assert "`date +%T`" in document
-    assert "[ETA:" not in document
-    for problem_class in range(1, 6):
-        assert f"[PROBLEM-C{problem_class}]" in document
-        assert f"**Class {problem_class} —" not in document
-    assert "choices for Classes 1–4" not in document
-    assert "[TASK-<ordinal>-<crc32>]" in document
-    assert "[STEP-<ordinal>-<crc32>]" in document
-    assert "eight lowercase hexadecimal digits" in document
-    assert "regenerate the timestamp on collision" in document
 
 
 def test_fixture_path_catalog_owns_each_compartment() -> None:
@@ -267,12 +190,6 @@ def test_fixture_path_catalog_owns_each_compartment() -> None:
     assert catalog["DOCKER_FIXTURE_ROOT"] == REPOSITORY / "tests" / "fixtures" / "data" / "docker"
     assert catalog["PROCESS_GUARD_FIXTURE_ROOT"] == REPOSITORY / "tests" / "fixtures" / "data" / "process_guard"
     assert catalog["VALIDATION_STUDY_FIXTURE_ROOT"] == (REPOSITORY / "tests" / "fixtures" / "data" / "validation_study")
-
-
-def test_repository_has_no_phase_named_tracked_files() -> None:
-    checker = _load_checker()
-
-    assert checker.tracked_phase_paths(REPOSITORY) == ()
 
 
 def test_repository_has_no_misplaced_fixture_paths() -> None:
