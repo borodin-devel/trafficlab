@@ -22,12 +22,15 @@ verification reruns the documented command on the delivery tree.
 
 ## Collection preservation
 
-The baseline collected 3,521 tests: 3,502 offline, 185 integration, 18 Docker,
-and one Internet case. The refactor adds one direct configuration-builder
-contract and one root-conftest collection contract, while renaming an imported
+The baseline collected 3,521 tests: 3,502 offline, 204 carrying the integration
+marker, 18 carrying Docker, and one carrying Internet. Every external case also
+carries integration, so the ordinary post-hook `-m integration` selection is
+185 after the 19 external cases are deselected; it is not the raw marker
+incidence. The refactor adds one direct configuration-builder contract and one
+root-conftest collection contract, while renaming an imported
 `test_body_failure` helper that pytest accidentally collected. The resulting
-inventory is 3,522 total and 3,503 offline; the 185/18/1 capability-marker
-counts are unchanged.
+inventory is 3,522 total and 3,503 offline; raw marker incidence remains
+204 integration, 18 Docker, and one Internet.
 
 The monolithic validation-study owner had 256 declared test functions and 735
 intended collected cases after excluding the accidental imported helper. The
