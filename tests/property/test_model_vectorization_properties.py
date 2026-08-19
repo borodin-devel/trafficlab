@@ -6,7 +6,8 @@ import math
 from collections import Counter
 
 import numpy as np
-from hypothesis import given
+import pytest
+from hypothesis import assume, given
 from numpy.typing import NDArray
 
 from tests.property.strategies import trace_events
@@ -109,7 +110,82 @@ def test_vector_features_match_literal_scalar_oracles() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("frame_lengths", "quantiles"),
+    [
+        (np.array([], dtype=np.uint32), (0.25, 0.75)),
+        (np.array([40], dtype=np.int64), (0.25, 0.75)),
+        (np.array([0], dtype=np.uint32), (0.25, 0.75)),
+        (np.array([40], dtype=np.uint32), (0.0, 0.75)),
+        (np.array([40], dtype=np.uint32), (0.25, 1.0)),
+        (np.array([40], dtype=np.uint32), (0.75, 0.25)),
+        (np.array([40], dtype=np.uint32), (0.25, 0.25)),
+        (np.array([40], dtype=np.uint32), (math.nan, 0.75)),
+        (np.array([40], dtype=np.uint32), (0.25, math.inf)),
+        (np.array([40], dtype=np.uint32), ()),
+        (np.array([40], dtype=np.uint32), (0.25, "0.75")),
+    ],
+)
+def test_type7_boundaries_rejects_noncanonical_columns_and_quantiles(
+    frame_lengths: NDArray[np.generic], quantiles: object
+) -> None:
+    """Loose dtypes, zero frames, or unordered levels would corrupt state boundaries."""
+    with pytest.raises(ValueError):
+        type7_boundaries(frame_lengths, quantiles)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("directions", "frame_lengths", "thresholds"),
+    [
+        (np.array([0, 1], dtype=np.int8), np.array([40, 80], dtype=np.uint32), np.array([50.0, 70.0])),
+        (np.array([0, 2], dtype=np.uint8), np.array([40, 80], dtype=np.uint32), np.array([50.0, 70.0])),
+        (np.array([0, 1], dtype=np.uint8), np.array([40, 80], dtype=np.int64), np.array([50.0, 70.0])),
+        (np.array([0, 1], dtype=np.uint8), np.array([0, 80], dtype=np.uint32), np.array([50.0, 70.0])),
+        (
+            np.array([0, 1], dtype=np.uint8),
+            np.array([40, 80], dtype=np.uint32),
+            np.array([50.0, 70.0], dtype=np.float32),
+        ),
+        (np.array([0, 1], dtype=np.uint8), np.array([40, 80], dtype=np.uint32), np.array([50.0, math.inf])),
+        (np.array([0, 1], dtype=np.uint8), np.array([40, 80], dtype=np.uint32), np.array([70.0, 50.0])),
+        (np.array([0, 1], dtype=np.uint8), np.array([40, 80], dtype=np.uint32), np.array([50.0])),
+        (np.array([0, 1], dtype=np.uint8), np.array([40, 80], dtype=np.uint32), np.array([[50.0, 70.0]])),
+        (np.array([0], dtype=np.uint8), np.array([40, 80], dtype=np.uint32), np.array([50.0, 70.0])),
+        (np.array([], dtype=np.uint8), np.array([], dtype=np.uint32), np.array([50.0, 70.0])),
+    ],
+)
+def test_encode_markov_states_rejects_noncanonical_columns_and_thresholds(
+    directions: NDArray[np.generic], frame_lengths: NDArray[np.generic], thresholds: NDArray[np.generic]
+) -> None:
+    """Invalid column domains must fail before state identity arithmetic."""
+    with pytest.raises(ValueError):
+        encode_markov_states(directions, frame_lengths, thresholds)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("states", "state_count"),
+    [
+        (np.array([0, 1], dtype=np.int8), 2),
+        ([0, 1], 2),
+        (np.array([[0, 1]], dtype=np.intp), 2),
+        (np.array([0], dtype=np.intp), 1),
+        (np.array([0, 1], dtype=np.intp), True),
+        (np.array([0, 1], dtype=np.intp), 0),
+        (np.array([-1, 0], dtype=np.intp), 2),
+        (np.array([0, 2], dtype=np.intp), 2),
+        (np.array([0, 0], dtype=np.intp), np.iinfo(np.intp).max),
+    ],
+)
+def test_transition_count_matrix_rejects_noncanonical_or_unsafe_state_vectors(states: object, state_count: int) -> None:
+    """Narrow, out-of-range, or overflowable states must not alias count cells."""
+    with pytest.raises(ValueError):
+        transition_count_matrix(states, state_count)  # type: ignore[arg-type]
+
+
 @given(trace_events(min_size=3))
 def test_vector_features_match_generated_scalar_oracles(events: tuple[TraceEvent, ...]) -> None:
-    """Finite generated traces preserve the scalar feature definitions exactly."""
-    _assert_vector_features_match_scalar_oracles(TrafficTrace.from_events(events))
+    """Fit-valid generated traces preserve the scalar feature definitions exactly."""
+    trace = TrafficTrace.from_events(events)
+    thresholds = type7_boundaries(trace.frame_lengths, (0.25, 0.75))
+    assume(thresholds[0] < thresholds[1])
+    _assert_vector_features_match_scalar_oracles(trace)

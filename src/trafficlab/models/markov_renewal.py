@@ -70,10 +70,21 @@ def type7_quantile(values: Sequence[int | float], q: float) -> float:
 
 def type7_boundaries(frame_lengths: NDArray[np.uint32], quantiles: tuple[float, float]) -> NDArray[np.float64]:
     """Return the two Type 7 frame-length boundaries as a float64 vector."""
-    if frame_lengths.ndim != 1 or len(frame_lengths) == 0:
-        raise ValueError("frame lengths must be a nonempty one-dimensional array")
-    if any(type(quantile) is not float or not 0.0 <= quantile <= 1.0 for quantile in quantiles):
-        raise ValueError("quantiles must be finite floats in [0, 1]")
+    if type(frame_lengths) is not np.ndarray or frame_lengths.dtype != np.dtype(np.uint32):
+        raise ValueError("frame lengths must be a uint32 NumPy array")
+    if frame_lengths.ndim != 1 or len(frame_lengths) == 0 or np.any(frame_lengths == 0):
+        raise ValueError("frame lengths must be a nonempty one-dimensional array of positive values")
+    if type(quantiles) is not tuple or len(quantiles) != 2:
+        raise ValueError("quantiles must be exactly two finite increasing floats in (0, 1)")
+    q1, q2 = quantiles
+    if (
+        type(q1) is not float
+        or type(q2) is not float
+        or not math.isfinite(q1)
+        or not math.isfinite(q2)
+        or not 0.0 < q1 < q2 < 1.0
+    ):
+        raise ValueError("quantiles must be exactly two finite increasing floats in (0, 1)")
     return np.asarray(np.quantile(frame_lengths, quantiles, method="linear"), dtype=np.float64)
 
 
@@ -552,10 +563,23 @@ def encode_markov_states(
     directions: NDArray[np.uint8], frame_lengths: NDArray[np.uint32], thresholds: NDArray[np.float64]
 ) -> tuple[NDArray[np.intp], NDArray[np.uint8]]:
     """Encode active direction-size states in their observed first-appearance order."""
-    if directions.ndim != 1 or frame_lengths.ndim != 1 or len(directions) != len(frame_lengths):
-        raise ValueError("state columns must be equal-length one-dimensional arrays")
-    if len(thresholds) != 2 or thresholds.ndim != 1 or thresholds[0] > thresholds[1]:
-        raise ValueError("state thresholds must be two nondecreasing values")
+    if type(directions) is not np.ndarray or directions.dtype != np.dtype(np.uint8):
+        raise ValueError("directions must be a uint8 NumPy array")
+    if type(frame_lengths) is not np.ndarray or frame_lengths.dtype != np.dtype(np.uint32):
+        raise ValueError("frame lengths must be a uint32 NumPy array")
+    if type(thresholds) is not np.ndarray or thresholds.dtype != np.dtype(np.float64):
+        raise ValueError("state thresholds must be a float64 NumPy array")
+    if directions.ndim != 1 or frame_lengths.ndim != 1 or len(directions) != len(frame_lengths) or len(directions) == 0:
+        raise ValueError("state columns must be nonempty equal-length one-dimensional arrays")
+    if np.any((directions != 0) & (directions != 1)) or np.any(frame_lengths == 0):
+        raise ValueError("state columns must contain canonical direction and positive frame-length values")
+    if (
+        thresholds.ndim != 1
+        or len(thresholds) != 2
+        or not np.all(np.isfinite(thresholds))
+        or thresholds[0] >= thresholds[1]
+    ):
+        raise ValueError("state thresholds must be two finite increasing values")
     size_bins = np.searchsorted(thresholds, frame_lengths, side="left").astype(np.uint8, copy=False)
     identity_codes = directions * np.uint8(3) + size_bins
     unique_codes, first_indices = np.unique(identity_codes, return_index=True)
@@ -568,14 +592,18 @@ def encode_markov_states(
 
 def transition_count_matrix(states: NDArray[np.intp], state_count: int) -> NDArray[np.int64]:
     """Count adjacent state pairs with flattened NumPy bincount indices."""
+    if type(states) is not np.ndarray or states.dtype != np.dtype(np.intp):
+        raise ValueError("state indices must be an intp NumPy array")
     if states.ndim != 1 or len(states) < 2 or type(state_count) is not int or state_count < 1:
         raise ValueError("state indices must contain at least two values for one positive state count")
+    if np.any(states < 0) or np.any(states >= state_count):
+        raise ValueError("state indices must be in [0, state_count)")
+    maximum_index = np.iinfo(np.intp).max
+    if state_count > maximum_index // state_count:
+        raise ValueError("state count is too large for a platform index matrix")
+    cell_count = state_count * state_count
     flattened = states[:-1] * state_count + states[1:]
-    return (
-        np.bincount(flattened, minlength=state_count * state_count)
-        .reshape(state_count, state_count)
-        .astype(np.int64, copy=False)
-    )
+    return np.bincount(flattened, minlength=cell_count).reshape(state_count, state_count).astype(np.int64, copy=False)
 
 
 def _fit_trace(trace: TrafficTrace, genes: tuple[float, float, float, int, float]) -> MarkovRenewalModel:
