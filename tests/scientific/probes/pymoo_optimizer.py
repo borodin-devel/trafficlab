@@ -170,7 +170,12 @@ REPLAY_CHECKED_FIELDS = (
     "snapshot.configuration.initial_sampling",
     "snapshot.configuration.constructor",
     "snapshot.configuration.initialization",
+    "snapshot.configuration.algorithm_repair",
     "snapshot.configuration.mating",
+    "snapshot.configuration.mating.crossover.vtype",
+    "snapshot.configuration.mating.crossover.repair",
+    "snapshot.configuration.mating.mutation.vtype",
+    "snapshot.configuration.mating.mutation.repair",
     "snapshot.pymoo_version",
     "snapshot.rng",
     "trial_history.evaluation_index",
@@ -341,10 +346,19 @@ class InitializationSettings(_StrictProbeRecord):
 type OperatorScalar = StrictInt | StrictFloat | StrictBool | None
 
 
+class RepairSettings(_StrictProbeRecord):
+    operator_class: str
+    name: str
+    vtype: str | None
+    repair: str | None
+
+
 class OperatorSettings(_StrictProbeRecord):
     variable_type: str
     operator_class: str
     settings: dict[str, OperatorScalar]
+    vtype: str | None
+    repair: RepairSettings | None
 
 
 class MatingDuplicateSettings(_StrictProbeRecord):
@@ -380,6 +394,7 @@ class PublicAlgorithmConfiguration(_StrictProbeRecord):
     initial_sampling: Annotated[tuple[Scalars, ...], BeforeValidator(_tuple_input)]
     constructor: ConstructorSettings
     initialization: InitializationSettings
+    algorithm_repair: RepairSettings
     mating: MatingSettings
     termination: TerminationSettings
 
@@ -910,7 +925,24 @@ def _operator_scalar(value: object) -> int | float | bool | None:
     raise TypeError("public pymoo operator setting must be a deterministic scalar")
 
 
+def _public_type_name(value: object) -> str | None:
+    return None if value is None else _qualified_name(value)
+
+
+def _repair_settings(value: object) -> RepairSettings | None:
+    if value is None:
+        return None
+    dynamic = cast(Any, value)
+    return RepairSettings(
+        operator_class=_qualified_name(value),
+        name=str(dynamic.name),
+        vtype=_public_type_name(dynamic.vtype),
+        repair=_public_type_name(dynamic.repair),
+    )
+
+
 def _operator_settings(variable_type: type[object], operator: object, *, mutation: bool) -> OperatorSettings:
+    dynamic = cast(Any, operator)
     names = ["prob"]
     operator_name = type(operator).__name__
     if mutation:
@@ -926,6 +958,8 @@ def _operator_settings(variable_type: type[object], operator: object, *, mutatio
         variable_type=_qualified_name(variable_type),
         operator_class=_qualified_name(operator),
         settings=settings,
+        vtype=_public_type_name(dynamic.vtype),
+        repair=_repair_settings(dynamic.repair),
     )
 
 
@@ -1016,6 +1050,7 @@ def _public_snapshot(
                     _qualified_name(algorithm.initialization.eliminate_duplicates),
                 ),
             ),
+            algorithm_repair=cast(RepairSettings, _repair_settings(algorithm.repair)),
             mating=_mating_settings(algorithm),
             termination=TerminationSettings(kind="n_gen", value=TOTAL_GENERATIONS),
         ),
@@ -1134,6 +1169,14 @@ def _expected_mating_settings() -> MatingSettings:
     return _mating_settings(algorithm)
 
 
+def _expected_algorithm_repair() -> RepairSettings:
+    algorithm = _MIXED_VARIABLE_GA(
+        pop_size=INITIAL_EVALUATION_BUDGET,
+        eliminate_duplicates=False,
+    )
+    return cast(RepairSettings, _repair_settings(algorithm.repair))
+
+
 def _known_objective(case_name: str, variables: Mapping[str, int | float]) -> float:
     if case_name == "bounded_continuous_sphere":
         return float(variables["x0"]) ** 2 + float(variables["x1"]) ** 2
@@ -1166,6 +1209,35 @@ def attempt_history_is_complete(run: FamilyRunRecord) -> bool:
     misses: dict[str, tuple[JsonObject, float]] = {}
     for item in history:
         if item.cache_key != _render_cache_key(item.cache_key_payload):
+            return False
+        payload = item.cache_key_payload
+        candidate = item.candidate
+        if not (
+            payload.family == run.family == candidate.family
+            and candidate.genes is not None
+            and payload.genes == candidate.genes
+            and payload.observation_window_seconds == run.observation_window_seconds
+            and payload.trial_seeds == run.trial_seeds
+            and payload.generation_limits == run.generation_limits
+            and payload.similarity == run.similarity
+        ):
+            return False
+        if candidate.status == "valid":
+            if not (
+                candidate.invalid is None
+                and tuple(trial.seed for trial in candidate.trials) == run.trial_seeds
+                and item.objective == 1.0 - candidate.fitness
+            ):
+                return False
+        elif candidate.status == "invalid":
+            if not (
+                candidate.invalid is not None
+                and candidate.fitness == 0.0
+                and not candidate.trials
+                and item.objective == INVALID_OBJECTIVE
+            ):
+                return False
+        else:
             return False
         scientific_result = (
             item.candidate.model_dump(mode="json", exclude={"identifier"}),
@@ -1204,6 +1276,21 @@ def _known_metadata_is_exact(case: KnownCaseEvidence) -> bool:
     )
 
 
+def _known_variables_are_valid(case: KnownCaseEvidence, variables: Scalars) -> bool:
+    if set(variables) != set(case.bounds):
+        return False
+    for name, value in variables.items():
+        lower, upper = case.bounds[name]
+        kind = case.variable_kinds[name]
+        if kind == "integer" and type(value) is not int:
+            return False
+        if kind == "real" and type(value) is not float:
+            return False
+        if not lower <= value <= upper:
+            return False
+    return True
+
+
 def _known_gate(evidence: ProbeEvidence) -> bool:
     for case in evidence.known_cases:
         if not _known_metadata_is_exact(case):
@@ -1213,6 +1300,17 @@ def _known_gate(evidence: ProbeEvidence) -> bool:
         for run in case.runs:
             objective = _known_objective(case.name, run.variables)
             observed_initial = run.history[0].population
+            generations_valid = True
+            for index, generation in enumerate(run.history):
+                recomputed = tuple(_known_objective(case.name, item.variables) for item in generation.population)
+                generations_valid = generations_valid and (
+                    generation.generation == index
+                    and generation.evaluation_count == (index + 1) * case.population_size
+                    and len(generation.population) == case.population_size
+                    and all(_known_variables_are_valid(case, item.variables) for item in generation.population)
+                    and tuple(item.objective for item in generation.population) == recomputed
+                    and generation.minimum_objective == min(recomputed)
+                )
             if not (
                 declared_initial_minimum > case.tolerance
                 and run.initial_minimum_objective == declared_initial_minimum
@@ -1220,14 +1318,15 @@ def _known_gate(evidence: ProbeEvidence) -> bool:
                 and tuple(item.objective for item in observed_initial) == declared_initial_objectives
                 and run.objective <= case.tolerance
                 and run.objective == objective
+                and _known_variables_are_valid(case, run.variables)
                 and run.evaluations == case.population_size * case.generations
                 and len(run.history) == case.generations
                 and run.history[0].minimum_objective == run.initial_minimum_objective
-                and all(
-                    generation.generation == index
-                    and generation.evaluation_count == (index + 1) * case.population_size
-                    and len(generation.population) == case.population_size
-                    for index, generation in enumerate(run.history)
+                and generations_valid
+                and run.objective == run.history[-1].minimum_objective
+                and any(
+                    item.variables == run.variables and item.objective == run.objective
+                    for item in run.history[-1].population
                 )
             ):
                 return False
@@ -1263,9 +1362,18 @@ def _fairness_gate(evidence: ProbeEvidence) -> bool:
     family_configs_match = all(
         family.runs[0].variables == family.runs[1].variables
         and family.runs[0].initial_sampling == family.runs[1].initial_sampling
+        and all(
+            run.variables == _variable_specs(REGISTRY[family.family], _FAMILY_BOUNDS[family.family])
+            and run.initial_sampling == tuple(dict(item) for item in _INITIAL_VALUES[family.family])
+            for run in family.runs
+        )
         for family in evidence.families
     )
     instances = len({run.optimizer_instance for run in all_runs})
+    canonical_instances = all(
+        tuple(run.optimizer_instance for run in family.runs) == (family_index + 1, family_index + 4)
+        for family_index, family in enumerate(evidence.families)
+    )
     champions_match = tuple(item.family for item in fairness.champion_comparison) == FAMILY_NAMES
     for family, champion in zip(evidence.families, fairness.champion_comparison, strict=True):
         first_run = family.runs[0]
@@ -1299,6 +1407,7 @@ def _fairness_gate(evidence: ProbeEvidence) -> bool:
         tuple(item.family for item in evidence.families) == FAMILY_NAMES
         and fairness.measured_family_set == FAMILY_NAMES
         and instances == len(all_runs)
+        and canonical_instances
         and fairness.distinct_optimizer_instances == instances
         and fairness.common_search_seed == first_runs[0].search_seed
         and fairness.common_trial_seeds == first_runs[0].trial_seeds
@@ -1339,7 +1448,13 @@ def _cache_diagnostics_gate(evidence: ProbeEvidence) -> bool:
         and invalid_attempt.evaluation_index == 1
         and invalid_attempt.generation == 0
         and invalid_attempt.candidate.identifier == CandidateId(birth_generation=0, birth_index=0)
+        and invalid_attempt.cache_key_payload.family == invalid.family == invalid_attempt.candidate.family
+        and invalid_attempt.candidate.genes is not None
+        and invalid_attempt.cache_key_payload.genes == invalid_attempt.candidate.genes
+        and invalid_attempt.cache_key_payload.observation_window_seconds == evidence.policy.window_seconds
+        and invalid_attempt.cache_key_payload.trial_seeds == evidence.policy.trial_seeds
         and invalid_attempt.cache_key_payload.generation_limits == invalid.limits
+        and invalid_attempt.cache_key_payload.similarity == evidence.policy.similarity
         and invalid_attempt.cache_key == _render_cache_key(invalid_attempt.cache_key_payload)
         and not invalid_attempt.cache_hit
         and invalid_attempt.candidate.status == "invalid"
@@ -1349,6 +1464,37 @@ def _cache_diagnostics_gate(evidence: ProbeEvidence) -> bool:
         and invalid_attempt.objective == INVALID_OBJECTIVE
     )
     return histories_complete and candidates_complete and invalid_adapter
+
+
+def _checkpoint_fields_are_linked(evidence: ProbeEvidence) -> bool:
+    policy = evidence.policy
+    snapshot = evidence.checkpoint.snapshot
+    first_run = evidence.families[0].runs[0]
+    configuration = snapshot.configuration
+    initial_attempts = first_run.history[: policy.initial_evaluation_budget]
+    expected_population = tuple(
+        PublicPopulationState(
+            variables={
+                spec.name: value
+                for spec, value in zip(first_run.variables, attempt.cache_key_payload.genes, strict=True)
+            },
+            objectives=(attempt.objective,),
+            status=("F", "G", "H"),
+        )
+        for attempt in initial_attempts
+    )
+    return (
+        snapshot.generation == 2
+        and snapshot.evaluation_count == policy.initial_evaluation_budget
+        and len(snapshot.population) == policy.initial_evaluation_budget
+        and snapshot.population == expected_population
+        and snapshot.termination.kind == "MaximumGenerationTermination"
+        and snapshot.termination.progress == 1.0 / policy.total_generations
+        and not snapshot.termination.has_terminated
+        and configuration.constructor.pop_size == policy.initial_evaluation_budget
+        and len(configuration.initial_sampling) == configuration.constructor.pop_size
+        and len(configuration.variables) == len(first_run.variables)
+    )
 
 
 def semantic_root_is_consistent(evidence: ProbeEvidence) -> bool:
@@ -1371,6 +1517,8 @@ def semantic_root_is_consistent(evidence: ProbeEvidence) -> bool:
         and configuration.variables == first_run.variables
         and configuration.initial_sampling == first_run.initial_sampling
         and configuration.mating == _expected_mating_settings()
+        and configuration.algorithm_repair == _expected_algorithm_repair()
+        and _checkpoint_fields_are_linked(evidence)
         and evidence.invalid_classification.limits == evidence.policy.invalid_generation_limits
         and evidence.production_loc == _loc_inventory()
     )

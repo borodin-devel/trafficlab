@@ -303,6 +303,38 @@ def test_history_completeness_helper_covers_each_rejected_mutation() -> None:
     )
     assert attempt_history_is_complete(duplicate_run) is False
 
+    invalid_source = ProbeEvidence.model_validate(build_probe_evidence()).invalid_classification.history[0].candidate
+    invalid_candidate = run.history[0].candidate.model_copy(
+        update={
+            "status": "invalid",
+            "fitness": 0.0,
+            "trials": (),
+            "invalid": invalid_source.invalid,
+        }
+    )
+    invalid_attempt = run.history[0].model_copy(update={"candidate": invalid_candidate, "objective": 1.0})
+    assert attempt_history_is_complete(run.model_copy(update={"history": (invalid_attempt, *run.history[1:])})) is False
+    invalid_wrong_objective = invalid_attempt.model_copy(update={"objective": 0.5})
+    assert (
+        attempt_history_is_complete(run.model_copy(update={"history": (invalid_wrong_objective, *run.history[1:])}))
+        is False
+    )
+
+    pending_candidate = run.history[-1].candidate.model_copy(
+        update={"status": "pending", "fitness": 0.0, "trials": (), "invalid": None}
+    )
+    pending_attempt = run.history[-1].model_copy(update={"candidate": pending_candidate, "objective": 1.0})
+    assert (
+        attempt_history_is_complete(run.model_copy(update={"history": (*run.history[:-1], pending_attempt)})) is False
+    )
+
+    linked_mismatch_candidate = hit.candidate.model_copy(update={"fitness": hit.candidate.fitness - 0.01})
+    linked_mismatch = hit.model_copy(
+        update={"candidate": linked_mismatch_candidate, "objective": 1.0 - linked_mismatch_candidate.fitness}
+    )
+    linked_history = (*run.history[:hit_index], linked_mismatch, *run.history[hit_index + 1 :])
+    assert attempt_history_is_complete(run.model_copy(update={"history": linked_history})) is False
+
 
 def test_checkpoint_is_explicitly_incomplete_and_records_replay_inputs() -> None:
     checkpoint = build_probe_evidence()["checkpoint"]
@@ -670,6 +702,16 @@ def test_strict_schema_rejects_bad_bounds_cardinality_and_evidence_sets() -> Non
         validate_probe_evidence(wrong_family_set)
 
 
+def test_known_variable_semantic_helper_covers_names_types_and_bounds() -> None:
+    model = ProbeEvidence.model_validate(build_probe_evidence())
+    continuous, mixed = model.known_cases
+    assert probe._known_variables_are_valid(continuous, continuous.runs[0].variables) is True  # pyright: ignore[reportPrivateUsage]
+    assert probe._known_variables_are_valid(continuous, {"x0": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
+    assert probe._known_variables_are_valid(continuous, {"x0": 0, "x1": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
+    assert probe._known_variables_are_valid(mixed, {"count": 3.0, "scale": 1.25}) is False  # pyright: ignore[reportPrivateUsage]
+    assert probe._known_variables_are_valid(continuous, {"x0": 3.0, "x1": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
+
+
 def test_decision_requires_exact_boolean_gate_membership() -> None:
     passing: dict[str, object] = dict.fromkeys(
         (
@@ -722,3 +764,108 @@ def test_shared_runner_generates_and_checks_the_named_pymoo_probe(tmp_path: Path
     assert generated.returncode == 0, generated.stderr
     checked = subprocess.run([*command, "--check"], cwd=tmp_path, check=False, capture_output=True, text=True)
     assert checked.returncode == 0, checked.stderr
+
+
+def test_round3_shifted_optimizer_ordinals_are_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    for family in evidence["families"]:
+        for run in family["runs"]:
+            run["optimizer_instance"] += 10
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_drifting_both_mmpp_variable_configs_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    mmpp = next(item for item in evidence["families"] if item["family"] == "mmpp")
+    for run in mmpp["runs"]:
+        run["variables"][0]["lower"] = 0.2
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_cache_payload_control_drift_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    runs = evidence["families"][0]["runs"]
+    for run in runs:
+        for attempt in run["history"]:
+            attempt["cache_key_payload"]["observation_window_seconds"] = 5.5
+            attempt["cache_key"] = json.dumps(
+                attempt["cache_key_payload"],
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+    evidence["checkpoint"]["comparison"]["uninterrupted_history"] = deepcopy(runs[0]["history"])
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_objective_fitness_mismatch_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    runs = evidence["families"][0]["runs"]
+    for run in runs:
+        run["history"][-1]["objective"] += 0.01
+    evidence["checkpoint"]["comparison"]["uninterrupted_history"] = deepcopy(runs[0]["history"])
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_replaced_invalid_cache_payload_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    attempt = evidence["invalid_classification"]["history"][0]
+    attempt["cache_key_payload"]["family"] = "mmpp"
+    attempt["cache_key"] = json.dumps(
+        attempt["cache_key_payload"],
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_later_known_generation_objective_corruption_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    for run in evidence["known_cases"][0]["runs"]:
+        run["history"][1]["population"][0]["objective"] += 1.0
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_checkpoint_generation_drift_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    evidence["checkpoint"]["snapshot"]["generation"] += 1
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_constructor_population_size_drift_is_rejected() -> None:
+    evidence = deepcopy(build_probe_evidence())
+    evidence["checkpoint"]["snapshot"]["configuration"]["constructor"]["pop_size"] += 1
+    with pytest.raises(ValueError):
+        validate_probe_evidence(evidence)
+
+
+def test_round3_operator_vtype_and_repair_configuration_is_complete() -> None:
+    configuration = build_probe_evidence()["checkpoint"]["snapshot"]["configuration"]
+    assert configuration["algorithm_repair"] == {
+        "operator_class": "pymoo.core.repair.NoRepair",
+        "name": "NoRepair",
+        "vtype": None,
+        "repair": None,
+    }
+    for group in ("crossover", "mutation"):
+        operators = configuration["mating"][group]
+        for operator in operators:
+            if operator["variable_type"] == "pymoo.core.variable.Integer":
+                assert operator["vtype"] == "builtins.float"
+                assert operator["repair"] == {
+                    "operator_class": "pymoo.operators.repair.rounding.RoundingRepair",
+                    "name": "RoundingRepair",
+                    "vtype": None,
+                    "repair": None,
+                }
+            else:
+                assert operator["vtype"] is None
+                assert operator["repair"] is None
