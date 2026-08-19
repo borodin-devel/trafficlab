@@ -139,16 +139,16 @@ Pyright strict mode, Ruff, Bash bounded-process guard, Docker Compose.
 - Produces: `valid_config_data(tmp_path: Path) -> dict[str, object]`, returning a
   fresh valid mapping whose run directory is scoped below `tmp_path`.
 
-- [ ] **[STEP-14-3509cb61] Write a RED direct builder contract.** Assert two
+- [x] **[STEP-14-3509cb61] Write a RED direct builder contract.** Assert two
   calls return equal but independent nested mappings, use distinct run paths,
   and both validate as `ExperimentConfig`; confirm the builder import fails.
-- [ ] **[STEP-15-1256de4a] Move the fixture data builder.** Create
+- [x] **[STEP-15-1256de4a] Move the fixture data builder.** Create
   `tests.support.config.valid_config_data`, make the pytest fixture delegate to
   it, and remove the large literal from `conftest.py`.
-- [ ] **[STEP-16-14a56531] Run GREEN and fixture consumers.** Run the new helper
+- [x] **[STEP-16-14a56531] Run GREEN and fixture consumers.** Run the new helper
   test plus configuration schema, validation, I/O, and comparison-pipeline
   owners; then run Ruff and strict Pyright.
-- [ ] **[STEP-17-59e159e0] Prove collection preservation and commit.** Compare
+- [x] **[STEP-17-59e159e0] Prove collection preservation and commit.** Compare
   exact node IDs and marker counts, inspect the diff, and commit with
   `test: isolate configuration fixture builder`.
 
