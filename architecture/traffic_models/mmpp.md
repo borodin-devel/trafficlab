@@ -121,7 +121,8 @@ generation.
 Schema 3 uses one local PCG64 generator. The exact scalar order is `random()`
 for the arrival-epoch regime, `choice(total_mark_count)` for the time-zero mark,
 then `exponential(scale=1.0/lambda_z)` followed by
-`exponential(scale=1.0/q_z,1-z)` for every competing-clock race. An arrival
+`exponential(scale=1.0 / (q01 if z == 0 else q10))` for every competing-clock
+race. An arrival
 inside `[0, W]` then consumes `choice(total_mark_count)`; a regime transition or
 out-of-window race consumes no mark draw. Choices use half-open scalar indexes.
 

@@ -87,11 +87,13 @@ enabled family names exactly as follows:
 
 ```python
 priority_rng = numpy.random.Generator(numpy.random.PCG64(master_seed))
-family_priority = tuple(priority_rng.permutation(sorted_family_names_array))
+family_priority = tuple(str(name) for name in priority_rng.permutation(sorted_family_names_array))
 ```
 
-`sorted_family_names_array` makes the result invariant to configuration and registry
-input order. The temporary `priority_rng` is then discarded. The dedicated
+`sorted_family_names_array` makes the result invariant to configuration and
+registry input order. Converting each NumPy string scalar to `str` gives the
+runtime tuple used by family validation and checkpointing. The temporary
+`priority_rng` is then discarded. The dedicated
 search RNG is initialized separately as
 `rng = numpy.random.Generator(numpy.random.PCG64(master_seed))`, so
 priority sampling consumes none of the existing search draw stream.
