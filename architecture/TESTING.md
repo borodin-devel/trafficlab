@@ -17,60 +17,20 @@ Docker and Internet tests may also be integration tests. Their external-resource
 marker controls whether they run.
 
 Every test command uses the process-tree memory, swap, worker, and wall-clock
-bounds owned by the [development workflow](DEVELOPMENT.md). A pytest result is
-not valid evidence when it came from an unbounded invocation. The fast unit loop
-uses four workers and excludes integration and external-resource tests:
+bounds in the [canonical testing gates](DEVELOPMENT.md#canonical-testing-gates).
+A pytest result is not valid evidence when it came from an unbounded invocation.
+The Fast gate excludes integration and external-resource cases; the Ordinary
+and Coverage gates include every offline unit, scientific, and in-process
+integration case. The External gate selects `docker or internet`, so a case
+carrying both capability markers runs once.
 
-```bash
-scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -q -n 4 --dist worksteal \
-  -m "not integration and not docker and not internet"
-```
-
-The deterministic coverage gate runs unit and in-process integration tests once:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -n 4 --dist worksteal --cov=trafficlab \
-  --cov-branch --cov-report=term-missing \
-  -m "not docker and not internet"
-```
-
-Docker and public-Internet tests run serially so their lifecycle failures stay
-readable:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -vv -n 0 -m docker
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -vv -n 0 -m internet --internet-url URL
-```
+The [development gate table](DEVELOPMENT.md#canonical-testing-gates) is the only
+authoritative source of copyable pytest commands. This document defines the
+behavior those commands must prove.
 
 When Docker tests are explicitly selected, unavailable Docker Engine or Compose
 is a session-level failure with an installation/readiness message; it is not
 silently skipped.
-
-For a detailed, pinpointed failure, select one pytest node ID or the last failed
-set and disable workers:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -vv -x -n 0 tests/path/test_module.py::test_name
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -vv -x -n 0 --lf
-```
 
 Broad deterministic suites request `-n 4 --dist worksteal` explicitly.
 Resource-owning and diagnostic commands request `-n 0`, so output and teardown
@@ -81,14 +41,9 @@ survived before reporting the run or launching another test command.
 `scripts/run_bounded.sh` gives each invocation a unique
 `trafficlab-test-guard-*.scope`, preserves guarded nonzero statuses, and uses
 status `125` for setup or final containment-verification failure. Its final
-cleanup kills the exact scope and polls it to inactive. Prove that boundary with:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -q -n 0 tests/integration/test_process_guard.py
-```
+cleanup kills the exact scope and polls it to inactive. Prove that boundary with
+the command under
+[process-tree containment](DEVELOPMENT.md#process-tree-containment).
 
 The controlled wall probe uses a parent, separate-session child and
 separate-session grandchild that ignore `SIGTERM`. The memory probe gives the
@@ -831,16 +786,9 @@ service.
 
 ### Bounded offline audit
 
-From a clean clone with the locked CPython environment already available, the
-acceptance command is:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 20m --kill-after 10s -- \
-  uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/<study-id>/
-```
+From a clean clone with the locked CPython environment already available, run
+the bounded offline audit in the
+[Release gate](DEVELOPMENT.md#release-gate).
 
 The command does not invoke Docker, open a network connection, call
 `trafficlab run`, or fetch a missing byte. It fails if the locked environment is
@@ -875,13 +823,13 @@ recovery system, security system, or publication service.
 
 ## Continuous integration
 
-All CI jobs run the four-worker, coverage-enabled unit and in-process
-integration suite once under an 8 GiB process-tree memory limit, a 1 GiB swap
-limit, and a twenty-minute wall-clock limit, including the fixture-based offline
-analytical pipeline. Docker capture tests and the complete `run` test run
-serially only on a job explicitly declared Docker-capable; that job treats
-Docker readiness failure as failure. The Internet smoke test is manual or
-scheduled and never gates ordinary changes.
+CI uses the same selections and process-tree bounds as the canonical Release
+gate. Static, Ordinary, Coverage, External, and audit components may run as
+independent jobs against the same commit. This preserves every test and branch
+obligation while reducing elapsed pipeline time. Docker cases remain serial on
+a job explicitly declared Docker-capable and Docker readiness failure is a
+failure. The Internet case may be scheduled separately for ordinary changes,
+but remains required milestone evidence.
 
 Tests should remain proportionate: cover public behavior, mathematical edge
 cases, and expensive failure boundaries. The completed non-Docker Python package

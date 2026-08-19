@@ -98,30 +98,115 @@ use `package.json`, npm scripts, `node_modules`, or Node.js application, runtime
 or build dependencies. Prefer Python, Rust-backed, or native packages when an
 equivalent choice exists.
 
-## Fast and detailed tests
+## Canonical testing gates
 
-### Task 15 normative full-verification gate
+This section is the only authoritative source of copyable pytest commands.
+[Testing](TESTING.md) owns the behavior and evidence required from each gate;
+README and historical implementation plans only link here. Every pytest process
+tree runs with a hard memory, swap, and wall-clock bound.
 
-For final research-fitness verification, use the active Task 15 plan's bounded
-commands. They are normative for the full non-Docker gate; the broader
-focused-loop examples below are historical development bounds and are not a
-substitute for this gate.
+| Gate | Selection | Execution | Required use |
+| --- | --- | --- | --- |
+| Focused | one node ID or the last failed set | serial, fail fast | TDD and diagnosis |
+| Fast | unit tests without integration or external resources | four workers, work stealing | local feedback |
+| Ordinary | every non-external test | four workers, work stealing | offline regression and xdist safety |
+| Coverage | every non-external test | serial, branch-aware | deterministic coverage evidence |
+| External | Docker or Internet | serial | lifecycle, cleanup, and real-endpoint evidence |
+| Release | static, ordinary, coverage, generators, audit, external | as defined by each gate | milestone acceptance |
+
+The serial Coverage command remains normative until repeated parallel coverage
+runs demonstrate identical file, line, and branch sets. Report the 50 slowest
+cases in the Ordinary and Coverage gates so performance work is evidence-led.
+
+### Focused gate
+
+Pinpoint one failure, or rerun the last failures, without parallel-output noise:
+
+```bash
+scripts/run_bounded.sh \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 5m --kill-after 10s -- \
+  uv run --locked pytest -vv -x -n 0 tests/path/test_module.py::test_name
+scripts/run_bounded.sh \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 5m --kill-after 10s -- \
+  uv run --locked pytest -vv -x -n 0 --lf
+```
+
+### Fast gate
+
+Run the unit-only feedback loop with exactly four workers:
 
 ```bash
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -q -n 4 -m "not docker and not internet"
+  uv run --locked pytest -q -n 4 --dist worksteal \
+  -m "not integration and not docker and not internet"
+```
+
+### Ordinary gate
+
+Run every offline test in parallel and retain its duration table:
+
+```bash
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -q -n 0 -m "not docker and not internet" \
-    --cov=trafficlab --cov-branch --cov-report=term-missing --cov-fail-under=90
+  uv run --locked pytest -q -n 4 --dist worksteal \
+  -m "not docker and not internet" --durations=50
 ```
 
-### Historical focused-loop examples
+### Coverage gate
 
-Every pytest process tree runs with a hard memory, swap, and wall-clock bound.
+Run every offline test once in a serial process with branch coverage:
+
+```bash
+scripts/run_bounded.sh \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 20m --kill-after 10s -- \
+  uv run --locked pytest -q -n 0 -m "not docker and not internet" \
+  --cov=trafficlab --cov-branch --cov-report=term-missing \
+  --cov-fail-under=90 --durations=50
+```
+
+### External gate
+
+Run Docker and Internet cases once with an explicit credential-free HTTPS
+endpoint. Individual development selections may use `-m docker` without the URL
+or `-m internet --internet-url URL`; only the combined selection is complete
+external release evidence.
+
+```bash
+scripts/run_bounded.sh \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 20m --kill-after 10s -- \
+  uv run --locked pytest -vv -n 0 -m "docker or internet" \
+  --internet-url URL
+```
+
+### Release gate
+
+Run `uv sync --locked --all-groups`, Ruff format checking and linting, strict
+Pyright, then the Ordinary and Coverage gates. Run every deterministic fixture
+generator with `--check`, the bounded offline validation-study audit, and the
+External gate on a capable host. Each component retains the execution mode and
+resource bounds above; do not combine competing heavy gates in one local scope.
+
+```bash
+uv run --locked python scripts/generate_similarity_fixtures.py --check
+uv run --locked python scripts/generate_model_fixtures.py --check
+uv run --locked python scripts/generate_fit_fixtures.py --check
+uv run --locked python scripts/generate_validation_study_fixture.py --check
+scripts/run_bounded.sh \
+  --memory-high 6G --memory-max 8G --swap-max 1G \
+  --wall-time 20m --kill-after 10s -- \
+  uv run --locked --offline python scripts/audit_validation_study.py \
+  examples/validation_study/evidence/<study-id>/
+```
+
+### Process-tree containment
+
 On Linux and WSL2 with systemd, `scripts/run_bounded.sh` creates a unique
 `trafficlab-test-guard-*.scope` so the limits include pytest workers and every
 descendant, even when the launching terminal or agent is interrupted.
@@ -131,46 +216,6 @@ termination and then sends `SIGKILL` after the configured grace period. The
 guard finally kills the exact scope, polls until it is inactive, and returns
 status `125` if setup or that final containment verification fails. Otherwise it
 preserves the guarded command's status, including timeout status `124`.
-
-Run the fast unit loop with four workers, a 6 GiB throttle, an 8 GiB hard limit,
-at most 1 GiB of swap, and a ten-minute deadline:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -q -n 4 --dist worksteal \
-  -m "not integration and not docker and not internet"
-```
-
-Run the deterministic unit and in-process integration suite once with branch
-coverage and missing-line output. It uses the same memory limits and a
-twenty-minute deadline:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -n 4 --dist worksteal --cov=trafficlab \
-  --cov-branch --cov-report=term-missing \
-  -m "not docker and not internet"
-```
-
-Docker and public-Internet tests run serially because they own external
-resources and need readable lifecycle failures. The scope bounds local pytest
-and CLI descendants; Docker's project-scoped lifecycle and stage deadlines
-continue to bound containers:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -vv -n 0 -m docker
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -vv -n 0 -m internet --internet-url URL
-```
 
 External tests are opt-in. Ordinary collection deselects `docker` and
 `internet` tests unless their marker or test directory is explicitly selected.
@@ -188,19 +233,6 @@ suite uses only its controlled endpoint and never reads this option. A Docker or
 Internet command is valid external evidence only when the selected test actually
 runs on a capable host; collection success or the expected actionable setup
 failure on a host without Docker is not capture evidence.
-
-Pinpoint one failure, or rerun the last failures, without parallel-output noise:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -vv -x -n 0 tests/path/test_module.py::test_name
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -vv -x -n 0 --lf
-```
 
 Broad deterministic commands use exactly four workers rather than deriving a
 worker count from a large host CPU count. A selected test remains serial and
@@ -253,17 +285,13 @@ files, source-controlled fixtures, and architecture documents visible to Git.
 
 ## Continuous integration
 
-The ordinary job runs, in order:
-
-1. `uv sync --locked --all-groups`;
-2. Ruff format checking and linting;
-3. strict Pyright checking;
-4. one four-worker, coverage-enabled deterministic test pass under the
-   documented process-tree memory, swap, and wall-clock limits.
-
-A Docker-capable job runs Docker integration tests serially. The Internet smoke
-test is manual or scheduled and does not gate ordinary changes. Failures retain
-verbose pytest context and missing-line information.
+CI runs the same Release components and selections defined above. Independent
+static, Ordinary, Coverage, External, and audit jobs may execute concurrently on
+separate executors at the same commit; competing heavy gates do not share one
+local bounded scope. A Docker-capable job treats unavailable Docker as failure.
+The Internet case may be scheduled separately for ordinary changes, but is
+required for milestone external evidence. Failures retain verbose pytest context
+and missing-line information.
 
 ## References
 

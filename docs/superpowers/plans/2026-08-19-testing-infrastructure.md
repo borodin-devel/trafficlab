@@ -72,19 +72,19 @@ Pyright strict mode, Ruff, Bash bounded-process guard, Docker Compose.
 - Produces: one `DEVELOPMENT.md` command table referenced by testing architecture
   and README.
 
-- [ ] **[STEP-4-3553028b] Demonstrate the documentation contradiction.** Use
+- [x] **[STEP-4-3553028b] Demonstrate the documentation contradiction.** Use
   `rg` to show parallel coverage in `TESTING.md`, serial normative coverage in
   `DEVELOPMENT.md`, and repeated command blocks in README; retain the commands
   as review evidence rather than adding a documentation-template test.
-- [ ] **[STEP-5-8f402632] Replace duplicated normative recipes.** Put Focused,
+- [x] **[STEP-5-8f402632] Replace duplicated normative recipes.** Put Focused,
   Fast, Ordinary, Coverage, External, and Release commands in one table in
   `DEVELOPMENT.md`; make `TESTING.md` define obligations and link to the table;
   reduce README to a link plus one focused example.
-- [ ] **[STEP-6-72aaa9ed] Verify command and marker consistency.** Search all
+- [x] **[STEP-6-72aaa9ed] Verify command and marker consistency.** Search all
   current architecture and README text for conflicting `pytest` selections,
   confirm the external command uses `-m "docker or internet"`, and run Ruff
   format/check on the repository.
-- [ ] **[STEP-7-16b9898a] Commit the gate model.** Inspect the documentation diff
+- [x] **[STEP-7-16b9898a] Commit the gate model.** Inspect the documentation diff
   and commit with `docs: unify testing verification gates`.
 
 ### [TASK-3-67843b64] Extract external and Docker support

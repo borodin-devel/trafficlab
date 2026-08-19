@@ -352,71 +352,15 @@ The genetic architecture index is
 
 ## Testing
 
-All pytest process trees must run through `scripts/run_bounded.sh`. The guard
-uses a uniquely owned transient systemd user scope, enforces memory, swap, and
-wall limits, terminates descendants on timeout or OOM, verifies the scope is
-inactive, and preserves the guarded command's exit status.
+All pytest process trees run through `scripts/run_bounded.sh`, which owns the
+complete process tree and enforces memory, swap, and wall limits. For one
+pinpointed TDD case use the serial
+[Focused gate](architecture/DEVELOPMENT.md#focused-gate). The authoritative
+copyable Fast, Ordinary, Coverage, External, and Release commands are in the
+[canonical testing gates](architecture/DEVELOPMENT.md#canonical-testing-gates).
 
-Format, lint, and type checks:
-
-```bash
-uv run --locked ruff format --check .
-uv run --locked ruff check .
-uv run --locked pyright
-```
-
-Fast unit tests:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -q -n 4 --dist worksteal \
-  -m "not integration and not docker and not internet"
-```
-
-Branch-aware unit and in-process integration coverage:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 6G --memory-max 8G --swap-max 1G \
-  --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -n 4 --dist worksteal --cov=trafficlab \
-  --cov-branch --cov-report=term-missing \
-  -m "not docker and not internet"
-```
-
-Docker integration tests run serially:
-
-```bash
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -vv -n 0 -m docker
-```
-
-The public-Internet smoke is opt-in and also serial. This endpoint was verified
-during final MVP validation; replace it if it is no longer available:
-
-```bash
-export TRAFFICLAB_INTERNET_URL="https://cachefly.cachefly.net/10mb.test"
-scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
-  --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -vv -n 0 -m internet \
-  --internet-url "$TRAFFICLAB_INTERNET_URL"
-```
-
-Deterministic fixture checks:
-
-```bash
-uv run --locked python scripts/generate_similarity_fixtures.py --check
-uv run --locked python scripts/generate_model_fixtures.py --check
-uv run --locked python scripts/generate_fit_fixtures.py --check
-```
-
-The complete marker policy, named behavioral evidence, coverage rules, Docker
-tracking, and Internet-test contract are in
+The marker policy, named behavioral evidence, branch-coverage rules, Docker
+tracking, and Internet contract are in the
 [Testing Strategy](architecture/TESTING.md).
 
 ## Validation Study
