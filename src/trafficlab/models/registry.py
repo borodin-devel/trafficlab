@@ -23,12 +23,11 @@ from trafficlab.config import (
     PoissonConfig,
 )
 from trafficlab.errors import TrafficlabError
-from trafficlab.models.common import FamilyBounds, FittedModel, Gene, Genes, ModelFamily
+from trafficlab.models.common import FamilyBounds, FittedModel, Gene, Genes, ModelFamily, ReferenceTrace
 from trafficlab.models.markov_renewal import MarkovRenewalFamily
 from trafficlab.models.mmpp import MmppFamily
 from trafficlab.models.poisson import PoissonFamily
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION, require_current_scientific_schema
-from trafficlab.trace import TraceEvent
 
 _OUTER_KEYS = {
     "version",
@@ -414,7 +413,7 @@ def _config_from_bound_mapping(family: ModelFamily, bounds: dict[str, FloatBound
 
 def make_best_model(
     family: ModelFamily,
-    reference: Sequence[TraceEvent],
+    reference: ReferenceTrace,
     genes: Sequence[Gene],
     *,
     reference_identity: ContentIdentity,

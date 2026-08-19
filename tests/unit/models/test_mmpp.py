@@ -16,7 +16,7 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.models import mmpp
 from trafficlab.models.common import MarkCount
 from trafficlab.models.mmpp import MmppFamily, MmppModel, _generate_with_rng
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 FAMILY = MmppFamily()
 BOUNDS = MmppConfig(
@@ -26,10 +26,12 @@ BOUNDS = MmppConfig(
     lambda1=FloatBounds(lower=2.0, upper=10.0),
 )
 LARGE_LIMITS = GenerationLimits(max_packets=100, max_output_bytes=100_000, max_wall_seconds=10.0)
-REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 60),
-    TraceEvent(1.0, Direction.INBOUND, 80),
-    TraceEvent(2.0, Direction.OUTBOUND, 60),
+REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 60),
+        TraceEvent(1.0, Direction.INBOUND, 80),
+        TraceEvent(2.0, Direction.OUTBOUND, 60),
+    )
 )
 
 

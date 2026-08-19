@@ -53,7 +53,7 @@ from trafficlab.models.mmpp import MmppFamily, MmppModel
 from trafficlab.models.poisson import PoissonFamily, PoissonModel
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
-from trafficlab.trace import Direction, TraceEvent, normalize_reference, parse_capture_metadata
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
 
 _ROOT = Path(__file__).resolve().parents[2]
 _EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
@@ -581,6 +581,7 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
     metadata = parse_capture_metadata(metadata_content, source=metadata_path)
     parsed_reference = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
     reference, window = normalize_reference(parsed_reference)
+    assert isinstance(reference, TrafficTrace)
     genes, bounds = _artifact_inputs(family_name)
     family = get_family(family_name)
     best = make_best_model(

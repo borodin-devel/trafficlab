@@ -10,6 +10,9 @@ from random import Random
 from time import monotonic
 from typing import Literal, Protocol, cast
 
+import numpy as np
+from numpy.typing import NDArray
+
 from trafficlab.config import FamilyName, FloatBounds, GenerationLimits, IntegerBounds, MarkovRenewalConfig
 from trafficlab.errors import TrafficlabError
 from trafficlab.models.common import (
@@ -21,9 +24,11 @@ from trafficlab.models.common import (
     GenerationResult,
     Genes,
     IncompleteReason,
+    ReferenceTrace,
+    coerce_reference_trace,
     validate_fit_inputs,
 )
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 _ROW_TOLERANCE = 1e-12
 _MINIMUM_FRAME_LENGTH = 14
@@ -60,15 +65,16 @@ def type7_quantile(values: Sequence[int | float], q: float) -> float:
             "invalid quantile sample or level",
             corrective_action="provide a nonempty finite numerical sample and a quantile in [0, 1]",
         )
-    ordered = sorted(float(value) for value in sample)
-    # Type 7 uses the zero-based fractional rank (n - 1)q and linear
-    # interpolation.  This matches common scientific tooling and keeps fitted
-    # quantiles reproducible without an optional numerical dependency.
-    h = (len(ordered) - 1) * q
-    lower_index = math.floor(h)
-    fraction = h - lower_index
-    upper_index = min(lower_index + 1, len(ordered) - 1)
-    return (1.0 - fraction) * ordered[lower_index] + fraction * ordered[upper_index]
+    return float(np.quantile(np.asarray(sample, dtype=np.float64), q, method="linear"))
+
+
+def type7_boundaries(frame_lengths: NDArray[np.uint32], quantiles: tuple[float, float]) -> NDArray[np.float64]:
+    """Return the two Type 7 frame-length boundaries as a float64 vector."""
+    if frame_lengths.ndim != 1 or len(frame_lengths) == 0:
+        raise ValueError("frame lengths must be a nonempty one-dimensional array")
+    if any(type(quantile) is not float or not 0.0 <= quantile <= 1.0 for quantile in quantiles):
+        raise ValueError("quantiles must be finite floats in [0, 1]")
+    return np.asarray(np.quantile(frame_lengths, quantiles, method="linear"), dtype=np.float64)
 
 
 def size_bin(frame_length: int, lower_threshold: float, upper_threshold: float) -> int:
@@ -173,51 +179,17 @@ def _canonical_genes(genes: Sequence[Gene], bounds: object) -> tuple[float, floa
     return (q1, q2, alpha, minimum_support, time_scale)
 
 
-def _repair_with_events(
-    genes: Sequence[Gene], bounds: object, events: tuple[TraceEvent, ...]
+def _repair_with_trace(
+    genes: Sequence[Gene], bounds: object, trace: TrafficTrace
 ) -> tuple[float, float, float, int, float]:
     repaired = _canonical_genes(genes, bounds)
-    lengths = tuple(event.frame_length for event in events)
-    thresholds = (type7_quantile(lengths, repaired[0]), type7_quantile(lengths, repaired[1]))
+    thresholds = type7_boundaries(trace.frame_lengths, (repaired[0], repaired[1]))
     if thresholds[0] >= thresholds[1]:
         raise _invalid(
             "invalid Markov renewal thresholds: repaired quantiles produce duplicate thresholds",
             corrective_action="provide a reference with enough distinct frame lengths for three bins",
         )
     return repaired
-
-
-def _validate_repair_reference(reference: Sequence[TraceEvent]) -> tuple[TraceEvent, ...]:
-    try:
-        events = tuple(reference)
-    except TypeError as error:
-        raise _invalid(
-            "invalid Markov renewal reference",
-            corrective_action="provide at least two canonical nondecreasing reference events",
-        ) from error
-    if len(events) < 2:
-        raise _invalid(
-            "invalid Markov renewal reference",
-            corrective_action="provide at least two canonical nondecreasing reference events",
-        )
-    previous: float | None = None
-    for event in events:
-        if (
-            type(event) is not TraceEvent
-            or type(event.timestamp) is not float
-            or not math.isfinite(event.timestamp)
-            or event.timestamp < 0.0
-            or type(event.direction) is not Direction
-            or type(event.frame_length) is not int
-            or not _MINIMUM_FRAME_LENGTH <= event.frame_length <= _MAXIMUM_FRAME_LENGTH
-            or (previous is not None and event.timestamp < previous)
-        ):
-            raise _invalid(
-                "invalid Markov renewal reference",
-                corrective_action="provide at least two canonical nondecreasing reference events",
-            )
-        previous = event.timestamp
-    return events
 
 
 def _validate_iats(values: object, *, allow_empty: bool, context: str) -> tuple[float, ...]:
@@ -576,52 +548,79 @@ class MarkovRenewalModel:
         return "markov_renewal"
 
 
-def _fit_events(events: tuple[TraceEvent, ...], genes: tuple[float, float, float, int, float]) -> MarkovRenewalModel:
+def encode_markov_states(
+    directions: NDArray[np.uint8], frame_lengths: NDArray[np.uint32], thresholds: NDArray[np.float64]
+) -> tuple[NDArray[np.intp], NDArray[np.uint8]]:
+    """Encode active direction-size states in their observed first-appearance order."""
+    if directions.ndim != 1 or frame_lengths.ndim != 1 or len(directions) != len(frame_lengths):
+        raise ValueError("state columns must be equal-length one-dimensional arrays")
+    if len(thresholds) != 2 or thresholds.ndim != 1 or thresholds[0] > thresholds[1]:
+        raise ValueError("state thresholds must be two nondecreasing values")
+    size_bins = np.searchsorted(thresholds, frame_lengths, side="left").astype(np.uint8, copy=False)
+    identity_codes = directions * np.uint8(3) + size_bins
+    unique_codes, first_indices = np.unique(identity_codes, return_index=True)
+    order = np.argsort(first_indices, kind="stable")
+    ordered_codes = unique_codes[order]
+    positions = np.empty(6, dtype=np.intp)
+    positions[ordered_codes] = np.arange(len(ordered_codes), dtype=np.intp)
+    return positions[identity_codes], ordered_codes
+
+
+def transition_count_matrix(states: NDArray[np.intp], state_count: int) -> NDArray[np.int64]:
+    """Count adjacent state pairs with flattened NumPy bincount indices."""
+    if states.ndim != 1 or len(states) < 2 or type(state_count) is not int or state_count < 1:
+        raise ValueError("state indices must contain at least two values for one positive state count")
+    flattened = states[:-1] * state_count + states[1:]
+    return (
+        np.bincount(flattened, minlength=state_count * state_count)
+        .reshape(state_count, state_count)
+        .astype(np.int64, copy=False)
+    )
+
+
+def _fit_trace(trace: TrafficTrace, genes: tuple[float, float, float, int, float]) -> MarkovRenewalModel:
     q1, q2, alpha, minimum_support, time_scale = genes
-    lengths = tuple(event.frame_length for event in events)
-    thresholds = (type7_quantile(lengths, q1), type7_quantile(lengths, q2))
-    identities = tuple((event.direction, size_bin(event.frame_length, *thresholds)) for event in events)
-    state_indices: dict[tuple[Direction, int], int] = {}
-    for identity in identities:
-        if identity not in state_indices:
-            state_indices[identity] = len(state_indices)
-    state_count = len(state_indices)
-    frame_samples: list[list[int]] = [[] for _ in range(state_count)]
-    source_samples: list[list[float]] = [[] for _ in range(state_count)]
-    conditional_samples: list[list[list[float]]] = [[[] for _ in range(state_count)] for _ in range(state_count)]
-    transition_counts = [[0 for _ in range(state_count)] for _ in range(state_count)]
-    for event, identity in zip(events, identities, strict=True):
-        frame_samples[state_indices[identity]].append(event.frame_length)
-    global_iats: list[float] = []
-    for index, (source_identity, destination_identity) in enumerate(zip(identities[:-1], identities[1:], strict=True)):
-        source = state_indices[source_identity]
-        destination = state_indices[destination_identity]
-        iat = events[index + 1].timestamp - events[index].timestamp
-        global_iats.append(iat)
-        source_samples[source].append(iat)
-        conditional_samples[source][destination].append(iat)
-        transition_counts[source][destination] += 1
-    rows: list[tuple[float, ...]] = []
-    for counts in transition_counts:
-        outgoing = sum(counts)
-        denominator = outgoing + alpha * state_count
-        if denominator == 0.0:
-            rows.append(tuple(1.0 / state_count for _ in range(state_count)))
-        else:
-            rows.append(tuple((count + alpha) / denominator for count in counts))
+    boundary_vector = type7_boundaries(trace.frame_lengths, (q1, q2))
+    thresholds = (float(boundary_vector[0]), float(boundary_vector[1]))
+    states_vector, identity_codes = encode_markov_states(trace.directions, trace.frame_lengths, boundary_vector)
+    state_count = len(identity_codes)
+    transition_counts = transition_count_matrix(states_vector, state_count)
+    iats = trace.iats()
+    source_indices = states_vector[:-1]
+    destination_indices = states_vector[1:]
+    denominators = transition_counts.sum(axis=1, dtype=np.float64) + alpha * state_count
+    rows_array = np.divide(
+        transition_counts + alpha,
+        denominators[:, np.newaxis],
+        out=np.zeros((state_count, state_count), dtype=np.float64),
+        where=denominators[:, np.newaxis] != 0.0,
+    )
+    rows_array[denominators == 0.0] = 1.0 / state_count
+    conditional_samples = tuple(
+        tuple(
+            tuple(float(value) for value in iats[(source_indices == source) & (destination_indices == destination)])
+            for destination in range(state_count)
+        )
+        for source in range(state_count)
+    )
     states = tuple(
-        MarkovState(identity[0], identity[1], tuple(frame_samples[index]), tuple(source_samples[index]))
-        for identity, index in state_indices.items()
+        MarkovState(
+            Direction.OUTBOUND if int(identity_code) // 3 == 0 else Direction.INBOUND,
+            int(identity_code) % 3,
+            tuple(int(value) for value in trace.frame_lengths[states_vector == index]),
+            tuple(float(value) for value in iats[source_indices == index]),
+        )
+        for index, identity_code in enumerate(identity_codes)
     )
     return MarkovRenewalModel(
         alpha=alpha,
-        conditional_iats=tuple(tuple(tuple(sample) for sample in row) for row in conditional_samples),
-        global_iats=tuple(global_iats),
+        conditional_iats=conditional_samples,
+        global_iats=tuple(float(value) for value in iats),
         minimum_support=minimum_support,
         states=states,
         thresholds=thresholds,
         time_scale=time_scale,
-        transition_rows=tuple(rows),
+        transition_rows=tuple(tuple(float(value) for value in row) for row in rows_array),
     )
 
 
@@ -849,18 +848,23 @@ class MarkovRenewalFamily:
         "transition": "additive_uniform_empty_row",
     }
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: Sequence[TraceEvent]) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
         """Return a canonical chromosome whose quantiles form distinct reference thresholds."""
-        events = _validate_repair_reference(reference)
-        return _repair_with_events(genes, bounds, events)
+        trace = coerce_reference_trace(reference)
+        if len(trace) < 2:
+            raise _invalid(
+                "invalid Markov renewal reference",
+                corrective_action="provide at least two canonical nondecreasing reference events",
+            )
+        return _repair_with_trace(genes, bounds, trace)
 
     def fit(
-        self, reference: Sequence[TraceEvent], genes: Sequence[Gene], *, W: float, bounds: FamilyBounds
+        self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds
     ) -> MarkovRenewalModel:
         """Fit active states, a complete transition matrix, and aligned empirical IAT samples."""
-        events = validate_fit_inputs(reference, W=W)
-        repaired = _repair_with_events(genes, bounds, events)
-        return _fit_events(events, repaired)
+        trace = validate_fit_inputs(reference, W=W)
+        repaired = _repair_with_trace(genes, bounds, trace)
+        return _fit_trace(trace, repaired)
 
     def generate(
         self,

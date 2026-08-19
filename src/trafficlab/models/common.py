@@ -9,15 +9,18 @@ from time import monotonic
 from types import MappingProxyType
 from typing import Literal, Protocol, cast
 
+import numpy as np
+
 from trafficlab.config import FamilyName, GenerationLimits, MarkovRenewalConfig, MmppConfig, PoissonConfig
 from trafficlab.errors import TrafficlabError
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 type Gene = float | int
 type Genes = tuple[Gene, ...]
 type IncompleteReason = Literal["max_packets", "max_output_bytes", "max_wall_seconds"]
 type FamilyBounds = PoissonConfig | MarkovRenewalConfig | MmppConfig
 type ModelDiagnostics = Mapping[str, int]
+type ReferenceTrace = TrafficTrace | Sequence[TraceEvent]
 
 MARKOV_MODEL_DIAGNOSTIC_KEYS = (
     "timing_tier_transition_count",
@@ -81,13 +84,11 @@ class ModelFamily(Protocol):
         """Return the canonical persisted estimator policy."""
         ...
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: Sequence[TraceEvent]) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
         """Repair one family chromosome without consuming randomness."""
         ...
 
-    def fit(
-        self, reference: Sequence[TraceEvent], genes: Sequence[Gene], *, W: float, bounds: FamilyBounds
-    ) -> FittedModel:
+    def fit(self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> FittedModel:
         """Fit a model to one normalized reference trace."""
         ...
 
@@ -188,43 +189,55 @@ class GenerationResult:
         return self.events
 
 
-def validate_fit_inputs(reference: Sequence[TraceEvent], *, W: float) -> tuple[TraceEvent, ...]:
-    """Validate the normalized canonical reference shared by all family fitters."""
+def coerce_reference_trace(reference: ReferenceTrace) -> TrafficTrace:
+    """Return the shared immutable model-fit trace, adapting legacy event inputs once."""
+    if type(reference) is TrafficTrace:
+        trace = reference
+    else:
+        try:
+            trace = TrafficTrace.from_events(reference)
+        except (TypeError, ValueError) as error:
+            detail = str(error)
+            if "not iterable" in detail:
+                detail = "events must be a sequence of TraceEvent values"
+            if detail == "event frame_length must fit in uint32":
+                detail = f"frame length must be in {_MINIMUM_FRAME_LENGTH}..{_MAXIMUM_FRAME_LENGTH} (32-bit)"
+            raise _invalid(
+                f"invalid reference trace: {detail}",
+                corrective_action="provide normalized canonical TrafficTrace columns ending at W",
+            ) from error
+    if np.any(trace.frame_lengths < _MINIMUM_FRAME_LENGTH):
+        raise _invalid(
+            f"invalid reference trace: frame length must be in {_MINIMUM_FRAME_LENGTH}..{_MAXIMUM_FRAME_LENGTH} (32-bit)",
+            corrective_action="provide renderer-compatible canonical Ethernet frame lengths",
+        )
+    return trace
+
+
+def validate_fit_inputs(reference: ReferenceTrace, *, W: float) -> TrafficTrace:
+    """Validate the normalized columnar reference shared by all family fitters."""
     if type(W) is not float or not math.isfinite(W) or W <= 0.0:
         raise _invalid(
             "invalid observation window: it must be a finite positive float",
             corrective_action="provide a finite positive normalized observation window",
         )
-    try:
-        events = tuple(reference)
-    except TypeError as error:
-        raise _invalid(
-            "invalid reference trace: events must be a sequence of TraceEvent values",
-            corrective_action="provide a normalized canonical reference ending at W",
-        ) from error
-    if len(events) < 2:
+    trace = coerce_reference_trace(reference)
+    if len(trace) < 2:
         raise _invalid(
             "invalid reference trace: at least two events are required",
             corrective_action="provide a normalized canonical reference ending at W",
         )
-    try:
-        _validate_canonical_events(events, context="reference", allow_empty=False)
-    except (TypeError, ValueError, TrafficlabError) as error:
-        raise _invalid(
-            f"invalid reference trace: {error}",
-            corrective_action="provide a normalized canonical reference ending at W",
-        ) from error
-    if events[0].timestamp != 0.0:
+    if trace.timestamps[0] != 0.0:
         raise _invalid(
             "invalid reference trace: timestamps must start at zero",
             corrective_action="normalize the reference trace to start at zero and end at W",
         )
-    if events[-1].timestamp != W:
+    if trace.timestamps[-1] != W:
         raise _invalid(
             "invalid reference trace: timestamps must end at W",
             corrective_action="normalize the reference trace to start at zero and end at W",
         )
-    return events
+    return trace
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +290,27 @@ class MarkDistribution:
             if mark in seen:
                 raise ValueError("mark distribution must not contain duplicate marks")
             seen.add(mark)
+
+    @classmethod
+    def from_trace(cls, trace: TrafficTrace) -> MarkDistribution:
+        """Count joint marks with vector kernels while retaining first appearance order."""
+        if type(trace) is not TrafficTrace:
+            raise TypeError("reference marks must be a TrafficTrace")
+        keys = (trace.directions.astype(np.uint64) << np.uint64(32)) | trace.frame_lengths.astype(np.uint64)
+        unique_keys, first_indices, counts = np.unique(keys, return_index=True, return_counts=True)
+        order = np.argsort(first_indices, kind="stable")
+        ordered_keys = unique_keys[order]
+        ordered_counts = counts[order]
+        return cls(
+            tuple(
+                MarkCount(
+                    Direction.OUTBOUND if int(key >> np.uint64(32)) == 0 else Direction.INBOUND,
+                    int(key & np.uint64(_MAXIMUM_FRAME_LENGTH)),
+                    int(count),
+                )
+                for key, count in zip(ordered_keys, ordered_counts, strict=True)
+            )
+        )
 
     @classmethod
     def from_reference(cls, reference: Sequence[TraceEvent]) -> MarkDistribution:

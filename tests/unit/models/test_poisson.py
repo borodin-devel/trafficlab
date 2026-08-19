@@ -14,7 +14,7 @@ from trafficlab.config import FloatBounds, GenerationLimits, PoissonConfig
 from trafficlab.errors import TrafficlabError
 from trafficlab.models.common import GenerationGuard, MarkCount, MarkDistribution
 from trafficlab.models.poisson import PoissonFamily, PoissonModel, _generate_with_rng
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 FAMILY = PoissonFamily()
 BOUNDS = PoissonConfig(c_lambda=FloatBounds(lower=0.25, upper=4.0))
@@ -55,9 +55,11 @@ def model() -> PoissonModel:
         base_rate=1.0,
         rate=2.0,
         marks=FAMILY.fit(
-            (
-                TraceEvent(0.0, Direction.OUTBOUND, 60),
-                TraceEvent(1.0, Direction.INBOUND, 80),
+            TrafficTrace.from_events(
+                (
+                    TraceEvent(0.0, Direction.OUTBOUND, 60),
+                    TraceEvent(1.0, Direction.INBOUND, 80),
+                )
             ),
             (2.0,),
             W=1.0,
@@ -67,12 +69,14 @@ def model() -> PoissonModel:
 
 
 @pytest.fixture
-def reference() -> tuple[TraceEvent, ...]:
+def reference() -> TrafficTrace:
     """Return a hand-checked normalized trace with rate one over W=2."""
-    return (
-        TraceEvent(0.0, Direction.OUTBOUND, 60),
-        TraceEvent(1.0, Direction.INBOUND, 80),
-        TraceEvent(2.0, Direction.OUTBOUND, 60),
+    return TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 60),
+            TraceEvent(1.0, Direction.INBOUND, 80),
+            TraceEvent(2.0, Direction.OUTBOUND, 60),
+        )
     )
 
 
@@ -98,7 +102,7 @@ def test_family_declares_the_poisson_chromosome_contract() -> None:
     ],
 )
 def test_repair_preserves_bounds_and_clamps_finite_outliers(
-    reference: tuple[TraceEvent, ...], genes: tuple[float, ...], expected: tuple[float, ...]
+    reference: TrafficTrace, genes: tuple[float, ...], expected: tuple[float, ...]
 ) -> None:
     """Skipping clamp logic would pass an out-of-bounds chromosome to fitting."""
     assert FAMILY.repair(genes, BOUNDS, reference) == expected
@@ -116,22 +120,20 @@ def test_repair_preserves_bounds_and_clamps_finite_outliers(
         (-math.inf,),
     ],
 )
-def test_repair_rejects_noncanonical_poisson_genes(
-    reference: tuple[TraceEvent, ...], genes: tuple[object, ...]
-) -> None:
+def test_repair_rejects_noncanonical_poisson_genes(reference: TrafficTrace, genes: tuple[object, ...]) -> None:
     """Coercing malformed genes would lose the chromosome's strict serialized form."""
     with pytest.raises(TrafficlabError):
         FAMILY.repair(genes, BOUNDS, reference)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("bounds", [object(), FloatBounds(lower=0.25, upper=4.0)])
-def test_repair_requires_real_poisson_bounds(reference: tuple[TraceEvent, ...], bounds: object) -> None:
+def test_repair_requires_real_poisson_bounds(reference: TrafficTrace, bounds: object) -> None:
     """Using a temporary or foreign bounds object would silently invalidate genetic constraints."""
     with pytest.raises(TrafficlabError):
         FAMILY.repair((1.0,), bounds, reference)  # type: ignore[arg-type]
 
 
-def test_fit_uses_interval_count_over_full_window(reference: tuple[TraceEvent, ...]) -> None:
+def test_fit_uses_interval_count_over_full_window(reference: TrafficTrace) -> None:
     """Using packet count instead of interval count would overestimate the MLE rate."""
     fitted = FAMILY.fit(reference, (2.0,), W=2.0, bounds=BOUNDS)
 
@@ -143,7 +145,7 @@ def test_fit_uses_interval_count_over_full_window(reference: tuple[TraceEvent, .
     )
 
 
-def test_fit_defensively_repairs_its_genes(reference: tuple[TraceEvent, ...]) -> None:
+def test_fit_defensively_repairs_its_genes(reference: TrafficTrace) -> None:
     """Bypassing repair in public fit would permit a rate outside configured bounds."""
     fitted = FAMILY.fit(reference, (100.0,), W=2.0, bounds=BOUNDS)
 
@@ -178,7 +180,7 @@ def test_fit_rejects_invalid_normalized_references(reference: tuple[TraceEvent, 
 
 
 def test_fitted_model_round_trips_only_strict_json_and_canonical_outer_genes(
-    reference: tuple[TraceEvent, ...],
+    reference: TrafficTrace,
 ) -> None:
     """Trusting payload fields or unrepaired outer genes would admit a divergent fitted model."""
     fitted = FAMILY.fit(reference, (2.0,), W=2.0, bounds=BOUNDS)
@@ -209,7 +211,7 @@ def test_fitted_model_round_trips_only_strict_json_and_canonical_outer_genes(
         FAMILY.load_fitted(payload, genes=(100.0,), bounds=BOUNDS)
 
 
-def test_fitted_model_exposes_only_its_three_serialized_fields(reference: tuple[TraceEvent, ...]) -> None:
+def test_fitted_model_exposes_only_its_three_serialized_fields(reference: TrafficTrace) -> None:
     """Adding mutable fitted fields would make persisted model state ambiguous."""
     fitted: PoissonModel = FAMILY.fit(reference, (1.0,), W=2.0, bounds=BOUNDS)
     assert tuple(fitted.__dataclass_fields__) == ("base_rate", "rate", "marks")

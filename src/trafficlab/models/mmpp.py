@@ -20,6 +20,7 @@ from trafficlab.models.common import (
     Genes,
     MarkCount,
     MarkDistribution,
+    ReferenceTrace,
     validate_fit_inputs,
 )
 from trafficlab.trace import Direction, TraceEvent
@@ -393,18 +394,16 @@ class MmppFamily:
         "first_event": "zero",
     }
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: Sequence[TraceEvent]) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
         """Return the canonical named q rates and strictly ordered arrival rates."""
         del reference
         return _repair_genes(genes, bounds)
 
-    def fit(
-        self, reference: Sequence[TraceEvent], genes: Sequence[Gene], *, W: float, bounds: FamilyBounds
-    ) -> MmppModel:
+    def fit(self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> MmppModel:
         """Retain repaired timing genes and the reference's joint empirical marks."""
-        events = validate_fit_inputs(reference, W=W)
+        trace = validate_fit_inputs(reference, W=W)
         q01, q10, lambda0, lambda1 = _repair_genes(genes, bounds)
-        return MmppModel(q01, q10, lambda0, lambda1, MarkDistribution.from_reference(events))
+        return MmppModel(q01, q10, lambda0, lambda1, MarkDistribution.from_trace(trace))
 
     def generate(
         self,

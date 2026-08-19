@@ -20,6 +20,7 @@ from trafficlab.models.common import (
     Genes,
     MarkCount,
     MarkDistribution,
+    ReferenceTrace,
     validate_fit_inputs,
 )
 from trafficlab.trace import Direction, TraceEvent
@@ -218,25 +219,23 @@ class PoissonFamily:
         "rate": "interval_count_over_window",
     }
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: Sequence[TraceEvent]) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
         """Return the one-value canonical, finite, in-bounds rate-scale chromosome."""
         del reference
         return _repair_genes(genes, bounds)
 
-    def fit(
-        self, reference: Sequence[TraceEvent], genes: Sequence[Gene], *, W: float, bounds: FamilyBounds
-    ) -> PoissonModel:
+    def fit(self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> PoissonModel:
         """Estimate intervals per full window and retain ordered joint empirical marks."""
-        events = validate_fit_inputs(reference, W=W)
-        repaired_genes = self.repair(genes, bounds, events)
-        base_rate = (len(events) - 1) / W
+        trace = validate_fit_inputs(reference, W=W)
+        repaired_genes = self.repair(genes, bounds, trace)
+        base_rate = (len(trace.timestamps) - 1) / W
         rate = base_rate * repaired_genes[0]
         if not math.isfinite(rate) or rate <= 0.0:
             raise _invalid(
                 "invalid fitted Poisson rate",
                 corrective_action="provide a valid trace window and finite positive c_lambda gene",
             )
-        return PoissonModel(base_rate=base_rate, rate=rate, marks=MarkDistribution.from_reference(events))
+        return PoissonModel(base_rate=base_rate, rate=rate, marks=MarkDistribution.from_trace(trace))
 
     def generate(
         self,

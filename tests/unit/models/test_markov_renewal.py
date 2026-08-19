@@ -22,7 +22,7 @@ from trafficlab.models.markov_renewal import (
     size_bin,
     type7_quantile,
 )
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 FAMILY = MarkovRenewalFamily()
 BOUNDS = MarkovRenewalConfig(
@@ -32,11 +32,13 @@ BOUNDS = MarkovRenewalConfig(
     r=IntegerBounds(lower=1, upper=5),
     c_t=FloatBounds(lower=0.5, upper=2.0),
 )
-DISTINCT_REFERENCE = (
-    TraceEvent(0.0, Direction.INBOUND, 20),
-    TraceEvent(1.0, Direction.OUTBOUND, 80),
-    TraceEvent(2.0, Direction.INBOUND, 40),
-    TraceEvent(3.0, Direction.OUTBOUND, 60),
+DISTINCT_REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.INBOUND, 20),
+        TraceEvent(1.0, Direction.OUTBOUND, 80),
+        TraceEvent(2.0, Direction.INBOUND, 40),
+        TraceEvent(3.0, Direction.OUTBOUND, 60),
+    )
 )
 LARGE_LIMITS = GenerationLimits(max_packets=100, max_output_bytes=100_000, max_wall_seconds=10.0)
 
@@ -226,10 +228,12 @@ def test_family_declares_the_markov_renewal_chromosome_contract() -> None:
     }
 
 
-def _two_state_reference() -> tuple[TraceEvent, ...]:
-    return (
-        TraceEvent(0.0, Direction.OUTBOUND, 20),
-        TraceEvent(1.0, Direction.INBOUND, 80),
+def _two_state_reference() -> TrafficTrace:
+    return TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 20),
+            TraceEvent(1.0, Direction.INBOUND, 80),
+        )
     )
 
 
