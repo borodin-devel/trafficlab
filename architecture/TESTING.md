@@ -58,6 +58,15 @@ and provide its own corresponding process-tree proof. Per-process
 virtual-address limits and wall-clock timeouts alone do not satisfy this
 requirement.
 
+The Coverage gate also uses four workers. Its acceptance is based on a
+2026-08-19 three-run equivalence check: the serial reference and two parallel
+runs selected the same 3,503 cases, passed at 97.73% total branch-aware
+coverage, and produced identical executed/missing line and branch sets for all
+42 package files. The parallel runs took 205.89 and 214.56 seconds instead of
+561.71 seconds serially. Changing worker count, distribution, coverage engine,
+or selection requires the same comparison again; aggregate percentage alone is
+not enough.
+
 ## Unit tests
 
 Unit tests are deterministic and do not start Docker. They cover:

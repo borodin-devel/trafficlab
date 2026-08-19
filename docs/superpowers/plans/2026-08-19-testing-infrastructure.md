@@ -207,19 +207,19 @@ Pyright strict mode, Ruff, Bash bounded-process guard, Docker Compose.
 - Produces: a documented serial-or-parallel coverage decision and duration
   evidence without lowering coverage scope.
 
-- [ ] **[STEP-25-b559c072] Run the post-refactor ordinary benchmark.** Execute all
+- [x] **[STEP-25-b559c072] Run the post-refactor ordinary benchmark.** Execute all
   non-external tests with four workers, work stealing, and `--durations=50` in
   the bounded scope; compare wall time and slowest cases with the baseline.
-- [ ] **[STEP-26-6b12c80f] Run serial branch coverage.** Export coverage JSON and
+- [x] **[STEP-26-6b12c80f] Run serial branch coverage.** Export coverage JSON and
   record collected cases, executed/missing lines, executed/missing branches,
   total branch coverage, and elapsed time.
-- [ ] **[STEP-27-6576c0e6] Run repeated four-worker branch coverage.** Execute the
+- [x] **[STEP-27-6576c0e6] Run repeated four-worker branch coverage.** Execute the
   same selection at least twice with pytest-cov, export separate JSON files,
   and compare each file/line/branch set to serial evidence.
-- [ ] **[STEP-28-6ed2093c] Apply the measured decision.** Make parallel coverage
+- [x] **[STEP-28-6ed2093c] Apply the measured decision.** Make parallel coverage
   normative only if every equivalence criterion passes; otherwise retain serial
   coverage and document job-level concurrency as the speed path.
-- [ ] **[STEP-29-6ef4642d] Run deterministic generator checks and commit.** Run
+- [x] **[STEP-29-6ef4642d] Run deterministic generator checks and commit.** Run
   every checked-in generator in check mode, inspect the architecture diff, and
   commit with `test: document measured coverage strategy`.
 

@@ -110,13 +110,14 @@ tree runs with a hard memory, swap, and wall-clock bound.
 | Focused | one node ID or the last failed set | serial, fail fast | TDD and diagnosis |
 | Fast | unit tests without integration or external resources | four workers, work stealing | local feedback |
 | Ordinary | every non-external test | four workers, work stealing | offline regression and xdist safety |
-| Coverage | every non-external test | serial, branch-aware | deterministic coverage evidence |
+| Coverage | every non-external test | four workers, work stealing, branch-aware | deterministic coverage evidence |
 | External | Docker or Internet | serial | lifecycle, cleanup, and real-endpoint evidence |
 | Release | static, ordinary, coverage, generators, audit, external | as defined by each gate | milestone acceptance |
 
-The serial Coverage command remains normative until repeated parallel coverage
-runs demonstrate identical file, line, and branch sets. Report the 50 slowest
-cases in the Ordinary and Coverage gates so performance work is evidence-led.
+The four-worker Coverage command is normative because the measured equivalence
+record below proves it reports the same file, line, and branch sets as serial
+execution. Report the 50 slowest cases in the Ordinary and Coverage gates so
+performance work remains evidence-led.
 
 ### Focused gate
 
@@ -159,16 +160,23 @@ scripts/run_bounded.sh \
 
 ### Coverage gate
 
-Run every offline test once in a serial process with branch coverage:
+Run every offline test once with four workers and branch coverage:
 
 ```bash
 scripts/run_bounded.sh \
-  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -q -n 0 -m "not docker and not internet" \
+  uv run --locked pytest -q -n 4 --dist worksteal \
+  -m "not docker and not internet" \
   --cov=trafficlab --cov-branch --cov-report=term-missing \
   --cov-fail-under=90 --durations=50
 ```
+
+On 2026-08-19, the same commit and 3,503-test selection took 561.71 seconds
+serially and 205.89/214.56 seconds in two four-worker runs. All three reported
+97.73% total branch-aware coverage and exactly identical executed and missing
+line and branch sets for all 42 source files. Repeat that comparison before
+changing the worker count, distribution mode, coverage engine, or selection.
 
 ### External gate
 
