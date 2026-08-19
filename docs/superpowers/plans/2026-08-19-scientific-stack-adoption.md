@@ -205,27 +205,27 @@ Run Ruff, Pyright, all model unit tests, the new properties, `tests/scientific/t
 - Produces: `BootstrapInterval` and `bootstrap_interval(values, *, seed, n_resamples=10_000, confidence_level=0.95)`.
 - Preserves: similarity score/diagnostic formulas and nearest-rank IAT diagnostics; no KS p-value enters artifacts.
 
-- [ ] **[STEP-19-5a07f83f] Step 1: Write failing KS, ACF, multiscale, and bootstrap tests**
+- [x] **[STEP-19-5a07f83f] Step 1: Write failing KS, ACF, multiscale, and bootstrap tests**
 
 Compare SciPy KS statistics with the independent merged-ECDF scan on tied integer/float samples. Compare vectorized ACF and bin cells with scalar oracles. Assert literal bootstrap metadata and fixed-seed interval bytes for a predeclared sample.
 
-- [ ] **[STEP-20-15248770] Step 2: Run the new statistical selection and verify RED**
+- [x] **[STEP-20-15248770] Step 2: Run the new statistical selection and verify RED**
 
 Run the focused bounded selection for KS, ACF, multiscale, statistics, and property modules; expect the bootstrap API to be missing and vectorization expectations to fail.
 
-- [ ] **[STEP-21-4baa3391] Step 3: Replace generic kernels without changing Trafficlab policy**
+- [x] **[STEP-21-4baa3391] Step 3: Replace generic kernels without changing Trafficlab policy**
 
 Use `ks_2samp(...).statistic`, centered NumPy dot products for selected lags, and vectorized per-direction `bincount` after existing four-ULP bin-index snapping. Retain the independent ECDF oracle in tests only and retain exact normalized-L1 accumulation in production.
 
-- [ ] **[STEP-22-44353315] Step 4: Implement seeded percentile bootstrap records**
+- [x] **[STEP-22-44353315] Step 4: Implement seeded percentile bootstrap records**
 
 Call `scipy.stats.bootstrap` with `Generator(PCG64(seed))`, 95% confidence, 10,000 resamples, and `method="percentile"`. Reject empty/nonfinite samples and nonfinite or inverted intervals. Persist seed, generator, method, resamples, sample size, statistic, and bounds.
 
-- [ ] **[STEP-23-44cb329a] Step 5: Integrate intervals into validation-study report inputs**
+- [x] **[STEP-23-44cb329a] Step 5: Integrate intervals into validation-study report inputs**
 
 Add intervals for declared training/held-out scalar summaries without presenting p-values or ground truth. Extend report fixtures and in-process study tests to recompute rather than trust stored interval fields.
 
-- [ ] **[STEP-24-99b9cca1] Step 6: Verify and commit statistical integration**
+- [x] **[STEP-24-99b9cca1] Step 6: Verify and commit statistical integration**
 
 Run Ruff, Pyright, all similarity/statistics unit and property tests, comparison integration, and validation-study pipeline tests. Commit `feat: adopt scipy statistical kernels`.
 
