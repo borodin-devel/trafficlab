@@ -22,12 +22,12 @@ from trafficlab.genetic.evaluation import (
     validate_evaluation_context,
 )
 from trafficlab.genetic.operators import ReproductionContext, fill_next_population
-from trafficlab.genetic.population import initial_population, rank_candidates
-from trafficlab.genetic.types import Candidate, FamilyPriority
+from trafficlab.genetic.population import rank_candidates
+from trafficlab.genetic.types import Candidate, CandidateId, FamilyPriority
 from trafficlab.models.common import FamilyBounds, MarkCount, MarkDistribution, make_rng
 from trafficlab.models.mmpp import MmppModel
 from trafficlab.models.registry import MMPP_FAMILY
-from trafficlab.trace import Direction, TrafficTrace
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 type Rates = tuple[float, float, float, float]
 type Coordinates = tuple[float, float, float, float]
@@ -36,6 +36,7 @@ HAND_ABSOLUTE_TOLERANCE = 1e-12
 TRAINING_WINDOW_SECONDS = 180.0
 HELD_OUT_WINDOW_SECONDS = 120.0
 EVALUATION_BUDGET = 120
+INVALID_OBJECTIVE = 1e300
 OPTIMIZER_GENERATIONS = 14
 SIMULATION_GENERATIONS = 16
 RECOVERY_SEEDS = (4101, 4201, 4301)
@@ -51,6 +52,32 @@ OPTIMIZER_STARTS: tuple[Coordinates, ...] = (
     (0.65, 0.35, 0.20, 0.50),
     (0.25, 0.45, 0.80, 0.60),
     (0.75, 0.55, 0.60, 0.80),
+)
+
+AGGREGATE_GATE_NAMES = (
+    "hand_likelihood",
+    "extreme_finite",
+    "synthetic_recovery",
+    "equal_evaluation_budget",
+    "held_out_likelihood",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class TrialPlan:
+    """Every independent seed used by one recovery/equal-budget trial."""
+
+    training_data_seed: int
+    likelihood_search_seed: int
+    production_search_seed: int
+    production_selection_trial_seeds: tuple[int, ...]
+    held_out_data_seed: int
+
+
+TRIAL_PLANS = (
+    TrialPlan(4101, 14101, 24101, (104101,), 34101),
+    TrialPlan(4201, 14201, 24201, (104201,), 34201),
+    TrialPlan(4301, 14301, 24301, (104301,), 34301),
 )
 
 
@@ -171,11 +198,47 @@ _MARKS = MarkDistribution(
 
 
 @dataclass(frozen=True, slots=True)
+class LikelihoodEvaluation:
+    """One complete SciPy objective evaluation retained in call order."""
+
+    evaluation_index: int
+    coordinates: Coordinates
+    rates: Rates | None
+    objective: float | None
+    log_likelihood: float | None
+    status: Literal["valid", "invalid"]
+    failure: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SimulationCandidateHistory:
+    """One production candidate in one generation, with optional evaluation event."""
+
+    generation: int
+    candidate_id: tuple[int, int]
+    genes: Rates | None
+    status: str
+    fitness: float
+    failure: dict[str, object] | None
+    evaluation_index: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class SimulationGenerationHistory:
+    """The complete post-evaluation production population for one generation."""
+
+    generation: int
+    candidates: tuple[SimulationCandidateHistory, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class LikelihoodFit:
     rates: Rates
     log_likelihood: float
     evaluations: int
     termination: str
+    starts: tuple[Rates, ...]
+    history: tuple[LikelihoodEvaluation, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +248,7 @@ class SimulationFit:
     evaluations: int
     termination: Literal["hard_limit"]
     starts: tuple[Rates, ...]
+    history: tuple[SimulationGenerationHistory, ...]
 
 
 class _DifferentialEvolutionResult(Protocol):
@@ -219,12 +283,38 @@ _expm = cast(_MatrixExponential, cast(Any, scipy_linalg).expm)
 _differential_evolution = cast(_DifferentialEvolution, cast(Any, scipy_optimize).differential_evolution)
 
 
+class LikelihoodHistoryRecord(TypedDict):
+    evaluation_index: int
+    coordinates: list[float]
+    rates: list[float] | None
+    objective: float | None
+    log_likelihood: float | None
+    status: str
+    failure: str | None
+
+
+class SimulationCandidateRecord(TypedDict):
+    generation: int
+    candidate_id: list[int]
+    genes: list[float] | None
+    status: str
+    fitness: float
+    failure: dict[str, object] | None
+    evaluation_index: int | None
+
+
+class SimulationGenerationRecord(TypedDict):
+    generation: int
+    candidates: list[SimulationCandidateRecord]
+
+
 class FitRecord(TypedDict):
     rates: list[float]
     starts: list[list[float]]
     evaluations: int
     termination: str
     training_log_likelihood: float
+    history: list[LikelihoodHistoryRecord]
 
 
 class SimulationRecord(TypedDict):
@@ -233,6 +323,7 @@ class SimulationRecord(TypedDict):
     evaluations: int
     termination: str
     training_fitness: float
+    history: list[SimulationGenerationRecord]
 
 
 class HeldOutRecord(TypedDict):
@@ -252,6 +343,7 @@ class TrialGateRecord(TypedDict):
 class TrialRecord(TypedDict):
     seed: int
     true_rates: list[float]
+    seed_limit_plan: SeedLimitRecord
     training_window_seconds: float
     simulation_reference_window_seconds: float
     training_event_count: int
@@ -302,8 +394,28 @@ class PolicyRecord(TypedDict):
     likelihood_optimizer: dict[str, int | str]
     simulation_distance_optimizer: dict[str, int | str]
     optimizer_starts: list[list[float]]
+    common_initial_rates: list[list[float]]
     training_window_seconds: float
     held_out_window_seconds: float
+
+
+class SeedLimitRecord(TypedDict):
+    training_data_seed: int
+    likelihood_search_seed: int
+    production_search_seed: int
+    production_selection_trial_seeds: list[int]
+    production_final_seed: None
+    held_out_data_seed: int
+    training_observation_window_seconds: float
+    held_out_observation_window_seconds: float
+    likelihood_population_size: int
+    likelihood_generations: int
+    production_population_size: int
+    production_generations: int
+    production_elite_count: int
+    production_tournament_size: int
+    production_duplicate_mutation_attempts: int
+    generation_limits: dict[str, int | float]
 
 
 class ProbeEvidence(TypedDict):
@@ -399,6 +511,43 @@ def decode_rates(coordinates: Sequence[float], bounds: ProbeRateBounds) -> Rates
     return decoded
 
 
+# Differential evolution round-trips custom starts through its unit-bound
+# scale/unscale mapping before the first objective call. Retain that locked
+# public-call result so the production comparator starts from bit-identical
+# decoded rate vectors rather than merely mathematically equivalent floats.
+_SCIPY_EFFECTIVE_STARTS = tuple(
+    cast(Coordinates, tuple(0.5 + (coordinate - 0.5) for coordinate in start)) for start in OPTIMIZER_STARTS
+)
+COMMON_START_RATES = tuple(decode_rates(start, PROBE_BOUNDS) for start in _SCIPY_EFFECTIVE_STARTS)
+
+
+def likelihood_evaluation_count(history: Sequence[LikelihoodEvaluation]) -> int:
+    """Derive a validated objective count from a complete likelihood history."""
+    indexes = tuple(item.evaluation_index for item in history)
+    if not indexes:
+        raise ValueError("likelihood evaluation history must be nonempty")
+    if indexes != tuple(range(1, len(indexes) + 1)):
+        raise ValueError("likelihood evaluation indexes must be contiguous from one")
+    return len(indexes)
+
+
+def simulation_evaluation_count(history: Sequence[SimulationGenerationHistory]) -> int:
+    """Derive a validated objective count from production evaluation events."""
+    if not history:
+        raise ValueError("simulation evaluation history must be nonempty")
+    indexes = tuple(
+        candidate.evaluation_index
+        for generation in history
+        for candidate in generation.candidates
+        if candidate.evaluation_index is not None
+    )
+    if not indexes:
+        raise ValueError("simulation evaluation history must contain evaluation events")
+    if indexes != tuple(range(1, len(indexes) + 1)):
+        raise ValueError("simulation evaluation indexes must be contiguous from one")
+    return len(indexes)
+
+
 def fit_mmpp_likelihood(
     iats: Iterable[float], terminal_silence: float, bounds: ProbeRateBounds, *, seed: int
 ) -> LikelihoodFit:
@@ -406,10 +555,41 @@ def fit_mmpp_likelihood(
     intervals, terminal = _observations(iats, terminal_silence)
     if type(seed) is not int or seed < 0:
         raise ValueError("optimizer seed must be a nonnegative exact integer")
+    history: list[LikelihoodEvaluation] = []
 
     def objective(raw: NDArray[np.float64]) -> float:
         coordinates = cast(Coordinates, tuple(float(item) for item in raw))
-        return -mmpp_log_likelihood(intervals, terminal, decode_rates(coordinates, bounds))
+        evaluation_index = len(history) + 1
+        rates: Rates | None = None
+        try:
+            rates = decode_rates(coordinates, bounds)
+            log_likelihood = mmpp_log_likelihood(intervals, terminal, rates)
+        except (ArithmeticError, ValueError) as error:
+            history.append(
+                LikelihoodEvaluation(
+                    evaluation_index=evaluation_index,
+                    coordinates=coordinates,
+                    rates=rates,
+                    objective=INVALID_OBJECTIVE,
+                    log_likelihood=None,
+                    status="invalid",
+                    failure=f"{type(error).__name__}: {error}",
+                )
+            )
+            return INVALID_OBJECTIVE
+        objective_value = -log_likelihood
+        history.append(
+            LikelihoodEvaluation(
+                evaluation_index=evaluation_index,
+                coordinates=coordinates,
+                rates=rates,
+                objective=objective_value,
+                log_likelihood=log_likelihood,
+                status="valid",
+                failure=None,
+            )
+        )
+        return objective_value
 
     result = _differential_evolution(
         objective,
@@ -423,12 +603,19 @@ def fit_mmpp_likelihood(
         workers=1,
         rng=np.random.Generator(np.random.PCG64(seed)),
     )
+    retained_history = tuple(history)
+    evaluations = likelihood_evaluation_count(retained_history)
+    if int(result.nfev) != evaluations:
+        raise AssertionError("SciPy evaluation count does not match the retained likelihood history")
     coordinates = cast(Coordinates, tuple(float(item) for item in result.x))
+    starts = tuple(cast(Rates, item.rates) for item in retained_history[: len(OPTIMIZER_STARTS)])
     return LikelihoodFit(
         rates=decode_rates(coordinates, bounds),
         log_likelihood=-float(result.fun),
-        evaluations=int(result.nfev),
+        evaluations=evaluations,
         termination=str(result.message),
+        starts=starts,
+        history=retained_history,
     )
 
 
@@ -439,19 +626,70 @@ def _generate_trace(rates: Rates, *, seed: int, window: float) -> TrafficTrace:
 
 
 def _evaluate_population(
-    candidates: Sequence[Candidate], context: ValidatedEvaluationContext
-) -> tuple[tuple[Candidate, ...], int]:
-    evaluations = 0
+    candidates: Sequence[Candidate], context: ValidatedEvaluationContext, *, next_evaluation_index: int
+) -> tuple[tuple[Candidate, ...], tuple[int | None, ...]]:
+    evaluation_index = next_evaluation_index
     output: list[Candidate] = []
+    events: list[int | None] = []
     for candidate in candidates:
         if candidate.status == "pending":
             candidate = evaluate_candidate(candidate, context)
-            evaluations += 1
+            events.append(evaluation_index)
+            evaluation_index += 1
+        else:
+            events.append(None)
         output.append(candidate)
-    return (tuple(output), evaluations)
+    return (tuple(output), tuple(events))
 
 
-def _simulation_distance_fit(reference: TrafficTrace, *, window: float, seed: int) -> SimulationFit:
+def _production_initial_population(events: Sequence[TraceEvent], starts: Sequence[Rates]) -> tuple[Candidate, ...]:
+    return tuple(
+        Candidate(
+            identifier=CandidateId(birth_generation=0, birth_index=index),
+            family="mmpp",
+            genes=cast(Rates, MMPP_FAMILY.repair(rates, PRODUCTION_BOUNDS, events)),
+            status="pending",
+            fitness=0.0,
+            trials=(),
+            invalid=None,
+            duplicate_diagnostics=(),
+        )
+        for index, rates in enumerate(starts)
+    )
+
+
+def _simulation_generation_history(
+    generation: int, candidates: Sequence[Candidate], evaluation_indexes: Sequence[int | None]
+) -> SimulationGenerationHistory:
+    if len(candidates) != len(evaluation_indexes):
+        raise ValueError("simulation candidates and evaluation events must have equal length")
+    records: list[SimulationCandidateHistory] = []
+    for candidate, evaluation_index in zip(candidates, evaluation_indexes, strict=True):
+        failure = (
+            None if candidate.invalid is None else cast(dict[str, object], candidate.invalid.model_dump(mode="json"))
+        )
+        records.append(
+            SimulationCandidateHistory(
+                generation=generation,
+                candidate_id=(candidate.identifier.birth_generation, candidate.identifier.birth_index),
+                genes=None if candidate.genes is None else cast(Rates, candidate.genes),
+                status=candidate.status,
+                fitness=candidate.fitness,
+                failure=failure,
+                evaluation_index=evaluation_index,
+            )
+        )
+    return SimulationGenerationHistory(generation=generation, candidates=tuple(records))
+
+
+def _simulation_distance_fit(
+    reference: TrafficTrace,
+    *,
+    window: float,
+    seed: int,
+    trial_seeds: tuple[int, ...],
+    starts: tuple[Rates, ...],
+) -> SimulationFit:
     events = reference.to_events()
     bounds: dict[FamilyName, FamilyBounds] = {"mmpp": PRODUCTION_BOUNDS}
     priority: FamilyPriority = ("mmpp",)
@@ -462,16 +700,15 @@ def _simulation_distance_fit(reference: TrafficTrace, *, window: float, seed: in
             window=window,
             families={"mmpp": MMPP_FAMILY},
             bounds=bounds,
-            trial_seeds=(seed + 100_000,),
+            trial_seeds=trial_seeds,
             trial_limits=_GENERATION_LIMITS,
             similarity=_SIMILARITY,
         )
     )
-    population = initial_population(
-        priority, population_size=len(OPTIMIZER_STARTS), bounds=bounds, reference=events, rng=rng
-    )
-    starts = tuple(cast(Rates, candidate.genes) for candidate in population)
-    population, evaluations = _evaluate_population(population, context)
+    population = _production_initial_population(events, starts)
+    retained_starts = tuple(cast(Rates, candidate.genes) for candidate in population)
+    population, evaluation_indexes = _evaluate_population(population, context, next_evaluation_index=1)
+    history = [_simulation_generation_history(0, population, evaluation_indexes)]
     for generation in range(1, SIMULATION_GENERATIONS + 1):
         population = fill_next_population(
             population,
@@ -487,8 +724,11 @@ def _simulation_distance_fit(reference: TrafficTrace, *, window: float, seed: in
             ),
             rng=rng,
         )
-        population, new_evaluations = _evaluate_population(population, context)
-        evaluations += new_evaluations
+        next_index = simulation_evaluation_count(history) + 1
+        population, evaluation_indexes = _evaluate_population(population, context, next_evaluation_index=next_index)
+        history.append(_simulation_generation_history(generation, population, evaluation_indexes))
+    retained_history = tuple(history)
+    evaluations = simulation_evaluation_count(retained_history)
     winner = rank_candidates(population, family_priority=priority)[0]
     if winner.status != "valid" or winner.genes is None:
         raise AssertionError("bounded production MMPP search produced no valid winner")
@@ -497,7 +737,8 @@ def _simulation_distance_fit(reference: TrafficTrace, *, window: float, seed: in
         fitness=winner.fitness,
         evaluations=evaluations,
         termination="hard_limit",
-        starts=starts,
+        starts=retained_starts,
+        history=retained_history,
     )
 
 
@@ -513,9 +754,73 @@ def _rates_list(rates: Rates) -> list[float]:
     return list(rates)
 
 
+def _likelihood_history_records(history: Sequence[LikelihoodEvaluation]) -> list[LikelihoodHistoryRecord]:
+    return [
+        {
+            "evaluation_index": item.evaluation_index,
+            "coordinates": list(item.coordinates),
+            "rates": None if item.rates is None else _rates_list(item.rates),
+            "objective": item.objective,
+            "log_likelihood": item.log_likelihood,
+            "status": item.status,
+            "failure": item.failure,
+        }
+        for item in history
+    ]
+
+
+def _simulation_history_records(
+    history: Sequence[SimulationGenerationHistory],
+) -> list[SimulationGenerationRecord]:
+    return [
+        {
+            "generation": generation.generation,
+            "candidates": [
+                {
+                    "generation": candidate.generation,
+                    "candidate_id": list(candidate.candidate_id),
+                    "genes": None if candidate.genes is None else _rates_list(candidate.genes),
+                    "status": candidate.status,
+                    "fitness": candidate.fitness,
+                    "failure": candidate.failure,
+                    "evaluation_index": candidate.evaluation_index,
+                }
+                for candidate in generation.candidates
+            ],
+        }
+        for generation in history
+    ]
+
+
+def _seed_limit_record(plan: TrialPlan) -> SeedLimitRecord:
+    return {
+        "training_data_seed": plan.training_data_seed,
+        "likelihood_search_seed": plan.likelihood_search_seed,
+        "production_search_seed": plan.production_search_seed,
+        "production_selection_trial_seeds": list(plan.production_selection_trial_seeds),
+        "production_final_seed": None,
+        "held_out_data_seed": plan.held_out_data_seed,
+        "training_observation_window_seconds": TRAINING_WINDOW_SECONDS,
+        "held_out_observation_window_seconds": HELD_OUT_WINDOW_SECONDS,
+        "likelihood_population_size": len(COMMON_START_RATES),
+        "likelihood_generations": OPTIMIZER_GENERATIONS,
+        "production_population_size": len(COMMON_START_RATES),
+        "production_generations": SIMULATION_GENERATIONS,
+        "production_elite_count": 1,
+        "production_tournament_size": 2,
+        "production_duplicate_mutation_attempts": 4,
+        "generation_limits": {
+            "max_packets": _GENERATION_LIMITS.max_packets,
+            "max_output_bytes": _GENERATION_LIMITS.max_output_bytes,
+            "max_wall_seconds": _GENERATION_LIMITS.max_wall_seconds,
+        },
+    }
+
+
 def decide_probe(gates: Mapping[str, bool]) -> DecisionRecord:
-    """Return a fail-closed decision with every failed gate named deterministically."""
-    failed = sorted(name for name, passed in gates.items() if not passed)
+    """Pass only an exact complete mapping of mandated true aggregate gates."""
+    failed = [name for name in AGGREGATE_GATE_NAMES if type(gates.get(name)) is not bool or not gates[name]]
+    failed.extend(f"unknown:{name}" for name in sorted(set(gates) - set(AGGREGATE_GATE_NAMES)))
     return {
         "outcome": "pass" if not failed else "reject",
         "failed_gates": failed,
@@ -560,13 +865,25 @@ def _extreme_records() -> list[ExtremeRecord]:
     return records
 
 
-def _trial(seed: int) -> TrialRecord:
+def _trial(plan: TrialPlan) -> TrialRecord:
+    seed = plan.training_data_seed
     training = _generate_trace(TRUE_RATES, seed=seed, window=TRAINING_WINDOW_SECONDS)
     training_iats, training_terminal = _trace_observations(training, TRAINING_WINDOW_SECONDS)
-    likelihood = fit_mmpp_likelihood(training_iats, training_terminal, PROBE_BOUNDS, seed=seed + 10_000)
+    likelihood = fit_mmpp_likelihood(
+        training_iats,
+        training_terminal,
+        PROBE_BOUNDS,
+        seed=plan.likelihood_search_seed,
+    )
     simulation_window = float(training.timestamps[-1])
-    simulation = _simulation_distance_fit(training, window=simulation_window, seed=seed + 20_000)
-    held_out_seed = seed + 30_000
+    simulation = _simulation_distance_fit(
+        training,
+        window=simulation_window,
+        seed=plan.production_search_seed,
+        trial_seeds=plan.production_selection_trial_seeds,
+        starts=likelihood.starts,
+    )
+    held_out_seed = plan.held_out_data_seed
     held_out = _generate_trace(TRUE_RATES, seed=held_out_seed, window=HELD_OUT_WINDOW_SECONDS)
     held_out_iats, held_out_terminal = _trace_observations(held_out, HELD_OUT_WINDOW_SECONDS)
     likelihood_held_out = mmpp_log_likelihood(held_out_iats, held_out_terminal, likelihood.rates)
@@ -580,15 +897,17 @@ def _trial(seed: int) -> TrialRecord:
     return {
         "seed": seed,
         "true_rates": _rates_list(TRUE_RATES),
+        "seed_limit_plan": _seed_limit_record(plan),
         "training_window_seconds": TRAINING_WINDOW_SECONDS,
         "simulation_reference_window_seconds": simulation_window,
         "training_event_count": len(training),
         "likelihood_fit": {
             "rates": _rates_list(likelihood.rates),
-            "starts": [_rates_list(decode_rates(start, PROBE_BOUNDS)) for start in OPTIMIZER_STARTS],
+            "starts": [_rates_list(start) for start in likelihood.starts],
             "evaluations": likelihood.evaluations,
             "termination": likelihood.termination,
             "training_log_likelihood": likelihood.log_likelihood,
+            "history": _likelihood_history_records(likelihood.history),
         },
         "simulation_distance_fit": {
             "rates": _rates_list(simulation.rates),
@@ -596,6 +915,7 @@ def _trial(seed: int) -> TrialRecord:
             "evaluations": simulation.evaluations,
             "termination": simulation.termination,
             "training_fitness": simulation.fitness,
+            "history": _simulation_history_records(simulation.history),
         },
         "held_out": {
             "seed": held_out_seed,
@@ -617,14 +937,13 @@ def build_probe_evidence() -> ProbeEvidence:
     """Run every predeclared gate and return complete machine-readable evidence."""
     hand = _hand_records()
     extreme = _extreme_records()
-    trials = [_trial(seed) for seed in RECOVERY_SEEDS]
+    trials = [_trial(plan) for plan in TRIAL_PLANS]
     gates: AggregateGates = {
         "hand_likelihood": all(record["passed"] for record in hand),
         "extreme_finite": all(record["passed"] for record in extreme),
         "synthetic_recovery": all(record["gates"]["recovery"] for record in trials),
-        "equal_budget_held_out": all(
-            record["gates"]["equal_evaluation_budget"] and record["gates"]["held_out_likelihood"] for record in trials
-        ),
+        "equal_evaluation_budget": all(record["gates"]["equal_evaluation_budget"] for record in trials),
+        "held_out_likelihood": all(record["gates"]["held_out_likelihood"] for record in trials),
     }
     policy: PolicyRecord = {
         "production_changed": False,
@@ -650,11 +969,12 @@ def build_probe_evidence() -> ProbeEvidence:
             "generations": SIMULATION_GENERATIONS,
         },
         "optimizer_starts": [list(start) for start in OPTIMIZER_STARTS],
+        "common_initial_rates": [_rates_list(rates) for rates in COMMON_START_RATES],
         "training_window_seconds": TRAINING_WINDOW_SECONDS,
         "held_out_window_seconds": HELD_OUT_WINDOW_SECONDS,
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "probe": "scipy_two_state_mmpp_likelihood",
         "policy": policy,
         "hand_cases": hand,
