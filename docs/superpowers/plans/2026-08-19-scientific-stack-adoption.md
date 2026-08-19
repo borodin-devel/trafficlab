@@ -111,7 +111,7 @@ Run Ruff format/check, strict Pyright, the focused property selection, existing 
 - Produces: `TrafficTrace(timestamps: NDArray[np.float64], directions: NDArray[np.uint8], frame_lengths: NDArray[np.uint32])`, `TrafficTrace.from_events()`, `TrafficTrace.to_events()`, `TrafficTrace.iats()`, `parse_pcapng_trace()`.
 - Changes: `normalize_reference()` and `align_generated()` return `TrafficTrace`; boundary APIs may retain `TraceEvent` conversion during migration.
 
-- [ ] **[STEP-7-3baf3a78] Step 1: Write failing ownership, dtype, validation, and conversion tests**
+- [x] **[STEP-7-3baf3a78] Step 1: Write failing ownership, dtype, validation, and conversion tests**
 
 ```python
 trace = TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 64),))
@@ -124,23 +124,23 @@ assert trace.to_events() == (TraceEvent(0.0, Direction.OUTBOUND, 64),)
 
 Mutate source arrays after construction, attempt writes, and cover unequal lengths, rank, wrong dtype, NaN/Inf, decreasing time, direction `2`, zero length, and `uint32` overflow.
 
-- [ ] **[STEP-8-3448d598] Step 2: Run trace tests and confirm `TrafficTrace` is absent**
+- [x] **[STEP-8-3448d598] Step 2: Run trace tests and confirm `TrafficTrace` is absent**
 
 Run the focused bounded selection for `tests/unit/test_trace.py` and `tests/property/test_trace_array_properties.py`; expect import failure for `TrafficTrace`.
 
-- [ ] **[STEP-9-64c9d82a] Step 3: Implement the minimal typed columnar value**
+- [x] **[STEP-9-64c9d82a] Step 3: Implement the minimal typed columnar value**
 
 Copy inputs into owned C-contiguous arrays, validate before narrowing integers, set `write=False`, and implement length, slicing, equality, event conversion, direction masks, and `np.diff` IATs without returning writable aliases.
 
-- [ ] **[STEP-10-9dd2d45c] Step 4: Migrate PCAPNG and normalization boundaries**
+- [x] **[STEP-10-9dd2d45c] Step 4: Migrate PCAPNG and normalization boundaries**
 
 Add `parse_pcapng_trace()` as the scientific-core entry point. Vectorize normalization and closed-window alignment. Keep `parse_pcapng_bytes()` as a thin event-boundary adapter until all external callers are migrated.
 
-- [ ] **[STEP-11-ffccc7d9] Step 5: Add in-process round-trip evidence and architecture text**
+- [x] **[STEP-11-ffccc7d9] Step 5: Add in-process round-trip evidence and architecture text**
 
 Prove PCAPNG → `TrafficTrace` → events → PCAPNG agreement for both directions and timestamp resolution, then update `architecture/SYSTEM.md` to define the three read-only columns and boundary adapters.
 
-- [ ] **[STEP-12-f518a9fc] Step 6: Verify and commit the trace layer**
+- [x] **[STEP-12-f518a9fc] Step 6: Verify and commit the trace layer**
 
 Run Ruff, Pyright, trace/PCAPNG/capture-validation unit suites, property tests, and `tests/integration/test_model_pipeline.py`. Commit `feat: add columnar traffic trace`.
 
