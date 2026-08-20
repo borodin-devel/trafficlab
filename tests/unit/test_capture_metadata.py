@@ -182,6 +182,25 @@ def test_invalid_json_capture_metadata_is_translated_to_a_trafficlab_error(tmp_p
     assert error.value.corrective_action == "correct capture.json JSON and retry"
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        b'{"interface":"eth0","interface":"eth0","target_mac":"02:42:ac:11:00:02"}',
+        b'{"interface":"eth0","target_mac":"02:42:ac:11:00:02","unknown":NaN}',
+        b'{"interface":"eth0","target_mac":"02:42:ac:11:00:02","unknown":Infinity}',
+    ],
+    ids=("duplicate-key", "nan-constant", "infinity-constant"),
+)
+def test_capture_metadata_rejects_ambiguous_json_before_model_validation(content: bytes) -> None:
+    """Duplicate keys and nonfinite constants must fail as JSON, never reach Pydantic as trusted structure."""
+    source = Path("run/capture.json")
+
+    with pytest.raises(TrafficlabError, match=r"invalid JSON in capture metadata run/capture\.json") as error:
+        parse_capture_metadata(content, source=source)
+
+    assert error.value.corrective_action == "correct capture.json JSON and retry"
+
+
 def test_missing_capture_metadata_is_translated_to_a_trafficlab_error(tmp_path: Path) -> None:
     """Leaking a missing-file error would make absent capture metadata hard to diagnose."""
     with pytest.raises(TrafficlabError, match="could not read capture metadata") as error:

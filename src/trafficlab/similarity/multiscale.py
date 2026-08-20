@@ -7,10 +7,15 @@ from collections.abc import Iterable
 import numpy as np
 
 from trafficlab.errors import TrafficlabError
-from trafficlab.similarity.common import FrozenJsonValue, JsonDiagnostics, SimilarityResult, validate_observation_window
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.similarity.common import (
+    FrozenJsonValue,
+    JsonDiagnostics,
+    SimilarityResult,
+    validate_observation_window,
+    validated_weights,
+)
+from trafficlab.trace import TraceEvent, TrafficTrace, validate_traffic_trace
 
-_WEIGHT_SUM_TOLERANCE = 1e-12
 _DISCREPANCY_TOLERANCE = 3e-12
 
 
@@ -97,41 +102,6 @@ def normalized_l1(reference_cells: Iterable[object], generated_cells: Iterable[o
     return _bounded_discrepancy(discrepancy, name="normalized L1 discrepancy")
 
 
-def _validated_weights(values: Iterable[object], *, name: str, expected_length: int | None = None) -> tuple[float, ...]:
-    """Return one finite nonnegative vector whose precise sum is one."""
-    try:
-        weights = tuple(values)
-    except TypeError as error:
-        raise TrafficlabError(
-            f"invalid {name}: weights must be iterable",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        ) from error
-    if expected_length is not None and len(weights) != expected_length:
-        raise TrafficlabError(
-            f"invalid {name}: weight count must match width count",
-            corrective_action="provide one finite normalized weight for every width",
-        )
-    if not weights or any(type(weight) is not float or not math.isfinite(weight) or weight < 0.0 for weight in weights):
-        raise TrafficlabError(
-            f"invalid {name}: weights must be finite nonnegative floats",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        )
-    typed_weights = tuple(weight for weight in weights if type(weight) is float)
-    try:
-        weight_sum = math.fsum(typed_weights)
-    except OverflowError as error:
-        raise TrafficlabError(
-            f"invalid {name}: weights cannot be summed safely",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        ) from error
-    if not math.isclose(weight_sum, 1.0, rel_tol=0.0, abs_tol=_WEIGHT_SUM_TOLERANCE):
-        raise TrafficlabError(
-            f"invalid {name}: weights must sum to one",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        )
-    return typed_weights
-
-
 def _snap_near_integer(quotient: float) -> float:
     """Snap a finite quotient only within four ULPs of its nearest integer."""
     # Values such as ``(k * width) / width`` can land a few representable
@@ -216,77 +186,6 @@ def _validated_widths_and_bin_counts(
     )
 
 
-def _validated_trace(
-    events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str, window: float
-) -> tuple[TraceEvent, ...] | TrafficTrace:
-    """Return one nonempty canonical trace contained by the shared closed window."""
-    corrective_action = f"provide nonempty finite nondecreasing canonical {trace_name} events in [0, W]"
-    if type(events) is TrafficTrace:
-        if not len(events):
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: at least one event is required",
-                corrective_action=corrective_action,
-            )
-        if events.timestamps[-1] > window:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: every event must be inside [0, W]",
-                corrective_action=corrective_action,
-            )
-        return events
-    try:
-        trace = tuple(events)
-    except TypeError as error:
-        raise TrafficlabError(
-            f"invalid {trace_name} trace: events must be an iterable of canonical events",
-            corrective_action=corrective_action,
-        ) from error
-    if not trace:
-        raise TrafficlabError(
-            f"invalid {trace_name} trace: at least one event is required",
-            corrective_action=corrective_action,
-        )
-    previous_timestamp: float | None = None
-    for event in trace:
-        if type(event) is not TraceEvent:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: every event must be a TraceEvent",
-                corrective_action=corrective_action,
-            )
-        try:
-            timestamp = event.timestamp
-            direction = event.direction
-            frame_length = event.frame_length
-        except AttributeError as error:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: event data is incomplete",
-                corrective_action=corrective_action,
-            ) from error
-        if (
-            type(timestamp) is not float
-            or not math.isfinite(timestamp)
-            or timestamp < 0.0
-            or type(direction) is not Direction
-            or type(frame_length) is not int
-            or frame_length <= 0
-        ):
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: events need finite timestamps, valid directions, and positive lengths",
-                corrective_action=corrective_action,
-            )
-        if timestamp > window:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: every event must be inside [0, W]",
-                corrective_action=corrective_action,
-            )
-        if previous_timestamp is not None and timestamp < previous_timestamp:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: timestamps must be nondecreasing",
-                corrective_action=corrective_action,
-            )
-        previous_timestamp = timestamp
-    return trace
-
-
 def _binned_trace_features(
     trace: TrafficTrace, *, width: float, bins_per_direction: int
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -312,45 +211,10 @@ def _binned_trace_features(
 
 
 def _binned_features(
-    events: tuple[TraceEvent, ...] | TrafficTrace, *, width: float, bins_per_direction: int
+    trace: TrafficTrace, *, width: float, bins_per_direction: int
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """Build outbound-then-inbound packet and captured-byte cells for one scale."""
-    if type(events) is TrafficTrace:
-        return _binned_trace_features(events, width=width, bins_per_direction=bins_per_direction)
-
-    timestamps = np.asarray([event.timestamp for event in events], dtype=np.float64)
-    lengths = tuple(event.frame_length for event in events)
-    quotients = timestamps / width
-    snapped = np.asarray([_snap_near_integer(float(quotient)) for quotient in quotients], dtype=np.float64)
-    indices = np.minimum(np.floor(snapped).astype(np.intp), bins_per_direction - 1)
-    directions = np.asarray([event.direction is Direction.OUTBOUND for event in events], dtype=bool)
-
-    def cells_for(direction: bool) -> tuple[tuple[int, ...], tuple[int, ...]]:
-        selected = directions == direction
-        direction_indices = indices[selected]
-        direction_lengths = tuple(
-            length for length, selected_value in zip(lengths, selected, strict=True) if selected_value
-        )
-        packets = tuple(int(value) for value in np.bincount(direction_indices, minlength=bins_per_direction))
-        exact = [0] * bins_per_direction
-        for index, length in zip(direction_indices, direction_lengths, strict=True):
-            exact[int(index)] += length
-        try:
-            weighted = tuple(
-                int(value)
-                for value in np.bincount(
-                    direction_indices,
-                    weights=np.asarray(direction_lengths, dtype=np.float64),
-                    minlength=bins_per_direction,
-                )
-            )
-        except OverflowError:
-            weighted = tuple(exact)
-        return packets, weighted if tuple(exact) == weighted else tuple(exact)
-
-    outbound_packets, outbound_bytes = cells_for(True)
-    inbound_packets, inbound_bytes = cells_for(False)
-    return outbound_packets + inbound_packets, outbound_bytes + inbound_bytes
+    """Build outbound-then-inbound cells from one validated columnar trace."""
+    return _binned_trace_features(trace, width=width, bins_per_direction=bins_per_direction)
 
 
 def _direction_totals(
@@ -386,17 +250,18 @@ def multiscale_rate_similarity(
         window=window,
         max_direction_bin_cells=max_direction_bin_cells,
     )
-    validated_scale_weights = _validated_weights(
+    validated_scale_weights = validated_weights(
         scale_weights,
         name="multiscale scale weights",
         expected_length=len(validated_widths),
+        count_name="width",
     )
-    feature_weights = _validated_weights(
+    feature_weights = validated_weights(
         (packet_weight, byte_weight),
         name="multiscale feature weights",
     )
-    reference_trace = _validated_trace(reference, trace_name="reference", window=window)
-    generated_trace = _validated_trace(generated, trace_name="generated", window=window)
+    reference_trace = validate_traffic_trace(reference, minimum_events=1, trace_name="reference", window=window)
+    generated_trace = validate_traffic_trace(generated, minimum_events=1, trace_name="generated", window=window)
 
     scale_diagnostics: list[dict[str, FrozenJsonValue]] = []
     packet_discrepancies: list[float] = []

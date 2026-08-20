@@ -41,7 +41,7 @@ from trafficlab.models.registry import POISSON_FAMILY, make_best_model, rebuild_
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
 
 
 def replace[Record](record: Record, **changes: object) -> Record:
@@ -108,16 +108,20 @@ def _stage_results(
     run_directory = prepared.run_directory
     metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
     capture_content = render_capture_metadata(metadata)
-    reference_events = (
-        TraceEvent(0.0, Direction.OUTBOUND, 64),
-        TraceEvent(window, Direction.INBOUND, 96),
+    reference_trace = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 64),
+            TraceEvent(window, Direction.INBOUND, 96),
+        )
     )
-    reference_content = encode_pcapng(reference_events, metadata)
-    generation_events = (
-        TraceEvent(0.0, Direction.OUTBOUND, 64),
-        TraceEvent(1.0, Direction.INBOUND, 96),
+    reference_content = encode_pcapng(reference_trace.to_events(), metadata)
+    generation_trace = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 64),
+            TraceEvent(1.0, Direction.INBOUND, 96),
+        )
     )
-    generated_content = encode_pcapng(generation_events, metadata)
+    generated_content = encode_pcapng(generation_trace.to_events(), metadata)
     (run_directory / "capture.json").write_bytes(capture_content)
     (run_directory / "reference.pcapng").write_bytes(reference_content)
     (run_directory / "generated.pcapng").write_bytes(generated_content)
@@ -127,7 +131,7 @@ def _stage_results(
     assert bounds is not None
     best_model = make_best_model(
         POISSON_FAMILY,
-        reference_events,
+        reference_trace,
         (1.0,),
         reference_identity=identify_bytes(reference_content),
         capture_identity=identify_bytes(capture_content),
@@ -155,7 +159,7 @@ def _stage_results(
     generation = GenerationStageResult(
         run_directory,
         run_directory / "generated.pcapng",
-        generation_events,
+        generation_trace,
         prepared.config.run.final_seed,
         window,
         False,
@@ -177,7 +181,7 @@ def _stage_results(
     snapshot_content = render_effective_config(prepared.config)
     context = make_strategy_context(
         prepared.config,
-        reference_events,
+        reference_trace,
         window,
         run_directory,
         experiment_identity=identify_bytes(snapshot_content),
@@ -1052,7 +1056,7 @@ def test_run_experiment_rejects_strict_path_status_window_and_seed_mismatches(
         generation = GenerationStageResult(
             generation.run_directory,
             tmp_path / "other.pcapng" if mutation == "path" else generation.generated_path,
-            generation.events,
+            generation.trace,
             generation.seed + 1 if mutation == "seed" else generation.seed,
             11.0 if mutation == "window" else generation.observation_window_seconds,
             generation.reused,
@@ -1342,10 +1346,10 @@ def test_run_experiment_rejects_remaining_strict_stage_invariants_before_the_nex
         ("fit", "capture-lineage", "capture lineage"),
         ("fit", "reference-lineage", "reference lineage"),
         ("generate", "window-type", "observation window"),
-        ("generate", "events-type", "event tuple"),
-        ("generate", "event-member", "TraceEvent"),
+        ("generate", "events-type", "TrafficTrace"),
+        ("generate", "event-member", "TrafficTrace"),
         ("generate", "reuse", "reuse"),
-        ("generate", "output-identity", "generated output events"),
+        ("generate", "output-identity", "generated output trace"),
         ("generate", "output-invalid", "generated output identity"),
         ("generate", "output-read", "generated.pcapng"),
         ("compare", "window-type", "observation window"),
@@ -1421,9 +1425,9 @@ def test_run_experiment_rejects_nested_and_lineage_corruption_before_the_next_ca
         if corruption == "window-type":
             generation = replace(generation, observation_window_seconds=cast(Any, 10))
         elif corruption == "events-type":
-            generation = replace(generation, events=cast(Any, list(generation.events)))
+            generation = replace(generation, trace=cast(Any, list(generation.trace)))
         elif corruption == "event-member":
-            generation = replace(generation, events=cast(Any, (object(),)))
+            generation = replace(generation, trace=cast(Any, (object(),)))
         elif corruption == "reuse":
             generation = replace(generation, reused=cast(Any, 1))
         elif corruption == "output-identity":

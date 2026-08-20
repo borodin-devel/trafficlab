@@ -32,7 +32,7 @@ from trafficlab.genetic.evaluation import (
 )
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateFailure, CandidateId
 from trafficlab.models.common import FamilyBounds, FittedModel, Gene, GenerationResult, Genes, ModelFamily
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 def replace[Record](record: Record, **changes: object) -> Record:
@@ -57,6 +57,9 @@ GENERATED = (
     TraceEvent(1.0, Direction.INBOUND, 120),
     TraceEvent(2.0, Direction.OUTBOUND, 120),
 )
+REFERENCE_TRACE = TrafficTrace.from_events(REFERENCE)
+GENERATED_TRACE = TrafficTrace.from_events(GENERATED)
+EMPTY_TRACE = TrafficTrace.from_events(())
 SIMILARITY = SimilarityConfig(
     iat_diagnostic_quantile=0.5,
     acf_lags=(1,),
@@ -111,17 +114,17 @@ class RecordingFamily:
         self.generate_errors: dict[int, Exception] = {}
         self.results: dict[int, object] = {}
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: Sequence[TraceEvent]) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: TrafficTrace) -> Genes:
         self.repair_calls += 1
         if self.repair_error is not None:
             raise self.repair_error
         assert bounds is BOUNDS
-        assert tuple(reference) == REFERENCE
+        assert reference is REFERENCE_TRACE
         return tuple(genes)
 
     def fit(
         self,
-        reference: Sequence[TraceEvent],
+        reference: TrafficTrace,
         genes: Sequence[Gene],
         *,
         W: float,
@@ -130,7 +133,7 @@ class RecordingFamily:
         self.fit_calls += 1
         if self.fit_error is not None:
             raise self.fit_error
-        assert tuple(reference) == REFERENCE
+        assert reference is REFERENCE_TRACE
         assert tuple(genes) == (1.0,)
         assert W == 2.0
         assert bounds is BOUNDS
@@ -150,7 +153,7 @@ class RecordingFamily:
         if error := self.generate_errors.get(seed):
             raise error
         assert model.family == self.name
-        return cast(GenerationResult, self.results.get(seed, GenerationResult(True, GENERATED)))
+        return cast(GenerationResult, self.results.get(seed, GenerationResult(True, GENERATED_TRACE)))
 
     def load_fitted(self, data: object, *, genes: Genes, bounds: FamilyBounds) -> FittedModel:
         del data, genes, bounds
@@ -174,7 +177,7 @@ def family(monkeypatch: pytest.MonkeyPatch) -> RecordingFamily:
 
 def _context(family: RecordingFamily, **changes: object) -> EvaluationContext:
     values: dict[str, object] = {
-        "reference": REFERENCE,
+        "reference": REFERENCE_TRACE,
         "window": W,
         "families": {"poisson_empirical": family},
         "bounds": {"poisson_empirical": BOUNDS},
@@ -220,6 +223,22 @@ def test_evaluation_fits_once_and_gives_each_trial_the_same_window_and_limits(
         cast(dict[str, object], evaluated.trials[0].methods[0].diagnostics)["changed"] = True
 
 
+def test_candidate_evaluation_never_materializes_reference_or_generated_events(
+    family: RecordingFamily, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Candidate fit, generation, and all four metrics must share columnar traces end to end."""
+
+    def reject_event_materialization(_trace: TrafficTrace) -> tuple[TraceEvent, ...]:
+        raise AssertionError("candidate evaluation materialized TraceEvent objects")
+
+    monkeypatch.setattr(TrafficTrace, "to_events", reject_event_materialization)
+
+    evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
+
+    assert evaluated.status == "valid"
+    assert len(evaluated.trials) == 2
+
+
 def test_evaluation_rejects_generation_diagnostics_from_the_wrong_family(family: RecordingFamily) -> None:
     """A Poisson candidate cannot persist counters from the Markov generation owner."""
     diagnostics = {
@@ -228,7 +247,7 @@ def test_evaluation_rejects_generation_diagnostics_from_the_wrong_family(family:
         "timing_tier_global_count": 3,
         "uniform_unobserved_row_count": 1,
     }
-    family.results[7] = GenerationResult(True, GENERATED, model_diagnostics=diagnostics)
+    family.results[7] = GenerationResult(True, GENERATED_TRACE, model_diagnostics=diagnostics)
 
     with pytest.raises(ValueError, match="model diagnostics.*poisson_empirical"):
         evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
@@ -248,7 +267,7 @@ def test_common_metric_precondition_failure_aborts_before_candidate_loop(family:
 
 def test_incomplete_generation_is_invalid_candidate_not_infrastructure_abort(family: RecordingFamily) -> None:
     """A bounded guard stop is candidate science and must receive zero fitness."""
-    family.results[7] = GenerationResult(False, (), "max_packets")
+    family.results[7] = GenerationResult(False, EMPTY_TRACE, "max_packets")
 
     evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
 
@@ -270,7 +289,7 @@ def test_incomplete_generation_is_invalid_candidate_not_infrastructure_abort(fam
 
 def test_generated_method_precondition_is_a_narrow_candidate_failure(family: RecordingFamily) -> None:
     """A complete but one-packet candidate cannot satisfy IAT or configured-lag metrics."""
-    family.results[7] = GenerationResult(True, (TraceEvent(0.0, Direction.OUTBOUND, 60),))
+    family.results[7] = GenerationResult(True, TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 60),)))
 
     evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
 
@@ -285,7 +304,7 @@ def test_final_validation_uses_only_fresh_seed_and_is_stage_fatal_when_incomplet
     family: RecordingFamily,
 ) -> None:
     """Final validation must neither reuse selection trials nor reselect after failure."""
-    family.results[101] = GenerationResult(False, (), "max_packets")
+    family.results[101] = GenerationResult(False, EMPTY_TRACE, "max_packets")
     valid = replace(PENDING_POISSON, status="valid", fitness=0.75)
 
     with pytest.raises(TrafficlabError, match="final validation.*max_packets"):
@@ -565,11 +584,11 @@ def test_evaluation_requires_raw_then_validated_context_types(family: RecordingF
         evaluate_candidate(PENDING_POISSON, cast(Any, raw))
 
 
-def test_context_requires_an_immutable_reference_tuple(family: RecordingFamily) -> None:
-    """A caller-owned list could change the shared reference between candidates."""
+def test_context_requires_an_exact_immutable_traffic_trace(family: RecordingFamily) -> None:
+    """A caller-owned event list could change the shared reference between candidates."""
     context = _context(family, reference=cast(Any, list(REFERENCE)))
 
-    with pytest.raises(TypeError, match="reference must be a tuple"):
+    with pytest.raises(TypeError, match="reference must be a TrafficTrace"):
         validate_evaluation_context(context)
 
 
@@ -584,7 +603,7 @@ def test_malformed_generation_return_aborts_as_a_family_defect(family: Recording
 def test_all_generated_sample_preconditions_are_reported() -> None:
     """An empty generated trace identifies every configured method lacking samples."""
     with pytest.raises(CandidateEvaluationError, match="frame_size_ks.*iat_ks.*multiscale_rate") as captured:
-        validate_candidate_similarity_preconditions((), SIMILARITY, seed=7)
+        validate_candidate_similarity_preconditions(EMPTY_TRACE, SIMILARITY, seed=7)
 
     assert captured.value.kind == "similarity_precondition"
     assert captured.value.seed == 7
@@ -606,7 +625,7 @@ def test_zero_weight_method_preconditions_remain_mandatory(
     similarity = _similarity_with_zero_weight(zero_weight_method)
 
     with pytest.raises(CandidateEvaluationError) as captured:
-        validate_candidate_similarity_preconditions((), similarity, seed=7)
+        validate_candidate_similarity_preconditions(EMPTY_TRACE, similarity, seed=7)
 
     assert captured.value.kind == "similarity_precondition"
     assert captured.value.seed == 7
@@ -630,7 +649,7 @@ def test_zero_weight_method_preconditions_invalidate_evaluable_candidates(
 ) -> None:
     """A complete candidate still becomes invalid when a zero-weight method lacks its required samples."""
     similarity = _similarity_with_zero_weight(zero_weight_method)
-    family.results[7] = GenerationResult(True, generated)
+    family.results[7] = GenerationResult(True, TrafficTrace.from_events(generated))
 
     evaluated = evaluate_candidate(
         PENDING_POISSON, validate_evaluation_context(_context(family, similarity=similarity))

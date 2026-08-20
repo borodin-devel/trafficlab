@@ -139,7 +139,7 @@ def _assert_close(
 
 
 def _assert_complete_trace(result: GenerationResult, *, window: float) -> tuple[TraceEvent, ...]:
-    events = result.require_complete()
+    events = result.require_complete().to_events()
     assert events
     assert all(math.isfinite(event.timestamp) and 0.0 <= event.timestamp <= window for event in events)
     assert all(left.timestamp <= right.timestamp for left, right in zip(events, events[1:], strict=False))

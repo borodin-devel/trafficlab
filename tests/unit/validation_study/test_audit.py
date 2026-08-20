@@ -56,7 +56,7 @@ from trafficlab.models.registry import load_best_model, rebuild_best_model, rend
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunDependencies, run_experiment
-from trafficlab.trace import TraceEvent, normalize_reference, parse_capture_metadata
+from trafficlab.trace import TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
 
 VALIDATION_STUDY_LOCAL_EXCLUDE_LOCK = Path("/tmp") / (
     f"trafficlab-validation-study-{hashlib.sha256(str(ROOT).encode('utf-8')).hexdigest()}.exclude.lock"
@@ -76,7 +76,7 @@ def offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:
     configs = study.validate_base_configs(repository_root, prerequisites)
     workloads = {item.name: item for item in study.workload_specs(prerequisites.url)}
     records: list[study.StudyRunRecord] = []
-    traces: dict[tuple[study.WorkloadName, int], tuple[TraceEvent, ...]] = {}
+    traces: dict[tuple[study.WorkloadName, int], TrafficTrace] = {}
     settings: dict[study.WorkloadName, SimilarityConfig] = {}
     for order, run_id, workload_value, repeat in study.PRIMARY_ORDER:
         workload_name = cast(study.WorkloadName, workload_value)

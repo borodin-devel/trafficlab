@@ -37,7 +37,7 @@ from scripts.run_validation_study import (
     retained_prerequisite_paths,
 )
 from trafficlab import USER_AGENT
-from trafficlab.artifacts import quantize_generated_events
+from trafficlab.artifacts import quantize_generated_trace
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import (
     ComparisonResult,
@@ -55,7 +55,7 @@ from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, ren
 from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model, runtime_fitted_model
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.pcapng import encode_pcapng_trace, parse_pcapng_bytes_trace
 from trafficlab.statistics import bootstrap_interval
 from trafficlab.study_evidence import (
     ValidationStudyEnvironment,
@@ -2094,7 +2094,7 @@ def _training(
         inspection = validate_capture_pair(directory / "capture.json", directory / "reference.pcapng", deadline=None)
         metadata = parse_capture_metadata(contents["capture.json"], source=directory / "capture.json")
         reference, window = normalize_reference(
-            parse_pcapng_bytes(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
+            parse_pcapng_bytes_trace(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
         )
         context = make_strategy_context(
             config,
@@ -2108,7 +2108,7 @@ def _training(
         checkpoint = parse_checkpoint(contents["checkpoint.json"], context.compatibility)
         best = load_best_model(contents["best_model.json"], source=directory / "best_model.json")
         _, generated, generated_bytes = reproduce_generated_pcapng(best, metadata)
-        parsed_generated = parse_pcapng_bytes(
+        parsed_generated = parse_pcapng_bytes_trace(
             contents["generated.pcapng"], metadata, source=directory / "generated.pcapng"
         )
     except TrafficlabError as error:
@@ -2363,7 +2363,7 @@ def _rebuild_held_out(
     """Independently reproduce a fixed training model at the held-out horizon."""
 
     metadata = parse_capture_metadata(capture_content, source=capture_source)
-    reference, W = normalize_reference(parse_pcapng_bytes(reference_content, metadata, source=reference_source))
+    reference, W = normalize_reference(parse_pcapng_bytes_trace(reference_content, metadata, source=reference_source))
     model = training.best_model
     raw_generated = (
         get_family(model.family)
@@ -2375,8 +2375,8 @@ def _rebuild_held_out(
         )
         .require_complete()
     )
-    generated = quantize_generated_events(raw_generated, W)
-    generated_pcapng = encode_pcapng(generated, metadata)
+    generated = quantize_generated_trace(raw_generated, W)
+    generated_pcapng = encode_pcapng_trace(generated, metadata)
     settings_identity = similarity_settings_identity(config.similarity)
     comparison = compare_traces(reference, align_generated(generated, W), W, config.similarity).with_input_identities(
         {

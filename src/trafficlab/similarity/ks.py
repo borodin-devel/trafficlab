@@ -1,14 +1,22 @@
 """Exact frame-size and inter-arrival-time Kolmogorov-Smirnov metrics."""
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import Any, Protocol, cast
 
+import numpy as np
+from numpy.typing import NDArray
 from scipy import stats as scipy_stats  # pyright: ignore[reportMissingTypeStubs]
 
 from trafficlab.errors import TrafficlabError
-from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult, validate_observation_window
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.similarity.common import (
+    JsonDiagnostics,
+    SimilarityResult,
+    validate_observation_window,
+    validated_numeric_array,
+    validated_numeric_sample,
+)
+from trafficlab.trace import TraceEvent, TrafficTrace, validate_traffic_trace
 
 
 class _KsResult(Protocol):
@@ -21,54 +29,55 @@ class _KsResult(Protocol):
 class _Ks2Samp(Protocol):
     """Typed boundary around SciPy's untyped two-sample KS callable."""
 
-    def __call__(self, left: Sequence[int], right: Sequence[int]) -> _KsResult: ...
+    def __call__(self, left: object, right: object) -> _KsResult: ...
 
 
 _ks_2samp = cast(_Ks2Samp, cast(Any, scipy_stats).ks_2samp)
 
 
-def _validated_numeric_sample(values: Iterable[object], *, sample_name: str) -> tuple[int | float, ...]:
-    """Materialize one nonempty finite numeric sample for an ECDF scan."""
-    try:
-        sample = tuple(values)
-    except TypeError as error:
-        raise TrafficlabError(
-            f"invalid {sample_name} sample: values must be iterable",
-            corrective_action="provide a nonempty iterable of finite numeric values",
-        ) from error
-    if not sample:
-        raise TrafficlabError(
-            f"invalid {sample_name} sample: at least one value is required",
-            corrective_action="provide a nonempty iterable of finite numeric values",
-        )
-
-    numeric: list[int | float] = []
-    for value in sample:
-        if type(value) is int:
-            numeric.append(value)
-        elif type(value) is float and math.isfinite(value):
-            numeric.append(value)
-        else:
-            raise TrafficlabError(
-                f"invalid {sample_name} sample: values must be finite numbers",
-                corrective_action="provide a nonempty iterable of finite numeric values",
-            )
-    return tuple(numeric)
-
-
 def _ks_statistic(left: Iterable[object], right: Iterable[object]) -> float:
     """Return SciPy's descriptive two-sample KS statistic after local validation."""
-    left_values = _validated_numeric_sample(left, sample_name="left")
-    right_values = _validated_numeric_sample(right, sample_name="right")
-    ordered_values = sorted((*left_values, *right_values))
-    ranks: dict[int | float, int] = {}
-    for value in ordered_values:
-        if value not in ranks:
-            ranks[value] = len(ranks)
-    left_ranks = tuple(ranks[value] for value in left_values)
-    right_ranks = tuple(ranks[value] for value in right_values)
+    left_raw: object = left
+    right_raw: object = right
+    if isinstance(left_raw, np.ndarray) and isinstance(right_raw, np.ndarray):
+        left_values = validated_numeric_array(
+            cast(NDArray[np.generic], left_raw),
+            error_name="left sample",
+            corrective_action="provide a nonempty iterable of finite numeric values",
+            require_nonempty=True,
+            as_float64=False,
+        )
+        right_values = validated_numeric_array(
+            cast(NDArray[np.generic], right_raw),
+            error_name="right sample",
+            corrective_action="provide a nonempty iterable of finite numeric values",
+            require_nonempty=True,
+            as_float64=False,
+        )
+        scipy_left: object = left_values
+        scipy_right: object = right_values
+    else:
+        left_values_tuple = validated_numeric_sample(
+            left,
+            error_name="left sample",
+            corrective_action="provide a nonempty iterable of finite numeric values",
+            require_nonempty=True,
+        )
+        right_values_tuple = validated_numeric_sample(
+            right,
+            error_name="right sample",
+            corrective_action="provide a nonempty iterable of finite numeric values",
+            require_nonempty=True,
+        )
+        ordered_values = sorted((*left_values_tuple, *right_values_tuple))
+        ranks: dict[int | float, int] = {}
+        for value in ordered_values:
+            if value not in ranks:
+                ranks[value] = len(ranks)
+        scipy_left = tuple(ranks[value] for value in left_values_tuple)
+        scipy_right = tuple(ranks[value] for value in right_values_tuple)
     try:
-        statistic = float(_ks_2samp(left_ranks, right_ranks).statistic)
+        statistic = float(_ks_2samp(scipy_left, scipy_right).statistic)
     except (TypeError, ValueError) as error:
         raise TrafficlabError(
             "invalid KS sample: values cannot be evaluated safely",
@@ -82,67 +91,17 @@ def _ks_statistic(left: Iterable[object], right: Iterable[object]) -> float:
     return statistic
 
 
-def _validated_trace(events: Iterable[TraceEvent], *, minimum_events: int, trace_name: str) -> tuple[TraceEvent, ...]:
-    """Validate metric inputs as complete finite nondecreasing canonical traces."""
-    corrective_action = f"provide finite nondecreasing canonical {trace_name} events"
-    try:
-        trace = tuple(events)
-    except TypeError as error:
-        raise TrafficlabError(
-            f"invalid {trace_name} trace: events must be an iterable of canonical events",
-            corrective_action=corrective_action,
-        ) from error
-    if len(trace) < minimum_events:
-        minimum_label = "one" if minimum_events == 1 else "two"
-        raise TrafficlabError(
-            f"invalid {trace_name} trace: at least {minimum_label} events are required",
-            corrective_action=corrective_action,
-        )
-
-    previous_timestamp: float | None = None
-    for event in trace:
-        if type(event) is not TraceEvent:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: every event must be a TraceEvent",
-                corrective_action=corrective_action,
-            )
-        try:
-            timestamp = event.timestamp
-            direction = event.direction
-            frame_length = event.frame_length
-        except AttributeError as error:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: event data is incomplete",
-                corrective_action=corrective_action,
-            ) from error
-        if (
-            type(timestamp) is not float
-            or not math.isfinite(timestamp)
-            or timestamp < 0.0
-            or type(direction) is not Direction
-            or type(frame_length) is not int
-            or frame_length <= 0
-        ):
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: events must have finite timestamps, directions, and positive lengths",
-                corrective_action=corrective_action,
-            )
-        if previous_timestamp is not None and timestamp < previous_timestamp:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: timestamps must be nondecreasing",
-                corrective_action=corrective_action,
-            )
-        previous_timestamp = timestamp
-    return trace
-
-
-def _frame_lengths(events: Iterable[TraceEvent], *, trace_name: str) -> tuple[int, ...]:
+def _frame_lengths(events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str) -> NDArray[np.uint32]:
     """Validate one canonical trace and return its strictly positive frame lengths."""
-    trace = _validated_trace(events, minimum_events=1, trace_name=trace_name)
-    return tuple(event.frame_length for event in trace)
+    trace = validate_traffic_trace(events, minimum_events=1, trace_name=trace_name)
+    return trace.frame_lengths
 
 
-def frame_size_ks(reference: Iterable[TraceEvent], generated: Iterable[TraceEvent], W: object) -> SimilarityResult:
+def frame_size_ks(
+    reference: Iterable[TraceEvent] | TrafficTrace,
+    generated: Iterable[TraceEvent] | TrafficTrace,
+    W: object,
+) -> SimilarityResult:
     """Compare complete frame-size samples with the exact two-sample KS distance."""
     window = validate_observation_window(W)
     reference_lengths = _frame_lengths(reference, trace_name="reference")
@@ -153,32 +112,32 @@ def frame_size_ks(reference: Iterable[TraceEvent], generated: Iterable[TraceEven
         "distance": distance,
         "reference_count": len(reference_lengths),
         "generated_count": len(generated_lengths),
-        "reference_minimum_length": min(reference_lengths),
-        "reference_maximum_length": max(reference_lengths),
-        "generated_minimum_length": min(generated_lengths),
-        "generated_maximum_length": max(generated_lengths),
+        "reference_minimum_length": int(np.min(reference_lengths)),
+        "reference_maximum_length": int(np.max(reference_lengths)),
+        "generated_minimum_length": int(np.min(generated_lengths)),
+        "generated_maximum_length": int(np.max(generated_lengths)),
     }
     return SimilarityResult(score=1.0 - distance, diagnostics=diagnostics)
 
 
-def _inter_arrival_times(events: Iterable[TraceEvent], *, trace_name: str) -> tuple[float, ...]:
+def _inter_arrival_times(events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str) -> NDArray[np.float64]:
     """Validate a canonical trace and derive its complete IAT sample, retaining zeros."""
-    trace = _validated_trace(events, minimum_events=2, trace_name=trace_name)
-    return tuple(current.timestamp - previous.timestamp for previous, current in zip(trace, trace[1:], strict=False))
+    trace = validate_traffic_trace(events, minimum_events=2, trace_name=trace_name)
+    return trace.iats()
 
 
-def _nearest_rank(values: tuple[float, ...], quantile: float) -> float:
+def _nearest_rank(values: NDArray[np.float64], quantile: float) -> float:
     """Return the documented one-based ceil(q*n) order statistic from one sample."""
-    return sorted(values)[math.ceil(quantile * len(values)) - 1]
+    return float(np.sort(values)[math.ceil(quantile * len(values)) - 1])
 
 
-def _median(values: tuple[float, ...]) -> float:
+def _median(values: NDArray[np.float64]) -> float:
     """Return the conventional middle value or mean of two middle values."""
-    ordered = sorted(values)
+    ordered = np.sort(values)
     middle = len(ordered) // 2
     if len(ordered) % 2:
-        return ordered[middle]
-    return (ordered[middle - 1] + ordered[middle]) / 2.0
+        return float(ordered[middle])
+    return float((ordered[middle - 1] + ordered[middle]) / 2.0)
 
 
 def _validate_diagnostic_quantile(diagnostic_quantile: object) -> float:
@@ -196,7 +155,10 @@ def _validate_diagnostic_quantile(diagnostic_quantile: object) -> float:
 
 
 def iat_ks(
-    reference: Iterable[TraceEvent], generated: Iterable[TraceEvent], W: object, diagnostic_quantile: object
+    reference: Iterable[TraceEvent] | TrafficTrace,
+    generated: Iterable[TraceEvent] | TrafficTrace,
+    W: object,
+    diagnostic_quantile: object,
 ) -> SimilarityResult:
     """Compare IAT samples with exact KS distance and explicit descriptive diagnostics."""
     window = validate_observation_window(W)
@@ -210,8 +172,8 @@ def iat_ks(
         "diagnostic_quantile": quantile,
         "reference_iat_count": len(reference_iats),
         "generated_iat_count": len(generated_iats),
-        "reference_zero_iat_count": sum(iat == 0.0 for iat in reference_iats),
-        "generated_zero_iat_count": sum(iat == 0.0 for iat in generated_iats),
+        "reference_zero_iat_count": int(np.count_nonzero(reference_iats == 0.0)),
+        "generated_zero_iat_count": int(np.count_nonzero(generated_iats == 0.0)),
         "reference_median_iat_seconds": _median(reference_iats),
         "generated_median_iat_seconds": _median(generated_iats),
         "reference_quantile_iat_seconds": _nearest_rank(reference_iats, quantile),

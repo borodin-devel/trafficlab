@@ -286,22 +286,24 @@ def test_multiscale_includes_an_event_exactly_at_the_closed_window_endpoint() ->
 
 
 def test_multiscale_byte_only_score_handles_very_large_valid_frame_lengths() -> None:
-    reference = (_event(0.0, frame_length=10**308),)
-    generated = (_event(0.0, frame_length=9 * 10**307),)
+    reference_length = 2**32 - 1
+    generated_length = 2**32 - 2
+    reference = (_event(0.0, frame_length=reference_length),)
+    generated = (_event(0.0, frame_length=generated_length),)
 
     result = multiscale_rate_similarity(reference, generated, 1.0, (1.0,), (1.0,), 0.0, 1.0, 2)
 
     assert result.diagnostics["feature_discrepancies"] == {
         "packet": 0.0,
-        "byte": pytest.approx(1.0 / 19.0),
+        "byte": pytest.approx(1.0 / (reference_length + generated_length)),
     }
-    assert result.score == pytest.approx(18.0 / 19.0)
+    assert result.score == pytest.approx(1.0 - 1.0 / (reference_length + generated_length))
 
 
 def test_multiscale_byte_only_diagnostic_preserves_a_small_exact_gap_between_huge_lengths() -> None:
-    reference_length = 2**2000
-    generated_length = reference_length - 2**1900
-    expected = (2**1900) / (2**2001 - 2**1900)
+    reference_length = 2**32 - 1
+    generated_length = reference_length - 1
+    expected = 1 / (reference_length + generated_length)
 
     result = multiscale_rate_similarity(
         (_event(0.0, frame_length=reference_length),),
@@ -579,7 +581,7 @@ def test_multiscale_cells_match_scalar_oracle_and_use_bincount(monkeypatch: pyte
     scales = cast(tuple[object, ...], result.diagnostics["scales"])
     scale = cast(Mapping[str, object], scales[0])
 
-    assert calls == 8
+    assert calls == 2
     assert scale["reference_totals"] == {
         "packet": {"outbound": sum(expected_packets[:10]), "inbound": sum(expected_packets[10:])},
         "byte": {"outbound": sum(expected_bytes[:10]), "inbound": sum(expected_bytes[10:])},

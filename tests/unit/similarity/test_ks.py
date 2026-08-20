@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import cast
 
+import numpy as np
 import pytest
 
 import trafficlab.similarity.ks as ks_module
@@ -123,10 +124,10 @@ def test_ks_statistic_rejects_nonfinite_or_out_of_range_scipy_statistics(
 
 
 def test_metric_uses_only_scipy_ks_statistic_for_tied_frame_and_iat_samples(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[tuple[object, ...], tuple[object, ...]]] = []
+    calls: list[tuple[object, object]] = []
     original = ks_module._ks_2samp  # pyright: ignore[reportPrivateUsage]
 
-    def statistic_only(left: tuple[int, ...], right: tuple[int, ...]) -> ks_module._KsResult:  # pyright: ignore[reportPrivateUsage]
+    def statistic_only(left: object, right: object) -> ks_module._KsResult:  # pyright: ignore[reportPrivateUsage]
         calls.append((left, right))
         return original(left, right)
 
@@ -141,7 +142,14 @@ def test_metric_uses_only_scipy_ks_statistic_for_tied_frame_and_iat_samples(monk
 
     assert frame_result.diagnostics["distance"] == pytest.approx(1.0 / 3.0)
     assert iat_result.diagnostics["distance"] == 0.0
-    assert calls == [((0, 0, 1), (0, 1, 1)), ((0, 1, 1), (1, 0, 1))]
+    assert len(calls) == 2
+    assert all(isinstance(sample, np.ndarray) for pair in calls for sample in pair)
+    assert [cast(np.ndarray, sample).tolist() for pair in calls for sample in pair] == [
+        [1, 1, 2],
+        [1, 2, 2],
+        [0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0],
+    ]
 
 
 def test_frame_size_ks_returns_identical_score_and_complete_diagnostics() -> None:

@@ -41,7 +41,7 @@ from trafficlab.models.registry import BestModel, get_family, make_best_model
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
 from trafficlab.statistics import bootstrap_interval
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 HASH = "a" * 64
 
@@ -1179,11 +1179,13 @@ def _evaluated_candidate(
 
 
 def terminal_checkpoint_and_best(tmp_path: Path) -> tuple[CheckpointState, BestModel, ComparisonResult]:
-    reference = (
-        TraceEvent(0.0, Direction.OUTBOUND, 60),
-        TraceEvent(1.0, Direction.INBOUND, 100),
-        TraceEvent(2.0, Direction.OUTBOUND, 200),
-        TraceEvent(3.0, Direction.INBOUND, 300),
+    reference = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 60),
+            TraceEvent(1.0, Direction.INBOUND, 100),
+            TraceEvent(2.0, Direction.OUTBOUND, 200),
+            TraceEvent(3.0, Direction.INBOUND, 300),
+        )
     )
     config = study.build_base_config(
         study.workload_specs("https://downloads.example.test/object.bin")[0],

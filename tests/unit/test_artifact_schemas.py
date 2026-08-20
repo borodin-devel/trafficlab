@@ -42,6 +42,7 @@ def test_public_core_artifact_roots_are_strict_frozen_pydantic_models() -> None:
     assert type(PUBLIC_ARTIFACT_MODELS) is MappingProxyType
     assert tuple(PUBLIC_ARTIFACT_MODELS) == (
         "best_model",
+        "capture_metadata",
         "checkpoint",
         "comparison_result",
         "failure_outcome",
@@ -75,6 +76,10 @@ def test_public_core_artifact_schemas_are_draft_2020_12_compatible() -> None:
 def test_every_checked_core_artifact_validates_against_its_published_schema() -> None:
     """A public schema must describe canonical persisted bytes rather than internal runtime fields."""
     checked = {
+        "capture_metadata": [
+            json.loads((_ROOT / "examples" / "data" / relative).read_bytes())
+            for relative in ("capture.json", "fit/capture.json")
+        ],
         "best_model": [
             document
             for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")

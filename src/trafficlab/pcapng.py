@@ -9,6 +9,8 @@ from pathlib import Path
 from time import monotonic
 from typing import BinaryIO, Literal
 
+import numpy as np
+
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, deterministic_peer_mac
 
@@ -329,10 +331,10 @@ def parse_pcapng_bytes(
     clock: Callable[[], float] = monotonic,
 ) -> tuple[TraceEvent, ...]:
     """Parse exact PCAPNG bytes at the immutable event-record boundary."""
-    return _parse_pcapng_bytes_trace(content, metadata, source=source, deadline=deadline, clock=clock).to_events()
+    return parse_pcapng_bytes_trace(content, metadata, source=source, deadline=deadline, clock=clock).to_events()
 
 
-def _parse_pcapng_bytes_trace(
+def parse_pcapng_bytes_trace(
     content: bytes,
     metadata: CaptureMetadata,
     *,
@@ -399,8 +401,8 @@ def _encode_block(block_type: int, body: bytes) -> bytes:
     return struct.pack("<II", block_type, total_length) + body + struct.pack("<I", total_length)
 
 
-def _timestamp_nanoseconds(event: TraceEvent) -> int:
-    scaled_timestamp = event.timestamp * 1_000_000_000
+def _timestamp_nanoseconds(timestamp_seconds: float) -> int:
+    scaled_timestamp = timestamp_seconds * 1_000_000_000
     if not math.isfinite(scaled_timestamp) or scaled_timestamp > _UINT64_MAX + 0.5:
         raise TrafficlabError(
             "event timestamp exceeds the PCAPNG 64-bit timestamp limit",
@@ -415,40 +417,56 @@ def _timestamp_nanoseconds(event: TraceEvent) -> int:
     return timestamp
 
 
-def _encode_frame(event: TraceEvent, target_mac: bytes, peer_mac: bytes) -> bytes:
-    if event.frame_length < 14:
+def _encode_frame(direction: int, frame_length: int, target_mac: bytes, peer_mac: bytes) -> bytes:
+    if frame_length < 14:
         raise TrafficlabError(
-            f"Ethernet frame length must be at least 14, got {event.frame_length}",
+            f"Ethernet frame length must be at least 14, got {frame_length}",
             corrective_action="generate complete Ethernet frame lengths and retry",
         )
-    if event.frame_length > _UINT32_MAX:
+    if frame_length > _UINT32_MAX:
         raise TrafficlabError(
             "frame length exceeds the PCAPNG 32-bit length and SnapLen limit",
             corrective_action="reduce generated frame lengths and retry",
         )
-    padded_length = event.frame_length + (-event.frame_length % 4)
+    padded_length = frame_length + (-frame_length % 4)
     if 32 + padded_length > _UINT32_MAX:
         raise TrafficlabError(
             "PCAPNG block length exceeds the 32-bit format limit",
             corrective_action="reduce generated frame lengths and retry",
         )
 
-    if event.direction is Direction.OUTBOUND:
+    if direction == 0:
         destination, source = peer_mac, target_mac
-    elif event.direction is Direction.INBOUND:
+    elif direction == 1:
         destination, source = target_mac, peer_mac
     else:
         raise TrafficlabError(
-            f"event has unsupported direction {event.direction!r}",
+            f"event has unsupported direction {direction!r}",
             corrective_action="generate only outbound or inbound trace events",
         )
-    return destination + source + b"\x08\x00" + b"\x00" * (event.frame_length - 14)
+    return destination + source + b"\x08\x00" + b"\x00" * (frame_length - 14)
 
 
 def encode_pcapng(events: Iterable[TraceEvent], metadata: CaptureMetadata) -> bytes:
     """Render canonical trace events as deterministic little-endian Ethernet PCAPNG bytes."""
-    materialized_events = tuple(events)
-    if not materialized_events:
+    try:
+        trace = TrafficTrace.from_events(events)
+    except (TypeError, ValueError) as error:
+        detail = str(error)
+        if detail == "event frame_length must fit in uint32":
+            detail = "frame length exceeds the PCAPNG 32-bit length and SnapLen limit"
+        raise TrafficlabError(
+            f"invalid PCAPNG rendering trace: {detail}",
+            corrective_action="generate finite nondecreasing canonical trace events and retry",
+        ) from error
+    return encode_pcapng_trace(trace, metadata)
+
+
+def encode_pcapng_trace(trace: TrafficTrace, metadata: CaptureMetadata) -> bytes:
+    """Render an owned columnar trace at the deterministic PCAPNG boundary."""
+    if type(trace) is not TrafficTrace:
+        raise TypeError("PCAPNG rendering trace must be a TrafficTrace")
+    if not len(trace):
         raise TrafficlabError(
             "PCAPNG rendering requires at least one event",
             corrective_action="generate a nonempty trace and retry",
@@ -456,8 +474,7 @@ def encode_pcapng(events: Iterable[TraceEvent], metadata: CaptureMetadata) -> by
 
     target_mac = bytes.fromhex(metadata.target_mac.replace(":", ""))
     peer_mac = bytes.fromhex(deterministic_peer_mac(metadata.target_mac).replace(":", ""))
-    frame_lengths = tuple(event.frame_length for event in materialized_events)
-    snap_len = max(65535, max(frame_lengths))
+    snap_len = max(65535, int(np.max(trace.frame_lengths)))
     if snap_len > _UINT32_MAX:
         raise TrafficlabError(
             "frame length exceeds the PCAPNG 32-bit length and SnapLen limit",
@@ -476,16 +493,12 @@ def encode_pcapng(events: Iterable[TraceEvent], metadata: CaptureMetadata) -> by
             + struct.pack("<HH", _END_OF_OPTIONS, 0),
         ),
     ]
-    previous_timestamp: float | None = None
-    for event in materialized_events:
-        if previous_timestamp is not None and event.timestamp < previous_timestamp:
-            raise TrafficlabError(
-                "event timestamps must be nondecreasing",
-                corrective_action="sort generated trace events by timestamp and retry",
-            )
-        previous_timestamp = event.timestamp
-        frame = _encode_frame(event, target_mac, peer_mac)
-        timestamp = _timestamp_nanoseconds(event)
+    for raw_timestamp, raw_direction, raw_frame_length in zip(
+        trace.timestamps, trace.directions, trace.frame_lengths, strict=True
+    ):
+        timestamp_seconds = float(raw_timestamp)
+        frame = _encode_frame(int(raw_direction), int(raw_frame_length), target_mac, peer_mac)
+        timestamp = _timestamp_nanoseconds(timestamp_seconds)
         packet_padding = b"\x00" * (-len(frame) % 4)
         body = struct.pack(
             "<IIIII",

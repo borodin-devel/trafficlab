@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -16,6 +17,7 @@ def test_every_public_root_has_one_canonical_draft_2020_12_schema() -> None:
     documents = schemas.build_schema_documents()
     expected_names = tuple(f"{name}.schema.json" for name in sorted(PUBLIC_ARTIFACT_MODELS))
 
+    assert len(documents) == 13
     assert tuple(documents) == expected_names
     for filename, content in documents.items():
         document = json.loads(content)
@@ -41,3 +43,22 @@ def test_schema_directory_check_rejects_changed_missing_and_foreign_files(tmp_pa
         "foreign:foreign.schema.json",
         f"missing:{missing}",
     )
+
+
+def test_schema_directory_check_rejects_symlink_and_nonregular_entries(tmp_path: Path) -> None:
+    """Following a link or ignoring a special file would make the checked schema tree nonportable."""
+    schemas.write_schema_directory(tmp_path)
+    first = next(iter(schemas.build_schema_documents()))
+    expected_path = tmp_path / first
+    outside = tmp_path.parent / "linked-schema.json"
+    outside.write_bytes(expected_path.read_bytes())
+    expected_path.unlink()
+    expected_path.symlink_to(outside)
+
+    assert schemas.schema_directory_mismatches(tmp_path) == (f"nonregular:{first}",)
+
+    expected_path.unlink()
+    expected_path.write_bytes(schemas.build_schema_documents()[first])
+    os.mkfifo(tmp_path / "foreign.pipe")
+
+    assert schemas.schema_directory_mismatches(tmp_path) == ("nonregular:foreign.pipe",)

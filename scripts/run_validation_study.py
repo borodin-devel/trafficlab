@@ -33,7 +33,7 @@ from trafficlab.artifacts import (
     FileIdentity,
     _file_identity,  # pyright: ignore[reportPrivateUsage]
     append_run_log,
-    quantize_generated_events,
+    quantize_generated_trace,
 )
 from trafficlab.capture import CaptureResult, capture_experiment
 from trafficlab.capture_validation import validate_capture_pair
@@ -62,7 +62,7 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.pcapng import encode_pcapng_trace, parse_pcapng_bytes_trace
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
 from trafficlab.statistics import bootstrap_interval
@@ -73,8 +73,7 @@ from trafficlab.study_evidence import (
 )
 from trafficlab.trace import (
     CaptureMetadata,
-    Direction,
-    TraceEvent,
+    TrafficTrace,
     align_generated,
     normalize_reference,
     parse_capture_metadata,
@@ -172,7 +171,7 @@ def evaluate_study_held_out(
         },
     )
     metadata = parse_capture_metadata(capture_content, source=capture_source)
-    reference, W = normalize_reference(parse_pcapng_bytes(reference_content, metadata, source=reference_source))
+    reference, W = normalize_reference(parse_pcapng_bytes_trace(reference_content, metadata, source=reference_source))
     raw_generated = (
         get_family(model.family)
         .generate(
@@ -183,8 +182,8 @@ def evaluate_study_held_out(
         )
         .require_complete()
     )
-    generated = quantize_generated_events(raw_generated, W)
-    generated_pcapng = encode_pcapng(generated, metadata)
+    generated = quantize_generated_trace(raw_generated, W)
+    generated_pcapng = encode_pcapng_trace(generated, metadata)
     aligned = align_generated(generated, W)
     settings_identity = similarity_settings_identity(config.similarity)
     comparison = compare_traces(reference, aligned, W, config.similarity).with_input_identities(
@@ -1878,8 +1877,8 @@ class _LoadedRunEvidence:
     metadata: CaptureMetadata
     contents: Mapping[str, bytes]
     artifact_sha256: JsonObject
-    reference: Sequence[TraceEvent]
-    generated: Sequence[TraceEvent]
+    reference: TrafficTrace
+    generated: TrafficTrace
     checkpoint: CheckpointState
     best_model: BestModel
     comparison: ComparisonResult
@@ -1946,7 +1945,7 @@ def _load_persisted_run_evidence(spec: StudyRunSpec) -> _LoadedRunEvidence:
     reference_path = spec.run_directory / "reference.pcapng"
     inspection = validate_capture_pair(capture_path, reference_path, deadline=None)
     metadata = parse_capture_metadata(contents["capture.json"], source=capture_path)
-    captured = parse_pcapng_bytes(contents["reference.pcapng"], metadata, source=reference_path)
+    captured = parse_pcapng_bytes_trace(contents["reference.pcapng"], metadata, source=reference_path)
     _require(inspection.packet_count == len(captured), "strict persisted reference packet counts must agree")
     reference, window = normalize_reference(captured)
 
@@ -1978,7 +1977,7 @@ def _load_persisted_run_evidence(spec: StudyRunSpec) -> _LoadedRunEvidence:
         "best_model.json must use its canonical production encoding",
     )
     generated_path = spec.run_directory / "generated.pcapng"
-    generated = parse_pcapng_bytes(contents["generated.pcapng"], metadata, source=generated_path)
+    generated = parse_pcapng_bytes_trace(contents["generated.pcapng"], metadata, source=generated_path)
     similarity = parse_comparison_result(contents["similarity.json"])
     _require(
         contents["similarity.json"] == render_comparison_result(similarity),
@@ -2034,29 +2033,28 @@ def _load_run_evidence(spec: StudyRunSpec, result: RunResult) -> _LoadedRunEvide
     return evidence
 
 
-def _direction_values(events: Sequence[TraceEvent], *, bytes_: bool) -> JsonObject:
+def _direction_values(trace: TrafficTrace, *, bytes_: bool) -> JsonObject:
+    outbound = trace.directions == 0
+    inbound = trace.directions == 1
     return {
-        "outbound": sum(
-            event.frame_length if bytes_ else 1 for event in events if event.direction is Direction.OUTBOUND
-        ),
-        "inbound": sum(event.frame_length if bytes_ else 1 for event in events if event.direction is Direction.INBOUND),
+        "outbound": int(sum(int(value) for value in trace.frame_lengths[outbound])) if bytes_ else int(outbound.sum()),
+        "inbound": int(sum(int(value) for value in trace.frame_lengths[inbound])) if bytes_ else int(inbound.sum()),
     }
 
 
 def _trace_summary(
-    events: Sequence[TraceEvent],
+    trace: TrafficTrace,
     result: ComparisonResult,
     *,
     role: Literal["reference", "generated"],
 ) -> JsonObject:
-    trace = tuple(events)
     _require_type(
-        bool(trace) and all(type(event) is TraceEvent for event in trace),
-        "trace summary requires canonical TraceEvent values",
+        type(trace) is TrafficTrace and bool(trace),
+        "trace summary requires a canonical TrafficTrace",
     )
     _require(len(trace) >= 2, "trace summary requires at least two events")
-    frame_lengths = tuple(event.frame_length for event in trace)
-    iats = tuple(current.timestamp - previous.timestamp for previous, current in zip(trace, trace[1:], strict=False))
+    frame_lengths = tuple(int(value) for value in trace.frame_lengths)
+    iats = tuple(float(value) for value in trace.iats())
     packet_totals = _direction_values(trace, bytes_=False)
     byte_totals = _direction_values(trace, bytes_=True)
     multiscale = result.methods["multiscale_rate"].diagnostics
@@ -2169,9 +2167,9 @@ def _require_published_lineage(
 @dataclass(frozen=True, slots=True)
 class _ReconstructedScience:
     fresh_simulation: TrialResult
-    raw_events: tuple[TraceEvent, ...]
-    reparsed_events: Sequence[TraceEvent]
-    aligned_events: Sequence[TraceEvent]
+    raw_events: TrafficTrace
+    reparsed_events: TrafficTrace
+    aligned_events: TrafficTrace
     published: ComparisonResult
 
 
@@ -2195,9 +2193,9 @@ def _reconstruct_science(
         _comparison_equals_trial(raw_comparison, fresh_simulation),
         "raw seed-97 comparison must equal the sole direct fresh simulation evaluation",
     )
-    quantized = quantize_generated_events(raw_trial, window)
-    rendered = encode_pcapng(quantized, evidence.metadata)
-    reparsed = parse_pcapng_bytes(rendered, evidence.metadata, source=generated_path)
+    quantized = quantize_generated_trace(raw_trial, window)
+    rendered = encode_pcapng_trace(quantized, evidence.metadata)
+    reparsed = parse_pcapng_bytes_trace(rendered, evidence.metadata, source=generated_path)
     _require(
         rendered == evidence.contents["generated.pcapng"] and reparsed == quantized == evidence.generated,
         "generated artifact must equal quantized and reparsed raw seed-97 events",
@@ -2305,7 +2303,7 @@ def extract_primary_record(
         evidence, fresh_simulation_trial, generated_path=spec.run_directory / "generated.pcapng"
     )
     _require(
-        science.reparsed_events == result.generation.events and science.published == result.comparison,
+        science.reparsed_events == result.generation.trace and science.published == result.comparison,
         "run result must equal the reconstructed generated artifact and published comparison",
     )
 
@@ -2399,7 +2397,7 @@ def _reference_descriptions(runs: Sequence[JsonObject]) -> JsonObject:
 
 def natural_variation(
     records: Sequence[StudyRunRecord],
-    traces: Mapping[tuple[WorkloadName, int], tuple[TraceEvent, ...]],
+    traces: Mapping[tuple[WorkloadName, int], TrafficTrace],
     settings: Mapping[WorkloadName, SimilarityConfig],
 ) -> tuple[JsonObject, JsonObject, JsonObject]:
     grouped = _group_run_documents(records)
@@ -5941,12 +5939,12 @@ def _primary_run_specs(
     return tuple(specs)
 
 
-def _load_reference_trace(run_directory: Path) -> tuple[TraceEvent, ...]:
+def _load_reference_trace(run_directory: Path) -> TrafficTrace:
     capture_path = run_directory / "capture.json"
     reference_path = run_directory / "reference.pcapng"
     validate_capture_pair(capture_path, reference_path, deadline=None)
     metadata = parse_capture_metadata(capture_path.read_bytes(), source=capture_path)
-    return parse_pcapng_bytes(reference_path.read_bytes(), metadata, source=reference_path)
+    return parse_pcapng_bytes_trace(reference_path.read_bytes(), metadata, source=reference_path)
 
 
 def _validate_primary_derived_records(
@@ -6149,8 +6147,8 @@ def _score_delta(reproduction: JsonObject, source: JsonObject) -> JsonObject:
 
 
 def _symmetric_reference_score(
-    source: Sequence[TraceEvent],
-    reproduction: Sequence[TraceEvent],
+    source: TrafficTrace,
+    reproduction: TrafficTrace,
     settings: SimilarityConfig,
 ) -> JsonObject:
     scores: list[JsonObject] = []
@@ -6315,7 +6313,7 @@ def run_study(
         workloads = {spec.name: spec for spec in workload_specs(url)}
         object_size = cast(int, prerequisites.capability["object_size_bytes"])
         records: list[StudyRunRecord] = []
-        traces: dict[tuple[WorkloadName, int], tuple[TraceEvent, ...]] = {}
+        traces: dict[tuple[WorkloadName, int], TrafficTrace] = {}
         settings: dict[WorkloadName, SimilarityConfig] = {}
         for spec in specifications:
             workload = workloads[spec.workload]
@@ -6424,7 +6422,7 @@ def _audit_primary_record(
     repository_root: Path,
     record: StudyRunRecord,
     object_size_bytes: int,
-) -> tuple[TraceEvent, ...]:
+) -> TrafficTrace:
     root = repository_root.resolve()
     key = record.key
     workload_name = cast(WorkloadName, key["workload"])
@@ -6596,7 +6594,7 @@ def audit_published_study(
         )
         configs = validate_base_configs(root, prerequisites, require_absent_run_directories=False)
         object_size = cast(int, prerequisites.capability["object_size_bytes"])
-        traces: dict[tuple[WorkloadName, int], tuple[TraceEvent, ...]] = {}
+        traces: dict[tuple[WorkloadName, int], TrafficTrace] = {}
         settings: dict[WorkloadName, SimilarityConfig] = {}
         for record in results.runs:
             workload = cast(WorkloadName, record.key["workload"])
@@ -6659,7 +6657,7 @@ class _CandidateTraining:
     config: ExperimentConfig
     contents: Mapping[str, bytes]
     metadata: CaptureMetadata
-    reference: Sequence[TraceEvent]
+    reference: TrafficTrace
     observation_window_seconds: float
     runtime_seconds: float
     checkpoint: CheckpointState
@@ -7648,7 +7646,7 @@ def _load_candidate_training(
     contents = _read_exact_artifact_set(directory)
     metadata = parse_capture_metadata(contents["capture.json"], source=directory / "capture.json")
     reference, window = normalize_reference(
-        parse_pcapng_bytes(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
+        parse_pcapng_bytes_trace(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
     )
     context = make_strategy_context(
         config,

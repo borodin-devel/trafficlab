@@ -21,7 +21,7 @@ from trafficlab.genetic.population import (
 )
 from trafficlab.genetic.types import Candidate, CandidateId, CandidateStatus
 from trafficlab.models.common import FamilyBounds, make_rng
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 @dataclass
@@ -41,10 +41,12 @@ class ScriptedRandom:
         return self.ranges.pop(0)
 
 
-REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 64),
-    TraceEvent(1.0, Direction.INBOUND, 128),
-    TraceEvent(2.0, Direction.OUTBOUND, 256),
+REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 64),
+        TraceEvent(1.0, Direction.INBOUND, 128),
+        TraceEvent(2.0, Direction.OUTBOUND, 256),
+    )
 )
 POISSON = PoissonConfig(c_lambda=FloatBounds(lower=0.5, upper=2.0))
 MARKOV = MarkovRenewalConfig(
@@ -174,9 +176,11 @@ def test_initial_population_uses_contiguous_priority_slots_and_stable_ids() -> N
 
 def test_initial_population_classifies_registered_initializer_repair_failure() -> None:
     """A registered mathematical initialization failure remains an invalid fixed population slot."""
-    invalid_reference = (
-        TraceEvent(0.0, Direction.OUTBOUND, 64),
-        TraceEvent(1.0, Direction.INBOUND, 64),
+    invalid_reference = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 64),
+            TraceEvent(1.0, Direction.INBOUND, 64),
+        )
     )
     rng = ScriptedRandom(random_values=[0.0] * 4, ranges=[1])
 

@@ -184,7 +184,7 @@ def test_repair_rejects_equal_quantiles_and_duplicate_reference_thresholds() -> 
         TraceEvent(1.0, Direction.INBOUND, 60),
     )
     with pytest.raises(TrafficlabError, match="threshold"):
-        FAMILY.repair((0.2, 0.8, 0.0, 1.0, 1.0), BOUNDS, duplicate_lengths)
+        FAMILY.repair((0.2, 0.8, 0.0, 1.0, 1.0), BOUNDS, TrafficTrace.from_events(duplicate_lengths))
 
 
 @pytest.mark.parametrize("bounds", [object(), FloatBounds(lower=0.1, upper=0.9)])
@@ -255,7 +255,7 @@ def test_complete_additive_transition_estimator_and_ordered_iat_samples() -> Non
         TraceEvent(4.0, Direction.INBOUND, 80),
         TraceEvent(5.0, Direction.INBOUND, 80),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 1.0, 2.0, 1.0), W=5.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 1.0, 2.0, 1.0), W=5.0, bounds=BOUNDS)
 
     assert model.transition_rows == ((0.25, 0.75), (0.5, 0.5))
     assert model.conditional_iats == ((((), (1.0, 2.0))), (((1.0,), (1.0,))))
@@ -284,7 +284,7 @@ def test_nonempty_zero_smoothed_row_equals_empirical_frequencies() -> None:
         TraceEvent(2.0, Direction.INBOUND, 80),
         TraceEvent(3.0, Direction.OUTBOUND, 20),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 0.0, 1.0, 1.0), W=3.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 0.0, 1.0, 1.0), W=3.0, bounds=BOUNDS)
     assert model.transition_rows[0] == (0.5, 0.5)
     assert model.transition_rows[1] == (1.0, 0.0)
 
@@ -408,7 +408,7 @@ def test_zero_iats_remain_valid_in_every_fitted_sample() -> None:
         TraceEvent(0.0, Direction.INBOUND, 80),
         TraceEvent(1.0, Direction.OUTBOUND, 20),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 0.0, 1.0, 1.0), W=1.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 0.0, 1.0, 1.0), W=1.0, bounds=BOUNDS)
     assert model.global_iats == (0.0, 1.0)
     assert model.conditional_iats[0][1] == (0.0,)
 
@@ -685,7 +685,7 @@ def test_load_rejects_state_counts_inconsistent_with_transition_flow() -> None:
         TraceEvent(2.0, Direction.OUTBOUND, 20),
         TraceEvent(3.0, Direction.INBOUND, 80),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 0.0, 2.0, 1.0), W=3.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 0.0, 2.0, 1.0), W=3.0, bounds=BOUNDS)
     payload = FAMILY.dump_fitted(model)
     _payload_state(payload, 0)["frame_lengths"] = [20]
     _payload_state(payload, 1)["frame_lengths"] = [20, 20]
@@ -703,7 +703,7 @@ def test_load_rejects_degree_valid_disconnected_transition_components() -> None:
         TraceEvent(3.0, Direction.OUTBOUND, 80),
         TraceEvent(4.0, Direction.INBOUND, 80),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 0.0, 2.0, 1.0), W=4.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 0.0, 2.0, 1.0), W=4.0, bounds=BOUNDS)
     payload = FAMILY.dump_fitted(model)
     payload["conditional_iats"] = [
         [[], [1.0], [], []],
@@ -747,7 +747,7 @@ def test_load_accepts_flow_when_the_same_state_is_initial_and_final() -> None:
         TraceEvent(1.0, Direction.INBOUND, 80),
         TraceEvent(2.0, Direction.OUTBOUND, 20),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 0.0, 2.0, 1.0), W=2.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 0.0, 2.0, 1.0), W=2.0, bounds=BOUNDS)
     payload = FAMILY.dump_fitted(model)
 
     assert FAMILY.load_fitted(payload, genes=(0.25, 0.75, 0.0, 2.0, 1.0), bounds=BOUNDS) == model
@@ -802,7 +802,7 @@ def test_final_only_state_uses_uniform_row_and_global_iat() -> None:
         TraceEvent(1.0, Direction.INBOUND, 50),
         TraceEvent(3.0, Direction.INBOUND, 80),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 0.0, 2.0, 1.0), W=3.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 0.0, 2.0, 1.0), W=3.0, bounds=BOUNDS)
     rng = ScriptedMarkovRng(random_values=[0.9, 0.1], indices=[0, 0])
     result = markov_renewal._generate_with_rng(
         model,
@@ -870,7 +870,7 @@ def test_generation_allows_zero_iats_until_a_reliability_guard_stops_it() -> Non
         TraceEvent(0.0, Direction.INBOUND, 80),
         TraceEvent(1.0, Direction.OUTBOUND, 20),
     )
-    model = FAMILY.fit(reference, (0.25, 0.75, 0.0, 1.0, 1.0), W=1.0, bounds=BOUNDS)
+    model = FAMILY.fit(TrafficTrace.from_events(reference), (0.25, 0.75, 0.0, 1.0, 1.0), W=1.0, bounds=BOUNDS)
     rng = ScriptedMarkovRng(random_values=[0.0, 0.9, 0.1], indices=[0, 0, 0, 0, 0])
     result = markov_renewal._generate_with_rng(
         model,
@@ -879,7 +879,7 @@ def test_generation_allows_zero_iats_until_a_reliability_guard_stops_it() -> Non
         limits=GenerationLimits(max_packets=3, max_output_bytes=100_000, max_wall_seconds=10.0),
         clock=ScriptedClock([0.0] * 24),
     )
-    assert tuple(event.timestamp for event in result.events) == (0.0, 0.0, 1.0)
+    assert tuple(event.timestamp for event in result.trace) == (0.0, 0.0, 1.0)
     assert result.reason == "max_packets"
 
 
@@ -941,7 +941,7 @@ def test_generation_checks_wall_after_destination_frame_draw_and_before_emission
         limits=LARGE_LIMITS,
         clock=ScriptedClock([0.0] * 8 + [10.0]),
     )
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
     assert result.reason == "max_wall_seconds"
 
 
@@ -962,9 +962,9 @@ def test_generation_checks_prospective_packet_and_output_limits_before_emission(
         limits=GenerationLimits(max_packets=100, max_output_bytes=19, max_wall_seconds=10.0),
         clock=ScriptedClock([0.0] * 8),
     )
-    assert packet_result.events == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
+    assert packet_result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
     assert packet_result.reason == "max_packets"
-    assert byte_result.events == ()
+    assert byte_result.trace == ()
     assert byte_result.reason == "max_output_bytes"
 
 
@@ -988,16 +988,18 @@ def test_generation_checks_initial_wall_guard_and_later_prospective_output_limit
     )
     assert initial_result.reason == "max_wall_seconds"
     assert initial_rng.calls == []
-    assert later_result.events == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
+    assert later_result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 20),)
     assert later_result.reason == "max_output_bytes"
 
 
 def test_generation_rejects_overflowed_scaled_arrival_time() -> None:
     """Treating arithmetic overflow as natural completion would hide structural corruption."""
     fitted = FAMILY.fit(
-        (
-            TraceEvent(0.0, Direction.OUTBOUND, 20),
-            TraceEvent(1e308, Direction.INBOUND, 80),
+        TrafficTrace.from_events(
+            (
+                TraceEvent(0.0, Direction.OUTBOUND, 20),
+                TraceEvent(1e308, Direction.INBOUND, 80),
+            )
         ),
         (0.25, 0.75, 0.0, 1.0, 2.0),
         W=1e308,

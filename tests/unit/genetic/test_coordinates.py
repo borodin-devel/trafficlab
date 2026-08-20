@@ -23,7 +23,7 @@ from trafficlab.genetic.coordinates import (
     reflect,
 )
 from trafficlab.models.registry import MARKOV_RENEWAL_FAMILY
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 @dataclass
@@ -57,10 +57,12 @@ MMPP_BOUNDS = MmppConfig(
     lambda0=FloatBounds(lower=0.1, upper=1.0),
     lambda1=FloatBounds(lower=2.0, upper=5.0),
 )
-REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 64),
-    TraceEvent(1.0, Direction.INBOUND, 128),
-    TraceEvent(2.0, Direction.OUTBOUND, 256),
+REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 64),
+        TraceEvent(1.0, Direction.INBOUND, 128),
+        TraceEvent(2.0, Direction.OUTBOUND, 256),
+    )
 )
 
 
@@ -112,7 +114,9 @@ def test_initialization_uses_the_documented_rng_primitives() -> None:
 
 def test_initialize_candidate_translates_only_registered_repair_errors() -> None:
     """A mathematical repair failure must become an invalid-candidate classification."""
-    invalid_reference = (TraceEvent(0.0, Direction.OUTBOUND, 64), TraceEvent(1.0, Direction.INBOUND, 64))
+    invalid_reference = TrafficTrace.from_events(
+        (TraceEvent(0.0, Direction.OUTBOUND, 64), TraceEvent(1.0, Direction.INBOUND, 64))
+    )
 
     with pytest.raises(CandidateEvaluationError, match="thresholds") as raised:
         initialize_candidate(

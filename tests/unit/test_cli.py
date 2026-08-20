@@ -79,7 +79,7 @@ def _run_result() -> RunResult:
             run_directory=Path("/abs/run"),
             capture=SimpleNamespace(packet_count=10),
             fit=SimpleNamespace(outcome=SimpleNamespace(winner=SimpleNamespace(family="mmpp", fitness=0.8))),
-            generation=SimpleNamespace(events=tuple(range(12))),
+            generation=SimpleNamespace(trace=tuple(range(12))),
             comparison=SimpleNamespace(aggregate_score=0.75),
         ),
     )
@@ -233,7 +233,7 @@ def test_cli_generate_uses_injected_boundary_and_reports_result(capsys: pytest.C
     """Generate must route one callback and count the returned final events."""
     result = cast(
         GenerationStageResult,
-        SimpleNamespace(events=(object(), object()), generated_path=Path("/abs/run/generated.pcapng")),
+        SimpleNamespace(trace=(object(), object()), generated_path=Path("/abs/run/generated.pcapng")),
     )
     paths: list[Path] = []
 

@@ -18,7 +18,7 @@ from trafficlab.models.common import (
     validate_fit_inputs,
     weighted_index,
 )
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 class ScriptedClock:
@@ -61,23 +61,28 @@ def _reference(*lengths: int) -> tuple[TraceEvent, ...]:
     return tuple(TraceEvent(float(index), Direction.OUTBOUND, length) for index, length in enumerate(lengths))
 
 
+def _trace(*lengths: int) -> TrafficTrace:
+    return TrafficTrace.from_events(_reference(*lengths))
+
+
 def test_generation_result_accepts_only_complete_or_diagnostic_states() -> None:
     """Permitting ambiguous result states would make partial output reusable."""
-    events = _reference(14, 60)
+    trace = _trace(14, 60)
+    empty = TrafficTrace.from_events(())
 
-    assert GenerationResult(complete=True, events=events) == GenerationResult(True, events, None)
-    assert GenerationResult(complete=False, events=events, reason="max_packets").reason == "max_packets"
+    assert GenerationResult(complete=True, trace=trace) == GenerationResult(True, trace, None)
+    assert GenerationResult(complete=False, trace=trace, reason="max_packets").reason == "max_packets"
 
-    for complete, result_events, reason in (
-        (True, (), None),
-        (True, events, "max_packets"),
-        (False, events, None),
-        (False, events, "unknown"),
+    for complete, result_trace, reason in (
+        (True, empty, None),
+        (True, trace, "max_packets"),
+        (False, trace, None),
+        (False, trace, "unknown"),
     ):
         with pytest.raises((TypeError, ValueError)):
-            GenerationResult(complete=complete, events=result_events, reason=reason)  # type: ignore[arg-type]
+            GenerationResult(complete=complete, trace=result_trace, reason=reason)  # type: ignore[arg-type]
 
-    result = GenerationResult(complete=True, events=events)
+    result = GenerationResult(complete=True, trace=trace)
     with pytest.raises(FrozenInstanceError):
         result.complete = False  # type: ignore[misc]
     assert not hasattr(result, "__dict__")
@@ -85,19 +90,36 @@ def test_generation_result_accepts_only_complete_or_diagnostic_states() -> None:
 
 def test_generation_result_requires_complete_trace_before_reuse() -> None:
     """Returning incomplete diagnostic events would publish a truncated trace."""
-    events = _reference(14, 60)
+    trace = _trace(14, 60)
 
-    assert GenerationResult(complete=True, events=events).require_complete() is events
+    assert GenerationResult(complete=True, trace=trace).require_complete() is trace
     with pytest.raises(TrafficlabError, match="max_output_bytes") as caught:
-        GenerationResult(complete=False, events=events, reason="max_output_bytes").require_complete()
+        GenerationResult(complete=False, trace=trace, reason="max_output_bytes").require_complete()
     assert caught.value.corrective_action == "increase generation limits and generate a complete trace"
+
+
+def test_generation_result_carries_the_exact_columnar_trace_without_materializing_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A generated trace must stay immutable and columnar until an external artifact boundary."""
+    trace = TrafficTrace.from_events(_reference(14, 60))
+
+    def reject_event_materialization(_trace: TrafficTrace) -> tuple[TraceEvent, ...]:
+        raise AssertionError("generation materialized TraceEvent objects")
+
+    monkeypatch.setattr(TrafficTrace, "to_events", reject_event_materialization)
+
+    result = GenerationResult(complete=True, trace=trace)
+
+    assert result.trace is trace
+    assert result.require_complete() is trace
 
 
 def test_generation_result_freezes_exact_nonnegative_model_diagnostic_counts() -> None:
     """Evaluation diagnostics must not be mutable or accept ambiguous counter values."""
     result = GenerationResult(
         complete=True,
-        events=_reference(14),
+        trace=_trace(14),
         model_diagnostics={"timing_tier_source_count": 2},
     )
 
@@ -116,35 +138,27 @@ def test_generation_result_freezes_exact_nonnegative_model_diagnostic_counts() -
         with pytest.raises((TypeError, ValueError), match="diagnostic"):
             GenerationResult(
                 complete=True,
-                events=_reference(14),
+                trace=_trace(14),
                 model_diagnostics=diagnostics,  # type: ignore[arg-type]
             )
 
     with pytest.raises(TypeError, match="complete"):
-        GenerationResult(complete=1, events=_reference(14))  # type: ignore[arg-type]
+        GenerationResult(complete=1, trace=_trace(14))  # type: ignore[arg-type]
 
 
-def test_generation_result_rejects_noncanonical_diagnostic_events() -> None:
-    """Malformed diagnostic events would conceal a broken generator boundary."""
-    with pytest.raises(TypeError, match="events must be a tuple"):
-        GenerationResult(complete=False, events=[], reason="max_packets")  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="nondecreasing"):
-        GenerationResult(
-            complete=False,
-            events=(
-                TraceEvent(1.0, Direction.OUTBOUND, 14),
-                TraceEvent(0.0, Direction.INBOUND, 60),
-            ),
-            reason="max_packets",
-        )
+def test_generation_result_rejects_noncolumnar_or_unrenderable_diagnostic_traces() -> None:
+    """Malformed diagnostic prefixes must fail at the single columnar result boundary."""
+    with pytest.raises(TypeError, match="TrafficTrace"):
+        GenerationResult(complete=False, trace=[], reason="max_packets")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="frame length"):
+        GenerationResult(complete=False, trace=_trace(13), reason="max_packets")
 
 
 @pytest.mark.parametrize("window", [1.0, 0.5])
 def test_validate_fit_inputs_returns_a_valid_normalized_reference(window: float) -> None:
     """Changing normalized endpoints would fit a model against a different window."""
-    reference = (
-        TraceEvent(0.0, Direction.OUTBOUND, 14),
-        TraceEvent(window, Direction.INBOUND, 2**32 - 1),
+    reference = TrafficTrace.from_events(
+        (TraceEvent(0.0, Direction.OUTBOUND, 14), TraceEvent(window, Direction.INBOUND, 2**32 - 1))
     )
 
     assert validate_fit_inputs(reference, W=window) == reference
@@ -153,9 +167,11 @@ def test_validate_fit_inputs_returns_a_valid_normalized_reference(window: float)
 @pytest.mark.parametrize("frame_length", [14, 70_000, 2**32 - 1])
 def test_validate_fit_inputs_accepts_renderer_compatible_frame_lengths(frame_length: int) -> None:
     """Rejecting valid canonical Ethernet lengths would discard valid captures."""
-    reference = (
-        TraceEvent(0.0, Direction.OUTBOUND, frame_length),
-        TraceEvent(1.0, Direction.INBOUND, frame_length),
+    reference = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, frame_length),
+            TraceEvent(1.0, Direction.INBOUND, frame_length),
+        )
     )
 
     assert validate_fit_inputs(reference, W=1.0) == reference
@@ -164,46 +180,36 @@ def test_validate_fit_inputs_accepts_renderer_compatible_frame_lengths(frame_len
 @pytest.mark.parametrize(
     ("reference", "window", "message"),
     [
-        ((_reference(14)[0],), 1.0, "at least two"),
+        (TrafficTrace.from_events((_reference(14)[0],)), 1.0, "at least two"),
         (
-            (
-                TraceEvent(0.1, Direction.OUTBOUND, 14),
-                TraceEvent(1.0, Direction.INBOUND, 60),
+            TrafficTrace.from_events(
+                (
+                    TraceEvent(0.1, Direction.OUTBOUND, 14),
+                    TraceEvent(1.0, Direction.INBOUND, 60),
+                )
             ),
             1.0,
             "start at zero",
         ),
         (
-            (
-                TraceEvent(0.0, Direction.OUTBOUND, 14),
-                TraceEvent(0.5, Direction.INBOUND, 60),
+            TrafficTrace.from_events(
+                (
+                    TraceEvent(0.0, Direction.OUTBOUND, 14),
+                    TraceEvent(0.5, Direction.INBOUND, 60),
+                )
             ),
             1.0,
             "end at W",
         ),
         (
-            (
-                TraceEvent(0.0, Direction.OUTBOUND, 14),
-                TraceEvent(1.0, Direction.INBOUND, 60),
-                TraceEvent(0.5, Direction.OUTBOUND, 60),
-            ),
-            0.5,
-            "nondecreasing",
-        ),
-        (
-            (TraceEvent(0.0, Direction.OUTBOUND, 13), TraceEvent(1.0, Direction.INBOUND, 60)),
+            TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 13), TraceEvent(1.0, Direction.INBOUND, 60))),
             1.0,
             "14",
-        ),
-        (
-            (TraceEvent(0.0, Direction.OUTBOUND, 2**32), TraceEvent(1.0, Direction.INBOUND, 60)),
-            1.0,
-            "32-bit",
         ),
     ],
 )
 def test_validate_fit_inputs_rejects_noncanonical_reference_inputs(
-    reference: tuple[TraceEvent, ...], window: float, message: str
+    reference: TrafficTrace, window: float, message: str
 ) -> None:
     """Invalid fit input would produce a model that cannot meet the shared contract."""
     with pytest.raises(TrafficlabError, match=message):
@@ -214,12 +220,12 @@ def test_validate_fit_inputs_rejects_noncanonical_reference_inputs(
 def test_validate_fit_inputs_requires_an_exact_finite_positive_float_window(window: object) -> None:
     """Coercing a window changes the common comparison boundary silently."""
     with pytest.raises(TrafficlabError, match="observation window"):
-        validate_fit_inputs(_reference(14, 60), W=window)  # type: ignore[arg-type]
+        validate_fit_inputs(_trace(14, 60), W=window)  # type: ignore[arg-type]
 
 
-def test_validate_fit_inputs_wraps_a_noniterable_reference() -> None:
-    """A noniterable reference must fail as a fit boundary rather than leak a TypeError."""
-    with pytest.raises(TrafficlabError, match="events must be a sequence"):
+def test_validate_fit_inputs_rejects_a_noncolumnar_reference() -> None:
+    """A legacy event object must fail at the exact columnar model-fit boundary."""
+    with pytest.raises(TrafficlabError, match="exact TrafficTrace"):
         validate_fit_inputs(object(), W=1.0)  # type: ignore[arg-type]
 
 

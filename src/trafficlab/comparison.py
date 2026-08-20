@@ -37,7 +37,7 @@ from trafficlab.errors import (
 )
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.models.registry import load_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.pcapng import parse_pcapng_bytes_trace
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.similarity.autocorrelation import (
     AutocorrelationSamplesInsufficientError,
@@ -1232,7 +1232,7 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
             corrective_action="verify the PCAPNG exists and is readable",
         )
         try:
-            reference_events = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
+            reference_trace = parse_pcapng_bytes_trace(reference_content, metadata, source=reference_path)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -1322,7 +1322,7 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 ),
             )
         try:
-            generated_events = parse_pcapng_bytes(generated_content, metadata, source=generated_path)
+            generated_trace = parse_pcapng_bytes_trace(generated_content, metadata, source=generated_path)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -1332,8 +1332,8 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 evidence_state="preserved",
             ) from error
         try:
-            reference, window = normalize_reference(reference_events)
-            generated = align_generated(generated_events, window)
+            reference, window = normalize_reference(reference_trace)
+            generated = align_generated(generated_trace, window)
             result = compare_traces(reference, generated, window, snapshot_config.similarity).with_input_identities(
                 {
                     "capture_json": identify_bytes(metadata_content),

@@ -64,6 +64,23 @@ def test_compare_traces_reuses_exact_traffic_trace_inputs(
     assert result.aggregate_score == 1.0
 
 
+def test_compare_traces_runs_all_four_metrics_without_event_materialization(
+    valid_config_data: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One columnar comparison must never rebuild event tuples for any mandatory metric."""
+    trace = TrafficTrace.from_events(_trace())
+
+    def reject_event_materialization(_trace: TrafficTrace) -> tuple[TraceEvent, ...]:
+        raise AssertionError("comparison materialized TraceEvent objects")
+
+    monkeypatch.setattr(TrafficTrace, "to_events", reject_event_materialization)
+
+    result = compare_traces(trace, trace, 3.0, _settings(valid_config_data))
+
+    assert result.aggregate_score == 1.0
+    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+
+
 def _prepare_comparison_run(
     valid_config_data: dict[str, object],
     tmp_path: Path,
@@ -581,14 +598,14 @@ def test_compare_translates_each_pcap_parse_failure_before_publication(
         (example_data / "models" / "best_model.json", run_directory / "best_model.json"),
     ):
         destination.write_bytes(source.read_bytes())
-    real_parse = comparison.parse_pcapng_bytes
+    real_parse = comparison.parse_pcapng_bytes_trace
 
-    def fail_selected(content: bytes, metadata: object, *, source: Path) -> tuple[TraceEvent, ...]:
+    def fail_selected(content: bytes, metadata: object, *, source: Path) -> TrafficTrace:
         if source.name == input_name:
             raise TrafficlabError("injected parse failure", corrective_action="restore valid PCAPNG bytes")
         return real_parse(content, cast(Any, metadata), source=source)
 
-    monkeypatch.setattr(comparison, "parse_pcapng_bytes", fail_selected)
+    monkeypatch.setattr(comparison, "parse_pcapng_bytes_trace", fail_selected)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison.compare_experiment(experiment_path)

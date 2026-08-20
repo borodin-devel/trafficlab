@@ -17,13 +17,14 @@ from trafficlab.models.common import (
     GenerationGuard,
     GenerationResult,
     Genes,
+    IncompleteReason,
     MarkCount,
     MarkDistribution,
-    ReferenceTrace,
+    make_generation_trace,
     make_rng,
     validate_fit_inputs,
 )
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TrafficTrace
 
 
 def _invalid(detail: str, *, corrective_action: str) -> TrafficlabError:
@@ -145,31 +146,42 @@ def _generate_with_rng(
     checked_model = _validate_model(model)
     window = _validate_window(W)
     guard = GenerationGuard.start(limits, clock=clock)
-    events: list[TraceEvent] = []
+    timestamps: list[float] = []
+    directions: list[Direction] = []
+    frame_lengths: list[int] = []
     output_bytes = 0
+
+    def result(complete: bool, reason: IncompleteReason | None = None) -> GenerationResult:
+        return GenerationResult(
+            complete=complete,
+            trace=make_generation_trace(timestamps, directions, frame_lengths),
+            reason=reason,
+        )
 
     reason = guard.pre_draw_reason(0, 0)
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return result(False, reason)
     direction, frame_length = checked_model.marks.sample(rng)
     reason = guard.post_draw_reason()
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return result(False, reason)
     reason = guard.prospective_reason(0, 0, frame_length)
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
-    events.append(TraceEvent(0.0, direction, frame_length))
+        return result(False, reason)
+    timestamps.append(0.0)
+    directions.append(direction)
+    frame_lengths.append(frame_length)
     output_bytes += frame_length
     current_time = 0.0
 
     while True:
-        reason = guard.pre_draw_reason(len(events), output_bytes)
+        reason = guard.pre_draw_reason(len(timestamps), output_bytes)
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return result(False, reason)
         raw_delay = rng.exponential(1.0 / checked_model.rate)
         reason = guard.post_draw_reason()
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return result(False, reason)
         delay = _validate_delay(raw_delay)
         next_time = current_time + delay
         if not math.isfinite(next_time):
@@ -178,16 +190,18 @@ def _generate_with_rng(
                 corrective_action="use finite generation parameters and random delays",
             )
         if next_time > window:
-            return GenerationResult(complete=True, events=tuple(events))
+            return result(True)
 
         direction, frame_length = checked_model.marks.sample(rng)
         reason = guard.post_draw_reason()
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
-        reason = guard.prospective_reason(len(events), output_bytes, frame_length)
+            return result(False, reason)
+        reason = guard.prospective_reason(len(timestamps), output_bytes, frame_length)
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
-        events.append(TraceEvent(next_time, direction, frame_length))
+            return result(False, reason)
+        timestamps.append(next_time)
+        directions.append(direction)
+        frame_lengths.append(frame_length)
         output_bytes += frame_length
         current_time = next_time
 
@@ -204,12 +218,12 @@ class PoissonFamily:
         "rate": "interval_count_over_window",
     }
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: TrafficTrace) -> Genes:
         """Return the one-value canonical, finite, in-bounds rate-scale chromosome."""
         del reference
         return _repair_genes(genes, bounds)
 
-    def fit(self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> PoissonModel:
+    def fit(self, reference: TrafficTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> PoissonModel:
         """Estimate intervals per full window and retain ordered joint empirical marks."""
         trace = validate_fit_inputs(reference, W=W)
         repaired_genes = self.repair(genes, bounds, trace)

@@ -52,7 +52,7 @@ from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import Candidate, TrialResult, rebuild_genetic_record
 from trafficlab.models.common import FittedModel, GenerationResult, make_rng
 from trafficlab.models.registry import get_family
-from trafficlab.trace import Direction, TraceEvent, align_generated, normalize_reference
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace, align_generated, normalize_reference
 
 _PRE_USER_AGENT_R6_FIXTURE = PRE_USER_AGENT_R6_FIXTURE
 
@@ -219,14 +219,14 @@ def natural_variation_inputs(
     tmp_path: Path,
 ) -> tuple[
     tuple[study.StudyRunRecord, ...],
-    dict[tuple[study.WorkloadName, int], tuple[TraceEvent, ...]],
+    dict[tuple[study.WorkloadName, int], TrafficTrace],
     dict[study.WorkloadName, SimilarityConfig],
     dict[str, object],
 ]:
     document = valid_result_document(tmp_path)
     records = study_result_value(document).runs
     url = "https://downloads.example.test/object.bin"
-    traces: dict[tuple[study.WorkloadName, int], tuple[TraceEvent, ...]] = {}
+    traces: dict[tuple[study.WorkloadName, int], TrafficTrace] = {}
     settings: dict[study.WorkloadName, SimilarityConfig] = {}
     for workload in study.workload_specs(url):
         config = study.build_base_config(
@@ -239,11 +239,13 @@ def natural_variation_inputs(
         settings[workload.name] = config.similarity
         for repeat in (1, 2, 3):
             start = float(10 * repeat)
-            traces[(workload.name, repeat)] = (
-                TraceEvent(start, Direction.OUTBOUND, 60 + repeat),
-                TraceEvent(start + 0.25, Direction.INBOUND, 100 + repeat),
-                TraceEvent(start + 1.0, Direction.OUTBOUND, 180 + repeat),
-                TraceEvent(start + float(repeat + 2), Direction.INBOUND, 260 + repeat),
+            traces[(workload.name, repeat)] = TrafficTrace.from_events(
+                (
+                    TraceEvent(start, Direction.OUTBOUND, 60 + repeat),
+                    TraceEvent(start + 0.25, Direction.INBOUND, 100 + repeat),
+                    TraceEvent(start + 1.0, Direction.OUTBOUND, 180 + repeat),
+                    TraceEvent(start + float(repeat + 2), Direction.INBOUND, 260 + repeat),
+                )
             )
     return records, traces, settings, document
 
@@ -303,17 +305,21 @@ def test_trace_summary_uses_canonical_events_and_multiscale_direction_totals(tmp
         url="https://downloads.example.test/object.bin",
         capture_image_id=f"sha256:{'d' * 64}",
     )
-    reference = (
-        TraceEvent(0.0, Direction.OUTBOUND, 60),
-        TraceEvent(0.0, Direction.INBOUND, 100),
-        TraceEvent(1.0, Direction.OUTBOUND, 200),
-        TraceEvent(3.0, Direction.INBOUND, 300),
+    reference = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 60),
+            TraceEvent(0.0, Direction.INBOUND, 100),
+            TraceEvent(1.0, Direction.OUTBOUND, 200),
+            TraceEvent(3.0, Direction.INBOUND, 300),
+        )
     )
-    generated = (
-        TraceEvent(0.0, Direction.INBOUND, 80),
-        TraceEvent(0.5, Direction.OUTBOUND, 120),
-        TraceEvent(1.5, Direction.INBOUND, 160),
-        TraceEvent(3.0, Direction.OUTBOUND, 240),
+    generated = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.INBOUND, 80),
+            TraceEvent(0.5, Direction.OUTBOUND, 120),
+            TraceEvent(1.5, Direction.INBOUND, 160),
+            TraceEvent(3.0, Direction.OUTBOUND, 240),
+        )
     )
     comparison = compare_traces(reference, generated, 3.0, config.similarity)
 
@@ -456,11 +462,11 @@ def test_primary_extraction_reloads_nine_artifacts_and_proves_raw_quantized_line
     assert record.raw_sequence == {
         "seed": 97,
         "observation_window_seconds": 10.0,
-        "trial_event_count": len(result.fit.outcome.final_trials) and len(result.generation.events),
-        "final_event_count": len(result.generation.events),
+        "trial_event_count": len(result.fit.outcome.final_trials) and len(result.generation.trace),
+        "final_event_count": len(result.generation.trace),
         "raw_events_equal": True,
         "fresh_simulation_score_reproduced": True,
-        "reparsed_event_count": len(result.generation.events),
+        "reparsed_event_count": len(result.generation.trace),
         "reparsed_matches_quantized": True,
     }
     assert sorted(path.name for path in spec.run_directory.iterdir()) == sorted(study.ARTIFACT_NAMES)
@@ -526,9 +532,9 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
             ) -> GenerationResult:
                 generated = original_family.generate(model, seed, W, limits)
                 if limits == study.load_experiment(spec.config_path).generation.final:
-                    first, *remaining = generated.events
+                    first, *remaining = generated.trace.to_events()
                     changed = TraceEvent(first.timestamp, first.direction, first.frame_length + 1)
-                    return replace(generated, events=(changed, *remaining))
+                    return replace(generated, trace=TrafficTrace.from_events((changed, *remaining)))
                 return generated
 
         def differing_family(_name: str) -> Any:
@@ -546,9 +552,12 @@ def test_run_extraction_rejects_missing_malformed_inconsistent_or_reused_evidenc
         trial = rebuild_genetic_record(original, aggregate_score=aggregate)
         result = replace(result, fit=replace(result.fit, outcome=replace(result.fit.outcome, final_trials=(trial,))))
     elif mutation == "quantized-events-differ":
-        first, *remaining = result.generation.events
+        first, *remaining = result.generation.trace.to_events()
         changed = TraceEvent(first.timestamp, first.direction, first.frame_length + 1)
-        result = replace(result, generation=replace(result.generation, events=(changed, *remaining)))
+        result = replace(
+            result,
+            generation=replace(result.generation, trace=TrafficTrace.from_events((changed, *remaining))),
+        )
     elif mutation == "similarity-lineage-differ":
         assert result.comparison.input_identities is not None
         identities = result.comparison.input_identities.as_content_identities()
@@ -580,8 +589,8 @@ def test_natural_variation_compares_each_pair_in_both_directions_and_averages_sc
     records, traces, settings, document = natural_variation_inputs(tmp_path)
     calls: list[
         tuple[
-            tuple[TraceEvent, ...],
-            tuple[TraceEvent, ...],
+            TrafficTrace,
+            TrafficTrace,
             float,
             SimilarityConfig,
             ComparisonResult,
@@ -589,8 +598,8 @@ def test_natural_variation_compares_each_pair_in_both_directions_and_averages_sc
     ] = []
 
     def comparison_spy(
-        reference: tuple[TraceEvent, ...],
-        generated: tuple[TraceEvent, ...],
+        reference: TrafficTrace,
+        generated: TrafficTrace,
         window: float,
         config: SimilarityConfig,
     ) -> ComparisonResult:
@@ -679,8 +688,8 @@ def test_natural_variation_propagates_metric_precondition_failure(
     )
 
     def failing_comparison(
-        reference: tuple[TraceEvent, ...],
-        generated: tuple[TraceEvent, ...],
+        reference: TrafficTrace,
+        generated: TrafficTrace,
         window: float,
         config: SimilarityConfig,
     ) -> ComparisonResult:
@@ -927,13 +936,15 @@ def test_validation_study_mmpp_bounds_retain_a_valid_candidate_for_a_short_obser
         capture_image_id=f"sha256:{'d' * 64}",
     )
     window = 0.7874600887298584
-    reference = tuple(
-        TraceEvent(
-            window * index / 176,
-            Direction.OUTBOUND if index % 2 == 0 else Direction.INBOUND,
-            60 if index % 2 == 0 else 100,
+    reference = TrafficTrace.from_events(
+        tuple(
+            TraceEvent(
+                window * index / 176,
+                Direction.OUTBOUND if index % 2 == 0 else Direction.INBOUND,
+                60 if index % 2 == 0 else 100,
+            )
+            for index in range(177)
         )
-        for index in range(177)
     )
     context = make_strategy_context(
         config,

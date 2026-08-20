@@ -35,9 +35,16 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes, parse_pcapng_bytes_trace
 from trafficlab.preflight import PreparedExperiment
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, normalize_reference, parse_capture_metadata
+from trafficlab.trace import (
+    CaptureMetadata,
+    Direction,
+    TraceEvent,
+    TrafficTrace,
+    normalize_reference,
+    parse_capture_metadata,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -100,7 +107,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
     run_directory.mkdir()
     real_fsync = os.fsync
     real_directory_fsync = artifact_module._fsync_containing_directory  # pyright: ignore[reportPrivateUsage]
-    real_parse = parse_pcapng_bytes
+    real_parse = parse_pcapng_bytes_trace
     real_link = os.link
     operations: list[str] = []
 
@@ -113,7 +120,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
         capture_metadata: CaptureMetadata,
         *,
         source: Path,
-    ) -> tuple[TraceEvent, ...]:
+    ) -> TrafficTrace:
         assert content == encoded
         assert source.name.startswith(".generated.pcapng.")
         operations.append("parse")
@@ -130,7 +137,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
         real_directory_fsync(path)
 
     monkeypatch.setattr(artifact_module.os, "fsync", observe_fsync)
-    monkeypatch.setattr(artifact_module, "parse_pcapng_bytes", observe_parse)
+    monkeypatch.setattr(artifact_module, "parse_pcapng_bytes_trace", observe_parse)
     monkeypatch.setattr(artifact_module.os, "link", observe_link)
     monkeypatch.setattr(artifact_module, "_fsync_containing_directory", observe_directory_fsync)
 
@@ -616,11 +623,11 @@ def test_publication_failure_never_creates_canonical_and_cleans_owned_temp(
             _metadata: CaptureMetadata,
             *,
             source: Path,
-        ) -> tuple[TraceEvent, ...]:
+        ) -> TrafficTrace:
             del source
             raise TrafficlabError("parse", corrective_action="repair")
 
-        monkeypatch.setattr(artifact_module, "parse_pcapng_bytes", fail_parse)
+        monkeypatch.setattr(artifact_module, "parse_pcapng_bytes_trace", fail_parse)
     else:
 
         def fail_link(_source: str | Path, _destination: str | Path) -> None:
@@ -659,11 +666,11 @@ def test_publication_reraises_unexpected_exception_unchanged_after_temp_cleanup(
         _metadata: CaptureMetadata,
         *,
         source: Path,
-    ) -> tuple[TraceEvent, ...]:
+    ) -> TrafficTrace:
         assert source.name.startswith(".generated.pcapng.")
         raise sentinel
 
-    monkeypatch.setattr(artifact_module, "parse_pcapng_bytes", fail_unexpected)
+    monkeypatch.setattr(artifact_module, "parse_pcapng_bytes_trace", fail_unexpected)
 
     with pytest.raises(RuntimeError) as raised:
         publish_generated_pcapng(
@@ -933,7 +940,7 @@ def test_stage_uses_authoritative_preparation_single_read_lineage_and_no_referen
     assert result.observation_window_seconds == 10.0
     assert result.generated_path == run_directory / "generated.pcapng"
     assert result.reused is False
-    assert result.events == parse_pcapng_bytes(
+    assert result.trace == parse_pcapng_bytes_trace(
         result.generated_path.read_bytes(),
         parse_capture_metadata(_CAPTURE_BYTES, source=capture_path),
         source=result.generated_path,
@@ -968,7 +975,7 @@ def test_stage_hashes_parses_and_rechecks_the_same_model_and_capture_bytes(
 
     assert model_seen == [_MODEL_BYTES]
     assert capture_seen == [_CAPTURE_BYTES]
-    assert result.events
+    assert len(result.trace)
     assert (
         hashlib.sha256(capture_seen[0]).hexdigest()
         == load_best_model(model_seen[0], source=Path("observed-best_model.json")).capture_sha256
@@ -1139,9 +1146,11 @@ def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
         assert clock() == 0.0
         return GenerationResult(
             True,
-            (
-                TraceEvent(0.0, Direction.OUTBOUND, 60),
-                TraceEvent(W, Direction.INBOUND, 80),
+            TrafficTrace.from_events(
+                (
+                    TraceEvent(0.0, Direction.OUTBOUND, 60),
+                    TraceEvent(W, Direction.INBOUND, 80),
+                )
             ),
         )
 
@@ -1158,8 +1167,8 @@ def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
     result = generate_experiment(experiment_path, clock=lambda: 0.0)
 
     assert result.observation_window_seconds == window
-    assert result.events[-1].timestamp == 0.002929687
-    assert all(0.0 <= event.timestamp <= window for event in result.events)
+    assert result.trace[-1].timestamp == 0.002929687
+    assert all(0.0 <= timestamp <= window for timestamp in result.trace.timestamps)
 
 
 @pytest.mark.parametrize(
@@ -1310,7 +1319,7 @@ def test_stage_rejects_incomplete_generation_without_publication(
     family = get_family(best.family)
 
     def incomplete_generate(*_args: Any, **_kwargs: Any) -> GenerationResult:
-        return GenerationResult(False, (), "max_packets")
+        return GenerationResult(False, TrafficTrace.from_events(()), "max_packets")
 
     incomplete = cast(
         ModelFamily,
@@ -1339,18 +1348,18 @@ def test_stage_rejects_a_post_publication_round_trip_mismatch(
 ) -> None:
     """The stage result must expose events parsed from the exact published bytes, not pre-render values."""
     experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
-    real_parse = parse_pcapng_bytes
+    real_parse = parse_pcapng_bytes_trace
 
     def change_stage_parse(
         content: bytes,
         metadata: CaptureMetadata,
         *,
         source: Path,
-    ) -> tuple[TraceEvent, ...]:
+    ) -> TrafficTrace:
         parsed = real_parse(content, metadata, source=source)
         return parsed[:-1]
 
-    monkeypatch.setattr(generation_module, "parse_pcapng_bytes", change_stage_parse)
+    monkeypatch.setattr(generation_module, "parse_pcapng_bytes_trace", change_stage_parse)
 
     with pytest.raises(TrafficlabError, match="round-trip"):
         generate_experiment(experiment_path, clock=lambda: 0.0)
@@ -1366,18 +1375,20 @@ def test_stage_rejects_a_post_publication_timestamp_above_stored_window(
 ) -> None:
     """The stage must independently enforce parsed timestamps inside stored W."""
     experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
-    real_parse = parse_pcapng_bytes
+    real_parse = parse_pcapng_bytes_trace
 
     def move_stage_parse_outside_window(
         content: bytes,
         metadata: CaptureMetadata,
         *,
         source: Path,
-    ) -> tuple[TraceEvent, ...]:
+    ) -> TrafficTrace:
         parsed = real_parse(content, metadata, source=source)
-        return (*parsed[:-1], TraceEvent(10.000000001, parsed[-1].direction, parsed[-1].frame_length))
+        return TrafficTrace.from_events(
+            (*parsed[:-1].to_events(), TraceEvent(10.000000001, parsed[-1].direction, parsed[-1].frame_length))
+        )
 
-    monkeypatch.setattr(generation_module, "parse_pcapng_bytes", move_stage_parse_outside_window)
+    monkeypatch.setattr(generation_module, "parse_pcapng_bytes_trace", move_stage_parse_outside_window)
 
     with pytest.raises(TrafficlabError, match="outside.*observation window"):
         generate_experiment(experiment_path, clock=lambda: 0.0)
@@ -1413,7 +1424,7 @@ def test_stage_success_logs_exact_publication_and_reuse_records(
     assert reused.reused is True
     common = {
         "observation_window_seconds": 10.0,
-        "packet_count": len(published.events),
+        "packet_count": len(published.trace),
         "path": str(run_directory / "generated.pcapng"),
         "seed": config.run.final_seed,
         "stage": "generate",
@@ -1487,7 +1498,9 @@ def test_cli_generate_injected_dispatch_prints_exact_summary(
     result = GenerationStageResult(
         run_directory=run_directory,
         generated_path=run_directory / "generated.pcapng",
-        events=(TraceEvent(0.0, Direction.OUTBOUND, 60), TraceEvent(1.0, Direction.INBOUND, 80)),
+        trace=TrafficTrace.from_events(
+            (TraceEvent(0.0, Direction.OUTBOUND, 60), TraceEvent(1.0, Direction.INBOUND, 80))
+        ),
         seed=54321,
         observation_window_seconds=1.0,
         reused=False,

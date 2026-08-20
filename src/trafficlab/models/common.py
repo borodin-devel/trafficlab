@@ -20,7 +20,7 @@ type Genes = tuple[Gene, ...]
 type IncompleteReason = Literal["max_packets", "max_output_bytes", "max_wall_seconds"]
 type FamilyBounds = PoissonConfig | MarkovRenewalConfig | MmppConfig
 type ModelDiagnostics = Mapping[str, int]
-type ReferenceTrace = TrafficTrace | Sequence[TraceEvent]
+type ReferenceTrace = TrafficTrace
 
 MARKOV_MODEL_DIAGNOSTIC_KEYS = (
     "timing_tier_transition_count",
@@ -84,11 +84,11 @@ class ModelFamily(Protocol):
         """Return the canonical persisted estimator policy."""
         ...
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: TrafficTrace) -> Genes:
         """Repair one family chromosome without consuming randomness."""
         ...
 
-    def fit(self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> FittedModel:
+    def fit(self, reference: TrafficTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> FittedModel:
         """Fit a model to one normalized reference trace."""
         ...
 
@@ -131,42 +131,26 @@ def _validate_frame_length(frame_length: object, *, context: str) -> int:
     return frame_length
 
 
-def _validate_canonical_events(events: object, *, context: str, allow_empty: bool) -> tuple[TraceEvent, ...]:
-    if type(events) is not tuple:
-        raise TypeError(f"{context} events must be a tuple")
-    event_values = cast(tuple[object, ...], events)
-    if not allow_empty and not event_values:
-        raise ValueError(f"{context} events must not be empty")
-
-    previous_timestamp: float | None = None
-    for event_value in event_values:
-        event = cast(TraceEvent, event_value)
-        if type(event) is not TraceEvent:
-            raise TypeError(f"{context} events must be TraceEvent values")
-        if type(event.timestamp) is not float or not math.isfinite(event.timestamp) or event.timestamp < 0.0:
-            raise ValueError(f"{context} timestamps must be finite nonnegative floats")
-        if type(event.direction) is not Direction:
-            raise TypeError(f"{context} directions must be Direction values")
-        _validate_frame_length(event.frame_length, context=context)
-        if previous_timestamp is not None and event.timestamp < previous_timestamp:
-            raise ValueError(f"{context} timestamps must be nondecreasing")
-        previous_timestamp = event.timestamp
-    return cast(tuple[TraceEvent, ...], event_values)
-
-
 @dataclass(frozen=True, slots=True)
 class GenerationResult:
-    """A complete reusable trace or diagnostic events from a stopped generation."""
+    """A complete reusable columnar trace or diagnostic prefix from a stopped generation."""
 
     complete: bool
-    events: tuple[TraceEvent, ...]
+    trace: TrafficTrace
     reason: IncompleteReason | None = None
     model_diagnostics: ModelDiagnostics = field(default_factory=_empty_model_diagnostics)
 
     def __post_init__(self) -> None:
         if type(self.complete) is not bool:
             raise TypeError("complete must be a bool")
-        _validate_canonical_events(self.events, context="generated", allow_empty=not self.complete)
+        if type(self.trace) is not TrafficTrace:
+            raise TypeError("generated trace must be a TrafficTrace")
+        if self.complete and not len(self.trace):
+            raise ValueError("complete generated trace must not be empty")
+        if np.any(self.trace.frame_lengths < _MINIMUM_FRAME_LENGTH):
+            raise ValueError(
+                f"generated frame length must be in {_MINIMUM_FRAME_LENGTH}..{_MAXIMUM_FRAME_LENGTH} (32-bit)"
+            )
         if self.complete:
             if self.reason is not None:
                 raise ValueError("complete generation must not have an incomplete reason")
@@ -174,7 +158,7 @@ class GenerationResult:
             raise ValueError("incomplete generation requires a recognized reason")
         object.__setattr__(self, "model_diagnostics", freeze_model_diagnostics(self.model_diagnostics))
 
-    def require_complete(self) -> tuple[TraceEvent, ...]:
+    def require_complete(self) -> TrafficTrace:
         """Return only a full-window trace, never diagnostic partial events."""
         if not self.complete:
             if self.reason == "max_packets":
@@ -186,58 +170,53 @@ class GenerationResult:
                 f"generation did not complete: {self.reason}",
                 corrective_action="increase generation limits and generate a complete trace",
             )
-        return self.events
+        return self.trace
 
 
-def coerce_reference_trace(reference: ReferenceTrace) -> TrafficTrace:
-    """Return the shared immutable model-fit trace, adapting legacy event inputs once."""
-    if type(reference) is TrafficTrace:
-        trace = reference
-    else:
-        try:
-            trace = TrafficTrace.from_events(reference)
-        except (TypeError, ValueError) as error:
-            detail = str(error)
-            if "not iterable" in detail:
-                detail = "events must be a sequence of TraceEvent values"
-            if detail == "event frame_length must fit in uint32":
-                detail = f"frame length must be in {_MINIMUM_FRAME_LENGTH}..{_MAXIMUM_FRAME_LENGTH} (32-bit)"
-            raise _invalid(
-                f"invalid reference trace: {detail}",
-                corrective_action="provide normalized canonical TrafficTrace columns ending at W",
-            ) from error
-    if np.any(trace.frame_lengths < _MINIMUM_FRAME_LENGTH):
-        raise _invalid(
-            f"invalid reference trace: frame length must be in {_MINIMUM_FRAME_LENGTH}..{_MAXIMUM_FRAME_LENGTH} (32-bit)",
-            corrective_action="provide renderer-compatible canonical Ethernet frame lengths",
-        )
-    return trace
+def make_generation_trace(
+    timestamps: Sequence[float], directions: Sequence[Direction], frame_lengths: Sequence[int]
+) -> TrafficTrace:
+    """Build one owned immutable generated trace directly from numeric model columns."""
+    return TrafficTrace(
+        np.asarray(timestamps, dtype=np.float64),
+        np.asarray([0 if direction is Direction.OUTBOUND else 1 for direction in directions], dtype=np.uint8),
+        np.asarray(frame_lengths, dtype=np.uint32),
+    )
 
 
 def validate_fit_inputs(reference: ReferenceTrace, *, W: float) -> TrafficTrace:
-    """Validate the normalized columnar reference shared by all family fitters."""
+    """Validate the exact normalized columnar reference shared by all family fitters."""
     if type(W) is not float or not math.isfinite(W) or W <= 0.0:
         raise _invalid(
             "invalid observation window: it must be a finite positive float",
             corrective_action="provide a finite positive normalized observation window",
         )
-    trace = coerce_reference_trace(reference)
-    if len(trace) < 2:
+    if type(reference) is not TrafficTrace:
+        raise _invalid(
+            "invalid reference trace: it must be an exact TrafficTrace",
+            corrective_action="provide normalized canonical TrafficTrace columns ending at W",
+        )
+    if np.any(reference.frame_lengths < _MINIMUM_FRAME_LENGTH):
+        raise _invalid(
+            f"invalid reference trace: frame length must be in {_MINIMUM_FRAME_LENGTH}..{_MAXIMUM_FRAME_LENGTH} (32-bit)",
+            corrective_action="provide renderer-compatible canonical Ethernet frame lengths",
+        )
+    if len(reference) < 2:
         raise _invalid(
             "invalid reference trace: at least two events are required",
             corrective_action="provide a normalized canonical reference ending at W",
         )
-    if trace.timestamps[0] != 0.0:
+    if reference.timestamps[0] != 0.0:
         raise _invalid(
             "invalid reference trace: timestamps must start at zero",
             corrective_action="normalize the reference trace to start at zero and end at W",
         )
-    if trace.timestamps[-1] != W:
+    if reference.timestamps[-1] != W:
         raise _invalid(
             "invalid reference trace: timestamps must end at W",
             corrective_action="normalize the reference trace to start at zero and end at W",
         )
-    return trace
+    return reference
 
 
 @dataclass(frozen=True, slots=True)

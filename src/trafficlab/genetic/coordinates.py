@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, cast
 
@@ -14,7 +13,7 @@ from trafficlab.errors import EvidenceState, FailureAuthority, TrafficlabError
 from trafficlab.genetic.types import CandidateFailure, CandidateFailureKind
 from trafficlab.models.common import FamilyBounds, Gene, Genes, ModelFamily
 from trafficlab.models.registry import MARKOV_RENEWAL_FAMILY, REGISTRY, get_family
-from trafficlab.trace import TraceEvent
+from trafficlab.trace import TrafficTrace
 
 type CoordinateKind = Literal["linear", "log", "integer"]
 
@@ -164,9 +163,7 @@ def _registered_family(family: ModelFamily) -> ModelFamily:
     return family
 
 
-def initialize_candidate(
-    family: ModelFamily, bounds: FamilyBounds, reference: Sequence[TraceEvent], rng: GeneticRng
-) -> Genes:
+def initialize_candidate(family: ModelFamily, bounds: FamilyBounds, reference: TrafficTrace, rng: GeneticRng) -> Genes:
     """Draw one chromosome in family order, then repair it once without further RNG."""
     checked_family = _registered_family(family)
     raw_genes: list[Gene] = []

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
-from trafficlab.artifacts import append_run_log, publish_generated_pcapng, quantize_generated_events
+from trafficlab.artifacts import append_run_log, publish_generated_pcapng, quantize_generated_trace
 from trafficlab.compatibility import identify_bytes, identify_file, require_compatible
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import (
@@ -17,10 +17,10 @@ from trafficlab.errors import (
     failure_outcome_from_error,
 )
 from trafficlab.models.registry import BestModel, get_family, load_best_model, runtime_fitted_model
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.pcapng import encode_pcapng_trace, parse_pcapng_bytes_trace
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
-from trafficlab.trace import CaptureMetadata, TraceEvent, parse_capture_metadata
+from trafficlab.trace import CaptureMetadata, TrafficTrace, parse_capture_metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +29,7 @@ class GenerationStageResult:
 
     run_directory: Path
     generated_path: Path
-    events: tuple[TraceEvent, ...]
+    trace: TrafficTrace
     seed: int
     observation_window_seconds: float
     reused: bool
@@ -40,10 +40,10 @@ def reproduce_generated_pcapng(
     metadata: CaptureMetadata,
     *,
     clock: Callable[[], float] = monotonic,
-) -> tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], bytes]:
+) -> tuple[TrafficTrace, TrafficTrace, bytes]:
     """Reproduce the exact final trace and PCAPNG bytes bound into a best model."""
     family = get_family(best.family)
-    events = family.generate(
+    trace = family.generate(
         runtime_fitted_model(best),
         best.final_seed,
         best.observation_window_seconds,
@@ -53,8 +53,8 @@ def reproduce_generated_pcapng(
     # Fitness uses full-precision model events, while publication uses timestamps
     # representable by PCAPNG.  Return both forms so later audit can reproduce
     # the precise quantization boundary instead of conflating the two traces.
-    rendered_events = quantize_generated_events(events, best.observation_window_seconds)
-    return events, rendered_events, encode_pcapng(rendered_events, metadata)
+    rendered_trace = quantize_generated_trace(trace, best.observation_window_seconds)
+    return trace, rendered_trace, encode_pcapng_trace(rendered_trace, metadata)
 
 
 def _read_required_bytes(path: Path, *, kind: str, corrective_action: str) -> bytes:
@@ -269,7 +269,7 @@ def generate_experiment(
             )
 
         try:
-            events, rendered_events, content = reproduce_generated_pcapng(best, metadata, clock=clock)
+            trace, rendered_trace, content = reproduce_generated_pcapng(best, metadata, clock=clock)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -301,7 +301,7 @@ def generate_experiment(
                 run_directory,
                 content,
                 metadata=metadata,
-                expected_events=events,
+                expected_events=trace,
                 observation_window_seconds=best.observation_window_seconds,
             )
         except TrafficlabError as error:
@@ -313,7 +313,7 @@ def generate_experiment(
                 evidence_state="not_published",
             ) from error
         try:
-            parsed_events = parse_pcapng_bytes(publication.content, metadata, source=publication.path)
+            parsed_trace = parse_pcapng_bytes_trace(publication.content, metadata, source=publication.path)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -322,7 +322,7 @@ def generate_experiment(
                 affected_evidence="generated.pcapng",
                 evidence_state="preserved",
             ) from error
-        if any(event.timestamp < 0.0 or event.timestamp > best.observation_window_seconds for event in parsed_events):
+        if parsed_trace.timestamps[-1] > best.observation_window_seconds:
             raise attach_failure_outcome(
                 TrafficlabError(
                     "generated PCAPNG contains a timestamp outside the stored observation window",
@@ -333,7 +333,7 @@ def generate_experiment(
                 affected_evidence="generated.pcapng",
                 evidence_state="preserved",
             )
-        if parsed_events != rendered_events:
+        if parsed_trace != rendered_trace:
             raise attach_failure_outcome(
                 TrafficlabError(
                     "generated PCAPNG did not round-trip to the complete generated events",
@@ -347,7 +347,7 @@ def generate_experiment(
         result = GenerationStageResult(
             run_directory=run_directory,
             generated_path=publication.path,
-            events=parsed_events,
+            trace=parsed_trace,
             seed=best.final_seed,
             observation_window_seconds=best.observation_window_seconds,
             reused=not publication.created_by_call,
@@ -362,7 +362,7 @@ def generate_experiment(
             {
                 "event": "generated_pcapng_reused" if result.reused else "generated_pcapng_published",
                 "observation_window_seconds": result.observation_window_seconds,
-                "packet_count": len(result.events),
+                "packet_count": len(result.trace),
                 "path": str(result.generated_path),
                 "seed": result.seed,
                 "stage": "generate",

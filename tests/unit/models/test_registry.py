@@ -35,14 +35,16 @@ from trafficlab.models.registry import (
     rebuild_best_model,
     render_best_model,
 )
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
-REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 60),
-    TraceEvent(1.0, Direction.INBOUND, 100),
-    TraceEvent(3.0, Direction.OUTBOUND, 140),
-    TraceEvent(6.0, Direction.INBOUND, 80),
-    TraceEvent(10.0, Direction.OUTBOUND, 60),
+REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 60),
+        TraceEvent(1.0, Direction.INBOUND, 100),
+        TraceEvent(3.0, Direction.OUTBOUND, 140),
+        TraceEvent(6.0, Direction.INBOUND, 80),
+        TraceEvent(10.0, Direction.OUTBOUND, 60),
+    )
 )
 WINDOW = 10.0
 POISSON_BOUNDS = PoissonConfig(c_lambda=FloatBounds(lower=0.25, upper=4.0))

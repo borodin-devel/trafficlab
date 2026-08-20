@@ -34,10 +34,10 @@ from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.genetic.types import Candidate, TrialResult
 from trafficlab.models.registry import BestModel, load_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.pcapng import parse_pcapng_bytes_trace
 from trafficlab.preflight import PreparedExperiment, run_preflight
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
-from trafficlab.trace import TraceEvent, normalize_reference, parse_capture_metadata
+from trafficlab.trace import TrafficTrace, normalize_reference, parse_capture_metadata
 
 _SUCCESSFUL_RUN_NAMES = frozenset(
     {
@@ -225,10 +225,8 @@ def _validate_generation_result(
         or result.observation_window_seconds != observation_window_seconds
     ):
         raise _invalid_stage_result("generate", "observation window does not match fitting")
-    if type(result.events) is not tuple:
-        raise _invalid_stage_result("generate", "events are not an exact event tuple")
-    if any(type(event) is not TraceEvent for event in result.events):
-        raise _invalid_stage_result("generate", "events contain a value that is not an exact TraceEvent")
+    if type(result.trace) is not TrafficTrace:
+        raise _invalid_stage_result("generate", "trace is not an exact TrafficTrace")
     if type(result.reused) is not bool:
         raise _invalid_stage_result("generate", "generated-output reuse evidence is not a boolean")
 
@@ -236,11 +234,11 @@ def _validate_generation_result(
     metadata_path = prepared.run_directory / "capture.json"
     try:
         metadata = parse_capture_metadata(capture_content, source=metadata_path)
-        generated_events = parse_pcapng_bytes(generated_content, metadata, source=result.generated_path)
+        generated_trace = parse_pcapng_bytes_trace(generated_content, metadata, source=result.generated_path)
     except TrafficlabError as error:
         raise _invalid_stage_result("generate", f"could not validate generated output identity: {error}") from error
-    if generated_events != result.events:
-        raise _invalid_stage_result("generate", "generated output events do not match generated.pcapng")
+    if generated_trace != result.trace:
+        raise _invalid_stage_result("generate", "generated output trace does not match generated.pcapng")
     return identify_bytes(generated_content)
 
 
@@ -386,11 +384,11 @@ def _validate_final_artifacts(
     reference_content = _read_final_artifact(reference_path, owner="capture", identities=identities)
     try:
         metadata = parse_capture_metadata(capture_content, source=capture_path)
-        reference_events = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
-        reference, window = normalize_reference(reference_events)
+        reference_trace = parse_pcapng_bytes_trace(reference_content, metadata, source=reference_path)
+        reference, window = normalize_reference(reference_trace)
     except TrafficlabError as error:
         raise _final_artifact_error("capture", str(error)) from error
-    if len(reference_events) != inspection.packet_count:
+    if len(reference_trace) != inspection.packet_count:
         raise _final_artifact_error("capture", "capture pair changed between strict validation and lineage loading")
     if window != fit.observation_window_seconds:
         raise _final_artifact_error("capture", "strict reference window does not match the fitting result")
@@ -469,10 +467,10 @@ def _validate_final_artifacts(
     generated_path = run_directory / "generated.pcapng"
     generated_content = _read_final_artifact(generated_path, owner="generate", identities=identities)
     try:
-        generated_events = parse_pcapng_bytes(generated_content, metadata, source=generated_path)
+        generated_trace = parse_pcapng_bytes_trace(generated_content, metadata, source=generated_path)
     except TrafficlabError as error:
         raise _final_artifact_error("generate", str(error)) from error
-    if generated_events != generation.events:
+    if generated_trace != generation.trace:
         raise _final_artifact_error("generate", "generated.pcapng does not match the generation result")
     input_identities["generated_pcapng"] = identify_bytes(generated_content)
 
@@ -610,7 +608,7 @@ def run_experiment(
                     "event": "run_completed",
                     "family": fit.outcome.winner.family,
                     "fitness": fit.outcome.winner.fitness,
-                    "generated_packet_count": len(generation.events),
+                    "generated_packet_count": len(generation.trace),
                     "reference_packet_count": capture.packet_count,
                     "run_directory": str(prepared.run_directory),
                     "stage": "run",

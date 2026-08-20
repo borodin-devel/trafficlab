@@ -32,14 +32,14 @@ from trafficlab.models.common import (
     validate_fit_inputs,
 )
 from trafficlab.models.registry import REGISTRY
-from trafficlab.trace import TraceEvent
+from trafficlab.trace import TrafficTrace
 
 
 @dataclass(frozen=True, slots=True)
 class EvaluationContext:
     """Immutable common scientific inputs shared by every candidate trial."""
 
-    reference: tuple[TraceEvent, ...]
+    reference: TrafficTrace
     window: float
     families: Mapping[FamilyName, ModelFamily]
     bounds: Mapping[FamilyName, FamilyBounds]
@@ -116,8 +116,8 @@ def validate_evaluation_context(context: EvaluationContext) -> ValidatedEvaluati
     # sample infeasibility cannot be misreported as one candidate's poor fitness.
     if type(context) is not EvaluationContext:
         raise TypeError("context must be an unvalidated EvaluationContext")
-    if type(context.reference) is not tuple:
-        raise TypeError("evaluation reference must be a tuple")
+    if type(context.reference) is not TrafficTrace:
+        raise TypeError("evaluation reference must be a TrafficTrace")
     validate_fit_inputs(context.reference, W=context.window)
     _validate_families_and_bounds(context)
     _validate_trial_seeds(context.trial_seeds)
@@ -211,7 +211,7 @@ def _generate_candidate(
 
 
 def validate_candidate_similarity_preconditions(
-    generated: tuple[TraceEvent, ...],
+    generated: TrafficTrace,
     similarity: SimilarityConfig,
     *,
     seed: int,
@@ -284,7 +284,7 @@ def _evaluate_trial(
     context: ValidatedEvaluationContext,
 ) -> TrialResult:
     generation = _generate_candidate(candidate, model, seed, context)
-    generated = generation.events
+    generated = generation.trace
     validate_candidate_similarity_preconditions(generated, context.similarity, seed=seed)
     try:
         comparison = compare_traces(context.reference, generated, context.window, context.similarity)

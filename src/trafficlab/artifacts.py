@@ -11,6 +11,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Literal, cast
 
+import numpy as np
 from pydantic import ValidationError
 
 from trafficlab.capture_validation import CaptureInspection, validate_capture_pair
@@ -18,8 +19,8 @@ from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import DeadlineExceededError, FailureOutcome, TrafficlabError, attach_failure_outcome
 from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
-from trafficlab.trace import CaptureMetadata, TraceEvent
+from trafficlab.pcapng import parse_pcapng_bytes_trace
+from trafficlab.trace import CaptureMetadata, TraceEvent, TrafficTrace
 
 
 def _artifact_error(detail: str) -> TrafficlabError:
@@ -450,6 +451,11 @@ def quantize_generated_events(
     observation_window_seconds: float,
 ) -> tuple[TraceEvent, ...]:
     """Map complete generated events to the nearest PCAPNG nanosecond without crossing stored W."""
+    return quantize_generated_trace(TrafficTrace.from_events(events), observation_window_seconds).to_events()
+
+
+def quantize_generated_trace(trace: TrafficTrace, observation_window_seconds: float) -> TrafficTrace:
+    """Quantize one generated columnar trace without materializing event records."""
     if (
         type(observation_window_seconds) is not float
         or not math.isfinite(observation_window_seconds)
@@ -465,20 +471,24 @@ def quantize_generated_events(
             "generated publication observation window exceeds the PCAPNG timestamp range",
             corrective_action="use a shorter observation window and retry generation",
         )
-    if any(event.timestamp < 0.0 or event.timestamp > observation_window_seconds for event in events):
+    if type(trace) is not TrafficTrace:
+        raise TypeError("complete generated trace must be a TrafficTrace")
+    if np.any(trace.timestamps > observation_window_seconds):
         raise TrafficlabError(
             "complete generated events contain a timestamp outside the stored observation window",
             corrective_action="report the traffic-model complete-window defect",
         )
     maximum_tick = math.floor(scaled_window)
-    return tuple(
-        TraceEvent(
-            min(round(event.timestamp * 1_000_000_000), maximum_tick) / 1_000_000_000,
-            event.direction,
-            event.frame_length,
-        )
-        for event in events
+    quantized = np.minimum(np.rint(trace.timestamps * 1_000_000_000), maximum_tick) / 1_000_000_000
+    return TrafficTrace(
+        np.asarray(quantized, dtype=np.float64),
+        trace.directions,
+        trace.frame_lengths,
     )
+
+
+def _expected_generated_trace(expected: Sequence[TraceEvent] | TrafficTrace) -> TrafficTrace:
+    return expected if type(expected) is TrafficTrace else TrafficTrace.from_events(expected)
 
 
 def _validate_generated_content(
@@ -486,16 +496,16 @@ def _validate_generated_content(
     *,
     source: Path,
     metadata: CaptureMetadata,
-    expected_events: Sequence[TraceEvent],
+    expected_events: Sequence[TraceEvent] | TrafficTrace,
     observation_window_seconds: float,
 ) -> None:
-    parsed = parse_pcapng_bytes(content, metadata, source=source)
-    if any(event.timestamp < 0.0 or event.timestamp > observation_window_seconds for event in parsed):
+    parsed = parse_pcapng_bytes_trace(content, metadata, source=source)
+    if np.any(parsed.timestamps > observation_window_seconds):
         raise TrafficlabError(
             f"generated capture {source} contains a timestamp outside the stored observation window",
             corrective_action="preserve the artifact and retry generation in a new run directory",
         )
-    if parsed != quantize_generated_events(expected_events, observation_window_seconds):
+    if parsed != quantize_generated_trace(_expected_generated_trace(expected_events), observation_window_seconds):
         raise TrafficlabError(
             f"generated capture {source} does not contain the expected generated events",
             corrective_action="preserve the artifact and retry generation in a new run directory",
@@ -507,7 +517,7 @@ def _read_existing_generated(
     expected_content: bytes,
     *,
     metadata: CaptureMetadata,
-    expected_events: Sequence[TraceEvent],
+    expected_events: Sequence[TraceEvent] | TrafficTrace,
     observation_window_seconds: float,
 ) -> GeneratedPublication | None:
     identity = _file_identity(
@@ -600,11 +610,11 @@ def publish_generated_pcapng(
     content: bytes,
     *,
     metadata: CaptureMetadata,
-    expected_events: Sequence[TraceEvent],
+    expected_events: Sequence[TraceEvent] | TrafficTrace,
     observation_window_seconds: float,
 ) -> GeneratedPublication:
     """Durably validate and exclusively publish or prove reuse of generated PCAPNG bytes."""
-    quantize_generated_events(expected_events, observation_window_seconds)
+    quantize_generated_trace(_expected_generated_trace(expected_events), observation_window_seconds)
     destination = run_directory / "generated.pcapng"
     existing = _read_existing_generated(
         destination,

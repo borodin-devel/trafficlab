@@ -229,7 +229,7 @@ def test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_pro
     run_directory = result.run_directory
     assert capsys.readouterr() == (
         f"run: family={result.fit.outcome.winner.family} fitness={result.fit.outcome.winner.fitness:.6f} "
-        f"reference_packets={result.capture.packet_count} generated_packets={len(result.generation.events)} "
+        f"reference_packets={result.capture.packet_count} generated_packets={len(result.generation.trace)} "
         f"aggregate_score={result.comparison.aggregate_score:.6f} output={run_directory}\n",
         "",
     )
@@ -311,7 +311,7 @@ def test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_pro
         metadata,
         source=run_directory / "generated.pcapng",
     )
-    assert generated_events == result.generation.events
+    assert generated_events == result.generation.trace
     # The generation stage publishes the trace once; strict comparison then reproduces it byte-for-byte.
     assert final_generation_calls == [(config.run.final_seed, window, config.generation.final)] * 2
 
@@ -343,7 +343,7 @@ def test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_pro
             "event": "run_completed",
             "family": result.fit.outcome.winner.family,
             "fitness": result.fit.outcome.winner.fitness,
-            "generated_packet_count": len(result.generation.events),
+            "generated_packet_count": len(result.generation.trace),
             "reference_packet_count": result.capture.packet_count,
             "run_directory": str(run_directory),
             "stage": "run",

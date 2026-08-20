@@ -25,7 +25,7 @@ from trafficlab.genetic.types import (
 )
 from trafficlab.models.common import FamilyBounds, Genes, make_rng
 from trafficlab.models.registry import POISSON_FAMILY
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 def replace[Record](record: Record, **changes: object) -> Record:
@@ -59,14 +59,18 @@ class ScriptedRandom:
         return self.normal_values.pop(0)
 
 
-REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 64),
-    TraceEvent(1.0, Direction.INBOUND, 128),
-    TraceEvent(2.0, Direction.OUTBOUND, 256),
+REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 64),
+        TraceEvent(1.0, Direction.INBOUND, 128),
+        TraceEvent(2.0, Direction.OUTBOUND, 256),
+    )
 )
-INVALID_MARKOV_REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 64),
-    TraceEvent(1.0, Direction.INBOUND, 64),
+INVALID_MARKOV_REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 64),
+        TraceEvent(1.0, Direction.INBOUND, 64),
+    )
 )
 POISSON = PoissonConfig(
     crossover_probability=1.0,

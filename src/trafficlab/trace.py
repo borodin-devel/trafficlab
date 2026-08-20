@@ -181,77 +181,51 @@ class TrafficTrace(Sequence[TraceEvent]):
         return False
 
 
-def _validated_events(events: Iterable[TraceEvent], *, minimum_events: int, trace_name: str) -> tuple[TraceEvent, ...]:
-    """Return one complete canonical trace after validating its research preconditions."""
+def validate_traffic_trace(
+    events: Iterable[TraceEvent] | TrafficTrace,
+    *,
+    minimum_events: int,
+    trace_name: str,
+    window: float | None = None,
+) -> TrafficTrace:
+    """Return one canonical columnar trace through the shared compatibility boundary."""
     corrective_action = f"provide finite nondecreasing canonical {trace_name} events"
     try:
-        trace = tuple(events)
-    except TypeError as error:
+        trace = events if type(events) is TrafficTrace else TrafficTrace.from_events(events)
+    except AttributeError as error:
         raise TrafficlabError(
-            f"invalid {trace_name} trace: events must be an iterable of canonical events",
+            f"invalid {trace_name} trace: event data is incomplete",
             corrective_action=corrective_action,
         ) from error
-
+    except (TypeError, ValueError) as error:
+        detail = (
+            str(error)
+            .replace("traffic trace events", "events")
+            .replace("event frame_length", "frame length")
+            .replace("event timestamp", "timestamp")
+            .replace("event direction", "direction")
+        )
+        raise TrafficlabError(
+            f"invalid {trace_name} trace: {detail}",
+            corrective_action=corrective_action,
+        ) from error
     if len(trace) < minimum_events:
         minimum_label = "one" if minimum_events == 1 else "two"
         raise TrafficlabError(
             f"invalid {trace_name} trace: at least {minimum_label} event{'s' if minimum_events != 1 else ''} are required",
             corrective_action=corrective_action,
         )
-
-    previous_timestamp: float | None = None
-    for event in trace:
-        if type(event) is not TraceEvent:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: every event must be a TraceEvent",
-                corrective_action=corrective_action,
-            )
-        try:
-            timestamp = event.timestamp
-            direction = event.direction
-            frame_length = event.frame_length
-        except AttributeError as error:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: event data is incomplete",
-                corrective_action=corrective_action,
-            ) from error
-        if type(timestamp) is not float or not math.isfinite(timestamp) or timestamp < 0.0:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: timestamps must be finite nonnegative floats",
-                corrective_action=corrective_action,
-            )
-        if type(direction) is not Direction:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: every event direction must be a Direction member",
-                corrective_action=corrective_action,
-            )
-        if type(frame_length) is not int or frame_length <= 0:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: frame lengths must be positive integers",
-                corrective_action=corrective_action,
-            )
-        if previous_timestamp is not None and timestamp < previous_timestamp:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: timestamps must be nondecreasing",
-                corrective_action=corrective_action,
-            )
-        previous_timestamp = timestamp
-
+    if window is not None and trace.timestamps[-1] > window:
+        raise TrafficlabError(
+            f"invalid {trace_name} trace: every event must be inside [0, W]",
+            corrective_action=f"provide nonempty finite nondecreasing canonical {trace_name} events in [0, W]",
+        )
     return trace
 
 
 def normalize_reference(events: Iterable[TraceEvent] | TrafficTrace) -> tuple[TrafficTrace, float]:
     """Normalize a complete reference trace to its closed observation window."""
-    if type(events) is TrafficTrace:
-        trace = events
-        if len(trace) < 2:
-            raise TrafficlabError(
-                "invalid reference trace: at least two events are required",
-                corrective_action="provide finite nondecreasing canonical reference events",
-            )
-    else:
-        reference = _validated_events(events, minimum_events=2, trace_name="reference")
-        trace = TrafficTrace.from_events(reference)
+    trace = validate_traffic_trace(events, minimum_events=2, trace_name="reference")
     start = trace.timestamps[0]
     window = float(trace.timestamps[-1] - start)
     if not math.isfinite(window) or window <= 0.0:
@@ -264,16 +238,7 @@ def normalize_reference(events: Iterable[TraceEvent] | TrafficTrace) -> tuple[Tr
 
 def align_generated(events: Iterable[TraceEvent] | TrafficTrace, W: float) -> TrafficTrace:
     """Shift a complete generated trace and retain its events in the closed window."""
-    if type(events) is TrafficTrace:
-        trace = events
-        if not len(trace):
-            raise TrafficlabError(
-                "invalid generated trace: at least one event is required",
-                corrective_action="provide finite nondecreasing canonical generated events",
-            )
-    else:
-        generated = _validated_events(events, minimum_events=1, trace_name="generated")
-        trace = TrafficTrace.from_events(generated)
+    trace = validate_traffic_trace(events, minimum_events=1, trace_name="generated")
     if type(W) is not float or not math.isfinite(W) or W <= 0.0:
         raise TrafficlabError(
             "invalid observation window: it must be a finite positive float",
@@ -312,6 +277,19 @@ def _format_validation_errors(error: ValidationError) -> str:
     return "; ".join(f"{'.'.join(str(part) for part in detail['loc'])}: {detail['msg']}" for detail in error.errors())
 
 
+def _reject_capture_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError(f"duplicate JSON key: {key}")
+        document[key] = value
+    return document
+
+
+def _reject_capture_nonfinite_constant(token: str) -> object:
+    raise ValueError(f"nonfinite JSON number: {token}")
+
+
 def parse_capture_metadata(content: bytes, *, source: Path) -> CaptureMetadata:
     """Parse exact capture metadata bytes while retaining their source in errors."""
     try:
@@ -323,8 +301,12 @@ def parse_capture_metadata(content: bytes, *, source: Path) -> CaptureMetadata:
         ) from error
 
     try:
-        document = json.loads(text)
-    except json.JSONDecodeError as error:
+        document = json.loads(
+            text,
+            object_pairs_hook=_reject_capture_duplicate_keys,
+            parse_constant=_reject_capture_nonfinite_constant,
+        )
+    except (json.JSONDecodeError, ValueError) as error:
         raise TrafficlabError(
             f"invalid JSON in capture metadata {source}: {error}",
             corrective_action="correct capture.json JSON and retry",

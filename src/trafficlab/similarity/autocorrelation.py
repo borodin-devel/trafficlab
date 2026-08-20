@@ -8,8 +8,15 @@ import numpy as np
 from numpy.typing import NDArray
 
 from trafficlab.errors import TrafficlabError
-from trafficlab.similarity.common import FrozenJsonValue, JsonDiagnostics, SimilarityResult, validate_observation_window
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.similarity.common import (
+    FrozenJsonValue,
+    JsonDiagnostics,
+    SimilarityResult,
+    validate_observation_window,
+    validated_numeric_array,
+    validated_weights,
+)
+from trafficlab.trace import TraceEvent, TrafficTrace, validate_traffic_trace
 
 _ROUNDING_TOLERANCE = 1e-15
 type _NumericSample = tuple[int | float, ...] | NDArray[np.float64] | NDArray[np.uint32]
@@ -38,61 +45,6 @@ def _clamp_documented_range(value: float, *, lower: float, upper: float, name: s
     )
 
 
-def _validated_numeric_values(values: Iterable[object]) -> tuple[int | float, ...]:
-    """Materialize one finite numeric sample for direct autocorrelation."""
-    try:
-        sample = tuple(values)
-    except TypeError as error:
-        raise TrafficlabError(
-            "invalid autocorrelation sample: values must be iterable",
-            corrective_action="provide an iterable of finite numeric values",
-        ) from error
-    numeric_values: list[int | float] = []
-    for value in sample:
-        if type(value) is int:
-            numeric_values.append(value)
-        elif type(value) is float and math.isfinite(value):
-            numeric_values.append(value)
-        else:
-            raise TrafficlabError(
-                "invalid autocorrelation sample: values must be finite numbers",
-                corrective_action="provide an iterable of finite numeric values",
-            )
-    return tuple(numeric_values)
-
-
-def _validated_numeric_array(values: Iterable[object] | NDArray[np.generic]) -> NDArray[np.float64]:
-    """Return one finite float64 array while retaining the generic scalar boundary."""
-    raw_values: object = values
-    array = cast(NDArray[np.generic], raw_values) if isinstance(raw_values, np.ndarray) else None
-    if (
-        array is not None
-        and array.ndim == 1
-        and (np.issubdtype(array.dtype, np.integer) or np.issubdtype(array.dtype, np.floating))
-    ):
-        try:
-            numeric = np.asarray(array, dtype=np.float64)
-        except (OverflowError, TypeError, ValueError) as error:
-            raise TrafficlabError(
-                "invalid autocorrelation sample: values cannot be evaluated safely",
-                corrective_action="provide finite numeric values within the supported arithmetic range",
-            ) from error
-        if not np.all(np.isfinite(numeric)):
-            raise TrafficlabError(
-                "invalid autocorrelation sample: values must be finite numbers",
-                corrective_action="provide an iterable of finite numeric values",
-            )
-        return numeric
-    sample = _validated_numeric_values(cast(Iterable[object], values))
-    try:
-        return np.asarray(sample, dtype=np.float64)
-    except (OverflowError, TypeError, ValueError) as error:
-        raise TrafficlabError(
-            "invalid autocorrelation sample: values cannot be evaluated safely",
-            corrective_action="provide finite numeric values within the supported arithmetic range",
-        ) from error
-
-
 def _validated_lag(lag: object, *, sample_length: int) -> int:
     """Return a positive lag that has paired values in its sample."""
     if type(lag) is not int or lag <= 0 or lag >= sample_length:
@@ -107,7 +59,16 @@ def _sample_autocorrelations(
     values: Iterable[object] | NDArray[np.generic], lags: tuple[int, ...]
 ) -> tuple[float, ...]:
     """Evaluate selected lags after one validation, centering, and denominator pass."""
-    sample = _validated_numeric_array(values)
+    sample = cast(
+        NDArray[np.float64],
+        validated_numeric_array(
+            values,
+            error_name="autocorrelation sample",
+            corrective_action="provide finite numeric values within the supported arithmetic range",
+            require_nonempty=False,
+            as_float64=True,
+        ),
+    )
     validated_lags = tuple(_validated_lag(lag, sample_length=len(sample)) for lag in lags)
     if np.all(sample == sample[0]):
         return tuple(0.0 for _lag in validated_lags)
@@ -164,41 +125,6 @@ def _validated_lags(lags: Iterable[object]) -> tuple[int, ...]:
     return typed_lags
 
 
-def _validated_weights(values: Iterable[object], *, name: str, expected_length: int | None = None) -> tuple[float, ...]:
-    """Return one finite nonnegative weight vector normalized with precise summation."""
-    try:
-        weights = tuple(values)
-    except TypeError as error:
-        raise TrafficlabError(
-            f"invalid {name}: weights must be iterable",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        ) from error
-    if expected_length is not None and len(weights) != expected_length:
-        raise TrafficlabError(
-            f"invalid {name}: weight count must match lag count",
-            corrective_action="provide one finite normalized weight for every lag",
-        )
-    if not weights or any(type(weight) is not float or not math.isfinite(weight) or weight < 0.0 for weight in weights):
-        raise TrafficlabError(
-            f"invalid {name}: weights must be finite nonnegative floats",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        )
-    typed_weights = tuple(weight for weight in weights if type(weight) is float)
-    try:
-        weight_sum = math.fsum(typed_weights)
-    except OverflowError as error:
-        raise TrafficlabError(
-            f"invalid {name}: weights cannot be summed safely",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        ) from error
-    if not math.isclose(weight_sum, 1.0, rel_tol=0.0, abs_tol=1e-12):
-        raise TrafficlabError(
-            f"invalid {name}: weights must sum to one",
-            corrective_action="provide finite nonnegative weights that sum to one",
-        )
-    return typed_weights
-
-
 def weighted_acf_discrepancy(
     reference_acf: tuple[float, ...], generated_acf: tuple[float, ...], lag_weights: tuple[float, ...]
 ) -> float:
@@ -243,70 +169,11 @@ def _feature_diagnostics(
     )
 
 
-def _validated_trace(events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str) -> TrafficTrace:
-    """Return one complete nondecreasing canonical trace for this metric."""
-    corrective_action = f"provide finite nondecreasing canonical {trace_name} events"
-    if type(events) is TrafficTrace:
-        if len(events) < 2:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: at least two events are required",
-                corrective_action=corrective_action,
-            )
-        return events
-    try:
-        trace = tuple(events)
-    except TypeError as error:
-        raise TrafficlabError(
-            f"invalid {trace_name} trace: events must be an iterable of canonical events",
-            corrective_action=corrective_action,
-        ) from error
-    if len(trace) < 2:
-        raise TrafficlabError(
-            f"invalid {trace_name} trace: at least two events are required",
-            corrective_action=corrective_action,
-        )
-    previous_timestamp: float | None = None
-    for event in trace:
-        if type(event) is not TraceEvent:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: every event must be a TraceEvent",
-                corrective_action=corrective_action,
-            )
-        try:
-            timestamp = event.timestamp
-            direction = event.direction
-            frame_length = event.frame_length
-        except AttributeError as error:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: event data is incomplete",
-                corrective_action=corrective_action,
-            ) from error
-        if (
-            type(timestamp) is not float
-            or not math.isfinite(timestamp)
-            or timestamp < 0.0
-            or type(direction) is not Direction
-            or type(frame_length) is not int
-            or frame_length <= 0
-        ):
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: events must have finite timestamps, directions, and positive lengths",
-                corrective_action=corrective_action,
-            )
-        if previous_timestamp is not None and timestamp < previous_timestamp:
-            raise TrafficlabError(
-                f"invalid {trace_name} trace: timestamps must be nondecreasing",
-                corrective_action=corrective_action,
-            )
-        previous_timestamp = timestamp
-    return TrafficTrace.from_events(trace)
-
-
 def _trace_samples(
     events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str
 ) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:
     """Validate one trace once and derive its IAT and frame-size feature samples."""
-    trace = _validated_trace(events, trace_name=trace_name)
+    trace = validate_traffic_trace(events, minimum_events=2, trace_name=trace_name)
     return trace.iats(), trace.frame_lengths
 
 
@@ -334,10 +201,13 @@ def autocorrelation_similarity(
     """Compare IAT and frame-size serial dependence at configured positive lags."""
     window = validate_observation_window(W)
     validated_lags = _validated_lags(lags)
-    validated_lag_weights = _validated_weights(
-        lag_weights, name="autocorrelation lag weights", expected_length=len(validated_lags)
+    validated_lag_weights = validated_weights(
+        lag_weights,
+        name="autocorrelation lag weights",
+        expected_length=len(validated_lags),
+        count_name="lag",
     )
-    feature_weights = _validated_weights((iat_weight, size_weight), name="autocorrelation feature weights")
+    feature_weights = validated_weights((iat_weight, size_weight), name="autocorrelation feature weights")
     reference_iats, reference_sizes = _trace_samples(reference, trace_name="reference")
     generated_iats, generated_sizes = _trace_samples(generated, trace_name="generated")
     samples = {

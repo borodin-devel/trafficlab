@@ -23,12 +23,11 @@ from trafficlab.models.common import (
     GenerationResult,
     Genes,
     IncompleteReason,
-    ReferenceTrace,
-    coerce_reference_trace,
+    make_generation_trace,
     make_rng,
     validate_fit_inputs,
 )
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.trace import Direction, TrafficTrace
 
 _ROW_TOLERANCE = 1e-12
 _MINIMUM_FRAME_LENGTH = 14
@@ -672,30 +671,31 @@ def _generate_with_rng(
     checked_model = _validate_model(model)
     window = _validate_window(W)
     guard = GenerationGuard.start(limits, clock=clock)
-    events: list[TraceEvent] = []
+    timestamps: list[float] = []
+    directions: list[Direction] = []
+    frame_lengths: list[int] = []
     output_bytes = 0
     timing_counts: dict[str, int] = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS}
 
     def generation_result(
         *,
         complete: bool,
-        result_events: tuple[TraceEvent, ...],
         reason: IncompleteReason | None = None,
     ) -> GenerationResult:
         return GenerationResult(
             complete=complete,
-            events=result_events,
+            trace=make_generation_trace(timestamps, directions, frame_lengths),
             reason=reason,
             model_diagnostics=timing_counts,
         )
 
     reason = guard.pre_draw_reason(0, 0)
     if reason is not None:
-        return generation_result(complete=False, result_events=(), reason=reason)
+        return generation_result(complete=False, reason=reason)
     raw_state_draw = rng.random()
     reason = guard.post_draw_reason()
     if reason is not None:
-        return generation_result(complete=False, result_events=(), reason=reason)
+        return generation_result(complete=False, reason=reason)
     state_index = _weighted_index_from_draw(
         tuple(float(len(state.frame_lengths)) for state in checked_model.states), raw_state_draw
     )
@@ -704,23 +704,25 @@ def _generate_with_rng(
     raw_frame_draw = rng.choice(len(state.frame_lengths))
     reason = guard.post_draw_reason()
     if reason is not None:
-        return generation_result(complete=False, result_events=(), reason=reason)
+        return generation_result(complete=False, reason=reason)
     frame_length = state.frame_lengths[_empirical_index_from_draw(len(state.frame_lengths), raw_frame_draw)]
     reason = guard.prospective_reason(0, 0, frame_length)
     if reason is not None:
-        return generation_result(complete=False, result_events=(), reason=reason)
-    events.append(TraceEvent(0.0, state.direction, frame_length))
+        return generation_result(complete=False, reason=reason)
+    timestamps.append(0.0)
+    directions.append(state.direction)
+    frame_lengths.append(frame_length)
     output_bytes = frame_length
     current_time = 0.0
 
     while True:
-        reason = guard.pre_draw_reason(len(events), output_bytes)
+        reason = guard.pre_draw_reason(len(timestamps), output_bytes)
         if reason is not None:
-            return generation_result(complete=False, result_events=tuple(events), reason=reason)
+            return generation_result(complete=False, reason=reason)
         raw_transition_draw = rng.random()
         reason = guard.post_draw_reason()
         if reason is not None:
-            return generation_result(complete=False, result_events=tuple(events), reason=reason)
+            return generation_result(complete=False, reason=reason)
         destination_index = _probability_index_from_draw(
             checked_model.transition_rows[state_index], raw_transition_draw
         )
@@ -737,7 +739,7 @@ def _generate_with_rng(
         raw_holding_draw = rng.choice(len(holding_sample))
         reason = guard.post_draw_reason()
         if reason is not None:
-            return generation_result(complete=False, result_events=tuple(events), reason=reason)
+            return generation_result(complete=False, reason=reason)
         holding_time = holding_sample[_empirical_index_from_draw(len(holding_sample), raw_holding_draw)]
         scaled_holding_time = holding_time * checked_model.time_scale
         next_time = current_time + scaled_holding_time
@@ -747,20 +749,22 @@ def _generate_with_rng(
                 corrective_action="use finite fitted timing samples and scale values that do not overflow",
             )
         if next_time > window:
-            return generation_result(complete=True, result_events=tuple(events))
+            return generation_result(complete=True)
 
         destination = checked_model.states[destination_index]
         raw_destination_frame_draw = rng.choice(len(destination.frame_lengths))
         reason = guard.post_draw_reason()
         if reason is not None:
-            return generation_result(complete=False, result_events=tuple(events), reason=reason)
+            return generation_result(complete=False, reason=reason)
         destination_frame_length = destination.frame_lengths[
             _empirical_index_from_draw(len(destination.frame_lengths), raw_destination_frame_draw)
         ]
-        reason = guard.prospective_reason(len(events), output_bytes, destination_frame_length)
+        reason = guard.prospective_reason(len(timestamps), output_bytes, destination_frame_length)
         if reason is not None:
-            return generation_result(complete=False, result_events=tuple(events), reason=reason)
-        events.append(TraceEvent(next_time, destination.direction, destination_frame_length))
+            return generation_result(complete=False, reason=reason)
+        timestamps.append(next_time)
+        directions.append(destination.direction)
+        frame_lengths.append(destination_frame_length)
         output_bytes += destination_frame_length
         current_time = next_time
         state_index = destination_index
@@ -863,18 +867,17 @@ class MarkovRenewalFamily:
         "transition": "additive_uniform_empty_row",
     }
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: TrafficTrace) -> Genes:
         """Return a canonical chromosome whose quantiles form distinct reference thresholds."""
-        trace = coerce_reference_trace(reference)
-        if len(trace) < 2:
+        if type(reference) is not TrafficTrace or len(reference) < 2:
             raise _invalid(
                 "invalid Markov renewal reference",
                 corrective_action="provide at least two canonical nondecreasing reference events",
             )
-        return _repair_with_trace(genes, bounds, trace)
+        return _repair_with_trace(genes, bounds, reference)
 
     def fit(
-        self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds
+        self, reference: TrafficTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds
     ) -> MarkovRenewalModel:
         """Fit active states, a complete transition matrix, and aligned empirical IAT samples."""
         trace = validate_fit_inputs(reference, W=W)

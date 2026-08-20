@@ -18,7 +18,7 @@ from trafficlab.errors import (
 )
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
 from trafficlab.models.registry import BestModel, get_family, make_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.pcapng import parse_pcapng_bytes_trace
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import normalize_reference, parse_capture_metadata
@@ -225,7 +225,7 @@ def fit_experiment(
                 evidence_state="preserved",
             ) from error
         try:
-            reference_events = parse_pcapng_bytes(reference_bytes, metadata, source=reference_path)
+            reference_trace = parse_pcapng_bytes_trace(reference_bytes, metadata, source=reference_path)
         except TrafficlabError as error:
             translated = TrafficlabError(
                 f"invalid reference PCAPNG {reference_path}: {error}",
@@ -240,7 +240,7 @@ def fit_experiment(
                 evidence_state="preserved",
             ) from error
         try:
-            reference, window = normalize_reference(reference_events)
+            reference, window = normalize_reference(reference_trace)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,

@@ -285,7 +285,7 @@ def test_generate_stops_before_any_draw_when_initial_wall_clock_is_invalid(model
     result = _generate_with_rng(model, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([math.inf]))
 
     assert result.complete is False
-    assert result.events == ()
+    assert result.trace == ()
     assert result.reason == "max_wall_seconds"
     assert rng.calls == []
 
@@ -389,7 +389,7 @@ def test_generate_checks_following_pre_draw_guard_after_nonemitting_regime_switc
         clock=ScriptedClock([0.0] * 8 + [10.0]),
     )
 
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_wall_seconds"
     assert rng.calls == [
         ("random", None),
@@ -424,8 +424,8 @@ def test_generate_checks_wall_after_each_raw_draw_before_validating_it(model: Mm
     )
 
     assert initial.reason == arrival.reason == transition.reason == "max_wall_seconds"
-    assert initial.events == ()
-    assert arrival.events == transition.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert initial.trace == ()
+    assert arrival.trace == transition.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
 
 
 @pytest.mark.parametrize("delay", [math.nan, math.inf, -math.inf, -0.1])
@@ -463,7 +463,7 @@ def test_generate_stops_at_prospective_mark_limit_after_an_in_window_arrival(mod
         limits=GenerationLimits(max_packets=2, max_output_bytes=139, max_wall_seconds=10.0),
         clock=ScriptedClock([0.0] * 20),
     )
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_output_bytes"
 
 
@@ -579,8 +579,8 @@ def test_generate_checks_initial_and_later_mark_wall_deadlines(model: MmppModel)
         clock=ScriptedClock([0.0] * 8 + [10.0]),
     )
     assert initial.reason == later.reason == "max_wall_seconds"
-    assert initial.events == ()
-    assert later.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert initial.trace == ()
+    assert later.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
 
 
 def test_generate_checks_initial_prospective_and_next_pre_draw_guards(model: MmppModel) -> None:
@@ -599,9 +599,9 @@ def test_generate_checks_initial_prospective_and_next_pre_draw_guards(model: Mmp
         limits=GenerationLimits(max_packets=1, max_output_bytes=100_000, max_wall_seconds=10.0),
         clock=ScriptedClock([0.0] * 8),
     )
-    assert initial.events == ()
+    assert initial.trace == ()
     assert initial.reason == "max_output_bytes"
-    assert next_race.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert next_race.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert next_race.reason == "max_packets"
 
 

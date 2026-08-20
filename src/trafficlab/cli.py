@@ -119,7 +119,7 @@ def main(
 
                 generate = generate_experiment
             generated = generate(parsed.experiment)
-            print(f"generate: packets={len(generated.events)} output={generated.generated_path}")
+            print(f"generate: packets={len(generated.trace)} output={generated.generated_path}")
             return 0
 
         if command == "fit":
@@ -149,7 +149,7 @@ def main(
                 f"run: family={completed.fit.outcome.winner.family} "
                 f"fitness={completed.fit.outcome.winner.fitness:.6f} "
                 f"reference_packets={completed.capture.packet_count} "
-                f"generated_packets={len(completed.generation.events)} "
+                f"generated_packets={len(completed.generation.trace)} "
                 f"aggregate_score={completed.comparison.aggregate_score:.6f} "
                 f"output={completed.run_directory}"
             )

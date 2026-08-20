@@ -27,7 +27,7 @@ from trafficlab.genetic.types import Candidate, CandidateId, FamilyPriority
 from trafficlab.models.common import FamilyBounds, MarkCount, MarkDistribution, make_rng
 from trafficlab.models.mmpp import MmppModel
 from trafficlab.models.registry import MMPP_FAMILY
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.trace import Direction, TrafficTrace
 
 type Rates = tuple[float, float, float, float]
 type Coordinates = tuple[float, float, float, float]
@@ -650,7 +650,7 @@ def fit_mmpp_likelihood(
 def _generate_trace(rates: Rates, *, seed: int, window: float) -> TrafficTrace:
     model = MmppModel(*rates, marks=_MARKS)
     result = MMPP_FAMILY.generate(model, seed, window, _GENERATION_LIMITS, clock=lambda: 0.0)
-    return TrafficTrace.from_events(result.require_complete())
+    return result.require_complete()
 
 
 def _evaluate_population(
@@ -670,12 +670,12 @@ def _evaluate_population(
     return (tuple(output), tuple(events))
 
 
-def _production_initial_population(events: Sequence[TraceEvent], starts: Sequence[Rates]) -> tuple[Candidate, ...]:
+def _production_initial_population(reference: TrafficTrace, starts: Sequence[Rates]) -> tuple[Candidate, ...]:
     return tuple(
         Candidate(
             identifier=CandidateId(birth_generation=0, birth_index=index),
             family="mmpp",
-            genes=cast(Rates, MMPP_FAMILY.repair(rates, PRODUCTION_BOUNDS, events)),
+            genes=cast(Rates, MMPP_FAMILY.repair(rates, PRODUCTION_BOUNDS, reference)),
             status="pending",
             fitness=0.0,
             trials=(),
@@ -718,13 +718,12 @@ def _simulation_distance_fit(
     trial_seeds: tuple[int, ...],
     starts: tuple[Rates, ...],
 ) -> SimulationFit:
-    events = reference.to_events()
     bounds: dict[FamilyName, FamilyBounds] = {"mmpp": PRODUCTION_BOUNDS}
     priority: FamilyPriority = ("mmpp",)
     rng = make_rng(seed)
     context = validate_evaluation_context(
         EvaluationContext(
-            reference=events,
+            reference=reference,
             window=window,
             families={"mmpp": MMPP_FAMILY},
             bounds=bounds,
@@ -733,7 +732,7 @@ def _simulation_distance_fit(
             similarity=_SIMILARITY,
         )
     )
-    population = _production_initial_population(events, starts)
+    population = _production_initial_population(reference, starts)
     retained_starts = tuple(cast(Rates, candidate.genes) for candidate in population)
     population, evaluation_indexes = _evaluate_population(population, context, next_evaluation_index=1)
     history = [_simulation_generation_history(0, population, evaluation_indexes)]
@@ -745,7 +744,7 @@ def _simulation_distance_fit(
             elite_count=PRODUCTION_ELITE_COUNT,
             tournament_size=PRODUCTION_TOURNAMENT_SIZE,
             context=ReproductionContext(
-                reference=events,
+                reference=reference,
                 family_bounds=bounds,
                 family_priority=priority,
                 duplicate_mutation_attempts=PRODUCTION_DUPLICATE_MUTATION_ATTEMPTS,

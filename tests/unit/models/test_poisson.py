@@ -176,7 +176,7 @@ def test_fit_defensively_repairs_its_genes(reference: TrafficTrace) -> None:
 def test_fit_rejects_invalid_normalized_references(reference: tuple[TraceEvent, ...], window: float) -> None:
     """Fitting an invalid trace would make its rate and marks untrustworthy."""
     with pytest.raises(TrafficlabError):
-        FAMILY.fit(reference, (1.0,), W=window, bounds=BOUNDS)
+        FAMILY.fit(reference, (1.0,), W=window, bounds=BOUNDS)  # type: ignore[arg-type]
 
 
 def test_fitted_model_round_trips_only_strict_json_and_canonical_outer_genes(
@@ -235,6 +235,24 @@ def test_generation_draw_order_and_closed_endpoint(model: PoissonModel) -> None:
     ]
 
 
+def test_generation_builds_the_complete_trace_without_materializing_event_records(
+    model: PoissonModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model result must remain columnar until the later PCAPNG publication boundary."""
+    rng = ScriptedPoissonRng(marks=[0], delays=[2.0])
+
+    def reject_event_materialization(_trace: TrafficTrace) -> tuple[TraceEvent, ...]:
+        raise AssertionError("model generation materialized TraceEvent objects")
+
+    monkeypatch.setattr(TrafficTrace, "to_events", reject_event_materialization)
+
+    result = _generate_with_rng(model, rng, W=1.0, limits=LARGE_LIMITS, clock=ScriptedClock([0.0] * 8))
+
+    assert type(result.trace) is TrafficTrace
+    assert result.require_complete() is result.trace
+    assert result.trace.timestamps.tolist() == [0.0]
+
+
 def test_generation_completes_naturally_after_first_out_of_window_delay(model: PoissonModel) -> None:
     """Treating natural exhaustion as a limit would discard a valid one-packet trace."""
     rng = ScriptedPoissonRng(marks=[0], delays=[1.1])
@@ -256,7 +274,7 @@ def test_generation_checks_pre_draw_packet_limit_before_another_delay(model: Poi
         limits=GenerationLimits(max_packets=1, max_output_bytes=100_000, max_wall_seconds=10.0),
         clock=ScriptedClock([0.0] * 8),
     )
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_packets"
     assert rng.calls == [("choice", 2)]
 
@@ -267,7 +285,7 @@ def test_generation_checks_pre_draw_output_exhaustion_before_another_delay(model
     limits = GenerationLimits(max_packets=100, max_output_bytes=60, max_wall_seconds=10.0)
 
     result = _generate_with_rng(model, rng, W=1.0, limits=limits, clock=ScriptedClock([0.0] * 8))
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_output_bytes"
     assert rng.calls == [("choice", 2)]
 
@@ -278,7 +296,7 @@ def test_generation_accepts_the_initial_packet_at_exact_packet_and_output_bounda
     limits = GenerationLimits(max_packets=1, max_output_bytes=60, max_wall_seconds=10.0)
 
     result = _generate_with_rng(model, rng, W=1.0, limits=limits, clock=ScriptedClock([0.0] * 8))
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_packets"
     assert rng.calls == [("choice", 2)]
 
@@ -304,7 +322,7 @@ def test_generation_checks_prospective_output_limit_before_in_window_emission(mo
         limits=GenerationLimits(max_packets=100, max_output_bytes=119, max_wall_seconds=10.0),
         clock=ScriptedClock([0.0] * 8),
     )
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_output_bytes"
     assert rng.calls == [("choice", 2), ("exponential", 0.5), ("choice", 2)]
 
@@ -320,7 +338,7 @@ def test_generation_checks_wall_time_before_the_next_exponential_draw(model: Poi
         limits=LARGE_LIMITS,
         clock=ScriptedClock([0.0, 0.0, 0.0, 0.0, 10.0]),
     )
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_wall_seconds"
     assert rng.calls == [("choice", 2)]
 
@@ -336,7 +354,7 @@ def test_generation_checks_wall_time_at_initial_prospective_emission(model: Pois
         limits=LARGE_LIMITS,
         clock=ScriptedClock([0.0, 0.0, 0.0, 10.0]),
     )
-    assert result.events == ()
+    assert result.trace == ()
     assert result.reason == "max_wall_seconds"
     assert rng.calls == [("choice", 2)]
 
@@ -352,7 +370,7 @@ def test_generation_checks_wall_time_at_later_prospective_emission(model: Poisso
         limits=LARGE_LIMITS,
         clock=ScriptedClock([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0]),
     )
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_wall_seconds"
     assert rng.calls == [("choice", 2), ("exponential", 0.5), ("choice", 2)]
 
@@ -368,7 +386,7 @@ def test_generation_checks_wall_time_after_a_later_mark_draw(model: PoissonModel
         limits=LARGE_LIMITS,
         clock=ScriptedClock([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0]),
     )
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
     assert result.reason == "max_wall_seconds"
     assert rng.calls == [("choice", 2), ("exponential", 0.5), ("choice", 2)]
 
@@ -391,9 +409,9 @@ def test_generation_checks_wall_time_after_exponential_and_mark_draws(model: Poi
     )
 
     assert mark_late.reason == "max_wall_seconds"
-    assert mark_late.events == ()
+    assert mark_late.trace == ()
     assert delay_late.reason == "max_wall_seconds"
-    assert delay_late.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert delay_late.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
 
 
 def test_generation_rejects_an_overflowed_next_arrival_time(model: PoissonModel) -> None:
@@ -414,7 +432,7 @@ def test_generation_permits_zero_delays_with_non_decreasing_timestamps(model: Po
     limits = GenerationLimits(max_packets=3, max_output_bytes=100_000, max_wall_seconds=10.0)
 
     result = _generate_with_rng(model, rng, W=1.0, limits=limits, clock=ScriptedClock([0.0] * 16))
-    assert result.events == (
+    assert result.trace == (
         TraceEvent(0.0, Direction.OUTBOUND, 60),
         TraceEvent(0.0, Direction.INBOUND, 80),
         TraceEvent(0.0, Direction.OUTBOUND, 60),
@@ -433,7 +451,7 @@ def test_generation_stops_for_nonfinite_or_backward_clock(model: PoissonModel, c
         clock=ScriptedClock(clock_values),
     )
     assert result.reason == "max_wall_seconds"
-    assert result.events == ()
+    assert result.trace == ()
 
 
 def test_generation_prioritizes_post_draw_wall_expiry_over_malformed_exponential(model: PoissonModel) -> None:
@@ -447,7 +465,7 @@ def test_generation_prioritizes_post_draw_wall_expiry_over_malformed_exponential
     )
 
     assert result.reason == "max_wall_seconds"
-    assert result.events == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+    assert result.trace == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
 
 
 @pytest.mark.parametrize("delay", [math.nan, math.inf, -math.inf, -0.1])
@@ -517,7 +535,7 @@ def test_fit_rejects_an_overflowing_candidate_rate() -> None:
         TraceEvent(5e-324, Direction.INBOUND, 80),
     )
     with pytest.raises(TrafficlabError, match="fitted Poisson rate"):
-        FAMILY.fit(reference, (4.0,), W=5e-324, bounds=BOUNDS)
+        FAMILY.fit(TrafficTrace.from_events(reference), (4.0,), W=5e-324, bounds=BOUNDS)
 
 
 @pytest.mark.parametrize(

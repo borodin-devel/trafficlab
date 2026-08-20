@@ -46,7 +46,7 @@ from trafficlab.genetic.types import Candidate, CandidateId, FamilyPriority, Ter
 from trafficlab.models.common import FamilyBounds, ModelFamily, make_rng
 from trafficlab.models.registry import get_family
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
-from trafficlab.trace import TraceEvent
+from trafficlab.trace import TrafficTrace
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +120,7 @@ def _genetic_settings(config: ExperimentConfig) -> GeneticCheckpointSettings:
 
 def make_strategy_context(
     config: ExperimentConfig,
-    reference: Sequence[TraceEvent],
+    reference: TrafficTrace,
     window: float,
     run_directory: Path,
     *,
@@ -134,7 +134,7 @@ def make_strategy_context(
     registered: dict[FamilyName, ModelFamily] = {name: get_family(name) for name in families}
     bounds = _enabled_bounds(config, families)
     evaluation = EvaluationContext(
-        reference=tuple(reference),
+        reference=reference,
         window=window,
         families=MappingProxyType(registered),
         bounds=MappingProxyType(bounds),

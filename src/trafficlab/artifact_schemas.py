@@ -18,10 +18,12 @@ from trafficlab.study_evidence import (
     ValidationStudyReport,
     ValidationStudyReportInput,
 )
+from trafficlab.trace import CaptureMetadata
 
 PUBLIC_ARTIFACT_MODELS: MappingProxyType[str, type[BaseModel]] = MappingProxyType(
     {
         "best_model": BestModel,
+        "capture_metadata": CaptureMetadata,
         "checkpoint": CheckpointArtifact,
         "comparison_result": PublishedComparisonResult,
         "failure_outcome": FailureOutcomeRecord,

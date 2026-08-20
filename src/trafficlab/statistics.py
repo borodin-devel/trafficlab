@@ -152,19 +152,18 @@ def bootstrap_interval(
     try:
         generator = np.random.Generator(np.random.PCG64(validated_seed))
         initial_state = copy.deepcopy(cast(dict[str, object], generator.bit_generator.state))
+        result = _bootstrap(
+            (np.asarray(sample, dtype=np.float64),),
+            np.mean,
+            n_resamples=validated_resamples,
+            confidence_level=validated_confidence,
+            method="percentile",
+            rng=generator,
+        )
+        lower_bound = float(result.confidence_interval.low)
+        upper_bound = float(result.confidence_interval.high)
         if all(value == sample[0] for value in sample[1:]):
             lower_bound = upper_bound = sample[0]
-        else:
-            result = _bootstrap(
-                (np.asarray(sample, dtype=np.float64),),
-                np.mean,
-                n_resamples=validated_resamples,
-                confidence_level=validated_confidence,
-                method="percentile",
-                rng=generator,
-            )
-            lower_bound = float(result.confidence_interval.low)
-            upper_bound = float(result.confidence_interval.high)
     except (ArithmeticError, TypeError, ValueError) as error:
         raise TrafficlabError(
             "invalid bootstrap sample: percentile interval could not be evaluated",

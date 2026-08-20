@@ -33,7 +33,7 @@ from trafficlab.genetic.types import (
     TrialResult,
 )
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 def replace[Record](record: Record, **changes: object) -> Record:
@@ -45,15 +45,19 @@ def replace[Record](record: Record, **changes: object) -> Record:
     return cast(Record, replace_dataclass(cast(Any, record), **changes))
 
 
-REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 64),
-    TraceEvent(1.0, Direction.INBOUND, 128),
-    TraceEvent(2.0, Direction.OUTBOUND, 256),
+REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 64),
+        TraceEvent(1.0, Direction.INBOUND, 128),
+        TraceEvent(2.0, Direction.OUTBOUND, 256),
+    )
 )
-MATRIX_REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 64),
-    TraceEvent(5.0, Direction.INBOUND, 128),
-    TraceEvent(10.0, Direction.OUTBOUND, 256),
+MATRIX_REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 64),
+        TraceEvent(5.0, Direction.INBOUND, 128),
+        TraceEvent(10.0, Direction.OUTBOUND, 256),
+    )
 )
 
 
@@ -116,6 +120,32 @@ def _context(
         reference_identity=ContentIdentity(size=2, sha256="b" * 64),
         capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
+
+
+def test_strategy_context_retains_the_exact_columnar_reference(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Strategy setup must not turn the shared NumPy reference back into event records."""
+    trace = REFERENCE
+
+    def reject_event_materialization(_trace: TrafficTrace) -> tuple[TraceEvent, ...]:
+        raise AssertionError("strategy materialized TraceEvent objects")
+
+    monkeypatch.setattr(TrafficTrace, "to_events", reject_event_materialization)
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+
+    context = make_strategy_context(
+        _config(valid_config_data, run_directory, generation_count=0),
+        trace,
+        2.0,
+        run_directory,
+        experiment_identity=ContentIdentity(size=1, sha256="a" * 64),
+        reference_identity=ContentIdentity(size=2, sha256="b" * 64),
+        capture_identity=ContentIdentity(size=3, sha256="c" * 64),
+    )
+
+    assert context.evaluation.reference is trace
 
 
 def _matrix_context(

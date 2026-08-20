@@ -39,7 +39,7 @@ from trafficlab.genetic.evaluation import (
 from trafficlab.genetic.types import Candidate, CandidateId, TrialResult, rebuild_genetic_record
 from trafficlab.models.common import FamilyBounds, Gene, Genes, ModelFamily
 from trafficlab.models.registry import REGISTRY
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 type JsonObject = dict[str, Any]
 type PymooAlgorithm = Any
@@ -260,13 +260,15 @@ _INITIAL_VALUES: dict[FamilyName, tuple[dict[str, Gene], ...]] = {
         {"c_lambda": 1.25},
     ),
 }
-_REFERENCE = tuple(
-    TraceEvent(
-        timestamp=index * 0.5,
-        direction=Direction.OUTBOUND if index % 2 == 0 else Direction.INBOUND,
-        frame_length=60 + index * 24,
+_REFERENCE = TrafficTrace.from_events(
+    tuple(
+        TraceEvent(
+            timestamp=index * 0.5,
+            direction=Direction.OUTBOUND if index % 2 == 0 else Direction.INBOUND,
+            frame_length=60 + index * 24,
+        )
+        for index in range(13)
     )
-    for index in range(13)
 )
 
 

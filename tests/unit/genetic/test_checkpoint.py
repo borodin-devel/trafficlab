@@ -59,7 +59,7 @@ from trafficlab.genetic.types import (
 )
 from trafficlab.models.common import Genes, make_rng
 from trafficlab.models.registry import MMPP_FAMILY
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 MARKOV_MODEL_DIAGNOSTICS = {
     "timing_tier_transition_count": 1,
@@ -662,10 +662,12 @@ def test_repair_failed_offspring_round_trips_without_unvalidated_genes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A real repair-invalid child must remain scientific evidence instead of aborting checkpoint publication."""
-    reference = (
-        TraceEvent(0.0, Direction.OUTBOUND, 64),
-        TraceEvent(1.0, Direction.INBOUND, 128),
-        TraceEvent(2.0, Direction.OUTBOUND, 256),
+    reference = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 64),
+            TraceEvent(1.0, Direction.INBOUND, 128),
+            TraceEvent(2.0, Direction.OUTBOUND, 256),
+        )
     )
     bounds = MmppConfig(
         crossover_probability=0.8,

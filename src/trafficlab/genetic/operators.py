@@ -26,14 +26,14 @@ from trafficlab.genetic.population import (
 from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, DuplicateDiagnostic, FamilyPriority
 from trafficlab.models.common import FamilyBounds, Gene, Genes
 from trafficlab.models.registry import get_family
-from trafficlab.trace import TraceEvent
+from trafficlab.trace import TrafficTrace
 
 
 @dataclass(frozen=True, slots=True, init=False)
 class ReproductionContext:
     """Immutable family settings, reference, retry bound, and duplicate comparison set."""
 
-    reference: tuple[TraceEvent, ...]
+    reference: TrafficTrace
     family_bounds: Mapping[FamilyName, FamilyBounds]
     family_priority: FamilyPriority
     duplicate_mutation_attempts: int
@@ -42,7 +42,7 @@ class ReproductionContext:
     def __init__(
         self,
         *,
-        reference: Sequence[TraceEvent],
+        reference: TrafficTrace,
         family_bounds: Mapping[FamilyName, FamilyBounds],
         family_priority: FamilyPriority,
         duplicate_mutation_attempts: int,
@@ -63,7 +63,9 @@ class ReproductionContext:
         # Freeze both the comparison population and family settings at the start
         # of reproduction.  Duplicate retries must see a stable set or their
         # random-draw count would depend on later caller mutation.
-        object.__setattr__(self, "reference", tuple(reference))
+        if type(reference) is not TrafficTrace:
+            raise TypeError("reproduction reference must be a TrafficTrace")
+        object.__setattr__(self, "reference", reference)
         object.__setattr__(self, "family_bounds", MappingProxyType(copied_bounds))
         object.__setattr__(
             self,

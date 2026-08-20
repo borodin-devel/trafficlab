@@ -37,18 +37,38 @@ def test_bootstrap_interval_records_literal_pcg64_percentile_metadata_and_bytes(
     )
 
 
-def test_bootstrap_interval_returns_the_exact_constant_sample_interval_without_scipy_warning(
+def test_bootstrap_interval_executes_the_locked_scipy_protocol_for_a_constant_sample(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A degenerate empirical distribution has a finite exact percentile interval."""
+    """A degenerate sample must not claim 10,000 resamples unless SciPy actually executes them."""
+    real_bootstrap = statistics._bootstrap  # pyright: ignore[reportPrivateUsage]
+    calls: list[dict[str, object]] = []
 
-    def forbidden_bootstrap(*_args: object, **_kwargs: object) -> _FakeBootstrapResult:
-        pytest.fail("constant sample reached SciPy's undefined standard-error path")
+    def observed_bootstrap(*args: object, **kwargs: object) -> object:
+        calls.append(kwargs)
+        return real_bootstrap(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(statistics, "_bootstrap", forbidden_bootstrap)
+    monkeypatch.setattr(statistics, "_bootstrap", observed_bootstrap)
     interval = bootstrap_interval([0.25, 0.25, 0.25], seed=20260819)
 
+    assert len(calls) == 1
+    assert calls[0]["n_resamples"] == 10_000
+    assert calls[0]["confidence_level"] == 0.95
+    assert calls[0]["method"] == "percentile"
+    assert isinstance(calls[0]["rng"], statistics.np.random.Generator)
+    assert type(calls[0]["rng"].bit_generator) is statistics.np.random.PCG64  # type: ignore[union-attr]
+    assert interval.as_dict()["n_resamples"] == 10_000
     assert (interval.lower_bound, interval.upper_bound, interval.sample_size) == (0.25, 0.25, 3)
+
+
+def test_bootstrap_interval_returns_exact_bounds_after_executing_a_nonbinary_constant_sample() -> None:
+    """Roundoff in SciPy's retained replicates must not invert a mathematically exact constant interval."""
+    value = 0.4418506419447859
+
+    interval = bootstrap_interval([value, value, value], seed=20260819)
+
+    assert (interval.lower_bound, interval.upper_bound) == (value, value)
+    assert interval.n_resamples == 10_000
 
 
 @pytest.mark.parametrize("values", [[], [1.0, float("nan")], [1.0, float("inf")]])

@@ -17,13 +17,14 @@ from trafficlab.models.common import (
     GenerationGuard,
     GenerationResult,
     Genes,
+    IncompleteReason,
     MarkCount,
     MarkDistribution,
-    ReferenceTrace,
+    make_generation_trace,
     make_rng,
     validate_fit_inputs,
 )
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TrafficTrace
 
 _PROBABILITY_TOLERANCE = 1e-12
 
@@ -284,13 +285,24 @@ def _generate_with_rng(
     checked_model = _validate_model(model)
     window = _validate_window(W)
     guard = GenerationGuard.start(limits, clock=clock)
+    timestamps: list[float] = []
+    directions: list[Direction] = []
+    frame_lengths: list[int] = []
+
+    def result(complete: bool, reason: IncompleteReason | None = None) -> GenerationResult:
+        return GenerationResult(
+            complete=complete,
+            trace=make_generation_trace(timestamps, directions, frame_lengths),
+            reason=reason,
+        )
+
     reason = guard.pre_draw_reason(0, 0)
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return result(False, reason)
     raw_regime_draw = rng.random()
     reason = guard.post_draw_reason()
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
+        return result(False, reason)
     arrival_epoch_a0, _ = _arrival_epoch_probabilities(
         checked_model.q01,
         checked_model.q10,
@@ -300,47 +312,51 @@ def _generate_with_rng(
     regime = 0 if _validate_unit_draw(raw_regime_draw) < arrival_epoch_a0 else 1
     sampled_mark = _sample_mark(checked_model.marks, rng, guard)
     if sampled_mark is None:
-        return GenerationResult(complete=False, events=(), reason="max_wall_seconds")
+        return result(False, "max_wall_seconds")
     direction, frame_length = sampled_mark
     reason = guard.prospective_reason(0, 0, frame_length)
     if reason is not None:
-        return GenerationResult(complete=False, events=(), reason=reason)
-    events = [TraceEvent(0.0, direction, frame_length)]
+        return result(False, reason)
+    timestamps.append(0.0)
+    directions.append(direction)
+    frame_lengths.append(frame_length)
     output_bytes = frame_length
     current_time = 0.0
 
     while True:
-        reason = guard.pre_draw_reason(len(events), output_bytes)
+        reason = guard.pre_draw_reason(len(timestamps), output_bytes)
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return result(False, reason)
         arrival_rate = checked_model.lambda0 if regime == 0 else checked_model.lambda1
         transition_rate = checked_model.q01 if regime == 0 else checked_model.q10
         raw_arrival_delay = rng.exponential(1.0 / arrival_rate)
         reason = guard.post_draw_reason()
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return result(False, reason)
         arrival_time = _next_time(current_time, _validate_delay(raw_arrival_delay), clock_name="arrival")
         raw_transition_delay = rng.exponential(1.0 / transition_rate)
         reason = guard.post_draw_reason()
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
+            return result(False, reason)
         transition_time = _next_time(current_time, _validate_delay(raw_transition_delay), clock_name="transition")
         arrival_wins = arrival_time < transition_time
         selected_time = arrival_time if arrival_wins else transition_time
         if selected_time > window:
-            return GenerationResult(complete=True, events=tuple(events))
+            return result(True)
         current_time = selected_time
         if not arrival_wins:
             regime = 1 - regime
             continue
         sampled_mark = _sample_mark(checked_model.marks, rng, guard)
         if sampled_mark is None:
-            return GenerationResult(complete=False, events=tuple(events), reason="max_wall_seconds")
+            return result(False, "max_wall_seconds")
         direction, frame_length = sampled_mark
-        reason = guard.prospective_reason(len(events), output_bytes, frame_length)
+        reason = guard.prospective_reason(len(timestamps), output_bytes, frame_length)
         if reason is not None:
-            return GenerationResult(complete=False, events=tuple(events), reason=reason)
-        events.append(TraceEvent(current_time, direction, frame_length))
+            return result(False, reason)
+        timestamps.append(current_time)
+        directions.append(direction)
+        frame_lengths.append(frame_length)
         output_bytes += frame_length
 
 
@@ -375,12 +391,12 @@ class MmppFamily:
         "first_event": "zero",
     }
 
-    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: ReferenceTrace) -> Genes:
+    def repair(self, genes: Sequence[Gene], bounds: FamilyBounds, reference: TrafficTrace) -> Genes:
         """Return the canonical named q rates and strictly ordered arrival rates."""
         del reference
         return _repair_genes(genes, bounds)
 
-    def fit(self, reference: ReferenceTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> MmppModel:
+    def fit(self, reference: TrafficTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> MmppModel:
         """Retain repaired timing genes and the reference's joint empirical marks."""
         trace = validate_fit_inputs(reference, W=W)
         q01, q10, lambda0, lambda1 = _repair_genes(genes, bounds)

@@ -28,15 +28,17 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 WINDOW = 10.0
-REFERENCE = (
-    TraceEvent(0.0, Direction.OUTBOUND, 60),
-    TraceEvent(1.0, Direction.INBOUND, 100),
-    TraceEvent(3.0, Direction.OUTBOUND, 140),
-    TraceEvent(6.0, Direction.INBOUND, 80),
-    TraceEvent(WINDOW, Direction.OUTBOUND, 60),
+REFERENCE = TrafficTrace.from_events(
+    (
+        TraceEvent(0.0, Direction.OUTBOUND, 60),
+        TraceEvent(1.0, Direction.INBOUND, 100),
+        TraceEvent(3.0, Direction.OUTBOUND, 140),
+        TraceEvent(6.0, Direction.INBOUND, 80),
+        TraceEvent(WINDOW, Direction.OUTBOUND, 60),
+    )
 )
 COMPLETE_LIMITS = GenerationLimits(max_packets=10_000, max_output_bytes=10_000_000, max_wall_seconds=10.0)
 

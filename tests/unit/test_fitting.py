@@ -49,7 +49,9 @@ RAW_REFERENCE = (
     TraceEvent(11.0, Direction.INBOUND, 128),
     TraceEvent(12.0, Direction.OUTBOUND, 256),
 )
-NORMALIZED_REFERENCE = tuple(replace(event, timestamp=event.timestamp - 10.0) for event in RAW_REFERENCE)
+NORMALIZED_REFERENCE = TrafficTrace.from_events(
+    tuple(replace(event, timestamp=event.timestamp - 10.0) for event in RAW_REFERENCE)
+)
 METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
 
 

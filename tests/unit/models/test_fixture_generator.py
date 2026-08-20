@@ -10,7 +10,7 @@ from scripts import generate_similarity_fixtures as similarity_fixture_generator
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.config import ExperimentConfig
 from trafficlab.errors import TrafficlabError
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 
 _ROOT = Path(__file__).parents[3]
 _MODEL_BYTES = (PIPELINE_FIXTURE_ROOT / "models" / "best_model.json").read_bytes()
@@ -95,21 +95,21 @@ def test_builder_rejects_invalid_parsed_generated_output(
     monkeypatch: pytest.MonkeyPatch,
     defect: str,
 ) -> None:
-    real_parse = fixture_generator.parse_pcapng_bytes
+    real_parse = fixture_generator.parse_pcapng_bytes_trace
 
     def parse_with_invalid_generated(
         content: bytes,
         metadata: CaptureMetadata,
         *,
         source: Path,
-    ) -> tuple[TraceEvent, ...]:
+    ) -> TrafficTrace:
         if source.name == "reference.pcapng":
             return real_parse(content, metadata, source=source)
         if defect == "outside-window":
-            return (TraceEvent(11.0, Direction.OUTBOUND, 60),)
-        return (TraceEvent(0.0, Direction.INBOUND, 60),)
+            return TrafficTrace.from_events((TraceEvent(11.0, Direction.OUTBOUND, 60),))
+        return TrafficTrace.from_events((TraceEvent(0.0, Direction.INBOUND, 60),))
 
-    monkeypatch.setattr(fixture_generator, "parse_pcapng_bytes", parse_with_invalid_generated)
+    monkeypatch.setattr(fixture_generator, "parse_pcapng_bytes_trace", parse_with_invalid_generated)
 
     with pytest.raises(TrafficlabError, match="observation window" if defect == "outside-window" else "round-trip"):
         fixture_generator._build_fixture()  # pyright: ignore[reportPrivateUsage]

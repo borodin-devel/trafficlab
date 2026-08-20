@@ -13,7 +13,7 @@ from trafficlab.genetic.coordinates import CandidateEvaluationError, GeneticRng,
 from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
 from trafficlab.models.common import FamilyBounds, make_rng
 from trafficlab.models.registry import get_family
-from trafficlab.trace import TraceEvent
+from trafficlab.trace import TrafficTrace
 
 
 def validate_family_priority(
@@ -64,13 +64,14 @@ def initial_population(
     *,
     population_size: int,
     bounds: Mapping[FamilyName, FamilyBounds],
-    reference: Sequence[TraceEvent],
+    reference: TrafficTrace,
     rng: GeneticRng,
 ) -> tuple[Candidate, ...]:
     """Initialize contiguous priority family slots with stable generation-zero IDs."""
     priority = validate_family_priority(family_priority, enabled_families=bounds)
     quotas = family_quotas(population_size, priority)
-    materialized_reference = tuple(reference)
+    if type(reference) is not TrafficTrace:
+        raise TypeError("population reference must be a TrafficTrace")
     population: list[Candidate] = []
     for family_name, quota in quotas.items():
         family = get_family(family_name)
@@ -78,7 +79,7 @@ def initial_population(
         for _ in range(quota):
             identifier = CandidateId(birth_generation=0, birth_index=len(population))
             try:
-                genes = initialize_candidate(family, family_bounds, materialized_reference, rng)
+                genes = initialize_candidate(family, family_bounds, reference, rng)
             except CandidateEvaluationError as error:
                 population.append(
                     Candidate(

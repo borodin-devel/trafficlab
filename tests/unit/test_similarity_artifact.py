@@ -15,10 +15,10 @@ from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.pcapng import parse_pcapng_bytes_trace
 from trafficlab.trace import (
     CaptureMetadata,
-    TraceEvent,
+    TrafficTrace,
     parse_capture_metadata,
 )
 
@@ -142,14 +142,14 @@ def test_compare_experiment_rejects_when_input_paths_change_after_evaluation(
         metadata: CaptureMetadata,
         *,
         source: Path,
-    ) -> tuple[TraceEvent, ...]:
+    ) -> TrafficTrace:
         input_name = "reference_pcapng" if source.name == "reference.pcapng" else "generated_pcapng"
         evaluated_sha256[input_name] = comparison.sha256_bytes(content)
         source.write_bytes(f"changed {source.name} after read".encode())
-        return parse_pcapng_bytes(content, metadata, source=source)
+        return parse_pcapng_bytes_trace(content, metadata, source=source)
 
     monkeypatch.setattr(comparison, "parse_capture_metadata", mutate_after_metadata_read)
-    monkeypatch.setattr(comparison, "parse_pcapng_bytes", mutate_after_pcapng_read)
+    monkeypatch.setattr(comparison, "parse_pcapng_bytes_trace", mutate_after_pcapng_read)
 
     with pytest.raises(TrafficlabError, match="capture.json changed during compare") as caught:
         compare_experiment(caller_path)

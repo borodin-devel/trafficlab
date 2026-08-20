@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import stat
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -36,27 +37,27 @@ def build_schema_documents() -> dict[str, bytes]:
     return documents
 
 
-def _regular_file_names(directory: Path) -> tuple[str, ...]:
+def _schema_entries(directory: Path) -> tuple[tuple[str, bool], ...]:
     if not directory.is_dir():
         return ()
     return tuple(
-        sorted(
-            path.relative_to(directory).as_posix()
-            for path in directory.rglob("*")
-            if path.is_file() or path.is_symlink()
-        )
+        sorted((path.name, stat.S_ISREG(path.stat(follow_symlinks=False).st_mode)) for path in directory.iterdir())
     )
 
 
 def schema_directory_mismatches(directory: Path = OUTPUT_DIRECTORY) -> tuple[str, ...]:
     """Return every changed, missing, or foreign schema path in stable order."""
     expected = build_schema_documents()
-    actual_names = set(_regular_file_names(directory))
+    entries = dict(_schema_entries(directory))
+    actual_names = set(entries)
     mismatches: list[str] = []
+    mismatches.extend(f"nonregular:{name}" for name, regular in entries.items() if not regular)
     for name, content in expected.items():
         path = directory / name
         if name not in actual_names:
             mismatches.append(f"missing:{name}")
+            continue
+        if not entries[name]:
             continue
         try:
             actual = path.read_bytes()
@@ -64,7 +65,7 @@ def schema_directory_mismatches(directory: Path = OUTPUT_DIRECTORY) -> tuple[str
             actual = b""
         if actual != content:
             mismatches.append(f"changed:{name}")
-    mismatches.extend(f"foreign:{name}" for name in actual_names - set(expected))
+    mismatches.extend(f"foreign:{name}" for name in actual_names - set(expected) if entries[name])
     return tuple(sorted(mismatches))
 
 
@@ -72,11 +73,14 @@ def write_schema_directory(directory: Path = OUTPUT_DIRECTORY) -> None:
     """Replace only the owned flat schema set with deterministic documents."""
     directory.mkdir(parents=True, exist_ok=True)
     expected = build_schema_documents()
-    for name in _regular_file_names(directory):
+    entries = _schema_entries(directory)
+    nonregular = tuple(name for name, regular in entries if not regular)
+    if nonregular:
+        raise ValueError("schema directory contains nonregular entries: " + ", ".join(nonregular))
+    for name, _regular in entries:
         if name not in expected:
             path = directory / name
-            if path.is_file() and not path.is_symlink():
-                path.unlink()
+            path.unlink()
     for name, content in expected.items():
         (directory / name).write_bytes(content)
 

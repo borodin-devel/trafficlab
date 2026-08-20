@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from trafficlab.artifacts import quantize_generated_events
+from trafficlab.artifacts import quantize_generated_trace
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config_io import load_experiment
 from trafficlab.errors import TrafficlabError
@@ -18,7 +18,7 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.pcapng import encode_pcapng_trace, parse_pcapng_bytes_trace
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
@@ -49,7 +49,7 @@ def _build_fixture() -> tuple[bytes, bytes]:
         ) from error
 
     metadata = parse_capture_metadata(capture_content, source=capture_path)
-    parsed = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
+    parsed = parse_pcapng_bytes_trace(reference_content, metadata, source=reference_path)
     reference, window = normalize_reference(parsed)
     artifact = make_best_model(
         POISSON_FAMILY,
@@ -74,15 +74,15 @@ def _build_fixture() -> tuple[bytes, bytes]:
         )
         .require_complete()
     )
-    rendered_events = quantize_generated_events(generated, loaded.observation_window_seconds)
-    generated_content = encode_pcapng(rendered_events, metadata)
-    parsed_generated = parse_pcapng_bytes(generated_content, metadata, source=_GENERATED_PATH)
-    if any(event.timestamp < 0.0 or event.timestamp > loaded.observation_window_seconds for event in parsed_generated):
+    rendered_trace = quantize_generated_trace(generated, loaded.observation_window_seconds)
+    generated_content = encode_pcapng_trace(rendered_trace, metadata)
+    parsed_generated = parse_pcapng_bytes_trace(generated_content, metadata, source=_GENERATED_PATH)
+    if parsed_generated.timestamps[-1] > loaded.observation_window_seconds:
         raise TrafficlabError(
             "traffic-model generation fixture generated capture exceeds its stored observation window",
             corrective_action="report the production PCAPNG generation defect",
         )
-    if parsed_generated != rendered_events:
+    if parsed_generated != rendered_trace:
         raise TrafficlabError(
             "traffic-model generation fixture generated capture did not round-trip",
             corrective_action="report the production PCAPNG generation defect",
