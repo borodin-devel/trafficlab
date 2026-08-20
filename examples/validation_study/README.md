@@ -7,12 +7,13 @@ and the exact URL, redirect result, headers, and external observation are retain
 in the candidate bundle. Do not run the external commands below until the source
 commit, endpoint, and prerequisite coordination have been explicitly approved.
 
-## Accepted corrected study
+## Accepted scientific-stack study
 
-[`evidence/2026-08-18-research-fitness-r21/`](evidence/2026-08-18-research-fitness-r21/)
-is the accepted final-source study. Its [report](REPORT.md), schema-3 `index.json`,
-and schema-2 `manifest.json` are the navigation and integrity roots. The manifest
-binds 231 retained evidence paths and excludes only itself. The bundle contains:
+[`evidence/2026-08-20-stack-adoption-r4/`](evidence/2026-08-20-stack-adoption-r4/)
+is the accepted scientific-stack study. Its [report](REPORT.md), schema-3
+`index.json`, and schema-2 `manifest.json` are the navigation and integrity
+roots. The manifest binds 231 retained evidence paths and excludes only itself.
+The bundle contains:
 
 - nine complete training trees, arranged as three workloads times three
   independent captures;
@@ -22,11 +23,15 @@ binds 231 retained evidence paths and excludes only itself. The bundle contains:
   `training-<workload>-r<repeat>.portable.toml` and `.realized.toml`;
 - retained prerequisite commands/results, transfer headers/observations,
   environment, lifecycle cleanup proof, report inputs, owner/lineage index, and
-  path/size/SHA-256 manifest.
+  path/size/SHA-256 manifest; and
+- fixed-seed 95% percentile-bootstrap intervals with exact PCG64 state and
+  metadata for every training runtime and selection-fitness mean.
 
 The audited source candidate is a transient publisher work copy, not another
-accepted study. Historical real-program validation study material and prior
-attempts remain non-accepted consistency or forensic evidence.
+accepted study. The older checked
+[`2026-08-18-research-fitness-r21`](evidence/2026-08-18-research-fitness-r21/)
+bundle remains unchanged as an accepted predecessor. Historical material and
+failed/nonfinal attempts remain ignored consistency or forensic evidence.
 
 ## Frozen protocol
 
@@ -39,6 +44,7 @@ JUnit XML, test counts, transfer headers, and capability observation.
 
 ```bash
 export TRAFFICLAB_INTERNET_URL='https://operator-approved.example/object'
+export HYPOTHESIS_STORAGE_DIRECTORY='/absolute/scratch/outside/the/checkout'
 STUDY_ID='validation-study-YYYYMMDD-r1'
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -88,6 +94,13 @@ reduce the observed cross-direction one-event risk; the approved URL, timeouts,
 metrics, observation-window derivation, seeds, model families, and resource
 scope remained fixed. An infeasible metric would still have invalidated the
 whole new ID.
+
+For scientific-stack adoption, r1 failed the strict clean-tree prerequisite,
+r2 failed final audit when Hypothesis created checkout-local constants, and r3
+was preserved as nonfinal after bootstrap evidence was found absent. r4 started
+from a new clean source snapshot with Hypothesis storage outside the checkout
+and includes independently audited bootstrap records. No failed ID or capture
+was reused.
 
 ## Candidate audit and exclusive publication
 

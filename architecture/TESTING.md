@@ -813,6 +813,14 @@ and mandatory execution remain fixed. It treats an invalid chromosome only as
 infeasible under its declared genes, settings, and limits, not as evidence of
 poor fit or model-family inferiority.
 
+Every three-repeat runtime and selection-fitness summary retains a 95%
+percentile-bootstrap interval computed with 10,000 resamples and
+`Generator(PCG64(20260819))`. The record includes initial generator state,
+seed, generator, method, confidence level, statistic, sample size, resample
+count, and bounds. The offline auditor recomputes the complete interval rather
+than trusting stored bounds; these descriptive intervals are not p-values or
+generalization claims.
+
 The accepted evidence bundle is a checked tree at
 `examples/validation_study/evidence/<study-id>/`. It contains the complete run
 trees, portable/realized pairs, held-out inputs and outputs, prerequisite

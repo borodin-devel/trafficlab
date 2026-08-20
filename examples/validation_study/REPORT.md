@@ -1,115 +1,108 @@
-# Validation Study report: final-source r21 evidence
+# Validation Study report: scientific-stack adoption r4
 
-The accepted final-source study is
-[`2026-08-18-research-fitness-r21`](evidence/2026-08-18-research-fitness-r21/).
+The accepted scientific-stack study is
+[`2026-08-20-stack-adoption-r4`](evidence/2026-08-20-stack-adoption-r4/).
 Its immutable manifest retains 231 evidence paths, excluding only the manifest
-itself, across nine training run trees, nine fixed-seed same-reference
-fresh-simulation records, and three independent held-out evaluations. The
-retained environment records source commit
-`ca2522dcfae5b39a44355d9df5329744847b7136`, source tree
-`4a743a7d8a48cd8ad34d8e96de48d53d4e7d789c`, schema-3 index provenance,
-immutable image identities, and the locked dependency identity.
+itself, across nine training run trees, nine fixed-seed same-reference fresh
+simulations, and three independent held-out evaluations. The environment binds
+source commit `a71d74b7b2dc27cea0a9eb00c375e510a0d7acbf`, tree
+`0e11527885623448fb03604dbf9f6bb2b4634dfd`, schema 3, CPython 3.12.3,
+the locked dependency identity, and exact target/capture images.
 
-`2026-08-18-research-fitness-r20` is a consumed failed attempt, not a result: a
-mandatory natural-variation comparison had insufficient aligned events and the
-collector stopped before held-out/report/publication artifacts. Historical
-real-program validation study material and earlier failed attempts are historical
-or forensic evidence only. The r21 destination is the accepted study bundle in
-this repository with complete retained real-program validation evidence.
+Earlier Task 13 attempts are not this result. r1 failed the clean-tree check;
+r2 completed collection but failed audit because Hypothesis created checkout
+cache state; r3 passed its then-current audit but omitted required bootstrap
+records and was moved intact to ignored preserved-nonfinal storage. The
+producer, strict schema, and independent auditor were corrected before r4.
+The older checked r21 bundle remains unchanged as an accepted predecessor.
 
 ## Evidence classes
 
-The protocol has three workloads (`short`, `streaming`, and `bursty`), three
-independent training captures per workload, selection seeds 17 and 29, and final
-seed 97. Training selection, natural variation, fresh simulation, and held-out
-evaluation are deliberately different claims.
+The protocol has three workloads, three independent training captures per
+workload, selection seeds 17 and 29, and final seed 97. Training selection,
+natural variation, same-reference fresh simulation, and held-out evaluation
+remain different claims.
 
 | Workload | Training selection mean | Natural-variation symmetric mean | Fresh simulation, seed 97 | Independent held-out |
 | --- | ---: | ---: | ---: | ---: |
-| short | 0.733800 | 0.633565 | 0.723225 | 0.712950 |
-| streaming | 0.877848 | 0.887415 | 0.878295 | 0.889224 |
-| bursty | 0.756479 | 0.787983 | 0.722909 | 0.737522 |
+| short | 0.743596 | 0.756048 | 0.736582 | 0.752091 |
+| streaming | 0.888097 | 0.953496 | 0.890632 | 0.897818 |
+| bursty | 0.772237 | 0.735295 | 0.760013 | 0.751923 |
 
-All short and bursty training repetitions selected `markov_renewal`; streaming
-selected `poisson_empirical` twice and `markov_renewal` once. The frozen
-training-only rule selected short r1 (`markov_renewal`), streaming r2
-(`poisson_empirical`), and bursty r3 (`markov_renewal`). These are observed
-selections in three repeats, not a claim that any family is generally superior.
+All short and bursty training repetitions selected `markov_renewal`; all
+streaming repetitions selected `poisson_empirical`. The frozen training-only
+rule selected short r3, streaming r3, and bursty r1. These are observations from
+three repeats, not evidence that either family is generally superior.
 
-The fixed-seed fresh-simulation records reuse each training reference and are
-not held-out evidence. The three held-out records use a new capture per workload,
-a fixed retained training model, and seed 97 without refitting or family
-reselection.
+The fresh-simulation records reuse each training reference and are not held-out
+evidence. Held-out records use a new capture, the fixed selected training model,
+and seed 97 without refitting, family reselection, seed choice, or protocol
+amendment.
 
 ## Component interpretation
 
-Every comparison executes four equally weighted components: frame-size KS,
-inter-arrival-time KS, autocorrelation, and multiscale rate. Held-out component
+Every comparison executes four equally weighted components. Held-out component
 scores are:
 
 | Workload | Autocorrelation | Frame-size KS | IAT KS | Multiscale rate |
 | --- | ---: | ---: | ---: | ---: |
-| short | 0.958889 | 0.970496 | 0.693169 | 0.229244 |
-| streaming | 0.907000 | 0.959365 | 0.816189 | 0.874341 |
-| bursty | 0.982553 | 0.928378 | 0.879921 | 0.159237 |
+| short | 0.906767 | 0.974611 | 0.922261 | 0.204726 |
+| streaming | 0.946967 | 0.962923 | 0.870919 | 0.810463 |
+| bursty | 0.922875 | 0.965295 | 0.913718 | 0.205803 |
 
-The multiscale-rate component is low for short and bursty in both fresh and
-held-out comparisons: fresh values are 0.137112 and 0.108539, while held-out
-values are 0.229244 and 0.159237. Streaming retains higher multiscale values
-(0.788927 fresh and 0.874341 held-out). This metric disagreement is retained as
-a result, not hidden by the arithmetic aggregate.
+The multiscale component remains materially lower for short and bursty than the
+other three components. That disagreement is retained rather than hidden by the
+aggregate. The controlled one-factor weight analysis changes only aggregation:
+short `0.780367→0.822881`, streaming `0.896630→0.913858`, and bursty
+`0.778054→0.818179`. It does not justify choosing weights after observing the
+result.
 
-A retained one-factor aggregation check changes only weights, not traces,
-components, diagnostics, or execution. It changes the selected aggregate from
-0.756955 to 0.801070 (short), 0.894715 to 0.914756 (streaming), and 0.737200 to
-0.782905 (bursty). The result shows weight sensitivity; it does not justify
-choosing weights after observing the outcome.
+No training run retained an invalid candidate. Trial limits remain 25,000
+packets, 40,000,000 bytes, and 5 seconds. An empty invalid-candidate list is not
+evidence that all chromosomes or families are generally feasible.
 
-No training run retained an invalid candidate. The recorded feasibility limits
-are 25,000 packets, 40,000,000 output bytes, and 5 seconds per trial. An empty
-invalid-candidate list is not evidence that all models are equally suitable.
+## Bootstrap and finite-sample uncertainty
 
-## Variance, trace inspection, and limits
+Training runtime and selection-fitness means retain independently recomputed
+95% percentile-bootstrap intervals using 10,000 resamples and
+`Generator(PCG64(20260819))`. Full initial generator state and metadata are in
+`report_inputs.json`.
 
-Selection-fitness sample variances are 0.000518 (short), 0.000406
-(streaming), and 0.000332 (bursty). Mean retained training runtimes are 9.195,
-26.081, and 8.645 seconds respectively; runtime sample variances are 0.613,
-1.962, and 0.153 seconds squared.
+| Workload | Runtime mean | Runtime 95% interval | Fitness mean | Fitness 95% interval |
+| --- | ---: | ---: | ---: | ---: |
+| short | 7.723709 | [7.309674, 8.362012] | 0.743596 | [0.719923, 0.759720] |
+| streaming | 26.488855 | [26.306931, 26.730307] | 0.888097 | [0.877200, 0.894601] |
+| bursty | 7.408110 | [7.223545, 7.593625] | 0.772237 | [0.749484, 0.799640] |
 
-The retained reference and generated PCAPNG paths parse under the same audit
-and comparison settings used for the report. They are finite observations from
-one approved HTTPS object and three traffic shapes. They do not establish
-behavior for unseen programs, endpoints, hosts, network conditions, capture
-tools, time periods, traffic families, or model classes beyond the three
-retained classical families. Three training repeats and one held-out capture per
-workload are too small to establish external generalization. The component
-metrics are descriptive diagnostics of these traces, not a universal or
-calibrated fidelity measure.
+These intervals describe three retained observations; they are not calibrated
+hypothesis tests and do not overcome the small sample.
+
+## Limits
+
+The references are finite observations from one credential-free HTTPS object,
+three traffic shapes, one host, and one time period. Three training captures and
+one held-out capture per workload cannot establish external generalization.
+The study does not establish behavior for unseen programs, endpoints, hosts,
+networks, traffic families, or model classes. Similarity components are
+descriptive diagnostics, not universal fidelity or causal measures.
 
 ## Reproduction and audit
 
-`index.json` binds each retained path to owner and lineage. `manifest.json`
-records the canonical path, size, SHA-256, owner, and lineage for each retained
-file. Portable/realized configuration pairs are under `configs/`; the training,
-fresh-simulation, and held-out records identify their exact input and output
-content identities. `lifecycle.json` binds the study ID, successful capture
-cleanup records, distinct capture projects, and phase image cleanup before
-publication.
-
-Audit from a no-hardlink clone checked out at the recorded source commit after
-copying the accepted bundle into its matching evidence path. Docker and network
-access are not required:
+The source candidate passed the standalone offline audit before exclusive
+publication. A separate `git clone --no-local --no-hardlinks --no-checkout` was
+detached at the recorded source commit; the accepted bundle was copied into the
+matching relative path as regular files. It contained no symlink or file with a
+hard-link count above one, matched the publisher bytes, and passed:
 
 ```bash
 UV_OFFLINE=1 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/2026-08-18-research-fitness-r21 \
+  examples/validation_study/evidence/2026-08-20-stack-adoption-r4 \
   --repository .
 ```
 
-The transient source candidate was audited before exclusive publication. It is
-not an additional accepted result; the tracked
-`evidence/2026-08-18-research-fitness-r21` destination is the immutable
-accepted bundle.
+The audit reconstructs every trace, model, fixed-seed generation, comparison,
+natural-variation value, bootstrap interval, report input, lineage edge, and
+manifest identity without Docker or network access.

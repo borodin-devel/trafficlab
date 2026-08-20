@@ -1,0 +1,169 @@
+[run]
+directory = "../training/short/r2"
+minimum_free_bytes = 1048576
+master_seed = 73
+final_seed = 97
+
+[target]
+image = "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
+argv = [
+    "--fail",
+    "--silent",
+    "--show-error",
+    "--location",
+    "--max-redirs",
+    "3",
+    "--proto",
+    "=https",
+    "--proto-redir",
+    "=https",
+    "--http1.1",
+    "--user-agent",
+    "trafficlab/0.1.0 (+https://github.com/borodin-devel/trafficlab)",
+    "--connect-timeout",
+    "15",
+    "--max-time",
+    "30",
+    "--limit-rate",
+    "4M",
+    "--range",
+    "0-1048575",
+    "--max-filesize",
+    "1048576",
+    "--dump-header",
+    "/trafficlab-study/short.headers",
+    "--output",
+    "/dev/null",
+    "--url",
+    "https://upload.wikimedia.org/wikipedia/commons/5/5b/SPACE_ELECTRIC_ROCKET_TEST%2C_SERT_II_IN_TANK_5_%28GRC-1968-C-03031%29.jpg",
+]
+working_directory = "/"
+
+[target.environment]
+
+[[target.mounts]]
+source = "../../../../.study-work/mount/2026-08-20-stack-adoption-r4"
+target = "/trafficlab-study"
+read_only = false
+
+[capture]
+image = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
+network_probe_url = "https://upload.wikimedia.org/wikipedia/commons/5/5b/SPACE_ELECTRIC_ROCKET_TEST%2C_SERT_II_IN_TANK_5_%28GRC-1968-C-03031%29.jpg"
+readiness_timeout_seconds = 10.0
+workload_timeout_seconds = 35.0
+flush_timeout_seconds = 5.0
+total_timeout_seconds = 90.0
+
+[generation.trial]
+max_packets = 25000
+max_output_bytes = 40000000
+max_wall_seconds = 5.0
+
+[generation.final]
+max_packets = 50000
+max_output_bytes = 80000000
+max_wall_seconds = 10.0
+
+[genetic]
+population_size = 6
+generation_count = 2
+tournament_size = 2
+elite_count = 1
+trial_seeds = [
+    17,
+    29,
+]
+duplicate_mutation_attempts = 3
+early_stopping_generations = 0
+early_stopping_tolerance = 0.0
+resume = true
+
+[models]
+enabled = [
+    "poisson_empirical",
+    "markov_renewal",
+    "mmpp",
+]
+
+[models.poisson_empirical]
+crossover_probability = 0.9
+mutation_probability = 1.0
+mutation_scale = 0.1
+
+[models.poisson_empirical.c_lambda]
+lower = 0.25
+upper = 4.0
+
+[models.markov_renewal]
+crossover_probability = 0.9
+mutation_probability = 0.2
+mutation_scale = 0.1
+
+[models.markov_renewal.q1]
+lower = 0.1
+upper = 0.4
+
+[models.markov_renewal.q2]
+lower = 0.6
+upper = 0.9
+
+[models.markov_renewal.alpha]
+lower = 0.0
+upper = 2.0
+
+[models.markov_renewal.r]
+lower = 1
+upper = 8
+
+[models.markov_renewal.c_t]
+lower = 0.25
+upper = 4.0
+
+[models.mmpp]
+crossover_probability = 0.9
+mutation_probability = 0.25
+mutation_scale = 0.1
+
+[models.mmpp.q01]
+lower = 0.01
+upper = 10.0
+
+[models.mmpp.q10]
+lower = 0.01
+upper = 10.0
+
+[models.mmpp.lambda0]
+lower = 10.0
+upper = 100.0
+
+[models.mmpp.lambda1]
+lower = 0.1
+upper = 1000.0
+
+[similarity]
+iat_diagnostic_quantile = 0.95
+acf_lags = [
+    1,
+]
+acf_lag_weights = [
+    1.0,
+]
+acf_iat_weight = 0.5
+acf_size_weight = 0.5
+multiscale_widths_seconds = [
+    0.001,
+    0.01,
+]
+multiscale_scale_weights = [
+    0.5,
+    0.5,
+]
+multiscale_packet_weight = 0.5
+multiscale_byte_weight = 0.5
+max_direction_bin_cells = 100000
+
+[similarity.method_weights]
+frame_size_ks = 0.25
+iat_ks = 0.25
+autocorrelation = 0.25
+multiscale_rate = 0.25

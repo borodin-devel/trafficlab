@@ -101,8 +101,14 @@ method weights, and bounded trial/final generation limits. Its SHA-256 is
 `ec5d58400c9549d97f55c634298dbfb4771455b5de174bae4172e8afe8642033`.
 
 The bounded configuration-only production preflight completed with status zero
-and prepared `runs/scientific-stack`. Real Docker/Internet execution is part of
-the source-bound external validation gate, not an ordinary offline test.
+and prepared `runs/scientific-stack`. A bounded real Docker/Internet
+`trafficlab run` then completed the full workflow with all three families in
+the checkpoint. It selected `markov_renewal`, reported selection fitness
+`0.712402`, parsed 84 reference packets, generated 48 packets, and published
+aggregate score `0.7303583634840887` with the exact nine documented run files.
+The owned Compose project had zero labeled containers, networks, or volumes
+afterward; the temporary exact capture-image tag was removed without global
+Docker cleanup.
 
 ## Optional probe decisions
 
@@ -139,13 +145,30 @@ or a license determination.
 
 ## Real-program validation and audit
 
-The accepted replacement Validation Study bundle is created only after the
-implementation source snapshot is committed. Its `environment.json` is the
-authority for the exact source commit/tree, Docker/Compose/kernel fields, image
-identities, capture-tool version, CPython patch, schema, and lock identity. The
-bundle retains nine real training captures, nine fixed-seed fresh simulations,
-three independent held-out captures, bootstrap summaries, prerequisite command
-evidence, lifecycle cleanup, lineage, and its manifest.
+The accepted replacement is
+`examples/validation_study/evidence/2026-08-20-stack-adoption-r4/`. It binds
+source commit `a71d74b7b2dc27cea0a9eb00c375e510a0d7acbf`, tree
+`0e11527885623448fb03604dbf9f6bb2b4634dfd`, schema 3, CPython 3.12.3,
+Docker 29.7.2, Compose 5.5.0, the exact image IDs, and the checked lock. Its
+manifest SHA-256 is
+`433ff85b1921051ea810f12bec034e57f0a41d71b13e56edc7f1f93bff5a296d`
+and lists 231 retained paths. The bundle retains nine real training captures,
+nine fixed-seed fresh simulations, three independent held-out captures,
+bootstrap summaries, prerequisite command evidence, lifecycle cleanup,
+lineage, and its manifest.
+
+The cold prerequisite Docker matrix passed 18/18 tests and the explicit
+credential-free HTTPS smoke passed 1/1. Every runtime and selection-fitness
+training summary includes a 95% percentile-bootstrap interval with 10,000
+resamples, seed 20260819, PCG64 initial state, sample size, statistic, method,
+and confidence level. The auditor independently recomputes those fields.
+
+Attempts r1 and r2 were consumed by checkout-local Hypothesis cache failures.
+r3 was published under its then-current schema but was found to omit the
+required bootstrap records; its complete bytes were moved to ignored
+`preserved-published-nonfinal` study storage and were not committed. Producer,
+schema, auditor, fixtures, and documentation were corrected before the entirely
+fresh r4 attempt. No source, capture, or failed study ID was reused.
 
 Acceptance requires a credential-free HTTPS prerequisite, real Docker capture,
 exclusive publication under a new study ID, and this detached audit shape:
@@ -155,13 +178,17 @@ UV_OFFLINE=1 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/<study-id>/ --repository .
+  examples/validation_study/evidence/2026-08-20-stack-adoption-r4/ \
+  --repository .
 ```
 
 The audit checkout must be a `git clone --no-local --no-hardlinks --no-checkout`
 detached at the recorded source commit. Accepted evidence is copied into the
-matching relative path as regular files. A later scientific source change must
-fail binding rather than be treated as valid evidence.
+matching relative path as regular files. The executed detached clone had no Git
+object alternates, evidence symlinks, or evidence files with link count above
+one; its bytes matched the publisher and the audit accepted all 231 paths. A
+later scientific source change must fail binding rather than be treated as
+valid evidence.
 
 The study remains finite descriptive evidence: three training captures and one
 held-out capture for each of three traffic shapes against one public object. It
