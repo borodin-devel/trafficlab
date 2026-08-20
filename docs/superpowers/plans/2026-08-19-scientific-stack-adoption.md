@@ -581,7 +581,7 @@ Create a small locked full-workflow configuration using fixed PCG64 seeds and al
 
 From the final implementation source commit, run all deterministic generator checks, bounded Docker/Internet prerequisites with an explicit credential-free HTTPS URL, the validation study, held-out/bootstrap reporting, and the offline audit in the required detached clone with regular copied evidence. Commit the manifest-bound accepted bundle and evidence docs.
 
-- [ ] **[STEP-78-68462365] Step 6: Run release gates, final review, and commit completion evidence**
+- [x] **[STEP-78-68462365] Step 6: Run release gates, final review, and commit completion evidence**
 
 Run `uv sync --locked --all-groups`, Ruff format check, Ruff lint, strict Pyright, bounded Ordinary, bounded Coverage at or above 90%, every generator `--check`, offline accepted-bundle audit, and combined serial Docker/Internet gate. Obtain a final whole-branch review with no Critical or Important findings, mark every plan checkbox accurately, commit `docs: record scientific stack validation`, and verify the worktree is clean.
 
