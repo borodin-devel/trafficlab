@@ -561,27 +561,27 @@ Run Ruff, Pyright, cleanup/capture unit and in-process integration tests, then t
 **Interfaces:**
 - Produces: deterministic `--check` generators, one-million-event benchmark evidence, exact code-reduction evidence, public JSON Schemas, distributable example config, and audited Docker/Internet real-program evidence.
 
-- [ ] **[STEP-73-2fcc2956] Step 1: Write failing generator/benchmark/reduction contract tests**
+- [x] **[STEP-73-2fcc2956] Step 1: Write failing generator/benchmark/reduction contract tests**
 
 Assert deterministic sorted schema filenames/content, benchmark seed `20260819`, exactly 1,000,000 events, five post-warmup subprocess samples, scalar/vector agreement within `1e-12`, and named before/after production-function inventories excluding tests/generated files.
 
-- [ ] **[STEP-74-e5cdb5af] Step 2: Run evidence contract tests and verify RED**
+- [x] **[STEP-74-e5cdb5af] Step 2: Run evidence contract tests and verify RED**
 
 Run the bounded focused generator and fixture tests; expect missing scripts and artifacts.
 
-- [ ] **[STEP-75-b6b19af7] Step 3: Implement deterministic generators and acceptance calculations**
+- [x] **[STEP-75-b6b19af7] Step 3: Implement deterministic generators and acceptance calculations**
 
 Generate every public root schema, benchmark normalization/IAT/multiscale/ACF in isolated subprocesses, compute median time/peak RSS, and require at least 25% numerical-loop and 30% artifact-validation reductions from explicit Git baseline/function inventories.
 
-- [ ] **[STEP-76-af2c91ab] Step 4: Check in example configuration and machine-readable evidence**
+- [x] **[STEP-76-af2c91ab] Step 4: Check in example configuration and machine-readable evidence**
 
 Create a small locked full-workflow configuration using fixed PCG64 seeds and all three families. Run every probe and benchmark twice, retain canonical JSON plus commands/environment/lock identity, and write the human evidence document without overstating rejected probes.
 
-- [ ] **[STEP-77-6f491ba3] Step 5: Produce and audit real-program validation evidence**
+- [x] **[STEP-77-6f491ba3] Step 5: Produce and audit real-program validation evidence**
 
 From the final implementation source commit, run all deterministic generator checks, bounded Docker/Internet prerequisites with an explicit credential-free HTTPS URL, the validation study, held-out/bootstrap reporting, and the offline audit in the required detached clone with regular copied evidence. Commit the manifest-bound accepted bundle and evidence docs.
 
-- [ ] **[STEP-78-68462365] Step 6: Run release gates, final review, and commit completion evidence**
+- [x] **[STEP-78-68462365] Step 6: Run release gates, final review, and commit completion evidence**
 
 Run `uv sync --locked --all-groups`, Ruff format check, Ruff lint, strict Pyright, bounded Ordinary, bounded Coverage at or above 90%, every generator `--check`, offline accepted-bundle audit, and combined serial Docker/Internet gate. Obtain a final whole-branch review with no Critical or Important findings, mark every plan checkbox accurately, commit `docs: record scientific stack validation`, and verify the worktree is clean.
 
