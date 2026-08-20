@@ -7768,9 +7768,16 @@ def _candidate_score_mean(scores: Sequence[JsonObject]) -> JsonObject:
 
 
 def _candidate_sample_summary(values: Sequence[float], *, name: str) -> JsonObject:
-    _require(len(values) >= 2, f"{name} requires at least two observations")
+    _require(len(values) == 3, f"{name} requires exactly three observations")
     _require(all(math.isfinite(value) and value >= 0.0 for value in values), f"{name} values must be finite")
-    return cast(JsonObject, {"mean": fmean(values), "sample_variance": variance(values)})
+    return cast(
+        JsonObject,
+        {
+            "bootstrap": cast(JsonValue, bootstrap_interval(values, seed=_BOOTSTRAP_SEED).as_dict()),
+            "mean": fmean(values),
+            "sample_variance": variance(values),
+        },
+    )
 
 
 def _candidate_winner_family(training: _CandidateTraining) -> FamilyName:

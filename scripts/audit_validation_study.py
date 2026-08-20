@@ -56,6 +56,7 @@ from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model, runtime_fitted_model
 from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from trafficlab.statistics import bootstrap_interval
 from trafficlab.study_evidence import (
     ValidationStudyEnvironment,
     ValidationStudyLifecycle,
@@ -2546,9 +2547,13 @@ def _mean(scores: Sequence[dict[str, object]]) -> dict[str, object]:
 
 
 def _sample_summary(values: Sequence[float], *, name: str) -> dict[str, object]:
-    if len(values) < 2 or any(not math.isfinite(value) or value < 0.0 for value in values):
+    if len(values) != 3 or any(not math.isfinite(value) or value < 0.0 for value in values):
         _fail("artifact_corrupt", "report_inputs.json", f"{name} requires finite observations", "restore report inputs")
-    return {"mean": fmean(values), "sample_variance": variance(values)}
+    return {
+        "bootstrap": bootstrap_interval(values, seed=20_260_819).as_dict(),
+        "mean": fmean(values),
+        "sample_variance": variance(values),
+    }
 
 
 def _winner_family(training: _Training) -> str:

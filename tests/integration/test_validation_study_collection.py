@@ -445,6 +445,36 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         "runtime_winner_variance",
         "training",
     }
+    for group_name in ("training", "runtime_winner_variance"):
+        summaries = cast(list[dict[str, object]], report_inputs[group_name])
+        for summary in summaries:
+            for field in ("runtime_seconds", "selection_fitness"):
+                descriptive = cast(dict[str, object], summary[field])
+                bootstrap = cast(dict[str, object], descriptive["bootstrap"])
+                assert set(bootstrap) == {
+                    "confidence_level",
+                    "generator",
+                    "generator_state",
+                    "lower_bound",
+                    "method",
+                    "n_resamples",
+                    "sample_size",
+                    "seed",
+                    "statistic",
+                    "upper_bound",
+                }
+                assert bootstrap["confidence_level"] == 0.95
+                assert bootstrap["generator"] == "PCG64"
+                assert bootstrap["method"] == "percentile"
+                assert bootstrap["n_resamples"] == 10_000
+                assert bootstrap["sample_size"] == 3
+                assert bootstrap["seed"] == 20_260_819
+                assert bootstrap["statistic"] == "mean"
+                assert (
+                    cast(float, bootstrap["lower_bound"])
+                    <= cast(float, descriptive["mean"])
+                    <= cast(float, bootstrap["upper_bound"])
+                )
     held_rows = cast(list[dict[str, object]], report_inputs["held_out"])
     held_records = {
         workload: cast(dict[str, object], json.loads((candidate / "held_out" / workload / "record.json").read_text()))

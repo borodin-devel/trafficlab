@@ -509,7 +509,41 @@ class StudyNaturalVariation(_StrictStudyModel):
     workload: Workload
 
 
+class StudyPcg64CoreState(_StrictStudyModel):
+    state: Annotated[StrictInt, Field(ge=0, le=2**128 - 1)]
+    inc: Annotated[StrictInt, Field(ge=0, le=2**128 - 1)]
+
+
+class StudyRngState(_StrictStudyModel):
+    bit_generator: Literal["PCG64"]
+    state: StudyPcg64CoreState
+    has_uint32: Annotated[StrictInt, Field(ge=0, le=1)]
+    uinteger: Annotated[StrictInt, Field(ge=0, le=2**32 - 1)]
+
+
+class StudyBootstrapInterval(_StrictStudyModel):
+    confidence_level: UnitFloat
+    generator: Literal["PCG64"]
+    generator_state: StudyRngState
+    lower_bound: ExactFloat
+    method: Literal["percentile"]
+    n_resamples: Literal[10_000]
+    sample_size: Literal[3]
+    seed: Literal[20_260_819]
+    statistic: Literal["mean"]
+    upper_bound: ExactFloat
+
+    @model_validator(mode="after")
+    def bounds_are_ordered(self) -> Self:
+        if self.confidence_level != 0.95:
+            raise ValueError("bootstrap confidence_level must be 0.95")
+        if self.lower_bound > self.upper_bound:
+            raise ValueError("bootstrap lower_bound must not exceed upper_bound")
+        return self
+
+
 class StudyDescriptive(_StrictStudyModel):
+    bootstrap: StudyBootstrapInterval
     mean: NonnegativeFloat
     sample_variance: NonnegativeFloat
 
