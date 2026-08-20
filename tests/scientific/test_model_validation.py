@@ -52,7 +52,8 @@ from trafficlab.models.markov_renewal import (
 )
 from trafficlab.models.mmpp import MmppFamily, MmppModel
 from trafficlab.models.poisson import PoissonFamily, PoissonModel
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.trace import Direction, TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
 
@@ -581,7 +582,7 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
     reference_content = reference_path.read_bytes()
     metadata_content = metadata_path.read_bytes()
     metadata = parse_capture_metadata(metadata_content, source=metadata_path)
-    parsed_reference = parse_pcapng_bytes(reference_content, metadata, source=reference_path)
+    parsed_reference = read_pcapng_bytes(reference_content, metadata, source=reference_path)
     reference, window = normalize_reference(parsed_reference)
     assert isinstance(reference, TrafficTrace)
     genes, bounds = _artifact_inputs(family_name)
@@ -612,7 +613,7 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
     second_events = _assert_complete_trace(second, window=loaded.observation_window_seconds)
     first_pcapng = encode_pcapng(first_events, metadata)
     second_pcapng = encode_pcapng(second_events, metadata)
-    reparsed = parse_pcapng_bytes(first_pcapng, metadata, source=Path(f"{family_name}-generated.pcapng"))
+    reparsed = read_pcapng_bytes(first_pcapng, metadata, source=Path(f"{family_name}-generated.pcapng"))
 
     assert first_events == second_events
     assert first_pcapng == second_pcapng

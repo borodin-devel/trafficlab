@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 import trafficlab.capture as capture_module
 import trafficlab.run as run_module
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts import FileIdentity
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import CaptureInspection
@@ -38,7 +39,6 @@ from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
 from trafficlab.models.registry import POISSON_FAMILY, make_best_model, rebuild_best_model, render_best_model
-from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata

@@ -34,8 +34,8 @@ from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.genetic.types import Candidate, TrialResult
 from trafficlab.models.registry import BestModel, load_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes_trace
 from trafficlab.preflight import PreparedExperiment, run_preflight
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import TrafficTrace, normalize_reference, parse_capture_metadata
 
@@ -234,7 +234,7 @@ def _validate_generation_result(
     metadata_path = prepared.run_directory / "capture.json"
     try:
         metadata = parse_capture_metadata(capture_content, source=metadata_path)
-        generated_trace = parse_pcapng_bytes_trace(generated_content, metadata, source=result.generated_path)
+        generated_trace = read_pcapng_bytes(generated_content, metadata, source=result.generated_path)
     except TrafficlabError as error:
         raise _invalid_stage_result("generate", f"could not validate generated output identity: {error}") from error
     if generated_trace != result.trace:
@@ -384,7 +384,7 @@ def _validate_final_artifacts(
     reference_content = _read_final_artifact(reference_path, owner="capture", identities=identities)
     try:
         metadata = parse_capture_metadata(capture_content, source=capture_path)
-        reference_trace = parse_pcapng_bytes_trace(reference_content, metadata, source=reference_path)
+        reference_trace = read_pcapng_bytes(reference_content, metadata, source=reference_path)
         reference, window = normalize_reference(reference_trace)
     except TrafficlabError as error:
         raise _final_artifact_error("capture", str(error)) from error
@@ -467,7 +467,7 @@ def _validate_final_artifacts(
     generated_path = run_directory / "generated.pcapng"
     generated_content = _read_final_artifact(generated_path, owner="generate", identities=identities)
     try:
-        generated_trace = parse_pcapng_bytes_trace(generated_content, metadata, source=generated_path)
+        generated_trace = read_pcapng_bytes(generated_content, metadata, source=generated_path)
     except TrafficlabError as error:
         raise _final_artifact_error("generate", str(error)) from error
     if generated_trace != generation.trace:

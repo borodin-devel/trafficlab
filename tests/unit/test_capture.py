@@ -16,7 +16,7 @@ from trafficlab.compatibility import identify_file
 from trafficlab.config import MountConfig
 from trafficlab.docker_cli import CommandResult, ServiceState
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.pcapng import encode_pcapng
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.preflight import (
     CaptureEnvironmentIdentity,
     MountedInputIdentity,

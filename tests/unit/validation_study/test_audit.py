@@ -53,7 +53,8 @@ from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
 from trafficlab.models.registry import load_best_model, rebuild_best_model, render_best_model
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunDependencies, run_experiment
 from trafficlab.trace import TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
@@ -2698,7 +2699,7 @@ def test_study_held_out_evaluator_uses_the_independent_window_with_the_fixed_tra
     fixture = FIT_FIXTURE
     config = load_configuration_pair(fixture / "experiment.toml").realized
     metadata = parse_capture_metadata(CAPTURE_BYTES, source=fixture / "capture.json")
-    original = parse_pcapng_bytes(REFERENCE_BYTES, metadata, source=fixture / "reference.pcapng")
+    original = read_pcapng_bytes(REFERENCE_BYTES, metadata, source=fixture / "reference.pcapng")
     independent = tuple(
         TraceEvent(event.timestamp, event.direction, event.frame_length + (1 if index == 1 else 0))
         for index, event in enumerate(original)

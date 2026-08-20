@@ -10,7 +10,7 @@ from time import monotonic
 from types import MappingProxyType
 
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.pcapng import PacketObservation, parse_pcapng_packets
+from trafficlab.scapy_io import PcapngPacket, read_pcapng_packets
 from trafficlab.trace import CaptureMetadata, Direction, TrafficTrace, load_capture_metadata
 
 _CAPTURE_ACTION = "replace the capture output with a complete valid capture pair"
@@ -21,7 +21,7 @@ class CaptureInspection:
     """Immutable packet observations and aggregate capture diagnostics."""
 
     metadata: CaptureMetadata
-    packets: tuple[PacketObservation, ...]
+    packets: tuple[PcapngPacket, ...]
     trace: TrafficTrace
     packet_count: int
     direction_counts: Mapping[Direction, int]
@@ -101,7 +101,7 @@ def _inspection_deadline(deadline: float | None, clock: Callable[[], float]) -> 
 
 def _inspect(
     metadata: CaptureMetadata,
-    packets: tuple[PacketObservation, ...],
+    packets: tuple[PcapngPacket, ...],
     *,
     deadline: float | None,
     clock: Callable[[], float],
@@ -165,7 +165,13 @@ def inspect_capture(
                 "capture inspection exceeded the total-run deadline",
                 corrective_action="increase the total run timeout and retry capture",
             )
-        packets = parse_pcapng_packets(pcapng_path, metadata, deadline=deadline, clock=clock)
+        packets = read_pcapng_packets(
+            pcapng_path,
+            metadata,
+            source=pcapng_path,
+            deadline=deadline,
+            clock=clock,
+        )
         return _inspect(metadata, packets, deadline=deadline, clock=clock)
     except DeadlineExceededError as error:
         raise DeadlineExceededError(

@@ -28,7 +28,7 @@ from trafficlab.errors import (
     attach_failure_outcome,
     failure_outcome_from_error,
 )
-from trafficlab.pcapng import parse_pcapng
+from trafficlab.scapy_io import read_pcapng
 from trafficlab.trace import load_capture_metadata
 
 if TYPE_CHECKING:
@@ -628,8 +628,8 @@ def _finish_capture_probe(
             )
         break
     metadata = load_capture_metadata(output / "capture.json")
-    events = parse_pcapng(output / "reference.pcapng.tmp", metadata, deadline=deadline, clock=clock)
-    if not events:
+    trace = read_pcapng(output / "reference.pcapng.tmp", metadata, deadline=deadline, clock=clock)
+    if not trace:
         raise TrafficlabError(
             "network probe completed without captured Ethernet traffic",
             corrective_action="verify the probe endpoint is reached through capture service eth0",

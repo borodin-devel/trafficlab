@@ -34,7 +34,7 @@ from trafficlab.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult, Genes
 from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
@@ -104,7 +104,7 @@ def _copy_fixture_experiment(tmp_path: Path) -> tuple[Path, Path, ExperimentConf
 
 def _strategy_context(config: ExperimentConfig, run_directory: Path):  # type: ignore[no-untyped-def]
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=run_directory / "capture.json")
-    parsed = parse_pcapng_bytes(_REFERENCE_BYTES, metadata, source=run_directory / "reference.pcapng")
+    parsed = read_pcapng_bytes(_REFERENCE_BYTES, metadata, source=run_directory / "reference.pcapng")
     reference, window = normalize_reference(parsed)
     return make_strategy_context(
         config,
@@ -232,7 +232,7 @@ def test_checked_fit_artifacts_load_through_every_strict_production_codec() -> N
     """A byte fixture that bypasses any strict codec would not be reusable scientific evidence."""
     config = load_experiment(_EXPERIMENT_PATH)
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=_FIT_DIRECTORY / "capture.json")
-    parsed = parse_pcapng_bytes(_REFERENCE_BYTES, metadata, source=_FIT_DIRECTORY / "reference.pcapng")
+    parsed = read_pcapng_bytes(_REFERENCE_BYTES, metadata, source=_FIT_DIRECTORY / "reference.pcapng")
     reference, window = normalize_reference(parsed)
     context = make_strategy_context(
         config,
@@ -455,7 +455,7 @@ def test_guard_truncated_real_candidate_is_invalid_with_direct_seed_reason(tmp_p
         update={"generation": config.generation.model_copy(update={"trial": trial}), "genetic": genetic}
     )
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=Path("capture.json"))
-    parsed = parse_pcapng_bytes(_REFERENCE_BYTES, metadata, source=Path("reference.pcapng"))
+    parsed = read_pcapng_bytes(_REFERENCE_BYTES, metadata, source=Path("reference.pcapng"))
     reference, window = normalize_reference(parsed)
     context = make_strategy_context(
         limited,

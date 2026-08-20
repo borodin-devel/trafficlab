@@ -46,7 +46,7 @@ from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import TrialResult
 from trafficlab.models.common import FittedModel, GenerationResult, ModelFamily
 from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment, run_preflight
 from trafficlab.run import RunDependencies, RunResult, run_experiment
 from trafficlab.trace import Direction, normalize_reference, parse_capture_metadata
@@ -253,7 +253,7 @@ def test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_pro
     assert inspection.direction_counts[Direction.INBOUND] > 0
 
     metadata = parse_capture_metadata(capture_content, source=run_directory / "capture.json")
-    parsed_reference = parse_pcapng_bytes(
+    parsed_reference = read_pcapng_bytes(
         reference_content,
         metadata,
         source=run_directory / "reference.pcapng",
@@ -306,7 +306,7 @@ def test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_pro
     ]
 
     generated_content = (run_directory / "generated.pcapng").read_bytes()
-    generated_events = parse_pcapng_bytes(
+    generated_events = read_pcapng_bytes(
         generated_content,
         metadata,
         source=run_directory / "generated.pcapng",

@@ -37,7 +37,7 @@ from trafficlab.errors import (
 )
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.models.registry import load_best_model
-from trafficlab.pcapng import parse_pcapng_bytes_trace
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.similarity.autocorrelation import (
     AutocorrelationSamplesInsufficientError,
@@ -1232,7 +1232,7 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
             corrective_action="verify the PCAPNG exists and is readable",
         )
         try:
-            reference_trace = parse_pcapng_bytes_trace(reference_content, metadata, source=reference_path)
+            reference_trace = read_pcapng_bytes(reference_content, metadata, source=reference_path)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -1293,7 +1293,8 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 evidence_state="preserved",
             ) from error
         try:
-            _, _, expected_generated_content = reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
+            _, expected_generated = reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
+            expected_generated_content = expected_generated.content
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -1322,7 +1323,7 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
                 ),
             )
         try:
-            generated_trace = parse_pcapng_bytes_trace(generated_content, metadata, source=generated_path)
+            generated_trace = read_pcapng_bytes(generated_content, metadata, source=generated_path)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,

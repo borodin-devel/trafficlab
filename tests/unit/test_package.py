@@ -1,5 +1,6 @@
 import importlib
 import importlib.metadata
+import importlib.util
 import os
 import runpy
 import subprocess
@@ -44,6 +45,11 @@ def test_installed_package_exposes_only_runtime_scientific_dependencies() -> Non
     assert {"numpy", "scipy"} <= runtime_names
     assert "scapy==2.7.0" in runtime_requirements
     assert not {"hypothesis", "pymoo"} & runtime_names
+
+
+def test_legacy_pcapng_module_is_removed() -> None:
+    assert not Path("src/trafficlab/pcapng.py").exists()
+    assert importlib.util.find_spec("trafficlab.pcapng") is None
 
 
 def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:

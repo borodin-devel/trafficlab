@@ -20,6 +20,8 @@ import trafficlab.artifacts as artifact_module
 import trafficlab.cli as cli_module
 import trafficlab.generation as generation_module
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
+from tests.support.scapy_fixtures import encode_events as encode_legacy_pcapng
+from tests.support.scapy_fixtures import encode_precise_events
 from trafficlab.artifacts import create_run_directory, publish_generated_pcapng
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig
@@ -35,7 +37,6 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.pcapng import encode_pcapng as encode_legacy_pcapng
 from trafficlab.preflight import PreparedExperiment
 from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.trace import (
@@ -1126,17 +1127,14 @@ def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
     """Nearest-nanosecond rendering must not move a valid binary-derived endpoint beyond stored W."""
     experiment_path, run_directory, config = _prepare_stage_run(valid_config_data, tmp_path)
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=run_directory / "capture.json")
-    decimal_reference = encode_legacy_pcapng(
+    binary_reference = encode_precise_events(
         (
             TraceEvent(0.0, Direction.OUTBOUND, 60),
-            TraceEvent(3e-9, Direction.INBOUND, 80),
+            TraceEvent(3 / 1024, Direction.INBOUND, 80),
         ),
         metadata,
+        resolution=0x8A,
     )
-    decimal_resolution = struct.pack("<HHB3x", 9, 1, 9)
-    binary_resolution = struct.pack("<HHB3x", 9, 1, 0x8A)
-    assert decimal_reference.count(decimal_resolution) == 1
-    binary_reference = decimal_reference.replace(decimal_resolution, binary_resolution)
     parsed_reference = read_pcapng_bytes(binary_reference, metadata, source=Path("binary-reference.pcapng"))
     reference, window = normalize_reference(parsed_reference)
     assert window == 3 / 1024

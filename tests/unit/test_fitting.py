@@ -18,6 +18,7 @@ import trafficlab.artifacts as artifacts
 import trafficlab.fitting as fitting
 import trafficlab.genetic.checkpoint as checkpoint
 import trafficlab.genetic.strategy as strategy_module
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts import publish_best_model
 from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FloatBounds, GenerationLimits, PoissonConfig
@@ -29,7 +30,6 @@ from trafficlab.genetic.strategy import FitOutcome, StrategyContext, make_strate
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.poisson import PoissonFamily
 from trafficlab.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
-from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import PreflightReport, PreparedExperiment, open_or_prepare_experiment
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata

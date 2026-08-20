@@ -16,7 +16,7 @@ from trafficlab.cli import main
 from trafficlab.comparison import compare_experiment, compare_traces, load_comparison_result
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
-from trafficlab.pcapng import parse_pcapng
+from trafficlab.scapy_io import read_pcapng
 from trafficlab.trace import Direction, TraceEvent, align_generated, load_capture_metadata, normalize_reference
 
 pytestmark = pytest.mark.integration
@@ -186,8 +186,8 @@ def _isolated_installed_working_directory(root: Path) -> Path:
 def test_checked_in_fixture_round_trip_preserves_canonical_values_and_one_shared_window() -> None:
     """Changing fixture bytes, direction classification, alignment, or one metric's W must break this boundary."""
     metadata = load_capture_metadata(_EXAMPLE_DATA / "capture.json")
-    reference_events = parse_pcapng(_EXAMPLE_DATA / "reference.pcapng", metadata)
-    generated_events = parse_pcapng(_EXAMPLE_DATA / "generated.pcapng", metadata)
+    reference_events = read_pcapng(_EXAMPLE_DATA / "reference.pcapng", metadata)
+    generated_events = read_pcapng(_EXAMPLE_DATA / "generated.pcapng", metadata)
 
     assert metadata.target_mac == "02:42:ac:11:00:02"
     assert reference_events == _REFERENCE_EVENTS

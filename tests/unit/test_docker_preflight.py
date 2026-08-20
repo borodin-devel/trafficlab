@@ -11,7 +11,7 @@ from trafficlab import USER_AGENT
 from trafficlab.config import ExperimentConfig
 from trafficlab.docker_cli import CommandResult, ServiceState
 from trafficlab.errors import TrafficlabError
-from trafficlab.pcapng import encode_pcapng
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.preflight import check_docker
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 

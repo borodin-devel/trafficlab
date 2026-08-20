@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
-from trafficlab.pcapng import encode_pcapng
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent
 
 

@@ -19,7 +19,7 @@ from trafficlab.capture_validation import CaptureInspection
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_experiment
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.pcapng import encode_pcapng
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 

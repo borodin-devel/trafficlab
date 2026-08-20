@@ -7,7 +7,7 @@ import pytest
 import trafficlab.capture_validation as capture_validation_module
 from trafficlab.capture_validation import inspect_capture
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.pcapng import PacketObservation
+from trafficlab.scapy_io import PcapngPacket
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 _TARGET = bytes.fromhex("0242ac110002")
@@ -188,9 +188,12 @@ def test_inspect_capture_rejects_strict_metadata_before_parsing_packets(tmp_path
 @pytest.mark.parametrize(
     ("content", "message"),
     [
-        (_capture(), "no Enhanced Packet Blocks"),
+        (_capture(), "no packet records"),
         (_capture(b"too short"), "at least 14"),
-        (_capture(_ethernet(_TARGET, _PEER, 0x0800, _ipv4("192.0.2.1", "192.0.2.2", 6)))[:-1], "truncated"),
+        (
+            _capture(_ethernet(_TARGET, _PEER, 0x0800, _ipv4("192.0.2.1", "192.0.2.2", 6)))[:-1],
+            "no packet records",
+        ),
     ],
     ids=["empty", "short-ethernet", "malformed-pcapng"],
 )
@@ -238,21 +241,22 @@ def test_inspect_capture_checks_deadline_during_packet_aggregation(
     frame = _ethernet(_TARGET, _PEER, 0x88B5, b"payload")
     metadata_path, pcapng_path = _write_pair(tmp_path, frame)
     packets = (
-        PacketObservation(TraceEvent(0.0, Direction.OUTBOUND, len(frame)), frame),
-        PacketObservation(TraceEvent(1.0, Direction.OUTBOUND, len(frame)), frame),
+        PcapngPacket(TraceEvent(0.0, Direction.OUTBOUND, len(frame)), frame),
+        PcapngPacket(TraceEvent(1.0, Direction.OUTBOUND, len(frame)), frame),
     )
 
     def parsed_packets(
         path: Path,
         metadata: CaptureMetadata,
         *,
+        source: Path,
         deadline: float | None,
         clock: object,
-    ) -> tuple[PacketObservation, ...]:
-        del path, metadata, deadline, clock
+    ) -> tuple[PcapngPacket, ...]:
+        del path, metadata, source, deadline, clock
         return packets
 
-    monkeypatch.setattr(capture_validation_module, "parse_pcapng_packets", parsed_packets)
+    monkeypatch.setattr(capture_validation_module, "read_pcapng_packets", parsed_packets)
     observed = 0
     original = capture_validation_module._network_observation  # pyright: ignore[reportPrivateUsage]
 

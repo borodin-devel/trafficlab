@@ -27,9 +27,9 @@ from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint
 from trafficlab.genetic.evaluation import ValidatedEvaluationContext
 from trafficlab.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate
-from trafficlab.pcapng import parse_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
 from trafficlab.run import RunDependencies, run_experiment
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 pytestmark = pytest.mark.integration
@@ -162,7 +162,7 @@ def _interrupt_after_atomic_generation_zero(
 def _strategy_context(offline: _OfflineRun):  # type: ignore[no-untyped-def]
     run_directory = offline.prepared.run_directory
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=run_directory / "capture.json")
-    parsed = parse_pcapng_bytes(_REFERENCE_BYTES, metadata, source=run_directory / "reference.pcapng")
+    parsed = read_pcapng_bytes(_REFERENCE_BYTES, metadata, source=run_directory / "reference.pcapng")
     reference, window = normalize_reference(parsed)
     return make_strategy_context(
         offline.pair.realized,
@@ -394,9 +394,9 @@ def test_full_pipeline_resume_after_atomic_checkpoint_is_scientifically_byte_ide
         assert "observation_window_seconds" in uninterrupted_result.comparison.methods[method].diagnostics
 
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=uninterrupted_directory / "capture.json")
-    assert parse_pcapng_bytes(
+    assert read_pcapng_bytes(
         uninterrupted_bytes["generated.pcapng"], metadata, source=uninterrupted_directory / "generated.pcapng"
-    ) == parse_pcapng_bytes(resumed_bytes["generated.pcapng"], metadata, source=resumed_directory / "generated.pcapng")
+    ) == read_pcapng_bytes(resumed_bytes["generated.pcapng"], metadata, source=resumed_directory / "generated.pcapng")
     uninterrupted_identities = _independent_identities(uninterrupted_bytes, uninterrupted.pair.realized)
     resumed_identities = _independent_identities(resumed_bytes, resumed.pair.realized)
     assert uninterrupted_identities == resumed_identities

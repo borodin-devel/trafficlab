@@ -11,7 +11,7 @@ from trafficlab.config_io import load_experiment
 from trafficlab.errors import TrafficlabError
 from trafficlab.genetic.checkpoint import load_checkpoint
 from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import load_capture_metadata, normalize_reference
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -39,7 +39,7 @@ def test_development_runtime_pin_exactly_matches_checked_checkpoint_python_versi
     capture_bytes = capture_path.read_bytes()
     metadata = load_capture_metadata(capture_path)
     reference_bytes = reference_path.read_bytes()
-    parsed = parse_pcapng_bytes(reference_bytes, metadata, source=reference_path)
+    parsed = read_pcapng_bytes(reference_bytes, metadata, source=reference_path)
     reference, window = normalize_reference(parsed)
     context = make_strategy_context(
         config,

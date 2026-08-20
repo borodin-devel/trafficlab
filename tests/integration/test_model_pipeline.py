@@ -23,7 +23,7 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes, parse_pcapng_trace
+from trafficlab.scapy_io import encode_pcapng, read_pcapng
 from trafficlab.trace import TrafficTrace, normalize_reference, parse_capture_metadata
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -60,8 +60,8 @@ CASES: tuple[tuple[ModelFamily, Genes, FamilyBounds], ...] = (
 )
 
 
-def _rounded_nanoseconds(timestamp: float) -> float:
-    return round(timestamp * 1_000_000_000) / 1_000_000_000
+def _scapy_microseconds(timestamp: float) -> float:
+    return int(timestamp * 1_000_000) / 1_000_000
 
 
 def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
@@ -71,7 +71,7 @@ def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
     capture_content = capture_path.read_bytes()
     reference_content = reference_path.read_bytes()
     metadata = parse_capture_metadata(capture_content, source=capture_path)
-    parsed_reference = parse_pcapng_trace(reference_path, metadata)
+    parsed_reference = read_pcapng(reference_path, metadata)
     normalized_reference, window = normalize_reference(parsed_reference)
     assert isinstance(normalized_reference, TrafficTrace)
     capture_identity = identify_bytes(capture_content)
@@ -93,14 +93,15 @@ def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
         generated = family.generate(
             runtime_fitted_model(loaded), 54321, loaded.observation_window_seconds, _LIMITS
         ).require_complete()
-        pcapng_content = encode_pcapng(generated, metadata)
-        parsed_generated = parse_pcapng_bytes(pcapng_content, metadata, source=Path("generated.pcapng"))
+        encoded = encode_pcapng(generated, metadata, observation_window_seconds=loaded.observation_window_seconds)
+        pcapng_content = encoded.content
+        parsed_generated = encoded.trace
 
         assert [(event.direction, event.frame_length) for event in parsed_generated] == [
             (event.direction, event.frame_length) for event in generated
         ]
         assert [event.timestamp for event in parsed_generated] == [
-            _rounded_nanoseconds(event.timestamp) for event in generated
+            _scapy_microseconds(event.timestamp) for event in generated
         ]
 
         reloaded = load_best_model(render_best_model(loaded), source=Path("best_model.json"))
@@ -110,4 +111,11 @@ def test_every_family_runs_through_model_json_and_byte_stable_pcapng() -> None:
             reloaded.observation_window_seconds,
             _LIMITS,
         ).require_complete()
-        assert encode_pcapng(reproduced, metadata) == pcapng_content
+        assert (
+            encode_pcapng(
+                reproduced,
+                metadata,
+                observation_window_seconds=reloaded.observation_window_seconds,
+            ).content
+            == pcapng_content
+        )

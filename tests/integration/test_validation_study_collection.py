@@ -24,7 +24,8 @@ from trafficlab.config_io import load_experiment
 from trafficlab.errors import TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
 from trafficlab.trace import TraceEvent, TrafficTrace, parse_capture_metadata
@@ -221,7 +222,7 @@ def _offline_stage_runners(
     environment: dict[str, object],
 ) -> tuple[Callable[[Path], RunResult], Callable[[Path], CaptureResult], list[str]]:
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=_FIT_FIXTURE / "capture.json")
-    base_events = parse_pcapng_bytes(_REFERENCE_BYTES, metadata, source=_FIT_FIXTURE / "reference.pcapng")
+    base_events = read_pcapng_bytes(_REFERENCE_BYTES, metadata, source=_FIT_FIXTURE / "reference.pcapng")
     sequence = count(1)
     calls: list[str] = []
 

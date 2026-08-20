@@ -22,8 +22,9 @@ from trafficlab.compatibility import ContentIdentity
 from trafficlab.config import ExperimentConfig, SimilarityConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import TrafficlabError
+from trafficlab.models.registry import load_best_model
 from trafficlab.similarity import SimilarityResult
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace, parse_capture_metadata
 
 
 def _settings(data: dict[str, object]) -> SimilarityConfig:
@@ -98,14 +99,25 @@ def _prepare_comparison_run(
     run_directory.mkdir()
     (run_directory / "experiment.toml").write_bytes(snapshot)
     example_data = Path(__file__).parents[2] / "examples" / "data"
-    names = ["capture.json", "reference.pcapng", "models/generated.pcapng"]
+    names = ["capture.json", "reference.pcapng"]
     if include_best_model:
         names.append("models/best_model.json")
     for name in names:
         source = example_data / name
         destination = run_directory / source.name
         destination.write_bytes(source.read_bytes())
+    if include_best_model:
+        _write_current_generated(run_directory)
     return experiment_path, run_directory
+
+
+def _write_current_generated(run_directory: Path) -> None:
+    metadata = parse_capture_metadata(
+        (run_directory / "capture.json").read_bytes(), source=run_directory / "capture.json"
+    )
+    best = load_best_model((run_directory / "best_model.json").read_bytes(), source=run_directory / "best_model.json")
+    _, encoded = comparison.reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
+    (run_directory / "generated.pcapng").write_bytes(encoded.content)
 
 
 def test_compare_public_boundary_classifies_a_missing_capture_input(
@@ -518,6 +530,7 @@ def test_compare_rejects_reference_mutation_before_similarity_publication(
         (example_data / "models" / "generated.pcapng", run_directory / "generated.pcapng"),
     ):
         destination.write_bytes(source.read_bytes())
+    _write_current_generated(run_directory)
     reference_path = run_directory / "reference.pcapng"
     real_compare = comparison.compare_traces
 
@@ -598,14 +611,15 @@ def test_compare_translates_each_pcap_parse_failure_before_publication(
         (example_data / "models" / "best_model.json", run_directory / "best_model.json"),
     ):
         destination.write_bytes(source.read_bytes())
-    real_parse = comparison.parse_pcapng_bytes_trace
+    _write_current_generated(run_directory)
+    real_parse = comparison.read_pcapng_bytes
 
     def fail_selected(content: bytes, metadata: object, *, source: Path) -> TrafficTrace:
         if source.name == input_name:
             raise TrafficlabError("injected parse failure", corrective_action="restore valid PCAPNG bytes")
         return real_parse(content, cast(Any, metadata), source=source)
 
-    monkeypatch.setattr(comparison, "parse_pcapng_bytes_trace", fail_selected)
+    monkeypatch.setattr(comparison, "read_pcapng_bytes", fail_selected)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison.compare_experiment(experiment_path)
