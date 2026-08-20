@@ -19,10 +19,20 @@ def test_reduction_inventory_recomputes_exact_historical_gates() -> None:
     categories = {item["name"]: item for item in evidence["categories"]}
 
     numpy = categories["numpy_loop_validation"]
-    assert (numpy["before_lines"], numpy["after_lines"]) == (45, 5)
-    assert numpy["reduction_percent"] == pytest.approx(88.88888888888889)
+    assert (numpy["before_lines"], numpy["after_lines"]) == (398, 287)
+    assert numpy["reduction_percent"] == pytest.approx(27.889447236180903)
     assert numpy["threshold_percent"] == 25.0
     assert numpy["passed"] is True
+    phase = numpy["phases"][0]
+    assert phase["measurement"] == "loop_and_validation_statements"
+    assert phase["measurement_definition"] == (
+        "unique ast.stmt lines in complete explicitly named migrated functions, including nested loop bodies and "
+        "straight-line custom validation"
+    )
+    before_names = {item["function"] for item in phase["before"]["functions"]}
+    after_names = {item["function"] for item in phase["after"]["functions"]}
+    assert {"_validated_events", "validate_fit_inputs", "_validated_trace"} <= before_names
+    assert {"TrafficTrace.__post_init__", "validate_fit_inputs"} <= after_names
 
     artifact = categories["artifact_schema_validation"]
     assert (artifact["before_lines"], artifact["after_lines"]) == (1100, 684)
@@ -98,7 +108,7 @@ def test_reduction_validator_rejects_each_metric_and_arithmetic_mutation(mutatio
     elif mutation == "categories":
         evidence["categories"].reverse()
     elif mutation == "numpy_metric":
-        evidence["categories"][0]["phases"][0]["measurement"] = "ast_statements"
+        evidence["categories"][0]["phases"][0]["measurement"] = "loop_body_statements"
     elif mutation == "phase_before":
         evidence["categories"][0]["phases"][0]["before_lines"] += 1
     elif mutation == "phase_after":

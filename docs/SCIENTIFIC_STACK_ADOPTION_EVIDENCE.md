@@ -24,8 +24,8 @@ uv run --locked python --version
 
 ## Public artifact schemas
 
-`examples/schemas/scientific-artifact-v3/` contains 12 public Draft 2020-12
-schemas totaling 146,738 bytes. Filenames come from the sorted
+`examples/schemas/scientific-artifact-v3/` contains 13 public Draft 2020-12
+schemas totaling 147,272 bytes. Filenames come from the sorted
 `PUBLIC_ARTIFACT_MODELS` registry; every schema declares its filename as `$id`.
 The generator rejects changed, missing, foreign, noncanonical, or incomplete
 output.
@@ -52,9 +52,10 @@ array indexes. All defect-exposed functions then reached 100% executable-line
 and branch coverage.
 
 Three initial post-correction runs passed at 19.37x, 21.26x, and 23.24x. The
-review-hardened canonical record was regenerated once after its validation code
-changed and passed at `21.08189298073065x`; vector/scalar median peak RSS ratio
-was `1.0`. Normalization, IAT, and multiscale agreement were exact. Selected-lag
+final columnar-core record passed at `21.187956620803675x`, from scalar and
+vector combined medians `2.5359822059836006s` and `0.11968979601806495s`;
+vector/scalar median peak RSS ratio was `1.0`. Normalization, IAT, and
+multiscale agreement were exact. Selected-lag
 ACF maximum absolute error was `4.336808689942018e-18`, below `1e-12`.
 
 `--check` independently rebuilds the one-million-event PCG64 dataset and runs
@@ -84,9 +85,11 @@ acceptance must retain the same protocol on the measured host.
 objects, not current file totals or prose estimates. It retains every qualified
 function and exact counted line.
 
-- The explicit NumPy migration inventory contains 45 baseline executable lines
-  nested below Python `for`/`while` loops and 5 after adoption: 88.89% reduction
-  against a 25% gate.
+- The explicit NumPy migration inventory contains 398 baseline executable
+  loop-and-validation lines and 287 after adoption: 27.89% reduction against a
+  25% gate. It counts unique `ast.stmt` lines in named loop bodies plus every
+  statement in named straight-line custom validation functions and retains each
+  function's roles and exact lines.
 - All three disjoint artifact-validation phases use the same unique AST
   executable-statement-line metric over explicit qualified functions. Their
   values are `402→199`, `518→311`, and `180→174`. The aggregate is `1100→684`,

@@ -1,0 +1,1 @@
+examples/validation_study/evidence/**/*.headers -text -diff

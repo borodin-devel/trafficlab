@@ -34,9 +34,12 @@ as `t'_i = t_i - t_1`, so the reference occupies the closed interval `[0, W]`.
 Packets at both endpoints are included.
 
 `TrafficTrace.from_events()` and `TrafficTrace.to_events()` are the
-compatibility boundary for immutable `TraceEvent` records. PCAPNG path parsing
-produces `TrafficTrace` for the scientific core; the event-returning PCAPNG APIs
-remain thin boundary adapters while existing consumers migrate.
+compatibility boundary for immutable `TraceEvent` records. PCAPNG parsing and
+rendering may use those records only at their external boundary. Normalization,
+strategy setup, genetic evaluation, model repair/fit/generation, all four
+similarity methods, final comparison, and validation-study reconstruction retain
+the exact `TrafficTrace` in memory. Generation results contain an immutable
+`TrafficTrace`, including bounded diagnostic prefixes.
 
 Before comparison, require a nonempty generated trace, shift it to its first
 packet, and retain only events in `[0, W]`. The same W is passed explicitly to

@@ -31,17 +31,27 @@ from pydantic import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from trafficlab.comparison import parse_comparison_result
-from trafficlab.config_io import load_experiment
-from trafficlab.genetic.checkpoint import CheckpointArtifact
-from trafficlab.models.registry import load_best_model
-from trafficlab.pcapng import parse_pcapng_bytes
-from trafficlab.trace import parse_capture_metadata
+from trafficlab.comparison import (
+    compare_traces,
+    parse_comparison_result,
+    render_comparison_result,
+    similarity_settings_identity,
+)
+from trafficlab.compatibility import identify_bytes
+from trafficlab.config_io import load_experiment, render_effective_config
+from trafficlab.errors import TrafficlabError
+from trafficlab.generation import reproduce_generated_pcapng
+from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
+from trafficlab.genetic.strategy import make_strategy_context
+from trafficlab.models.registry import load_best_model, render_best_model
+from trafficlab.pcapng import parse_pcapng_bytes_trace
+from trafficlab.trace import align_generated, normalize_reference, parse_capture_metadata
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 EVIDENCE_PATH = REPOSITORY / "examples" / "scientific_stack" / "example_run.json"
 ARTIFACT_DIRECTORY = REPOSITORY / "examples" / "scientific_stack" / "example_run_artifacts"
 CONFIG_PATH = REPOSITORY / "examples" / "scientific_stack" / "experiment.toml"
+_CONFIG_RELATIVE = Path("examples/scientific_stack/experiment.toml")
 _ARTIFACT_NAMES = (
     "best_model.json",
     "capture.json",
@@ -106,12 +116,22 @@ class Identity(_StrictModel):
 class SourceRecord(_StrictModel):
     commit: GitIdentity
     tree: GitIdentity
-    source_clean: Literal[False]
+    source_clean: bool
     state_note: Literal[
-        "production, config, and lock bytes matched the recorded commit; documentation and evidence changes were uncommitted"
+        "production, config, and lock bytes matched the recorded commit; documentation and evidence changes were uncommitted",
+        "checkout was clean at the recorded source commit before the run; retained evidence was added afterward",
     ]
     config_identity: Identity
     uv_lock_identity: Identity
+
+    @model_validator(mode="after")
+    def chronology_matches_cleanliness(self) -> Self:
+        clean_note = (
+            "checkout was clean at the recorded source commit before the run; retained evidence was added afterward"
+        )
+        if self.source_clean != (self.state_note == clean_note):
+            raise ValueError("example-run source cleanliness and chronology note disagree")
+        return self
 
 
 class ResourceBounds(_StrictModel):
@@ -260,40 +280,101 @@ def _one_event(records: Sequence[Mapping[str, object]], event: str) -> Mapping[s
 
 
 def _derived_result(artifact_directory: Path) -> tuple[dict[str, object], str]:
-    capture_content = (artifact_directory / "capture.json").read_bytes()
+    contents = {name: (artifact_directory / name).read_bytes() for name in _ARTIFACT_NAMES}
+    capture_content = contents["capture.json"]
     metadata = parse_capture_metadata(capture_content, source=artifact_directory / "capture.json")
-    reference = parse_pcapng_bytes(
-        (artifact_directory / "reference.pcapng").read_bytes(),
+    raw_reference = parse_pcapng_bytes_trace(
+        contents["reference.pcapng"],
         metadata,
         source=artifact_directory / "reference.pcapng",
     )
-    generated = parse_pcapng_bytes(
-        (artifact_directory / "generated.pcapng").read_bytes(),
+    reference, window = normalize_reference(raw_reference)
+    generated = parse_pcapng_bytes_trace(
+        contents["generated.pcapng"],
         metadata,
         source=artifact_directory / "generated.pcapng",
     )
-    best = load_best_model(
-        (artifact_directory / "best_model.json").read_bytes(), source=artifact_directory / "best_model.json"
-    )
-    comparison = parse_comparison_result((artifact_directory / "similarity.json").read_bytes())
-    checkpoint_document = cast(dict[str, object], json.loads((artifact_directory / "checkpoint.json").read_bytes()))
-    CheckpointArtifact.model_validate(checkpoint_document)
+    best = load_best_model(contents["best_model.json"], source=artifact_directory / "best_model.json")
+    if render_best_model(best) != contents["best_model.json"]:
+        raise ValueError("example best model is not canonical")
     config = load_experiment(artifact_directory / "experiment.toml")
+    if render_effective_config(config) != contents["experiment.toml"]:
+        raise ValueError("example experiment snapshot is not canonical")
+    context = make_strategy_context(
+        config,
+        reference,
+        window,
+        artifact_directory,
+        experiment_identity=identify_bytes(contents["experiment.toml"]),
+        reference_identity=identify_bytes(contents["reference.pcapng"]),
+        capture_identity=identify_bytes(contents["capture.json"]),
+    )
+    try:
+        checkpoint = parse_checkpoint(contents["checkpoint.json"], context.compatibility)
+    except TrafficlabError as error:
+        raise ValueError(f"example checkpoint is incompatible: {error}") from error
+    if render_history_csv(checkpoint) != contents["ga_history.csv"]:
+        raise ValueError("example history is not the exact checkpoint projection")
+    winners = tuple(
+        candidate for candidate in checkpoint.population if candidate.identifier == checkpoint.best_identifier
+    )
+    if len(winners) != 1:
+        raise ValueError("example checkpoint must identify one winner")
+    winner = winners[0]
+    if (
+        winner.status != "valid"
+        or winner.family != best.family
+        or winner.genes != best.genes
+        or winner.fitness != checkpoint.best_fitness
+        or best.capture_identity != identify_bytes(contents["capture.json"])
+        or best.reference_identity != identify_bytes(contents["reference.pcapng"])
+        or best.final_seed != config.run.final_seed
+        or best.final_limits != config.generation.final
+        or best.observation_window_seconds != window
+    ):
+        raise ValueError("example winner and best-model lineage are incompatible")
+    try:
+        _raw_generated, rendered_generated, regenerated_content = reproduce_generated_pcapng(
+            best, metadata, clock=lambda: 0.0
+        )
+    except TrafficlabError as error:
+        raise ValueError(f"example generated trace cannot be reconstructed: {error}") from error
+    if regenerated_content != contents["generated.pcapng"] or rendered_generated != generated:
+        raise ValueError("example generated trace does not match its best-model lineage")
+    aligned = align_generated(generated, window)
+    comparison = parse_comparison_result(contents["similarity.json"])
+    if render_comparison_result(comparison) != contents["similarity.json"]:
+        raise ValueError("example similarity is not canonical")
+    recomputed = compare_traces(reference, aligned, window, config.similarity).with_input_identities(
+        {
+            "capture_json": identify_bytes(contents["capture.json"]),
+            "generated_pcapng": identify_bytes(contents["generated.pcapng"]),
+            "reference_pcapng": identify_bytes(contents["reference.pcapng"]),
+            "similarity_settings": similarity_settings_identity(config.similarity),
+        }
+    )
+    if recomputed != comparison:
+        raise ValueError("example similarity does not match recomputed four-method scores")
     records = _run_log(artifact_directory / "run.log")
     final_validation = _one_event(records, "final_validation_succeeded")
     completed = _one_event(records, "run_completed")
     created = _one_event(records, "capture_project_created")
-    families = {cast(str, item["family"]) for item in cast(list[dict[str, object]], checkpoint_document["population"])}
+    families = {candidate.family for candidate in checkpoint.population}
     if families != set(_FAMILIES):
         raise ValueError("example checkpoint does not contain all three families")
-    if cast(str, final_validation["family"]) != best.family or completed["family"] != best.family:
+    if (
+        cast(str, final_validation["family"]) != best.family
+        or completed["family"] != best.family
+        or final_validation.get("fitness") != winner.fitness
+        or final_validation.get("seed") != best.final_seed
+    ):
         raise ValueError("example winner family does not match retained artifacts")
     result: dict[str, object] = {
         "aggregate_score": comparison.aggregate_score,
         "enabled_families": list(config.models.enabled),
         "generated_packet_count": len(generated),
         "method_scores": {name: comparison.methods[name].score for name in _METHOD_NAMES},
-        "observation_window_seconds": comparison.observation_window_seconds,
+        "observation_window_seconds": window,
         "reference_packet_count": len(reference),
         "selection_fitness": cast(float, final_validation["fitness"]),
         "winner_family": best.family,
@@ -342,7 +423,24 @@ def _cleanup_inventory(repository: Path, project_name: str) -> dict[str, list[st
     }
 
 
-def build_evidence(repository: Path, artifact_directory: Path, *, source_commit: str) -> dict[str, Any]:
+def _clean_source_record(repository: Path, source_commit: str) -> dict[str, object]:
+    if _git(repository, "rev-parse", "HEAD") != source_commit or _git(
+        repository, "status", "--porcelain", "--untracked-files=all"
+    ):
+        raise ValueError("example run must start from a clean checkout at the exact source commit")
+    return {
+        "source_clean": True,
+        "state_note": "checkout was clean at the recorded source commit before the run; retained evidence was added afterward",
+    }
+
+
+def build_evidence(
+    repository: Path,
+    artifact_directory: Path,
+    *,
+    source_commit: str,
+    source_record: Mapping[str, object],
+) -> dict[str, Any]:
     source_tree = _git(repository, "rev-parse", f"{source_commit}^{{tree}}")
     source_config = subprocess.run(
         ("git", "show", f"{source_commit}:examples/scientific_stack/experiment.toml"),
@@ -357,7 +455,7 @@ def build_evidence(repository: Path, artifact_directory: Path, *, source_commit:
     cleanup = _cleanup_inventory(repository, project_name)
     if any(cleanup.values()):
         raise ValueError("example run cleanup label inventory is not empty")
-    config = load_experiment(CONFIG_PATH)
+    config = load_experiment(repository / _CONFIG_RELATIVE)
     capture_environment = _one_event(_run_log(artifact_directory / "run.log"), "capture_environment_identity")
     evidence: dict[str, Any] = {
         "artifacts": {name: _identity(artifact_directory / name) for name in _ARTIFACT_NAMES},
@@ -408,11 +506,7 @@ def build_evidence(repository: Path, artifact_directory: Path, *, source_commit:
                 "sha256": hashlib.sha256(source_config).hexdigest(),
                 "size": len(source_config),
             },
-            "source_clean": False,
-            "state_note": (
-                "production, config, and lock bytes matched the recorded commit; "
-                "documentation and evidence changes were uncommitted"
-            ),
+            **source_record,
             "tree": source_tree,
             "uv_lock_identity": {"sha256": hashlib.sha256(source_lock).hexdigest(), "size": len(source_lock)},
         },
@@ -451,7 +545,7 @@ def validate_evidence(evidence: Mapping[str, object], *, repository_root: Path =
             "sha256": hashlib.sha256(source_config).hexdigest(),
             "size": len(source_config),
         }
-        or source_config != CONFIG_PATH.read_bytes()
+        or source_config != (root / _CONFIG_RELATIVE).read_bytes()
     ):
         raise ValueError("example-run config identity does not match source and checked bytes")
     if (
@@ -480,7 +574,7 @@ def validate_evidence(evidence: Mapping[str, object], *, repository_root: Path =
         "volumes": [],
     }:
         raise ValueError("example-run cleanup inventory is not the retained empty label result")
-    config = load_experiment(CONFIG_PATH)
+    config = load_experiment(root / _CONFIG_RELATIVE)
     if (
         tuple(config.models.enabled) != _FAMILIES
         or tuple(model.execution.target_argv) != config.target.argv
@@ -503,13 +597,19 @@ def parse_and_validate_evidence(content: bytes, *, repository_root: Path = REPOS
 def _record(repository: Path, run_directory: Path, source_commit: str) -> None:
     if ARTIFACT_DIRECTORY.exists() or EVIDENCE_PATH.exists():
         raise ValueError("refusing to replace existing checked example-run evidence")
+    source_record = _clean_source_record(repository, source_commit)
     missing = [name for name in _ARTIFACT_NAMES if not (run_directory / name).is_file()]
     if missing:
         raise ValueError("example run is missing artifacts: " + ", ".join(missing))
     ARTIFACT_DIRECTORY.mkdir(parents=True)
     for name in _ARTIFACT_NAMES:
         shutil.copy2(run_directory / name, ARTIFACT_DIRECTORY / name)
-    evidence = build_evidence(repository, ARTIFACT_DIRECTORY, source_commit=source_commit)
+    evidence = build_evidence(
+        repository,
+        ARTIFACT_DIRECTORY,
+        source_commit=source_commit,
+        source_record=source_record,
+    )
     EVIDENCE_PATH.write_bytes(canonical_json_bytes(evidence))
 
 

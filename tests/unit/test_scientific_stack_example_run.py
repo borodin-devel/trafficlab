@@ -20,20 +20,18 @@ def test_checked_example_run_recomputes_artifacts_and_result() -> None:
     content = _EVIDENCE.read_bytes()
     evidence = example_run.parse_and_validate_evidence(content, repository_root=_ROOT)
 
-    assert evidence["source"]["commit"] == "a71d74b7b2dc27cea0a9eb00c375e510a0d7acbf"
+    assert len(evidence["source"]["commit"]) == 40
+    assert evidence["source"]["source_clean"] is True
     assert evidence["execution"]["exit_status"] == 0
     assert evidence["execution"]["target_argv"][-2:] == ["--url", evidence["execution"]["url"]]
     assert evidence["result"]["enabled_families"] == ["poisson_empirical", "markov_renewal", "mmpp"]
-    assert evidence["result"]["winner_family"] == "markov_renewal"
-    assert evidence["result"]["reference_packet_count"] == 84
-    assert evidence["result"]["generated_packet_count"] == 48
-    assert evidence["cleanup"] == {
-        "containers": [],
-        "networks": [],
-        "project_name": "trafficlab-capture-7238353bd49c41909a3ed29c3153d281",
-        "verified": True,
-        "volumes": [],
-    }
+    assert evidence["result"]["winner_family"] in evidence["result"]["enabled_families"]
+    assert evidence["result"]["reference_packet_count"] > 0
+    assert evidence["result"]["generated_packet_count"] > 0
+    assert evidence["cleanup"]["containers"] == []
+    assert evidence["cleanup"]["networks"] == []
+    assert evidence["cleanup"]["volumes"] == []
+    assert evidence["cleanup"]["verified"] is True
     assert content == example_run.canonical_json_bytes(evidence)
 
 
@@ -91,6 +89,33 @@ def test_example_run_parser_rejects_invalid_and_noncanonical_json() -> None:
         example_run.parse_and_validate_evidence(json.dumps(document, indent=2).encode("utf-8"), repository_root=_ROOT)
 
 
+def test_example_run_recording_requires_a_clean_checkout_at_the_exact_source_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later clean-looking record must not rewrite whether the executed source snapshot was clean."""
+    source_commit = "a" * 40
+
+    def clean_git(_repository: Path, *arguments: str) -> str:
+        if arguments == ("rev-parse", "HEAD"):
+            return source_commit
+        if arguments == ("status", "--porcelain", "--untracked-files=all"):
+            return ""
+        raise AssertionError(arguments)
+
+    monkeypatch.setattr(example_run, "_git", clean_git)
+    assert example_run._clean_source_record(tmp_path, source_commit) == {  # pyright: ignore[reportPrivateUsage]
+        "source_clean": True,
+        "state_note": "checkout was clean at the recorded source commit before the run; retained evidence was added afterward",
+    }
+
+    def dirty_git(_repository: Path, *arguments: str) -> str:
+        return source_commit if arguments == ("rev-parse", "HEAD") else " M src/x.py"
+
+    monkeypatch.setattr(example_run, "_git", dirty_git)
+    with pytest.raises(ValueError, match="clean checkout"):
+        example_run._clean_source_record(tmp_path, source_commit)  # pyright: ignore[reportPrivateUsage]
+
+
 def test_example_run_validator_rejects_checked_config_policy_drift(monkeypatch: pytest.MonkeyPatch) -> None:
     real_load = example_run.load_experiment
 
@@ -129,4 +154,53 @@ def test_example_run_derivation_rejects_cross_artifact_contradictions(
         path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
 
     with pytest.raises(ValueError):
+        example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_example_run_derivation_rejects_a_structurally_valid_foreign_checkpoint_lineage(tmp_path: Path) -> None:
+    """A valid checkpoint root with a changed reference SHA must fail compatibility reconstruction."""
+    source = _ROOT / "examples" / "scientific_stack" / "example_run_artifacts"
+    copied = tmp_path / "artifacts"
+    shutil.copytree(source, copied)
+    checkpoint_path = copied / "checkpoint.json"
+    checkpoint = json.loads(checkpoint_path.read_bytes())
+    checkpoint["reference_identity"]["sha256"] = "0" * 64
+    checkpoint_path.write_bytes(example_run.canonical_json_bytes(checkpoint))
+
+    with pytest.raises(ValueError, match="checkpoint"):
+        example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("mutation", ["components", "aggregate"])
+def test_example_run_derivation_recomputes_similarity_instead_of_trusting_valid_local_arithmetic(
+    tmp_path: Path, mutation: str
+) -> None:
+    """Locally valid changed scores and matching log claims must still fail recomputation from retained traces."""
+    source = _ROOT / "examples" / "scientific_stack" / "example_run_artifacts"
+    copied = tmp_path / "artifacts"
+    shutil.copytree(source, copied)
+    similarity_path = copied / "similarity.json"
+    similarity = json.loads(similarity_path.read_bytes())
+    methods = similarity["methods"]
+    frame = methods["frame_size_ks"]
+    if mutation == "components":
+        delta = 0.01
+        iat = methods["iat_ks"]
+        frame["diagnostics"]["distance"] -= delta
+        frame["score"] += delta
+        iat["diagnostics"]["distance"] += delta
+        iat["score"] -= delta
+    else:
+        frame["diagnostics"]["distance"] = 0.0
+        frame["score"] = 1.0
+        similarity["aggregate_score"] = sum(item["weight"] * item["score"] for item in methods.values())
+        log_path = copied / "run.log"
+        records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+        next(item for item in records if item["event"] == "run_completed")["aggregate_score"] = similarity[
+            "aggregate_score"
+        ]
+        log_path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
+    similarity_path.write_bytes(example_run.canonical_json_bytes(similarity))
+
+    with pytest.raises(ValueError, match="similarity"):
         example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]

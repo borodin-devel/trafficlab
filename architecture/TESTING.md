@@ -760,9 +760,11 @@ raw arithmetic, source-file identities, host/runtime fields, and `uv.lock`; it
 does not replace a required fresh measurement run.
 
 Source reduction is recomputed from full Git identities and explicit qualified
-function inventories. The NumPy category counts unique executable statement
-lines beneath named Python `for`/`while` loop bodies before and after the
-migration and requires at least 25% reduction. The artifact category uses one
+function inventories. The NumPy category counts the unique `ast.stmt` lines in
+named Python `for`/`while` loop bodies together with every `ast.stmt` line in
+the explicitly named custom trace, model, and similarity validation functions;
+each function records whether it contributes loop-body lines, straight-line
+validation, or both. It requires at least 25% reduction. The artifact category uses one
 unique AST executable-statement-line metric for all three disjoint strict-schema
 consolidation inventories and requires at least 30% aggregate reduction; a path
 may not occur in more than one phase. Tests and generated evidence are excluded

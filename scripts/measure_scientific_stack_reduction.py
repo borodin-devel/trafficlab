@@ -18,28 +18,97 @@ OUTPUT = REPOSITORY / "examples" / "scientific_stack" / "code_reduction.json"
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 
 _NUMPY_BASELINE = "2d1a2dafd3b31787d4b48e4bce508492b89b6c7c"
-_NUMPY_AFTER = "b32bc74d8b6778cddbcb863f54e8ff8d56f936c4"
-_NUMPY_BEFORE_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
-    "src/trafficlab/trace.py": ("normalize_reference", "align_generated"),
+_NUMPY_AFTER = "6248c24eea97e280d3f1687e5c82124f7008dfd0"
+_NUMPY_BEFORE_LOOP_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
     "src/trafficlab/models/common.py": ("MarkDistribution.from_reference",),
-    "src/trafficlab/models/markov_renewal.py": ("type7_quantile", "_fit_events"),
+    "src/trafficlab/models/markov_renewal.py": ("_fit_events",),
     "src/trafficlab/similarity/ks.py": ("exact_ecdf_distance",),
     "src/trafficlab/similarity/autocorrelation.py": ("sample_autocorrelation",),
     "src/trafficlab/similarity/multiscale.py": ("_binned_features",),
 }
-_NUMPY_AFTER_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
-    "src/trafficlab/trace.py": ("normalize_reference", "align_generated"),
+_NUMPY_BEFORE_VALIDATION_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
+    "src/trafficlab/trace.py": (
+        "TraceEvent.__post_init__",
+        "_validated_events",
+        "normalize_reference",
+        "align_generated",
+    ),
+    "src/trafficlab/models/common.py": (
+        "_validate_frame_length",
+        "_validate_canonical_events",
+        "GenerationResult.__post_init__",
+        "validate_fit_inputs",
+        "MarkDistribution.__post_init__",
+    ),
+    "src/trafficlab/models/markov_renewal.py": ("type7_quantile", "_validate_repair_reference"),
+    "src/trafficlab/similarity/ks.py": (
+        "_validated_numeric_sample",
+        "_validated_trace",
+        "_validate_diagnostic_quantile",
+    ),
+    "src/trafficlab/similarity/autocorrelation.py": (
+        "_validated_numeric_values",
+        "_validated_lag",
+        "_validated_lags",
+        "_validated_weights",
+        "_validated_trace",
+        "_validate_lags_fit_samples",
+    ),
+    "src/trafficlab/similarity/multiscale.py": (
+        "_validated_cells",
+        "_validated_weights",
+        "_validated_widths_and_bin_counts",
+        "_validated_trace",
+    ),
+}
+_NUMPY_AFTER_LOOP_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
     "src/trafficlab/models/common.py": ("MarkDistribution.from_trace",),
+    "src/trafficlab/models/markov_renewal.py": (
+        "_fit_trace",
+        "encode_markov_states",
+        "transition_count_matrix",
+    ),
+    "src/trafficlab/similarity/ks.py": ("_ks_statistic",),
+    "src/trafficlab/similarity/autocorrelation.py": ("_sample_autocorrelations",),
+    "src/trafficlab/similarity/multiscale.py": ("_binned_trace_features",),
+}
+_NUMPY_AFTER_VALIDATION_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
+    "src/trafficlab/trace.py": (
+        "TrafficTrace.__post_init__",
+        "validate_traffic_trace",
+        "normalize_reference",
+        "align_generated",
+    ),
+    "src/trafficlab/models/common.py": (
+        "_validate_frame_length",
+        "GenerationResult.__post_init__",
+        "validate_fit_inputs",
+        "MarkDistribution.__post_init__",
+        "make_generation_trace",
+    ),
     "src/trafficlab/models/markov_renewal.py": (
         "type7_boundaries",
         "encode_markov_states",
         "transition_count_matrix",
-        "_fit_trace",
     ),
-    "src/trafficlab/similarity/ks.py": ("_ks_statistic",),
-    "src/trafficlab/similarity/autocorrelation.py": ("sample_autocorrelation",),
-    "src/trafficlab/similarity/multiscale.py": ("_binned_features",),
+    "src/trafficlab/similarity/ks.py": ("_validate_diagnostic_quantile",),
+    "src/trafficlab/similarity/autocorrelation.py": (
+        "_validated_lag",
+        "_validated_lags",
+        "_validate_lags_fit_samples",
+    ),
+    "src/trafficlab/similarity/common.py": (
+        "validated_numeric_sample",
+        "validated_numeric_array",
+        "validated_weights",
+    ),
+    "src/trafficlab/similarity/multiscale.py": ("_validated_cells", "_validated_widths_and_bin_counts"),
 }
+
+_LOOP_AND_VALIDATION_DEFINITION = (
+    "unique ast.stmt lines in complete explicitly named migrated functions, including nested loop bodies and "
+    "straight-line custom validation"
+)
 
 _TASK5_BEFORE: Mapping[str, tuple[str, ...]] = {
     "src/trafficlab/comparison.py": (
@@ -202,6 +271,20 @@ def _git_source(repository: Path, revision: str, path: str) -> str:
     return completed.stdout
 
 
+def _full_revision(repository: Path, revision: str) -> str:
+    completed = subprocess.run(
+        ("git", "rev-parse", "--verify", f"{revision}^{{commit}}"),
+        cwd=repository,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    resolved = completed.stdout.strip()
+    if completed.returncode != 0 or _HEX40.fullmatch(resolved) is None:
+        raise ValueError(f"cannot resolve full Git revision {revision!r}")
+    return resolved
+
+
 def _statement_lines(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, ...]:
     return tuple(sorted({node.lineno for node in ast.walk(function) if isinstance(node, ast.stmt)}))
 
@@ -251,6 +334,79 @@ def _inventory(
     }
 
 
+def _loop_and_validation_inventory(
+    repository: Path,
+    revision: str,
+    *,
+    loop_paths: Mapping[str, tuple[str, ...]],
+    validation_paths: Mapping[str, tuple[str, ...]],
+) -> dict[str, object]:
+    """Count loop bodies plus every statement in explicit custom-validation functions."""
+    entries: list[dict[str, object]] = []
+    total_by_path: dict[str, set[int]] = {}
+    for path in sorted(set(loop_paths) | set(validation_paths)):
+        source = _git_source(repository, revision, path)
+        functions = _qualified_functions(ast.parse(source, filename=path))
+        loop_names = set(loop_paths.get(path, ()))
+        validation_names = set(validation_paths.get(path, ()))
+        missing = (loop_names | validation_names) - set(functions)
+        if missing:
+            raise ValueError(f"missing functions at {revision}:{path}: {', '.join(sorted(missing))}")
+        for name in sorted(loop_names | validation_names):
+            roles: list[str] = []
+            lines: set[int] = set()
+            if name in loop_names:
+                roles.append("loop_body")
+                lines.update(_loop_body_lines(functions[name]))
+            if name in validation_names:
+                roles.append("straight_line_validation")
+                lines.update(_statement_lines(functions[name]))
+            ordered_lines = tuple(sorted(lines))
+            total_by_path.setdefault(path, set()).update(ordered_lines)
+            entries.append(
+                {
+                    "executable_lines": list(ordered_lines),
+                    "function": name,
+                    "line_count": len(ordered_lines),
+                    "path": path,
+                    "roles": roles,
+                }
+            )
+    return {
+        "functions": entries,
+        "revision": revision,
+        "total_lines": sum(len(lines) for lines in total_by_path.values()),
+    }
+
+
+def _loop_and_validation_phase(
+    repository: Path,
+    *,
+    after_revision: str,
+) -> dict[str, object]:
+    before = _loop_and_validation_inventory(
+        repository,
+        _NUMPY_BASELINE,
+        loop_paths=_NUMPY_BEFORE_LOOP_FUNCTIONS,
+        validation_paths=_NUMPY_BEFORE_VALIDATION_FUNCTIONS,
+    )
+    after = _loop_and_validation_inventory(
+        repository,
+        after_revision,
+        loop_paths=_NUMPY_AFTER_LOOP_FUNCTIONS,
+        validation_paths=_NUMPY_AFTER_VALIDATION_FUNCTIONS,
+    )
+    return {
+        "after": after,
+        "after_lines": after["total_lines"],
+        "before": before,
+        "before_lines": before["total_lines"],
+        "measurement": "loop_and_validation_statements",
+        "measurement_definition": _LOOP_AND_VALIDATION_DEFINITION,
+        "name": "tasks_2_to_4_numpy_migration",
+    }
+
+
 def _phase(
     repository: Path,
     *,
@@ -288,17 +444,14 @@ def _category(name: str, threshold: float, phases: list[dict[str, object]]) -> d
     }
 
 
-def build_reduction_evidence(repository: Path = REPOSITORY) -> dict[str, Any]:
+def build_reduction_evidence(
+    repository: Path = REPOSITORY, *, numpy_after_revision: str = _NUMPY_AFTER
+) -> dict[str, Any]:
     """Recompute both acceptance categories from immutable Git revisions."""
     root = repository.resolve()
-    numerical = _phase(
+    numerical = _loop_and_validation_phase(
         root,
-        name="tasks_2_to_4_numpy_migration",
-        before_revision=_NUMPY_BASELINE,
-        after_revision=_NUMPY_AFTER,
-        before_paths={path: names for path, names in _NUMPY_BEFORE_FUNCTIONS.items()},
-        after_paths={path: names for path, names in _NUMPY_AFTER_FUNCTIONS.items()},
-        measurement="loop_body_statements",
+        after_revision=_full_revision(root, numpy_after_revision),
     )
     task_5 = _phase(
         root,
@@ -357,7 +510,7 @@ def build_reduction_evidence(repository: Path = REPOSITORY) -> dict[str, Any]:
     return evidence
 
 
-def _inventory_total(side: Mapping[str, object]) -> int:
+def _inventory_total(side: Mapping[str, object], *, require_roles: bool = False) -> int:
     functions = cast(list[dict[str, object]], side.get("functions"))
     by_path: dict[str, set[int]] = {}
     previous: tuple[str, str] | None = None
@@ -380,6 +533,15 @@ def _inventory_total(side: Mapping[str, object]) -> int:
             raise ValueError("function inventory has invalid executable lines")
         if item.get("line_count") != len(lines):
             raise ValueError("function inventory line count does not match its lines")
+        roles = item.get("roles")
+        if require_roles and roles not in (
+            ["loop_body"],
+            ["straight_line_validation"],
+            ["loop_body", "straight_line_validation"],
+        ):
+            raise ValueError("loop-and-validation inventory has invalid function roles")
+        if not require_roles and roles is not None:
+            raise ValueError("artifact inventory must not carry loop-and-validation roles")
         by_path.setdefault(path, set()).update(typed_lines)
     revision = side.get("revision")
     if not isinstance(revision, str) or _HEX40.fullmatch(revision) is None:
@@ -409,17 +571,20 @@ def validate_reduction_evidence(evidence: Mapping[str, object]) -> None:
         ):
             raise ValueError("artifact phases must use the same AST statement-line metric")
         if category["name"] == "numpy_loop_validation" and any(
-            phase.get("measurement") != "loop_body_statements" for phase in phases
+            phase.get("measurement") != "loop_and_validation_statements"
+            or phase.get("measurement_definition") != _LOOP_AND_VALIDATION_DEFINITION
+            for phase in phases
         ):
-            raise ValueError("NumPy phase must use the declared loop-body statement metric")
+            raise ValueError("NumPy phase must use the complete loop-and-validation statement metric")
         before_total = 0
         after_total = 0
         phase_paths: list[set[str]] = []
         for phase in phases:
             before = cast(dict[str, object], phase.get("before"))
             after = cast(dict[str, object], phase.get("after"))
-            before_lines = _inventory_total(before)
-            after_lines = _inventory_total(after)
+            numerical = category["name"] == "numpy_loop_validation"
+            before_lines = _inventory_total(before, require_roles=numerical)
+            after_lines = _inventory_total(after, require_roles=numerical)
             if phase.get("before_lines") != before_lines:
                 raise ValueError("phase before total does not match inventory")
             if phase.get("after_lines") != after_lines:
@@ -460,11 +625,36 @@ def canonical_json_bytes(document: Mapping[str, object]) -> bytes:
     return (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
 
 
+def _stored_numpy_after_revision(content: bytes) -> str:
+    try:
+        document = cast(dict[str, object], json.loads(content))
+        categories = cast(list[dict[str, object]], document["categories"])
+        phases = cast(list[dict[str, object]], categories[0]["phases"])
+        after = cast(dict[str, object], phases[0]["after"])
+        revision = cast(str, after["revision"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError("stored reduction evidence has no readable NumPy after revision") from error
+    if _HEX40.fullmatch(revision) is None:
+        raise ValueError("stored reduction evidence NumPy after revision is not a full Git identity")
+    return revision
+
+
+def _verify_numpy_sources_match_revision(repository: Path, revision: str) -> None:
+    for path in sorted(set(_NUMPY_AFTER_LOOP_FUNCTIONS) | set(_NUMPY_AFTER_VALIDATION_FUNCTIONS)):
+        try:
+            current = (repository / path).read_text(encoding="utf-8")
+        except OSError as error:
+            raise ValueError(f"cannot read current measured source {path}: {error}") from error
+        if current != _git_source(repository, revision, path):
+            raise ValueError(f"current measured source differs from NumPy after revision: {path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--repository", type=Path, default=REPOSITORY)
+    parser.add_argument("--numpy-after", help="full source commit for the post-migration inventory")
     return parser
 
 
@@ -473,7 +663,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     repository = cast(Path, arguments.repository)
     output = cast(Path, arguments.output)
     try:
-        expected = canonical_json_bytes(build_reduction_evidence(repository))
+        requested_revision = cast(str | None, arguments.numpy_after)
+        if cast(bool, arguments.check) and requested_revision is None:
+            requested_revision = _stored_numpy_after_revision(output.read_bytes())
+        after_revision = _full_revision(repository, requested_revision or _NUMPY_AFTER)
+        _verify_numpy_sources_match_revision(repository.resolve(), after_revision)
+        expected = canonical_json_bytes(build_reduction_evidence(repository, numpy_after_revision=after_revision))
         if cast(bool, arguments.check):
             if output.read_bytes() != expected:
                 print(f"scientific-stack-reduction: stale evidence at {output}", file=sys.stderr)
