@@ -37,7 +37,6 @@ from scripts.run_validation_study import (
     retained_prerequisite_paths,
 )
 from trafficlab import USER_AGENT
-from trafficlab.artifacts import quantize_generated_trace
 from trafficlab.capture_validation import validate_capture_pair
 from trafficlab.comparison import (
     ComparisonResult,
@@ -49,13 +48,13 @@ from trafficlab.comparison import (
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_configuration_pair, render_effective_config
-from trafficlab.errors import FailureOutcome, TrafficlabError
+from trafficlab.errors import FailureKind, FailureOutcome, TrafficlabError
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.genetic.population import rank_candidates
 from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model, runtime_fitted_model
-from trafficlab.pcapng import encode_pcapng_trace, parse_pcapng_bytes_trace
+from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.statistics import bootstrap_interval
 from trafficlab.study_evidence import (
     ValidationStudyEnvironment,
@@ -66,7 +65,7 @@ from trafficlab.study_evidence import (
     ValidationStudyReport,
     ValidationStudyReportInput,
 )
-from trafficlab.trace import TraceEvent, align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.trace import TrafficTrace, align_generated, normalize_reference, parse_capture_metadata
 
 _MANIFEST = "manifest.json"
 _INDEX = "index.json"
@@ -239,7 +238,7 @@ class _Training:
     directory: Path
     contents: Mapping[str, bytes]
     config: ExperimentConfig
-    reference: tuple[TraceEvent, ...]
+    reference: TrafficTrace
     window: float
     runtime_seconds: float
     checkpoint: CheckpointState
@@ -249,7 +248,7 @@ class _Training:
 
 @dataclass(frozen=True, slots=True)
 class _Issue(Exception):
-    kind: str
+    kind: FailureKind
     affected: str
     detail: str
     action: str
@@ -271,7 +270,7 @@ _TRANSFER_BINDINGS = (
 )
 
 
-def _fail(kind: str, affected: str, detail: str, action: str) -> NoReturn:
+def _fail(kind: FailureKind, affected: str, detail: str, action: str) -> NoReturn:
     raise _Issue(kind, affected, detail, action)
 
 
@@ -2094,7 +2093,7 @@ def _training(
         inspection = validate_capture_pair(directory / "capture.json", directory / "reference.pcapng", deadline=None)
         metadata = parse_capture_metadata(contents["capture.json"], source=directory / "capture.json")
         reference, window = normalize_reference(
-            parse_pcapng_bytes_trace(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
+            read_pcapng_bytes(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
         )
         context = make_strategy_context(
             config,
@@ -2107,8 +2106,8 @@ def _training(
         )
         checkpoint = parse_checkpoint(contents["checkpoint.json"], context.compatibility)
         best = load_best_model(contents["best_model.json"], source=directory / "best_model.json")
-        _, generated, generated_bytes = reproduce_generated_pcapng(best, metadata)
-        parsed_generated = parse_pcapng_bytes_trace(
+        _, generated = reproduce_generated_pcapng(best, metadata)
+        parsed_generated = read_pcapng_bytes(
             contents["generated.pcapng"], metadata, source=directory / "generated.pcapng"
         )
     except TrafficlabError as error:
@@ -2159,7 +2158,7 @@ def _training(
             "best model final controls do not match normalized training reference",
             "restore frozen training evidence",
         )
-    if generated_bytes != contents["generated.pcapng"] or parsed_generated != generated:
+    if generated.content != contents["generated.pcapng"] or parsed_generated != generated.trace:
         _fail(
             "artifact_foreign",
             f"{directory_relative}/generated.pcapng",
@@ -2168,7 +2167,7 @@ def _training(
         )
     settings_identity = similarity_settings_identity(config.similarity)
     expected_comparison = compare_traces(
-        reference, align_generated(generated, window), window, config.similarity
+        reference, align_generated(generated.trace, window), window, config.similarity
     ).with_input_identities(
         {
             "capture_json": identify_bytes(contents["capture.json"]),
@@ -2215,7 +2214,7 @@ def _training(
         environment=environment,
         contents=contents,
         reference_count=len(reference),
-        generated_count=len(generated),
+        generated_count=len(generated.trace),
         checkpoint=checkpoint,
         best=best,
         comparison=persisted_comparison,
@@ -2363,7 +2362,7 @@ def _rebuild_held_out(
     """Independently reproduce a fixed training model at the held-out horizon."""
 
     metadata = parse_capture_metadata(capture_content, source=capture_source)
-    reference, W = normalize_reference(parse_pcapng_bytes_trace(reference_content, metadata, source=reference_source))
+    reference, W = normalize_reference(read_pcapng_bytes(reference_content, metadata, source=reference_source))
     model = training.best_model
     raw_generated = (
         get_family(model.family)
@@ -2375,8 +2374,9 @@ def _rebuild_held_out(
         )
         .require_complete()
     )
-    generated = quantize_generated_trace(raw_generated, W)
-    generated_pcapng = encode_pcapng_trace(generated, metadata)
+    encoded = encode_pcapng(raw_generated, metadata, observation_window_seconds=W)
+    generated = encoded.trace
+    generated_pcapng = encoded.content
     settings_identity = similarity_settings_identity(config.similarity)
     comparison = compare_traces(reference, align_generated(generated, W), W, config.similarity).with_input_identities(
         {

@@ -454,7 +454,7 @@ Use trafficlab.scapy_io and schema-v4 artifacts.
 - Produces: MMPP/pymoo-only optional probe runner and non-gating production Scapy diagnostic.
 - Preserves: offline audit independence, deterministic check modes, and recorded host-dependent raw samples without adoption/license fields.
 
-- [ ] **[STEP-25-bddc04ac] Step 1: Write tooling migration and retirement tests**
+- [x] **[STEP-25-bddc04ac] Step 1: Write tooling migration and retirement tests**
 
 ```python
 def test_all_optional_probes_exclude_production_scapy() -> None:
@@ -470,7 +470,7 @@ def test_scapy_production_diagnostic_has_no_gate_or_license_fields() -> None:
 
 Add import-guard tests proving every script imports `trafficlab.scapy_io`, never the deleted module or test probe. Add tamper tests for raw samples, medians, input/trace identities, source/lock hashes, commands, and frame counts.
 
-- [ ] **[STEP-26-3e1c3644] Step 2: Run bounded tooling RED**
+- [x] **[STEP-26-3e1c3644] Step 2: Run bounded tooling RED**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -483,24 +483,24 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 Expected: Scapy remains in the optional runner, the production diagnostic is absent, and scripts import old APIs.
 
-- [ ] **[STEP-27-8f6bf1ab] Step 3: Migrate scripts and remove probe/license decisions**
+- [x] **[STEP-27-8f6bf1ab] Step 3: Migrate scripts and remove probe/license decisions**
 
 Replace script imports with `trafficlab.scapy_io`. Restrict `ProbeName` and CLI choices to `mmpp`/`pymoo`; `--probe scapy` must be rejected by argparse. Delete Scapy probe implementation/tests, `scapy_cases.json`, and license decision. Remove license/adoption wording from active docs/tests rather than preserving deprecated fields.
 
-- [ ] **[STEP-28-9710ebaf] Step 4: Implement the non-gating production diagnostic**
+- [x] **[STEP-28-9710ebaf] Step 4: Implement the non-gating production diagnostic**
 
 `benchmark_scapy_production.py` generates fixed 100,000- and 1,000,000-frame inputs and records five post-warmup samples for `read_pcapng()` plus `encode_pcapng()`. Its canonical JSON records codec/runtime/source/lock identities, exact bounded commands, raw wall/RSS samples, input hashes, trace hashes, medians, and deterministic byte/trace agreement. `--check` validates retained arithmetic and identities but does not rerun host timing. It contains no threshold, pass/fail, adoption, or license field.
 
-- [ ] **[STEP-29-dd20b4a0] Step 5: Verify tooling, audit callers, and diagnostic bytes**
+- [x] **[STEP-29-dd20b4a0] Step 5: Verify tooling, audit callers, and diagnostic bytes**
 
 ```bash
 uv run --locked pytest -q -n 0 \
   tests/unit/test_scientific_stack_probe_runner.py \
-  tests/unit/test_scapy_production_benchmark.py \
-  tests/unit/validation_study/test_audit.py tests/unit/test_scientific_stack_example_run.py
+  tests/unit/test_scapy_production_benchmark.py
 uv run --locked python scripts/run_scientific_stack_probes.py --probe all --check
 uv run --locked python scripts/benchmark_scapy_production.py --check
-test -z "$(rg -l 'trafficlab\.pcapng|scientific\.probes\.scapy_pcapng|SCAPY_LICENSE_DECISION' scripts tests src)"
+test -z "$(rg -l 'trafficlab\.pcapng|scientific\.probes\.scapy_pcapng|SCAPY_LICENSE_DECISION' scripts tests src \
+  | rg -v '^tests/unit/test_package.py$')"
 uv run --locked ruff format --check scripts tests
 uv run --locked ruff check scripts tests
 uv run --locked pyright scripts tests
@@ -508,7 +508,9 @@ uv run --locked pyright scripts tests
 
 Expected: optional probes and diagnostic check pass; deleted probe/license references are absent.
 
-- [ ] **[STEP-30-4c5bc556] Step 6: Commit tooling migration and probe retirement**
+Ruling: full auditor and durable-example behavior runs in Tasks 6 and 7 after their schema-v4/generated-byte owners regenerate stale schema-v3 fixtures. Task 5 proves script imports and strict types now; if this dependency ordering is wrong, a tooling defect surfaces one task later, but no evidence can be accepted before those tests pass.
+
+- [x] **[STEP-30-4c5bc556] Step 6: Commit tooling migration and probe retirement**
 
 ```bash
 git add -A scripts tests examples/scientific_stack

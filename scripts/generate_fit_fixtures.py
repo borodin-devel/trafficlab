@@ -18,12 +18,13 @@ from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
+from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.trace import (
     CaptureMetadata,
     Direction,
     TraceEvent,
+    TrafficTrace,
     normalize_reference,
     parse_capture_metadata,
     render_capture_metadata,
@@ -256,7 +257,7 @@ def _validate_fixture_tree(tree: dict[str, bytes], run_directory: Path) -> None:
             corrective_action="report the production effective-configuration codec defect",
         ) from error
     metadata = parse_capture_metadata(tree["capture.json"], source=Path("capture.json"))
-    parsed = parse_pcapng_bytes(tree["reference.pcapng"], metadata, source=Path("reference.pcapng"))
+    parsed = read_pcapng_bytes(tree["reference.pcapng"], metadata, source=Path("reference.pcapng"))
     reference, window = normalize_reference(parsed)
     context = make_strategy_context(
         config,
@@ -293,7 +294,11 @@ def generate_fixture_tree() -> dict[str, bytes]:
     config = _fixture_config()
     experiment_content = render_effective_config(config)
     capture_content = render_capture_metadata(_METADATA)
-    reference_content = encode_pcapng(_REFERENCE_EVENTS, _METADATA)
+    reference_content = encode_pcapng(
+        TrafficTrace.from_events(_REFERENCE_EVENTS),
+        _METADATA,
+        observation_window_seconds=_REFERENCE_EVENTS[-1].timestamp,
+    ).content
     with tempfile.TemporaryDirectory(prefix="trafficlab-fit-fixture-") as temporary:
         run_directory = Path(temporary) / "run"
         run_directory.mkdir()

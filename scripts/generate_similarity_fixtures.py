@@ -12,11 +12,12 @@ from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng, write_pcapng
+from trafficlab.scapy_io import encode_pcapng, read_pcapng
 from trafficlab.trace import (
     CaptureMetadata,
     Direction,
     TraceEvent,
+    TrafficTrace,
     load_capture_metadata,
     normalize_reference,
     render_capture_metadata,
@@ -56,7 +57,13 @@ def _build_temporary_run(root: Path) -> Path:
     generated_path = run_directory / "generated.pcapng"
     capture_content = render_capture_metadata(_METADATA)
     capture_path.write_bytes(capture_content)
-    write_pcapng(reference_path, _REFERENCE_EVENTS, _METADATA)
+    reference_path.write_bytes(
+        encode_pcapng(
+            TrafficTrace.from_events(_REFERENCE_EVENTS),
+            _METADATA,
+            observation_window_seconds=_REFERENCE_EVENTS[-1].timestamp,
+        ).content
+    )
     reference_content = reference_path.read_bytes()
     bounds = config.models.poisson_empirical
     if bounds is None:
@@ -79,8 +86,8 @@ def _build_temporary_run(root: Path) -> Path:
     model_content = render_best_model(model)
     model_path.write_bytes(model_content)
     loaded = load_best_model(model_content, source=model_path)
-    _, _, generated_content = reproduce_generated_pcapng(loaded, _METADATA, clock=lambda: 0.0)
-    generated_path.write_bytes(generated_content)
+    _, generated = reproduce_generated_pcapng(loaded, _METADATA, clock=lambda: 0.0)
+    generated_path.write_bytes(generated.content)
     compare_experiment(caller_path)
     return run_directory
 
@@ -92,7 +99,7 @@ def _validate_canonical_events(run_directory: Path) -> None:
             "canonical-trace and offline-similarity fixture metadata does not match the hand-listed metadata",
             corrective_action="restore the canonical-trace and offline-similarity fixture metadata and regenerate",
         )
-    parsed_reference = parse_pcapng(run_directory / "reference.pcapng", metadata)
+    parsed_reference = read_pcapng(run_directory / "reference.pcapng", metadata)
     if parsed_reference != _REFERENCE_EVENTS:
         raise TrafficlabError(
             "canonical-trace and offline-similarity fixture reference events do not match the hand-listed events",
@@ -100,8 +107,8 @@ def _validate_canonical_events(run_directory: Path) -> None:
         )
     model_path = run_directory / "best_model.json"
     model = load_best_model(model_path.read_bytes(), source=model_path)
-    _, _, expected_generated = reproduce_generated_pcapng(model, metadata, clock=lambda: 0.0)
-    if (run_directory / "generated.pcapng").read_bytes() != expected_generated:
+    _, expected_generated = reproduce_generated_pcapng(model, metadata, clock=lambda: 0.0)
+    if (run_directory / "generated.pcapng").read_bytes() != expected_generated.content:
         raise TrafficlabError(
             "canonical-trace and offline-similarity fixture generated capture is not owned by its retained fitted model",
             corrective_action="regenerate the canonical-trace and offline-similarity fixture model and generated capture together",

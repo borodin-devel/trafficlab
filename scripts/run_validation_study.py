@@ -33,7 +33,6 @@ from trafficlab.artifacts import (
     FileIdentity,
     _file_identity,  # pyright: ignore[reportPrivateUsage]
     append_run_log,
-    quantize_generated_trace,
 )
 from trafficlab.capture import CaptureResult, capture_experiment
 from trafficlab.capture_validation import validate_capture_pair
@@ -62,9 +61,9 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.pcapng import encode_pcapng_trace, parse_pcapng_bytes_trace
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
+from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.statistics import bootstrap_interval
 from trafficlab.study_evidence import (
     ValidationStudyPrerequisite,
@@ -171,7 +170,7 @@ def evaluate_study_held_out(
         },
     )
     metadata = parse_capture_metadata(capture_content, source=capture_source)
-    reference, W = normalize_reference(parse_pcapng_bytes_trace(reference_content, metadata, source=reference_source))
+    reference, W = normalize_reference(read_pcapng_bytes(reference_content, metadata, source=reference_source))
     raw_generated = (
         get_family(model.family)
         .generate(
@@ -182,8 +181,9 @@ def evaluate_study_held_out(
         )
         .require_complete()
     )
-    generated = quantize_generated_trace(raw_generated, W)
-    generated_pcapng = encode_pcapng_trace(generated, metadata)
+    encoded = encode_pcapng(raw_generated, metadata, observation_window_seconds=W)
+    generated = encoded.trace
+    generated_pcapng = encoded.content
     aligned = align_generated(generated, W)
     settings_identity = similarity_settings_identity(config.similarity)
     comparison = compare_traces(reference, aligned, W, config.similarity).with_input_identities(
@@ -1945,7 +1945,7 @@ def _load_persisted_run_evidence(spec: StudyRunSpec) -> _LoadedRunEvidence:
     reference_path = spec.run_directory / "reference.pcapng"
     inspection = validate_capture_pair(capture_path, reference_path, deadline=None)
     metadata = parse_capture_metadata(contents["capture.json"], source=capture_path)
-    captured = parse_pcapng_bytes_trace(contents["reference.pcapng"], metadata, source=reference_path)
+    captured = read_pcapng_bytes(contents["reference.pcapng"], metadata, source=reference_path)
     _require(inspection.packet_count == len(captured), "strict persisted reference packet counts must agree")
     reference, window = normalize_reference(captured)
 
@@ -1977,7 +1977,7 @@ def _load_persisted_run_evidence(spec: StudyRunSpec) -> _LoadedRunEvidence:
         "best_model.json must use its canonical production encoding",
     )
     generated_path = spec.run_directory / "generated.pcapng"
-    generated = parse_pcapng_bytes_trace(contents["generated.pcapng"], metadata, source=generated_path)
+    generated = read_pcapng_bytes(contents["generated.pcapng"], metadata, source=generated_path)
     similarity = parse_comparison_result(contents["similarity.json"])
     _require(
         contents["similarity.json"] == render_comparison_result(similarity),
@@ -2059,6 +2059,7 @@ def _trace_summary(
     byte_totals = _direction_values(trace, bytes_=True)
     multiscale = result.methods["multiscale_rate"].diagnostics
     _require_type(isinstance(multiscale, MultiscaleDiagnostic), "multiscale diagnostics must be typed")
+    multiscale = cast(MultiscaleDiagnostic, multiscale)
     scales: list[JsonValue] = []
     for value in multiscale.scales:
         scale = value.model_dump(mode="json")
@@ -2096,7 +2097,8 @@ def _comparison_equals_trial(comparison: ComparisonResult, trial: TrialResult) -
         and comparison.methods.keys() == tuple(method.name for method in trial.methods)
         and all(
             comparison.methods[method.name].score == method.score
-            and comparison.methods[method.name].diagnostics.model_dump(mode="json") == _thaw_json(method.diagnostics)
+            and comparison.methods[method.name].diagnostics.model_dump(mode="json")
+            == _thaw_json(cast(FrozenJsonValue, method.diagnostics))
             for method in trial.methods
         )
     )
@@ -2151,6 +2153,7 @@ def _require_published_lineage(
 ) -> None:
     input_identities = rebuilt.input_identities
     _require(input_identities is not None, "published comparison must carry exact input lineage")
+    assert input_identities is not None
     expected = {
         "capture_json": identify_bytes(artifact_contents["capture.json"]),
         "reference_pcapng": identify_bytes(artifact_contents["reference.pcapng"]),
@@ -2193,12 +2196,12 @@ def _reconstruct_science(
         _comparison_equals_trial(raw_comparison, fresh_simulation),
         "raw seed-97 comparison must equal the sole direct fresh simulation evaluation",
     )
-    quantized = quantize_generated_trace(raw_trial, window)
-    rendered = encode_pcapng_trace(quantized, evidence.metadata)
-    reparsed = parse_pcapng_bytes_trace(rendered, evidence.metadata, source=generated_path)
+    encoded = encode_pcapng(raw_trial, evidence.metadata, observation_window_seconds=window)
+    rendered = encoded.content
+    reparsed = encoded.trace
     _require(
-        rendered == evidence.contents["generated.pcapng"] and reparsed == quantized == evidence.generated,
-        "generated artifact must equal quantized and reparsed raw seed-97 events",
+        rendered == evidence.contents["generated.pcapng"] and reparsed == evidence.generated,
+        "generated artifact must equal reparsed Scapy seed-97 events",
     )
     aligned = align_generated(reparsed, window)
     settings_identity = similarity_settings_identity(evidence.config.similarity)
@@ -5944,7 +5947,7 @@ def _load_reference_trace(run_directory: Path) -> TrafficTrace:
     reference_path = run_directory / "reference.pcapng"
     validate_capture_pair(capture_path, reference_path, deadline=None)
     metadata = parse_capture_metadata(capture_path.read_bytes(), source=capture_path)
-    return parse_pcapng_bytes_trace(reference_path.read_bytes(), metadata, source=reference_path)
+    return read_pcapng_bytes(reference_path.read_bytes(), metadata, source=reference_path)
 
 
 def _validate_primary_derived_records(
@@ -6478,7 +6481,7 @@ def _audit_primary_record(
     document = _study_run_document(record)
     for name, value in expected.items():
         _require(document[name] == value, f"primary {name} must match locally reconstructed evidence")
-    return tuple(evidence.reference)
+    return evidence.reference
 
 
 def _audit_reproduction_record(
@@ -7646,7 +7649,7 @@ def _load_candidate_training(
     contents = _read_exact_artifact_set(directory)
     metadata = parse_capture_metadata(contents["capture.json"], source=directory / "capture.json")
     reference, window = normalize_reference(
-        parse_pcapng_bytes_trace(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
+        read_pcapng_bytes(contents["reference.pcapng"], metadata, source=directory / "reference.pcapng")
     )
     context = make_strategy_context(
         config,
@@ -7768,14 +7771,11 @@ def _candidate_score_mean(scores: Sequence[JsonObject]) -> JsonObject:
 def _candidate_sample_summary(values: Sequence[float], *, name: str) -> JsonObject:
     _require(len(values) == 3, f"{name} requires exactly three observations")
     _require(all(math.isfinite(value) and value >= 0.0 for value in values), f"{name} values must be finite")
-    return cast(
-        JsonObject,
-        {
-            "bootstrap": cast(JsonValue, bootstrap_interval(values, seed=_BOOTSTRAP_SEED).as_dict()),
-            "mean": fmean(values),
-            "sample_variance": variance(values),
-        },
-    )
+    return {
+        "bootstrap": cast(JsonValue, bootstrap_interval(values, seed=_BOOTSTRAP_SEED).as_dict()),
+        "mean": fmean(values),
+        "sample_variance": variance(values),
+    }
 
 
 def _candidate_winner_family(training: _CandidateTraining) -> FamilyName:

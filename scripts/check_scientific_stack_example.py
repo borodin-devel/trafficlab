@@ -50,9 +50,9 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.models.common import FamilyBounds
+from trafficlab.models.common import FamilyBounds, Genes
 from trafficlab.models.registry import get_family, load_best_model, make_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes_trace
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import align_generated, normalize_reference, parse_capture_metadata
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -346,13 +346,13 @@ def _derived_result(
     contents = {name: (artifact_directory / name).read_bytes() for name in _ARTIFACT_NAMES}
     capture_content = contents["capture.json"]
     metadata = parse_capture_metadata(capture_content, source=artifact_directory / "capture.json")
-    raw_reference = parse_pcapng_bytes_trace(
+    raw_reference = read_pcapng_bytes(
         contents["reference.pcapng"],
         metadata,
         source=artifact_directory / "reference.pcapng",
     )
     reference, window = normalize_reference(raw_reference)
-    generated = parse_pcapng_bytes_trace(
+    generated = read_pcapng_bytes(
         contents["generated.pcapng"],
         metadata,
         source=artifact_directory / "generated.pcapng",
@@ -401,7 +401,7 @@ def _derived_result(
         reconstructed_best = make_best_model(
             get_family(winner.family),
             reference,
-            winner.genes,
+            cast(Genes, winner.genes),
             reference_identity=identify_bytes(contents["reference.pcapng"]),
             capture_identity=identify_bytes(contents["capture.json"]),
             final_seed=config.run.final_seed,
@@ -414,12 +414,10 @@ def _derived_result(
     if reconstructed_best != best:
         raise ValueError("example fitted model does not match the retained reference and winner")
     try:
-        _raw_generated, rendered_generated, regenerated_content = reproduce_generated_pcapng(
-            best, metadata, clock=lambda: 0.0
-        )
+        _raw_generated, regenerated = reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
     except TrafficlabError as error:
         raise ValueError(f"example generated trace cannot be reconstructed: {error}") from error
-    if regenerated_content != contents["generated.pcapng"] or rendered_generated != generated:
+    if regenerated.content != contents["generated.pcapng"] or regenerated.trace != generated:
         raise ValueError("example generated trace does not match its best-model lineage")
     aligned = align_generated(generated, window)
     comparison = parse_comparison_result(contents["similarity.json"])

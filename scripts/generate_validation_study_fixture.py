@@ -28,9 +28,16 @@ from trafficlab.errors import TrafficlabError
 from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.strategy import run_strategy
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
-from trafficlab.trace import CaptureMetadata, TraceEvent, align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.trace import (
+    CaptureMetadata,
+    TraceEvent,
+    TrafficTrace,
+    align_generated,
+    normalize_reference,
+    parse_capture_metadata,
+)
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"
@@ -71,9 +78,18 @@ def _metadata() -> CaptureMetadata:
 
 
 def _base_events(metadata: CaptureMetadata) -> tuple[TraceEvent, ...]:
-    return parse_pcapng_bytes(
+    return read_pcapng_bytes(
         (FIT_FIXTURE / "reference.pcapng").read_bytes(), metadata, source=FIT_FIXTURE / "reference.pcapng"
-    )
+    ).to_events()
+
+
+def _encode_events(events: Sequence[TraceEvent], metadata: CaptureMetadata) -> bytes:
+    trace = TrafficTrace.from_events(events)
+    return encode_pcapng(
+        trace,
+        metadata,
+        observation_window_seconds=max(1.0, float(trace.timestamps[-1])),
+    ).content
 
 
 def _variant_events(events: Sequence[TraceEvent], *, variant: int) -> tuple[TraceEvent, ...]:
@@ -167,7 +183,7 @@ def _append_capture_log_lineage(
 
 def _checkpoint_fitness(files: Mapping[str, bytes], config: ExperimentConfig, metadata: CaptureMetadata) -> float:
     reference, window = normalize_reference(
-        parse_pcapng_bytes(files["reference.pcapng"], metadata, source=Path("reference.pcapng"))
+        read_pcapng_bytes(files["reference.pcapng"], metadata, source=Path("reference.pcapng"))
     )
     checkpoint = study.parse_checkpoint(  # pyright: ignore[reportPrivateUsage]
         files["checkpoint.json"],
@@ -289,7 +305,7 @@ def _write_training_tree(
     events: tuple[TraceEvent, ...],
     workload: str,
     repeat: int,
-) -> tuple[dict[str, object], dict[str, bytes], study.ComparisonResult, tuple[TraceEvent, ...], float]:
+) -> tuple[dict[str, object], dict[str, bytes], study.ComparisonResult, TrafficTrace, float]:
     directory_relative = f"training/{workload}/r{repeat}"
     experiment = render_effective_config(config)
     capture = (
@@ -300,7 +316,7 @@ def _write_training_tree(
         ).encode("utf-8")
         + b"\n"
     )
-    reference = encode_pcapng(events, metadata)
+    reference = _encode_events(events, metadata)
     with tempfile.TemporaryDirectory(prefix="trafficlab-validation-study-fixture-") as temporary:
         run_directory = Path(temporary) / "run"
         run_directory.mkdir()
@@ -312,21 +328,21 @@ def _write_training_tree(
         fit_experiment(Path("fixture-validation-study.toml"), dependencies=dependencies)
         best = (run_directory / "best_model.json").read_bytes()
         model = study.load_best_model(best, source=run_directory / "best_model.json")
-        _, generated, generated_bytes = reproduce_generated_pcapng(model, metadata)
+        _, generated = reproduce_generated_pcapng(model, metadata)
         parsed_reference, window = normalize_reference(
-            parse_pcapng_bytes(reference, metadata, source=Path("reference.pcapng"))
+            read_pcapng_bytes(reference, metadata, source=Path("reference.pcapng"))
         )
         comparison = compare_traces(
-            parsed_reference, align_generated(generated, window), window, config.similarity
+            parsed_reference, align_generated(generated.trace, window), window, config.similarity
         ).with_input_identities(
             {
                 "capture_json": identify_bytes(capture),
-                "generated_pcapng": identify_bytes(generated_bytes),
+                "generated_pcapng": identify_bytes(generated.content),
                 "reference_pcapng": identify_bytes(reference),
                 "similarity_settings": similarity_settings_identity(config.similarity),
             }
         )
-        (run_directory / "generated.pcapng").write_bytes(generated_bytes)
+        (run_directory / "generated.pcapng").write_bytes(generated.content)
         (run_directory / "similarity.json").write_bytes(render_comparison_result(comparison))
         (run_directory / "run.log").write_bytes(b"")
         checkpoint = cast(dict[str, object], json.loads((run_directory / "checkpoint.json").read_bytes()))
@@ -356,7 +372,7 @@ def _write_training_tree(
             {
                 "event": "generated_pcapng_published",
                 "observation_window_seconds": window,
-                "packet_count": len(generated),
+                "packet_count": len(generated.trace),
                 "seed": model.final_seed,
                 "stage": "generate",
             },
@@ -378,7 +394,7 @@ def _write_training_tree(
                 "event": "run_completed",
                 "family": model.family,
                 "fitness": fitness,
-                "generated_packet_count": len(generated),
+                "generated_packet_count": len(generated.trace),
                 "reference_packet_count": len(parsed_reference),
                 "stage": "run",
             },
@@ -441,7 +457,7 @@ def _write_held_out(
         ).encode("utf-8")
         + b"\n"
     )
-    reference = encode_pcapng(events, metadata)
+    reference = _encode_events(events, metadata)
     portable = _config_bytes(config, ".")
     realized = _config_bytes(config, f"/retained/{directory_relative}")
     evaluation = study.evaluate_study_held_out(
