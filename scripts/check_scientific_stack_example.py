@@ -296,21 +296,45 @@ def _matches_checked_configuration(
     """Require one relocation prefix while preserving every portable path meaning."""
     if len(snapshot.target.mounts) != len(checked.portable.target.mounts):
         return False
-    if checked.portable.run.directory.is_absolute():
-        return snapshot == checked.realized
+    portable_paths = (
+        checked.portable.run.directory,
+        *(mount.source for mount in checked.portable.target.mounts),
+    )
+    current_paths = (
+        checked.realized.run.directory,
+        *(mount.source for mount in checked.realized.target.mounts),
+    )
+    snapshot_paths = (
+        snapshot.run.directory,
+        *(mount.source for mount in snapshot.target.mounts),
+    )
     current_root = repository_root.resolve()
-    try:
-        run_suffix = checked.realized.run.directory.relative_to(current_root)
-    except ValueError:
-        return False
-    if not snapshot.run.directory.is_absolute():
-        return False
-    recorded_root = snapshot.run.directory
-    for _ in run_suffix.parts:
-        recorded_root = recorded_root.parent
-    if recorded_root / run_suffix != snapshot.run.directory:
-        return False
-    expected = realize_configuration(checked.portable, recorded_root / _CONFIG_RELATIVE.parent)
+    recorded_root: Path | None = None
+    for portable, current, retained in zip(portable_paths, current_paths, snapshot_paths, strict=True):
+        if portable.is_absolute():
+            if retained != portable:
+                return False
+            continue
+        try:
+            relative = current.relative_to(current_root)
+        except ValueError:
+            return False
+        if not retained.is_absolute():
+            return False
+        inferred_root = retained
+        for _ in relative.parts:
+            inferred_root = inferred_root.parent
+        if retained.relative_to(inferred_root) != relative:
+            return False
+        if recorded_root is None:
+            recorded_root = inferred_root
+        elif inferred_root != recorded_root:
+            return False
+    expected = (
+        checked.realized
+        if recorded_root is None
+        else realize_configuration(checked.portable, recorded_root / _CONFIG_RELATIVE.parent)
+    )
     return snapshot == expected
 
 

@@ -395,6 +395,63 @@ def test_example_run_configuration_comparison_preserves_absolute_portable_mounts
     )
 
 
+def test_example_run_configuration_comparison_relocates_relative_mount_with_absolute_run(tmp_path: Path) -> None:
+    config_path = _ROOT / "examples" / "scientific_stack" / "experiment.toml"
+    base = load_configuration_pair(config_path)
+    portable = base.portable.model_copy(
+        update={
+            "run": base.portable.run.model_copy(update={"directory": (tmp_path / "absolute-run").resolve()}),
+            "target": base.portable.target.model_copy(
+                update={"mounts": (MountConfig(source=Path("../../examples/data"), target="/input"),)}
+            ),
+        }
+    )
+    checked = ConfigurationPair(
+        portable=portable,
+        realized=realize_configuration(portable, config_path.parent.resolve()),
+    )
+    relocated = realize_configuration(
+        portable,
+        tmp_path / "relocated-checkout" / config_path.parent.relative_to(_ROOT),
+    )
+    assert checked.realized.run.directory == relocated.run.directory
+    assert checked.realized.target.mounts[0].source != relocated.target.mounts[0].source
+
+    assert example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
+        relocated,
+        checked,
+        repository_root=_ROOT,
+    )
+
+
+def test_example_run_configuration_comparison_rejects_relative_mount_escape(tmp_path: Path) -> None:
+    config_path = _ROOT / "examples" / "scientific_stack" / "experiment.toml"
+    base = load_configuration_pair(config_path)
+    portable = base.portable.model_copy(
+        update={
+            "target": base.portable.target.model_copy(
+                update={"mounts": (MountConfig(source=Path("../../../outside-input"), target="/input"),)}
+            )
+        }
+    )
+    checked = ConfigurationPair(
+        portable=portable,
+        realized=realize_configuration(portable, config_path.parent.resolve()),
+    )
+    relocated = realize_configuration(
+        portable,
+        tmp_path / "relocated-checkout" / config_path.parent.relative_to(_ROOT),
+    )
+    assert not checked.realized.target.mounts[0].source.is_relative_to(_ROOT)
+    assert not relocated.target.mounts[0].source.is_relative_to(tmp_path / "relocated-checkout")
+
+    assert not example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
+        relocated,
+        checked,
+        repository_root=_ROOT,
+    )
+
+
 @pytest.mark.parametrize("mutation", ["checked_outside_root", "relative_snapshot"])
 def test_example_run_configuration_comparison_rejects_paths_without_one_checkout_root(
     tmp_path: Path,
