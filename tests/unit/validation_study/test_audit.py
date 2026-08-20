@@ -4,6 +4,7 @@ import copy
 import fcntl
 import hashlib
 import json
+import math
 import os
 import shutil
 import socket
@@ -60,6 +61,13 @@ from trafficlab.trace import TraceEvent, normalize_reference, parse_capture_meta
 VALIDATION_STUDY_LOCAL_EXCLUDE_LOCK = Path("/tmp") / (
     f"trafficlab-validation-study-{hashlib.sha256(str(ROOT).encode('utf-8')).hexdigest()}.exclude.lock"
 )
+
+
+def test_auditor_sample_summary_rejects_wrong_cardinality_and_nonfinite_values() -> None:
+    with pytest.raises(auditor._Issue, match="requires finite observations"):  # pyright: ignore[reportPrivateUsage]
+        auditor._sample_summary([1.0, 2.0], name="runtime")  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(auditor._Issue, match="requires finite observations"):  # pyright: ignore[reportPrivateUsage]
+        auditor._sample_summary([1.0, math.nan, 3.0], name="runtime")  # pyright: ignore[reportPrivateUsage]
 
 
 def offline_published_study(repository_root: Path) -> tuple[Path, Path, Path]:

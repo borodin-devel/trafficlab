@@ -1441,6 +1441,25 @@ def test_median_quantile_and_descriptive_statistics_use_published_formulas() -> 
         )
 
 
+def test_candidate_sample_summary_retains_bootstrap_and_rejects_invalid_inputs() -> None:
+    summary = study._candidate_sample_summary(  # pyright: ignore[reportPrivateUsage]
+        [1.0, 2.0, 3.0], name="training runtime"
+    )
+    bootstrap = cast(dict[str, object], summary["bootstrap"])
+    assert summary["mean"] == 2.0
+    assert summary["sample_variance"] == 1.0
+    assert bootstrap["seed"] == 20_260_819
+    assert bootstrap["sample_size"] == 3
+    assert bootstrap["n_resamples"] == 10_000
+
+    with pytest.raises(ValueError, match="exactly three"):
+        study._candidate_sample_summary([1.0, 2.0], name="training runtime")  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(ValueError, match="finite"):
+        study._candidate_sample_summary(  # pyright: ignore[reportPrivateUsage]
+            [1.0, math.nan, 3.0], name="training runtime"
+        )
+
+
 def test_prerequisite_codec_round_trips_exact_canonical_schema(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()

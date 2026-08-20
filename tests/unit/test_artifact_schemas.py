@@ -6,6 +6,7 @@ import copy
 import json
 from pathlib import Path
 from types import MappingProxyType
+from typing import cast
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -15,6 +16,7 @@ from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
 from trafficlab.comparison import ComparisonResult, MethodComparison, MethodDiagnostic, parse_comparison_result
 from trafficlab.errors import FailureOutcomeRecord
 from trafficlab.models.registry import FamilyPayload
+from trafficlab.study_evidence import StudyBootstrapInterval
 
 _ROOT = Path(__file__).parents[2]
 _SIMILARITY_FIXTURE = Path(__file__).parents[2] / "examples" / "data" / "similarity.json"
@@ -197,3 +199,22 @@ def test_comparison_root_serializes_the_valid_prepublication_state() -> None:
     assert evaluated.model_dump(mode="json")["input_identities"] is None
     with pytest.raises(ValueError, match="identities are required"):
         evaluated.as_dict()
+
+
+def test_study_bootstrap_schema_rejects_changed_policy_and_inverted_bounds() -> None:
+    document = _checked_study_artifacts("report_inputs.json")[0]
+    report_inputs = cast(dict[str, object], document)
+    training = cast(list[dict[str, object]], report_inputs["training"])
+    runtime = cast(dict[str, object], training[0]["runtime_seconds"])
+    bootstrap = cast(dict[str, object], runtime["bootstrap"])
+
+    assert StudyBootstrapInterval.model_validate(bootstrap).confidence_level == 0.95
+    changed_confidence = copy.deepcopy(bootstrap)
+    changed_confidence["confidence_level"] = 0.9
+    with pytest.raises(ValidationError, match="confidence_level"):
+        StudyBootstrapInterval.model_validate(changed_confidence)
+
+    inverted = copy.deepcopy(bootstrap)
+    inverted["lower_bound"] = cast(float, bootstrap["upper_bound"]) + 1.0
+    with pytest.raises(ValidationError, match="lower_bound"):
+        StudyBootstrapInterval.model_validate(inverted)
