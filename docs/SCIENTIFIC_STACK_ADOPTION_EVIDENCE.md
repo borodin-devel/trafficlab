@@ -116,8 +116,8 @@ The bounded configuration-only production preflight completed with status zero
 and prepared `runs/scientific-stack`. A bounded real Docker/Internet
 `trafficlab run` then completed the full workflow with all three families in
 the checkpoint. It selected `markov_renewal`, reported selection fitness
-`0.712402`, parsed 84 reference packets, generated 48 packets, and published
-aggregate score `0.7303583634840887` with the exact nine documented run files.
+`0.672212`, parsed 81 reference packets, generated 25 packets, and published
+aggregate score `0.6516330819663915` with the exact nine documented run files.
 The owned Compose project had zero labeled containers, networks, or volumes
 afterward; the temporary exact capture-image tag was removed without global
 Docker cleanup.
@@ -126,12 +126,14 @@ Durable evidence is in
 [`example_run.json`](../examples/scientific_stack/example_run.json), with the
 nine exact companion artifacts under `example_run_artifacts/`. It records the
 actual bounded command, URL, resource limits, exit status, observed filesystem
-completion time and provenance, source commit/tree, dirty-state limitation,
+completion time and provenance, clean source commit/tree,
 lock/config/image identities, environment, every artifact hash/size, winner,
 all families, packet counts, aggregate/component scores, and empty exact-label
 cleanup inventory. `scripts/check_scientific_stack_example.py --check` strictly
-reparses the artifacts and recomputes every verifiable fact; it does not rebind
-the run to a later clean commit.
+reparses the artifacts, validates checkpoint compatibility/history/winner
+lineage, regenerates the final PCAPNG, aligns the generated trace, and recomputes
+all four component scores and the aggregate; it does not rebind the run to a
+later commit.
 
 ## Optional probe decisions
 
@@ -169,13 +171,14 @@ or a license determination.
 ## Real-program validation and audit
 
 The accepted replacement is
-`examples/validation_study/evidence/2026-08-20-stack-adoption-r4/`. It binds
-source commit `a71d74b7b2dc27cea0a9eb00c375e510a0d7acbf`, tree
-`0e11527885623448fb03604dbf9f6bb2b4634dfd`, schema 3, CPython 3.12.3,
+`examples/validation_study/evidence/2026-08-20-stack-adoption-r6/`. It binds
+source commit `bc7e0e99560d02091d363cb084dcb7e530ed5711`, tree
+`9d4ad17c1621e532e2e3a40a086a329fb1e41690`, schema 3, CPython 3.12.3,
 Docker 29.7.2, Compose 5.5.0, the exact image IDs, and the checked lock. Its
 manifest SHA-256 is
-`433ff85b1921051ea810f12bec034e57f0a41d71b13e56edc7f1f93bff5a296d`
-and lists 231 retained paths. The bundle retains nine real training captures,
+`881e9c90852d253a18d40de05c0eaa9953cdafc9783ed30f3f2375d101f0f281`
+and lists 231 retained paths (232 regular files totaling 66,955,094 bytes,
+including the manifest). The bundle retains nine real training captures,
 nine fixed-seed fresh simulations, three independent held-out captures,
 bootstrap summaries, prerequisite command evidence, lifecycle cleanup,
 lineage, and its manifest.
@@ -191,7 +194,12 @@ r3 was published under its then-current schema but was found to omit the
 required bootstrap records; its complete bytes were moved to ignored
 `preserved-published-nonfinal` study storage and were not committed. Producer,
 schema, auditor, fixtures, and documentation were corrected before the entirely
-fresh r4 attempt. No source, capture, or failed study ID was reused.
+fresh r4 attempt. r4 was accepted under its source but was replaced after the
+final whole-branch fixes; its bytes remain recoverable from Git history. r5
+failed before Docker work because a checkout-local Hypothesis cache was present.
+r6 then started from the clean final source with external Hypothesis storage.
+No source, capture, or failed study ID was reused. The accepted r21 predecessor
+remains byte-unchanged in the current tree.
 
 Acceptance requires a credential-free HTTPS prerequisite, real Docker capture,
 exclusive publication under a new study ID, and this detached audit shape:
@@ -201,7 +209,7 @@ UV_OFFLINE=1 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/2026-08-20-stack-adoption-r4/ \
+  examples/validation_study/evidence/2026-08-20-stack-adoption-r6/ \
   --repository .
 ```
 

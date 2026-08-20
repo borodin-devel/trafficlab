@@ -9,7 +9,7 @@ commit, endpoint, and prerequisite coordination have been explicitly approved.
 
 ## Accepted scientific-stack study
 
-[`evidence/2026-08-20-stack-adoption-r4/`](evidence/2026-08-20-stack-adoption-r4/)
+[`evidence/2026-08-20-stack-adoption-r6/`](evidence/2026-08-20-stack-adoption-r6/)
 is the accepted scientific-stack study. Its [report](REPORT.md), schema-3
 `index.json`, and schema-2 `manifest.json` are the navigation and integrity
 roots. The manifest binds 231 retained evidence paths and excludes only itself.
@@ -97,10 +97,12 @@ whole new ID.
 
 For scientific-stack adoption, r1 failed the strict clean-tree prerequisite,
 r2 failed final audit when Hypothesis created checkout-local constants, and r3
-was preserved as nonfinal after bootstrap evidence was found absent. r4 started
-from a new clean source snapshot with Hypothesis storage outside the checkout
-and includes independently audited bootstrap records. No failed ID or capture
-was reused.
+was preserved as nonfinal after bootstrap evidence was found absent. r4 was the
+first bootstrap-complete accepted bundle and remains recoverable from Git
+history. The final-review replacement attempt r5 failed before Docker work
+because a checkout-local Hypothesis cache was present. r6 started from a new
+clean source snapshot with Hypothesis storage outside the checkout and replaced
+r4 in the current tree. No failed ID or capture was reused.
 
 ## Candidate audit and exclusive publication
 

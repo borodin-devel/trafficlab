@@ -65,7 +65,8 @@ def test_reduction_inventory_recomputes_exact_historical_gates() -> None:
 def test_checked_reduction_evidence_is_exact_and_fail_closed() -> None:
     """A stale stored percentage must not pass when its function inventory no longer recomputes."""
     content = _EVIDENCE.read_bytes()
-    rebuilt = reduction.build_reduction_evidence(_ROOT)
+    after_revision = reduction._stored_numpy_after_revision(content)  # pyright: ignore[reportPrivateUsage]
+    rebuilt = reduction.build_reduction_evidence(_ROOT, numpy_after_revision=after_revision)
     assert content == reduction.canonical_json_bytes(rebuilt)
     reduction.validate_reduction_evidence(rebuilt)
 
