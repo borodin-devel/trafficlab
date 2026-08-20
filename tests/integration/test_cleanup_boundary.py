@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -37,6 +39,10 @@ class _ShortWaitHandle:
     def kill(self) -> None:
         self.actions.append("kill")
         self._handle.kill()
+
+    def reap(self) -> bool:
+        self.actions.append("reap")
+        return self._handle.reap()
 
 
 class _HangingBoundary:
@@ -95,6 +101,9 @@ class _RealProcessHandle:
     def kill(self) -> None:
         self.process.kill()
 
+    def reap(self) -> bool:
+        return self.process.poll() is not None
+
 
 class _RealProcessBoundary:
     def __init__(self) -> None:
@@ -151,7 +160,7 @@ def test_hanging_cleanup_terminates_then_kills_local_cli_without_later_docker_qu
     ]
     assert boundary.runs == []
     assert boundary.handle is not None
-    assert boundary.handle.actions == ["wait", "terminate", "wait", "kill", "wait"]
+    assert boundary.handle.actions == ["wait", "terminate", "wait", "kill", "wait", "reap"]
     assert all(timeout > 0.0 for timeout in boundary.handle.waits)
     assert boundary.handle.waits[0] < 2.0
 
@@ -196,3 +205,104 @@ def test_full_initial_wait_reserves_time_to_kill_and_reap_real_process(tmp_path:
         if boundary.handle is not None and boundary.handle.process.returncode is None:
             boundary.handle.process.kill()
             boundary.handle.process.communicate(timeout=1.0)
+
+
+class _DescendantBoundary:
+    def __init__(self, parent_pid: Path, child_pid: Path) -> None:
+        self.parent_pid = parent_pid
+        self.child_pid = child_pid
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        timeout: float,
+        environment: Mapping[str, str] | None,
+    ) -> CommandResult:
+        raise AssertionError(f"unexpected Docker query after cleanup launch: {argv} {timeout} {environment}")
+
+    def start(self, argv: tuple[str, ...], *, environment: Mapping[str, str] | None) -> ProcessHandle:
+        del argv
+        child_program = (
+            "import os,pathlib,signal,sys,time;"
+            "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+            "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));"
+            "time.sleep(30)"
+        )
+        parent_program = (
+            "import os,pathlib,signal,subprocess,sys,time;"
+            "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+            "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));"
+            "subprocess.Popen([sys.executable,'-c',sys.argv[3],sys.argv[2]],stdout=sys.stdout,stderr=sys.stderr);"
+            "time.sleep(30)"
+        )
+        return SubprocessBoundary().start(
+            (
+                sys.executable,
+                "-c",
+                parent_program,
+                str(self.parent_pid),
+                str(self.child_pid),
+                child_program,
+            ),
+            environment=environment,
+        )
+
+
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _kill_exact_test_pid(pid: int) -> None:
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+
+
+def _pid_gone_within(pid: int, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while _pid_exists(pid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
+def test_cleanup_kills_and_reaps_sigterm_ignoring_process_group_with_inherited_pipes(tmp_path: Path) -> None:
+    """Cleanup timeout must kill the Compose process group so inherited pipes close and every descendant exits."""
+    parent_pid_path = tmp_path / "parent.pid"
+    child_pid_path = tmp_path / "child.pid"
+    boundary = _DescendantBoundary(parent_pid_path, child_pid_path)
+    started = time.monotonic()
+    parent_pid: int | None = None
+    child_pid: int | None = None
+
+    try:
+        result = cleanup_project(
+            DockerCompose(boundary=boundary),
+            (tmp_path / "compose.json").resolve(),
+            "trafficlab-run",
+            deadline=started + 2.0,
+            clock=time.monotonic,
+        )
+        parent_pid = int(parent_pid_path.read_text())
+        child_pid = int(child_pid_path.read_text())
+
+        assert result.timed_out
+        assert time.monotonic() - started < 2.5
+        assert _pid_gone_within(parent_pid, 0.5)
+        assert _pid_gone_within(child_pid, 0.5)
+    finally:
+        if child_pid is None and child_pid_path.exists():
+            child_pid = int(child_pid_path.read_text())
+        if parent_pid is None and parent_pid_path.exists():
+            parent_pid = int(parent_pid_path.read_text())
+        if child_pid is not None:
+            _kill_exact_test_pid(child_pid)
+        if parent_pid is not None:
+            _kill_exact_test_pid(parent_pid)

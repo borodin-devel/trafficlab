@@ -34,10 +34,13 @@ class _CleanupHandle:
         return CommandResult(self.returncode, "", "cleanup failed" if self.returncode else "")
 
     def terminate(self) -> None:
-        raise AssertionError("bounded fake cleanup should complete")
+        return None
 
     def kill(self) -> None:
-        raise AssertionError("bounded fake cleanup should complete")
+        return None
+
+    def reap(self) -> bool:
+        return True
 
 
 class _Docker:
@@ -177,6 +180,8 @@ class _Clock:
         self.docker = docker
 
     def __call__(self) -> float:
+        if self.docker.scenario.endswith("cleanup_clock_error") and self.docker.calls[-1:] == ["start_down"]:
+            return float("nan")
         if self.docker.scenario == "validation_deadline" and self.docker.capture_signalled:
             return 160.0
         if self.docker.scenario.startswith("readiness_timeout") and self.docker.calls[-1:] == ["state_capture"]:
@@ -1792,6 +1797,22 @@ def test_cleanup_failure_is_secondary_after_capture_failure(
         "target exited after Trafficlab requested termination with status 137",
         "cleanup command failed with status 5: cleanup failed",
     ]
+
+
+def test_cleanup_clock_failure_is_secondary_after_capture_failure(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed post-launch cleanup clock must not escape finally and replace capture's primary failure."""
+    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
+    docker = _Docker("capture_exit_cleanup_clock_error")
+
+    with pytest.raises(TrafficlabError) as caught:
+        capture_experiment(experiment_path, docker=docker, clock=_Clock(docker), interruption=lambda: False)
+
+    assert str(caught.value).startswith("capture stopped during target workload; secondary:")
+    records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
+    assert records[-1]["failure_kind"] == "capture_stopped"
+    assert records[-1]["secondary_details"][-1].startswith("cleanup clock failed after launch:")
 
 
 @pytest.mark.parametrize(

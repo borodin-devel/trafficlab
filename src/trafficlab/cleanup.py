@@ -83,16 +83,59 @@ def _wait(handle: ProcessHandle, remaining: float) -> CommandResult | None:
     return handle.wait(timeout=remaining)
 
 
-def _stop_without_wait(handle: ProcessHandle) -> None:
-    """Best-effort containment when no deadline budget remains for reaping."""
+def _with_details(result: CleanupResult, details: tuple[str, ...]) -> CleanupResult:
+    if not details:
+        return result
+    return CleanupResult(
+        success=False,
+        timed_out=result.timed_out,
+        detail=f"{result.detail}; {'; '.join(details)}",
+    )
+
+
+def _finish(
+    handle: ProcessHandle,
+    result: CleanupResult,
+    *,
+    secondary_details: tuple[str, ...] = (),
+) -> CleanupResult:
+    details = list(secondary_details)
+    try:
+        reaped = handle.reap()
+    except (TrafficlabError, OSError) as error:
+        details.append(_boundary_detail("reap cleanup command", error))
+    else:
+        if not reaped:
+            details.append("local cleanup command has not exited after nonblocking reap")
+    return _with_details(result, tuple(details))
+
+
+def _stop_without_wait(handle: ProcessHandle) -> tuple[str, ...]:
+    """Signal without waiting when only a nonblocking reap remains in budget."""
+    details: list[str] = []
     try:
         handle.terminate()
-    except (TrafficlabError, OSError):
-        pass
+    except (TrafficlabError, OSError) as error:
+        details.append(_boundary_detail("terminate cleanup command", error))
     try:
         handle.kill()
-    except (TrafficlabError, OSError):
-        pass
+    except (TrafficlabError, OSError) as error:
+        details.append(_boundary_detail("kill cleanup command", error))
+    return tuple(details)
+
+
+def _clock_failure(
+    handle: ProcessHandle,
+    error: ArithmeticError | TypeError | ValueError,
+    *,
+    stop: bool,
+) -> CleanupResult:
+    details = _stop_without_wait(handle) if stop else ()
+    return _finish(
+        handle,
+        _failure(f"cleanup clock failed after launch: {error}"),
+        secondary_details=details,
+    )
 
 
 def _reap_after_kill(
@@ -101,14 +144,17 @@ def _reap_after_kill(
     deadline: float,
     clock: Callable[[], float],
 ) -> CleanupResult:
-    remaining = _remaining(deadline, clock)
+    try:
+        remaining = _remaining(deadline, clock)
+    except (ArithmeticError, TypeError, ValueError) as error:
+        return _clock_failure(handle, error, stop=False)
     if remaining <= 0.0:
-        return _timeout(_TIMEOUT_DETAIL)
+        return _finish(handle, _timeout(_TIMEOUT_DETAIL))
     try:
         _wait(handle, remaining)
     except (TrafficlabError, OSError) as error:
-        return _failure(_boundary_detail("reap killed cleanup command", error))
-    return _timeout(_TIMEOUT_DETAIL)
+        return _finish(handle, _failure(_boundary_detail("reap killed cleanup command", error)))
+    return _finish(handle, _timeout(_TIMEOUT_DETAIL))
 
 
 def _stop_and_reap(
@@ -124,34 +170,55 @@ def _stop_and_reap(
         try:
             handle.kill()
         except (TrafficlabError, OSError) as kill_error:
-            return _failure(f"{terminate_detail}; {_boundary_detail('kill cleanup command', kill_error)}")
-        remaining = _remaining(deadline, clock)
+            return _finish(
+                handle,
+                _failure(f"{terminate_detail}; {_boundary_detail('kill cleanup command', kill_error)}"),
+            )
+        try:
+            remaining = _remaining(deadline, clock)
+        except (ArithmeticError, TypeError, ValueError) as error:
+            return _finish(
+                handle,
+                _failure(terminate_detail),
+                secondary_details=(f"cleanup clock failed after launch: {error}",),
+            )
         if remaining <= 0.0:
-            return _failure(terminate_detail)
+            return _finish(handle, _failure(terminate_detail))
         try:
             _wait(handle, remaining)
         except (TrafficlabError, OSError) as reap_error:
-            return _failure(f"{terminate_detail}; {_boundary_detail('reap killed cleanup command', reap_error)}")
-        return _failure(terminate_detail)
+            return _finish(
+                handle,
+                _failure(f"{terminate_detail}; {_boundary_detail('reap killed cleanup command', reap_error)}"),
+            )
+        return _finish(handle, _failure(terminate_detail))
 
-    remaining = _remaining(deadline, clock)
+    try:
+        remaining = _remaining(deadline, clock)
+    except (ArithmeticError, TypeError, ValueError) as error:
+        return _clock_failure(handle, error, stop=True)
     if remaining <= 0.0:
+        details: list[str] = []
         try:
             handle.kill()
-        except (TrafficlabError, OSError):
-            pass
-        return _timeout(_TIMEOUT_DETAIL)
+        except (TrafficlabError, OSError) as error:
+            details.append(_boundary_detail("kill cleanup command", error))
+        return _finish(handle, _timeout(_TIMEOUT_DETAIL), secondary_details=tuple(details))
     try:
         result = _wait(handle, remaining / 2.0)
     except (TrafficlabError, OSError) as error:
-        _stop_without_wait(handle)
-        return _failure(_boundary_detail("reap terminated cleanup command", error))
+        stop_details = _stop_without_wait(handle)
+        return _finish(
+            handle,
+            _failure(_boundary_detail("reap terminated cleanup command", error)),
+            secondary_details=stop_details,
+        )
     if result is not None:
-        return _timeout(_TIMEOUT_DETAIL)
+        return _finish(handle, _timeout(_TIMEOUT_DETAIL))
     try:
         handle.kill()
     except (TrafficlabError, OSError) as error:
-        return _failure(_boundary_detail("kill cleanup command", error))
+        return _finish(handle, _failure(_boundary_detail("kill cleanup command", error)))
     return _reap_after_kill(
         handle,
         deadline=deadline,
@@ -192,22 +259,36 @@ def cleanup_project(
     except (TrafficlabError, OSError) as error:
         return _failure(_boundary_detail("launch cleanup command", error))
 
-    remaining = _remaining(deadline, clock)
+    try:
+        remaining = _remaining(deadline, clock)
+    except (ArithmeticError, TypeError, ValueError) as error:
+        return _clock_failure(handle, error, stop=True)
     if remaining <= 0.0:
-        _stop_without_wait(handle)
-        return _timeout("cleanup deadline expired during launch; project resources may remain")
+        details = _stop_without_wait(handle)
+        return _finish(
+            handle,
+            _timeout("cleanup deadline expired during launch; project resources may remain"),
+            secondary_details=details,
+        )
     normal_wait = remaining - min(_LOCAL_STOP_RESERVE_SECONDS, remaining)
     if normal_wait <= 0.0:
         return _stop_and_reap(handle, deadline=deadline, clock=clock)
     try:
         result = _wait(handle, normal_wait)
     except (TrafficlabError, OSError) as error:
-        _stop_without_wait(handle)
-        return _failure(_boundary_detail("wait for cleanup command", error))
+        details = _stop_without_wait(handle)
+        return _finish(
+            handle,
+            _failure(_boundary_detail("wait for cleanup command", error)),
+            secondary_details=details,
+        )
     if result is None:
         return _stop_and_reap(handle, deadline=deadline, clock=clock)
     if result.returncode != 0:
-        return _failure(f"cleanup command failed with status {result.returncode}: {_command_detail(result)}")
+        return _finish(
+            handle,
+            _failure(f"cleanup command failed with status {result.returncode}: {_command_detail(result)}"),
+        )
     output = _command_detail(result)
     detail = "project resources removed" if output == "no command output" else f"project resources removed: {output}"
-    return CleanupResult(success=True, timed_out=False, detail=detail)
+    return _finish(handle, CleanupResult(success=True, timed_out=False, detail=detail))

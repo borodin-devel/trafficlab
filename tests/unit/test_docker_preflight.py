@@ -38,6 +38,9 @@ class _CleanupHandle:
     def kill(self) -> None:
         self.killed = True
 
+    def reap(self) -> bool:
+        return True
+
 
 class _Docker:
     def __init__(
@@ -578,6 +581,26 @@ def test_probe_failure_remains_primary_when_cleanup_also_fails(
         report.require_success()
     assert caught.value.corrective_action == "make the named prerequisite available"
     assert _names(docker)[-1:] == ["start_down"]
+
+
+def test_probe_failure_remains_primary_when_cleanup_clock_fails_after_launch(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """A malformed post-launch cleanup clock must become a secondary finding, not escape preflight finally."""
+    config = _config(valid_config_data, tmp_path)
+    docker = _Docker(target_exit=7)
+
+    def cleanup_clock() -> float:
+        return float("nan") if _names(docker)[-1:] == ["start_down"] else 100.0
+
+    report = check_docker(config, docker, deadline=160.0, clock=cleanup_clock)
+
+    failures = [finding for finding in report.findings if not finding.ok]
+    assert [finding.name for finding in failures] == ["network_probe", "probe_cleanup"]
+    assert failures[0].detail == "capture prerequisite is unavailable"
+    assert failures[1].detail.startswith("cleanup clock failed after launch:")
+    with pytest.raises(TrafficlabError, match="capture prerequisite is unavailable.*cleanup clock failed"):
+        report.require_success()
 
 
 def test_total_deadline_exhaustion_stops_before_the_next_docker_action(

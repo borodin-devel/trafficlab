@@ -30,6 +30,9 @@ class _CleanupHandle:
     def kill(self) -> None:
         raise AssertionError("successful cleanup was killed")
 
+    def reap(self) -> bool:
+        return True
+
 
 class _HappyDocker:
     def __init__(self, events: list[str]) -> None:

@@ -335,6 +335,9 @@ class _CompletedHandle:
     def kill(self) -> None:
         return None
 
+    def reap(self) -> bool:
+        return True
+
 
 class _PreflightClock:
     def __init__(self, scenario: _Scenario) -> None:

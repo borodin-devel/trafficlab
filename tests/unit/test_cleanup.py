@@ -18,6 +18,14 @@ class _Clock:
         return self.now
 
 
+class _SequenceClock:
+    def __init__(self, values: list[object]) -> None:
+        self.values = values
+
+    def __call__(self) -> object:
+        return self.values.pop(0)
+
+
 class _BrokenFloatInt(int):
     def __float__(self) -> float:
         raise TypeError("cannot convert")
@@ -32,6 +40,8 @@ class _SequenceHandle:
         wait_errors: list[BaseException | None] | None = None,
         terminate_error: BaseException | None = None,
         kill_error: BaseException | None = None,
+        reap_error: BaseException | None = None,
+        reap_result: bool = True,
         terminate_advance: float = 0.0,
         kill_advance: float = 0.0,
     ) -> None:
@@ -40,6 +50,8 @@ class _SequenceHandle:
         self.wait_errors = wait_errors
         self.terminate_error = terminate_error
         self.kill_error = kill_error
+        self.reap_error = reap_error
+        self.reap_result = reap_result
         self.terminate_advance = terminate_advance
         self.kill_advance = kill_advance
         self.waits: list[float] = []
@@ -67,6 +79,12 @@ class _SequenceHandle:
         self.clock.now += self.kill_advance
         if self.kill_error is not None:
             raise self.kill_error
+
+    def reap(self) -> bool:
+        self.actions.append("reap")
+        if self.reap_error is not None:
+            raise self.reap_error
+        return self.reap_result
 
 
 class _Docker:
@@ -225,7 +243,7 @@ def test_success_uses_one_down_process_and_no_inventory_query(tmp_path: Path) ->
 
     assert result == CleanupResult(success=True, timed_out=False, detail="project resources removed: removed")
     assert docker.calls == [(compose_path, "trafficlab-run", 160.0)]
-    assert handle.actions == ["wait"]
+    assert handle.actions == ["wait", "reap"]
     assert handle.waits == [57.0]
 
 
@@ -261,6 +279,7 @@ def test_nonzero_cleanup_reports_status_and_actionable_command_output(
         detail=f"cleanup command failed with status 17: {detail}",
     )
     assert len(docker.calls) == 1
+    assert handle.actions == ["wait", "reap"]
 
 
 @pytest.mark.parametrize(
@@ -309,8 +328,10 @@ def test_initial_wait_failure_stops_local_cli_and_preserves_wait_error(tmp_path:
         clock=clock,
     )
 
-    assert result.detail == "could not wait for cleanup command: wait denied"
-    assert handle.actions == ["wait", "terminate", "kill"]
+    assert result.detail.startswith("could not wait for cleanup command: wait denied")
+    assert "could not terminate cleanup command: terminate denied" in result.detail
+    assert "could not kill cleanup command: kill denied" in result.detail
+    assert handle.actions == ["wait", "terminate", "kill", "reap"]
 
 
 def test_hanging_cleanup_terminates_and_reaps_with_fresh_budget(tmp_path: Path) -> None:
@@ -331,7 +352,7 @@ def test_hanging_cleanup_terminates_and_reaps_with_fresh_budget(tmp_path: Path) 
 
     assert result.timed_out
     assert result.detail == "cleanup command exceeded its deadline; project resources may remain"
-    assert handle.actions == ["wait", "terminate", "wait"]
+    assert handle.actions == ["wait", "terminate", "wait", "reap"]
     assert handle.waits == [59.0, 25.0]
 
 
@@ -357,7 +378,7 @@ def test_uncooperative_cleanup_is_killed_and_reaped_with_fresh_budgets(tmp_path:
 
     assert result.timed_out
     assert result.detail == "cleanup command exceeded its deadline; project resources may remain"
-    assert handle.actions == ["wait", "terminate", "wait", "kill", "wait"]
+    assert handle.actions == ["wait", "terminate", "wait", "kill", "wait", "reap"]
     assert handle.waits == [59.0, 25.0, 40.0]
 
 
@@ -375,7 +396,7 @@ def test_launch_consuming_budget_stops_process_without_nonpositive_wait(tmp_path
     )
 
     assert result.timed_out
-    assert handle.actions == ["terminate", "kill"]
+    assert handle.actions == ["terminate", "kill", "reap"]
     assert handle.waits == []
 
 
@@ -397,7 +418,7 @@ def test_signal_time_is_deducted_before_next_wait(tmp_path: Path) -> None:
     )
 
     assert result.timed_out
-    assert handle.actions == ["wait", "terminate", "kill"]
+    assert handle.actions == ["wait", "terminate", "kill", "reap"]
     assert handle.waits == [59.0]
 
 
@@ -423,4 +444,201 @@ def test_terminate_failure_is_actionable_after_kill_and_reap(tmp_path: Path) -> 
         timed_out=False,
         detail="could not terminate cleanup command: terminate denied",
     )
-    assert handle.actions == ["wait", "terminate", "kill", "wait"]
+    assert handle.actions == ["wait", "terminate", "kill", "wait", "reap"]
+
+
+def test_tiny_positive_budget_starts_in_stop_state_and_reaps_without_nonpositive_wait(tmp_path: Path) -> None:
+    """A sub-reserve budget must contain and reap rather than enter the ordinary wait."""
+    clock = _Clock()
+    handle = _SequenceHandle(
+        clock,
+        [(0.02, None), (0.01, CommandResult(-9, "", ""))],
+    )
+
+    result = cleanup_project(
+        _Docker(handle, clock=clock),
+        (tmp_path / "compose.json").resolve(),
+        "trafficlab-run",
+        deadline=100.05,
+        clock=clock,
+    )
+
+    assert result.timed_out
+    assert handle.actions == ["terminate", "wait", "kill", "wait", "reap"]
+    assert handle.waits == pytest.approx([0.025, 0.03])
+    assert all(timeout > 0.0 for timeout in handle.waits)
+
+
+def test_kill_consuming_remaining_budget_still_enters_nonblocking_reap(tmp_path: Path) -> None:
+    """Budget expiry during kill must not return without a final nonblocking reap attempt."""
+    clock = _Clock()
+    handle = _SequenceHandle(
+        clock,
+        [(10.0, None), (10.0, None)],
+        kill_advance=40.0,
+    )
+
+    result = cleanup_project(
+        _Docker(handle, clock=clock),
+        (tmp_path / "compose.json").resolve(),
+        "trafficlab-run",
+        deadline=160.0,
+        clock=clock,
+    )
+
+    assert result.timed_out
+    assert handle.actions == ["wait", "terminate", "wait", "kill", "reap"]
+    assert handle.waits == [59.0, 25.0]
+
+
+def test_kill_failure_remains_actionable_and_still_attempts_nonblocking_reap(tmp_path: Path) -> None:
+    """A failed SIGKILL must be visible without skipping the direct-child reap state."""
+    clock = _Clock()
+    handle = _SequenceHandle(
+        clock,
+        [(1.0, None), (1.0, None)],
+        kill_error=PermissionError("kill denied"),
+    )
+
+    result = cleanup_project(
+        _Docker(handle, clock=clock),
+        (tmp_path / "compose.json").resolve(),
+        "trafficlab-run",
+        deadline=160.0,
+        clock=clock,
+    )
+
+    assert result.detail == "could not kill cleanup command: kill denied"
+    assert handle.actions == ["wait", "terminate", "wait", "kill", "reap"]
+
+
+@pytest.mark.parametrize(
+    ("results", "wait_errors", "detail", "actions"),
+    [
+        (
+            [(1.0, None), (1.0, CommandResult(0, "", ""))],
+            [None, PermissionError("terminated reap denied")],
+            "could not reap terminated cleanup command: terminated reap denied",
+            ["wait", "terminate", "wait", "terminate", "kill", "reap"],
+        ),
+        (
+            [(1.0, None), (1.0, None), (1.0, CommandResult(-9, "", ""))],
+            [None, None, PermissionError("killed reap denied")],
+            "could not reap killed cleanup command: killed reap denied",
+            ["wait", "terminate", "wait", "kill", "wait", "reap"],
+        ),
+    ],
+    ids=["terminated-reap", "killed-reap"],
+)
+def test_reap_wait_failures_remain_actionable_after_nonblocking_reap(
+    tmp_path: Path,
+    results: list[tuple[float, CommandResult | None]],
+    wait_errors: list[BaseException | None],
+    detail: str,
+    actions: list[str],
+) -> None:
+    """A bounded reap-wait error must retain its diagnostic and still enter nonblocking reap."""
+    clock = _Clock()
+    handle = _SequenceHandle(clock, results, wait_errors=wait_errors)
+
+    result = cleanup_project(
+        _Docker(handle, clock=clock),
+        (tmp_path / "compose.json").resolve(),
+        "trafficlab-run",
+        deadline=160.0,
+        clock=clock,
+    )
+
+    assert result.detail == detail
+    assert handle.actions == actions
+
+
+@pytest.mark.parametrize(
+    "clock_values",
+    [
+        [100.0, float("nan")],
+        [100.0, 100.0, float("nan")],
+        [100.0, 100.0, 100.0, float("nan")],
+    ],
+    ids=["after-launch", "after-terminate", "after-kill"],
+)
+def test_post_launch_clock_failures_are_contained_as_cleanup_results(
+    tmp_path: Path,
+    clock_values: list[object],
+) -> None:
+    """A malformed cleanup clock after launch must not escape before local process containment."""
+    clock = _SequenceClock(clock_values)
+    handle = _SequenceHandle(
+        _Clock(),
+        [(0.0, None), (0.0, None)],
+    )
+
+    result = cleanup_project(
+        _Docker(handle, clock=_Clock()),
+        (tmp_path / "compose.json").resolve(),
+        "trafficlab-run",
+        deadline=160.0,
+        clock=clock,  # type: ignore[arg-type]
+    )
+
+    assert not result.success
+    assert "cleanup clock failed after launch" in result.detail
+    assert handle.actions[-2:] == ["kill", "reap"]
+
+
+def test_clock_failure_after_failed_terminate_is_secondary_to_signal_error(tmp_path: Path) -> None:
+    """The terminate-error recovery branch must also contain malformed clock reads after launch."""
+    clock = _SequenceClock([100.0, 100.0, float("nan")])
+    handle = _SequenceHandle(
+        _Clock(),
+        [(0.0, None)],
+        terminate_error=PermissionError("terminate denied"),
+    )
+
+    result = cleanup_project(
+        _Docker(handle, clock=_Clock()),
+        (tmp_path / "compose.json").resolve(),
+        "trafficlab-run",
+        deadline=160.0,
+        clock=clock,  # type: ignore[arg-type]
+    )
+
+    assert result.detail.startswith("could not terminate cleanup command: terminate denied")
+    assert "cleanup clock failed after launch" in result.detail
+    assert handle.actions == ["wait", "terminate", "kill", "reap"]
+
+
+@pytest.mark.parametrize(
+    ("reap_error", "reap_result", "detail"),
+    [
+        (PermissionError("reap denied"), True, "could not reap cleanup command: reap denied"),
+        (None, False, "local cleanup command has not exited after nonblocking reap"),
+    ],
+    ids=["reap-error", "still-running"],
+)
+def test_completed_command_requires_successful_explicit_reap_state(
+    tmp_path: Path,
+    reap_error: BaseException | None,
+    reap_result: bool,
+    detail: str,
+) -> None:
+    """A completed down cannot report success when its explicit direct-child reap state fails."""
+    clock = _Clock()
+    handle = _SequenceHandle(
+        clock,
+        [(0.0, CommandResult(0, "", ""))],
+        reap_error=reap_error,
+        reap_result=reap_result,
+    )
+
+    result = cleanup_project(
+        _Docker(handle, clock=clock),
+        (tmp_path / "compose.json").resolve(),
+        "trafficlab-run",
+        deadline=160.0,
+        clock=clock,
+    )
+
+    assert not result.success
+    assert result.detail == f"project resources removed; {detail}"
+    assert handle.actions == ["wait", "reap"]

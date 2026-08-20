@@ -308,8 +308,10 @@ These tests join real modules without Docker:
 10. Use injected subprocess boundaries to prove that a live capture receives
     `SIGINT` and one bounded flush wait, while an already-stopped capture gets no
     signal or flush wait. A zero cleanup budget makes no Docker command. A
-    hanging cleanup terminates or kills and reaps its local CLI at the deadline
-    and makes no later Docker query.
+    hanging cleanup terminates or kills its isolated local CLI process group,
+    reaps the direct child at the deadline, and makes no later Docker query.
+    Launch-expiry, clock-error, and signal-error cases must enter a nonblocking
+    reap state without passing a nonpositive wait timeout.
 11. Round-trip portable and realized configurations with method weights
     `(1, 0, 0, 0)` and `(0.1, 0.2, 0.3, 0.4)`. Require all four mandatory method
     settings and diagnostics in both cases; realization may change only the run
@@ -699,11 +701,14 @@ Docker tests remain serial, and the public Internet smoke test remains opt-in.
 A focused in-process integration fixture substitutes only the cleanup command
 with a controlled hanging cleanup process. It requires cleanup timeout at the
 remaining total-run deadline, termination of the local Compose CLI, no later
-Docker query, and an actionable diagnostic that the project may remain. A
-separate zero-budget case makes no Docker command. These controlled
-cleanup-timeout cases do not claim that resources were removed. Real Docker
-cleanup and complete-removal assertions remain in every ordinary Docker capture
-case; the suite does not try to make the daemon hang.
+Docker query, and an actionable diagnostic that the project may remain. A real
+child/grandchild fixture ignores `SIGTERM` and inherits the cleanup CLI's output
+pipes; timeout must kill the isolated process group, close the pipes, reap the
+direct child, and leave both PIDs gone. A separate zero-budget case makes no
+Docker command. These controlled cleanup-timeout cases do not claim that
+resources were removed. Real Docker cleanup and complete-removal assertions
+remain in every ordinary Docker capture case; the suite does not try to make the
+daemon hang.
 
 The deterministic Docker suite uses only its controlled endpoint. It verifies
 the capture topology without depending on an external service.

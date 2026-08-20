@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import signal
 import subprocess
 import time
 from collections.abc import Callable, Mapping
@@ -355,6 +357,10 @@ class ProcessHandle(Protocol):
     def kill(self) -> None:
         """Forcefully stop the local command process."""
 
+    def reap(self) -> bool:
+        """Nonblocking direct-child reap attempt; return whether it has exited."""
+        ...
+
 
 class CommandBoundary(Protocol):
     """Injected operating-system command boundary."""
@@ -397,8 +403,9 @@ def _decode_output(data: bytes, *, stream: str) -> str:
 
 
 class _SubprocessHandle:
-    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+    def __init__(self, process: subprocess.Popen[bytes], *, process_group: int | None) -> None:
         self._process = process
+        self._process_group = process_group
         self._result: CommandResult | None = None
 
     def wait(self, *, timeout: float) -> CommandResult | None:
@@ -424,17 +431,34 @@ class _SubprocessHandle:
         )
         return self._result
 
-    def terminate(self) -> None:
+    def _signal(self, *, force: bool, action: str) -> None:
         try:
-            self._process.terminate()
+            if self._process_group is None:
+                if force:
+                    self._process.kill()
+                else:
+                    self._process.terminate()
+            else:
+                sent = signal.SIGKILL if force else signal.SIGTERM
+                os.killpg(self._process_group, sent)
+        except ProcessLookupError:
+            self.reap()
         except OSError as error:
-            raise _process_error("terminate Docker cleanup command", error) from error
+            raise _process_error(f"{action} Docker cleanup command group", error) from error
+
+    def terminate(self) -> None:
+        self._signal(force=False, action="terminate")
 
     def kill(self) -> None:
+        self._signal(force=True, action="kill")
+
+    def reap(self) -> bool:
+        if self._result is not None:
+            return True
         try:
-            self._process.kill()
+            return self._process.poll() is not None
         except OSError as error:
-            raise _process_error("kill Docker cleanup command", error) from error
+            raise _process_error("reap Docker cleanup command", error) from error
 
 
 class SubprocessBoundary:
@@ -487,6 +511,7 @@ class SubprocessBoundary:
                 env=None if environment is None else dict(environment),
                 shell=False,
                 stderr=subprocess.PIPE,
+                start_new_session=os.name == "posix",
                 stdout=subprocess.PIPE,
             )
         except FileNotFoundError as error:
@@ -496,7 +521,7 @@ class SubprocessBoundary:
             ) from error
         except OSError as error:
             raise _process_error("launch Docker cleanup command", error) from error
-        return _SubprocessHandle(process)
+        return _SubprocessHandle(process, process_group=process.pid if os.name == "posix" else None)
 
 
 def _require_positive_finite(value: object, name: str) -> float:

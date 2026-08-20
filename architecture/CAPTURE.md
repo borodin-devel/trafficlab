@@ -128,8 +128,9 @@ applicable and by the remaining total-run budget.
     exact validated project name. With positive remaining budget, issue one
     `docker compose down --volumes --remove-orphans`. With zero budget, make no
     blocking Docker call and record cleanup timeout. If the local Compose CLI
-    exceeds its bounded wait, terminate it, kill it when necessary, and reap it
-    within the absolute deadline. Production makes no post-down inventory query.
+    exceeds its bounded wait, signal its isolated process group, kill it when
+    necessary, and reap its direct child within the reserved absolute-deadline
+    budget. Production makes no post-down inventory query.
 
 When the target container stops, its process namespace closes, so a background
 descendant cannot remain as a hidden workload. Capture and the shared network
@@ -225,9 +226,13 @@ budget, the cleanup branch records timeout without launching Docker. When a
 running cleanup expires, Trafficlab terminates or kills and reaps the local CLI
 without a production resource-inventory query.
 Cleanup reserves the final one second of positive total-run budget for
-terminating, killing when necessary, and reaping its local Compose CLI. When
-less budget remains, it starts this local stop sequence immediately instead of
-using the whole remainder for the ordinary cleanup wait.
+terminating, killing when necessary, and reaping its local Compose CLI process
+group. When less budget remains, it starts this local stop sequence immediately
+instead of using the whole remainder for the ordinary cleanup wait. If launch,
+signalling, or a broken clock consumes that reserve, cleanup makes one
+nonblocking direct-child reap attempt and returns; it never extends a blocking
+wait past the absolute deadline. A post-launch clock failure is a cleanup result,
+so it cannot escape `finally` and replace an earlier capture or preflight error.
 
 Trafficlab never edits host routes, forwarding flags, firewall rules, network
 namespaces, DNS files, users, groups, or sudo configuration. Consequently it
@@ -255,7 +260,9 @@ no wrapper, PID file, or Compose `exec` dependency exists.
 Reliability cases also cover prompt capture-failure detection before workload
 timeout, natural versus kill-induced target status, a capture process that
 ignores `SIGINT`, malformed-output cleanup, and a controlled hanging-cleanup
-fixture stopped by the remaining total-run deadline. The rendered production
+fixture whose SIGTERM-ignoring child and grandchild inherit output pipes and are
+killed through the isolated cleanup process group before the direct child is
+reaped. The rendered production
 service set must be exactly `{capture, target}`; the endpoint remains only a test
 fixture. Normal launch invokes Docker without `sudo`.
 
