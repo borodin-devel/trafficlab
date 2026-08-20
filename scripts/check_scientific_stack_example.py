@@ -39,7 +39,13 @@ from trafficlab.comparison import (
 )
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment, render_effective_config
+from trafficlab.config_io import (
+    ConfigurationPair,
+    load_configuration_pair,
+    load_experiment,
+    realize_configuration,
+    render_effective_config,
+)
 from trafficlab.errors import TrafficlabError
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
@@ -281,25 +287,31 @@ def _one_event(records: Sequence[Mapping[str, object]], event: str) -> Mapping[s
     return matches[0]
 
 
-def _matches_checked_configuration(snapshot: ExperimentConfig, checked: ExperimentConfig) -> bool:
-    """Compare every setting while ignoring only host-realized path spelling."""
-    if len(snapshot.target.mounts) != len(checked.target.mounts):
+def _matches_checked_configuration(
+    snapshot: ExperimentConfig,
+    checked: ConfigurationPair,
+    *,
+    repository_root: Path,
+) -> bool:
+    """Require one relocation prefix while preserving every portable path meaning."""
+    if len(snapshot.target.mounts) != len(checked.portable.target.mounts):
         return False
-    normalized_target = checked.target.model_copy(
-        update={
-            "mounts": tuple(
-                mount.model_copy(update={"source": snapshot.target.mounts[index].source})
-                for index, mount in enumerate(checked.target.mounts)
-            )
-        }
-    )
-    normalized_checked = checked.model_copy(
-        update={
-            "run": checked.run.model_copy(update={"directory": snapshot.run.directory}),
-            "target": normalized_target,
-        }
-    )
-    return snapshot == normalized_checked
+    if checked.portable.run.directory.is_absolute():
+        return snapshot == checked.realized
+    current_root = repository_root.resolve()
+    try:
+        run_suffix = checked.realized.run.directory.relative_to(current_root)
+    except ValueError:
+        return False
+    if not snapshot.run.directory.is_absolute():
+        return False
+    recorded_root = snapshot.run.directory
+    for _ in run_suffix.parts:
+        recorded_root = recorded_root.parent
+    if recorded_root / run_suffix != snapshot.run.directory:
+        return False
+    expected = realize_configuration(checked.portable, recorded_root / _CONFIG_RELATIVE.parent)
+    return snapshot == expected
 
 
 def _derived_result(
@@ -327,8 +339,8 @@ def _derived_result(
     config = load_experiment(artifact_directory / "experiment.toml")
     if render_effective_config(config) != contents["experiment.toml"]:
         raise ValueError("example experiment snapshot is not canonical")
-    checked_config = load_experiment(repository_root / _CONFIG_RELATIVE)
-    if not _matches_checked_configuration(config, checked_config):
+    checked_config = load_configuration_pair(repository_root / _CONFIG_RELATIVE)
+    if not _matches_checked_configuration(config, checked_config, repository_root=repository_root):
         raise ValueError("example experiment snapshot does not match the checked configuration")
     context = make_strategy_context(
         config,

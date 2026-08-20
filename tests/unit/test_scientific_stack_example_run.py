@@ -14,6 +14,7 @@ import pytest
 
 from scripts import check_scientific_stack_example as example_run
 from trafficlab.config import ExperimentConfig, MountConfig
+from trafficlab.config_io import ConfigurationPair, load_configuration_pair, realize_configuration
 
 _ROOT = Path(__file__).parents[2]
 _EVIDENCE = _ROOT / "examples" / "scientific_stack" / "example_run.json"
@@ -233,17 +234,191 @@ def test_example_run_derivation_rejects_effective_snapshot_policy_drift_with_mat
         example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]
 
 
+def test_example_run_rejects_arbitrary_run_directory_with_matching_artifact_lineage(tmp_path: Path) -> None:
+    """Relocation may change only the checkout prefix, not the portable run-directory meaning."""
+    repository = tmp_path / "repository"
+    scientific_stack = repository / "examples" / "scientific_stack"
+    scientific_stack.mkdir(parents=True)
+    git_directory = subprocess.run(
+        ("git", "rev-parse", "--absolute-git-dir"),
+        cwd=_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (repository / ".git").write_text(f"gitdir: {git_directory}\n", encoding="utf-8")
+    shutil.copy2(_ROOT / "uv.lock", repository / "uv.lock")
+    shutil.copy2(_ROOT / "examples" / "scientific_stack" / "experiment.toml", scientific_stack / "experiment.toml")
+    artifacts = scientific_stack / "example_run_artifacts"
+    shutil.copytree(_ROOT / "examples" / "scientific_stack" / "example_run_artifacts", artifacts)
+
+    experiment_path = artifacts / "experiment.toml"
+    config = example_run.load_experiment(experiment_path)
+    arbitrary_directory = (tmp_path / "unrelated" / "output").resolve()
+    changed = config.model_copy(update={"run": config.run.model_copy(update={"directory": arbitrary_directory})})
+    snapshot = example_run.render_effective_config(changed)
+    experiment_path.write_bytes(snapshot)
+    experiment_identity = example_run.identify_bytes(snapshot)
+    identity_document = {
+        "sha256": experiment_identity.sha256,
+        "size": experiment_identity.size,
+    }
+
+    checkpoint_path = artifacts / "checkpoint.json"
+    checkpoint = json.loads(checkpoint_path.read_bytes())
+    checkpoint["experiment_identity"] = identity_document
+    checkpoint_path.write_bytes(example_run.canonical_json_bytes(checkpoint))
+
+    original_directory = str(config.run.directory)
+    changed_directory = str(arbitrary_directory)
+    log_path = artifacts / "run.log"
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    for record in records:
+        for name, value in record.items():
+            if isinstance(value, str) and value.startswith(original_directory):
+                record[name] = changed_directory + value.removeprefix(original_directory)
+    capture = next(item for item in records if item["event"] == "capture_published")
+    capture["experiment_identity"] = identity_document
+    log_path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
+
+    evidence = json.loads(_EVIDENCE.read_bytes())
+    evidence["artifacts"] = {
+        name: {
+            "sha256": hashlib.sha256((artifacts / name).read_bytes()).hexdigest(),
+            "size": (artifacts / name).stat().st_size,
+        }
+        for name in evidence["artifacts"]
+    }
+
+    with pytest.raises(ValueError, match="checked configuration"):
+        example_run.validate_evidence(evidence, repository_root=repository)
+
+
 def test_example_run_configuration_comparison_rejects_a_different_mount_inventory(tmp_path: Path) -> None:
-    checked = example_run.load_experiment(_ROOT / "examples" / "scientific_stack" / "experiment.toml")
-    snapshot = checked.model_copy(
+    config_path = _ROOT / "examples" / "scientific_stack" / "experiment.toml"
+    checked = load_configuration_pair(config_path)
+    snapshot = checked.realized.model_copy(
         update={
-            "target": checked.target.model_copy(update={"mounts": (MountConfig(source=tmp_path, target="/input"),)})
+            "target": checked.realized.target.model_copy(
+                update={"mounts": (MountConfig(source=tmp_path, target="/input"),)}
+            )
         }
     )
 
     assert not example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
         snapshot,
         checked,
+        repository_root=_ROOT,
+    )
+
+
+def test_example_run_configuration_comparison_binds_relative_mounts_to_one_relocated_root(tmp_path: Path) -> None:
+    config_path = _ROOT / "examples" / "scientific_stack" / "experiment.toml"
+    base = load_configuration_pair(config_path)
+    portable = base.portable.model_copy(
+        update={
+            "target": base.portable.target.model_copy(
+                update={"mounts": (MountConfig(source=Path("../../examples/data"), target="/input"),)}
+            )
+        }
+    )
+    checked = ConfigurationPair(
+        portable=portable,
+        realized=realize_configuration(portable, config_path.parent.resolve()),
+    )
+    relocated_root = tmp_path / "relocated-checkout"
+    relocated = realize_configuration(portable, relocated_root / config_path.parent.relative_to(_ROOT))
+    foreign_mount = relocated.model_copy(
+        update={
+            "target": relocated.target.model_copy(
+                update={
+                    "mounts": (
+                        relocated.target.mounts[0].model_copy(
+                            update={"source": tmp_path / "other-checkout" / "examples" / "data"}
+                        ),
+                    )
+                }
+            )
+        }
+    )
+
+    assert example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
+        relocated,
+        checked,
+        repository_root=_ROOT,
+    )
+    assert not example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
+        foreign_mount,
+        checked,
+        repository_root=_ROOT,
+    )
+
+
+def test_example_run_configuration_comparison_preserves_absolute_portable_mounts(tmp_path: Path) -> None:
+    config_path = _ROOT / "examples" / "scientific_stack" / "experiment.toml"
+    base = load_configuration_pair(config_path)
+    absolute_source = (tmp_path / "absolute-input").resolve()
+    absolute_run = (tmp_path / "absolute-run").resolve()
+    portable = base.portable.model_copy(
+        update={
+            "run": base.portable.run.model_copy(update={"directory": absolute_run}),
+            "target": base.portable.target.model_copy(
+                update={"mounts": (MountConfig(source=absolute_source, target="/input"),)}
+            ),
+        }
+    )
+    checked = ConfigurationPair(
+        portable=portable,
+        realized=realize_configuration(portable, config_path.parent.resolve()),
+    )
+    relocated = realize_configuration(
+        portable,
+        tmp_path / "relocated-checkout" / config_path.parent.relative_to(_ROOT),
+    )
+    foreign = relocated.model_copy(
+        update={
+            "target": relocated.target.model_copy(
+                update={"mounts": (relocated.target.mounts[0].model_copy(update={"source": tmp_path / "other-input"}),)}
+            )
+        }
+    )
+
+    assert example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
+        relocated,
+        checked,
+        repository_root=_ROOT,
+    )
+    assert not example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
+        foreign,
+        checked,
+        repository_root=_ROOT,
+    )
+
+
+@pytest.mark.parametrize("mutation", ["checked_outside_root", "relative_snapshot"])
+def test_example_run_configuration_comparison_rejects_paths_without_one_checkout_root(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    config_path = _ROOT / "examples" / "scientific_stack" / "experiment.toml"
+    checked = load_configuration_pair(config_path)
+    snapshot = checked.realized
+    if mutation == "checked_outside_root":
+        checked = ConfigurationPair(
+            portable=checked.portable,
+            realized=checked.realized.model_copy(
+                update={"run": checked.realized.run.model_copy(update={"directory": tmp_path / "outside" / "run"})}
+            ),
+        )
+    else:
+        snapshot = snapshot.model_copy(
+            update={"run": snapshot.run.model_copy(update={"directory": Path("relative/run")})}
+        )
+
+    assert not example_run._matches_checked_configuration(  # pyright: ignore[reportPrivateUsage]
+        snapshot,
+        checked,
+        repository_root=_ROOT,
     )
 
 
