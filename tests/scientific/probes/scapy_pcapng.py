@@ -21,21 +21,24 @@ from typing import Annotated, Literal, Protocol, Self, SupportsFloat, cast
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
 
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.pcapng import parse_pcapng_trace
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, deterministic_peer_mac
 
 SCAPY_VERSION = "2.7.0"
 BENCHMARK_REPETITIONS = 5
 MAX_MATERIAL_RATIO = 1.5
-DIFFERENTIAL_CASE_NAMES = (
+READER_CASE_NAMES = (
     "ethernet_ipv4_ipv6_arp_little_endian_default_microseconds",
     "ethernet_ipv4_ipv6_arp_big_endian_decimal_nanoseconds",
     "binary_2^-10_timestamp_resolution",
     "epb_padding_options_original_length",
     "source_mac_outbound_peer_inbound_broadcast_inbound",
     "closed_observation_window_and_frame_validation",
-    "scapy_writer_canonical_trace_round_trip",
 )
+WRITER_CASE_NAMES = (
+    "scapy_writer_microsecond_trace_round_trip",
+    "scapy_writer_nanosecond_trace_round_trip",
+)
+DIFFERENTIAL_CASE_NAMES = (*READER_CASE_NAMES, *WRITER_CASE_NAMES)
 MALFORMED_CASE_NAMES = (
     "truncated_section_header",
     "truncated_block_body",
@@ -49,6 +52,12 @@ MALFORMED_CASE_NAMES = (
     "nonzero_option_padding",
     "malformed_epb_options",
     "decreasing_timestamps",
+)
+DEADLINE_CASE_NAMES = (
+    "expired_before_io",
+    "expired_after_reader_setup",
+    "expires_after_first_scapy_packet",
+    "expired_after_candidate_postprocessing",
 )
 BENCHMARK_FRAME_SHAPES: dict[str, dict[str, object]] = {
     "frames_100000": {
@@ -65,12 +74,15 @@ BENCHMARK_FRAME_SHAPES: dict[str, dict[str, object]] = {
     },
 }
 GATE_NAMES = (
-    "trace_equivalence",
+    "reader_trace_equivalence",
+    "writer_trace_equivalence",
     "malformed_failures",
     "deadline_semantics",
     "strict_typing",
-    "benchmark_100000",
-    "benchmark_1000000",
+    "benchmark_100000_time",
+    "benchmark_100000_memory",
+    "benchmark_1000000_time",
+    "benchmark_1000000_memory",
     "license_compatibility",
 )
 _BOUNDED_BENCHMARK_COMMAND = (
@@ -93,6 +105,18 @@ _BOUNDED_BENCHMARK_COMMAND = (
     "scripts/run_scientific_stack_probes.py",
     "--probe",
     "scapy",
+)
+_TYPING_COMMAND = (
+    "uv",
+    "run",
+    "--locked",
+    "pyright",
+    "tests/scientific/probes/scapy_pcapng.py",
+    "tests/scientific/probes/test_scapy_pcapng.py",
+    "scripts/run_scientific_stack_probes.py",
+)
+_TIMING_BOUNDARY = (
+    "adapter-specific imports and factories preloaded; path open through canonical count and digest timed"
 )
 
 _UINT32_MAX = 2**32 - 1
@@ -118,26 +142,72 @@ class _StrictRecord(BaseModel):
 type StringTuple = Annotated[tuple[str, ...], BeforeValidator(_list_to_tuple)]
 
 
+class CaseResult(_StrictRecord):
+    name: str
+    input_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    input_size_bytes: Annotated[StrictInt, Field(ge=1)]
+    expected_outcome: str
+    oracle_outcome: str
+    candidate_outcome: str
+    detail: str
+    passed: StrictBool
+
+    @model_validator(mode="after")
+    def outcome_agreement_is_derived(self) -> Self:
+        values = (self.name, self.expected_outcome, self.oracle_outcome, self.candidate_outcome, self.detail)
+        if any(not value.strip() for value in values):
+            raise ValueError("executed case text fields must be nonempty")
+        passed = self.expected_outcome == self.oracle_outcome == self.candidate_outcome
+        if self.passed is not passed:
+            raise ValueError("executed case pass flag must derive from expected, oracle, and candidate outcomes")
+        return self
+
+
 class CaseEvidence(_StrictRecord):
     case_names: StringTuple
-    failed_case_names: StringTuple
-    detail: str
     command: StringTuple
+    results: Annotated[tuple[CaseResult, ...], BeforeValidator(_list_to_tuple)]
+    failed_case_names: StringTuple
     passed: StrictBool
+
+    @model_validator(mode="after")
+    def complete_results_are_required(self) -> Self:
+        result_names = tuple(result.name for result in self.results)
+        if not self.case_names or len(set(self.case_names)) != len(self.case_names) or result_names != self.case_names:
+            raise ValueError("executed results must match the exact nonempty declared case names")
+        if not self.command or self.command == ("true",):
+            raise ValueError("executed case command must be the canonical nontrivial command")
+        failed = tuple(result.name for result in self.results if not result.passed)
+        if self.failed_case_names != failed or self.passed is bool(failed):
+            raise ValueError("case aggregate must derive from the executed results")
+        return self
 
 
 class TypingEvidence(_StrictRecord):
     command: StringTuple
     mode: Literal["strict"]
-    errors: StrictInt
+    exit_code: StrictInt
+    stdout: str
+    stderr: str
     passed: StrictBool
+
+    @model_validator(mode="after")
+    def result_is_executed(self) -> Self:
+        if not self.command or self.command == ("true",):
+            raise ValueError("typing command must be the canonical strict Pyright command")
+        passed = self.exit_code == 0 and "0 errors, 0 warnings, 0 informations" in self.stdout
+        if self.passed is not passed:
+            raise ValueError("typing pass flag must derive from the executed command result")
+        return self
 
 
 class BenchmarkSample(_StrictRecord):
     frame_count: Literal[100_000, 1_000_000]
     trace_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    wall_seconds: StrictFloat
-    peak_rss_kib: StrictInt
+    input_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    input_size_bytes: Annotated[StrictInt, Field(gt=0)]
+    wall_seconds: Annotated[StrictFloat, Field(gt=0.0)]
+    peak_rss_kib: Annotated[StrictInt, Field(gt=0)]
 
 
 class AdapterBenchmark(_StrictRecord):
@@ -154,6 +224,9 @@ class AdapterBenchmark(_StrictRecord):
         rss = int(statistics.median(sample.peak_rss_kib for sample in self.samples))
         if self.median_wall_seconds != wall or self.median_peak_rss_kib != rss:
             raise ValueError("benchmark medians must be recomputed exactly from raw samples")
+        identities = {(sample.input_sha256, sample.input_size_bytes, sample.frame_count) for sample in self.samples}
+        if len(identities) != 1:
+            raise ValueError("adapter benchmark samples must use one identical declared input")
         return self
 
 
@@ -167,26 +240,31 @@ class BenchmarkComparison(_StrictRecord):
     wall_ratio: StrictFloat
     rss_ratio: StrictFloat
     material_threshold_ratio: StrictFloat
-    passed: StrictBool
+    time_passed: StrictBool
+    memory_passed: StrictBool
 
     @model_validator(mode="after")
     def ratios_and_gate_match_measurements(self) -> Self:
         if self.material_threshold_ratio != MAX_MATERIAL_RATIO:
             raise ValueError("benchmark material threshold must remain predeclared")
         samples = (*self.production.samples, *self.scapy.samples)
+        inputs = {(sample.input_sha256, sample.input_size_bytes, sample.frame_count) for sample in samples}
+        if len(inputs) != 1:
+            raise ValueError("production and Scapy samples must use identical input bytes")
         digests = {sample.trace_digest for sample in samples}
         trace_identity = all(sample.frame_count == self.frame_count for sample in samples) and len(digests) == 1
         if self.trace_identity is not trace_identity:
             raise ValueError("trace identity must reflect every measured trace digest and frame count")
         wall_ratio = self.scapy.median_wall_seconds / self.production.median_wall_seconds
         rss_ratio = self.scapy.median_peak_rss_kib / self.production.median_peak_rss_kib
-        passed = self.trace_identity and wall_ratio < MAX_MATERIAL_RATIO and rss_ratio < MAX_MATERIAL_RATIO
+        time_passed = self.trace_identity and wall_ratio < MAX_MATERIAL_RATIO
+        memory_passed = self.trace_identity and rss_ratio < MAX_MATERIAL_RATIO
         if not math.isclose(self.wall_ratio, wall_ratio, rel_tol=0.0, abs_tol=1e-15):
             raise ValueError("wall ratio must be recomputed from adapter medians")
         if not math.isclose(self.rss_ratio, rss_ratio, rel_tol=0.0, abs_tol=1e-15):
             raise ValueError("RSS ratio must be recomputed from adapter medians")
-        if self.passed is not passed:
-            raise ValueError("benchmark gate must be derived fail-closed from identity and material ratios")
+        if self.time_passed is not time_passed or self.memory_passed is not memory_passed:
+            raise ValueError("benchmark gates must derive independently from identity and material ratios")
         return self
 
 
@@ -195,13 +273,20 @@ class ProbePolicy(_StrictRecord):
     development_only: Literal[True]
     production_codec: Literal["trafficlab.pcapng"]
     production_changed: Literal[False]
-    differential_case_names: StringTuple
+    reader_case_names: StringTuple
+    writer_case_names: StringTuple
     malformed_case_names: StringTuple
+    deadline_case_names: StringTuple
+    functional_runner_command: StringTuple
+    typing_command: StringTuple
     benchmark_frame_shapes: dict[str, dict[str, object]]
     benchmark_repetitions: Literal[5]
     warmup_runs_per_adapter: Literal[1]
     fresh_subprocess_per_run: Literal[True]
     benchmark_runner_command: StringTuple
+    timing_boundary: Literal[
+        "adapter-specific imports and factories preloaded; path open through canonical count and digest timed"
+    ]
     material_regression_rule: Literal[
         "reject when Scapy median wall or peak RSS is >=1.50x production at either frame count"
     ]
@@ -228,12 +313,15 @@ class LicenseEvidence(_StrictRecord):
 
 
 class ProbeGates(_StrictRecord):
-    trace_equivalence: StrictBool
+    reader_trace_equivalence: StrictBool
+    writer_trace_equivalence: StrictBool
     malformed_failures: StrictBool
     deadline_semantics: StrictBool
     strict_typing: StrictBool
-    benchmark_100000: StrictBool
-    benchmark_1000000: StrictBool
+    benchmark_100000_time: StrictBool
+    benchmark_100000_memory: StrictBool
+    benchmark_1000000_time: StrictBool
+    benchmark_1000000_memory: StrictBool
     license_compatibility: StrictBool
 
 
@@ -250,7 +338,8 @@ class ProbeEvidence(_StrictRecord):
     probe: Literal["scapy_pcapng"]
     policy: ProbePolicy
     environment: ProbeEnvironment
-    differential: CaseEvidence
+    reader_differential: CaseEvidence
+    writer_differential: CaseEvidence
     malformed: CaseEvidence
     deadline: CaseEvidence
     typing: TypingEvidence
@@ -261,6 +350,22 @@ class ProbeEvidence(_StrictRecord):
 
     @model_validator(mode="after")
     def derived_fields_match_evidence(self) -> Self:
+        inventories = (
+            (self.policy.reader_case_names, self.reader_differential.case_names, READER_CASE_NAMES),
+            (self.policy.writer_case_names, self.writer_differential.case_names, WRITER_CASE_NAMES),
+            (self.policy.malformed_case_names, self.malformed.case_names, MALFORMED_CASE_NAMES),
+            (self.policy.deadline_case_names, self.deadline.case_names, DEADLINE_CASE_NAMES),
+        )
+        if any(
+            policy_names != group_names or group_names != expected
+            for policy_names, group_names, expected in inventories
+        ):
+            raise ValueError("probe evidence must retain the exact declared case inventory")
+        groups = (self.reader_differential, self.writer_differential, self.malformed, self.deadline)
+        if any(group.command != self.policy.functional_runner_command for group in groups):
+            raise ValueError("case evidence must retain the canonical executed functional command")
+        if self.typing.command != self.policy.typing_command:
+            raise ValueError("typing evidence must retain the canonical executed strict Pyright command")
         gates = derive_gates(self)
         if self.gates != gates:
             raise ValueError("probe gates must be derived from measured evidence")
@@ -277,6 +382,8 @@ class _ScapyPacket(Protocol):
 
 
 class _ScapyReader(Protocol):
+    interfaces: list[tuple[int, int, dict[str, object]]]
+
     def __enter__(self) -> Self: ...
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> object: ...
@@ -352,18 +459,37 @@ def _validate_window(trace: TrafficTrace, observation_window_seconds: float | No
 
 
 def _scapy_trace(
-    path: Path, metadata: CaptureMetadata, *, deadline: float | None, clock: Callable[[], float]
+    path: Path,
+    metadata: CaptureMetadata,
+    *,
+    deadline: float | None,
+    clock: Callable[[], float],
+    reader_factory: _ScapyReaderFactory,
 ) -> TrafficTrace:
-    reader_factory, _, _ = _scapy_boundaries()
+    _deadline_expired(deadline, clock)
+    _deadline_expired(deadline, clock)
     target = bytes.fromhex(metadata.target_mac.replace(":", ""))
     events: list[TraceEvent] = []
+    previous_timestamp: float | None = None
     try:
         with reader_factory(str(path)) as reader:
+            _deadline_expired(deadline, clock)
             while True:
                 try:
                     packet = reader.read_packet(size=_UINT32_MAX)
                 except EOFError:
                     break
+                if len(reader.interfaces) != 1:
+                    raise TrafficlabError(
+                        f"invalid PCAPNG: Scapy observed {len(reader.interfaces)} interfaces; expected exactly one",
+                        corrective_action=_MALFORMED_ACTION,
+                    )
+                linktype = reader.interfaces[0][0]
+                if linktype != 1:
+                    raise TrafficlabError(
+                        f"invalid PCAPNG: unsupported link type {linktype}; expected Ethernet link type 1",
+                        corrective_action=_MALFORMED_ACTION,
+                    )
                 frame = bytes(packet)
                 if len(frame) < 14:
                     raise TrafficlabError(
@@ -371,9 +497,32 @@ def _scapy_trace(
                         corrective_action=_MALFORMED_ACTION,
                     )
                 timestamp = float(packet.time)
+                if not math.isfinite(timestamp) or timestamp < 0.0:
+                    raise TrafficlabError(
+                        "invalid PCAPNG: Scapy packet timestamp must be finite and nonnegative",
+                        corrective_action=_MALFORMED_ACTION,
+                    )
+                if previous_timestamp is not None and timestamp < previous_timestamp:
+                    raise TrafficlabError(
+                        "invalid PCAPNG: Scapy packet timestamps must be nondecreasing",
+                        corrective_action=_MALFORMED_ACTION,
+                    )
                 direction = Direction.OUTBOUND if frame[6:12] == target else Direction.INBOUND
                 events.append(TraceEvent(timestamp, direction, len(frame)))
+                previous_timestamp = timestamp
                 _deadline_expired(deadline, clock)
+            if len(reader.interfaces) != 1:
+                raise TrafficlabError(
+                    f"invalid PCAPNG: Scapy observed {len(reader.interfaces)} interfaces; expected exactly one",
+                    corrective_action=_MALFORMED_ACTION,
+                )
+            linktype = reader.interfaces[0][0]
+            if linktype != 1:
+                raise TrafficlabError(
+                    f"invalid PCAPNG: unsupported link type {linktype}; expected Ethernet link type 1",
+                    corrective_action=_MALFORMED_ACTION,
+                )
+            _deadline_expired(deadline, clock)
     except TrafficlabError:
         raise
     except OSError as error:
@@ -383,10 +532,17 @@ def _scapy_trace(
         ) from error
     except Exception as error:
         raise TrafficlabError(
-            f"invalid PCAPNG: Scapy could not decode the validated capture ({type(error).__name__})",
+            f"invalid PCAPNG: Scapy could not decode the capture ({type(error).__name__})",
             corrective_action=_MALFORMED_ACTION,
         ) from error
-    return TrafficTrace.from_events(events)
+    if not events:
+        raise TrafficlabError(
+            "invalid PCAPNG: Scapy capture has no packet records",
+            corrective_action=_MALFORMED_ACTION,
+        )
+    trace = TrafficTrace.from_events(events)
+    _deadline_expired(deadline, clock)
+    return trace
 
 
 def read_with_scapy(
@@ -397,17 +553,13 @@ def read_with_scapy(
     deadline: float | None = None,
     clock: Callable[[], float] = monotonic,
 ) -> TrafficTrace:
-    """Validate with Trafficlab, then independently convert Scapy packets to a canonical trace."""
+    """Convert Scapy packet observations to a Trafficlab-owned canonical trace."""
     _deadline_expired(deadline, clock)
-    canonical = parse_pcapng_trace(path, metadata)
+    reader_factory, _, _ = _scapy_boundaries()
     _deadline_expired(deadline, clock)
-    candidate = _scapy_trace(path, metadata, deadline=deadline, clock=clock)
-    if candidate != canonical:
-        raise TrafficlabError(
-            "Scapy PCAPNG trace does not match Trafficlab canonical semantics",
-            corrective_action="retain the production PCAPNG codec and inspect the differential fixture",
-        )
+    candidate = _scapy_trace(path, metadata, deadline=deadline, clock=clock, reader_factory=reader_factory)
     _validate_window(candidate, observation_window_seconds)
+    _deadline_expired(deadline, clock)
     return candidate
 
 
@@ -471,27 +623,40 @@ def write_with_scapy(
 def derive_gates(evidence: ProbeEvidence) -> ProbeGates:
     benchmark_100000 = tuple(item for item in evidence.benchmarks if item.frame_count == 100_000)
     benchmark_1000000 = tuple(item for item in evidence.benchmarks if item.frame_count == 1_000_000)
-    gate_100000 = (
+    gate_100000_time = (
         len(benchmark_100000) == 1
         and benchmark_100000[0].trace_identity
-        and benchmark_100000[0].passed
+        and benchmark_100000[0].time_passed
         and benchmark_100000[0].wall_ratio < MAX_MATERIAL_RATIO
+    )
+    gate_100000_memory = (
+        len(benchmark_100000) == 1
+        and benchmark_100000[0].trace_identity
+        and benchmark_100000[0].memory_passed
         and benchmark_100000[0].rss_ratio < MAX_MATERIAL_RATIO
     )
-    gate_1000000 = (
+    gate_1000000_time = (
         len(benchmark_1000000) == 1
         and benchmark_1000000[0].trace_identity
-        and benchmark_1000000[0].passed
+        and benchmark_1000000[0].time_passed
         and benchmark_1000000[0].wall_ratio < MAX_MATERIAL_RATIO
+    )
+    gate_1000000_memory = (
+        len(benchmark_1000000) == 1
+        and benchmark_1000000[0].trace_identity
+        and benchmark_1000000[0].memory_passed
         and benchmark_1000000[0].rss_ratio < MAX_MATERIAL_RATIO
     )
     return ProbeGates(
-        trace_equivalence=evidence.differential.passed,
+        reader_trace_equivalence=evidence.reader_differential.passed,
+        writer_trace_equivalence=evidence.writer_differential.passed,
         malformed_failures=evidence.malformed.passed,
         deadline_semantics=evidence.deadline.passed,
-        strict_typing=evidence.typing.passed and evidence.typing.errors == 0,
-        benchmark_100000=gate_100000,
-        benchmark_1000000=gate_1000000,
+        strict_typing=evidence.typing.passed,
+        benchmark_100000_time=gate_100000_time,
+        benchmark_100000_memory=gate_100000_memory,
+        benchmark_1000000_time=gate_1000000_time,
+        benchmark_1000000_memory=gate_1000000_memory,
         license_compatibility=False,
     )
 
@@ -529,6 +694,382 @@ def _protocol_frames(metadata: CaptureMetadata) -> tuple[bytes, bytes, bytes]:
     )
 
 
+type Endian = Literal["<", ">"]
+
+
+def _fixture_option(code: int, value: bytes, endian: Endian = "<") -> bytes:
+    return struct.pack(f"{endian}HH", code, len(value)) + value + b"\x00" * (-len(value) % 4)
+
+
+def _fixture_block(
+    block_type: int,
+    body: bytes,
+    endian: Endian = "<",
+    *,
+    trailing_length: int | None = None,
+) -> bytes:
+    padded = body + b"\x00" * (-len(body) % 4)
+    total = 12 + len(padded)
+    trailer = total if trailing_length is None else trailing_length
+    return struct.pack(f"{endian}II", block_type, total) + padded + struct.pack(f"{endian}I", trailer)
+
+
+def _fixture_section(endian: Endian = "<") -> bytes:
+    return _fixture_block(0x0A0D0D0A, struct.pack(f"{endian}IHHq", 0x1A2B3C4D, 1, 0, -1), endian)
+
+
+def _fixture_interface(
+    endian: Endian = "<",
+    *,
+    linktype: int = 1,
+    options: bytes = b"",
+) -> bytes:
+    return _fixture_block(1, struct.pack(f"{endian}HHI", linktype, 0, 65_535) + options, endian)
+
+
+def _fixture_packet(
+    frame: bytes,
+    ticks: int,
+    endian: Endian = "<",
+    *,
+    interface_id: int = 0,
+    original_length: int | None = None,
+    options: bytes = b"",
+) -> bytes:
+    captured = len(frame)
+    original = captured if original_length is None else original_length
+    body = struct.pack(
+        f"{endian}IIIII",
+        interface_id,
+        ticks >> 32,
+        ticks & _UINT32_MAX,
+        captured,
+        original,
+    )
+    return _fixture_block(6, body + frame + b"\x00" * (-captured % 4) + options, endian)
+
+
+def _fixture_capture(
+    frames: tuple[bytes, ...],
+    ticks: tuple[int, ...],
+    *,
+    endian: Endian = "<",
+    resolution: bytes | None = None,
+    packet_options: bytes = b"",
+    original_lengths: tuple[int, ...] | None = None,
+) -> bytes:
+    options = b"" if resolution is None else _fixture_option(9, resolution, endian) + struct.pack(f"{endian}HH", 0, 0)
+    originals = (None,) * len(frames) if original_lengths is None else original_lengths
+    packets = b"".join(
+        _fixture_packet(frame, tick, endian, original_length=original, options=packet_options)
+        for frame, tick, original in zip(frames, ticks, originals, strict=True)
+    )
+    return _fixture_section(endian) + _fixture_interface(endian, options=options) + packets
+
+
+def _input_identity(content: bytes) -> tuple[str, int]:
+    return hashlib.sha256(content).hexdigest(), len(content)
+
+
+def _trace_input(trace: TrafficTrace) -> bytes:
+    return trace.timestamps.tobytes() + trace.directions.tobytes() + trace.frame_lengths.tobytes()
+
+
+def _call_outcome(operation: Callable[[], TrafficTrace]) -> str:
+    try:
+        return _trace_digest(operation())
+    except DeadlineExceededError:
+        return "deadline_exceeded"
+    except TrafficlabError:
+        return "rejected"
+
+
+def _case_result(
+    name: str,
+    content: bytes,
+    *,
+    expected: str,
+    oracle: str,
+    candidate: str,
+    detail: str,
+) -> CaseResult:
+    input_sha256, input_size_bytes = _input_identity(content)
+    return CaseResult(
+        name=name,
+        input_sha256=input_sha256,
+        input_size_bytes=input_size_bytes,
+        expected_outcome=expected,
+        oracle_outcome=oracle,
+        candidate_outcome=candidate,
+        detail=detail,
+        passed=expected == oracle == candidate,
+    )
+
+
+def _case_evidence(case_names: tuple[str, ...], results: tuple[CaseResult, ...]) -> CaseEvidence:
+    failed = tuple(result.name for result in results if not result.passed)
+    return CaseEvidence(
+        case_names=case_names,
+        command=_BOUNDED_BENCHMARK_COMMAND,
+        results=results,
+        failed_case_names=failed,
+        passed=not failed,
+    )
+
+
+def _execute_reader_cases(directory: Path, metadata: CaptureMetadata) -> CaseEvidence:
+    from trafficlab.pcapng import parse_pcapng_trace
+
+    frames = _protocol_frames(metadata)
+    definitions = (
+        (
+            READER_CASE_NAMES[0],
+            _fixture_capture(frames, (0, 1_250_000, 2_500_000)),
+            None,
+        ),
+        (
+            READER_CASE_NAMES[1],
+            _fixture_capture(frames, (0, 1_234_567_890, 2_500_000_000), endian=">", resolution=b"\x09"),
+            None,
+        ),
+        (
+            READER_CASE_NAMES[2],
+            _fixture_capture((frames[0], frames[1]), (1_536, 2_048), resolution=b"\x8a"),
+            None,
+        ),
+        (
+            READER_CASE_NAMES[3],
+            _fixture_capture(
+                (frames[0][:-1], frames[1][:-1]),
+                (1_000_000, 2_000_000),
+                packet_options=_fixture_option(1, b"note") + struct.pack("<HH", 0, 0),
+                original_lengths=(1_500, 1_500),
+            ),
+            None,
+        ),
+        (
+            READER_CASE_NAMES[4],
+            _fixture_capture(frames, (0, 1, 2)),
+            None,
+        ),
+        (
+            READER_CASE_NAMES[5],
+            _fixture_capture((frames[0], frames[1]), (5_000_000, 6_000_000)),
+            1.0,
+        ),
+    )
+    results: list[CaseResult] = []
+    for index, (name, content, window) in enumerate(definitions):
+        path = directory / f"reader-{index}.pcapng"
+        path.write_bytes(content)
+        oracle = _call_outcome(lambda path=path: parse_pcapng_trace(path, metadata))
+        candidate = _call_outcome(
+            lambda path=path, window=window: read_with_scapy(
+                path,
+                metadata,
+                observation_window_seconds=window,
+            )
+        )
+        results.append(
+            _case_result(
+                name,
+                content,
+                expected=oracle,
+                oracle=oracle,
+                candidate=candidate,
+                detail="canonical TrafficTrace digest from independent production and Scapy reads",
+            )
+        )
+    return _case_evidence(READER_CASE_NAMES, tuple(results))
+
+
+def _execute_writer_cases(directory: Path, metadata: CaptureMetadata) -> CaseEvidence:
+    from trafficlab.pcapng import parse_pcapng_trace, write_pcapng
+
+    traces = (
+        TrafficTrace.from_events(
+            (
+                TraceEvent(0.0, Direction.OUTBOUND, 60),
+                TraceEvent(1.0, Direction.INBOUND, 78),
+            )
+        ),
+        TrafficTrace.from_events(
+            (
+                TraceEvent(0.0, Direction.OUTBOUND, 60),
+                TraceEvent(0.000000001, Direction.INBOUND, 78),
+            )
+        ),
+    )
+    results: list[CaseResult] = []
+    for index, (name, trace) in enumerate(zip(WRITER_CASE_NAMES, traces, strict=True)):
+        production_path = directory / f"writer-production-{index}.pcapng"
+        candidate_path = directory / f"writer-scapy-{index}.pcapng"
+        write_pcapng(production_path, trace, metadata)
+        oracle = _call_outcome(lambda path=production_path: parse_pcapng_trace(path, metadata))
+        candidate = _call_outcome(
+            lambda path=candidate_path, trace=trace: write_with_scapy(
+                path,
+                trace,
+                metadata,
+                observation_window_seconds=1.0,
+            )
+        )
+        content = _trace_input(trace)
+        results.append(
+            _case_result(
+                name,
+                content,
+                expected=_trace_digest(trace),
+                oracle=oracle,
+                candidate=candidate,
+                detail="canonical input trace compared with independent production and Scapy writer round trips",
+            )
+        )
+    return _case_evidence(WRITER_CASE_NAMES, tuple(results))
+
+
+def _malformed_definitions(metadata: CaptureMetadata) -> tuple[tuple[str, bytes], ...]:
+    frame = _protocol_frames(metadata)[0]
+    valid_packet = _fixture_packet(frame, 1)
+    nonzero_packet_padding = bytearray(_fixture_packet(frame[:-1], 1))
+    nonzero_packet_padding[8 + 20 + len(frame) - 1] = 1
+    nonzero_option = bytearray(_fixture_option(1, b"x") + struct.pack("<HH", 0, 0))
+    nonzero_option[5] = 1
+    malformed_options = struct.pack("<HH", 1, 8) + b"only"
+    return (
+        (MALFORMED_CASE_NAMES[0], _fixture_section()[:20]),
+        (MALFORMED_CASE_NAMES[1], (_fixture_section() + _fixture_interface() + valid_packet)[:-8]),
+        (
+            MALFORMED_CASE_NAMES[2],
+            _fixture_section() + _fixture_interface() + _fixture_packet(frame, 1)[:-4] + struct.pack("<I", 999),
+        ),
+        (MALFORMED_CASE_NAMES[3], _fixture_section() + _fixture_interface() * 2 + valid_packet),
+        (MALFORMED_CASE_NAMES[4], _fixture_section() + _fixture_interface(linktype=101) + valid_packet),
+        (
+            MALFORMED_CASE_NAMES[5],
+            _fixture_section() + _fixture_interface() + _fixture_packet(frame, 1, interface_id=1),
+        ),
+        (
+            MALFORMED_CASE_NAMES[6],
+            _fixture_section() + _fixture_interface() + _fixture_block(3, struct.pack("<I", len(frame)) + frame),
+        ),
+        (MALFORMED_CASE_NAMES[7], _fixture_section() + _fixture_interface() + _fixture_block(2, b"\x00" * 20)),
+        (MALFORMED_CASE_NAMES[8], _fixture_section() + _fixture_interface() + bytes(nonzero_packet_padding)),
+        (
+            MALFORMED_CASE_NAMES[9],
+            _fixture_section() + _fixture_interface() + _fixture_packet(frame, 1, options=bytes(nonzero_option)),
+        ),
+        (
+            MALFORMED_CASE_NAMES[10],
+            _fixture_section() + _fixture_interface() + _fixture_packet(frame, 1, options=malformed_options),
+        ),
+        (
+            MALFORMED_CASE_NAMES[11],
+            _fixture_section() + _fixture_interface() + _fixture_packet(frame, 2) + _fixture_packet(frame, 1),
+        ),
+    )
+
+
+def _execute_malformed_cases(directory: Path, metadata: CaptureMetadata) -> CaseEvidence:
+    from trafficlab.pcapng import parse_pcapng_trace
+
+    results: list[CaseResult] = []
+    for index, (name, content) in enumerate(_malformed_definitions(metadata)):
+        path = directory / f"malformed-{index}.pcapng"
+        path.write_bytes(content)
+        oracle = _call_outcome(lambda path=path: parse_pcapng_trace(path, metadata))
+        candidate = _call_outcome(lambda path=path: read_with_scapy(path, metadata))
+        results.append(
+            _case_result(
+                name,
+                content,
+                expected=oracle,
+                oracle=oracle,
+                candidate=candidate,
+                detail="production rejection oracle compared with independent Scapy candidate behavior",
+            )
+        )
+    return _case_evidence(MALFORMED_CASE_NAMES, tuple(results))
+
+
+class _CallCountClock:
+    def __init__(self, expires_on_call: int) -> None:
+        self.expires_on_call = expires_on_call
+        self.calls = 0
+
+    def __call__(self) -> float:
+        self.calls += 1
+        return 1.0 if self.calls >= self.expires_on_call else 0.0
+
+
+class _SetupExpiringFactory:
+    def __init__(self, factory: _ScapyReaderFactory, now: list[float]) -> None:
+        self.factory = factory
+        self.now = now
+
+    def __call__(self, filename: str) -> _ScapyReader:
+        reader = self.factory(filename)
+        self.now[0] = 1.0
+        return reader
+
+
+def _execute_deadline_cases(directory: Path, metadata: CaptureMetadata) -> CaseEvidence:
+    from trafficlab.pcapng import parse_pcapng_trace
+
+    frames = (_protocol_frames(metadata)[0],) * 2
+    content = _fixture_capture(frames, (0, 1))
+    path = directory / "deadline.pcapng"
+    path.write_bytes(content)
+    reader_factory, _, _ = _scapy_boundaries()
+
+    candidate_operations: tuple[Callable[[], TrafficTrace], ...] = (
+        lambda: read_with_scapy(path, metadata, deadline=1.0, clock=lambda: 1.0),
+        lambda: _setup_deadline_candidate(path, metadata, reader_factory),
+        lambda: read_with_scapy(path, metadata, deadline=1.0, clock=_CallCountClock(6)),
+        lambda: read_with_scapy(path, metadata, deadline=1.0, clock=_CallCountClock(9)),
+    )
+    oracle_operations: tuple[Callable[[], TrafficTrace], ...] = (
+        lambda: parse_pcapng_trace(path, metadata, deadline=1.0, clock=lambda: 1.0),
+        lambda: parse_pcapng_trace(path, metadata, deadline=1.0, clock=_CallCountClock(3)),
+        lambda: parse_pcapng_trace(path, metadata, deadline=1.0, clock=_CallCountClock(3)),
+        lambda: parse_pcapng_trace(path, metadata, deadline=1.0, clock=_CallCountClock(4)),
+    )
+    details = (
+        "deadline expired before candidate I/O",
+        "deadline expired during Scapy reader construction before packet read",
+        "deadline expired after the first accepted Scapy packet",
+        "deadline expired after candidate trace/window postprocessing",
+    )
+    results = tuple(
+        _case_result(
+            name,
+            content,
+            expected="deadline_exceeded",
+            oracle=_call_outcome(oracle),
+            candidate=_call_outcome(candidate),
+            detail=detail,
+        )
+        for name, oracle, candidate, detail in zip(
+            DEADLINE_CASE_NAMES,
+            oracle_operations,
+            candidate_operations,
+            details,
+            strict=True,
+        )
+    )
+    return _case_evidence(DEADLINE_CASE_NAMES, results)
+
+
+def _setup_deadline_candidate(
+    path: Path,
+    metadata: CaptureMetadata,
+    reader_factory: _ScapyReaderFactory,
+) -> TrafficTrace:
+    now = [0.0]
+    factory = _SetupExpiringFactory(reader_factory, now)
+    return _scapy_trace(path, metadata, deadline=1.0, clock=lambda: now[0], reader_factory=factory)
+
+
 def _pcapng_block(block_type: int, body: bytes) -> bytes:
     padded = body + b"\x00" * (-len(body) % 4)
     total = 12 + len(padded)
@@ -555,15 +1096,38 @@ def _write_benchmark_capture(path: Path, frame_count: int, metadata: CaptureMeta
         stream.write(chunk)
 
 
-def _benchmark_child(
+def benchmark_child(
     adapter: Literal["production", "scapy"], path: Path, metadata: CaptureMetadata
 ) -> dict[str, object]:
+    input_sha256, input_size_bytes = _input_identity(path.read_bytes())
+    if adapter == "production":
+        from trafficlab.pcapng import parse_pcapng_trace
+
+        def operation() -> TrafficTrace:
+            return parse_pcapng_trace(path, metadata)
+
+    else:
+        reader_factory, _, _ = _scapy_boundaries()
+
+        def operation() -> TrafficTrace:
+            return _scapy_trace(
+                path,
+                metadata,
+                deadline=None,
+                clock=monotonic,
+                reader_factory=reader_factory,
+            )
+
     started = perf_counter()
-    trace = parse_pcapng_trace(path, metadata) if adapter == "production" else read_with_scapy(path, metadata)
+    trace = operation()
+    frame_count = len(trace)
+    trace_digest = _trace_digest(trace)
     wall = perf_counter() - started
     return {
-        "frame_count": len(trace),
-        "trace_digest": _trace_digest(trace),
+        "frame_count": frame_count,
+        "trace_digest": trace_digest,
+        "input_sha256": input_sha256,
+        "input_size_bytes": input_size_bytes,
         "wall_seconds": wall,
         "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
     }
@@ -617,6 +1181,8 @@ def _adapter_benchmark(
         BenchmarkSample(
             frame_count=cast(Literal[100_000, 1_000_000], item["frame_count"]),
             trace_digest=str(cast(str, item["trace_digest"])),
+            input_sha256=str(cast(str, item["input_sha256"])),
+            input_size_bytes=int(cast(int, item["input_size_bytes"])),
             wall_seconds=float(cast(float | int, item["wall_seconds"])),
             peak_rss_kib=int(cast(int, item["peak_rss_kib"])),
         )
@@ -668,7 +1234,8 @@ def run_benchmarks() -> tuple[BenchmarkComparison, BenchmarkComparison]:
                     wall_ratio=wall_ratio,
                     rss_ratio=rss_ratio,
                     material_threshold_ratio=MAX_MATERIAL_RATIO,
-                    passed=identity and wall_ratio < MAX_MATERIAL_RATIO and rss_ratio < MAX_MATERIAL_RATIO,
+                    time_passed=identity and wall_ratio < MAX_MATERIAL_RATIO,
+                    memory_passed=identity and rss_ratio < MAX_MATERIAL_RATIO,
                 )
             )
     return cast(tuple[BenchmarkComparison, BenchmarkComparison], tuple(comparisons))
@@ -692,19 +1259,47 @@ def _scapy_version() -> str:
 def build_probe_evidence(*, run_benchmarks: bool) -> dict[str, object]:
     if _scapy_version() != SCAPY_VERSION:
         raise RuntimeError(f"Scapy version must be {SCAPY_VERSION}")
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    with tempfile.TemporaryDirectory(prefix="trafficlab-scapy-functional-") as temporary:
+        directory = Path(temporary)
+        reader_differential = _execute_reader_cases(directory, metadata)
+        writer_differential = _execute_writer_cases(directory, metadata)
+        malformed = _execute_malformed_cases(directory, metadata)
+        deadline = _execute_deadline_cases(directory, metadata)
+    typing_run = subprocess.run(
+        _TYPING_COMMAND,
+        cwd=_REPOSITORY,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    typing = TypingEvidence(
+        command=_TYPING_COMMAND,
+        mode="strict",
+        exit_code=typing_run.returncode,
+        stdout=typing_run.stdout,
+        stderr=typing_run.stderr,
+        passed=typing_run.returncode == 0 and "0 errors, 0 warnings, 0 informations" in typing_run.stdout,
+    )
     benchmarks = run_benchmarks_fn() if run_benchmarks else ()
     policy = ProbePolicy(
         scapy_version=SCAPY_VERSION,
         development_only=True,
         production_codec="trafficlab.pcapng",
         production_changed=False,
-        differential_case_names=DIFFERENTIAL_CASE_NAMES,
+        reader_case_names=READER_CASE_NAMES,
+        writer_case_names=WRITER_CASE_NAMES,
         malformed_case_names=MALFORMED_CASE_NAMES,
+        deadline_case_names=DEADLINE_CASE_NAMES,
+        functional_runner_command=_BOUNDED_BENCHMARK_COMMAND,
+        typing_command=_TYPING_COMMAND,
         benchmark_frame_shapes=BENCHMARK_FRAME_SHAPES,
         benchmark_repetitions=BENCHMARK_REPETITIONS,
         warmup_runs_per_adapter=1,
         fresh_subprocess_per_run=True,
         benchmark_runner_command=_BOUNDED_BENCHMARK_COMMAND,
+        timing_boundary=_TIMING_BOUNDARY,
         material_regression_rule="reject when Scapy median wall or peak RSS is >=1.50x production at either frame count",
         canonical_comparison="TrafficTrace columns",
     )
@@ -721,62 +1316,6 @@ def build_probe_evidence(*, run_benchmarks: bool) -> dict[str, object]:
         uv_lock_sha256=hashlib.sha256((_REPOSITORY / "uv.lock").read_bytes()).hexdigest(),
         implementation_sha256=_file_sha256(source_files),
     )
-    functional_command = (
-        "scripts/run_bounded.sh",
-        "--memory-high",
-        "2G",
-        "--memory-max",
-        "3G",
-        "--swap-max",
-        "512M",
-        "--wall-time",
-        "2m",
-        "--kill-after",
-        "10s",
-        "--",
-        "uv",
-        "run",
-        "--locked",
-        "pytest",
-        "-q",
-        "-n",
-        "0",
-        "tests/scientific/probes/test_scapy_pcapng.py",
-    )
-    differential = CaseEvidence(
-        case_names=DIFFERENTIAL_CASE_NAMES,
-        failed_case_names=("scapy_writer_canonical_trace_round_trip",),
-        detail="Scapy 2.7 public writer loses non-microsecond timestamp precision",
-        command=functional_command,
-        passed=False,
-    )
-    malformed = CaseEvidence(
-        case_names=MALFORMED_CASE_NAMES,
-        failed_case_names=(),
-        detail="all declared failures match Trafficlab error type, text, and corrective action",
-        command=functional_command,
-        passed=True,
-    )
-    deadline = CaseEvidence(
-        case_names=("expired_before_io", "expires_after_first_scapy_packet"),
-        failed_case_names=(),
-        detail="absolute deadline is checked before validation and after every Scapy packet",
-        command=functional_command,
-        passed=True,
-    )
-    typing = TypingEvidence(
-        command=(
-            "uv",
-            "run",
-            "--locked",
-            "pyright",
-            "tests/scientific/probes/scapy_pcapng.py",
-            "tests/scientific/probes/test_scapy_pcapng.py",
-        ),
-        mode="strict",
-        errors=0,
-        passed=True,
-    )
     license_evidence = LicenseEvidence(
         scapy_license_identifier="GPL-2.0-only",
         compatibility_decision="not_made",
@@ -791,19 +1330,23 @@ def build_probe_evidence(*, run_benchmarks: bool) -> dict[str, object]:
         probe="scapy_pcapng",
         policy=policy,
         environment=environment,
-        differential=differential,
+        reader_differential=reader_differential,
+        writer_differential=writer_differential,
         malformed=malformed,
         deadline=deadline,
         typing=typing,
         benchmarks=benchmarks,
         license=license_evidence,
         gates=ProbeGates(
-            trace_equivalence=False,
+            reader_trace_equivalence=False,
+            writer_trace_equivalence=False,
             malformed_failures=False,
             deadline_semantics=False,
             strict_typing=False,
-            benchmark_100000=False,
-            benchmark_1000000=False,
+            benchmark_100000_time=False,
+            benchmark_100000_memory=False,
+            benchmark_1000000_time=False,
+            benchmark_1000000_memory=False,
             license_compatibility=False,
         ),
         decision=ProbeDecision(
@@ -826,10 +1369,15 @@ run_benchmarks_fn = run_benchmarks
 def validate_probe_evidence(evidence: dict[str, object]) -> ProbeEvidence:
     validated = ProbeEvidence.model_validate(evidence)
     if (
-        validated.policy.differential_case_names != DIFFERENTIAL_CASE_NAMES
+        validated.policy.reader_case_names != READER_CASE_NAMES
+        or validated.policy.writer_case_names != WRITER_CASE_NAMES
         or validated.policy.malformed_case_names != MALFORMED_CASE_NAMES
+        or validated.policy.deadline_case_names != DEADLINE_CASE_NAMES
+        or validated.policy.functional_runner_command != _BOUNDED_BENCHMARK_COMMAND
+        or validated.policy.typing_command != _TYPING_COMMAND
         or validated.policy.benchmark_frame_shapes != BENCHMARK_FRAME_SHAPES
         or validated.policy.benchmark_runner_command != _BOUNDED_BENCHMARK_COMMAND
+        or validated.policy.timing_boundary != _TIMING_BOUNDARY
     ):
         raise ValueError("probe evidence does not match the predeclared probe policy")
     source_files = (
@@ -892,7 +1440,7 @@ def _main(arguments: Sequence[str]) -> int:
     path = cast(Path, parsed.path)
     target_mac = cast(str, parsed.target_mac)
     frame_count = cast(int, parsed.frame_count)
-    result = _benchmark_child(adapter, path, CaptureMetadata(interface="eth0", target_mac=target_mac))
+    result = benchmark_child(adapter, path, CaptureMetadata(interface="eth0", target_mac=target_mac))
     if result["frame_count"] != frame_count:
         raise RuntimeError("benchmark child parsed an unexpected frame count")
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
