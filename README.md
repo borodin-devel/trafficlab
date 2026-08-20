@@ -122,7 +122,9 @@ the committed [uv.lock](uv.lock) without silently upgrading dependencies.
 Build the production capture image used by the example configuration:
 
 ```bash
-docker build --tag trafficlab-capture:local docker/capture
+docker build --pull --no-cache --provenance=false --platform linux/amd64 \
+  --output type=image,rewrite-timestamp=true,unpack=false \
+  --tag trafficlab-capture:local docker/capture
 ```
 
 The image definition is checked in at
@@ -177,7 +179,9 @@ uv run --locked trafficlab preflight \
 Build the capture image, confirm Docker access, then run full preflight:
 
 ```bash
-docker build --tag trafficlab-capture:local docker/capture
+docker build --pull --no-cache --provenance=false --platform linux/amd64 \
+  --output type=image,rewrite-timestamp=true,unpack=false \
+  --tag trafficlab-capture:local docker/capture
 uv run --locked trafficlab preflight examples/configs/local.toml
 ```
 
