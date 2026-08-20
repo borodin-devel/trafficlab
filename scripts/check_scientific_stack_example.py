@@ -38,12 +38,14 @@ from trafficlab.comparison import (
     similarity_settings_identity,
 )
 from trafficlab.compatibility import identify_bytes
+from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_experiment, render_effective_config
 from trafficlab.errors import TrafficlabError
 from trafficlab.generation import reproduce_generated_pcapng
 from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.models.registry import load_best_model, render_best_model
+from trafficlab.models.common import FamilyBounds
+from trafficlab.models.registry import get_family, load_best_model, make_best_model, render_best_model
 from trafficlab.pcapng import parse_pcapng_bytes_trace
 from trafficlab.trace import align_generated, normalize_reference, parse_capture_metadata
 
@@ -279,7 +281,32 @@ def _one_event(records: Sequence[Mapping[str, object]], event: str) -> Mapping[s
     return matches[0]
 
 
-def _derived_result(artifact_directory: Path) -> tuple[dict[str, object], str]:
+def _matches_checked_configuration(snapshot: ExperimentConfig, checked: ExperimentConfig) -> bool:
+    """Compare every setting while ignoring only host-realized path spelling."""
+    if len(snapshot.target.mounts) != len(checked.target.mounts):
+        return False
+    normalized_target = checked.target.model_copy(
+        update={
+            "mounts": tuple(
+                mount.model_copy(update={"source": snapshot.target.mounts[index].source})
+                for index, mount in enumerate(checked.target.mounts)
+            )
+        }
+    )
+    normalized_checked = checked.model_copy(
+        update={
+            "run": checked.run.model_copy(update={"directory": snapshot.run.directory}),
+            "target": normalized_target,
+        }
+    )
+    return snapshot == normalized_checked
+
+
+def _derived_result(
+    artifact_directory: Path,
+    *,
+    repository_root: Path = REPOSITORY,
+) -> tuple[dict[str, object], str]:
     contents = {name: (artifact_directory / name).read_bytes() for name in _ARTIFACT_NAMES}
     capture_content = contents["capture.json"]
     metadata = parse_capture_metadata(capture_content, source=artifact_directory / "capture.json")
@@ -300,6 +327,9 @@ def _derived_result(artifact_directory: Path) -> tuple[dict[str, object], str]:
     config = load_experiment(artifact_directory / "experiment.toml")
     if render_effective_config(config) != contents["experiment.toml"]:
         raise ValueError("example experiment snapshot is not canonical")
+    checked_config = load_experiment(repository_root / _CONFIG_RELATIVE)
+    if not _matches_checked_configuration(config, checked_config):
+        raise ValueError("example experiment snapshot does not match the checked configuration")
     context = make_strategy_context(
         config,
         reference,
@@ -315,12 +345,9 @@ def _derived_result(artifact_directory: Path) -> tuple[dict[str, object], str]:
         raise ValueError(f"example checkpoint is incompatible: {error}") from error
     if render_history_csv(checkpoint) != contents["ga_history.csv"]:
         raise ValueError("example history is not the exact checkpoint projection")
-    winners = tuple(
+    winner = next(
         candidate for candidate in checkpoint.population if candidate.identifier == checkpoint.best_identifier
     )
-    if len(winners) != 1:
-        raise ValueError("example checkpoint must identify one winner")
-    winner = winners[0]
     if (
         winner.status != "valid"
         or winner.family != best.family
@@ -333,6 +360,23 @@ def _derived_result(artifact_directory: Path) -> tuple[dict[str, object], str]:
         or best.observation_window_seconds != window
     ):
         raise ValueError("example winner and best-model lineage are incompatible")
+    winner_bounds = cast(FamilyBounds, getattr(config.models, winner.family))
+    try:
+        reconstructed_best = make_best_model(
+            get_family(winner.family),
+            reference,
+            winner.genes,
+            reference_identity=identify_bytes(contents["reference.pcapng"]),
+            capture_identity=identify_bytes(contents["capture.json"]),
+            final_seed=config.run.final_seed,
+            final_limits=config.generation.final,
+            W=window,
+            bounds=winner_bounds,
+        )
+    except TrafficlabError as error:
+        raise ValueError(f"example fitted model cannot be reconstructed: {error}") from error
+    if reconstructed_best != best:
+        raise ValueError("example fitted model does not match the retained reference and winner")
     try:
         _raw_generated, rendered_generated, regenerated_content = reproduce_generated_pcapng(
             best, metadata, clock=lambda: 0.0
@@ -451,7 +495,7 @@ def build_evidence(
     source_lock = subprocess.run(
         ("git", "show", f"{source_commit}:uv.lock"), cwd=repository, check=True, capture_output=True
     ).stdout
-    result, project_name = _derived_result(artifact_directory)
+    result, project_name = _derived_result(artifact_directory, repository_root=repository)
     cleanup = _cleanup_inventory(repository, project_name)
     if any(cleanup.values()):
         raise ValueError("example run cleanup label inventory is not empty")
@@ -563,7 +607,7 @@ def validate_evidence(evidence: Mapping[str, object], *, repository_root: Path =
     for name in _ARTIFACT_NAMES:
         if model.artifacts[name].model_dump(mode="json") != _identity(artifact_directory / name):
             raise ValueError(f"example-run artifact identity does not match retained bytes: {name}")
-    result, project_name = _derived_result(artifact_directory)
+    result, project_name = _derived_result(artifact_directory, repository_root=root)
     if model.result.model_dump(mode="json") != result:
         raise ValueError("example-run result does not match retained artifacts")
     if model.cleanup.model_dump(mode="json") != {

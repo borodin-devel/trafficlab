@@ -29,6 +29,7 @@ dist/
 runs/
 
 # Retain manifest-bound validation logs despite the general log rule.
+!/examples/scientific_stack/example_run_artifacts/run.log
 !/tests/fixtures/data/validation_study/candidate/**/run.log
 !/examples/validation_study/evidence/**/run.log
 
