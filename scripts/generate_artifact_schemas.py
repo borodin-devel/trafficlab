@@ -17,7 +17,7 @@ if __package__ in (None, ""):
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-OUTPUT_DIRECTORY = REPOSITORY / "examples" / "schemas" / "scientific-artifact-v3"
+OUTPUT_DIRECTORY = REPOSITORY / "examples" / "schemas" / "scientific-artifact-v4"
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
 

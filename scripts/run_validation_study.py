@@ -3549,8 +3549,8 @@ def _retained_prerequisite_document(value: object) -> dict[str, object]:
     _require(type(value) is dict, "retained prerequisite evidence must be a JSON object")
     raw = cast(dict[str, object], value)
     _require(
-        raw.get("schema_version") == 3,
-        "retained prerequisite schema version must be exactly 3",
+        raw.get("schema_version") == 4,
+        "retained prerequisite schema version must be exactly 4",
     )
     validated = validate_study_model(
         ValidationStudyPrerequisite,
@@ -3606,7 +3606,7 @@ def _retained_prerequisite_document(value: object) -> dict[str, object]:
         "capability": _retained_prerequisite_capability(root["capability"]),
         "commands": commands,
         "environment": _retained_prerequisite_environment(root["environment"]),
-        "schema_version": 3,
+        "schema_version": 4,
         "study_id": study_id,
         "url": url,
     }
@@ -8487,7 +8487,7 @@ def _collection_inputs_from_prerequisites(
                             "uv_lock_identity": uv_lock_identity,
                         },
                     ),
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "study_id": study_id,
                     "url": url,
                 },
@@ -8507,7 +8507,7 @@ def _collection_inputs_from_prerequisites(
             "kernel_release": current_host["kernel_release"],
             "python_implementation": current_host["python_implementation"],
             "python_version": current_host["python_version"],
-            "scientific_artifact_schema": 3,
+            "scientific_artifact_schema": 4,
             "source_commit": source_commit,
             "source_tree": source_tree,
             "target_image_id": target_image_id,
@@ -8934,7 +8934,7 @@ def collect_validation_candidate(
                     },
                 ),
                 "prerequisite_path": "examples/validation_study/prerequisites.json",
-                "schema_version": 3,
+                "schema_version": 4,
                 "selection_seeds": list(configs["short"].genetic.trial_seeds),
                 "study_id": checked_study_id,
                 "training_repetitions": 3,
@@ -9023,7 +9023,7 @@ def collect_validation_candidate(
             "protocol": "protocol.json",
             "report": "report.json",
             "report_inputs": "report_inputs.json",
-            "schema_version": 3,
+            "schema_version": 4,
             "training": [
                 cast(JsonValue, _candidate_training_record(item, environment=environment)) for item in ordered_training
             ],

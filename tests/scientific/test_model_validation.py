@@ -22,6 +22,7 @@ from tests.scientific.oracles import (
     markov_stationary_distribution,
     mmpp_moments,
 )
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.compatibility import identify_bytes
 from trafficlab.config import (
     FloatBounds,
@@ -52,7 +53,6 @@ from trafficlab.models.markov_renewal import (
 )
 from trafficlab.models.mmpp import MmppFamily, MmppModel
 from trafficlab.models.poisson import PoissonFamily, PoissonModel
-from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.trace import Direction, TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
@@ -600,7 +600,7 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
     )
     rendered = render_best_model(best)
     loaded = load_best_model(rendered, source=Path(f"{family_name}-best_model.json"))
-    assert loaded.scientific_artifact_schema == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 3
+    assert loaded.scientific_artifact_schema == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 4
     assert render_best_model(loaded) == rendered
 
     first = family.generate(

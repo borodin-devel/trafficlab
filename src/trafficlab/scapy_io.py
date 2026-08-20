@@ -69,7 +69,7 @@ class _ScapyWriter(Protocol):
     def write_packet(
         self,
         packet: _ScapyPacket,
-        sec: float | None = None,
+        sec: object | None = None,
         usec: int | None = None,
         caplen: int | None = None,
         wirelen: int | None = None,
@@ -84,15 +84,23 @@ class _EtherFactory(Protocol):
     def __call__(self, raw_packet: bytes) -> _ScapyPacket: ...
 
 
+class _TimestampFactory(Protocol):
+    def __call__(self, value: str) -> object: ...
+
+
 def _reader_boundary() -> tuple[_ScapyReaderFactory, type[SupportsFloat]]:
     utils = importlib.import_module("scapy.utils")
     return cast(_ScapyReaderFactory, utils.PcapNgReader), cast(type[SupportsFloat], utils.EDecimal)
 
 
-def _writer_boundary() -> tuple[_ScapyWriterFactory, _EtherFactory]:
+def _writer_boundary() -> tuple[_ScapyWriterFactory, _EtherFactory, _TimestampFactory]:
     utils = importlib.import_module("scapy.utils")
     layers = importlib.import_module("scapy.layers.l2")
-    return cast(_ScapyWriterFactory, utils.PcapNgWriter), cast(_EtherFactory, layers.Ether)
+    return (
+        cast(_ScapyWriterFactory, utils.PcapNgWriter),
+        cast(_EtherFactory, layers.Ether),
+        cast(_TimestampFactory, utils.EDecimal),
+    )
 
 
 def _deadline_expired(deadline: float | None, clock: Callable[[], float]) -> None:
@@ -284,6 +292,7 @@ def _write_scapy_path(
     *,
     writer_factory: _ScapyWriterFactory,
     ether_factory: _EtherFactory,
+    timestamp_factory: _TimestampFactory,
 ) -> None:
     try:
         with writer_factory(str(path)) as writer:
@@ -293,7 +302,7 @@ def _write_scapy_path(
                     writer.write_header(packet)
                 writer.write_packet(
                     packet,
-                    sec=event.timestamp,
+                    sec=timestamp_factory(_microsecond_text(event.timestamp)),
                     caplen=event.frame_length,
                     wirelen=event.frame_length,
                 )
@@ -309,6 +318,15 @@ def _write_scapy_path(
         ) from error
 
 
+def _microsecond_text(timestamp: float) -> str:
+    scaled = timestamp * 1_000_000
+    nearest = round(scaled)
+    tolerance = 4 * math.ulp(scaled)
+    ticks = nearest if abs(scaled - nearest) <= tolerance else math.floor(scaled)
+    seconds, microseconds = divmod(ticks, 1_000_000)
+    return f"{seconds}.{microseconds:06d}"
+
+
 def encode_pcapng(
     trace: TrafficTrace,
     metadata: CaptureMetadata,
@@ -317,7 +335,7 @@ def encode_pcapng(
 ) -> EncodedPcapng:
     """Encode through Scapy and return only reparsed emitted output."""
     _validate_encoding_input(trace, observation_window_seconds)
-    writer_factory, ether_factory = _writer_boundary()
+    writer_factory, ether_factory, timestamp_factory = _writer_boundary()
     with TemporaryDirectory(prefix="trafficlab-scapy-write-") as temporary:
         path = Path(temporary) / "generated.pcapng"
         _write_scapy_path(
@@ -326,6 +344,7 @@ def encode_pcapng(
             metadata,
             writer_factory=writer_factory,
             ether_factory=ether_factory,
+            timestamp_factory=timestamp_factory,
         )
         try:
             content = path.read_bytes()

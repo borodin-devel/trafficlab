@@ -251,7 +251,7 @@ class BestModel(BaseModel):
     )
 
     version: Literal[1]
-    scientific_artifact_schema: Literal[3]
+    scientific_artifact_schema: Literal[4]
     family: FamilyName
     genes: Genes
     fitted: FamilyPayload
@@ -767,7 +767,7 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
         ) from error
     return BestModel(
         version=1,
-        scientific_artifact_schema=cast(Literal[3], document["scientific_artifact_schema"]),
+        scientific_artifact_schema=cast(Literal[4], document["scientific_artifact_schema"]),
         family=_family_name(family_value),
         genes=genes,
         fitted=fitted,

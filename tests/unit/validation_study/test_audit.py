@@ -24,6 +24,7 @@ from scripts import audit_validation_study as auditor
 from scripts import generate_validation_study_fixture as fixture_generator
 from scripts import run_validation_study as study
 from tests.fixtures.paths import VALIDATION_STUDY_CANDIDATE
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from tests.support.validation_study import (
     CAPTURE_BYTES,
     FIT_FIXTURE,
@@ -53,10 +54,9 @@ from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
 from trafficlab.models.registry import load_best_model, rebuild_best_model, render_best_model
-from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import open_or_prepare_experiment
 from trafficlab.run import RunDependencies, run_experiment
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
 
 VALIDATION_STUDY_LOCAL_EXCLUDE_LOCK = Path("/tmp") / (
@@ -2376,7 +2376,7 @@ def test_offline_bundle_fixture_carries_complete_real_program_validation_evidenc
     before = candidate_bytes(candidate)
     index = json.loads((candidate / "index.json").read_text(encoding="utf-8"))
 
-    assert index["schema_version"] == 3
+    assert index["schema_version"] == 4
     assert set(index) == {
         "environment",
         "fresh_simulation",
@@ -2860,7 +2860,7 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
             "target_image_reference": study.TARGET_REFERENCE,
             "uv_lock_identity": identify_bytes(b"locked\n").as_dict(),
         },
-        "schema_version": 3,
+        "schema_version": 4,
         "study_id": study_id,
         "url": url,
     }
@@ -2914,7 +2914,7 @@ def test_complete_fixture_freezes_training_model_selection_and_bidirectional_var
     report_inputs = cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text(encoding="utf-8")))
 
     selection = cast(dict[str, object], protocol["model_selection"])
-    assert protocol["schema_version"] == 3
+    assert protocol["schema_version"] == 4
     assert "natural_variation_windows" not in protocol
     assert selection["rule"] == "highest_best_fitness_then_lowest_repeat"
     assert {cast(dict[str, object], value)["workload"] for value in cast(list[object], selection["selected"])} == {

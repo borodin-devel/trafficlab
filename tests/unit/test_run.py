@@ -613,7 +613,7 @@ def test_final_reload_preserves_the_generic_checkpoint_error_boundary(
 
     def replace_checkpoint_after_compare(path: Path) -> ComparisonResult:
         result = original_compare(path)
-        checkpoint_path.write_bytes(b'{"scientific_artifact_schema":3}\n')
+        checkpoint_path.write_bytes(b'{"scientific_artifact_schema":4}\n')
         return result
 
     object.__setattr__(dependencies, "compare", replace_checkpoint_after_compare)

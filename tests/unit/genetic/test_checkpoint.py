@@ -215,7 +215,7 @@ GENETIC = GeneticCheckpointSettings(
     resume=True,
 )
 COMPATIBILITY = CheckpointCompatibility(
-    scientific_artifact_schema=3,
+    scientific_artifact_schema=4,
     experiment_identity=ContentIdentity(size=101, sha256="a" * 64),
     reference_identity=ContentIdentity(size=102, sha256="b" * 64),
     capture_identity=ContentIdentity(size=103, sha256="c" * 64),
@@ -587,7 +587,7 @@ def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnost
     assert content.endswith(b"\n")
     decoded = json.loads(content)
     assert content == (json.dumps(decoded, sort_keys=True, separators=(",", ":")) + "\n").encode()
-    assert decoded["scientific_artifact_schema"] == 3
+    assert decoded["scientific_artifact_schema"] == 4
     assert tuple(method.name for method in loaded.population[0].trials[0].methods) == METHOD_ORDER
     with pytest.raises(TypeError):
         cast(dict[str, object], loaded.population[0].trials[0].methods[0].diagnostics)["changed"] = True
@@ -789,12 +789,12 @@ def test_checkpoint_round_trip_preserves_candidate_failure_scientific_diagnostic
         ("nonfinite_score", 7, "legacy nonfinite score"),
     ],
 )
-def test_schema_v3_checkpoint_rejects_incomplete_legacy_candidate_failure(
+def test_schema_v4_checkpoint_rejects_incomplete_legacy_candidate_failure(
     kind: str,
     seed: int | None,
     detail: str,
 ) -> None:
-    """Current checkpoints cannot silently upgrade pre-v3 diagnostic semantics."""
+    """Current checkpoints cannot silently upgrade incomplete failure semantics."""
     document = _decoded()
     invalid = cast(dict[str, object], cast(list[dict[str, object]], document["population"])[1]["invalid"])
     invalid.clear()
@@ -927,7 +927,7 @@ def test_checkpoint_rejects_noncanonical_but_equivalent_json() -> None:
         (False, None),
         (True, None),
         (True, 1),
-        (True, 4),
+        (True, 5),
         (True, True),
         (True, "2"),
         (True, 2.0),

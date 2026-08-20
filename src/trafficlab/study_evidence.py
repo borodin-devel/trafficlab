@@ -126,7 +126,7 @@ class ValidationStudyEnvironment(_StrictStudyModel):
     kernel_release: NonemptyString
     python_implementation: Literal["CPython"]
     python_version: Literal["3.12.3"]
-    scientific_artifact_schema: Literal[3]
+    scientific_artifact_schema: Literal[4]
     source_commit: GitIdentity
     source_tree: GitIdentity
     target_image_id: ImageIdentity
@@ -192,7 +192,7 @@ class ValidationStudyPrerequisite(_StrictStudyModel):
         tuple[StudyPrerequisiteCommand, ...], Field(min_length=2, max_length=2), BeforeValidator(_tuple_input)
     ]
     environment: StudyPrerequisiteEnvironment
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     study_id: NonemptyString
     url: Annotated[StrictStr, Field(pattern=r"^https://")]
 
@@ -359,7 +359,7 @@ class ValidationStudyLineage(_StrictStudyModel):
     protocol: RelativePath
     report: RelativePath
     report_inputs: RelativePath
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     training: Annotated[
         tuple[StudyTrainingLineage, ...], Field(min_length=9, max_length=9), BeforeValidator(_tuple_input)
     ]
@@ -411,7 +411,7 @@ class ValidationStudyProtocol(_StrictStudyModel):
     final_seed: NonnegativeInt
     model_selection: StudyModelSelection
     prerequisite_path: RelativePath
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     selection_seeds: Annotated[tuple[NonnegativeInt, ...], Field(min_length=1), BeforeValidator(_tuple_input)]
     study_id: NonemptyString
     training_repetitions: PositiveInt

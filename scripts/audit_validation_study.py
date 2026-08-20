@@ -1066,12 +1066,12 @@ def _require_permitted_relocated_worktree(
 
 def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
     document = _json(content, name="environment.json")
-    if document.get("scientific_artifact_schema") != 3:
+    if document.get("scientific_artifact_schema") != 4:
         _fail(
             "scientific_semantics_incompatible",
             "environment",
-            "environment must record scientific schema 3",
-            "recreate evidence under schema 3",
+            "environment must record scientific schema 4",
+            "recreate evidence under schema 4",
         )
     if ("python_implementation" in document and document["python_implementation"] != "CPython") or (
         "python_version" in document and document["python_version"] != platform.python_version()
@@ -1249,11 +1249,11 @@ def _environment(content: bytes, *, repository: Path) -> dict[str, object]:
 
 def _protocol(content: bytes) -> dict[str, object]:
     document = _json(content, name="protocol.json")
-    if document.get("schema_version") != 3 or document.get("final_seed") != 97:
+    if document.get("schema_version") != 4 or document.get("final_seed") != 97:
         _fail(
             "scientific_semantics_incompatible",
             "protocol",
-            "protocol must freeze schema 3 and final seed 97",
+            "protocol must freeze schema 4 and final seed 97",
             "restore frozen protocol",
         )
     raw_selection = document.get("model_selection")
@@ -3000,8 +3000,8 @@ def _audit(
         _fail(
             "scientific_semantics_incompatible",
             _INDEX,
-            "evidence index must use schema version 3",
-            "rebuild retained evidence under schema 3",
+            "evidence index must use schema version 4",
+            "rebuild retained evidence under schema 4",
         )
     index = _validated_study_root(index, ValidationStudyLineage, name=_INDEX)
     _metadata(index, entries)

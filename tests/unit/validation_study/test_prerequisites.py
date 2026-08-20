@@ -1859,7 +1859,7 @@ def test_collect_cli_freezes_its_attempt_before_any_input_bridge_failure(
 
 
 def test_public_prerequisites_then_collect_binds_the_raw_published_marker_before_transformation(tmp_path: Path) -> None:
-    """The public phase transition checks schema-1 publication bytes before schema-3 retention."""
+    """The public phase transition checks schema-1 publication bytes before schema-4 retention."""
 
     repository = tmp_path / "repository"
     write_prerequisite_repository_inputs(repository)

@@ -522,7 +522,7 @@ def validate_source_identities(source_commit: str, source_tree: str) -> None:
 
 
 def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, bytes]:
-    """Build one complete, credential-free schema-3 candidate through public scientific owners."""
+    """Build one complete, credential-free schema-4 candidate through public scientific owners."""
     validate_source_identities(source_commit, source_tree)
     configs: dict[study.WorkloadName, ExperimentConfig] = {}
     for workload in WORKLOADS:
@@ -601,7 +601,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                 "selected": list(selections),
             },
             "prerequisite_path": "examples/validation_study/prerequisites.json",
-            "schema_version": 3,
+            "schema_version": 4,
             "selection_seeds": list(configs["short"].genetic.trial_seeds),
             "study_id": _STUDY_ID,
             "training_repetitions": 3,
@@ -621,7 +621,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             "kernel_release": "fixture-kernel-1",
             "python_implementation": "CPython",
             "python_version": sys.version.split()[0],
-            "scientific_artifact_schema": 3,
+            "scientific_artifact_schema": 4,
             "source_commit": source_commit,
             "source_tree": source_tree,
             "target_image_id": TARGET_ID,
@@ -702,7 +702,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                     },
                     "commands": prerequisite_commands,
                     "environment": prerequisite_environment,
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "study_id": _STUDY_ID,
                     "url": _URL,
                 }
@@ -780,7 +780,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             "protocol": "protocol.json",
             "report": "report.json",
             "report_inputs": "report_inputs.json",
-            "schema_version": 3,
+            "schema_version": 4,
             "training": training,
         }
         (root / "index.json").write_bytes(_canonical(index))

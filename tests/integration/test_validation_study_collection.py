@@ -14,6 +14,7 @@ import pytest
 
 from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts import append_run_log
 from trafficlab.capture import CaptureResult
 from trafficlab.capture_validation import validate_capture_pair
@@ -24,10 +25,9 @@ from trafficlab.config_io import load_experiment
 from trafficlab.errors import TrafficlabError
 from trafficlab.fitting import fit_experiment
 from trafficlab.generation import generate_experiment
-from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import TraceEvent, TrafficTrace, parse_capture_metadata
 
 pytestmark = pytest.mark.integration
@@ -144,7 +144,7 @@ def _retained_prerequisites(
                     "uv_lock_identity",
                 )
             },
-            "schema_version": 3,
+            "schema_version": 4,
             "study_id": study_id,
             "url": url,
         }
@@ -174,7 +174,7 @@ def _collection_inputs(
         "kernel_release": "fixture-kernel-1",
         "python_implementation": "CPython",
         "python_version": platform.python_version(),
-        "scientific_artifact_schema": 3,
+        "scientific_artifact_schema": 4,
         "source_commit": commit,
         "source_tree": tree,
         "target_image_id": f"sha256:{study.TARGET_REFERENCE.rsplit(':', 1)[-1]}",
@@ -222,7 +222,7 @@ def _offline_stage_runners(
     environment: dict[str, object],
 ) -> tuple[Callable[[Path], RunResult], Callable[[Path], CaptureResult], list[str]]:
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=_FIT_FIXTURE / "capture.json")
-    base_events = read_pcapng_bytes(_REFERENCE_BYTES, metadata, source=_FIT_FIXTURE / "reference.pcapng")
+    base_events = read_pcapng_bytes(_REFERENCE_BYTES, metadata, source=_FIT_FIXTURE / "reference.pcapng").to_events()
     sequence = count(1)
     calls: list[str] = []
 
@@ -505,7 +505,7 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text()))
     assert protocol["study_id"] == protocol["candidate_id"] == protocol["destination_id"] == "study-1"
     assert protocol["prerequisite_path"] == "examples/validation_study/prerequisites.json"
-    assert protocol["schema_version"] == 3
+    assert protocol["schema_version"] == 4
     assert "natural_variation_windows" not in protocol
     lifecycle = cast(dict[str, object], json.loads((candidate / "lifecycle.json").read_text()))
     assert lifecycle["study_id"] == "study-1"
