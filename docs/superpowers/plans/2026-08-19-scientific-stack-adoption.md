@@ -519,27 +519,27 @@ Run Ruff, strict Pyright, focused probe tests twice, full production PCAPNG/capt
 - Produces: one bounded `compose down --volumes --remove-orphans` production path and dedicated-test label inventory/sweep.
 - Preserves: exact project-name validation, process deadline/termination, primary-error arbitration, and no global cleanup.
 
-- [ ] **[STEP-67-a7c84d0f] Step 1: Rewrite tests around the simpler observable contract**
+- [x] **[STEP-67-a7c84d0f] Step 1: Rewrite tests around the simpler observable contract**
 
 Add failing unit tests for one exact down command, timeout/kill/reap, invalid scope, nonzero status, and primary-versus-secondary failure. Move real resource-removal assertions to Docker lifecycle tests using exact Compose project labels.
 
-- [ ] **[STEP-68-9b4ce29e] Step 2: Run cleanup tests and confirm old state-machine expectations fail**
+- [x] **[STEP-68-9b4ce29e] Step 2: Run cleanup tests and confirm old state-machine expectations fail**
 
 Run the focused bounded cleanup unit/integration selection; verify failures demonstrate the production inventory/state-machine behavior that the new contract removes.
 
-- [ ] **[STEP-69-19a98eac] Step 3: Implement one bounded cleanup command**
+- [x] **[STEP-69-19a98eac] Step 3: Implement one bounded cleanup command**
 
 Reduce `cleanup_project` to validated scope, single `start_down`, bounded wait, terminate/kill/reap, and a compact success/failure result. Remove production post-down inventory ordering while retaining actionable command output.
 
-- [ ] **[STEP-70-40039936] Step 4: Move leak verification to real Docker ownership fixtures**
+- [x] **[STEP-70-40039936] Step 4: Move leak verification to real Docker ownership fixtures**
 
 Have each Docker test register its unique project, assert no labeled containers/networks/volumes/orphans remain, and run one bounded session teardown sweep for registered test projects only.
 
-- [ ] **[STEP-71-d7ce8726] Step 5: Update capture arbitration and stable architecture**
+- [x] **[STEP-71-d7ce8726] Step 5: Update capture arbitration and stable architecture**
 
 Ensure `capture.py` always invokes cleanup in `finally`, attaches cleanup failure secondarily when a stage already failed, and otherwise surfaces cleanup as primary. Update `architecture/CAPTURE.md` with the single-command production boundary and dedicated lifecycle assertions.
 
-- [ ] **[STEP-72-1288f057] Step 6: Verify and commit Docker simplification**
+- [x] **[STEP-72-1288f057] Step 6: Verify and commit Docker simplification**
 
 Run Ruff, Pyright, cleanup/capture unit and in-process integration tests, then the bounded Docker selection on a capable host with post-run label inventory empty. Commit `refactor: simplify compose cleanup`.
 
