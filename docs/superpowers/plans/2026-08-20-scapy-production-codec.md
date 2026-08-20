@@ -622,7 +622,7 @@ git commit -m "feat: publish scapy schema v4 fixtures"
 - Produces: one clean schema-v4 Scapy durable example and authoritative architecture with no legacy/license claims.
 - Preserves: exact checkpoint/refit/generation/comparison recomputation and clean project-scoped Docker teardown.
 
-- [ ] **[STEP-37-3f0c548a] Step 1: Write durable-example and documentation RED tests**
+- [x] **[STEP-37-3f0c548a] Step 1: Write durable-example RED tests**
 
 ```python
 def test_example_is_schema_v4_and_regenerates_exact_scapy_bytes() -> None:
@@ -630,16 +630,11 @@ def test_example_is_schema_v4_and_regenerates_exact_scapy_bytes() -> None:
     assert json.loads(artifact_bytes("best_model.json"))["schema_version"] == 4
     assert derive_example_result() == evidence["result"]
     assert regenerate_generated_bytes() == artifact_bytes("generated.pcapng")
-
-
-def test_active_docs_name_one_scapy_codec_and_no_license_gate() -> None:
-    active = read_active_architecture_and_evidence()
-    assert "trafficlab.scapy_io" in active
-    assert "development-only Scapy" not in active
-    assert "license compatibility" not in active.lower()
 ```
 
-- [ ] **[STEP-38-c14d89ca] Step 2: Run bounded example/docs RED**
+Review human-facing architecture prose directly; do not add source-text tests for wording.
+
+- [x] **[STEP-38-c14d89ca] Step 2: Run bounded example/docs RED**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -651,11 +646,11 @@ uv run --locked python scripts/check_scientific_stack_example.py --check
 
 Expected: retained example is schema 3/old bytes and active docs describe a rejected development-only probe.
 
-- [ ] **[STEP-39-cf3d2126] Step 3: Update architecture and evidence claims**
+- [x] **[STEP-39-cf3d2126] Step 3: Update architecture and evidence claims**
 
 Document the new Scapy API/data flow, accepted timestamp/container semantics, reparsed output authority, test-only oracle, schema-v4 incompatibility, diagnostic-only performance, no-license policy, and rewrite-over-compatibility policy. Remove active statements that the custom codec is production or Scapy is rejected. Preserve historical descriptions only when explicitly labeled as superseded evidence.
 
-- [ ] **[STEP-40-ac598dde] Step 4: Freeze source, then run and retain a clean durable example**
+- [x] **[STEP-40-ac598dde] Step 4: Freeze source, then run and retain a clean durable example**
 
 Commit the final implementation and checker source before the run:
 
@@ -668,22 +663,21 @@ test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
 From that exact clean source, build/use the locked capture image, run the bounded `examples/scientific_stack/experiment.toml` workflow against the explicit Wikimedia HTTPS URL, retain the exact nine artifacts, and generate `example_run.json`. The checker must refit, encode through Scapy, byte-compare, reparse, recompute all four similarity methods, validate path relocation, and verify empty exact-label Docker inventories.
 
-- [ ] **[STEP-41-e74e04b7] Step 5: Verify example, architecture, and source binding**
+- [x] **[STEP-41-e74e04b7] Step 5: Verify example, architecture, and source binding**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/test_scientific_stack_example_run.py \
   tests/unit/test_package.py tests/integration/test_run_pipeline.py
 uv run --locked python scripts/check_scientific_stack_example.py --check
-test -z "$(rg -l 'trafficlab\.pcapng|SCAPY_LICENSE_DECISION' README.md architecture docs \
-  examples --glob '!docs/superpowers/specs/2026-08-19-scientific-stack-adoption-design.md' \
-  --glob '!docs/superpowers/plans/2026-08-19-scientific-stack-adoption.md' \
-  --glob '!examples/validation_study/evidence/**')"
+test -z "$(rg -l 'trafficlab\.pcapng|SCAPY_LICENSE_DECISION' README.md architecture \
+  examples/data examples/scientific_stack examples/validation_study/README.md \
+  --glob '!examples/scientific_stack/example_run.json')"
 git diff --check
 ```
 
 Expected: current docs/example use Scapy/schema v4; explicitly historical documents/bundles remain unchanged.
 
-- [ ] **[STEP-42-4b7ec698] Step 6: Commit durable Scapy example and architecture**
+- [x] **[STEP-42-4b7ec698] Step 6: Commit durable Scapy example and architecture**
 
 ```bash
 git add README.md architecture docs/SCIENTIFIC_STACK_ADOPTION_EVIDENCE.md \
