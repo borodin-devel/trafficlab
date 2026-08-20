@@ -531,7 +531,7 @@ git commit -m "refactor: retire scapy adoption probe"
 - Produces: `SCIENTIFIC_ARTIFACT_SCHEMA_VERSION = 4` and deterministic Scapy-produced fixtures.
 - Rejects: every schema-v3 best model/checkpoint/current-run reuse with exact refit instructions.
 
-- [ ] **[STEP-31-166432a3] Step 1: Write schema-v4 and stale-artifact RED tests**
+- [x] **[STEP-31-166432a3] Step 1: Write schema-v4 and stale-artifact RED tests**
 
 ```python
 def test_current_scientific_schema_is_four() -> None:
@@ -547,7 +547,7 @@ def test_schema_v3_and_other_noncurrent_artifacts_require_refit(version: object)
 
 Assert all generated PCAPNG fixtures reparse through Scapy and repeated generator runs retain identical hashes.
 
-- [ ] **[STEP-32-4caabb0a] Step 2: Run bounded schema/fixture RED**
+- [x] **[STEP-32-4caabb0a] Step 2: Run bounded schema/fixture RED**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -559,11 +559,11 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 Expected: version remains 3, schema-v3 artifacts are accepted, and checked bytes reflect the old codec.
 
-- [ ] **[STEP-33-1fe65021] Step 3: Bump schema and update every strict literal**
+- [x] **[STEP-33-1fe65021] Step 3: Bump schema and update every strict literal**
 
 Set the global constant to 4. Update `Literal[3]`, expected schema paths, scientific environment/report fixtures, checkpoint/best-model constructors, compatibility assertions, and corrective-action tests. Do not add a schema migration path or codec selector field.
 
-- [ ] **[STEP-34-cd499ca2] Step 4: Regenerate all deterministic artifacts twice**
+- [x] **[STEP-34-cd499ca2] Step 4: Regenerate all deterministic artifacts twice**
 
 Run the owning generators:
 
@@ -578,7 +578,7 @@ uv run --locked python scripts/check_fixture_layout.py --write-manifest
 
 Record `sha256sum` for every generated file, rerun the same commands, and require the inventories and hashes to be identical. Remove only generator-owned v3 outputs; do not alter historical accepted r6/r21 bundles.
 
-- [ ] **[STEP-35-5dfc21fe] Step 5: Verify schemas, fixtures, round trips, and history immutability**
+- [x] **[STEP-35-5dfc21fe] Step 5: Verify schemas, fixtures, round trips, and history immutability**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/test_scientific_rng.py \
@@ -597,7 +597,7 @@ git diff --exit-code HEAD -- examples/validation_study/evidence/2026-08-20-stack
 
 Expected: focused tests/checks pass and historical bundles have no diff.
 
-- [ ] **[STEP-36-a208a8c2] Step 6: Commit schema-v4 deterministic evidence**
+- [x] **[STEP-36-a208a8c2] Step 6: Commit schema-v4 deterministic evidence**
 
 ```bash
 git add -A src/trafficlab/scientific_schema.py examples/data examples/schemas \
