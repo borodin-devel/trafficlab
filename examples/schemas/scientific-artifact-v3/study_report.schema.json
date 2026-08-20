@@ -382,6 +382,67 @@
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
     },
+    "StudyBootstrapInterval": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence_level": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "generator": {
+          "const": "PCG64",
+          "title": "Generator",
+          "type": "string"
+        },
+        "generator_state": {
+          "$ref": "#/$defs/StudyRngState"
+        },
+        "lower_bound": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "method": {
+          "const": "percentile",
+          "title": "Method",
+          "type": "string"
+        },
+        "n_resamples": {
+          "const": 10000,
+          "title": "N Resamples",
+          "type": "integer"
+        },
+        "sample_size": {
+          "const": 3,
+          "title": "Sample Size",
+          "type": "integer"
+        },
+        "seed": {
+          "const": 20260819,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "statistic": {
+          "const": "mean",
+          "title": "Statistic",
+          "type": "string"
+        },
+        "upper_bound": {
+          "$ref": "#/$defs/ExactFloat"
+        }
+      },
+      "required": [
+        "confidence_level",
+        "generator",
+        "generator_state",
+        "lower_bound",
+        "method",
+        "n_resamples",
+        "sample_size",
+        "seed",
+        "statistic",
+        "upper_bound"
+      ],
+      "title": "StudyBootstrapInterval",
+      "type": "object"
+    },
     "StudyCandidateIdentifier": {
       "additionalProperties": false,
       "properties": {
@@ -470,6 +531,9 @@
     "StudyDescriptive": {
       "additionalProperties": false,
       "properties": {
+        "bootstrap": {
+          "$ref": "#/$defs/StudyBootstrapInterval"
+        },
         "mean": {
           "$ref": "#/$defs/NonnegativeFloat"
         },
@@ -478,6 +542,7 @@
         }
       },
       "required": [
+        "bootstrap",
         "mean",
         "sample_variance"
       ],
@@ -740,6 +805,62 @@
         "symmetric_mean"
       ],
       "title": "StudyNaturalVariationPair",
+      "type": "object"
+    },
+    "StudyPcg64CoreState": {
+      "additionalProperties": false,
+      "properties": {
+        "inc": {
+          "maximum": 340282366920938463463374607431768211455,
+          "minimum": 0,
+          "title": "Inc",
+          "type": "integer"
+        },
+        "state": {
+          "maximum": 340282366920938463463374607431768211455,
+          "minimum": 0,
+          "title": "State",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "state",
+        "inc"
+      ],
+      "title": "StudyPcg64CoreState",
+      "type": "object"
+    },
+    "StudyRngState": {
+      "additionalProperties": false,
+      "properties": {
+        "bit_generator": {
+          "const": "PCG64",
+          "title": "Bit Generator",
+          "type": "string"
+        },
+        "has_uint32": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Has Uint32",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/StudyPcg64CoreState"
+        },
+        "uinteger": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Uinteger",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bit_generator",
+        "state",
+        "has_uint32",
+        "uinteger"
+      ],
+      "title": "StudyRngState",
       "type": "object"
     },
     "StudyScore": {

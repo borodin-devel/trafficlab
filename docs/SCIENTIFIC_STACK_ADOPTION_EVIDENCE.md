@@ -25,7 +25,7 @@ uv run --locked python --version
 ## Public artifact schemas
 
 `examples/schemas/scientific-artifact-v3/` contains 12 public Draft 2020-12
-schemas totaling 140,970 bytes. Filenames come from the sorted
+schemas totaling 146,738 bytes. Filenames come from the sorted
 `PUBLIC_ARTIFACT_MODELS` registry; every schema declares its filename as `$id`.
 The generator rejects changed, missing, foreign, noncanonical, or incomplete
 output.

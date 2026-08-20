@@ -1809,6 +1809,7 @@ def test_offline_bundle_audit_covers_training_record_and_reconstruction_boundari
     ("field", "expected_kind"),
     (
         ("runtime", "artifact_foreign"),
+        ("bootstrap", "artifact_foreign"),
         ("winner", "artifact_foreign"),
         ("weights", "artifact_corrupt"),
         ("invalid_chromosome", "artifact_foreign"),
@@ -1832,6 +1833,13 @@ def test_offline_bundle_audit_recomputes_each_report_input_family(
         records = cast(list[dict[str, object]], document["runtime_winner_variance"])
         runtime = cast(dict[str, object], records[0]["runtime_seconds"])
         runtime["mean"] = cast(float, runtime["mean"]) + 1.0
+    elif field == "bootstrap":
+        records = cast(list[dict[str, object]], document["runtime_winner_variance"])
+        runtime = cast(dict[str, object], records[0]["runtime_seconds"])
+        bootstrap = cast(dict[str, object], runtime["bootstrap"])
+        lower = cast(float, bootstrap["lower_bound"])
+        upper = cast(float, bootstrap["upper_bound"])
+        bootstrap["lower_bound"] = lower + (upper - lower) / 2.0
     elif field == "winner":
         records = cast(list[dict[str, object]], document["runtime_winner_variance"])
         winners = cast(dict[str, object], records[0]["winner_family_counts"])
