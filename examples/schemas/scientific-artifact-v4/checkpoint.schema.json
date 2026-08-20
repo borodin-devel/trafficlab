@@ -1386,7 +1386,7 @@
       "$ref": "#/$defs/NamedRngState"
     },
     "scientific_artifact_schema": {
-      "const": 3,
+      "const": 4,
       "title": "Scientific Artifact Schema",
       "type": "integer"
     },
