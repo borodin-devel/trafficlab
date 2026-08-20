@@ -123,6 +123,7 @@ _UINT32_MAX = 2**32 - 1
 _MALFORMED_ACTION = "replace the PCAPNG with a complete valid Ethernet capture"
 _DEADLINE_ACTION = "increase the total run timeout and retry capture"
 _REPOSITORY = Path(__file__).resolve().parents[3]
+_CANONICAL_PYTHON = str(_REPOSITORY / ".venv" / "bin" / "python")
 
 
 def _list_to_tuple(value: object) -> object:
@@ -140,24 +141,53 @@ class _StrictRecord(BaseModel):
 
 
 type StringTuple = Annotated[tuple[str, ...], BeforeValidator(_list_to_tuple)]
+type ComparisonField = Literal["status", "exception_type", "message", "corrective_action", "trace_digest"]
+type ComparisonFields = Annotated[tuple[ComparisonField, ...], BeforeValidator(_list_to_tuple)]
+
+
+class NormalizedOutcome(_StrictRecord):
+    status: Literal["accepted", "rejected", "deadline_exceeded"]
+    exception_type: str | None
+    message: str | None
+    corrective_action: str | None
+    trace_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None
+
+    @model_validator(mode="after")
+    def fields_match_status(self) -> Self:
+        error_values = (self.exception_type, self.message, self.corrective_action)
+        if self.status == "accepted":
+            if self.trace_digest is None or any(value is not None for value in error_values):
+                raise ValueError("accepted outcome requires only a canonical trace digest")
+        elif self.trace_digest is not None or any(value is None or not value.strip() for value in error_values):
+            raise ValueError("rejected outcome requires normalized exception type, message, and corrective action")
+        return self
+
+    def project(self, fields: ComparisonFields) -> tuple[str | None, ...]:
+        return tuple(getattr(self, field) for field in fields)
 
 
 class CaseResult(_StrictRecord):
     name: str
     input_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     input_size_bytes: Annotated[StrictInt, Field(ge=1)]
-    expected_outcome: str
-    oracle_outcome: str
-    candidate_outcome: str
+    comparison_fields: ComparisonFields
+    expected_outcome: NormalizedOutcome
+    oracle_outcome: NormalizedOutcome
+    candidate_outcome: NormalizedOutcome
     detail: str
     passed: StrictBool
 
     @model_validator(mode="after")
     def outcome_agreement_is_derived(self) -> Self:
-        values = (self.name, self.expected_outcome, self.oracle_outcome, self.candidate_outcome, self.detail)
+        values = (self.name, self.detail)
         if any(not value.strip() for value in values):
             raise ValueError("executed case text fields must be nonempty")
-        passed = self.expected_outcome == self.oracle_outcome == self.candidate_outcome
+        if not self.comparison_fields or len(set(self.comparison_fields)) != len(self.comparison_fields):
+            raise ValueError("executed case comparison fields must be nonempty and unique")
+        expected = self.expected_outcome.project(self.comparison_fields)
+        oracle = self.oracle_outcome.project(self.comparison_fields)
+        candidate = self.candidate_outcome.project(self.comparison_fields)
+        passed = expected == oracle == candidate
         if self.passed is not passed:
             raise ValueError("executed case pass flag must derive from expected, oracle, and candidate outcomes")
         return self
@@ -245,6 +275,10 @@ class BenchmarkComparison(_StrictRecord):
 
     @model_validator(mode="after")
     def ratios_and_gate_match_measurements(self) -> Self:
+        if self.production.command != benchmark_evidence_command("production", self.frame_count):
+            raise ValueError("production adapter must retain its canonical benchmark command")
+        if self.scapy.command != benchmark_evidence_command("scapy", self.frame_count):
+            raise ValueError("Scapy adapter must retain its canonical benchmark command")
         if self.material_threshold_ratio != MAX_MATERIAL_RATIO:
             raise ValueError("benchmark material threshold must remain predeclared")
         samples = (*self.production.samples, *self.scapy.samples)
@@ -284,6 +318,8 @@ class ProbePolicy(_StrictRecord):
     warmup_runs_per_adapter: Literal[1]
     fresh_subprocess_per_run: Literal[True]
     benchmark_runner_command: StringTuple
+    benchmark_child_module: Literal["tests.scientific.probes.scapy_pcapng"]
+    benchmark_path_placeholder: Literal["<generated-pcapng>"]
     timing_boundary: Literal[
         "adapter-specific imports and factories preloaded; path open through canonical count and digest timed"
     ]
@@ -420,7 +456,12 @@ class _EtherFactory(Protocol):
     def __call__(self, raw_packet: bytes) -> _ScapyPacket: ...
 
 
-def _scapy_boundaries() -> tuple[_ScapyReaderFactory, _ScapyWriterFactory, _EtherFactory]:
+def _scapy_boundaries() -> tuple[
+    _ScapyReaderFactory,
+    _ScapyWriterFactory,
+    _EtherFactory,
+    type[SupportsFloat],
+]:
     """Load Scapy only at the explicit development adapter boundary."""
     utils = importlib.import_module("scapy.utils")
     layers = importlib.import_module("scapy.layers.l2")
@@ -428,6 +469,7 @@ def _scapy_boundaries() -> tuple[_ScapyReaderFactory, _ScapyWriterFactory, _Ethe
         cast(_ScapyReaderFactory, utils.PcapNgReader),
         cast(_ScapyWriterFactory, utils.PcapNgWriter),
         cast(_EtherFactory, layers.Ether),
+        cast(type[SupportsFloat], utils.EDecimal),
     )
 
 
@@ -465,6 +507,7 @@ def _scapy_trace(
     deadline: float | None,
     clock: Callable[[], float],
     reader_factory: _ScapyReaderFactory,
+    timestamp_type: type[SupportsFloat],
 ) -> TrafficTrace:
     _deadline_expired(deadline, clock)
     _deadline_expired(deadline, clock)
@@ -494,6 +537,11 @@ def _scapy_trace(
                 if len(frame) < 14:
                     raise TrafficlabError(
                         f"invalid PCAPNG: captured Ethernet frame length must be at least 14, got {len(frame)}",
+                        corrective_action=_MALFORMED_ACTION,
+                    )
+                if not isinstance(packet.time, timestamp_type):
+                    raise TrafficlabError(
+                        "invalid PCAPNG: Scapy packet record has no explicit timestamp",
                         corrective_action=_MALFORMED_ACTION,
                     )
                 timestamp = float(packet.time)
@@ -555,9 +603,16 @@ def read_with_scapy(
 ) -> TrafficTrace:
     """Convert Scapy packet observations to a Trafficlab-owned canonical trace."""
     _deadline_expired(deadline, clock)
-    reader_factory, _, _ = _scapy_boundaries()
+    reader_factory, _, _, timestamp_type = _scapy_boundaries()
     _deadline_expired(deadline, clock)
-    candidate = _scapy_trace(path, metadata, deadline=deadline, clock=clock, reader_factory=reader_factory)
+    candidate = _scapy_trace(
+        path,
+        metadata,
+        deadline=deadline,
+        clock=clock,
+        reader_factory=reader_factory,
+        timestamp_type=timestamp_type,
+    )
     _validate_window(candidate, observation_window_seconds)
     _deadline_expired(deadline, clock)
     return candidate
@@ -586,7 +641,7 @@ def write_with_scapy(
     if type(trace) is not TrafficTrace:
         raise TypeError("trace must be a TrafficTrace")
     _validate_window(trace, observation_window_seconds)
-    _, writer_factory, ether_factory = _scapy_boundaries()
+    _, writer_factory, ether_factory, _ = _scapy_boundaries()
     try:
         with writer_factory(str(path)) as writer:
             for index, event in enumerate(trace):
@@ -771,26 +826,50 @@ def _input_identity(content: bytes) -> tuple[str, int]:
     return hashlib.sha256(content).hexdigest(), len(content)
 
 
+def _stream_file_identity(path: Path) -> tuple[str, int]:
+    expected_size = path.stat().st_size
+    digest = hashlib.sha256()
+    observed_size = 0
+    with path.open("rb") as stream:
+        while chunk := stream.read(64 * 1024):
+            digest.update(chunk)
+            observed_size += len(chunk)
+    if observed_size != expected_size:
+        raise RuntimeError("benchmark capture size changed while hashing")
+    return digest.hexdigest(), expected_size
+
+
 def _trace_input(trace: TrafficTrace) -> bytes:
     return trace.timestamps.tobytes() + trace.directions.tobytes() + trace.frame_lengths.tobytes()
 
 
-def _call_outcome(operation: Callable[[], TrafficTrace]) -> str:
+def _call_outcome(operation: Callable[[], TrafficTrace]) -> NormalizedOutcome:
     try:
-        return _trace_digest(operation())
-    except DeadlineExceededError:
-        return "deadline_exceeded"
-    except TrafficlabError:
-        return "rejected"
+        return NormalizedOutcome(
+            status="accepted",
+            exception_type=None,
+            message=None,
+            corrective_action=None,
+            trace_digest=_trace_digest(operation()),
+        )
+    except TrafficlabError as error:
+        return NormalizedOutcome(
+            status="deadline_exceeded" if isinstance(error, DeadlineExceededError) else "rejected",
+            exception_type=type(error).__name__,
+            message=str(error),
+            corrective_action=error.corrective_action,
+            trace_digest=None,
+        )
 
 
 def _case_result(
     name: str,
     content: bytes,
     *,
-    expected: str,
-    oracle: str,
-    candidate: str,
+    comparison_fields: tuple[ComparisonField, ...],
+    expected: NormalizedOutcome,
+    oracle: NormalizedOutcome,
+    candidate: NormalizedOutcome,
     detail: str,
 ) -> CaseResult:
     input_sha256, input_size_bytes = _input_identity(content)
@@ -798,11 +877,14 @@ def _case_result(
         name=name,
         input_sha256=input_sha256,
         input_size_bytes=input_size_bytes,
+        comparison_fields=comparison_fields,
         expected_outcome=expected,
         oracle_outcome=oracle,
         candidate_outcome=candidate,
         detail=detail,
-        passed=expected == oracle == candidate,
+        passed=expected.project(comparison_fields)
+        == oracle.project(comparison_fields)
+        == candidate.project(comparison_fields),
     )
 
 
@@ -874,6 +956,7 @@ def _execute_reader_cases(directory: Path, metadata: CaptureMetadata) -> CaseEvi
             _case_result(
                 name,
                 content,
+                comparison_fields=("status", "trace_digest"),
                 expected=oracle,
                 oracle=oracle,
                 candidate=candidate,
@@ -919,7 +1002,8 @@ def _execute_writer_cases(directory: Path, metadata: CaptureMetadata) -> CaseEvi
             _case_result(
                 name,
                 content,
-                expected=_trace_digest(trace),
+                comparison_fields=("status", "trace_digest"),
+                expected=_call_outcome(lambda trace=trace: trace),
                 oracle=oracle,
                 candidate=candidate,
                 detail="canonical input trace compared with independent production and Scapy writer round trips",
@@ -983,6 +1067,7 @@ def _execute_malformed_cases(directory: Path, metadata: CaptureMetadata) -> Case
             _case_result(
                 name,
                 content,
+                comparison_fields=("status",),
                 expected=oracle,
                 oracle=oracle,
                 candidate=candidate,
@@ -1020,11 +1105,11 @@ def _execute_deadline_cases(directory: Path, metadata: CaptureMetadata) -> CaseE
     content = _fixture_capture(frames, (0, 1))
     path = directory / "deadline.pcapng"
     path.write_bytes(content)
-    reader_factory, _, _ = _scapy_boundaries()
+    reader_factory, _, _, timestamp_type = _scapy_boundaries()
 
     candidate_operations: tuple[Callable[[], TrafficTrace], ...] = (
         lambda: read_with_scapy(path, metadata, deadline=1.0, clock=lambda: 1.0),
-        lambda: _setup_deadline_candidate(path, metadata, reader_factory),
+        lambda: _setup_deadline_candidate(path, metadata, reader_factory, timestamp_type),
         lambda: read_with_scapy(path, metadata, deadline=1.0, clock=_CallCountClock(6)),
         lambda: read_with_scapy(path, metadata, deadline=1.0, clock=_CallCountClock(9)),
     )
@@ -1044,7 +1129,14 @@ def _execute_deadline_cases(directory: Path, metadata: CaptureMetadata) -> CaseE
         _case_result(
             name,
             content,
-            expected="deadline_exceeded",
+            comparison_fields=("status", "exception_type", "corrective_action"),
+            expected=NormalizedOutcome(
+                status="deadline_exceeded",
+                exception_type="DeadlineExceededError",
+                message="expected deadline expiration",
+                corrective_action=_DEADLINE_ACTION,
+                trace_digest=None,
+            ),
             oracle=_call_outcome(oracle),
             candidate=_call_outcome(candidate),
             detail=detail,
@@ -1064,10 +1156,18 @@ def _setup_deadline_candidate(
     path: Path,
     metadata: CaptureMetadata,
     reader_factory: _ScapyReaderFactory,
+    timestamp_type: type[SupportsFloat],
 ) -> TrafficTrace:
     now = [0.0]
     factory = _SetupExpiringFactory(reader_factory, now)
-    return _scapy_trace(path, metadata, deadline=1.0, clock=lambda: now[0], reader_factory=factory)
+    return _scapy_trace(
+        path,
+        metadata,
+        deadline=1.0,
+        clock=lambda: now[0],
+        reader_factory=factory,
+        timestamp_type=timestamp_type,
+    )
 
 
 def _pcapng_block(block_type: int, body: bytes) -> bytes:
@@ -1099,7 +1199,7 @@ def _write_benchmark_capture(path: Path, frame_count: int, metadata: CaptureMeta
 def benchmark_child(
     adapter: Literal["production", "scapy"], path: Path, metadata: CaptureMetadata
 ) -> dict[str, object]:
-    input_sha256, input_size_bytes = _input_identity(path.read_bytes())
+    input_sha256, input_size_bytes = _stream_file_identity(path)
     if adapter == "production":
         from trafficlab.pcapng import parse_pcapng_trace
 
@@ -1107,7 +1207,7 @@ def benchmark_child(
             return parse_pcapng_trace(path, metadata)
 
     else:
-        reader_factory, _, _ = _scapy_boundaries()
+        reader_factory, _, _, timestamp_type = _scapy_boundaries()
 
         def operation() -> TrafficTrace:
             return _scapy_trace(
@@ -1116,6 +1216,7 @@ def benchmark_child(
                 deadline=None,
                 clock=monotonic,
                 reader_factory=reader_factory,
+                timestamp_type=timestamp_type,
             )
 
     started = perf_counter()
@@ -1145,7 +1246,7 @@ def _run_child(
     adapter: Literal["production", "scapy"], path: Path, metadata: CaptureMetadata, frame_count: int
 ) -> dict[str, object]:
     command = (
-        sys.executable,
+        _CANONICAL_PYTHON,
         "-m",
         "tests.scientific.probes.scapy_pcapng",
         "benchmark-child",
@@ -1169,6 +1270,25 @@ def _run_child(
     return cast(dict[str, object], json.loads(completed.stdout))
 
 
+def benchmark_evidence_command(
+    adapter: Literal["production", "scapy"], frame_count: Literal[100_000, 1_000_000]
+) -> tuple[str, ...]:
+    return (
+        _CANONICAL_PYTHON,
+        "-m",
+        "tests.scientific.probes.scapy_pcapng",
+        "benchmark-child",
+        "--adapter",
+        adapter,
+        "--path",
+        "<generated-pcapng>",
+        "--target-mac",
+        "02:42:ac:11:00:02",
+        "--frame-count",
+        str(frame_count),
+    )
+
+
 def _adapter_benchmark(
     adapter: Literal["production", "scapy"],
     path: Path,
@@ -1188,19 +1308,9 @@ def _adapter_benchmark(
         )
         for item in raw
     )
-    command = (
-        sys.executable,
-        "-m",
-        "tests.scientific.probes.scapy_pcapng",
-        "benchmark-child",
-        "--adapter",
+    command = benchmark_evidence_command(
         adapter,
-        "--path",
-        "<generated-pcapng>",
-        "--target-mac",
-        metadata.target_mac,
-        "--frame-count",
-        str(frame_count),
+        cast(Literal[100_000, 1_000_000], frame_count),
     )
     return AdapterBenchmark(
         command=command,
@@ -1256,16 +1366,22 @@ def _scapy_version() -> str:
     return str(module.__version__)
 
 
-def build_probe_evidence(*, run_benchmarks: bool) -> dict[str, object]:
-    if _scapy_version() != SCAPY_VERSION:
-        raise RuntimeError(f"Scapy version must be {SCAPY_VERSION}")
+def _execute_functional_evidence() -> tuple[CaseEvidence, CaseEvidence, CaseEvidence, CaseEvidence]:
     metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
     with tempfile.TemporaryDirectory(prefix="trafficlab-scapy-functional-") as temporary:
         directory = Path(temporary)
-        reader_differential = _execute_reader_cases(directory, metadata)
-        writer_differential = _execute_writer_cases(directory, metadata)
-        malformed = _execute_malformed_cases(directory, metadata)
-        deadline = _execute_deadline_cases(directory, metadata)
+        return (
+            _execute_reader_cases(directory, metadata),
+            _execute_writer_cases(directory, metadata),
+            _execute_malformed_cases(directory, metadata),
+            _execute_deadline_cases(directory, metadata),
+        )
+
+
+def build_probe_evidence(*, run_benchmarks: bool) -> dict[str, object]:
+    if _scapy_version() != SCAPY_VERSION:
+        raise RuntimeError(f"Scapy version must be {SCAPY_VERSION}")
+    reader_differential, writer_differential, malformed, deadline = _execute_functional_evidence()
     typing_run = subprocess.run(
         _TYPING_COMMAND,
         cwd=_REPOSITORY,
@@ -1299,6 +1415,8 @@ def build_probe_evidence(*, run_benchmarks: bool) -> dict[str, object]:
         warmup_runs_per_adapter=1,
         fresh_subprocess_per_run=True,
         benchmark_runner_command=_BOUNDED_BENCHMARK_COMMAND,
+        benchmark_child_module="tests.scientific.probes.scapy_pcapng",
+        benchmark_path_placeholder="<generated-pcapng>",
         timing_boundary=_TIMING_BOUNDARY,
         material_regression_rule="reject when Scapy median wall or peak RSS is >=1.50x production at either frame count",
         canonical_comparison="TrafficTrace columns",
@@ -1390,6 +1508,14 @@ def validate_probe_evidence(evidence: dict[str, object]) -> ProbeEvidence:
     lock_sha256 = hashlib.sha256((_REPOSITORY / "uv.lock").read_bytes()).hexdigest()
     if validated.environment.uv_lock_sha256 != lock_sha256:
         raise ValueError("probe evidence uv.lock SHA-256 does not match the current lock")
+    retained_functional = (
+        validated.reader_differential,
+        validated.writer_differential,
+        validated.malformed,
+        validated.deadline,
+    )
+    if retained_functional != _execute_functional_evidence():
+        raise ValueError("probe results do not match independently re-executed functional evidence")
     return validated
 
 

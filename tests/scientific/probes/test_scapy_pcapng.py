@@ -27,7 +27,10 @@ from tests.scientific.probes.scapy_pcapng import (
     BenchmarkComparison,
     BenchmarkSample,
     CaseEvidence,
+    CaseResult,
+    NormalizedOutcome,
     ProbeEvidence,
+    benchmark_evidence_command,
     build_probe_evidence,
     decide_probe,
     derive_gates,
@@ -374,7 +377,6 @@ def test_reader_exposes_each_predeclared_malformed_difference(tmp_path: Path, na
         parse_pcapng_trace(path, _metadata())
 
     accepted_by_scapy = {
-        "simple_packet_block",
         "obsolete_packet_block",
         "nonzero_packet_padding",
         "nonzero_option_padding",
@@ -410,13 +412,14 @@ def test_reader_checks_expired_deadline_before_touching_a_missing_path(tmp_path:
 
 
 def _passing_comparison(frame_count: int) -> BenchmarkComparison:
+    exact_frame_count = cast(Literal[100_000, 1_000_000], frame_count)
     return BenchmarkComparison.model_validate(
         {
             "frame_count": frame_count,
             "warmup_runs_per_adapter": 1,
             "measured_runs_per_adapter": 5,
             "production": {
-                "command": ["python", "-m", "tests.scientific.probes.scapy_pcapng", "benchmark-child"],
+                "command": benchmark_evidence_command("production", exact_frame_count),
                 "samples": [
                     {
                         "frame_count": frame_count,
@@ -432,7 +435,7 @@ def _passing_comparison(frame_count: int) -> BenchmarkComparison:
                 "median_peak_rss_kib": 100_000,
             },
             "scapy": {
-                "command": ["python", "-m", "tests.scientific.probes.scapy_pcapng", "benchmark-child"],
+                "command": benchmark_evidence_command("scapy", exact_frame_count),
                 "samples": [
                     {
                         "frame_count": frame_count,
@@ -549,7 +552,7 @@ def test_case_evidence_names_the_exact_failed_differential_case() -> None:
     differential = ProbeEvidence.model_validate(build_probe_evidence(run_benchmarks=False)).writer_differential
 
     assert differential.failed_case_names == ("scapy_writer_nanosecond_trace_round_trip",)
-    assert differential.results[-1].candidate_outcome == "rejected"
+    assert differential.results[-1].candidate_outcome.status == "rejected"
     assert differential.results[-1].oracle_outcome == differential.results[-1].expected_outcome
     assert CaseEvidence.model_validate(differential.model_dump(mode="python")) == differential
 
@@ -575,6 +578,12 @@ def test_evidence_is_strict_canonical_machine_auditable_and_checkable(tmp_path: 
     environment["implementation_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="implementation SHA-256"):
         validate_probe_evidence(stale)
+
+    stale_lock = deepcopy(evidence)
+    environment = cast(dict[str, object], stale_lock["environment"])
+    environment["uv_lock_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="uv.lock SHA-256"):
+        validate_probe_evidence(stale_lock)
 
     changed_policy = deepcopy(evidence)
     policy = changed_policy["policy"]
@@ -621,7 +630,24 @@ def test_evidence_is_strict_canonical_machine_auditable_and_checkable(tmp_path: 
         fabricated = deepcopy(evidence)
         group = cast(dict[str, object], fabricated[group_name])
         results = cast(tuple[dict[str, object], ...], group["results"])
-        results[0]["candidate_outcome"] = "fabricated_success"
+        expected = cast(dict[str, object], results[0]["expected_outcome"])
+        results[0]["candidate_outcome"] = (
+            {
+                "status": "rejected",
+                "exception_type": "TrafficlabError",
+                "message": "fabricated rejection",
+                "corrective_action": "fabricated action",
+                "trace_digest": None,
+            }
+            if expected["status"] == "accepted"
+            else {
+                "status": "accepted",
+                "exception_type": None,
+                "message": None,
+                "corrective_action": None,
+                "trace_digest": "d" * 64,
+            }
+        )
         with pytest.raises(ValueError, match="pass flag must derive"):
             validate_probe_evidence(fabricated)
 
@@ -810,8 +836,8 @@ def test_review_deadline_is_rechecked_immediately_after_reader_setup(monkeypatch
             del filename
             return reader
 
-    def boundaries() -> tuple[object, object, object]:
-        return ReaderFactory(), object(), object()
+    def boundaries() -> tuple[object, object, object, object]:
+        return ReaderFactory(), object(), object(), float
 
     monkeypatch.setattr(probe, "_scapy_boundaries", boundaries)
 
@@ -893,8 +919,8 @@ def test_candidate_policy_normalizes_candidate_visible_reader_failures(
             raise OSError("injected reader failure")
 
     def install(factory: object) -> None:
-        def boundaries() -> tuple[object, object, object]:
-            return factory, object(), object()
+        def boundaries() -> tuple[object, object, object, object]:
+            return factory, object(), object(), float
 
         monkeypatch.setattr(probe, "_scapy_boundaries", boundaries)
 
@@ -947,8 +973,8 @@ def test_writer_normalizes_type_io_and_dynamic_boundary_failures(
             del filename
             raise OSError("injected writer failure")
 
-    def io_boundaries() -> tuple[object, object, object]:
-        return object(), ErrorWriterFactory(), EtherFactory()
+    def io_boundaries() -> tuple[object, object, object, object]:
+        return object(), ErrorWriterFactory(), EtherFactory(), float
 
     monkeypatch.setattr(probe, "_scapy_boundaries", io_boundaries)
     with pytest.raises(TrafficlabError, match="could not write PCAPNG.*injected writer failure"):
@@ -973,8 +999,8 @@ def test_writer_normalizes_type_io_and_dynamic_boundary_failures(
             del filename
             return Writer()
 
-    def dynamic_boundaries() -> tuple[object, object, object]:
-        return object(), WriterFactory(), EtherFactory()
+    def dynamic_boundaries() -> tuple[object, object, object, object]:
+        return object(), WriterFactory(), EtherFactory(), float
 
     monkeypatch.setattr(probe, "_scapy_boundaries", dynamic_boundaries)
     with pytest.raises(TrafficlabError, match="Scapy could not encode.*RuntimeError"):
@@ -992,3 +1018,142 @@ def test_benchmark_children_parse_the_same_input_independently(tmp_path: Path) -
     assert production["trace_digest"] == candidate["trace_digest"]
     assert production["input_sha256"] == candidate["input_sha256"]
     assert production["input_size_bytes"] == candidate["input_size_bytes"] == path.stat().st_size
+
+
+def test_review_coherent_fabricated_technical_pass_fails_authenticity() -> None:
+    """Recomputed-looking groups, gates, and decision cannot replace independent case execution."""
+    evidence = build_probe_evidence(run_benchmarks=False)
+    for group_name in ("reader_differential", "writer_differential", "malformed", "deadline"):
+        group = cast(dict[str, object], evidence[group_name])
+        results = cast(tuple[dict[str, object], ...], group["results"])
+        for result in results:
+            result["candidate_outcome"] = result["oracle_outcome"]
+            result["passed"] = True
+        group["failed_case_names"] = ()
+        group["passed"] = True
+    evidence["benchmarks"] = tuple(
+        comparison.model_dump(mode="python")
+        for comparison in (_passing_comparison(100_000), _passing_comparison(1_000_000))
+    )
+    gates = cast(dict[str, object], evidence["gates"])
+    for name in GATE_NAMES[:-1]:
+        gates[name] = True
+    decision = cast(dict[str, object], evidence["decision"])
+    decision["technical_outcome"] = "pass"
+    decision["failed_technical_gates"] = ()
+
+    with pytest.raises(ValueError, match="independently re-executed functional evidence"):
+        validate_probe_evidence(evidence)
+
+
+def test_review_functional_outcomes_retain_normalized_status_and_error_details() -> None:
+    """Accepted traces and failures must retain the exact normalized fields used by the oracle comparison."""
+    evidence = ProbeEvidence.model_validate(build_probe_evidence(run_benchmarks=False))
+    accepted = evidence.reader_differential.results[0].candidate_outcome
+    rejected = next(result for result in evidence.malformed.results if not result.passed).candidate_outcome
+
+    assert accepted.status == "accepted"
+    assert accepted.trace_digest is not None
+    assert accepted.exception_type is None
+    assert accepted.message is None
+    assert accepted.corrective_action is None
+    assert rejected.status in {"accepted", "rejected"}
+    if rejected.status == "rejected":
+        assert rejected.exception_type
+        assert rejected.message
+        assert rejected.corrective_action
+
+    with pytest.raises(ValueError, match="accepted outcome requires only"):
+        NormalizedOutcome.model_validate(
+            {
+                "status": "accepted",
+                "exception_type": None,
+                "message": None,
+                "corrective_action": None,
+                "trace_digest": None,
+            }
+        )
+    with pytest.raises(ValueError, match="rejected outcome requires normalized"):
+        NormalizedOutcome.model_validate(
+            {
+                "status": "rejected",
+                "exception_type": "TrafficlabError",
+                "message": None,
+                "corrective_action": "retry",
+                "trace_digest": None,
+            }
+        )
+
+    result = evidence.reader_differential.results[0].model_dump(mode="python")
+    result["comparison_fields"] = ()
+    with pytest.raises(ValueError, match="comparison fields must be nonempty and unique"):
+        CaseResult.model_validate(result)
+    result["comparison_fields"] = ("status", "status")
+    with pytest.raises(ValueError, match="comparison fields must be nonempty and unique"):
+        CaseResult.model_validate(result)
+
+
+@pytest.mark.parametrize("field", ["exception_type", "message", "corrective_action"])
+def test_review_functional_error_detail_mutation_fails_authenticity(field: str) -> None:
+    evidence = build_probe_evidence(run_benchmarks=False)
+    malformed = cast(dict[str, object], evidence["malformed"])
+    results = cast(tuple[dict[str, object], ...], malformed["results"])
+    rejected = cast(dict[str, object], results[0]["candidate_outcome"])
+    rejected[field] = f"fabricated-{field}"
+
+    with pytest.raises(ValueError, match="independently re-executed functional evidence"):
+        validate_probe_evidence(evidence)
+
+
+@pytest.mark.parametrize(
+    ("adapter", "replacement"),
+    [
+        ("production", ["true"]),
+        (
+            "production",
+            ["python", "-m", "tests.scientific.probes.scapy_pcapng", "benchmark-child", "--adapter", "scapy"],
+        ),
+        ("scapy", ["python", "-m", "tests.scientific.probes.scapy_pcapng", "benchmark-child", "--frame-count", "1"]),
+        (
+            "scapy",
+            ["python", "-m", "tests.scientific.probes.scapy_pcapng", "benchmark-child", "--path", "/tmp/not-canonical"],
+        ),
+    ],
+)
+def test_review_benchmark_commands_are_bound_to_policy_adapter_size_and_placeholder(
+    adapter: str, replacement: list[str]
+) -> None:
+    comparison = _passing_comparison(100_000).model_dump(mode="python")
+    comparison[adapter]["command"] = replacement
+
+    with pytest.raises(ValueError, match="canonical benchmark command"):
+        BenchmarkComparison.model_validate(comparison)
+
+
+def test_review_benchmark_identity_streams_without_path_read_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Input authentication must not retain the whole capture before peak-RSS measurement."""
+    path = _write(tmp_path, _capture((_protocol_frames()[0],), (1,)))
+
+    def forbidden(self: Path) -> bytes:
+        raise AssertionError(f"whole-file read forbidden for {self}")
+
+    monkeypatch.setattr(Path, "read_bytes", forbidden)
+
+    result = probe.benchmark_child("production", path, _metadata())
+
+    assert result["input_size_bytes"] == path.stat().st_size
+
+    actual_size = path.stat().st_size
+
+    class ChangedStat:
+        st_size = actual_size + 1
+
+    def changed_stat(self: Path) -> ChangedStat:
+        del self
+        return ChangedStat()
+
+    monkeypatch.setattr(Path, "stat", changed_stat)
+    with pytest.raises(RuntimeError, match="size changed while hashing"):
+        probe.benchmark_child("production", path, _metadata())
