@@ -124,12 +124,12 @@ applicable and by the remaining total-run budget.
     Stage reuse requires both files to be present and valid. A target failure may
     retain validated output only as diagnostic data, not as a reusable reference
     pair.
-11. Enter cleanup unconditionally using the last known project resource
-    inventory. With positive remaining budget, run
-    `docker compose down --volumes --remove-orphans` within it. With zero budget,
-    make no blocking Docker call and record cleanup timeout. If a running cleanup
-    expires, terminate the local Compose CLI and make no further Docker query.
-    Report the last known inventory as possibly remaining.
+11. Enter cleanup unconditionally with the explicit absolute Compose path and
+    exact validated project name. With positive remaining budget, issue one
+    `docker compose down --volumes --remove-orphans`. With zero budget, make no
+    blocking Docker call and record cleanup timeout. If the local Compose CLI
+    exceeds its bounded wait, terminate it, kill it when necessary, and reap it
+    within the absolute deadline. Production makes no post-down inventory query.
 
 When the target container stops, its process namespace closes, so a background
 descendant cannot remain as a hidden workload. Capture and the shared network
@@ -158,8 +158,8 @@ Each listed outcome records the canonical failure fields from
 [Failure policy](SYSTEM.md#failure-policy), including `affected_evidence` and
 `evidence_state`. Readiness, target, capture, flush, and timeout failures record
 the capture pair state. Metadata and malformed-output failures record the
-diagnostic pair or `not_published`. Cleanup failures record the
-`possibly_remaining` project inventory. A successful validated capture records
+diagnostic pair or `not_published`. Cleanup failures record that the exact named
+project may remain. A successful validated capture records
 the preserved reusable pair. These records describe the existing outcomes; they
 introduce no event, timeout, or lifecycle branch.
 
@@ -196,8 +196,8 @@ introduce no event, timeout, or lifecycle branch.
   fit checkpoint and is not a capture control.
 - **Cleanup failure:** report it after the primary failure, or as the failure if
   the run otherwise succeeded. Cleanup is bounded by the remaining total-run
-  budget, reports last known inventory as possibly remaining, and is safe to
-  repeat.
+  budget, retains the Compose status and actionable command output, and is safe
+  to repeat for the exact named project.
 
 After event arbitration, primary error precedence follows the event that caused
 termination:
@@ -219,11 +219,11 @@ unexpected capture stop is primary; when capture remains healthy, a
 stage-specific timeout wins a same-observation race with total-run timeout.
 Every secondary failure and exit status is recorded in `run.log`.
 
-Trafficlab records the project name and observed resource names or IDs as the
-lifecycle progresses. Cleanup uses this last known inventory. With zero budget,
-the cleanup branch records timeout without launching Docker. When a running
-cleanup expires, Trafficlab terminates the local CLI, performs no post-deadline
-Docker query, and reports the inventory as possibly remaining.
+Trafficlab records the unique project name when the lifecycle starts. Cleanup
+validates that exact name and the absolute Compose path before launch. With zero
+budget, the cleanup branch records timeout without launching Docker. When a
+running cleanup expires, Trafficlab terminates or kills and reaps the local CLI
+without a production resource-inventory query.
 Cleanup reserves the final one second of positive total-run budget for
 terminating, killing when necessary, and reaping its local Compose CLI. When
 less budget remains, it starts this local stop sequence immediately instead of
@@ -245,7 +245,11 @@ owns the default-bridge network namespace and target joins with
 controlled endpoint fixture on the Compose bridge, producing known TCP or UDP
 traffic. Tests cover readiness before direct service-command launch, exact target
 status, normal and timed-out child cleanup, bounded capture flush, and complete
-project teardown. A target fixture without a shell or idle command proves that
+project teardown. Each real Docker test registers its unique project and asserts
+by the exact `com.docker.compose.project` label that containers, networks, named
+volumes, and an intentionally orphaned service are absent. One bounded session
+teardown sweep may inspect and remove only those registered project labels. A
+target fixture without a shell or idle command proves that
 no wrapper, PID file, or Compose `exec` dependency exists.
 
 Reliability cases also cover prompt capture-failure detection before workload

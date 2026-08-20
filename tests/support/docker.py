@@ -4,7 +4,7 @@ import json
 import re
 import time
 import uuid
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -109,7 +109,11 @@ def require_checked_prebuilt_capture_image(reference: str) -> str:
     return reference
 
 
-def provision_docker_test_environment(config: pytest.Config) -> Generator[DockerTestEnvironment, None, None]:
+def provision_docker_test_environment(
+    config: pytest.Config,
+    *,
+    project_registry: DockerProjectRegistry | None = None,
+) -> Generator[DockerTestEnvironment, None, None]:
     """Build one external-test environment and remove every image it owns."""
 
     if not (external_tests_requested(config, "docker") or external_tests_requested(config, "internet")):
@@ -152,6 +156,11 @@ def provision_docker_test_environment(config: pytest.Config) -> Generator[Docker
         yield environment
     finally:
         cleanup_errors: list[BaseException] = []
+        if project_registry is not None:
+            try:
+                project_registry.sweep()
+            except BaseException as error:
+                cleanup_errors.append(error)
         for image in reversed(built_images):
             try:
                 run_external_command(
@@ -177,7 +186,26 @@ class DockerResourceInspection:
     diagnostics: tuple[str, ...]
 
 
-def inspect_project_resources(project_name: str) -> DockerResourceInspection:
+def _bounded_timeout(
+    maximum: float,
+    *,
+    deadline: float | None,
+    clock: Callable[[], float],
+) -> float:
+    if deadline is None:
+        return maximum
+    remaining = deadline - clock()
+    if remaining <= 0.0:
+        raise pytest.UsageError("Docker project cleanup sweep deadline expired")
+    return min(maximum, remaining)
+
+
+def inspect_project_resources(
+    project_name: str,
+    *,
+    deadline: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> DockerResourceInspection:
     """Inspect every labelled resource kind without letting one Docker failure abort the rest."""
     label = f"label=com.docker.compose.project={project_name}"
     commands = {
@@ -189,7 +217,11 @@ def inspect_project_resources(project_name: str) -> DockerResourceInspection:
     diagnostics: list[str] = []
     for kind, argv in commands.items():
         try:
-            result = run_external_command(argv, purpose=f"inspect {project_name} {kind}", timeout=15.0)
+            result = run_external_command(
+                argv,
+                purpose=f"inspect {project_name} {kind}",
+                timeout=_bounded_timeout(15.0, deadline=deadline, clock=clock),
+            )
         except pytest.UsageError as error:
             resources[kind] = ()
             diagnostics.append(f"could not inspect Docker project {project_name!r} {kind}: {error}")
@@ -205,7 +237,12 @@ def remaining_resource_message(project_name: str, remaining: ResourceNames) -> s
     return f"Docker project {project_name!r} still has labelled resources: {rendered}"
 
 
-def _remove_remaining(remaining: ResourceNames) -> tuple[str, ...]:
+def _remove_remaining(
+    remaining: ResourceNames,
+    *,
+    deadline: float,
+    clock: Callable[[], float],
+) -> tuple[str, ...]:
     commands = {
         "containers": ("docker", "rm", "--force"),
         "networks": ("docker", "network", "rm"),
@@ -219,7 +256,7 @@ def _remove_remaining(remaining: ResourceNames) -> tuple[str, ...]:
                 result = run_external_command(
                     (*commands[kind], *names),
                     purpose=f"remove leaked test {kind}",
-                    timeout=30.0,
+                    timeout=_bounded_timeout(30.0, deadline=deadline, clock=clock),
                     check=False,
                 )
             except pytest.UsageError as error:
@@ -234,10 +271,43 @@ def _remove_remaining(remaining: ResourceNames) -> tuple[str, ...]:
 
 
 @dataclass(slots=True)
-class DockerProjectTracker:
+class DockerProjectRegistry:
+    """Session-owned exact project names eligible for one bounded recovery sweep."""
+
     projects: set[str] = field(default_factory=lambda: set[str]())
 
     def add(self, project_name: str) -> None:
+        if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project_name) is None:
+            raise ValueError("invalid Docker test project name")
+        self.projects.add(project_name)
+
+    def sweep(self, *, timeout: float = 60.0, clock: Callable[[], float] = time.monotonic) -> None:
+        """Inspect, remove, and re-inspect only projects registered by this test session."""
+        deadline = clock() + timeout
+        failures: list[str] = []
+        for project_name in sorted(self.projects):
+            inspection = inspect_project_resources(project_name, deadline=deadline, clock=clock)
+            failures.extend(inspection.diagnostics)
+            remaining = inspection.resources
+            if any(remaining.values()):
+                failures.append(remaining_resource_message(project_name, remaining))
+                failures.extend(_remove_remaining(remaining, deadline=deadline, clock=clock))
+                final = inspect_project_resources(project_name, deadline=deadline, clock=clock)
+                failures.extend(final.diagnostics)
+                if any(final.resources.values()):
+                    failures.append(remaining_resource_message(project_name, final.resources))
+        if failures:
+            pytest.fail("\n".join(failures), pytrace=False)
+
+
+@dataclass(slots=True)
+class DockerProjectTracker:
+    registry: DockerProjectRegistry | None = None
+    projects: set[str] = field(default_factory=lambda: set[str]())
+
+    def add(self, project_name: str) -> None:
+        if self.registry is not None:
+            self.registry.add(project_name)
         self.projects.add(project_name)
 
     def assert_clean(self) -> None:
@@ -248,7 +318,6 @@ class DockerProjectTracker:
             remaining = inspection.resources
             if any(remaining.values()):
                 failures.append(remaining_resource_message(project_name, remaining))
-                failures.extend(_remove_remaining(remaining))
         if failures:
             pytest.fail("\n".join(failures), pytrace=False)
 
@@ -273,6 +342,9 @@ def merge_endpoint_overlay(production: bytes) -> bytes:
     overlay_services = cast(dict[str, object], overlay_document["services"])
     production_services.update(overlay_services)
     production_document["networks"] = overlay_document["networks"]
+    production_document["volumes"] = {"lifecycle": {}}
+    endpoint = cast(dict[str, object], production_services["endpoint"])
+    endpoint["volumes"] = [{"type": "volume", "source": "lifecycle", "target": "/trafficlab-test-volume"}]
     return (json.dumps(production_document, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 

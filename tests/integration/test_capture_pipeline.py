@@ -10,7 +10,7 @@ import trafficlab.capture as capture_module
 from trafficlab.capture import CaptureResult, capture_experiment
 from trafficlab.compose import ComposePaths, write_production_compose
 from trafficlab.config import ExperimentConfig
-from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
+from trafficlab.docker_cli import CommandResult, ServiceState
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import run_preflight
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
@@ -139,11 +139,6 @@ class _HappyDocker:
             self.events.append("cleanup")
         return _CleanupHandle()
 
-    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory:
-        if self._production(project_name):
-            self.events.append("cleanup_verified")
-        return ProjectInventory(containers=())
-
 
 class _Clock:
     def __init__(self, docker: _HappyDocker, events: list[str]) -> None:
@@ -235,7 +230,6 @@ def test_capture_happy_path_orders_full_lifecycle_and_publishes_reference(
         "observe_capture",
         "validate_publish",
         "cleanup",
-        "cleanup_verified",
     ]
     assert (result.run_directory / "capture.json").exists()
     assert result.reference_path.exists()

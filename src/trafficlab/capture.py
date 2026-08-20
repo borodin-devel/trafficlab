@@ -57,7 +57,6 @@ from trafficlab.docker_cli import (
     CapturePlatform,
     CommandResult,
     DockerCompose,
-    ProjectInventory,
     ServiceState,
     load_capture_image_lock,
 )
@@ -446,18 +445,6 @@ def _future_deadline(clock: Callable[[], float], seconds: float, *, stage: str) 
             corrective_action="use a finite monotonic clock and positive capture timeouts",
         )
     return deadline
-
-
-def _inventory(
-    states: dict[str, ServiceState],
-    *,
-    project_name: str,
-    project_may_exist: bool,
-) -> ProjectInventory:
-    return ProjectInventory(
-        containers=tuple(sorted(states.values(), key=lambda item: (item.service, item.name, item.identifier))),
-        networks=(f"{project_name}_default",) if project_may_exist else (),
-    )
 
 
 def _remember(states: dict[str, ServiceState], service: str, state: ServiceState | None) -> None:
@@ -1149,7 +1136,6 @@ def capture_prepared_experiment(
     result: CaptureResult | None = None
     publication: CapturePublication | None = None
     target_may_exist = False
-    project_may_exist = False
     natural_target_succeeded = False
 
     def record_temporary_cleanup_failure(detail: str) -> None:
@@ -1177,7 +1163,6 @@ def capture_prepared_experiment(
         try:
             _append_event(run_directory, "capture_project_created", project_name=project_name)
             operation = "create capture service"
-            project_may_exist = True
             docker.create_capture(compose_path, project_name, deadline=creation_deadline)
             total_deadline = _future_deadline(clock, config.capture.total_timeout_seconds, stage="total-run")
             operation = "start capture service"
@@ -1413,14 +1398,11 @@ def capture_prepared_experiment(
                 docker,
                 compose_path,
                 project_name,
-                _inventory(states, project_name=project_name, project_may_exist=project_may_exist),
                 deadline=cleanup_deadline,
                 clock=clock,
             )
             if not cleanup.success:
                 outcome = record_cleanup_failure(outcome, cleanup.detail)
-                for secondary_detail in cleanup.secondary_details:
-                    outcome = record_cleanup_failure(outcome, f"additional cleanup failure: {secondary_detail}")
 
     if publication is not None and publication.created_by_call and outcome.primary_kind is not None:
         try:

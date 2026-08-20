@@ -59,6 +59,11 @@ def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
         default_network = cast(dict[str, object], networks.get("default", {}))
         overlay_addresses.append(default_network.get("ipv4_address"))
     assert overlay_addresses == ["172.31.254.2", "172.31.254.3", "172.31.254.4"]
+    merged = cast(dict[str, object], json.loads(docker_support.merge_endpoint_overlay(production)))
+    assert merged["volumes"] == {"lifecycle": {}}
+    endpoint = cast(dict[str, object], overlay_services["endpoint"])
+    assert endpoint["volumes"] == [{"type": "volume", "source": "lifecycle", "target": "/trafficlab-test-volume"}]
+    assert "volumes" not in cast(dict[str, object], overlay_services["orphan"])
     target = cast(dict[str, object], _services(production)["target"])
     assert target["command"] == ["traffic", "--tcp-count", "2", "--udp-count", "3"]
     assert target["network_mode"] == "service:capture"
@@ -685,7 +690,45 @@ def test_capture_lifecycle_positions_use_published_run_log_schema(tmp_path: Path
     assert support.capture_lifecycle_positions(tmp_path) == (0, 1)
 
 
-def test_tracker_aggregates_inventory_and_removal_errors_while_continuing_cleanup(
+def test_tracker_registers_every_exact_project_with_the_session_sweep() -> None:
+    """A project visible only to one test could escape the final owned-label recovery sweep."""
+    registry = docker_support.DockerProjectRegistry()
+    tracker = docker_support.DockerProjectTracker(registry=registry)
+
+    tracker.add("trafficlab-capture-abc123")
+
+    assert tracker.projects == {"trafficlab-capture-abc123"}
+    assert registry.projects == {"trafficlab-capture-abc123"}
+
+
+def test_per_test_assertion_reports_label_leaks_without_running_a_second_cleanup_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-test proof must observe real labels but leave recovery to the one session sweep."""
+    calls: list[tuple[str, ...]] = []
+
+    def command(
+        argv: tuple[str, ...],
+        *,
+        purpose: str,
+        timeout: float,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        del purpose, timeout, check
+        calls.append(argv)
+        stdout = "project_default\n" if argv[1:3] == ("network", "ls") else ""
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    monkeypatch.setattr(docker_support, "run_external_command", command)
+    tracker = docker_support.DockerProjectTracker(projects={"project"})
+
+    with pytest.raises(pytest.fail.Exception, match=r"networks=\[project_default\]"):
+        tracker.assert_clean()
+
+    assert not any("rm" in argv for argv in calls)
+
+
+def test_session_sweep_aggregates_inventory_and_removal_errors_while_continuing_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One inventory/removal failure must not prevent other known resources from being removed."""
@@ -711,10 +754,10 @@ def test_tracker_aggregates_inventory_and_removal_errors_while_continuing_cleanu
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr(docker_support, "run_external_command", command)
-    tracker = docker_support.DockerProjectTracker(projects={"project"})
+    registry = docker_support.DockerProjectRegistry(projects={"project"})
 
     with pytest.raises(pytest.fail.Exception) as caught:
-        tracker.assert_clean()
+        registry.sweep()
 
     message = str(caught.value)
     assert "container inventory failed" in message

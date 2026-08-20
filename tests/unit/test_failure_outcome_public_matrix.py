@@ -22,7 +22,7 @@ from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT, PIPELINE_FIXTURE_ROOT
 from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FloatBounds
 from trafficlab.config_io import render_effective_config
-from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState, load_capture_image_lock
+from trafficlab.docker_cli import CommandResult, ServiceState, load_capture_image_lock
 from trafficlab.errors import FailureOutcome, TrafficlabError
 from trafficlab.fitting import FitDependencies
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, run_strategy
@@ -451,10 +451,6 @@ class _PreflightDocker:
     def start_down(self, compose_path: Path, project_name: str, *, deadline: float) -> _CompletedHandle:
         del compose_path, project_name, deadline
         return _CompletedHandle()
-
-    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory:
-        del compose_path, project_name, deadline
-        return ProjectInventory(())
 
 
 _PREFLIGHT_LOG_FINDINGS: dict[_Scenario, tuple[str, ...]] = {
@@ -917,10 +913,6 @@ class _CaptureDocker:
         timeout = self.scenario in {"cleanup_timeout_after_success", "target_23_cleanup_timeout"}
         self.cleanup_handle = _CompletedHandle(timeout=timeout)
         return self.cleanup_handle
-
-    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory:
-        del compose_path, project_name, deadline
-        return ProjectInventory(())
 
     def clock(self) -> float:
         if self.cleanup_handle is not None and self.cleanup_handle.timeout and self.cleanup_handle.waited:

@@ -14,7 +14,6 @@ from trafficlab.docker_cli import (
     CommandResult,
     DockerCompose,
     ProcessHandle,
-    ProjectInventory,
     ServiceState,
     SubprocessBoundary,
 )
@@ -102,14 +101,11 @@ def _compose_prefix(compose_path: Path, project: str = "trafficlab-run_1") -> tu
 def test_command_values_are_immutable() -> None:
     result = CommandResult(returncode=0, stdout="ok\n", stderr="")
     service = ServiceState(identifier="abc", name="project-capture-1", service="capture", state="running", exit_code=0)
-    inventory = ProjectInventory(containers=(service,))
 
     with pytest.raises(FrozenInstanceError):
         result.stdout = "changed"  # type: ignore[misc]
     with pytest.raises(FrozenInstanceError):
         service.state = "exited"  # type: ignore[misc]
-    with pytest.raises(FrozenInstanceError):
-        inventory.containers = ()  # type: ignore[misc]
 
 
 @pytest.mark.parametrize(
@@ -311,114 +307,6 @@ def test_service_state_returns_none_when_service_is_absent(tmp_path: Path) -> No
     assert state is None
 
 
-def test_project_inventory_is_sorted_and_typed(tmp_path: Path) -> None:
-    stdout = (
-        '[{"ID":"two","Name":"p-target-1","Service":"target","State":"exited","ExitCode":7},'
-        '{"ID":"one","Name":"p-capture-1","Service":"capture","State":"running","ExitCode":0}]'
-    )
-    boundary = _RecordingBoundary(
-        [
-            CommandResult(0, stdout, ""),
-            CommandResult(0, '{"ID":"network-id","Name":"trafficlab-run_default"}\n', ""),
-            CommandResult(0, '{"Name":"trafficlab-run_data"}\n', ""),
-        ]
-    )
-    compose_path = tmp_path / "compose.json"
-
-    inventory = _docker(boundary).project_inventory(compose_path, "trafficlab-run", timeout=4.0)
-
-    assert inventory == ProjectInventory(
-        containers=(
-            ServiceState("one", "p-capture-1", "capture", "running", 0),
-            ServiceState("two", "p-target-1", "target", "exited", 7),
-        ),
-        networks=("trafficlab-run_default",),
-        volumes=("trafficlab-run_data",),
-    )
-    assert boundary.runs == [
-        (_compose_prefix(compose_path, "trafficlab-run") + ("ps", "--all", "--format", "json"), 4.0, None),
-        (
-            (
-                "docker",
-                "network",
-                "ls",
-                "--filter",
-                "label=com.docker.compose.project=trafficlab-run",
-                "--format",
-                "json",
-            ),
-            4.0,
-            None,
-        ),
-        (
-            (
-                "docker",
-                "volume",
-                "ls",
-                "--filter",
-                "label=com.docker.compose.project=trafficlab-run",
-                "--format",
-                "json",
-            ),
-            4.0,
-            None,
-        ),
-    ]
-
-
-@pytest.mark.parametrize(
-    ("network_json", "volume_json"),
-    [
-        ("not-json", ""),
-        ('{"ID":"network-id"}', ""),
-        ("", '{"Name":1}'),
-        ("", '{"Name":"same"}\n{"Name":"same"}\n'),
-    ],
-)
-def test_project_inventory_strictly_validates_networks_and_volumes(
-    tmp_path: Path, network_json: str, volume_json: str
-) -> None:
-    boundary = _RecordingBoundary(
-        [CommandResult(0, "", ""), CommandResult(0, network_json, ""), CommandResult(0, volume_json, "")]
-    )
-
-    with pytest.raises(TrafficlabError, match="Docker project (network|volume) inventory"):
-        _docker(boundary).project_inventory(tmp_path / "compose.json", "trafficlab-run", timeout=1.0)
-
-
-def test_project_inventory_decodes_multiple_compose_json_lines(tmp_path: Path) -> None:
-    stdout = (
-        '{"ID":"two","Name":"p-target-1","Service":"target","State":"exited","ExitCode":7}\n'
-        '{"ID":"one","Name":"p-capture-1","Service":"capture","State":"running","ExitCode":0}\n'
-    )
-    boundary = _RecordingBoundary([CommandResult(0, stdout, "")])
-
-    inventory = _docker(boundary).project_inventory(tmp_path / "compose.json", "trafficlab-run", timeout=1.0)
-
-    assert inventory.containers == (
-        ServiceState("one", "p-capture-1", "capture", "running", 0),
-        ServiceState("two", "p-target-1", "target", "exited", 7),
-    )
-
-
-def test_project_inventory_accepts_empty_or_array_compose_json(tmp_path: Path) -> None:
-    empty = _RecordingBoundary([CommandResult(0, "\n\n", "")])
-    array = _RecordingBoundary(
-        [
-            CommandResult(
-                0,
-                '[{"ID":"one","Name":"p-capture-1","Service":"capture","State":"running","ExitCode":0}]',
-                "",
-            )
-        ]
-    )
-
-    assert _docker(empty).project_inventory(tmp_path / "compose.json", "trafficlab-run", timeout=1.0).containers == ()
-    assert _docker(array).project_inventory(tmp_path / "compose.json", "trafficlab-run", timeout=1.0).containers == (
-        ServiceState("one", "p-capture-1", "capture", "running", 0),
-    )
-
-
 @pytest.mark.parametrize(
     "stdout",
     [
@@ -438,7 +326,7 @@ def test_invalid_inventory_json_is_an_actionable_error(tmp_path: Path, stdout: s
     boundary = _RecordingBoundary([CommandResult(0, stdout, "")])
 
     with pytest.raises(TrafficlabError, match="invalid Docker Compose service inventory") as caught:
-        _docker(boundary).project_inventory(tmp_path / "compose.json", "trafficlab-run", timeout=1.0)
+        _docker(boundary).service_state(tmp_path / "compose.json", "trafficlab-run", "capture", timeout=1.0)
 
     assert "Docker Compose" in caught.value.corrective_action
 
@@ -459,7 +347,7 @@ def test_inventory_rejects_malformed_json_lines_and_duplicate_keys_or_rows(tmp_p
     boundary = _RecordingBoundary([CommandResult(0, stdout, "")])
 
     with pytest.raises(TrafficlabError, match="invalid Docker Compose service inventory"):
-        _docker(boundary).project_inventory(tmp_path / "compose.json", "trafficlab-run", timeout=1.0)
+        _docker(boundary).service_state(tmp_path / "compose.json", "trafficlab-run", "capture", timeout=1.0)
 
 
 def test_service_state_rejects_duplicate_and_wrong_service_rows(tmp_path: Path) -> None:

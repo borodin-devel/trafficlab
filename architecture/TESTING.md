@@ -307,10 +307,9 @@ These tests join real modules without Docker:
    occurs before work starts and after every frame.
 10. Use injected subprocess boundaries to prove that a live capture receives
     `SIGINT` and one bounded flush wait, while an already-stopped capture gets no
-    signal or flush wait. A zero cleanup budget makes no Docker command and
-    reports the last-known inventory as possibly remaining. A hanging cleanup
-    kills its local CLI at the deadline, makes no later Docker query, and reports
-    the same inventory as possibly remaining.
+    signal or flush wait. A zero cleanup budget makes no Docker command. A
+    hanging cleanup terminates or kills and reaps its local CLI at the deadline
+    and makes no later Docker query.
 11. Round-trip portable and realized configurations with method weights
     `(1, 0, 0, 0)` and `(0.1, 0.2, 0.3, 0.4)`. Require all four mandatory method
     settings and diagnostics in both cases; realization may change only the run
@@ -687,9 +686,11 @@ bridge. Assertions require:
   timeout, malformed output, and test interruption remove the project's
   containers, networks, volumes, and orphans.
 
-Teardown calls Compose cleanup in `finally` and then inspects Docker for the
-unique project label. A cleanup assertion failure must show remaining resource
-names.
+Teardown calls Compose cleanup in `finally`. Every Docker case registers its
+unique project and then inspects containers, networks, volumes, and orphans by
+the exact project label. A cleanup assertion failure must show remaining
+resource names. One bounded session teardown sweep may recover only projects
+registered by that test session and verifies their labels are empty afterward.
 
 One contract fixture uses a target image with no shell or idle command. It proves
 that direct service-command launch needs no wrapper, PID file, or Compose `exec`.
@@ -698,12 +699,11 @@ Docker tests remain serial, and the public Internet smoke test remains opt-in.
 A focused in-process integration fixture substitutes only the cleanup command
 with a controlled hanging cleanup process. It requires cleanup timeout at the
 remaining total-run deadline, termination of the local Compose CLI, no later
-Docker query, and a diagnostic that lists the last-known project inventory as
-possibly remaining. A separate zero-budget case makes no Docker command and
-reports the same inventory. These controlled cleanup-timeout cases do not claim
-that resources were removed. Real Docker cleanup and complete-removal assertions
-remain in every ordinary Docker capture case; the suite does not try to make the
-daemon hang.
+Docker query, and an actionable diagnostic that the project may remain. A
+separate zero-budget case makes no Docker command. These controlled
+cleanup-timeout cases do not claim that resources were removed. Real Docker
+cleanup and complete-removal assertions remain in every ordinary Docker capture
+case; the suite does not try to make the daemon hang.
 
 The deterministic Docker suite uses only its controlled endpoint. It verifies
 the capture topology without depending on an external service.

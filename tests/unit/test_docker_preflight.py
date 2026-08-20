@@ -6,12 +6,10 @@ from typing import cast
 
 import pytest
 
-import trafficlab.cleanup as cleanup_module
 import trafficlab.preflight as preflight_module
 from trafficlab import USER_AGENT
-from trafficlab.cleanup import CleanupResult
 from trafficlab.config import ExperimentConfig
-from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
+from trafficlab.docker_cli import CommandResult, ServiceState
 from trafficlab.errors import TrafficlabError
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import check_docker
@@ -180,10 +178,6 @@ class _Docker:
         self._record("start_down", compose_path, project_name, deadline=deadline)
         return self.cleanup
 
-    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory:
-        self._record("project_inventory", compose_path, project_name, deadline=deadline)
-        return ProjectInventory(containers=())
-
 
 def _config(
     valid_config_data: dict[str, object],
@@ -256,7 +250,6 @@ def test_full_docker_preflight_checks_images_topology_capture_and_network(
         "signal_capture",
         "service_state",
         "start_down",
-        "project_inventory",
     ]
     assert {deadline for _name, _args, deadline in docker.calls} == {160.0}
     production, probe = docker.documents
@@ -331,7 +324,6 @@ def test_full_docker_preflight_accepts_supported_compose_version_json_and_reache
         "signal_capture",
         "service_state",
         "start_down",
-        "project_inventory",
     ]
 
 
@@ -585,120 +577,7 @@ def test_probe_failure_remains_primary_when_cleanup_also_fails(
     with pytest.raises(TrafficlabError, match="capture prerequisite is unavailable.*status 19") as caught:
         report.require_success()
     assert caught.value.corrective_action == "make the named prerequisite available"
-    assert _names(docker)[-2:] == ["start_down", "project_inventory"]
-
-
-@pytest.mark.parametrize(
-    ("failure_operation", "target_exit", "expected_states"),
-    [
-        (None, 0, (("capture", "exited", 0), ("target", "exited", 0))),
-        ("create_capture", 0, ()),
-        ("start_capture", 0, ()),
-        ("start_target", 0, (("capture", "running", 0),)),
-        (None, 7, (("capture", "running", 0), ("target", "exited", 7))),
-        ("signal_capture", 0, (("capture", "running", 0), ("target", "exited", 0))),
-    ],
-    ids=[
-        "success",
-        "create-may-have-partially-succeeded",
-        "after-create",
-        "capture-observed",
-        "target-observed-nonzero",
-        "both-observed",
-    ],
-)
-def test_probe_cleanup_receives_the_freshest_observed_service_inventory(
-    valid_config_data: dict[str, object],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    failure_operation: str | None,
-    target_exit: int,
-    expected_states: tuple[tuple[str, str, int], ...],
-) -> None:
-    """Discarding observed service identities would make zero-budget or hanging cleanup report empty evidence."""
-    config = _config(valid_config_data, tmp_path)
-    failure = None
-    if failure_operation is not None:
-        failure = (
-            failure_operation,
-            TrafficlabError(f"{failure_operation} failed", corrective_action="repair probe"),
-        )
-    docker = _Docker(failure=failure, target_exit=target_exit)
-    captured: list[ProjectInventory] = []
-
-    def controlled_cleanup(
-        compose: object,
-        compose_path: Path,
-        project_name: str,
-        last_known_inventory: ProjectInventory,
-        *,
-        deadline: float,
-        clock: object,
-    ) -> CleanupResult:
-        captured.append(last_known_inventory)
-        return CleanupResult(
-            success=False,
-            timed_out=True,
-            detail="controlled cleanup timeout",
-            possibly_remaining=last_known_inventory,
-        )
-
-    monkeypatch.setattr(cleanup_module, "cleanup_project", controlled_cleanup)
-
-    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
-
-    probe_name = [cast(str, args[1]) for name, args, _deadline in docker.calls if name == "config"][1]
-    expected = ProjectInventory(
-        containers=tuple(
-            ServiceState(
-                f"{service}-id",
-                f"{probe_name}-{service}-1",
-                service,
-                state,
-                status,
-            )
-            for service, state, status in expected_states
-        ),
-        networks=(f"{probe_name}_default",),
-    )
-    assert captured == [expected]
-    failures = [finding.name for finding in report.findings if not finding.ok]
-    assert failures[-1] == "probe_cleanup"
-
-
-def test_probe_cleanup_finding_keeps_primary_before_secondary_cleanup_detail(
-    valid_config_data: dict[str, object],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Dropping cleanup secondary detail would hide why its known command failure could not be verified."""
-    config = _config(valid_config_data, tmp_path)
-    docker = _Docker(target_exit=7)
-
-    def controlled_cleanup(
-        compose: object,
-        compose_path: Path,
-        project_name: str,
-        last_known_inventory: ProjectInventory,
-        *,
-        deadline: float,
-        clock: object,
-    ) -> CleanupResult:
-        return CleanupResult(
-            success=False,
-            timed_out=False,
-            detail="cleanup command failed with status 23",
-            possibly_remaining=last_known_inventory,
-            secondary_details=("inventory query failed",),
-        )
-
-    monkeypatch.setattr(cleanup_module, "cleanup_project", controlled_cleanup)
-
-    report = check_docker(config, docker, deadline=160.0, clock=lambda: 100.0)
-
-    failures = [finding for finding in report.findings if not finding.ok]
-    assert [finding.name for finding in failures] == ["network_probe", "probe_cleanup"]
-    assert failures[1].detail == "cleanup command failed with status 23; secondary: inventory query failed"
+    assert _names(docker)[-1:] == ["start_down"]
 
 
 def test_total_deadline_exhaustion_stops_before_the_next_docker_action(

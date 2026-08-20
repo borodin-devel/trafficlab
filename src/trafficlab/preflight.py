@@ -32,13 +32,11 @@ from trafficlab.pcapng import parse_pcapng
 from trafficlab.trace import load_capture_metadata
 
 if TYPE_CHECKING:
-    from trafficlab.cleanup import CleanupResult
     from trafficlab.docker_cli import (
         CaptureImageLock,
         CapturePlatform,
         ImageIdentity,
         ProcessHandle,
-        ProjectInventory,
         ServiceState,
     )
 
@@ -108,8 +106,6 @@ class DockerPreflight(Protocol):
     def signal_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
 
     def start_down(self, compose_path: Path, project_name: str, *, deadline: float) -> ProcessHandle: ...
-
-    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory: ...
 
 
 def default_writable(path: Path) -> bool:
@@ -426,12 +422,6 @@ def _preflight_failure_outcome(finding: PreflightFinding, *, authority: FailureA
     )
 
 
-def _cleanup_detail(cleanup: CleanupResult) -> str:
-    if not cleanup.secondary_details:
-        return cleanup.detail
-    return f"{cleanup.detail}; secondary: {'; '.join(cleanup.secondary_details)}"
-
-
 def _image_ready(
     compose: DockerPreflight,
     image: str,
@@ -691,7 +681,6 @@ def check_docker(
     from trafficlab.cleanup import cleanup_project
     from trafficlab.docker_cli import (
         CaptureImageLockError,
-        ProjectInventory,
         load_capture_image_lock,
         parse_docker_info_platform,
         validate_capture_dockerfile,
@@ -882,13 +871,10 @@ def check_docker(
                 ),
             )
             observed: dict[str, ServiceState] = {}
-            probe_created = False
-
             try:
                 _require_deadline(deadline, clock)
                 compose.config(probe_path, probe_name, deadline=deadline)
                 _require_deadline(deadline, clock)
-                probe_created = True
                 compose.create_capture(probe_path, probe_name, deadline=deadline)
                 _run_probe(
                     config,
@@ -912,15 +898,6 @@ def check_docker(
                     compose,
                     probe_path,
                     probe_name,
-                    ProjectInventory(
-                        containers=tuple(
-                            sorted(
-                                observed.values(),
-                                key=lambda item: (item.service, item.name, item.identifier),
-                            )
-                        ),
-                        networks=(f"{probe_name}_default",) if probe_created else (),
-                    ),
                     deadline=deadline,
                     clock=clock,
                 )
@@ -929,7 +906,7 @@ def check_docker(
                         PreflightFinding(
                             "probe_cleanup",
                             False,
-                            _cleanup_detail(cleanup),
+                            cleanup.detail,
                             "remove the uniquely named preflight Compose project and retry",
                         )
                     )

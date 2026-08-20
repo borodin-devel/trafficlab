@@ -9,6 +9,7 @@ from hypothesis import settings
 
 from tests.support.config import valid_config_data as build_valid_config_data
 from tests.support.docker import (
+    DockerProjectRegistry,
     DockerProjectTracker,
     DockerTestEnvironment,
     EndpointDockerCompose,
@@ -89,9 +90,18 @@ def retained_test_body_failure(request: pytest.FixtureRequest) -> BaseException 
 
 
 @pytest.fixture(scope="session")
-def docker_test_environment(pytestconfig: pytest.Config) -> Iterator[DockerTestEnvironment]:
+def docker_project_registry() -> DockerProjectRegistry:
+    """Collect only unique Compose projects created by this external-test session."""
+    return DockerProjectRegistry()
+
+
+@pytest.fixture(scope="session")
+def docker_test_environment(
+    pytestconfig: pytest.Config,
+    docker_project_registry: DockerProjectRegistry,
+) -> Iterator[DockerTestEnvironment]:
     """Require and build the real-Docker test environment; never skip explicit selection."""
-    yield from provision_docker_test_environment(pytestconfig)
+    yield from provision_docker_test_environment(pytestconfig, project_registry=docker_project_registry)
 
 
 @pytest.fixture(scope="session")
@@ -100,8 +110,11 @@ def internet_url(pytestconfig: pytest.Config) -> str:
 
 
 @pytest.fixture
-def docker_project_tracker(request: pytest.FixtureRequest) -> Iterator[DockerProjectTracker]:
-    tracker = DockerProjectTracker()
+def docker_project_tracker(
+    request: pytest.FixtureRequest,
+    docker_project_registry: DockerProjectRegistry,
+) -> Iterator[DockerProjectTracker]:
+    tracker = DockerProjectTracker(registry=docker_project_registry)
     try:
         yield tracker
     finally:

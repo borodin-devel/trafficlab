@@ -14,7 +14,7 @@ from trafficlab.capture import CaptureResult, capture_experiment, capture_prepar
 from trafficlab.capture_policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
 from trafficlab.compatibility import identify_file
 from trafficlab.config import MountConfig
-from trafficlab.docker_cli import CommandResult, ProjectInventory, ServiceState
+from trafficlab.docker_cli import CommandResult, ServiceState
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
 from trafficlab.pcapng import encode_pcapng
 from trafficlab.preflight import (
@@ -171,12 +171,6 @@ class _Docker:
         self._record("start_down")
         return _CleanupHandle(returncode=5 if "cleanup_failure" in self.scenario else 0)
 
-    def project_inventory(self, compose_path: Path, project_name: str, *, deadline: float) -> ProjectInventory:
-        self._record("inventory")
-        if self.scenario == "cleanup_failure_inventory_error":
-            raise TrafficlabError("injected cleanup inventory failure", corrective_action="test")
-        return ProjectInventory(containers=())
-
 
 class _Clock:
     def __init__(self, docker: _Docker) -> None:
@@ -271,7 +265,7 @@ def test_readiness_timeout_reports_capture_logs_and_never_starts_target(
 
     assert "start_target" not in docker.calls
     assert "logs_capture" in docker.calls
-    assert docker.calls[-2:] == ["start_down", "inventory"]
+    assert docker.calls[-1:] == ["start_down"]
     assert not (prepared.run_directory / "reference.pcapng").exists()
 
 
@@ -293,7 +287,7 @@ def test_readiness_log_failure_is_ordered_secondary_evidence(
     assert records[-1]["secondary_details"] == [
         "could not read capture logs after readiness failure: injected capture logs failure"
     ]
-    assert docker.calls[-2:] == ["start_down", "inventory"]
+    assert docker.calls[-1:] == ["start_down"]
 
 
 def test_readiness_log_jsonl_failure_is_ordered_secondary_evidence(
@@ -523,7 +517,7 @@ def test_start_target_boundary_error_is_contextual_and_cleanup_still_runs(
 
     assert str(caught.value) == "could not start target service: injected target start failure"
     assert "kill_target" not in docker.calls
-    assert docker.calls[-2:] == ["start_down", "inventory"]
+    assert docker.calls[-1:] == ["start_down"]
     records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
     assert records[-1]["failure_kind"] == "validation_failed"
 
@@ -643,24 +637,6 @@ def test_workload_and_flush_docker_calls_use_the_active_stage_deadline(tmp_path:
 
     assert observed_deadlines[:2] == [("state_target", 105.0), ("state_capture", 105.0)]
     assert observed_deadlines[2:] == [("signal_capture", 106.0), ("state_capture", 106.0)]
-
-
-def test_last_known_capture_inventory_includes_the_created_project_network() -> None:
-    """Zero-budget cleanup must report the known project network, not only observed containers."""
-    states = {
-        "capture": ServiceState("capture-id", "project-capture-1", "capture", "running", 0),
-    }
-
-    inventory = cast(Any, capture_module)._inventory(
-        states,
-        project_name="trafficlab-capture-test",
-        project_may_exist=True,
-    )
-
-    assert inventory == ProjectInventory(
-        containers=(states["capture"],),
-        networks=("trafficlab-capture-test_default",),
-    )
 
 
 @pytest.mark.parametrize(
@@ -857,7 +833,7 @@ def test_keyboard_interrupt_inside_workload_runs_owned_interruption_transition(
     assert caught.value.exit_code == 130
     assert docker.calls.count("kill_target") == 1
     assert docker.calls.count("signal_capture") == 1
-    assert docker.calls[-2:] == ["start_down", "inventory"]
+    assert docker.calls[-1:] == ["start_down"]
     assert (prepared.run_directory / "diagnostic-capture.json").exists()
     assert (prepared.run_directory / "diagnostic-reference.pcapng").exists()
     records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
@@ -881,7 +857,7 @@ def test_keyboard_interrupt_during_partial_target_start_kills_before_capture_act
         "signal_capture",
         "state_capture",
     ]
-    assert docker.calls[-2:] == ["start_down", "inventory"]
+    assert docker.calls[-1:] == ["start_down"]
     assert caught.value.exit_code == 130
     assert (prepared.run_directory / "diagnostic-capture.json").exists()
     assert (prepared.run_directory / "diagnostic-reference.pcapng").exists()
@@ -1003,7 +979,7 @@ def test_malformed_capture_is_validation_primary_and_never_published(
 
     assert not (prepared.run_directory / "capture.json").exists()
     assert not (prepared.run_directory / "reference.pcapng").exists()
-    assert docker.calls[-2:] == ["start_down", "inventory"]
+    assert docker.calls[-1:] == ["start_down"]
 
 
 def test_validation_total_deadline_is_primary_and_zero_budget_cleanup_makes_no_docker_call(
@@ -1795,21 +1771,6 @@ def test_cleanup_rollback_preserves_a_concurrent_replacement_pair(
     assert (prepared.run_directory / "capture.json").read_bytes() == winner_metadata_bytes
     assert (prepared.run_directory / "reference.pcapng").read_bytes() == winner_pcapng_bytes
     assert "capture pair changed during invalid-pair recovery" in str(caught.value)
-
-
-def test_cleanup_records_its_internal_secondary_failure_in_order(
-    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A known cleanup command failure must retain the later inventory-query error as secondary evidence."""
-    experiment_path, prepared = _prepared(valid_config_data, tmp_path, monkeypatch)
-    docker = _Docker("cleanup_failure_inventory_error")
-
-    with pytest.raises(TrafficlabError) as caught:
-        capture_experiment(experiment_path, docker=docker, clock=_Clock(docker), interruption=lambda: False)
-
-    records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
-    assert records[-1]["secondary_details"] == ["additional cleanup failure: injected cleanup inventory failure"]
-    assert "secondary: additional cleanup failure: injected cleanup inventory failure" in str(caught.value)
 
 
 def test_cleanup_failure_is_secondary_after_capture_failure(

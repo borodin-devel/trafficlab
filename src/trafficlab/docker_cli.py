@@ -343,15 +343,6 @@ class ServiceState:
     exit_code: int
 
 
-@dataclass(frozen=True, slots=True)
-class ProjectInventory:
-    """Last observed resources belonging to one Compose project."""
-
-    containers: tuple[ServiceState, ...]
-    networks: tuple[str, ...] = ()
-    volumes: tuple[str, ...] = ()
-
-
 class ProcessHandle(Protocol):
     """Controllable command used only for deadline-bounded cleanup."""
 
@@ -619,7 +610,7 @@ def _load_inventory_json(text: str) -> object:
     return cast(object, json.loads(text, object_pairs_hook=_reject_duplicate_json_keys))
 
 
-def _parse_inventory(stdout: str) -> ProjectInventory:
+def _parse_service_states(stdout: str) -> tuple[ServiceState, ...]:
     try:
         stripped = stdout.strip()
         if not stripped:
@@ -651,35 +642,7 @@ def _parse_inventory(stdout: str) -> ProjectInventory:
             f"invalid Docker Compose service inventory: {error}",
             corrective_action="verify Docker Compose v2 returns valid JSON from ps --format json",
         ) from error
-    return ProjectInventory(
-        containers=tuple(sorted(containers, key=lambda item: (item.service, item.name, item.identifier)))
-    )
-
-
-def _parse_resource_names(stdout: str, *, kind: str) -> tuple[str, ...]:
-    try:
-        documents = tuple(_load_inventory_json(line) for line in stdout.splitlines() if line.strip())
-        names: list[str] = []
-        for document in documents:
-            if not isinstance(document, dict):
-                raise ValueError("every JSON Lines entry must be an object")
-            typed_document = cast(dict[object, object], document)
-            name = typed_document.get("Name")
-            if not isinstance(name, str) or not name:
-                raise ValueError("Name must be a nonempty string")
-            if kind == "network":
-                identifier = typed_document.get("ID")
-                if not isinstance(identifier, str) or not identifier:
-                    raise ValueError("ID must be a nonempty string")
-            names.append(name)
-        if len(names) != len(set(names)):
-            raise ValueError(f"{kind} names must be unique")
-    except (json.JSONDecodeError, ValueError) as error:
-        raise TrafficlabError(
-            f"invalid Docker project {kind} inventory: {error}",
-            corrective_action=f"verify Docker returns valid JSON from {kind} ls --format json",
-        ) from error
-    return tuple(sorted(names))
+    return tuple(sorted(containers, key=lambda item: (item.service, item.name, item.identifier)))
 
 
 def _validate_config_json(stdout: str) -> None:
@@ -901,15 +864,15 @@ class DockerCompose:
             timeout=timeout,
             deadline=deadline,
         )
-        inventory = _parse_inventory(result.stdout)
-        if not inventory.containers:
+        states = _parse_service_states(result.stdout)
+        if not states:
             return None
-        if len(inventory.containers) != 1:
+        if len(states) != 1:
             raise TrafficlabError(
-                f"expected at most one container for service {service}, got {len(inventory.containers)}",
+                f"expected at most one container for service {service}, got {len(states)}",
                 corrective_action="remove stale containers for the unique Compose project and retry",
             )
-        state = inventory.containers[0]
+        state = states[0]
         if state.service != service:
             raise TrafficlabError(
                 f"Docker Compose returned service {state.service!r} for requested service {service}",
@@ -990,46 +953,6 @@ class DockerCompose:
             "Docker Compose kill capture",
             timeout=timeout,
             deadline=deadline,
-        )
-
-    # Cleanup verification inventories containers, networks, and volumes
-    # independently.  An empty container list alone is insufficient because
-    # Compose can leave project-scoped network or volume residue.
-    def project_inventory(
-        self,
-        compose_path: Path,
-        project_name: str,
-        *,
-        timeout: float | None = None,
-        deadline: float | None = None,
-    ) -> ProjectInventory:
-        """Return a typed snapshot of every labelled project resource."""
-        containers_result = self._compose_run(
-            compose_path,
-            project_name,
-            ("ps", "--all", "--format", "json"),
-            "Docker Compose project inventory",
-            timeout=timeout,
-            deadline=deadline,
-        )
-        label = f"label=com.docker.compose.project={project_name}"
-        networks_result = self._run(
-            ("docker", "network", "ls", "--filter", label, "--format", "json"),
-            "Docker project network inventory",
-            timeout=timeout,
-            deadline=deadline,
-        )
-        volumes_result = self._run(
-            ("docker", "volume", "ls", "--filter", label, "--format", "json"),
-            "Docker project volume inventory",
-            timeout=timeout,
-            deadline=deadline,
-        )
-        containers = _parse_inventory(containers_result.stdout).containers
-        return ProjectInventory(
-            containers=containers,
-            networks=_parse_resource_names(networks_result.stdout, kind="network"),
-            volumes=_parse_resource_names(volumes_result.stdout, kind="volume"),
         )
 
     def start_down(

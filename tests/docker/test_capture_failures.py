@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from tests.docker.support import capture_log, write_docker_experiment
+from tests.docker.support import assert_tracked_projects_clean, capture_log, write_docker_experiment
 from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
 from trafficlab.capture import capture_prepared_experiment
 from trafficlab.compose import ComposePaths
@@ -162,6 +162,7 @@ def test_natural_nonzero_status_is_exact_and_only_diagnostic_capture_remains(
     assert (run_directory / "diagnostic-reference.pcapng").exists()
     assert "kill:target" not in docker.calls
     assert docker.calls.count("signal:capture") == 1
+    assert_tracked_projects_clean(docker.tracker)
 
 
 @pytest.mark.parametrize(
@@ -196,6 +197,7 @@ def test_workload_timeout_kills_target_and_any_child(
     _assert_failed_run(tmp_path / f"timeout-{argv[0]}-run", "stage_timeout", induced_status=True)
     assert docker.calls.count("kill:target") == 1
     assert docker.calls.count("signal:capture") == 1
+    assert_tracked_projects_clean(docker.tracker)
 
 
 def test_capture_early_exit_kills_long_target_next_and_within_five_seconds(
@@ -234,6 +236,7 @@ def test_capture_early_exit_kills_long_target_next_and_within_five_seconds(
     assert docker.calls[stopped_index + 1] == "kill:target"
     assert "signal:capture" not in docker.calls
     _assert_failed_run(tmp_path / "capture-exit-run", "capture_stopped", induced_status=True)
+    assert_tracked_projects_clean(docker.tracker)
 
 
 def test_capture_ignoring_sigint_reaches_flush_timeout_and_rejects_output(
@@ -265,6 +268,7 @@ def test_capture_ignoring_sigint_reaches_flush_timeout_and_rejects_output(
     assert not (tmp_path / "ignore-int-run" / "reference.pcapng").exists()
     assert docker.calls.count("signal:capture") == 1
     assert docker.calls.count("kill:capture") == 1
+    assert_tracked_projects_clean(docker.tracker)
 
 
 def test_malformed_output_is_rejected_after_bounded_flush(
@@ -298,6 +302,7 @@ def test_malformed_output_is_rejected_after_bounded_flush(
         capture_prepared_experiment(experiment, prepared, docker=endpoint_docker)
 
     assert not (tmp_path / "malformed-run" / "reference.pcapng").exists()
+    assert_tracked_projects_clean(endpoint_docker.tracker)
 
 
 def test_readiness_failure_never_starts_target_and_cleans_project(
@@ -327,6 +332,7 @@ def test_readiness_failure_never_starts_target_and_cleans_project(
     records = capture_log(tmp_path / "readiness-run")
     assert all(record.get("event") != "capture_ready" for record in records)
     assert "start:target" not in docker.calls
+    assert_tracked_projects_clean(docker.tracker)
 
 
 def test_interruption_kills_target_flushes_once_and_returns_interruption_primary(
@@ -356,3 +362,4 @@ def test_interruption_kills_target_flushes_once_and_returns_interruption_primary
     _assert_failed_run(tmp_path / "interrupt-run", "user_interruption", induced_status=True)
     assert docker.calls.count("kill:target") == 1
     assert docker.calls.count("signal:capture") == 1
+    assert_tracked_projects_clean(docker.tracker)

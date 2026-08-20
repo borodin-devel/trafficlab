@@ -13,26 +13,10 @@ from trafficlab.docker_cli import (
     CommandResult,
     DockerCompose,
     ProcessHandle,
-    ProjectInventory,
-    ServiceState,
     SubprocessBoundary,
 )
 
 pytestmark = pytest.mark.integration
-
-
-def _known_inventory() -> ProjectInventory:
-    return ProjectInventory(
-        containers=(
-            ServiceState(
-                identifier="capture-id",
-                name="trafficlab-run-capture-1",
-                service="capture",
-                state="running",
-                exit_code=0,
-            ),
-        )
-    )
 
 
 class _ShortWaitHandle:
@@ -139,14 +123,12 @@ def test_hanging_cleanup_terminates_then_kills_local_cli_without_later_docker_qu
     boundary = _HangingBoundary()
     compose = DockerCompose(boundary=boundary)
     compose_path = (tmp_path / "compose.json").resolve()
-    known = _known_inventory()
     started = time.monotonic()
 
     result = cleanup_project(
         compose,
         compose_path,
         "trafficlab-run",
-        known,
         deadline=started + 2.0,
         clock=time.monotonic,
     )
@@ -154,7 +136,6 @@ def test_hanging_cleanup_terminates_then_kills_local_cli_without_later_docker_qu
     assert time.monotonic() - started < 0.5
     assert result.timed_out
     assert not result.success
-    assert result.possibly_remaining == known
     assert boundary.starts == [
         (
             "docker",
@@ -178,19 +159,15 @@ def test_hanging_cleanup_terminates_then_kills_local_cli_without_later_docker_qu
 def test_zero_budget_with_real_compose_adapter_starts_no_boundary_command(tmp_path: Path) -> None:
     """The top-level zero-budget guard must precede even the concrete Docker adapter's scope validation and launch."""
     boundary = _HangingBoundary()
-    known = _known_inventory()
-
     result = cleanup_project(
         DockerCompose(boundary=boundary),
         (tmp_path / "compose.json").resolve(),
         "trafficlab-run",
-        known,
         deadline=100.0,
         clock=lambda: 100.0,
     )
 
     assert result.timed_out
-    assert result.possibly_remaining == known
     assert boundary.starts == []
     assert boundary.runs == []
 
@@ -205,7 +182,6 @@ def test_full_initial_wait_reserves_time_to_kill_and_reap_real_process(tmp_path:
             DockerCompose(boundary=boundary),
             (tmp_path / "compose.json").resolve(),
             "trafficlab-run",
-            _known_inventory(),
             deadline=started + 0.25,
             clock=time.monotonic,
         )
