@@ -9,7 +9,7 @@ import json
 import re
 import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -41,18 +41,136 @@ _NUMPY_AFTER_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
     "src/trafficlab/similarity/multiscale.py": ("_binned_features",),
 }
 
-_STRUCTURAL_PREFIXES = (
-    "_strict",
-    "_bounded",
-    "_exact",
-    "_ranged",
-    "_float",
-    "_normalized",
-    "_validate",
-    "_parse",
-    "_build",
-)
-_STRUCTURAL_EXACT = frozenset({"from_dict", "from_json", "__post_init__"})
+_TASK5_BEFORE: Mapping[str, tuple[str, ...]] = {
+    "src/trafficlab/comparison.py": (
+        "ComparisonResult.from_dict",
+        "MethodComparison.from_dict",
+        "_bounded_float",
+        "_bounded_weighted_score",
+        "_exact_keys",
+        "_float_list",
+        "_normalized_weights",
+        "_ranged_float",
+        "_strict_float",
+        "_strict_int",
+        "_validate_acf_feature",
+        "_validate_autocorrelation_diagnostics",
+        "_validate_direction_totals",
+        "_validate_frame_size_diagnostics",
+        "_validate_iat_diagnostics",
+        "_validate_method_diagnostics",
+        "_validate_multiscale_diagnostics",
+        "_validate_score_discrepancy",
+    ),
+    "src/trafficlab/errors.py": (
+        "FailureOutcome.__post_init__",
+        "FailureOutcome.from_dict",
+        "FailureOutcome.from_json",
+        "_strict_json_object",
+        "_validate_failure_outcome_order",
+    ),
+    "src/trafficlab/models/registry.py": (
+        "BestModel.__post_init__",
+        "_build_bounds",
+        "_exact_mapping",
+        "_parse_final_limits",
+        "_parse_genes",
+        "_parse_identity",
+        "_validate_best_model",
+        "_validate_final_limits",
+        "_validate_final_seed",
+        "_validate_genes",
+        "_validate_identity",
+        "_validate_window",
+    ),
+}
+_TASK5_AFTER: Mapping[str, tuple[str, ...]] = {
+    "src/trafficlab/comparison.py": (
+        "ComparisonResult.from_dict",
+        "MethodComparison.from_dict",
+        "_bounded_weighted_score",
+        "_exact_float_input",
+    ),
+    "src/trafficlab/errors.py": (
+        "FailureOutcomeRecord.from_dict",
+        "FailureOutcomeRecord.from_json",
+        "_strict_json_object",
+        "_validate_failure_outcome_order",
+    ),
+    "src/trafficlab/models/registry.py": (
+        "_build_bounds",
+        "_exact_mapping",
+        "_parse_final_limits",
+        "_parse_genes",
+        "_parse_identity",
+        "_validate_best_model",
+        "_validate_final_limits",
+        "_validate_final_seed",
+        "_validate_genes",
+        "_validate_identity",
+        "_validate_window",
+    ),
+}
+_TASK6_BEFORE: Mapping[str, tuple[str, ...]] = {
+    "src/trafficlab/genetic/checkpoint.py": (
+        "_exact_object",
+        "_float",
+        "_float_array",
+        "_parse_candidate",
+        "_parse_compatibility",
+        "_parse_coordinate",
+        "_parse_decimal",
+        "_parse_duplicate",
+        "_parse_failure",
+        "_parse_family",
+        "_parse_gene",
+        "_parse_generation_limits",
+        "_parse_genetic",
+        "_parse_history_csv",
+        "_parse_history_row",
+        "_parse_identifier",
+        "_parse_method",
+        "_parse_repr_float",
+        "_parse_rng",
+        "_parse_similarity",
+        "_parse_trial",
+        "_validate_candidate",
+        "_validate_compatibility_shape",
+        "_validate_coordinate",
+        "_validate_family_spec",
+        "_validate_genetic",
+        "_validate_history",
+        "_validate_rng_state",
+        "_validate_state",
+    ),
+    "src/trafficlab/genetic/types.py": (
+        "Candidate.__post_init__",
+        "CandidateFailure.__post_init__",
+        "DuplicateDiagnostic.__post_init__",
+        "HistoryRow.__post_init__",
+        "TrialResult.__post_init__",
+        "_validate_model_diagnostic_shape",
+    ),
+}
+_TASK6_AFTER: Mapping[str, tuple[str, ...]] = {
+    "src/trafficlab/genetic/checkpoint.py": (
+        "_exact_float_input",
+        "_float",
+        "_parse_decimal",
+        "_parse_gene",
+        "_parse_history_csv",
+        "_parse_repr_float",
+        "_validate_candidate",
+        "_validate_compatibility_shape",
+        "_validate_coordinate",
+        "_validate_family_spec",
+        "_validate_genetic",
+        "_validate_history",
+        "_validate_rng_state",
+        "_validate_state",
+    ),
+    "src/trafficlab/genetic/types.py": ("_exact_float", "_validate_model_diagnostic_shape"),
+}
 
 
 def _qualified_functions(tree: ast.Module) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
@@ -84,19 +202,6 @@ def _git_source(repository: Path, revision: str, path: str) -> str:
     return completed.stdout
 
 
-def _selected_function_names(
-    functions: Mapping[str, ast.FunctionDef | ast.AsyncFunctionDef],
-) -> tuple[str, ...]:
-    return tuple(
-        sorted(
-            qualified
-            for qualified in functions
-            if qualified.rsplit(".", 1)[-1].startswith(_STRUCTURAL_PREFIXES)
-            or qualified.rsplit(".", 1)[-1] in _STRUCTURAL_EXACT
-        )
-    )
-
-
 def _statement_lines(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, ...]:
     return tuple(sorted({node.lineno for node in ast.walk(function) if isinstance(node, ast.stmt)}))
 
@@ -108,32 +213,19 @@ def _loop_body_lines(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[
     return tuple(sorted(lines))
 
 
-def _source_span_lines(source: str, function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, ...]:
-    physical = source.splitlines()
-    return tuple(
-        line_number
-        for line_number in range(function.lineno, cast(int, function.end_lineno) + 1)
-        if physical[line_number - 1].strip() and not physical[line_number - 1].lstrip().startswith("#")
-    )
-
-
-_LineMeasurement = Callable[[str, ast.FunctionDef | ast.AsyncFunctionDef], tuple[int, ...]]
-
-
 def _inventory(
     repository: Path,
     revision: str,
-    paths: Mapping[str, tuple[str, ...] | None],
+    paths: Mapping[str, tuple[str, ...]],
     *,
-    measurement: Literal["ast_statements", "loop_body_statements", "nonblank_source_span"],
+    measurement: Literal["ast_statements", "loop_body_statements"],
 ) -> dict[str, object]:
     entries: list[dict[str, object]] = []
     total_by_path: dict[str, set[int]] = {}
     for path in sorted(paths):
         source = _git_source(repository, revision, path)
         functions = _qualified_functions(ast.parse(source, filename=path))
-        configured = paths[path]
-        names = _selected_function_names(functions) if configured is None else configured
+        names = paths[path]
         missing = set(names) - set(functions)
         if missing:
             raise ValueError(f"missing functions at {revision}:{path}: {', '.join(sorted(missing))}")
@@ -141,10 +233,8 @@ def _inventory(
             function = functions[name]
             if measurement == "ast_statements":
                 lines = _statement_lines(function)
-            elif measurement == "loop_body_statements":
-                lines = _loop_body_lines(function)
             else:
-                lines = _source_span_lines(source, function)
+                lines = _loop_body_lines(function)
             total_by_path.setdefault(path, set()).update(lines)
             entries.append(
                 {
@@ -167,9 +257,9 @@ def _phase(
     name: str,
     before_revision: str,
     after_revision: str,
-    before_paths: Mapping[str, tuple[str, ...] | None],
-    after_paths: Mapping[str, tuple[str, ...] | None],
-    measurement: Literal["ast_statements", "loop_body_statements", "nonblank_source_span"],
+    before_paths: Mapping[str, tuple[str, ...]],
+    after_paths: Mapping[str, tuple[str, ...]],
+    measurement: Literal["ast_statements", "loop_body_statements"],
 ) -> dict[str, object]:
     before = _inventory(repository, before_revision, before_paths, measurement=measurement)
     after = _inventory(repository, after_revision, after_paths, measurement=measurement)
@@ -215,16 +305,8 @@ def build_reduction_evidence(repository: Path = REPOSITORY) -> dict[str, Any]:
         name="task_5_core_artifacts",
         before_revision="90e3e1d19406b45dbbe2ab0abb56ad1b946b5187",
         after_revision="fc865991a65e82b5c0199682768888f4856366ce",
-        before_paths={
-            "src/trafficlab/comparison.py": None,
-            "src/trafficlab/errors.py": None,
-            "src/trafficlab/models/registry.py": None,
-        },
-        after_paths={
-            "src/trafficlab/comparison.py": None,
-            "src/trafficlab/errors.py": None,
-            "src/trafficlab/models/registry.py": None,
-        },
+        before_paths=_TASK5_BEFORE,
+        after_paths=_TASK5_AFTER,
         measurement="ast_statements",
     )
     task_6 = _phase(
@@ -232,17 +314,11 @@ def build_reduction_evidence(repository: Path = REPOSITORY) -> dict[str, Any]:
         name="task_6_checkpoint_artifacts",
         before_revision="734af74eb9c31e5fd1890e77bb61969b59995bab",
         after_revision="60674f7b2d2edf7ba844c01fa37e419aa9cd83b5",
-        before_paths={
-            "src/trafficlab/genetic/checkpoint.py": None,
-            "src/trafficlab/genetic/types.py": None,
-        },
-        after_paths={
-            "src/trafficlab/genetic/checkpoint.py": None,
-            "src/trafficlab/genetic/types.py": None,
-        },
+        before_paths=_TASK6_BEFORE,
+        after_paths=_TASK6_AFTER,
         measurement="ast_statements",
     )
-    task_7_functions: Mapping[str, tuple[str, ...] | None] = {
+    task_7_functions: Mapping[str, tuple[str, ...]] = {
         "scripts/audit_validation_study.py": (
             "_entries",
             "_environment",
@@ -265,7 +341,7 @@ def build_reduction_evidence(repository: Path = REPOSITORY) -> dict[str, Any]:
         after_revision="7b6094a9f47458b8de8d45deca64bc71170c62fd",
         before_paths=task_7_functions,
         after_paths=task_7_functions,
-        measurement="nonblank_source_span",
+        measurement="ast_statements",
     )
     categories = [
         _category("numpy_loop_validation", 25.0, [numerical]),
@@ -328,6 +404,14 @@ def validate_reduction_evidence(evidence: Mapping[str, object]) -> None:
         raise ValueError("reduction evidence categories are invalid")
     for category in categories:
         phases = cast(list[dict[str, object]], category.get("phases"))
+        if category["name"] == "artifact_schema_validation" and any(
+            phase.get("measurement") != "ast_statements" for phase in phases
+        ):
+            raise ValueError("artifact phases must use the same AST statement-line metric")
+        if category["name"] == "numpy_loop_validation" and any(
+            phase.get("measurement") != "loop_body_statements" for phase in phases
+        ):
+            raise ValueError("NumPy phase must use the declared loop-body statement metric")
         before_total = 0
         after_total = 0
         phase_paths: list[set[str]] = []

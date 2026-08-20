@@ -25,7 +25,10 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from trafficlab.similarity.autocorrelation import _sample_autocorrelations  # pyright: ignore[reportPrivateUsage]
-from trafficlab.similarity.multiscale import _binned_features, _snap_near_integer  # pyright: ignore[reportPrivateUsage]
+from trafficlab.similarity.multiscale import _binned_features  # pyright: ignore[reportPrivateUsage]
+from trafficlab.similarity.multiscale import (  # pyright: ignore[reportPrivateUsage]
+    _snap_near_integer as _production_snap_near_integer,  # pyright: ignore[reportPrivateUsage]
+)
 from trafficlab.trace import TrafficTrace, normalize_reference
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -102,6 +105,14 @@ def _widths(trace: TrafficTrace) -> tuple[float, ...]:
     return tuple(window * fraction for fraction in MULTISCALE_WIDTH_FRACTIONS)
 
 
+def _scalar_snap_near_integer(quotient: float) -> float:
+    """Apply the literal four-ULP bin boundary without production helpers."""
+    nearest = round(quotient)
+    if abs(quotient - nearest) <= 4.0 * math.ulp(quotient):
+        return float(nearest)
+    return quotient
+
+
 def _scalar_normalization(trace: TrafficTrace) -> NDArray[np.float64]:
     start = float(trace.timestamps[0])
     return np.asarray([float(timestamp) - start for timestamp in trace.timestamps], dtype=np.float64)
@@ -128,11 +139,11 @@ def _scalar_multiscale(trace: TrafficTrace) -> tuple[NDArray[np.int64], NDArray[
     packet_parts: list[NDArray[np.int64]] = []
     byte_parts: list[NDArray[np.int64]] = []
     for width in _widths(trace):
-        bin_count = math.ceil(_snap_near_integer(float(normalized[-1]) / width))
+        bin_count = math.ceil(_scalar_snap_near_integer(float(normalized[-1]) / width))
         packets = np.zeros(2 * bin_count, dtype=np.int64)
         byte_counts = np.zeros(2 * bin_count, dtype=np.int64)
         for timestamp, direction, frame_length in zip(normalized, trace.directions, trace.frame_lengths, strict=True):
-            quotient = _snap_near_integer(float(timestamp) / width)
+            quotient = _scalar_snap_near_integer(float(timestamp) / width)
             index = min(math.floor(quotient), bin_count - 1) + int(direction) * bin_count
             packets[index] += 1
             byte_counts[index] += int(frame_length)
@@ -146,7 +157,7 @@ def _vector_multiscale(trace: TrafficTrace) -> tuple[NDArray[np.int64], NDArray[
     packet_parts: list[NDArray[np.int64]] = []
     byte_parts: list[NDArray[np.int64]] = []
     for width in _widths(trace):
-        bin_count = math.ceil(_snap_near_integer(float(normalized.timestamps[-1]) / width))
+        bin_count = math.ceil(_production_snap_near_integer(float(normalized.timestamps[-1]) / width))
         packets, byte_counts = _binned_features(normalized, width=width, bins_per_direction=bin_count)
         packet_parts.append(np.asarray(packets, dtype=np.int64))
         byte_parts.append(np.asarray(byte_counts, dtype=np.int64))
@@ -200,10 +211,9 @@ def _max_abs_error(left: NDArray[np.generic], right: NDArray[np.generic]) -> flo
     return float(np.max(np.abs(left.astype(np.float64) - right.astype(np.float64))))
 
 
-def compare_kernel_results(trace: TrafficTrace) -> dict[str, dict[str, float | bool]]:
-    """Compare independent scalar results with the production vector paths."""
-    scalar = _kernel_results(trace, "scalar")
-    vector = _kernel_results(trace, "vector")
+def _agreement_from_results(
+    scalar: Mapping[str, _KernelValue], vector: Mapping[str, _KernelValue]
+) -> dict[str, dict[str, float | bool]]:
     result: dict[str, dict[str, float | bool]] = {}
     for name in ("normalization", "iat", "multiscale", "selected_lag_acf"):
         scalar_value = scalar[name]
@@ -219,6 +229,27 @@ def compare_kernel_results(trace: TrafficTrace) -> dict[str, dict[str, float | b
             error = _max_abs_error(cast(NDArray[np.generic], scalar_value), cast(NDArray[np.generic], vector_value))
         result[name] = {"max_abs_error": error, "passed": error <= AGREEMENT_TOLERANCE}
     return result
+
+
+def _independent_kernel_evidence(
+    trace: TrafficTrace,
+) -> tuple[dict[str, dict[str, float | bool]], dict[str, dict[str, str]]]:
+    """Run each untimed kernel once and return agreement plus exact result identities."""
+    scalar = _kernel_results(trace, "scalar")
+    vector = _kernel_results(trace, "vector")
+    return (
+        _agreement_from_results(scalar, vector),
+        {
+            "scalar": {name: _result_digest(value) for name, value in scalar.items()},
+            "vector": {name: _result_digest(value) for name, value in vector.items()},
+        },
+    )
+
+
+def compare_kernel_results(trace: TrafficTrace) -> dict[str, dict[str, float | bool]]:
+    """Compare independent scalar results with the production vector paths."""
+    agreement, _identities = _independent_kernel_evidence(trace)
+    return agreement
 
 
 def _result_digest(value: NDArray[np.generic] | tuple[NDArray[np.int64], NDArray[np.int64]]) -> str:
@@ -416,6 +447,7 @@ def _validate_measurements(
     *,
     implementation: str,
     dataset: Mapping[str, object],
+    expected_result_identities: Mapping[str, str],
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{implementation} measurements must be an object")
@@ -474,6 +506,8 @@ def _validate_measurements(
                 result_identities = cast(dict[str, str], identities)
             elif identities != result_identities:
                 raise ValueError(f"{implementation} result identities are not deterministic")
+            if identities != expected_result_identities:
+                raise ValueError(f"{implementation} sample does not match independent result identities")
     expected_medians = {
         **{
             name: statistics.median(cast(float, sample["wall_seconds"][name]) for sample in samples)
@@ -504,7 +538,9 @@ def _validate_root(evidence: Mapping[str, object]) -> None:
         raise ValueError("benchmark root is invalid")
 
 
-def _validate_dataset_protocol(evidence: Mapping[str, object], expected_event_count: int) -> dict[str, object]:
+def _validate_dataset_protocol(
+    evidence: Mapping[str, object], expected_event_count: int
+) -> tuple[dict[str, object], TrafficTrace]:
     dataset = cast(dict[str, object], evidence["dataset"])
     expected_trace = generate_benchmark_trace(expected_event_count)
     if dataset != {
@@ -536,10 +572,12 @@ def _validate_dataset_protocol(evidence: Mapping[str, object], expected_event_co
         "warmup_subprocess_count": WARMUP_SUBPROCESS_COUNT,
     }:
         raise ValueError("benchmark protocol does not match locked policy")
-    return dataset
+    return dataset, expected_trace
 
 
-def _validate_agreement(evidence: Mapping[str, object]) -> dict[str, dict[str, object]]:
+def _validate_agreement(
+    evidence: Mapping[str, object], expected: Mapping[str, Mapping[str, float | bool]]
+) -> dict[str, dict[str, object]]:
     agreement = cast(dict[str, dict[str, object]], evidence["agreement"])
     if set(agreement) != {"normalization", "iat", "multiscale", "selected_lag_acf"}:
         raise ValueError("benchmark agreement components are incomplete")
@@ -547,17 +585,26 @@ def _validate_agreement(evidence: Mapping[str, object]) -> dict[str, dict[str, o
         error = _strict_number(component.get("max_abs_error"), name=f"{name} max error")
         if component.get("passed") is not (error <= AGREEMENT_TOLERANCE):
             raise ValueError(f"{name} agreement gate does not match its error")
+    if agreement != expected:
+        raise ValueError("stored agreement does not match independent kernel agreement")
     return agreement
 
 
 def _validated_implementations(
-    evidence: Mapping[str, object], dataset: Mapping[str, object]
+    evidence: Mapping[str, object],
+    dataset: Mapping[str, object],
+    expected_result_identities: Mapping[str, Mapping[str, str]],
 ) -> dict[str, dict[str, Any]]:
     implementations_value = cast(dict[str, object], evidence["implementations"])
     if tuple(implementations_value) != _IMPLEMENTATIONS:
         raise ValueError("benchmark implementations are invalid")
     return {
-        name: _validate_measurements(implementations_value[name], implementation=name, dataset=dataset)
+        name: _validate_measurements(
+            implementations_value[name],
+            implementation=name,
+            dataset=dataset,
+            expected_result_identities=expected_result_identities[name],
+        )
         for name in _IMPLEMENTATIONS
     }
 
@@ -601,9 +648,10 @@ def validate_evidence(
 ) -> None:
     """Recompute every equality, sample, median, environment, and decision gate."""
     _validate_root(evidence)
-    dataset = _validate_dataset_protocol(evidence, expected_event_count)
-    agreement = _validate_agreement(evidence)
-    implementations = _validated_implementations(evidence, dataset)
+    dataset, expected_trace = _validate_dataset_protocol(evidence, expected_event_count)
+    expected_agreement, expected_result_identities = _independent_kernel_evidence(expected_trace)
+    agreement = _validate_agreement(evidence, expected_agreement)
+    implementations = _validated_implementations(evidence, dataset, expected_result_identities)
     _validate_decision(evidence, agreement, implementations)
     if evidence["environment"] != _environment(repository_root.resolve()):
         raise ValueError("benchmark environment does not match current lock and host")

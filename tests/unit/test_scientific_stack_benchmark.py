@@ -5,10 +5,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+import trafficlab.similarity.multiscale as multiscale_module
 from scripts import benchmark_scientific_stack as benchmark
 
 _ROOT = Path(__file__).parents[2]
@@ -49,6 +52,41 @@ def test_scalar_and_vector_kernels_agree_independently() -> None:
     assert tuple(agreement) == ("normalization", "iat", "multiscale", "selected_lag_acf")
     assert all(component["max_abs_error"] <= 1e-12 for component in agreement.values())
     assert all(component["passed"] is True for component in agreement.values())
+
+
+@pytest.mark.parametrize(
+    ("integer", "toward"),
+    [
+        (0.0, math.inf),
+        (1.0, -math.inf),
+        (1.0, math.inf),
+        (3.0, -math.inf),
+        (3.0, math.inf),
+        (1024.0, -math.inf),
+        (1024.0, math.inf),
+    ],
+)
+def test_scalar_snap_uses_the_literal_four_ulp_boundary(integer: float, toward: float) -> None:
+    four_ulps = integer
+    for _ in range(4):
+        four_ulps = math.nextafter(four_ulps, toward)
+    fifth_float = math.nextafter(four_ulps, toward)
+
+    assert benchmark._scalar_snap_near_integer(four_ulps) == integer  # pyright: ignore[reportPrivateUsage]
+    assert benchmark._scalar_snap_near_integer(fifth_float) == fifth_float  # pyright: ignore[reportPrivateUsage]
+
+
+def test_scalar_multiscale_does_not_call_production_snapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_production_snap(_quotient: float) -> float:
+        raise AssertionError("scalar oracle called production snapping")
+
+    monkeypatch.setattr(multiscale_module, "_snap_near_integer", fail_production_snap)
+    monkeypatch.setattr(benchmark, "_production_snap_near_integer", fail_production_snap)
+    trace = benchmark.generate_benchmark_trace(512)
+    packets, byte_counts = benchmark._scalar_multiscale(trace)  # pyright: ignore[reportPrivateUsage]
+
+    assert int(packets.sum()) == 3 * len(trace)
+    assert int(byte_counts.sum()) == 3 * int(trace.frame_lengths.astype(object).sum())
 
 
 def test_checked_benchmark_retains_five_fresh_samples_and_recomputes_gate() -> None:
@@ -118,6 +156,112 @@ def test_checked_benchmark_retains_five_fresh_samples_and_recomputes_gate() -> N
     wrong_environment["environment"]["machine"] = "wrong-machine"
     with pytest.raises(ValueError, match="environment"):
         benchmark.validate_evidence(wrong_environment, repository_root=_ROOT)
+
+
+def test_benchmark_rejects_fabricated_agreement() -> None:
+    evidence = benchmark.parse_and_validate_evidence(_EVIDENCE.read_bytes(), repository_root=_ROOT)
+    evidence["agreement"]["selected_lag_acf"]["max_abs_error"] = 0.0
+    with pytest.raises(ValueError, match="independent kernel agreement"):
+        benchmark.validate_evidence(evidence, repository_root=_ROOT)
+
+
+def test_benchmark_rejects_fabricated_result_digests() -> None:
+    fabricated_digests = benchmark.parse_and_validate_evidence(_EVIDENCE.read_bytes(), repository_root=_ROOT)
+    for implementation in ("scalar", "vector"):
+        for group in ("warmups", "samples"):
+            for sample in fabricated_digests["implementations"][implementation][group]:
+                sample["result_identities"] = {
+                    name: "0" * 64 for name in ("normalization", "iat", "multiscale", "selected_lag_acf")
+                }
+    with pytest.raises(ValueError, match="independent result identities"):
+        benchmark.validate_evidence(fabricated_digests, repository_root=_ROOT)
+
+
+def test_benchmark_check_does_not_rerun_timing_subprocesses(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_timing(_implementation: str, _event_count: int) -> dict[str, object]:
+        raise AssertionError("benchmark check spawned a timing subprocess")
+
+    monkeypatch.setattr(benchmark, "_run_child", fail_timing)  # pyright: ignore[reportPrivateUsage]
+    evidence = benchmark.parse_and_validate_evidence(_EVIDENCE.read_bytes(), repository_root=_ROOT)
+    assert evidence["decision"]["passed"] is True
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "object",
+        "fields",
+        "warmups",
+        "samples",
+        "ordinal",
+        "input",
+        "rss",
+        "wall_object",
+        "wall_fields",
+        "combined",
+        "identity_object",
+        "identity_fields",
+        "nondeterministic",
+        "independent",
+        "medians",
+    ],
+)
+def test_benchmark_measurement_validator_rejects_each_untrusted_boundary(mutation: str) -> None:
+    evidence = json.loads(_EVIDENCE.read_bytes())
+    value: Any = copy.deepcopy(evidence["implementations"]["scalar"])
+    expected = value["samples"][0]["result_identities"]
+    if mutation == "object":
+        value = []
+    elif mutation == "fields":
+        value["unknown"] = True
+    elif mutation == "warmups":
+        value["warmups"] = []
+    elif mutation == "samples":
+        value["samples"] = []
+    elif mutation == "ordinal":
+        value["warmups"][0]["ordinal"] = 2
+    elif mutation == "input":
+        value["warmups"][0]["event_count"] = 1
+    elif mutation == "rss":
+        value["warmups"][0]["peak_rss_kib"] = 0
+    elif mutation == "wall_object":
+        value["warmups"][0]["wall_seconds"] = []
+    elif mutation == "wall_fields":
+        del value["warmups"][0]["wall_seconds"]["iat"]
+    elif mutation == "combined":
+        value["warmups"][0]["wall_seconds"]["combined_multiscale_acf"] += 1.0
+    elif mutation == "identity_object":
+        value["warmups"][0]["result_identities"] = []
+    elif mutation == "identity_fields":
+        del value["warmups"][0]["result_identities"]["iat"]
+    elif mutation == "nondeterministic":
+        value["samples"][1]["result_identities"]["iat"] = "f" * 64
+    elif mutation == "independent":
+        value["warmups"][0]["result_identities"] = {name: "f" * 64 for name in expected}
+    else:
+        value["medians"]["iat"] += 1.0
+
+    with pytest.raises(ValueError):
+        benchmark._validate_measurements(  # pyright: ignore[reportPrivateUsage]
+            value,
+            implementation="scalar",
+            dataset=evidence["dataset"],
+            expected_result_identities=expected,
+        )
+
+
+def test_benchmark_agreement_validator_rejects_incomplete_and_inconsistent_gates() -> None:
+    evidence = json.loads(_EVIDENCE.read_bytes())
+    expected = copy.deepcopy(evidence["agreement"])
+    incomplete = copy.deepcopy(evidence)
+    del incomplete["agreement"]["iat"]
+    with pytest.raises(ValueError, match="components"):
+        benchmark._validate_agreement(incomplete, expected)  # pyright: ignore[reportPrivateUsage]
+
+    inconsistent = copy.deepcopy(evidence)
+    inconsistent["agreement"]["iat"]["passed"] = False
+    with pytest.raises(ValueError, match="gate"):
+        benchmark._validate_agreement(inconsistent, expected)  # pyright: ignore[reportPrivateUsage]
 
 
 def test_benchmark_evidence_rejects_noncanonical_json() -> None:

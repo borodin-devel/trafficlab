@@ -51,12 +51,20 @@ centered each ACF feature once, and accumulated multiscale cells from integer
 array indexes. All defect-exposed functions then reached 100% executable-line
 and branch coverage.
 
-Three fresh post-correction full runs passed the unchanged gate. Their combined
-multiscale/ACF median speedups were 19.37, 21.26, and 23.24; vector/scalar
-median peak RSS ratio was 1.0 in every run. Normalization, IAT, and multiscale
-agreement were exact. Selected-lag ACF maximum absolute error was
-`4.336808689942018e-18`, below `1e-12`. The canonical JSON retains the later
-run's complete raw values and recomputed medians.
+Three initial post-correction runs passed at 19.37x, 21.26x, and 23.24x. The
+review-hardened canonical record was regenerated once after its validation code
+changed and passed at `21.08189298073065x`; vector/scalar median peak RSS ratio
+was `1.0`. Normalization, IAT, and multiscale agreement were exact. Selected-lag
+ACF maximum absolute error was `4.336808689942018e-18`, below `1e-12`.
+
+`--check` independently rebuilds the one-million-event PCG64 dataset and runs
+the scalar and vector kernels once without timers or subprocess sampling. It
+recomputes every agreement value and result digest, then compares them with all
+retained warm-up/measured identities. Fabricated zero ACF error or all-zero
+digests fail. Only explicit generation runs the one-warm-up plus five measured
+fresh subprocess protocol. The scalar multiscale oracle implements the literal
+`round`/`math.ulp` four-ULP rule independently and does not import or call the
+production snapping helper.
 
 ```bash
 scripts/run_bounded.sh \
@@ -79,9 +87,10 @@ function and exact counted line.
 - The explicit NumPy migration inventory contains 45 baseline executable lines
   nested below Python `for`/`while` loops and 5 after adoption: 88.89% reduction
   against a 25% gate.
-- The disjoint Tasks 5–7 artifact-validation phases are `402→199`, `518→311`,
-  and `562→479`. The aggregate is `1482→989`, a 33.27% reduction against a 30%
-  gate. No owner path is counted in two phases.
+- All three disjoint artifact-validation phases use the same unique AST
+  executable-statement-line metric over explicit qualified functions. Their
+  values are `402→199`, `518→311`, and `180→174`. The aggregate is `1100→684`,
+  a 37.82% reduction against a 30% gate. No owner path is counted in two phases.
 
 Tests and generated evidence are excluded. Cross-artifact arithmetic, lineage,
 canonical bytes, duplicate keys, and publication policy remain intentionally
@@ -109,6 +118,17 @@ aggregate score `0.7303583634840887` with the exact nine documented run files.
 The owned Compose project had zero labeled containers, networks, or volumes
 afterward; the temporary exact capture-image tag was removed without global
 Docker cleanup.
+
+Durable evidence is in
+[`example_run.json`](../examples/scientific_stack/example_run.json), with the
+nine exact companion artifacts under `example_run_artifacts/`. It records the
+actual bounded command, URL, resource limits, exit status, observed filesystem
+completion time and provenance, source commit/tree, dirty-state limitation,
+lock/config/image identities, environment, every artifact hash/size, winner,
+all families, packet counts, aggregate/component scores, and empty exact-label
+cleanup inventory. `scripts/check_scientific_stack_example.py --check` strictly
+reparses the artifacts and recomputes every verifiable fact; it does not rebind
+the run to a later clean commit.
 
 ## Optional probe decisions
 

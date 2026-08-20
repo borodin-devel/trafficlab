@@ -762,10 +762,11 @@ does not replace a required fresh measurement run.
 Source reduction is recomputed from full Git identities and explicit qualified
 function inventories. The NumPy category counts unique executable statement
 lines beneath named Python `for`/`while` loop bodies before and after the
-migration and requires at least 25% reduction. The artifact category carries
-the three disjoint strict-schema consolidation inventories and requires at
-least 30% aggregate reduction; a path may not occur in more than one phase.
-Tests and generated evidence are excluded from both inventories.
+migration and requires at least 25% reduction. The artifact category uses one
+unique AST executable-statement-line metric for all three disjoint strict-schema
+consolidation inventories and requires at least 30% aggregate reduction; a path
+may not occur in more than one phase. Tests and generated evidence are excluded
+from both inventories.
 
 The shared probe runner checks the MMPP likelihood, pymoo optimizer, and Scapy
 PCAPNG evidence in fixed order. Probe rejection is a valid result only when the
@@ -774,7 +775,11 @@ pymoo rejects on transparent replay and reduction, and Scapy rejects on
 technical gates while its separate production-license gate remains blocked.
 None of those rejected candidates may enter the runtime package. The small
 scientific-stack example uses PCG64 seeds and enables all three production
-model families through the ordinary full-workflow configuration boundary.
+model families through the ordinary full-workflow configuration boundary. Its
+retained real-run record binds the actual bounded command, endpoint, source,
+lock/config/images, environment, nine companion artifacts, scientific results,
+and empty cleanup label inventory. The offline check reparses those companion
+artifacts and recomputes every verifiable fact without rerunning Docker.
 
 ## Accepted Validation Study evidence
 
