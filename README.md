@@ -38,7 +38,7 @@ work.
 The implemented MVP includes:
 
 - non-promiscuous Ethernet capture from a target container's `eth0`;
-- strict PCAPNG parsing and deterministic PCAPNG generation;
+- production Scapy PCAPNG reading and deterministic Scapy PCAPNG generation;
 - Poisson empirical, Markov Renewal, and two-state MMPP traffic models;
 - heterogeneous genetic search with deterministic population allocation,
   checkpoints, stable selection, crossover, mutation, and final validation;

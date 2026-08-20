@@ -116,7 +116,7 @@ applicable and by the remaining total-run budget.
    unexpectedly, reject its output without a signal or flush wait.
 9. Before publication, require successful capture exit, a nonempty Ethernet
    PCAPNG, and valid temporary `capture.json` and PCAPNG files. Parse every frame
-   using the target MAC. Pass the monotonic total-run deadline into parsing and
+   through the sole production Scapy boundary using the target MAC. Pass the monotonic total-run deadline into parsing and
    validation; check it before work starts and after every frame. Expiry aborts
    before another frame is accepted.
 10. After target success, exclusively publish `capture.json` first, then

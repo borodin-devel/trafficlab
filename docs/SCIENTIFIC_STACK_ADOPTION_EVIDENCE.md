@@ -1,9 +1,9 @@
 # Scientific stack adoption evidence
 
 This record binds the permanent NumPy, SciPy, Pydantic, and Hypothesis adoption
-to reproducible machine-readable evidence. The MMPP-likelihood, pymoo, and
-Scapy candidates remain rejected development-only probes; none entered the
-installed package.
+to reproducible machine-readable evidence. MMPP-likelihood and pymoo remain
+rejected development-only probes. The earlier Scapy rejection was superseded
+by the explicit production migration documented below.
 
 ## Locked environment
 
@@ -24,7 +24,7 @@ uv run --locked python --version
 
 ## Public artifact schemas
 
-`examples/schemas/scientific-artifact-v3/` contains 13 public Draft 2020-12
+`examples/schemas/scientific-artifact-v4/` contains 13 public Draft 2020-12
 schemas totaling 147,272 bytes. Filenames come from the sorted
 `PUBLIC_ARTIFACT_MODELS` registry; every schema declares its filename as `$id`.
 The generator rejects changed, missing, foreign, noncanonical, or incomplete
@@ -135,10 +135,10 @@ lineage, regenerates the final PCAPNG, aligns the generated trace, and recompute
 all four component scores and the aggregate; it does not rebind the run to a
 later commit.
 
-## Optional probe decisions
+## Optional probe decisions and Scapy production supersession
 
-The shared runner generates or checks all probes in the fixed order MMPP,
-pymoo, Scapy:
+The shared runner generates or checks the remaining optional probes in the
+fixed order MMPP, pymoo:
 
 ```bash
 uv run --locked python scripts/run_scientific_stack_probes.py --probe all --check
@@ -151,22 +151,16 @@ The strict retained decisions are:
 - pymoo: `reject`; failed gates `exact_public_state_replay` and
   `production_loc_reduction`; the basic generational strategy remains
   production.
-- Scapy: technical `reject`; failed writer-equivalence, malformed-input,
-  100,000-frame time, and 1,000,000-frame time gates. Production adoption is
-  separately blocked because GPL compatibility was not decided by an
-  authorized human. Scapy remains development-only and production is unchanged.
+The historical Scapy probe rejected adoption under its former equivalence and
+performance gates. That decision is intentionally superseded: Scapy 2.7.0 is
+now the required runtime dependency and sole production PCAPNG reader/writer.
+The custom codec, compatibility APIs, licensing decision, and Scapy adoption
+gate were deleted. `scapy_production_benchmark.json` retains source/lock-bound
+100,000- and 1,000,000-frame measurements as diagnostics only; it contains no
+threshold, pass/fail, adoption, or license field.
 
-The final retained Scapy generation measured candidate/production median wall
-ratios of 14.091 at 100,000 frames and 13.329 at 1,000,000 frames. Median peak
-RSS ratios were 1.079 and 0.607 respectively. `--check` deterministically replays
-the functional inventory and validates policy, source, commands, raw-sample
-identities, medians, gates, and decisions. It does not claim host-dependent raw
-timing bytes are reproducible or silently rerun the expensive benchmark; new
-timing authenticity requires an explicit full generation, which was run twice.
-
-Rejected gates were not relaxed after results. Synthetic probe results do not
-claim real-traffic ground truth, optimizer superiority, general MMPP recovery,
-or a license determination.
+Synthetic optional-probe results do not claim real-traffic ground truth,
+optimizer superiority, or general MMPP recovery.
 
 ## Real-program validation and audit
 

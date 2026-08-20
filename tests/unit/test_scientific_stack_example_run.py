@@ -48,7 +48,9 @@ def test_durable_example_tracks_all_nine_artifacts_for_clean_checkouts() -> None
 def test_checked_example_run_recomputes_artifacts_and_result() -> None:
     content = _EVIDENCE.read_bytes()
     evidence = example_run.parse_and_validate_evidence(content, repository_root=_ROOT)
+    best_model = json.loads((_ROOT / evidence["artifacts_directory"] / "best_model.json").read_bytes())
 
+    assert best_model["scientific_artifact_schema"] == 4
     assert len(evidence["source"]["commit"]) == 40
     assert evidence["source"]["source_clean"] is True
     assert evidence["execution"]["exit_status"] == 0
@@ -509,16 +511,17 @@ def test_example_run_rejects_coherent_reference_derived_fitted_payload_replaceme
     capture_path = artifacts / "capture.json"
     capture_content = capture_path.read_bytes()
     metadata = example_run.parse_capture_metadata(capture_content, source=capture_path)
-    _, _, generated_content = example_run.reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
+    _, regenerated = example_run.reproduce_generated_pcapng(best, metadata, clock=lambda: 0.0)
+    generated_content = regenerated.content
     generated_path = artifacts / "generated.pcapng"
     assert generated_content != generated_path.read_bytes()
     generated_path.write_bytes(generated_content)
 
     reference_path = artifacts / "reference.pcapng"
     reference_content = reference_path.read_bytes()
-    raw_reference = example_run.parse_pcapng_bytes_trace(reference_content, metadata, source=reference_path)
+    raw_reference = example_run.read_pcapng_bytes(reference_content, metadata, source=reference_path)
     reference, window = example_run.normalize_reference(raw_reference)
-    generated = example_run.parse_pcapng_bytes_trace(generated_content, metadata, source=generated_path)
+    generated = example_run.read_pcapng_bytes(generated_content, metadata, source=generated_path)
     aligned = example_run.align_generated(generated, window)
     config = example_run.load_experiment(artifacts / "experiment.toml")
     comparison = example_run.compare_traces(reference, aligned, window, config.similarity).with_input_identities(

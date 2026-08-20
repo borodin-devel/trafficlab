@@ -79,8 +79,9 @@ Unit tests are deterministic and do not start Docker. They cover:
   counts;
 - strict `capture.json` parsing, normalized target MACs, unknown fields, and
   missing or invalid metadata;
-- Ethernet PCAPNG parsing/rendering, malformed blocks, timestamp resolution,
-  unsupported link types, frame lengths, and outbound/inbound round trips;
+- Scapy PCAPNG reading/writing, accepted container syntax, timestamp
+  resolutions, unsupported interfaces/link types, frame lengths,
+  outbound/inbound round trips, and stable normalized errors;
 - source-MAC classification for outbound, inbound unicast, and inbound broadcast
   frames;
 - canonical trace ordering, direction values, IAT extraction, reference
@@ -770,12 +771,12 @@ consolidation inventories and requires at least 30% aggregate reduction; a path
 may not occur in more than one phase. Tests and generated evidence are excluded
 from both inventories.
 
-The shared probe runner checks the MMPP likelihood, pymoo optimizer, and Scapy
-PCAPNG evidence in fixed order. Probe rejection is a valid result only when the
-strict canonical evidence recomputes it: MMPP rejects on held-out likelihood,
-pymoo rejects on transparent replay and reduction, and Scapy rejects on
-technical gates while its separate production-license gate remains blocked.
-None of those rejected candidates may enter the runtime package. The small
+The shared probe runner checks only the MMPP likelihood and pymoo optimizer in
+fixed order. Probe rejection is a valid result only when strict canonical
+evidence recomputes it: MMPP rejects on held-out likelihood and pymoo rejects
+on transparent replay and reduction. Scapy is the sole production PCAPNG
+implementation and is covered by ordinary reader/writer tests plus the
+non-gating `benchmark_scapy_production.py` diagnostic. The small
 scientific-stack example uses PCG64 seeds and enables all three production
 model families through the ordinary full-workflow configuration boundary. Its
 retained real-run record binds the actual bounded command, endpoint, source,

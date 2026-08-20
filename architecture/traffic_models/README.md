@@ -12,7 +12,7 @@ serialize(fitted model) -> JSON-compatible value
 `fit` is deterministic for a reference and chromosome. `generate` owns an
 explicit `numpy.random.Generator(numpy.random.PCG64(seed))`; model code never
 uses NumPy's module-global RNG or `default_rng`. Scalar draw order, primitive,
-shape, and endpoint semantics are part of scientific artifact schema 3. Every generator starts at zero
+shape, and endpoint semantics are part of scientific artifact schema 4. Every generator starts at zero
 and simulates the complete closed interval `[0, W]`. It emits events at or before
 `W` and finishes normally only after the next simulated event would be after
 `W`. Packet-count, output-size, and wall-time limits are reliability guards.

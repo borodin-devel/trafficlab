@@ -33,9 +33,9 @@ For a reference with `n >= 2` finite, nondecreasing timestamps, define
 as `t'_i = t_i - t_1`, so the reference occupies the closed interval `[0, W]`.
 Packets at both endpoints are included.
 
-`TrafficTrace.from_events()` and `TrafficTrace.to_events()` are the
-compatibility boundary for immutable `TraceEvent` records. PCAPNG parsing and
-rendering may use those records only at their external boundary. Normalization,
+`TrafficTrace.from_events()` and `TrafficTrace.to_events()` are the external
+boundary for immutable `TraceEvent` records. Scapy PCAPNG reading and writing
+may use those records only inside `trafficlab.scapy_io`. Normalization,
 strategy setup, genetic evaluation, model repair/fit/generation, all four
 similarity methods, final comparison, and validation-study reconstruction retain
 the exact `TrafficTrace` in memory. Generation results contain an immutable
@@ -49,8 +49,9 @@ outside the reference's first and last packets is outside MVP scope.
 The rule applies to valid Ethernet frames captured on the target's
 non-promiscuous `eth0`. Parsing requires the accompanying `capture.json`; a
 missing file, invalid MAC, unsupported link type, or malformed frame is an error.
-The research core works on canonical values, not on file handles or Docker
-objects. PCAPNG parsing and rendering are boundary functions.
+The research core works on canonical values, not on Scapy packets, file handles,
+or Docker objects. `trafficlab.scapy_io` is the sole production PCAPNG boundary;
+there is no selectable or fallback codec.
 
 Generated Ethernet frames use `capture.json`'s target MAC. Their peer MAC is
 `02:00:00:00:00:01`, unless that equals the target MAC, in which case it is
@@ -147,12 +148,12 @@ generations use different seeds and may use different reliability budgets, but
 never a shorter observation window and never serve as final artifacts.
 
 The model completes simulation against the stored floating-point `W` before the
-final trace is rendered. PCAPNG normally uses nearest-nanosecond timestamps; if
-that representation would move a generated event above `W`, Trafficlab uses the
-largest whole-nanosecond tick not above `W` for that event. This boundary-only
-quantization retains every generated event, preserves nondecreasing order, and
-does not shorten or repeat the stochastic simulation. Publication reparses the
-bytes and explicitly requires every rendered timestamp to remain in `[0, W]`.
+final trace is rendered. Scapy emits microsecond PCAPNG timestamps. Trafficlab
+passes exact decimal microseconds to Scapy, truncating higher-precision values
+without moving them above `W`; values already on a microsecond remain stable
+across repeated write/read cycles. Publication reparses the exact emitted bytes
+through Scapy. That reparsed trace is authoritative for counts, comparison,
+hashes, and evidence, and every timestamp must remain in `[0, W]`.
 
 ### `compare`
 

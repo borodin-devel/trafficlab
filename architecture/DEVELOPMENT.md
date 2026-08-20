@@ -244,6 +244,7 @@ uv run --locked python scripts/generate_validation_study_fixture.py --check
 uv run --locked python scripts/generate_artifact_schemas.py --check
 uv run --locked python scripts/measure_scientific_stack_reduction.py --check
 uv run --locked python scripts/benchmark_scientific_stack.py --check
+uv run --locked python scripts/benchmark_scapy_production.py --check
 uv run --locked python scripts/check_scientific_stack_example.py --check
 uv run --locked python scripts/run_scientific_stack_probes.py --probe all --check
 scripts/run_bounded.sh \
