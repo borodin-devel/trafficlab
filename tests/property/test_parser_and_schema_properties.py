@@ -9,7 +9,7 @@ from hypothesis import given
 
 from tests.property.strategies import PcapngCase, json_documents, pcapng_cases
 from trafficlab.errors import TrafficlabError
-from trafficlab.pcapng import parse_pcapng_bytes
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import CaptureMetadata, parse_capture_metadata, render_capture_metadata
 
 
@@ -30,8 +30,8 @@ def test_pcapng_cases_round_trip_or_reject_deterministically(case: PcapngCase) -
     metadata = CaptureMetadata(interface="eth0", target_mac="02:00:00:00:00:01")
     if case.events is None:
         with pytest.raises(TrafficlabError):
-            parse_pcapng_bytes(case.content, metadata, source=Path("capture.pcapng"))
+            read_pcapng_bytes(case.content, metadata, source=Path("capture.pcapng"))
         with pytest.raises(TrafficlabError):
-            parse_pcapng_bytes(case.content, metadata, source=Path("capture.pcapng"))
+            read_pcapng_bytes(case.content, metadata, source=Path("capture.pcapng"))
     else:
-        assert parse_pcapng_bytes(case.content, metadata, source=Path("capture.pcapng")) == case.events
+        assert read_pcapng_bytes(case.content, metadata, source=Path("capture.pcapng")).to_events() == case.events

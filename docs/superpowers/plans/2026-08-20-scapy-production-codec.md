@@ -140,7 +140,7 @@ git commit -m "build: require scapy at runtime"
 - Produces: `PcapngPacket`, `read_pcapng_packets()`, `read_pcapng_bytes()`, and `read_pcapng()`.
 - Consumes: `TrafficTrace`, `TraceEvent`, `CaptureMetadata`, `DeadlineExceededError`, and `TrafficlabError`.
 
-- [ ] **[STEP-7-9062f10f] Step 1: Write reader contracts and scalar-oracle tests**
+- [x] **[STEP-7-9062f10f] Step 1: Write reader contracts and scalar-oracle tests**
 
 ```python
 def test_reader_returns_owned_trace_and_exact_frames(valid_capture: bytes, metadata: CaptureMetadata) -> None:
@@ -167,7 +167,7 @@ def test_reader_deadline_wins_after_one_packet(valid_capture: bytes, metadata: C
 
 Cover little and big endian inputs, decimal and binary timestamp resolutions, IPv4/IPv6/ARP Ethernet frames, target/peer/broadcast sources, options/padding accepted by Scapy, interface/link-type errors, missing timestamps, decreasing timestamps, empty captures, dynamic exceptions, and path I/O errors.
 
-- [ ] **[STEP-8-a6bad60f] Step 2: Run bounded reader RED**
+- [x] **[STEP-8-a6bad60f] Step 2: Run bounded reader RED**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -178,7 +178,7 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 Expected: import failure for `trafficlab.scapy_io` and missing oracle helper.
 
-- [ ] **[STEP-9-d82dd6f5] Step 3: Implement typed reader boundaries**
+- [x] **[STEP-9-d82dd6f5] Step 3: Implement typed reader boundaries**
 
 Use locally defined protocols for Scapy packets, readers, interfaces, timestamp values, and factories. Define:
 
@@ -208,7 +208,7 @@ def read_pcapng_packets(
 
 `read_pcapng_bytes()` passes `BytesIO(content)`; `read_pcapng()` passes the path. Convert each accepted packet explicitly to bytes, timestamp, direction, and captured frame length. Validate the resulting `TrafficTrace`; translate Scapy, type, arithmetic, and I/O exceptions into stable Trafficlab errors without importing test code.
 
-- [ ] **[STEP-10-38c82e13] Step 4: Extract only the valid-subset test oracle**
+- [x] **[STEP-10-38c82e13] Step 4: Extract only the valid-subset test oracle**
 
 Move the minimum `struct`-based Section Header, Interface Description, Enhanced Packet, timestamp-resolution, and Ethernet direction calculations needed by valid fixtures into `tests/support/pcapng_oracle.py`. It must expose only:
 
@@ -220,7 +220,7 @@ def oracle_trace(content: bytes, metadata: CaptureMetadata) -> TrafficTrace:
 
 The oracle must not import Scapy or `trafficlab.scapy_io`, implement writing, or define production error behavior.
 
-- [ ] **[STEP-11-542c5682] Step 5: Verify reader behavior and defect-function coverage**
+- [x] **[STEP-11-542c5682] Step 5: Verify reader behavior and defect-function coverage**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/test_scapy_io.py \
@@ -237,7 +237,7 @@ uv run --locked pyright src/trafficlab/scapy_io.py tests/support/pcapng_oracle.p
 
 Expected: reader suite passes; every reader function exposed by a RED failure has 100% lines/branches.
 
-- [ ] **[STEP-12-9b7b4180] Step 6: Commit the production reader**
+- [x] **[STEP-12-9b7b4180] Step 6: Commit the production reader**
 
 ```bash
 git add src/trafficlab/scapy_io.py tests/support/pcapng_oracle.py \
