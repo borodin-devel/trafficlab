@@ -1,0 +1,929 @@
+{
+  "$defs": {
+    "AcfFeatureDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_differences": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "generated_acf": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "generated_sample_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "reference_acf": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "reference_sample_count": {
+          "$ref": "#/$defs/PositiveInt"
+        }
+      },
+      "required": [
+        "reference_sample_count",
+        "generated_sample_count",
+        "reference_acf",
+        "generated_acf",
+        "absolute_differences",
+        "discrepancy"
+      ],
+      "title": "AcfFeatureDiagnostic",
+      "type": "object"
+    },
+    "AcfFeatureWeights": {
+      "additionalProperties": false,
+      "properties": {
+        "iat": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "size": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "iat",
+        "size"
+      ],
+      "title": "AcfFeatureWeights",
+      "type": "object"
+    },
+    "AutocorrelationDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "feature_weights": {
+          "$ref": "#/$defs/AcfFeatureWeights"
+        },
+        "iat": {
+          "$ref": "#/$defs/AcfFeatureDiagnostic"
+        },
+        "lag_weights": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "lags": {
+          "$ref": "#/$defs/IntTuple"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "size": {
+          "$ref": "#/$defs/AcfFeatureDiagnostic"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "lags",
+        "lag_weights",
+        "feature_weights",
+        "iat",
+        "size",
+        "discrepancy"
+      ],
+      "title": "AutocorrelationDiagnostic",
+      "type": "object"
+    },
+    "DirectionTotals": {
+      "additionalProperties": false,
+      "properties": {
+        "byte": {
+          "$ref": "#/$defs/DirectionValues"
+        },
+        "packet": {
+          "$ref": "#/$defs/DirectionValues"
+        }
+      },
+      "required": [
+        "packet",
+        "byte"
+      ],
+      "title": "DirectionTotals",
+      "type": "object"
+    },
+    "DirectionValues": {
+      "additionalProperties": false,
+      "properties": {
+        "inbound": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "outbound": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "outbound",
+        "inbound"
+      ],
+      "title": "DirectionValues",
+      "type": "object"
+    },
+    "ExactFloat": {
+      "type": "number"
+    },
+    "ExactNumber": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "$ref": "#/$defs/ExactFloat"
+        }
+      ]
+    },
+    "FloatTuple": {
+      "items": {
+        "$ref": "#/$defs/ExactFloat"
+      },
+      "type": "array"
+    },
+    "FrameSizeDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "generated_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "generated_maximum_length": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "generated_minimum_length": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "reference_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "reference_maximum_length": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "reference_minimum_length": {
+          "$ref": "#/$defs/PositiveInt"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "distance",
+        "reference_count",
+        "generated_count",
+        "reference_minimum_length",
+        "reference_maximum_length",
+        "generated_minimum_length",
+        "generated_maximum_length"
+      ],
+      "title": "FrameSizeDiagnostic",
+      "type": "object"
+    },
+    "IatDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostic_quantile": {
+          "$ref": "#/$defs/ExactFloat",
+          "gt": 0.0,
+          "lt": 1.0
+        },
+        "distance": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "generated_iat_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "generated_median_iat_seconds": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "generated_quantile_iat_seconds": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "generated_zero_iat_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "reference_iat_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "reference_median_iat_seconds": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "reference_quantile_iat_seconds": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "reference_zero_iat_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "distance",
+        "diagnostic_quantile",
+        "reference_iat_count",
+        "generated_iat_count",
+        "reference_zero_iat_count",
+        "generated_zero_iat_count",
+        "reference_median_iat_seconds",
+        "generated_median_iat_seconds",
+        "reference_quantile_iat_seconds",
+        "generated_quantile_iat_seconds"
+      ],
+      "title": "IatDiagnostic",
+      "type": "object"
+    },
+    "IntTuple": {
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "MultiscaleDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "direction_bin_cell_counts": {
+          "$ref": "#/$defs/IntTuple"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "feature_discrepancies": {
+          "$ref": "#/$defs/MultiscaleFeatureWeights"
+        },
+        "feature_weights": {
+          "$ref": "#/$defs/MultiscaleFeatureWeights"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "scale_discrepancies": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "scale_weights": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "scales": {
+          "items": {
+            "$ref": "#/$defs/MultiscaleScaleDiagnostic"
+          },
+          "title": "Scales",
+          "type": "array"
+        },
+        "total_direction_bin_cells": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "widths": {
+          "$ref": "#/$defs/FloatTuple"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "widths",
+        "scale_weights",
+        "feature_weights",
+        "direction_bin_cell_counts",
+        "total_direction_bin_cells",
+        "scales",
+        "scale_discrepancies",
+        "feature_discrepancies",
+        "discrepancy"
+      ],
+      "title": "MultiscaleDiagnostic",
+      "type": "object"
+    },
+    "MultiscaleFeatureWeights": {
+      "additionalProperties": false,
+      "properties": {
+        "byte": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "packet": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "packet",
+        "byte"
+      ],
+      "title": "MultiscaleFeatureWeights",
+      "type": "object"
+    },
+    "MultiscaleScaleDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "bins_per_direction": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "direction_bin_cell_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "feature_discrepancies": {
+          "$ref": "#/$defs/MultiscaleFeatureWeights"
+        },
+        "generated_totals": {
+          "$ref": "#/$defs/DirectionTotals"
+        },
+        "reference_totals": {
+          "$ref": "#/$defs/DirectionTotals"
+        },
+        "width_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "width_seconds",
+        "bins_per_direction",
+        "direction_bin_cell_count",
+        "reference_totals",
+        "generated_totals",
+        "feature_discrepancies",
+        "discrepancy"
+      ],
+      "title": "MultiscaleScaleDiagnostic",
+      "type": "object"
+    },
+    "NonemptyString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "NonnegativeFloat": {
+      "$ref": "#/$defs/ExactFloat",
+      "ge": 0.0
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "PositiveFloat": {
+      "$ref": "#/$defs/ExactFloat",
+      "gt": 0.0
+    },
+    "PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "RelativePath": {
+      "type": "string"
+    },
+    "Repeat": {
+      "maximum": 3,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "StudyCandidateIdentifier": {
+      "additionalProperties": false,
+      "properties": {
+        "birth_generation": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "birth_index": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "birth_generation",
+        "birth_index"
+      ],
+      "title": "StudyCandidateIdentifier",
+      "type": "object"
+    },
+    "StudyControlledWeightAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "alternative_aggregate": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "alternative_weights": {
+          "$ref": "#/$defs/StudyMethodValues"
+        },
+        "baseline_aggregate": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "baseline_weights": {
+          "$ref": "#/$defs/StudyMethodValues"
+        },
+        "components": {
+          "$ref": "#/$defs/StudyMethodValues"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/StudyDiagnostics"
+        },
+        "executed_methods": {
+          "items": {
+            "$ref": "#/$defs/NonemptyString"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Executed Methods",
+          "type": "array"
+        },
+        "training_directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "alternative_aggregate",
+        "alternative_weights",
+        "baseline_aggregate",
+        "baseline_weights",
+        "components",
+        "diagnostics",
+        "executed_methods",
+        "training_directory",
+        "workload"
+      ],
+      "title": "StudyControlledWeightAnalysis",
+      "type": "object"
+    },
+    "StudyDescriptive": {
+      "additionalProperties": false,
+      "properties": {
+        "mean": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "sample_variance": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        }
+      },
+      "required": [
+        "mean",
+        "sample_variance"
+      ],
+      "title": "StudyDescriptive",
+      "type": "object"
+    },
+    "StudyDiagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "autocorrelation": {
+          "$ref": "#/$defs/AutocorrelationDiagnostic"
+        },
+        "frame_size_ks": {
+          "$ref": "#/$defs/FrameSizeDiagnostic"
+        },
+        "iat_ks": {
+          "$ref": "#/$defs/IatDiagnostic"
+        },
+        "multiscale_rate": {
+          "$ref": "#/$defs/MultiscaleDiagnostic"
+        }
+      },
+      "required": [
+        "autocorrelation",
+        "frame_size_ks",
+        "iat_ks",
+        "multiscale_rate"
+      ],
+      "title": "StudyDiagnostics",
+      "type": "object"
+    },
+    "StudyHeldOutScore": {
+      "additionalProperties": false,
+      "properties": {
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "score": {
+          "$ref": "#/$defs/StudyScore"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "score",
+        "workload",
+        "observation_window_seconds"
+      ],
+      "title": "StudyHeldOutScore",
+      "type": "object"
+    },
+    "StudyInvalidCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_evidence": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "authority": {
+          "enum": [
+            "primary",
+            "secondary"
+          ],
+          "title": "Authority",
+          "type": "string"
+        },
+        "corrective_action": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "evidence_state": {
+          "enum": [
+            "not_published",
+            "diagnostic_only",
+            "preserved",
+            "possibly_remaining"
+          ],
+          "title": "Evidence State",
+          "type": "string"
+        },
+        "family": {
+          "enum": [
+            "markov_renewal",
+            "mmpp",
+            "poisson_empirical"
+          ],
+          "title": "Family",
+          "type": "string"
+        },
+        "genes": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ExactNumber"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Genes"
+        },
+        "identifier": {
+          "$ref": "#/$defs/StudyCandidateIdentifier"
+        },
+        "kind": {
+          "enum": [
+            "repair",
+            "fit",
+            "generation",
+            "incomplete_generation",
+            "similarity_precondition",
+            "nonfinite_score"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "affected_evidence",
+        "authority",
+        "corrective_action",
+        "detail",
+        "evidence_state",
+        "family",
+        "genes",
+        "identifier",
+        "kind",
+        "seed",
+        "stage"
+      ],
+      "title": "StudyInvalidCandidate",
+      "type": "object"
+    },
+    "StudyInvalidChromosomeDiagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "invalid_candidates": {
+          "items": {
+            "$ref": "#/$defs/StudyInvalidCandidate"
+          },
+          "title": "Invalid Candidates",
+          "type": "array"
+        },
+        "repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "training_directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "trial_limits": {
+          "$ref": "#/$defs/StudyTrialLimits"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "invalid_candidates",
+        "repeat",
+        "training_directory",
+        "trial_limits",
+        "workload"
+      ],
+      "title": "StudyInvalidChromosomeDiagnostics",
+      "type": "object"
+    },
+    "StudyMethodValues": {
+      "additionalProperties": false,
+      "properties": {
+        "autocorrelation": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "frame_size_ks": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "iat_ks": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "multiscale_rate": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "autocorrelation",
+        "frame_size_ks",
+        "iat_ks",
+        "multiscale_rate"
+      ],
+      "title": "StudyMethodValues",
+      "type": "object"
+    },
+    "StudyNaturalVariation": {
+      "additionalProperties": false,
+      "properties": {
+        "pairs": {
+          "items": {
+            "$ref": "#/$defs/StudyNaturalVariationPair"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Pairs",
+          "type": "array"
+        },
+        "symmetric_mean": {
+          "$ref": "#/$defs/StudyScore"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "pairs",
+        "symmetric_mean",
+        "workload"
+      ],
+      "title": "StudyNaturalVariation",
+      "type": "object"
+    },
+    "StudyNaturalVariationPair": {
+      "additionalProperties": false,
+      "properties": {
+        "forward": {
+          "$ref": "#/$defs/StudyScore"
+        },
+        "left_repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "reverse": {
+          "$ref": "#/$defs/StudyScore"
+        },
+        "right_repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "symmetric_mean": {
+          "$ref": "#/$defs/StudyScore"
+        }
+      },
+      "required": [
+        "forward",
+        "left_repeat",
+        "reverse",
+        "right_repeat",
+        "symmetric_mean"
+      ],
+      "title": "StudyNaturalVariationPair",
+      "type": "object"
+    },
+    "StudyScore": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregate": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "methods": {
+          "$ref": "#/$defs/StudyMethodValues"
+        }
+      },
+      "required": [
+        "aggregate",
+        "methods"
+      ],
+      "title": "StudyScore",
+      "type": "object"
+    },
+    "StudyTrainingSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "runtime_seconds": {
+          "$ref": "#/$defs/StudyDescriptive"
+        },
+        "selection_fitness": {
+          "$ref": "#/$defs/StudyDescriptive"
+        },
+        "winner_family_count_variance": {
+          "$ref": "#/$defs/ExactNumber"
+        },
+        "winner_family_counts": {
+          "$ref": "#/$defs/StudyWinnerCounts"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "runtime_seconds",
+        "selection_fitness",
+        "winner_family_count_variance",
+        "winner_family_counts",
+        "workload"
+      ],
+      "title": "StudyTrainingSummary",
+      "type": "object"
+    },
+    "StudyTrialLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_output_bytes": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "max_packets": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "max_wall_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "max_output_bytes",
+        "max_packets",
+        "max_wall_seconds"
+      ],
+      "title": "StudyTrialLimits",
+      "type": "object"
+    },
+    "StudyWinnerCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "markov_renewal": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "mmpp": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "poisson_empirical": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "markov_renewal",
+        "mmpp",
+        "poisson_empirical"
+      ],
+      "title": "StudyWinnerCounts",
+      "type": "object"
+    },
+    "StudyWorkloadScore": {
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "$ref": "#/$defs/StudyScore"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "score",
+        "workload"
+      ],
+      "title": "StudyWorkloadScore",
+      "type": "object"
+    },
+    "UnitFloat": {
+      "$ref": "#/$defs/ExactFloat",
+      "ge": 0.0,
+      "le": 1.0
+    },
+    "Workload": {
+      "enum": [
+        "short",
+        "streaming",
+        "bursty"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "study_report_input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Typed report arithmetic inputs; the auditor still independently recomputes every value.",
+  "properties": {
+    "controlled_weight_analysis": {
+      "items": {
+        "$ref": "#/$defs/StudyControlledWeightAnalysis"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Controlled Weight Analysis",
+      "type": "array"
+    },
+    "formula": {
+      "const": "arithmetic_mean",
+      "title": "Formula",
+      "type": "string"
+    },
+    "fresh_simulation": {
+      "items": {
+        "$ref": "#/$defs/StudyWorkloadScore"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Fresh Simulation",
+      "type": "array"
+    },
+    "held_out": {
+      "items": {
+        "$ref": "#/$defs/StudyHeldOutScore"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Held Out",
+      "type": "array"
+    },
+    "invalid_chromosome_diagnostics": {
+      "items": {
+        "$ref": "#/$defs/StudyInvalidChromosomeDiagnostics"
+      },
+      "maxItems": 9,
+      "minItems": 9,
+      "title": "Invalid Chromosome Diagnostics",
+      "type": "array"
+    },
+    "natural_variation": {
+      "items": {
+        "$ref": "#/$defs/StudyNaturalVariation"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Natural Variation",
+      "type": "array"
+    },
+    "runtime_winner_variance": {
+      "items": {
+        "$ref": "#/$defs/StudyTrainingSummary"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Runtime Winner Variance",
+      "type": "array"
+    },
+    "training": {
+      "items": {
+        "$ref": "#/$defs/StudyTrainingSummary"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Training",
+      "type": "array"
+    }
+  },
+  "required": [
+    "controlled_weight_analysis",
+    "formula",
+    "fresh_simulation",
+    "held_out",
+    "invalid_chromosome_diagnostics",
+    "natural_variation",
+    "runtime_winner_variance",
+    "training"
+  ],
+  "title": "ValidationStudyReportInput",
+  "type": "object"
+}

@@ -23,6 +23,11 @@ Compute ACFs separately for the IAT sequence and the frame-length sequence. Each
 configured lag must be a unique positive integer smaller than all four relevant
 sequence lengths. Lag weights \(a_k\ge0\) sum to one.
 
+For each feature and trace, the NumPy implementation validates and scales the
+column once, computes the whole-series mean and shared denominator once, then
+uses centered dot products for only the configured lags. This execution order
+does not change the estimator or the constant-series convention.
+
 For feature \(f\), define bounded discrepancy
 
 \[
@@ -59,8 +64,8 @@ definitions. The sample ACF formula is the cited established estimator.
 ## Computational cost
 
 For lag set \(L\) and total reference/generated sample length \(n+m\), direct
-evaluation takes \(O(|L|(n+m))\) time and \(O(|L|)\) diagnostic space beyond the
-input sequences.
+evaluation takes \(O(|L|(n+m))\) time. Centered working arrays require
+\(O(n+m)\) space and retained diagnostics require \(O(|L|)\) space.
 
 ## Deterministic test examples
 

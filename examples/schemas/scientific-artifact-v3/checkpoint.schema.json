@@ -1,0 +1,1433 @@
+{
+  "$defs": {
+    "BestCandidateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "fitness": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "identifier": {
+          "$ref": "#/$defs/CandidateIdentifierRecord"
+        }
+      },
+      "required": [
+        "identifier",
+        "fitness"
+      ],
+      "title": "BestCandidateRecord",
+      "type": "object"
+    },
+    "CandidateFailureRecord": {
+      "discriminator": {
+        "mapping": {
+          "fit": "#/$defs/FitFailure",
+          "generation": "#/$defs/GenerationFailure",
+          "incomplete_generation": "#/$defs/IncompleteGenerationFailure",
+          "nonfinite_score": "#/$defs/NonfiniteScoreFailure",
+          "repair": "#/$defs/RepairFailure",
+          "similarity_precondition": "#/$defs/SimilarityPreconditionFailure"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RepairFailure"
+        },
+        {
+          "$ref": "#/$defs/FitFailure"
+        },
+        {
+          "$ref": "#/$defs/GenerationFailure"
+        },
+        {
+          "$ref": "#/$defs/IncompleteGenerationFailure"
+        },
+        {
+          "$ref": "#/$defs/SimilarityPreconditionFailure"
+        },
+        {
+          "$ref": "#/$defs/NonfiniteScoreFailure"
+        }
+      ]
+    },
+    "CandidateIdentifierRecord": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      ],
+      "type": "array"
+    },
+    "CandidateRecord": {
+      "discriminator": {
+        "mapping": {
+          "invalid": "#/$defs/InvalidCandidateRecord",
+          "pending": "#/$defs/PendingCandidateRecord",
+          "valid": "#/$defs/ValidCandidateRecord"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PendingCandidateRecord"
+        },
+        {
+          "$ref": "#/$defs/ValidCandidateRecord"
+        },
+        {
+          "$ref": "#/$defs/InvalidCandidateRecord"
+        }
+      ]
+    },
+    "ContentIdentityRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "size",
+        "sha256"
+      ],
+      "title": "ContentIdentityRecord",
+      "type": "object"
+    },
+    "CoordinateRecord": {
+      "discriminator": {
+        "mapping": {
+          "integer": "#/$defs/IntegerCoordinateRecord",
+          "linear": "#/$defs/LinearCoordinateRecord",
+          "log": "#/$defs/LogCoordinateRecord"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LinearCoordinateRecord"
+        },
+        {
+          "$ref": "#/$defs/LogCoordinateRecord"
+        },
+        {
+          "$ref": "#/$defs/IntegerCoordinateRecord"
+        }
+      ]
+    },
+    "DuplicateDiagnostic": {
+      "additionalProperties": false,
+      "description": "One bounded duplicate-retry decision.",
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "outcome": {
+          "$ref": "#/$defs/DuplicateOutcome"
+        }
+      },
+      "required": [
+        "attempt",
+        "outcome",
+        "detail"
+      ],
+      "title": "DuplicateDiagnostic",
+      "type": "object"
+    },
+    "DuplicateOutcome": {
+      "enum": [
+        "invalid",
+        "duplicate",
+        "exhausted"
+      ],
+      "type": "string"
+    },
+    "EvidenceState": {
+      "enum": [
+        "not_published",
+        "diagnostic_only",
+        "preserved",
+        "possibly_remaining"
+      ],
+      "type": "string"
+    },
+    "ExactFloat": {
+      "type": "number"
+    },
+    "FailureAuthority": {
+      "enum": [
+        "primary",
+        "secondary"
+      ],
+      "type": "string"
+    },
+    "FamilyCheckpointRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinates": {
+          "items": {
+            "$ref": "#/$defs/CoordinateRecord"
+          },
+          "minItems": 1,
+          "title": "Coordinates",
+          "type": "array"
+        },
+        "gene_order": {
+          "items": {
+            "$ref": "#/$defs/NonemptyString"
+          },
+          "minItems": 1,
+          "title": "Gene Order",
+          "type": "array"
+        },
+        "name": {
+          "enum": [
+            "poisson_empirical",
+            "markov_renewal",
+            "mmpp"
+          ],
+          "title": "Name",
+          "type": "string"
+        },
+        "operators": {
+          "$ref": "#/$defs/FamilyOperatorsRecord"
+        }
+      },
+      "required": [
+        "name",
+        "gene_order",
+        "coordinates",
+        "operators"
+      ],
+      "title": "FamilyCheckpointRecord",
+      "type": "object"
+    },
+    "FamilyOperatorsRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "crossover_probability": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "mutation_probability": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "mutation_scale": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat",
+          "gt": 0.0
+        }
+      },
+      "required": [
+        "crossover_probability",
+        "mutation_probability",
+        "mutation_scale"
+      ],
+      "title": "FamilyOperatorsRecord",
+      "type": "object"
+    },
+    "FamilyPriority": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "FitFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_evidence": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/FailureAuthority"
+        },
+        "corrective_action": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "evidence_state": {
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "kind": {
+          "const": "fit",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "seed",
+        "detail",
+        "stage",
+        "affected_evidence",
+        "evidence_state",
+        "corrective_action",
+        "authority",
+        "kind"
+      ],
+      "title": "FitFailure",
+      "type": "object"
+    },
+    "Gene": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "GenerationFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_evidence": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/FailureAuthority"
+        },
+        "corrective_action": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "evidence_state": {
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "kind": {
+          "const": "generation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "seed",
+        "detail",
+        "stage",
+        "affected_evidence",
+        "evidence_state",
+        "corrective_action",
+        "authority",
+        "kind"
+      ],
+      "title": "GenerationFailure",
+      "type": "object"
+    },
+    "GenerationLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_output_bytes": {
+          "exclusiveMinimum": 0,
+          "title": "Max Output Bytes",
+          "type": "integer"
+        },
+        "max_packets": {
+          "exclusiveMinimum": 0,
+          "title": "Max Packets",
+          "type": "integer"
+        },
+        "max_wall_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Max Wall Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "max_packets",
+        "max_output_bytes",
+        "max_wall_seconds"
+      ],
+      "title": "GenerationLimits",
+      "type": "object"
+    },
+    "Genes": {
+      "items": {
+        "$ref": "#/$defs/Gene"
+      },
+      "type": "array"
+    },
+    "GeneticCheckpointSettings": {
+      "additionalProperties": false,
+      "description": "All genetic settings that can alter selection, reproduction, or termination.",
+      "properties": {
+        "duplicate_mutation_attempts": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "early_stopping_generations": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "early_stopping_tolerance": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "elite_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "final_seed": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "generation_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "master_seed": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "population_size": {
+          "minimum": 2,
+          "title": "Population Size",
+          "type": "integer"
+        },
+        "resume": {
+          "title": "Resume",
+          "type": "boolean"
+        },
+        "tournament_size": {
+          "minimum": 2,
+          "title": "Tournament Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "master_seed",
+        "final_seed",
+        "population_size",
+        "generation_count",
+        "tournament_size",
+        "elite_count",
+        "duplicate_mutation_attempts",
+        "early_stopping_generations",
+        "early_stopping_tolerance",
+        "resume"
+      ],
+      "title": "GeneticCheckpointSettings",
+      "type": "object"
+    },
+    "HistoryRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "best_fitness": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "best_identifier": {
+          "$ref": "#/$defs/CandidateIdentifierRecord"
+        },
+        "candidate_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "family": {
+          "anyOf": [
+            {
+              "enum": [
+                "poisson_empirical",
+                "markov_renewal",
+                "mmpp"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Family"
+        },
+        "generation": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "mean_fitness": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "scope": {
+          "enum": [
+            "family",
+            "overall"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "valid_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "generation",
+        "scope",
+        "family",
+        "candidate_count",
+        "valid_count",
+        "best_fitness",
+        "mean_fitness",
+        "best_identifier"
+      ],
+      "title": "HistoryRecord",
+      "type": "object"
+    },
+    "IncompleteGenerationFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_evidence": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/FailureAuthority"
+        },
+        "corrective_action": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "evidence_state": {
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "kind": {
+          "const": "incomplete_generation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "seed",
+        "detail",
+        "stage",
+        "affected_evidence",
+        "evidence_state",
+        "corrective_action",
+        "authority",
+        "kind"
+      ],
+      "title": "IncompleteGenerationFailure",
+      "type": "object"
+    },
+    "IntegerCoordinateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "integer",
+          "title": "Kind",
+          "type": "string"
+        },
+        "lower": {
+          "title": "Lower",
+          "type": "integer"
+        },
+        "name": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "upper": {
+          "title": "Upper",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "lower",
+        "upper"
+      ],
+      "title": "IntegerCoordinateRecord",
+      "type": "object"
+    },
+    "InvalidCandidateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "duplicate_diagnostics": {
+          "items": {
+            "$ref": "#/$defs/DuplicateDiagnostic"
+          },
+          "title": "Duplicate Diagnostics",
+          "type": "array"
+        },
+        "family": {
+          "enum": [
+            "poisson_empirical",
+            "markov_renewal",
+            "mmpp"
+          ],
+          "title": "Family",
+          "type": "string"
+        },
+        "fitness": {
+          "$ref": "#/$defs/ExactFloat",
+          "ge": 0.0,
+          "le": 0.0
+        },
+        "genes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Genes"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "identifier": {
+          "$ref": "#/$defs/CandidateIdentifierRecord"
+        },
+        "invalid": {
+          "$ref": "#/$defs/CandidateFailureRecord"
+        },
+        "status": {
+          "const": "invalid",
+          "title": "Status",
+          "type": "string"
+        },
+        "trials": {
+          "items": {
+            "$ref": "#/$defs/TrialResult"
+          },
+          "title": "Trials",
+          "type": "array"
+        }
+      },
+      "required": [
+        "identifier",
+        "family",
+        "fitness",
+        "trials",
+        "duplicate_diagnostics",
+        "genes",
+        "status",
+        "invalid"
+      ],
+      "title": "InvalidCandidateRecord",
+      "type": "object"
+    },
+    "JsonScalar": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JsonScalar"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "LinearCoordinateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "linear",
+          "title": "Kind",
+          "type": "string"
+        },
+        "lower": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "name": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "upper": {
+          "$ref": "#/$defs/ExactFloat"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "lower",
+        "upper"
+      ],
+      "title": "LinearCoordinateRecord",
+      "type": "object"
+    },
+    "LogCoordinateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "log",
+          "title": "Kind",
+          "type": "string"
+        },
+        "lower": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "name": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "upper": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "lower",
+        "upper"
+      ],
+      "title": "LogCoordinateRecord",
+      "type": "object"
+    },
+    "MethodName": {
+      "enum": [
+        "autocorrelation",
+        "frame_size_ks",
+        "iat_ks",
+        "multiscale_rate"
+      ],
+      "type": "string"
+    },
+    "MethodTrialResult": {
+      "additionalProperties": false,
+      "description": "One named similarity result retained with recursively frozen diagnostics.",
+      "properties": {
+        "diagnostics": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Diagnostics",
+          "type": "object"
+        },
+        "name": {
+          "$ref": "#/$defs/MethodName"
+        },
+        "score": {
+          "$ref": "#/$defs/trafficlab__genetic__types__UnitFloat"
+        }
+      },
+      "required": [
+        "name",
+        "score",
+        "diagnostics"
+      ],
+      "title": "MethodTrialResult",
+      "type": "object"
+    },
+    "MethodWeights": {
+      "additionalProperties": false,
+      "properties": {
+        "autocorrelation": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Autocorrelation",
+          "type": "number"
+        },
+        "frame_size_ks": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Frame Size Ks",
+          "type": "number"
+        },
+        "iat_ks": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Iat Ks",
+          "type": "number"
+        },
+        "multiscale_rate": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Multiscale Rate",
+          "type": "number"
+        }
+      },
+      "required": [
+        "frame_size_ks",
+        "iat_ks",
+        "autocorrelation",
+        "multiscale_rate"
+      ],
+      "title": "MethodWeights",
+      "type": "object"
+    },
+    "ModelDiagnostics": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "type": "object"
+    },
+    "NamedRngState": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "const": "numpy.random.Generator/PCG64",
+          "title": "Engine",
+          "type": "string"
+        },
+        "python_version": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "state": {
+          "$ref": "#/$defs/RngState"
+        }
+      },
+      "required": [
+        "engine",
+        "python_version",
+        "state"
+      ],
+      "title": "NamedRngState",
+      "type": "object"
+    },
+    "NonemptyString": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "NonfiniteScoreFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_evidence": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/FailureAuthority"
+        },
+        "corrective_action": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "evidence_state": {
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "kind": {
+          "const": "nonfinite_score",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "seed",
+        "detail",
+        "stage",
+        "affected_evidence",
+        "evidence_state",
+        "corrective_action",
+        "authority",
+        "kind"
+      ],
+      "title": "NonfiniteScoreFailure",
+      "type": "object"
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Pcg64CoreState": {
+      "additionalProperties": false,
+      "description": "The two exact unsigned 128-bit PCG64 state integers.",
+      "properties": {
+        "inc": {
+          "maximum": 340282366920938463463374607431768211455,
+          "minimum": 0,
+          "title": "Inc",
+          "type": "integer"
+        },
+        "state": {
+          "maximum": 340282366920938463463374607431768211455,
+          "minimum": 0,
+          "title": "State",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "state",
+        "inc"
+      ],
+      "title": "Pcg64CoreState",
+      "type": "object"
+    },
+    "PendingCandidateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "duplicate_diagnostics": {
+          "items": {
+            "$ref": "#/$defs/DuplicateDiagnostic"
+          },
+          "title": "Duplicate Diagnostics",
+          "type": "array"
+        },
+        "family": {
+          "enum": [
+            "poisson_empirical",
+            "markov_renewal",
+            "mmpp"
+          ],
+          "title": "Family",
+          "type": "string"
+        },
+        "fitness": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "genes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Genes"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "identifier": {
+          "$ref": "#/$defs/CandidateIdentifierRecord"
+        },
+        "invalid": {
+          "title": "Invalid",
+          "type": "null"
+        },
+        "status": {
+          "const": "pending",
+          "title": "Status",
+          "type": "string"
+        },
+        "trials": {
+          "items": {
+            "$ref": "#/$defs/TrialResult"
+          },
+          "title": "Trials",
+          "type": "array"
+        }
+      },
+      "required": [
+        "identifier",
+        "family",
+        "fitness",
+        "trials",
+        "duplicate_diagnostics",
+        "genes",
+        "status",
+        "invalid"
+      ],
+      "title": "PendingCandidateRecord",
+      "type": "object"
+    },
+    "PositiveFloat": {
+      "$ref": "#/$defs/ExactFloat",
+      "gt": 0.0
+    },
+    "PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "RepairFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_evidence": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/FailureAuthority"
+        },
+        "corrective_action": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "evidence_state": {
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "kind": {
+          "const": "repair",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "seed",
+        "detail",
+        "stage",
+        "affected_evidence",
+        "evidence_state",
+        "corrective_action",
+        "authority",
+        "kind"
+      ],
+      "title": "RepairFailure",
+      "type": "object"
+    },
+    "RngState": {
+      "additionalProperties": false,
+      "description": "Exact JSON-compatible state returned by NumPy's PCG64 bit generator.",
+      "properties": {
+        "bit_generator": {
+          "const": "PCG64",
+          "title": "Bit Generator",
+          "type": "string"
+        },
+        "has_uint32": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Has Uint32",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/Pcg64CoreState"
+        },
+        "uinteger": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Uinteger",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bit_generator",
+        "state",
+        "has_uint32",
+        "uinteger"
+      ],
+      "title": "RngState",
+      "type": "object"
+    },
+    "SimilarityConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "acf_iat_weight": {
+          "title": "Acf Iat Weight",
+          "type": "number"
+        },
+        "acf_lag_weights": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Acf Lag Weights",
+          "type": "array"
+        },
+        "acf_lags": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Acf Lags",
+          "type": "array"
+        },
+        "acf_size_weight": {
+          "title": "Acf Size Weight",
+          "type": "number"
+        },
+        "iat_diagnostic_quantile": {
+          "title": "Iat Diagnostic Quantile",
+          "type": "number"
+        },
+        "max_direction_bin_cells": {
+          "minimum": 2,
+          "title": "Max Direction Bin Cells",
+          "type": "integer"
+        },
+        "method_weights": {
+          "$ref": "#/$defs/MethodWeights"
+        },
+        "multiscale_byte_weight": {
+          "title": "Multiscale Byte Weight",
+          "type": "number"
+        },
+        "multiscale_packet_weight": {
+          "title": "Multiscale Packet Weight",
+          "type": "number"
+        },
+        "multiscale_scale_weights": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Multiscale Scale Weights",
+          "type": "array"
+        },
+        "multiscale_widths_seconds": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Multiscale Widths Seconds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "iat_diagnostic_quantile",
+        "acf_lags",
+        "acf_lag_weights",
+        "acf_iat_weight",
+        "acf_size_weight",
+        "multiscale_widths_seconds",
+        "multiscale_scale_weights",
+        "multiscale_packet_weight",
+        "multiscale_byte_weight",
+        "max_direction_bin_cells",
+        "method_weights"
+      ],
+      "title": "SimilarityConfig",
+      "type": "object"
+    },
+    "SimilarityPreconditionFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_evidence": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/FailureAuthority"
+        },
+        "corrective_action": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "detail": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "evidence_state": {
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "kind": {
+          "const": "similarity_precondition",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "seed",
+        "detail",
+        "stage",
+        "affected_evidence",
+        "evidence_state",
+        "corrective_action",
+        "authority",
+        "kind"
+      ],
+      "title": "SimilarityPreconditionFailure",
+      "type": "object"
+    },
+    "TerminalReason": {
+      "enum": [
+        "running",
+        "hard_limit",
+        "early_stop"
+      ],
+      "type": "string"
+    },
+    "TrialResult": {
+      "additionalProperties": false,
+      "description": "All four scores from one deterministic generated-trace seed.",
+      "properties": {
+        "aggregate_score": {
+          "$ref": "#/$defs/trafficlab__genetic__types__UnitFloat"
+        },
+        "methods": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            },
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            },
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            },
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            }
+          ],
+          "title": "Methods",
+          "type": "array"
+        },
+        "model_diagnostics": {
+          "$ref": "#/$defs/ModelDiagnostics"
+        },
+        "seed": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "seed",
+        "aggregate_score",
+        "methods"
+      ],
+      "title": "TrialResult",
+      "type": "object"
+    },
+    "ValidCandidateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "duplicate_diagnostics": {
+          "items": {
+            "$ref": "#/$defs/DuplicateDiagnostic"
+          },
+          "title": "Duplicate Diagnostics",
+          "type": "array"
+        },
+        "family": {
+          "enum": [
+            "poisson_empirical",
+            "markov_renewal",
+            "mmpp"
+          ],
+          "title": "Family",
+          "type": "string"
+        },
+        "fitness": {
+          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+        },
+        "genes": {
+          "$ref": "#/$defs/Genes"
+        },
+        "identifier": {
+          "$ref": "#/$defs/CandidateIdentifierRecord"
+        },
+        "invalid": {
+          "title": "Invalid",
+          "type": "null"
+        },
+        "status": {
+          "const": "valid",
+          "title": "Status",
+          "type": "string"
+        },
+        "trials": {
+          "items": {
+            "$ref": "#/$defs/TrialResult"
+          },
+          "title": "Trials",
+          "type": "array"
+        }
+      },
+      "required": [
+        "identifier",
+        "family",
+        "fitness",
+        "trials",
+        "duplicate_diagnostics",
+        "genes",
+        "status",
+        "invalid"
+      ],
+      "title": "ValidCandidateRecord",
+      "type": "object"
+    },
+    "trafficlab__genetic__checkpoint__UnitFloat": {
+      "$ref": "#/$defs/ExactFloat",
+      "ge": 0.0,
+      "le": 1.0
+    },
+    "trafficlab__genetic__types__UnitFloat": {
+      "ge": 0.0,
+      "le": 1.0,
+      "type": "number"
+    }
+  },
+  "$id": "checkpoint.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Exact public checkpoint JSON root before cross-artifact compatibility checks.",
+  "properties": {
+    "best": {
+      "$ref": "#/$defs/BestCandidateRecord"
+    },
+    "capture_identity": {
+      "$ref": "#/$defs/ContentIdentityRecord"
+    },
+    "consecutive_stagnation": {
+      "$ref": "#/$defs/NonnegativeInt"
+    },
+    "experiment_identity": {
+      "$ref": "#/$defs/ContentIdentityRecord"
+    },
+    "families": {
+      "items": {
+        "$ref": "#/$defs/FamilyCheckpointRecord"
+      },
+      "minItems": 1,
+      "title": "Families",
+      "type": "array"
+    },
+    "family_priority": {
+      "$ref": "#/$defs/FamilyPriority"
+    },
+    "generation": {
+      "$ref": "#/$defs/NonnegativeInt"
+    },
+    "genetic": {
+      "$ref": "#/$defs/GeneticCheckpointSettings"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/HistoryRecord"
+      },
+      "minItems": 1,
+      "title": "History",
+      "type": "array"
+    },
+    "observation_window_seconds": {
+      "$ref": "#/$defs/PositiveFloat"
+    },
+    "population": {
+      "items": {
+        "$ref": "#/$defs/CandidateRecord"
+      },
+      "minItems": 1,
+      "title": "Population",
+      "type": "array"
+    },
+    "reference_identity": {
+      "$ref": "#/$defs/ContentIdentityRecord"
+    },
+    "rng": {
+      "$ref": "#/$defs/NamedRngState"
+    },
+    "scientific_artifact_schema": {
+      "const": 3,
+      "title": "Scientific Artifact Schema",
+      "type": "integer"
+    },
+    "similarity": {
+      "$ref": "#/$defs/SimilarityConfig"
+    },
+    "terminal_reason": {
+      "$ref": "#/$defs/TerminalReason"
+    },
+    "trial_limits": {
+      "$ref": "#/$defs/GenerationLimits"
+    },
+    "trial_seeds": {
+      "items": {
+        "$ref": "#/$defs/NonnegativeInt"
+      },
+      "minItems": 1,
+      "title": "Trial Seeds",
+      "type": "array"
+    }
+  },
+  "required": [
+    "scientific_artifact_schema",
+    "experiment_identity",
+    "reference_identity",
+    "capture_identity",
+    "observation_window_seconds",
+    "trial_seeds",
+    "trial_limits",
+    "families",
+    "family_priority",
+    "genetic",
+    "similarity",
+    "rng",
+    "generation",
+    "population",
+    "history",
+    "best",
+    "consecutive_stagnation",
+    "terminal_reason"
+  ],
+  "title": "CheckpointArtifact",
+  "type": "object"
+}

@@ -35,9 +35,11 @@ Distance and score both lie in `[0, 1]`.
 
 ## Algorithm
 
-Sort the two IAT samples, scan their merged unique values, consume ties before
-comparing ECDFs, and take the exact maximum difference. Do not bin, discard
-zeros, add jitter, or normalize by mean IAT.
+Pool and order the exact IAT values, assign ties the same monotone integer rank,
+and pass the two rank samples to `scipy.stats.ks_2samp`; retain only its
+statistic. This is equivalent to the merged tied-ECDF scan and avoids unsafe
+numeric coercion. Do not bin, discard zeros, add jitter, normalize by mean IAT,
+or consume SciPy's p-value.
 
 ## Diagnostics and edge cases
 

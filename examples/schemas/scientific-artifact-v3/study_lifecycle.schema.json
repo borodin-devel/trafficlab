@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "ImageIdentity": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "NonemptyString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "RelativePath": {
+      "type": "string"
+    },
+    "StudyLifecycleRow": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanup_verified": {
+          "title": "Cleanup Verified",
+          "type": "boolean"
+        },
+        "directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "project_name": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "run_id": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "cleanup_verified",
+        "directory",
+        "project_name",
+        "run_id"
+      ],
+      "title": "StudyLifecycleRow",
+      "type": "object"
+    },
+    "StudyPhaseImageLifecycle": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_image_id": {
+          "$ref": "#/$defs/ImageIdentity"
+        },
+        "cleanup_verified": {
+          "title": "Cleanup Verified",
+          "type": "boolean"
+        },
+        "post_cleanup_inspect_exit_status": {
+          "title": "Post Cleanup Inspect Exit Status",
+          "type": "integer"
+        },
+        "tag": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "capture_image_id",
+        "cleanup_verified",
+        "post_cleanup_inspect_exit_status",
+        "tag"
+      ],
+      "title": "StudyPhaseImageLifecycle",
+      "type": "object"
+    }
+  },
+  "$id": "study_lifecycle.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Complete cleanup proof for training, held-out, and phase image resources.",
+  "properties": {
+    "held_out": {
+      "items": {
+        "$ref": "#/$defs/StudyLifecycleRow"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Held Out",
+      "type": "array"
+    },
+    "phase_capture_image": {
+      "$ref": "#/$defs/StudyPhaseImageLifecycle"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "study_id": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "training": {
+      "items": {
+        "$ref": "#/$defs/StudyLifecycleRow"
+      },
+      "maxItems": 9,
+      "minItems": 9,
+      "title": "Training",
+      "type": "array"
+    }
+  },
+  "required": [
+    "held_out",
+    "phase_capture_image",
+    "schema_version",
+    "study_id",
+    "training"
+  ],
+  "title": "ValidationStudyLifecycle",
+  "type": "object"
+}

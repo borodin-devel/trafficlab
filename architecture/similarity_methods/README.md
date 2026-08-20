@@ -2,9 +2,11 @@
 
 Similarity methods compare two [canonical traces](../SYSTEM.md#data-flow) in
 memory. The shared comparison boundary gives them already normalized and cropped
-events in `[0, W]` plus the same finite positive observation window `W`. Methods
-do not open PCAPNG files, choose model parameters, or hide failed preconditions
-behind a low score.
+columnar `TrafficTrace` values in `[0, W]` plus the same finite positive
+observation window `W`. Methods consume those owned read-only NumPy columns
+directly; event-record conversion remains only a compatibility boundary for a
+generic caller. Methods do not open PCAPNG files, choose model parameters, or
+hide failed preconditions behind a low score.
 
 Each method returns:
 

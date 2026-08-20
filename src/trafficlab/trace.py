@@ -240,10 +240,18 @@ def _validated_events(events: Iterable[TraceEvent], *, minimum_events: int, trac
     return trace
 
 
-def normalize_reference(events: Iterable[TraceEvent]) -> tuple[TrafficTrace, float]:
+def normalize_reference(events: Iterable[TraceEvent] | TrafficTrace) -> tuple[TrafficTrace, float]:
     """Normalize a complete reference trace to its closed observation window."""
-    reference = _validated_events(events, minimum_events=2, trace_name="reference")
-    trace = TrafficTrace.from_events(reference)
+    if type(events) is TrafficTrace:
+        trace = events
+        if len(trace) < 2:
+            raise TrafficlabError(
+                "invalid reference trace: at least two events are required",
+                corrective_action="provide finite nondecreasing canonical reference events",
+            )
+    else:
+        reference = _validated_events(events, minimum_events=2, trace_name="reference")
+        trace = TrafficTrace.from_events(reference)
     start = trace.timestamps[0]
     window = float(trace.timestamps[-1] - start)
     if not math.isfinite(window) or window <= 0.0:
@@ -254,15 +262,23 @@ def normalize_reference(events: Iterable[TraceEvent]) -> tuple[TrafficTrace, flo
     return TrafficTrace(trace.timestamps - start, trace.directions, trace.frame_lengths), window
 
 
-def align_generated(events: Iterable[TraceEvent], W: float) -> TrafficTrace:
+def align_generated(events: Iterable[TraceEvent] | TrafficTrace, W: float) -> TrafficTrace:
     """Shift a complete generated trace and retain its events in the closed window."""
-    generated = _validated_events(events, minimum_events=1, trace_name="generated")
+    if type(events) is TrafficTrace:
+        trace = events
+        if not len(trace):
+            raise TrafficlabError(
+                "invalid generated trace: at least one event is required",
+                corrective_action="provide finite nondecreasing canonical generated events",
+            )
+    else:
+        generated = _validated_events(events, minimum_events=1, trace_name="generated")
+        trace = TrafficTrace.from_events(generated)
     if type(W) is not float or not math.isfinite(W) or W <= 0.0:
         raise TrafficlabError(
             "invalid observation window: it must be a finite positive float",
             corrective_action="provide a finite positive observation window",
         )
-    trace = TrafficTrace.from_events(generated)
     shifted_timestamps = trace.timestamps - trace.timestamps[0]
     mask = shifted_timestamps <= W
     return TrafficTrace(shifted_timestamps[mask], trace.directions[mask], trace.frame_lengths[mask])

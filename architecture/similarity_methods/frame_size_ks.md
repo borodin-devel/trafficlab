@@ -28,11 +28,12 @@ Because empirical CDFs lie in `[0, 1]`, both distance and score lie in `[0, 1]`.
 ## Input and algorithm
 
 Use the full captured frame length \(l_i\) from each canonical event. Require at
-least one finite positive integer length in each trace. Sort both samples, walk
-their merged unique values, update each ECDF after consuming all ties at that
-value, and retain the maximum absolute difference. This exact procedure handles
-the discrete, tied nature of packet sizes; no interpolation or histogram is
-used.
+least one finite positive integer length in each trace. Pool and order the exact
+values, assign every equal value the same monotone integer rank, and pass the two
+rank samples to `scipy.stats.ks_2samp`; retain only its statistic. Rank encoding
+preserves the tied ECDF distance while preventing loss when an exact integer is
+larger than binary64. No interpolation or histogram is used, and Trafficlab does
+not consume SciPy's p-value.
 
 ## Diagnostics and edge cases
 

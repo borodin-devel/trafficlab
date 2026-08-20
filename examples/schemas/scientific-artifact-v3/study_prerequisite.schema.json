@@ -1,0 +1,267 @@
+{
+  "$defs": {
+    "GitIdentity": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "ImageIdentity": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "NonemptyString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "RelativePath": {
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "StudyCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "canary_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "content_length": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "content_range": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "object_size_bytes": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "status": {
+          "$ref": "#/$defs/PositiveInt"
+        }
+      },
+      "required": [
+        "canary_sha256",
+        "content_length",
+        "content_range",
+        "object_size_bytes",
+        "status"
+      ],
+      "title": "StudyCapability",
+      "type": "object"
+    },
+    "StudyContentIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "size": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "sha256",
+        "size"
+      ],
+      "title": "StudyContentIdentity",
+      "type": "object"
+    },
+    "StudyPrerequisiteCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "items": {
+            "$ref": "#/$defs/NonemptyString"
+          },
+          "minItems": 1,
+          "title": "Argv",
+          "type": "array"
+        },
+        "command": {
+          "$ref": "#/$defs/StudyRetainedOutput"
+        },
+        "exit_status": {
+          "maximum": 0,
+          "minimum": 0,
+          "title": "Exit Status",
+          "type": "integer"
+        },
+        "junit": {
+          "$ref": "#/$defs/StudyRetainedOutput"
+        },
+        "kind": {
+          "enum": [
+            "docker_matrix",
+            "internet_smoke"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/StudyRetainedOutput"
+        },
+        "stderr": {
+          "$ref": "#/$defs/StudyRetainedOutput"
+        },
+        "stdout": {
+          "$ref": "#/$defs/StudyRetainedOutput"
+        },
+        "tests": {
+          "$ref": "#/$defs/StudyTestCounts"
+        }
+      },
+      "required": [
+        "argv",
+        "command",
+        "exit_status",
+        "junit",
+        "kind",
+        "status",
+        "stderr",
+        "stdout",
+        "tests"
+      ],
+      "title": "StudyPrerequisiteCommand",
+      "type": "object"
+    },
+    "StudyPrerequisiteEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_image_id": {
+          "$ref": "#/$defs/ImageIdentity"
+        },
+        "capture_image_reference": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "capture_tool_version": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/GitIdentity"
+        },
+        "source_tree": {
+          "$ref": "#/$defs/GitIdentity"
+        },
+        "target_image_id": {
+          "$ref": "#/$defs/ImageIdentity"
+        },
+        "target_image_reference": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "uv_lock_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        }
+      },
+      "required": [
+        "capture_image_id",
+        "capture_image_reference",
+        "capture_tool_version",
+        "source_commit",
+        "source_tree",
+        "target_image_id",
+        "target_image_reference",
+        "uv_lock_identity"
+      ],
+      "title": "StudyPrerequisiteEnvironment",
+      "type": "object"
+    },
+    "StudyRetainedOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "path": {
+          "$ref": "#/$defs/RelativePath"
+        }
+      },
+      "required": [
+        "identity",
+        "path"
+      ],
+      "title": "StudyRetainedOutput",
+      "type": "object"
+    },
+    "StudyTestCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "errors": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "failed": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "passed": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "skipped": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "total": {
+          "$ref": "#/$defs/PositiveInt"
+        }
+      },
+      "required": [
+        "errors",
+        "failed",
+        "passed",
+        "skipped",
+        "total"
+      ],
+      "title": "StudyTestCounts",
+      "type": "object"
+    }
+  },
+  "$id": "study_prerequisite.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Retained successful Docker and Internet prerequisite evidence.",
+  "properties": {
+    "capability": {
+      "$ref": "#/$defs/StudyCapability"
+    },
+    "commands": {
+      "items": {
+        "$ref": "#/$defs/StudyPrerequisiteCommand"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Commands",
+      "type": "array"
+    },
+    "environment": {
+      "$ref": "#/$defs/StudyPrerequisiteEnvironment"
+    },
+    "schema_version": {
+      "const": 3,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "study_id": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "url": {
+      "pattern": "^https://",
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capability",
+    "commands",
+    "environment",
+    "schema_version",
+    "study_id",
+    "url"
+  ],
+  "title": "ValidationStudyPrerequisite",
+  "type": "object"
+}

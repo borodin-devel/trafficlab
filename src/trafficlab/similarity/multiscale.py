@@ -8,7 +8,7 @@ import numpy as np
 
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import FrozenJsonValue, JsonDiagnostics, SimilarityResult, validate_observation_window
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 _WEIGHT_SUM_TOLERANCE = 1e-12
 _DISCREPANCY_TOLERANCE = 3e-12
@@ -216,9 +216,23 @@ def _validated_widths_and_bin_counts(
     )
 
 
-def _validated_trace(events: Iterable[TraceEvent], *, trace_name: str, window: float) -> tuple[TraceEvent, ...]:
+def _validated_trace(
+    events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str, window: float
+) -> tuple[TraceEvent, ...] | TrafficTrace:
     """Return one nonempty canonical trace contained by the shared closed window."""
     corrective_action = f"provide nonempty finite nondecreasing canonical {trace_name} events in [0, W]"
+    if type(events) is TrafficTrace:
+        if not len(events):
+            raise TrafficlabError(
+                f"invalid {trace_name} trace: at least one event is required",
+                corrective_action=corrective_action,
+            )
+        if events.timestamps[-1] > window:
+            raise TrafficlabError(
+                f"invalid {trace_name} trace: every event must be inside [0, W]",
+                corrective_action=corrective_action,
+            )
+        return events
     try:
         trace = tuple(events)
     except TypeError as error:
@@ -273,10 +287,37 @@ def _validated_trace(events: Iterable[TraceEvent], *, trace_name: str, window: f
     return trace
 
 
+def _binned_trace_features(
+    trace: TrafficTrace, *, width: float, bins_per_direction: int
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Build exact cells directly from one validated columnar trace."""
+    quotients = trace.timestamps / width
+    nearest = np.rint(quotients)
+    ulps = np.abs(np.spacing(quotients))
+    snapped = np.where(np.abs(quotients - nearest) <= 4.0 * ulps, nearest, quotients)
+    indices = np.minimum(np.floor(snapped).astype(np.intp), bins_per_direction - 1)
+    flat_indices = indices + trace.directions.astype(np.intp) * bins_per_direction
+    packets = np.bincount(flat_indices, minlength=2 * bins_per_direction)
+
+    maximum_length = int(np.max(trace.frame_lengths))
+    if len(trace) <= np.iinfo(np.uint64).max // maximum_length:
+        exact_bytes = np.zeros(2 * bins_per_direction, dtype=np.uint64)
+        np.add.at(exact_bytes, flat_indices, trace.frame_lengths.astype(np.uint64))
+        return tuple(int(value) for value in packets), tuple(int(value) for value in exact_bytes)
+
+    fallback = [0] * (2 * bins_per_direction)
+    for index, frame_length in zip(flat_indices, trace.frame_lengths, strict=True):
+        fallback[int(index)] += int(frame_length)
+    return tuple(int(value) for value in packets), tuple(fallback)
+
+
 def _binned_features(
-    events: tuple[TraceEvent, ...], *, width: float, bins_per_direction: int
+    events: tuple[TraceEvent, ...] | TrafficTrace, *, width: float, bins_per_direction: int
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """Build outbound-then-inbound packet and captured-byte cells for one scale."""
+    if type(events) is TrafficTrace:
+        return _binned_trace_features(events, width=width, bins_per_direction=bins_per_direction)
+
     timestamps = np.asarray([event.timestamp for event in events], dtype=np.float64)
     lengths = tuple(event.frame_length for event in events)
     quotients = timestamps / width
@@ -329,8 +370,8 @@ def _direction_totals(
 
 
 def multiscale_rate_similarity(
-    reference: Iterable[TraceEvent],
-    generated: Iterable[TraceEvent],
+    reference: Iterable[TraceEvent] | TrafficTrace,
+    generated: Iterable[TraceEvent] | TrafficTrace,
     W: object,
     widths: Iterable[object],
     scale_weights: Iterable[object],

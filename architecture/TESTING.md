@@ -739,6 +739,43 @@ The URL is supplied by the operator or CI environment. This test is never part
 of the default or deterministic integration gate because public connectivity and
 external services are outside Trafficlab's control.
 
+## Retained scientific-stack evidence
+
+The public scientific artifact schemas are generated from every root in
+`PUBLIC_ARTIFACT_MODELS`. The checked flat directory contains exactly one
+sorted `<root>.schema.json` file per root, each declares JSON Schema Draft
+2020-12, and `--check` rebuilds and byte-compares the complete directory rather
+than trusting an inventory count.
+
+The retained numerical benchmark uses exactly 1,000,000 events drawn from
+`Generator(PCG64(20260819))` with the locked draw order. Independent scalar and
+production-vector results cover timestamp normalization, IATs, multiscale
+packet/byte cells, and selected-lag ACF; each maximum absolute difference must
+be at most `1e-12`. Each implementation receives one excluded warm-up followed
+by five measured fresh subprocesses. Evidence retains every wall-time and peak
+RSS sample plus recomputed medians. The migration passes only when equality
+holds and combined multiscale/ACF is at least three times faster or vector peak
+RSS is at most half the scalar value. The checked command validates retained
+raw arithmetic, source-file identities, host/runtime fields, and `uv.lock`; it
+does not replace a required fresh measurement run.
+
+Source reduction is recomputed from full Git identities and explicit qualified
+function inventories. The NumPy category counts unique executable statement
+lines beneath named Python `for`/`while` loop bodies before and after the
+migration and requires at least 25% reduction. The artifact category carries
+the three disjoint strict-schema consolidation inventories and requires at
+least 30% aggregate reduction; a path may not occur in more than one phase.
+Tests and generated evidence are excluded from both inventories.
+
+The shared probe runner checks the MMPP likelihood, pymoo optimizer, and Scapy
+PCAPNG evidence in fixed order. Probe rejection is a valid result only when the
+strict canonical evidence recomputes it: MMPP rejects on held-out likelihood,
+pymoo rejects on transparent replay and reduction, and Scapy rejects on
+technical gates while its separate production-license gate remains blocked.
+None of those rejected candidates may enter the runtime package. The small
+scientific-stack example uses PCG64 seeds and enables all three production
+model families through the ordinary full-workflow configuration boundary.
+
 ## Accepted Validation Study evidence
 
 A replacement study is accepted only when its Docker and Internet prerequisite

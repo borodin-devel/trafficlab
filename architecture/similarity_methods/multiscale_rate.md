@@ -34,6 +34,12 @@ and construct \(g_{h,f}\) identically. Packet cells contain event counts; byte
 cells contain sums of captured frame lengths. Every event direction must be
 exactly `outbound` or `inbound`.
 
+The columnar implementation applies the same four-ULP rule elementwise, forms
+direction-offset integer bin indexes, and uses NumPy counting over those
+indexes. Captured-byte cells accumulate as exact unsigned integers when their
+proved bound fits; the defensive larger-bound path uses Python integers. Float
+weighted sums never become authoritative byte counts.
+
 For configured maximum direction-bin cell count \(C_{max}\), require
 
 \[

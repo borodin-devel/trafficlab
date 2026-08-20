@@ -1,0 +1,504 @@
+{
+  "$defs": {
+    "ConfigurationStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "relation": {
+          "const": "configuration",
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation",
+        "name"
+      ],
+      "title": "ConfigurationStudyLineage",
+      "type": "object"
+    },
+    "HeldOutStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "capture.json",
+            "generated.pcapng",
+            "portable.toml",
+            "realized.toml",
+            "record.json",
+            "reference.pcapng",
+            "run.log",
+            "similarity.json"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "relation",
+        "workload"
+      ],
+      "title": "HeldOutStudyLineage",
+      "type": "object"
+    },
+    "ImageIdentity": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "NonemptyString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "PrerequisiteStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "record": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "relation": {
+          "const": "prerequisite",
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation",
+        "record"
+      ],
+      "title": "PrerequisiteStudyLineage",
+      "type": "object"
+    },
+    "RelativePath": {
+      "type": "string"
+    },
+    "Repeat": {
+      "maximum": 3,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "RepeatedStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "best_model.json",
+            "capture.json",
+            "checkpoint.json",
+            "experiment.toml",
+            "fresh_simulation",
+            "ga_history.csv",
+            "generated.pcapng",
+            "reference.pcapng",
+            "run.log",
+            "similarity.json"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "relation",
+        "repeat",
+        "workload"
+      ],
+      "title": "RepeatedStudyLineage",
+      "type": "object"
+    },
+    "Sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "SimpleStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "study-index",
+            "protocol",
+            "environment",
+            "prerequisites",
+            "report_inputs",
+            "report",
+            "lifecycle"
+          ],
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation"
+      ],
+      "title": "SimpleStudyLineage",
+      "type": "object"
+    },
+    "StudyCaptureLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "capture_image_id": {
+          "$ref": "#/$defs/ImageIdentity"
+        },
+        "capture_image_reference": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "capture_tool_version": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "target_image_id": {
+          "$ref": "#/$defs/ImageIdentity"
+        },
+        "target_image_reference": {
+          "$ref": "#/$defs/NonemptyString"
+        }
+      },
+      "required": [
+        "capture_identity",
+        "capture_image_id",
+        "capture_image_reference",
+        "capture_tool_version",
+        "target_image_id",
+        "target_image_reference"
+      ],
+      "title": "StudyCaptureLineage",
+      "type": "object"
+    },
+    "StudyContentIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "size": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "sha256",
+        "size"
+      ],
+      "title": "StudyContentIdentity",
+      "type": "object"
+    },
+    "StudyFreshSimulationLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "comparison_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "generated_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "path": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "reference_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "seed": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "training_directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "training_model_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "comparison_identity",
+        "generated_identity",
+        "path",
+        "reference_identity",
+        "repeat",
+        "seed",
+        "training_directory",
+        "training_model_identity",
+        "workload"
+      ],
+      "title": "StudyFreshSimulationLineage",
+      "type": "object"
+    },
+    "StudyHeldOutLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_lineage": {
+          "$ref": "#/$defs/StudyCaptureLineage"
+        },
+        "directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "training_directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "capture_lineage",
+        "directory",
+        "training_directory",
+        "workload"
+      ],
+      "title": "StudyHeldOutLineage",
+      "type": "object"
+    },
+    "StudyLineage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SimpleStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/PrerequisiteStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/ConfigurationStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/TransferStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/RepeatedStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/HeldOutStudyLineage"
+        }
+      ]
+    },
+    "StudyTrainingLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_lineage": {
+          "$ref": "#/$defs/StudyCaptureLineage"
+        },
+        "directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "portable_config": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "portable_config_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "realized_config": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "realized_config_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "reference_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "run_config_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "capture_lineage",
+        "directory",
+        "portable_config",
+        "portable_config_identity",
+        "realized_config",
+        "realized_config_identity",
+        "reference_identity",
+        "repeat",
+        "run_config_identity",
+        "workload"
+      ],
+      "title": "StudyTrainingLineage",
+      "type": "object"
+    },
+    "TransferStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "relation": {
+          "enum": [
+            "transfer-header",
+            "external-observation"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "requested_end": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "requested_start": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "run_id": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "scope": {
+          "enum": [
+            "prerequisites",
+            "training",
+            "held_out"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "transfer_index": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "workload": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Workload"
+            },
+            {
+              "const": "prerequisites",
+              "type": "string"
+            }
+          ],
+          "title": "Workload"
+        }
+      },
+      "required": [
+        "filename",
+        "relation",
+        "requested_end",
+        "requested_start",
+        "run_id",
+        "scope",
+        "transfer_index",
+        "workload"
+      ],
+      "title": "TransferStudyLineage",
+      "type": "object"
+    },
+    "Workload": {
+      "enum": [
+        "short",
+        "streaming",
+        "bursty"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "study_lineage.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Accepted evidence index and its complete typed lineage maps.",
+  "properties": {
+    "environment": {
+      "$ref": "#/$defs/RelativePath"
+    },
+    "fresh_simulation": {
+      "items": {
+        "$ref": "#/$defs/StudyFreshSimulationLineage"
+      },
+      "maxItems": 9,
+      "minItems": 9,
+      "title": "Fresh Simulation",
+      "type": "array"
+    },
+    "held_out": {
+      "items": {
+        "$ref": "#/$defs/StudyHeldOutLineage"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Held Out",
+      "type": "array"
+    },
+    "lifecycle": {
+      "$ref": "#/$defs/RelativePath"
+    },
+    "lineage": {
+      "additionalProperties": {
+        "$ref": "#/$defs/StudyLineage"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/RelativePath"
+      },
+      "title": "Lineage",
+      "type": "object"
+    },
+    "ownership": {
+      "additionalProperties": {
+        "$ref": "#/$defs/NonemptyString"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/RelativePath"
+      },
+      "title": "Ownership",
+      "type": "object"
+    },
+    "prerequisites": {
+      "$ref": "#/$defs/RelativePath"
+    },
+    "protocol": {
+      "$ref": "#/$defs/RelativePath"
+    },
+    "report": {
+      "$ref": "#/$defs/RelativePath"
+    },
+    "report_inputs": {
+      "$ref": "#/$defs/RelativePath"
+    },
+    "schema_version": {
+      "const": 3,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "training": {
+      "items": {
+        "$ref": "#/$defs/StudyTrainingLineage"
+      },
+      "maxItems": 9,
+      "minItems": 9,
+      "title": "Training",
+      "type": "array"
+    }
+  },
+  "required": [
+    "environment",
+    "fresh_simulation",
+    "held_out",
+    "lifecycle",
+    "lineage",
+    "ownership",
+    "prerequisites",
+    "protocol",
+    "report",
+    "report_inputs",
+    "schema_version",
+    "training"
+  ],
+  "title": "ValidationStudyLineage",
+  "type": "object"
+}

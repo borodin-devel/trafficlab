@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "GitIdentity": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "ImageIdentity": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "NonemptyString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "StudyCompatibilityDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "status": {
+          "const": "compatible",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "status"
+      ],
+      "title": "StudyCompatibilityDecision",
+      "type": "object"
+    },
+    "StudyContentIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "size": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "sha256",
+        "size"
+      ],
+      "title": "StudyContentIdentity",
+      "type": "object"
+    }
+  },
+  "$id": "study_environment.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Checked source, runtime, and image identity record for one accepted study.",
+  "properties": {
+    "capture_image_id": {
+      "$ref": "#/$defs/ImageIdentity"
+    },
+    "capture_image_reference": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "capture_tool_version": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "compatibility_decision": {
+      "$ref": "#/$defs/StudyCompatibilityDecision"
+    },
+    "docker_compose_version": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "docker_engine_version": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "host_architecture": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "kernel_release": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "python_implementation": {
+      "const": "CPython",
+      "title": "Python Implementation",
+      "type": "string"
+    },
+    "python_version": {
+      "const": "3.12.3",
+      "title": "Python Version",
+      "type": "string"
+    },
+    "scientific_artifact_schema": {
+      "const": 3,
+      "title": "Scientific Artifact Schema",
+      "type": "integer"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/GitIdentity"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/GitIdentity"
+    },
+    "target_image_id": {
+      "$ref": "#/$defs/ImageIdentity"
+    },
+    "target_image_reference": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "uv_lock_identity": {
+      "$ref": "#/$defs/StudyContentIdentity"
+    }
+  },
+  "required": [
+    "capture_image_id",
+    "capture_image_reference",
+    "capture_tool_version",
+    "compatibility_decision",
+    "docker_compose_version",
+    "docker_engine_version",
+    "host_architecture",
+    "kernel_release",
+    "python_implementation",
+    "python_version",
+    "scientific_artifact_schema",
+    "source_commit",
+    "source_tree",
+    "target_image_id",
+    "target_image_reference",
+    "uv_lock_identity"
+  ],
+  "title": "ValidationStudyEnvironment",
+  "type": "object"
+}

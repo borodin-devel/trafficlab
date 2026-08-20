@@ -1,0 +1,167 @@
+{
+  "$defs": {
+    "NonemptyString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "RelativePath": {
+      "type": "string"
+    },
+    "Repeat": {
+      "maximum": 3,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "Sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "StudyContentIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "size": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "sha256",
+        "size"
+      ],
+      "title": "StudyContentIdentity",
+      "type": "object"
+    },
+    "StudyModelSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "rule": {
+          "const": "highest_best_fitness_then_lowest_repeat",
+          "title": "Rule",
+          "type": "string"
+        },
+        "selected": {
+          "items": {
+            "$ref": "#/$defs/StudySelectedModel"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Selected",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rule",
+        "selected"
+      ],
+      "title": "StudyModelSelection",
+      "type": "object"
+    },
+    "StudySelectedModel": {
+      "additionalProperties": false,
+      "properties": {
+        "best_model_identity": {
+          "$ref": "#/$defs/StudyContentIdentity"
+        },
+        "repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "training_directory": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "best_model_identity",
+        "repeat",
+        "training_directory",
+        "workload"
+      ],
+      "title": "StudySelectedModel",
+      "type": "object"
+    },
+    "Workload": {
+      "enum": [
+        "short",
+        "streaming",
+        "bursty"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "study_protocol.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Frozen study identity, seed, repetition, and model-selection protocol.",
+  "properties": {
+    "candidate_id": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "destination_id": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "final_seed": {
+      "$ref": "#/$defs/NonnegativeInt"
+    },
+    "model_selection": {
+      "$ref": "#/$defs/StudyModelSelection"
+    },
+    "prerequisite_path": {
+      "$ref": "#/$defs/RelativePath"
+    },
+    "schema_version": {
+      "const": 3,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "selection_seeds": {
+      "items": {
+        "$ref": "#/$defs/NonnegativeInt"
+      },
+      "minItems": 1,
+      "title": "Selection Seeds",
+      "type": "array"
+    },
+    "study_id": {
+      "$ref": "#/$defs/NonemptyString"
+    },
+    "training_repetitions": {
+      "$ref": "#/$defs/PositiveInt"
+    },
+    "workloads": {
+      "items": {
+        "$ref": "#/$defs/Workload"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Workloads",
+      "type": "array"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "destination_id",
+    "final_seed",
+    "model_selection",
+    "prerequisite_path",
+    "schema_version",
+    "selection_seeds",
+    "study_id",
+    "training_repetitions",
+    "workloads"
+  ],
+  "title": "ValidationStudyProtocol",
+  "type": "object"
+}

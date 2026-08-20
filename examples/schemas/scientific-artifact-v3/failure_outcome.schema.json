@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "EvidenceState": {
+      "enum": [
+        "not_published",
+        "diagnostic_only",
+        "preserved",
+        "possibly_remaining"
+      ],
+      "type": "string"
+    },
+    "FailureAuthority": {
+      "enum": [
+        "primary",
+        "secondary"
+      ],
+      "type": "string"
+    },
+    "FailureKind": {
+      "enum": [
+        "configuration_invalid",
+        "docker_preflight_failed",
+        "target_failed",
+        "capture_failed",
+        "stage_timeout",
+        "interrupted",
+        "capture_malformed",
+        "artifact_missing",
+        "artifact_changed",
+        "artifact_foreign",
+        "artifact_stale",
+        "artifact_corrupt",
+        "scientific_semantics_incompatible",
+        "metric_infeasible",
+        "generation_incomplete",
+        "publication_collision",
+        "publication_failed",
+        "cleanup_failed"
+      ],
+      "type": "string"
+    },
+    "FailureStage": {
+      "enum": [
+        "preflight",
+        "capture",
+        "fit",
+        "generate",
+        "compare",
+        "publication"
+      ],
+      "type": "string"
+    },
+    "NonEmptyStrictString": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "$id": "failure_outcome.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One immutable, serializable expected-failure record.",
+  "properties": {
+    "affected_evidence": {
+      "$ref": "#/$defs/NonEmptyStrictString"
+    },
+    "authority": {
+      "$ref": "#/$defs/FailureAuthority"
+    },
+    "corrective_action": {
+      "$ref": "#/$defs/NonEmptyStrictString"
+    },
+    "detail": {
+      "$ref": "#/$defs/NonEmptyStrictString"
+    },
+    "evidence_state": {
+      "$ref": "#/$defs/EvidenceState"
+    },
+    "kind": {
+      "$ref": "#/$defs/FailureKind"
+    },
+    "stage": {
+      "$ref": "#/$defs/FailureStage"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Status"
+    }
+  },
+  "required": [
+    "kind",
+    "stage",
+    "detail",
+    "affected_evidence",
+    "evidence_state",
+    "corrective_action",
+    "authority"
+  ],
+  "title": "FailureOutcomeRecord",
+  "type": "object"
+}

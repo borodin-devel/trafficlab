@@ -1,0 +1,293 @@
+{
+  "$defs": {
+    "ConfigurationStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "relation": {
+          "const": "configuration",
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation",
+        "name"
+      ],
+      "title": "ConfigurationStudyLineage",
+      "type": "object"
+    },
+    "HeldOutStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "capture.json",
+            "generated.pcapng",
+            "portable.toml",
+            "realized.toml",
+            "record.json",
+            "reference.pcapng",
+            "run.log",
+            "similarity.json"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "relation",
+        "workload"
+      ],
+      "title": "HeldOutStudyLineage",
+      "type": "object"
+    },
+    "NonemptyString": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "PrerequisiteStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "record": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "relation": {
+          "const": "prerequisite",
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation",
+        "record"
+      ],
+      "title": "PrerequisiteStudyLineage",
+      "type": "object"
+    },
+    "RelativePath": {
+      "type": "string"
+    },
+    "Repeat": {
+      "maximum": 3,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "RepeatedStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "best_model.json",
+            "capture.json",
+            "checkpoint.json",
+            "experiment.toml",
+            "fresh_simulation",
+            "ga_history.csv",
+            "generated.pcapng",
+            "reference.pcapng",
+            "run.log",
+            "similarity.json"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "repeat": {
+          "$ref": "#/$defs/Repeat"
+        },
+        "workload": {
+          "$ref": "#/$defs/Workload"
+        }
+      },
+      "required": [
+        "relation",
+        "repeat",
+        "workload"
+      ],
+      "title": "RepeatedStudyLineage",
+      "type": "object"
+    },
+    "Sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "SimpleStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "enum": [
+            "study-index",
+            "protocol",
+            "environment",
+            "prerequisites",
+            "report_inputs",
+            "report",
+            "lifecycle"
+          ],
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation"
+      ],
+      "title": "SimpleStudyLineage",
+      "type": "object"
+    },
+    "StudyLineage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SimpleStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/PrerequisiteStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/ConfigurationStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/TransferStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/RepeatedStudyLineage"
+        },
+        {
+          "$ref": "#/$defs/HeldOutStudyLineage"
+        }
+      ]
+    },
+    "StudyManifestEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "lineage": {
+          "$ref": "#/$defs/StudyLineage"
+        },
+        "owner": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "path": {
+          "$ref": "#/$defs/RelativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "size": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "lineage",
+        "owner",
+        "path",
+        "sha256",
+        "size"
+      ],
+      "title": "StudyManifestEntry",
+      "type": "object"
+    },
+    "TransferStudyLineage": {
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "relation": {
+          "enum": [
+            "transfer-header",
+            "external-observation"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "requested_end": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "requested_start": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "run_id": {
+          "$ref": "#/$defs/NonemptyString"
+        },
+        "scope": {
+          "enum": [
+            "prerequisites",
+            "training",
+            "held_out"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "transfer_index": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "workload": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Workload"
+            },
+            {
+              "const": "prerequisites",
+              "type": "string"
+            }
+          ],
+          "title": "Workload"
+        }
+      },
+      "required": [
+        "filename",
+        "relation",
+        "requested_end",
+        "requested_start",
+        "run_id",
+        "scope",
+        "transfer_index",
+        "workload"
+      ],
+      "title": "TransferStudyLineage",
+      "type": "object"
+    },
+    "Workload": {
+      "enum": [
+        "short",
+        "streaming",
+        "bursty"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "study_manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Canonical inventory root; file bytes and modes remain auditor-owned policy.",
+  "properties": {
+    "files": {
+      "items": {
+        "$ref": "#/$defs/StudyManifestEntry"
+      },
+      "minItems": 1,
+      "title": "Files",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 2,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "files",
+    "schema_version"
+  ],
+  "title": "ValidationStudyManifest",
+  "type": "object"
+}

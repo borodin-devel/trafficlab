@@ -100,6 +100,44 @@ def test_sample_autocorrelation_rejects_a_noniterable_sample() -> None:
         sample_autocorrelation(cast(Iterable[object], 1), 1)
 
 
+def test_sample_autocorrelation_rejects_a_nonfinite_numpy_column() -> None:
+    """The direct array path must retain finite-value validation."""
+    with pytest.raises(TrafficlabError, match="finite numbers"):
+        sample_autocorrelation(np.array([1.0, math.inf], dtype=np.float64), 1)
+
+
+def test_sample_autocorrelation_translates_numpy_conversion_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A numeric-library conversion failure must retain the stable Trafficlab boundary."""
+
+    def fail_asarray(_values: object, *, dtype: object) -> NDArray[np.float64]:
+        raise OverflowError(dtype)
+
+    monkeypatch.setattr(autocorrelation_module.np, "asarray", fail_asarray)
+    with pytest.raises(TrafficlabError, match="evaluated safely"):
+        sample_autocorrelation(np.array([1, 2], dtype=np.uint32), 1)
+
+
+def test_sample_autocorrelation_translates_numpy_dot_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed centered dot product must not escape as a raw NumPy exception."""
+
+    def fail_dot(_left: NDArray[np.float64], _right: NDArray[np.float64]) -> np.float64:
+        raise ValueError("dot failed")
+
+    monkeypatch.setattr(autocorrelation_module.np, "dot", fail_dot)
+    with pytest.raises(TrafficlabError, match="evaluated safely"):
+        sample_autocorrelation([1.0, 2.0, 1.0], 1)
+
+
+def test_sample_autocorrelation_retains_zero_denominator_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A zero numerical denominator retains the documented constant-series convention."""
+
+    def zero_dot(_left: NDArray[np.float64], _right: NDArray[np.float64]) -> np.float64:
+        return np.float64(0.0)
+
+    monkeypatch.setattr(autocorrelation_module.np, "dot", zero_dot)
+    assert sample_autocorrelation([1.0, 2.0, 1.0], 1) == 0.0
+
+
 def test_autocorrelation_similarity_returns_identical_score_and_complete_nested_diagnostics() -> None:
     reference = _events(0.0, 1.0, 3.0, 6.0, lengths=(10, 20, 10, 20))
     generated = _events(5.0, 6.0, 8.0, 11.0, lengths=(10, 20, 10, 20))

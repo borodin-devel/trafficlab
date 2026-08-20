@@ -1,0 +1,502 @@
+{
+  "$defs": {
+    "ContentIdentity": {
+      "description": "The portable size and SHA-256 identity of authoritative bytes.",
+      "properties": {
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "size",
+        "sha256"
+      ],
+      "title": "ContentIdentity",
+      "type": "object"
+    },
+    "DirectionName": {
+      "enum": [
+        "outbound",
+        "inbound"
+      ],
+      "type": "string"
+    },
+    "ExactFloat": {
+      "type": "number"
+    },
+    "FamilyPayload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PoissonPayload"
+        },
+        {
+          "$ref": "#/$defs/MarkovRenewalPayload"
+        },
+        {
+          "$ref": "#/$defs/MmppPayload"
+        }
+      ]
+    },
+    "FloatBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "lower": {
+          "title": "Lower",
+          "type": "number"
+        },
+        "upper": {
+          "title": "Upper",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "title": "FloatBounds",
+      "type": "object"
+    },
+    "FloatCube": {
+      "items": {
+        "$ref": "#/$defs/FloatMatrix"
+      },
+      "type": "array"
+    },
+    "FloatMatrix": {
+      "items": {
+        "$ref": "#/$defs/FloatVector"
+      },
+      "type": "array"
+    },
+    "FloatVector": {
+      "items": {
+        "$ref": "#/$defs/ExactFloat"
+      },
+      "type": "array"
+    },
+    "Gene": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "GenerationLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_output_bytes": {
+          "exclusiveMinimum": 0,
+          "title": "Max Output Bytes",
+          "type": "integer"
+        },
+        "max_packets": {
+          "exclusiveMinimum": 0,
+          "title": "Max Packets",
+          "type": "integer"
+        },
+        "max_wall_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Max Wall Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "max_packets",
+        "max_output_bytes",
+        "max_wall_seconds"
+      ],
+      "title": "GenerationLimits",
+      "type": "object"
+    },
+    "Genes": {
+      "items": {
+        "$ref": "#/$defs/Gene"
+      },
+      "type": "array"
+    },
+    "IntVector": {
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "IntegerBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "lower": {
+          "title": "Lower",
+          "type": "integer"
+        },
+        "upper": {
+          "title": "Upper",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "title": "IntegerBounds",
+      "type": "object"
+    },
+    "MarkPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "direction": {
+          "$ref": "#/$defs/DirectionName"
+        },
+        "frame_length": {
+          "maximum": 4294967295,
+          "minimum": 14,
+          "title": "Frame Length",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "direction",
+        "frame_length",
+        "count"
+      ],
+      "title": "MarkPayload",
+      "type": "object"
+    },
+    "MarkPayloads": {
+      "items": {
+        "$ref": "#/$defs/MarkPayload"
+      },
+      "type": "array"
+    },
+    "MarkovRenewalPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "conditional_iats": {
+          "$ref": "#/$defs/FloatCube"
+        },
+        "global_iats": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "minimum_support": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "states": {
+          "$ref": "#/$defs/MarkovStatePayloads"
+        },
+        "thresholds": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/ExactFloat"
+            },
+            {
+              "$ref": "#/$defs/ExactFloat"
+            }
+          ],
+          "title": "Thresholds",
+          "type": "array"
+        },
+        "time_scale": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "timing_diagnostics": {
+          "$ref": "#/$defs/MarkovTimingPayload"
+        },
+        "transition_rows": {
+          "$ref": "#/$defs/FloatMatrix"
+        }
+      },
+      "required": [
+        "alpha",
+        "conditional_iats",
+        "global_iats",
+        "minimum_support",
+        "states",
+        "thresholds",
+        "time_scale",
+        "timing_diagnostics",
+        "transition_rows"
+      ],
+      "title": "MarkovRenewalPayload",
+      "type": "object"
+    },
+    "MarkovStatePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/DirectionName"
+        },
+        "frame_lengths": {
+          "$ref": "#/$defs/IntVector"
+        },
+        "size_bin": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Size Bin",
+          "type": "integer"
+        },
+        "source_iats": {
+          "$ref": "#/$defs/FloatVector"
+        }
+      },
+      "required": [
+        "direction",
+        "frame_lengths",
+        "size_bin",
+        "source_iats"
+      ],
+      "title": "MarkovStatePayload",
+      "type": "object"
+    },
+    "MarkovStatePayloads": {
+      "items": {
+        "$ref": "#/$defs/MarkovStatePayload"
+      },
+      "type": "array"
+    },
+    "MarkovTimingPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "reference_usage_counts": {
+          "$ref": "#/$defs/TimingUsageCountsPayload"
+        },
+        "transition_tiers": {
+          "$ref": "#/$defs/TimingTierMatrix"
+        },
+        "unobserved_rows": {
+          "$ref": "#/$defs/IntVector"
+        }
+      },
+      "required": [
+        "reference_usage_counts",
+        "transition_tiers",
+        "unobserved_rows"
+      ],
+      "title": "MarkovTimingPayload",
+      "type": "object"
+    },
+    "MmppPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "lambda0": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "lambda1": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "marks": {
+          "$ref": "#/$defs/MarkPayloads"
+        },
+        "q01": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "q10": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "q01",
+        "q10",
+        "lambda0",
+        "lambda1",
+        "marks"
+      ],
+      "title": "MmppPayload",
+      "type": "object"
+    },
+    "NonnegativeFloat": {
+      "$ref": "#/$defs/ExactFloat",
+      "ge": 0.0
+    },
+    "NonnegativeInt": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "PoissonPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "base_rate": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "marks": {
+          "$ref": "#/$defs/MarkPayloads"
+        },
+        "rate": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "base_rate",
+        "rate",
+        "marks"
+      ],
+      "title": "PoissonPayload",
+      "type": "object"
+    },
+    "PositiveFloat": {
+      "$ref": "#/$defs/ExactFloat",
+      "gt": 0.0
+    },
+    "PositiveInt": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "TimingTierMatrix": {
+      "items": {
+        "$ref": "#/$defs/TimingTierVector"
+      },
+      "type": "array"
+    },
+    "TimingTierName": {
+      "enum": [
+        "transition",
+        "source",
+        "global"
+      ],
+      "type": "string"
+    },
+    "TimingTierVector": {
+      "items": {
+        "$ref": "#/$defs/TimingTierName"
+      },
+      "type": "array"
+    },
+    "TimingUsageCountsPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "global": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "source": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "transition": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "global",
+        "source",
+        "transition"
+      ],
+      "title": "TimingUsageCountsPayload",
+      "type": "object"
+    }
+  },
+  "$id": "best_model.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One fully self-contained, lineage-bound fitted traffic model.",
+  "properties": {
+    "capture_identity": {
+      "$ref": "#/$defs/ContentIdentity"
+    },
+    "estimator_choices": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "title": "Estimator Choices",
+      "type": "object"
+    },
+    "family": {
+      "enum": [
+        "poisson_empirical",
+        "markov_renewal",
+        "mmpp"
+      ],
+      "title": "Family",
+      "type": "string"
+    },
+    "final_limits": {
+      "$ref": "#/$defs/GenerationLimits"
+    },
+    "final_seed": {
+      "title": "Final Seed",
+      "type": "integer"
+    },
+    "fitted": {
+      "$ref": "#/$defs/FamilyPayload"
+    },
+    "gene_bounds": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/IntegerBounds"
+          },
+          {
+            "$ref": "#/$defs/FloatBounds"
+          }
+        ]
+      },
+      "title": "Gene Bounds",
+      "type": "object"
+    },
+    "genes": {
+      "$ref": "#/$defs/Genes"
+    },
+    "observation_window_seconds": {
+      "title": "Observation Window Seconds",
+      "type": "number"
+    },
+    "reference_identity": {
+      "$ref": "#/$defs/ContentIdentity"
+    },
+    "scientific_artifact_schema": {
+      "const": 3,
+      "title": "Scientific Artifact Schema",
+      "type": "integer"
+    },
+    "seed_policy": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Seed Policy",
+      "type": "object"
+    },
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "scientific_artifact_schema",
+    "family",
+    "genes",
+    "fitted",
+    "reference_identity",
+    "capture_identity",
+    "final_seed",
+    "final_limits",
+    "observation_window_seconds",
+    "gene_bounds",
+    "estimator_choices",
+    "seed_policy"
+  ],
+  "title": "BestModel",
+  "type": "object"
+}

@@ -2,14 +2,17 @@
 
 import math
 from collections.abc import Iterable
+from typing import cast
 
 import numpy as np
+from numpy.typing import NDArray
 
 from trafficlab.errors import TrafficlabError
 from trafficlab.similarity.common import FrozenJsonValue, JsonDiagnostics, SimilarityResult, validate_observation_window
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 _ROUNDING_TOLERANCE = 1e-15
+type _NumericSample = tuple[int | float, ...] | NDArray[np.float64] | NDArray[np.uint32]
 
 
 class AutocorrelationSamplesInsufficientError(TrafficlabError):
@@ -58,6 +61,38 @@ def _validated_numeric_values(values: Iterable[object]) -> tuple[int | float, ..
     return tuple(numeric_values)
 
 
+def _validated_numeric_array(values: Iterable[object] | NDArray[np.generic]) -> NDArray[np.float64]:
+    """Return one finite float64 array while retaining the generic scalar boundary."""
+    raw_values: object = values
+    array = cast(NDArray[np.generic], raw_values) if isinstance(raw_values, np.ndarray) else None
+    if (
+        array is not None
+        and array.ndim == 1
+        and (np.issubdtype(array.dtype, np.integer) or np.issubdtype(array.dtype, np.floating))
+    ):
+        try:
+            numeric = np.asarray(array, dtype=np.float64)
+        except (OverflowError, TypeError, ValueError) as error:
+            raise TrafficlabError(
+                "invalid autocorrelation sample: values cannot be evaluated safely",
+                corrective_action="provide finite numeric values within the supported arithmetic range",
+            ) from error
+        if not np.all(np.isfinite(numeric)):
+            raise TrafficlabError(
+                "invalid autocorrelation sample: values must be finite numbers",
+                corrective_action="provide an iterable of finite numeric values",
+            )
+        return numeric
+    sample = _validated_numeric_values(cast(Iterable[object], values))
+    try:
+        return np.asarray(sample, dtype=np.float64)
+    except (OverflowError, TypeError, ValueError) as error:
+        raise TrafficlabError(
+            "invalid autocorrelation sample: values cannot be evaluated safely",
+            corrective_action="provide finite numeric values within the supported arithmetic range",
+        ) from error
+
+
 def _validated_lag(lag: object, *, sample_length: int) -> int:
     """Return a positive lag that has paired values in its sample."""
     if type(lag) is not int or lag <= 0 or lag >= sample_length:
@@ -68,30 +103,42 @@ def _validated_lag(lag: object, *, sample_length: int) -> int:
     return lag
 
 
-def sample_autocorrelation(values: Iterable[object], lag: object) -> float:
-    """Return the documented whole-series-mean sample autocorrelation at one lag."""
-    sample = _validated_numeric_values(values)
-    validated_lag = _validated_lag(lag, sample_length=len(sample))
-    if all(value == sample[0] for value in sample):
-        return 0.0
+def _sample_autocorrelations(
+    values: Iterable[object] | NDArray[np.generic], lags: tuple[int, ...]
+) -> tuple[float, ...]:
+    """Evaluate selected lags after one validation, centering, and denominator pass."""
+    sample = _validated_numeric_array(values)
+    validated_lags = tuple(_validated_lag(lag, sample_length=len(sample)) for lag in lags)
+    if np.all(sample == sample[0]):
+        return tuple(0.0 for _lag in validated_lags)
     try:
-        largest_magnitude = max(abs(float(value)) for value in sample)
-        if largest_magnitude == 0.0:
-            return 0.0
+        largest_magnitude = float(np.max(np.abs(sample)))
         _, scale_exponent = math.frexp(largest_magnitude)
-        scaled = np.asarray([math.ldexp(float(value), -scale_exponent) for value in sample], dtype=np.float64)
+        scaled = np.ldexp(sample, -scale_exponent)
         mean = math.fsum(float(value) for value in scaled) / len(scaled)
         centered = scaled - mean
         denominator = float(np.dot(centered, centered))
-        numerator = float(np.dot(centered[:-validated_lag], centered[validated_lag:]))
     except (OverflowError, ValueError) as error:
         raise TrafficlabError(
             "invalid autocorrelation sample: values cannot be evaluated safely",
             corrective_action="provide finite numeric values within the supported arithmetic range",
         ) from error
     if denominator == 0.0:
-        return 0.0
-    return _clamp_documented_range(numerator / denominator, lower=-1.0, upper=1.0, name="autocorrelation")
+        return tuple(0.0 for _lag in validated_lags)
+    return tuple(
+        _clamp_documented_range(
+            float(np.dot(centered[:-lag], centered[lag:])) / denominator,
+            lower=-1.0,
+            upper=1.0,
+            name="autocorrelation",
+        )
+        for lag in validated_lags
+    )
+
+
+def sample_autocorrelation(values: Iterable[object], lag: object) -> float:
+    """Return the documented whole-series-mean sample autocorrelation at one lag."""
+    return _sample_autocorrelations(values, (cast(int, lag),))[0]
 
 
 def _validated_lags(lags: Iterable[object]) -> tuple[int, ...]:
@@ -170,14 +217,14 @@ def weighted_acf_discrepancy(
 
 
 def _feature_diagnostics(
-    reference_values: tuple[int | float, ...],
-    generated_values: tuple[int | float, ...],
+    reference_values: _NumericSample,
+    generated_values: _NumericSample,
     lags: tuple[int, ...],
     lag_weights: tuple[float, ...],
 ) -> tuple[dict[str, FrozenJsonValue], float]:
     """Calculate complete diagnostics for one feature's two autocorrelation vectors."""
-    reference_acf = tuple(sample_autocorrelation(reference_values, lag) for lag in lags)
-    generated_acf = tuple(sample_autocorrelation(generated_values, lag) for lag in lags)
+    reference_acf = _sample_autocorrelations(reference_values, lags)
+    generated_acf = _sample_autocorrelations(generated_values, lags)
     differences = tuple(
         abs(reference_value - generated_value)
         for reference_value, generated_value in zip(reference_acf, generated_acf, strict=True)
@@ -196,9 +243,16 @@ def _feature_diagnostics(
     )
 
 
-def _validated_trace(events: Iterable[TraceEvent], *, trace_name: str) -> tuple[TraceEvent, ...]:
+def _validated_trace(events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str) -> TrafficTrace:
     """Return one complete nondecreasing canonical trace for this metric."""
     corrective_action = f"provide finite nondecreasing canonical {trace_name} events"
+    if type(events) is TrafficTrace:
+        if len(events) < 2:
+            raise TrafficlabError(
+                f"invalid {trace_name} trace: at least two events are required",
+                corrective_action=corrective_action,
+            )
+        return events
     try:
         trace = tuple(events)
     except TypeError as error:
@@ -245,17 +299,20 @@ def _validated_trace(events: Iterable[TraceEvent], *, trace_name: str) -> tuple[
                 corrective_action=corrective_action,
             )
         previous_timestamp = timestamp
-    return trace
+    return TrafficTrace.from_events(trace)
 
 
-def _trace_samples(events: Iterable[TraceEvent], *, trace_name: str) -> tuple[tuple[float, ...], tuple[int, ...]]:
+def _trace_samples(
+    events: Iterable[TraceEvent] | TrafficTrace, *, trace_name: str
+) -> tuple[NDArray[np.float64], NDArray[np.uint32]]:
     """Validate one trace once and derive its IAT and frame-size feature samples."""
     trace = _validated_trace(events, trace_name=trace_name)
-    iats = tuple(current.timestamp - previous.timestamp for previous, current in zip(trace, trace[1:], strict=False))
-    return iats, tuple(event.frame_length for event in trace)
+    return trace.iats(), trace.frame_lengths
 
 
-def _validate_lags_fit_samples(lags: tuple[int, ...], samples: dict[str, tuple[int | float, ...]]) -> None:
+def _validate_lags_fit_samples(
+    lags: tuple[int, ...], samples: dict[str, NDArray[np.float64] | NDArray[np.uint32]]
+) -> None:
     """Require every configured lag to fit reference and generated IAT and size samples."""
     for sample_name, values in samples.items():
         if any(lag >= len(values) for lag in lags):
@@ -266,8 +323,8 @@ def _validate_lags_fit_samples(lags: tuple[int, ...], samples: dict[str, tuple[i
 
 
 def autocorrelation_similarity(
-    reference: Iterable[TraceEvent],
-    generated: Iterable[TraceEvent],
+    reference: Iterable[TraceEvent] | TrafficTrace,
+    generated: Iterable[TraceEvent] | TrafficTrace,
     W: object,
     lags: Iterable[object],
     lag_weights: Iterable[object],
