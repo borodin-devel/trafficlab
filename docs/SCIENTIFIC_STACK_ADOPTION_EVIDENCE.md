@@ -158,7 +158,7 @@ The strict retained decisions are:
 
 The final retained Scapy generation measured candidate/production median wall
 ratios of 14.091 at 100,000 frames and 13.329 at 1,000,000 frames. Median peak
-RSS ratios were 1.0 and 0.607 respectively. `--check` deterministically replays
+RSS ratios were 1.079 and 0.607 respectively. `--check` deterministically replays
 the functional inventory and validates policy, source, commands, raw-sample
 identities, medians, gates, and decisions. It does not claim host-dependent raw
 timing bytes are reproducible or silently rerun the expensive benchmark; new
