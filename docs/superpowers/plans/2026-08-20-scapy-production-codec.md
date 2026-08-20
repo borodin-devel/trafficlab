@@ -260,7 +260,7 @@ git commit -m "feat: add production scapy reader"
 - Produces: frozen `EncodedPcapng(content: bytes, trace: TrafficTrace)` and `encode_pcapng()`.
 - Changes: generated publication accepts Scapy bytes and the reparsed emitted trace; nanosecond-specific quantization helpers are removed.
 
-- [ ] **[STEP-13-3191eef7] Step 1: Write writer, determinism, and authority tests**
+- [x] **[STEP-13-3191eef7] Step 1: Write writer, determinism, and authority tests**
 
 ```python
 def test_encode_returns_exact_bytes_and_reparsed_authoritative_trace(metadata: CaptureMetadata) -> None:
@@ -279,7 +279,7 @@ def test_identical_locked_writes_are_byte_identical(metadata: CaptureMetadata) -
 
 Cover both directions, target/peer MAC roles, 14-byte minimum, uint32 limits, closed-window checks, nonfinite/decreasing inputs, writer I/O/type/dynamic errors, flush/close, and exact post-write reparse.
 
-- [ ] **[STEP-14-5fff5ec5] Step 2: Run bounded writer RED**
+- [x] **[STEP-14-5fff5ec5] Step 2: Run bounded writer RED**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -291,7 +291,7 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 Expected: `EncodedPcapng`/`encode_pcapng` are absent and nanosecond equality assumptions fail.
 
-- [ ] **[STEP-15-271ed263] Step 3: Implement deterministic Scapy encoding**
+- [x] **[STEP-15-271ed263] Step 3: Implement deterministic Scapy encoding**
 
 Define:
 
@@ -316,11 +316,11 @@ def encode_pcapng(
 
 Use one owned temporary file, `PcapNgWriter`, explicit `Ether` frames, deterministic zero payloads, explicit `sec`, `caplen`, and `wirelen`, then close, read bytes, and call `read_pcapng_bytes()`. Reject empty output, out-of-window reparsed timestamps, changed directions/frame lengths, and nondeterministic ambient fields. Return only reparsed output.
 
-- [ ] **[STEP-16-0692d552] Step 4: Make generated publication consume reparsed authority**
+- [x] **[STEP-16-0692d552] Step 4: Make generated publication consume reparsed authority**
 
 Replace nanosecond `quantize_generated_trace()`/`quantize_generated_events()` ownership with `EncodedPcapng.trace`. `reproduce_generated_pcapng()` returns the raw model trace plus one `EncodedPcapng`; `publish_generated_pcapng()` validates exact content by reparsing through Scapy and compares against the encoded trace. Generation result, logs, and comparison consume that trace.
 
-- [ ] **[STEP-17-4d8975b9] Step 5: Verify writer, publication, CLI, and exact coverage**
+- [x] **[STEP-17-4d8975b9] Step 5: Verify writer, publication, CLI, and exact coverage**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/test_scapy_io.py \
@@ -338,7 +338,7 @@ uv run --locked pyright src/trafficlab/scapy_io.py src/trafficlab/artifacts.py \
 
 Expected: all focused paths pass, repeated bytes match, and RED-exposed functions have full line/branch coverage.
 
-- [ ] **[STEP-18-39c481a0] Step 6: Commit authoritative Scapy output**
+- [x] **[STEP-18-39c481a0] Step 6: Commit authoritative Scapy output**
 
 ```bash
 git add src/trafficlab/scapy_io.py src/trafficlab/artifacts.py \

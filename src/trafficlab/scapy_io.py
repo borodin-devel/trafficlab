@@ -8,11 +8,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import monotonic
 from typing import BinaryIO, Protocol, Self, SupportsFloat, cast
 
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, deterministic_peer_mac
 
 _UINT32_MAX = 2**32 - 1
 _MALFORMED_ACTION = "replace the PCAPNG with a complete valid Ethernet capture"
@@ -27,6 +28,14 @@ class PcapngPacket:
 
     event: TraceEvent
     ethernet_frame: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class EncodedPcapng:
+    """Exact Scapy output and the trace reparsed from those bytes."""
+
+    content: bytes
+    trace: TrafficTrace
 
 
 class _ScapyPacket(Protocol):
@@ -50,9 +59,40 @@ class _ScapyReaderFactory(Protocol):
     def __call__(self, filename: _ReaderInput) -> _ScapyReader: ...
 
 
+class _ScapyWriter(Protocol):
+    def __enter__(self) -> Self: ...
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> object: ...
+
+    def write_header(self, packet: _ScapyPacket) -> None: ...
+
+    def write_packet(
+        self,
+        packet: _ScapyPacket,
+        sec: float | None = None,
+        usec: int | None = None,
+        caplen: int | None = None,
+        wirelen: int | None = None,
+    ) -> None: ...
+
+
+class _ScapyWriterFactory(Protocol):
+    def __call__(self, filename: str) -> _ScapyWriter: ...
+
+
+class _EtherFactory(Protocol):
+    def __call__(self, raw_packet: bytes) -> _ScapyPacket: ...
+
+
 def _reader_boundary() -> tuple[_ScapyReaderFactory, type[SupportsFloat]]:
     utils = importlib.import_module("scapy.utils")
     return cast(_ScapyReaderFactory, utils.PcapNgReader), cast(type[SupportsFloat], utils.EDecimal)
+
+
+def _writer_boundary() -> tuple[_ScapyWriterFactory, _EtherFactory]:
+    utils = importlib.import_module("scapy.utils")
+    layers = importlib.import_module("scapy.layers.l2")
+    return cast(_ScapyWriterFactory, utils.PcapNgWriter), cast(_EtherFactory, layers.Ether)
 
 
 def _deadline_expired(deadline: float | None, clock: Callable[[], float]) -> None:
@@ -198,3 +238,121 @@ def read_pcapng(
     """Read one PCAPNG path into a columnar TrafficTrace."""
     packets = read_pcapng_packets(path, metadata, source=path, deadline=deadline, clock=clock)
     return TrafficTrace.from_events(packet.event for packet in packets)
+
+
+def _validate_encoding_input(trace: TrafficTrace, observation_window_seconds: float) -> None:
+    if type(trace) is not TrafficTrace:
+        raise TypeError("trace must be a TrafficTrace")
+    if (
+        type(observation_window_seconds) is not float
+        or not math.isfinite(observation_window_seconds)
+        or observation_window_seconds <= 0.0
+    ):
+        raise TrafficlabError(
+            "invalid observation window: it must be a finite positive float",
+            corrective_action="provide a finite positive observation window",
+        )
+    if not len(trace):
+        raise TrafficlabError(
+            "cannot encode an empty traffic trace",
+            corrective_action="generate at least one complete Ethernet frame",
+        )
+    if float(trace.timestamps[-1]) > observation_window_seconds:
+        raise TrafficlabError(
+            "traffic trace contains a timestamp outside the closed observation window",
+            corrective_action="retain only packets inside the closed observation window and retry",
+        )
+    if any(event.frame_length < 14 for event in trace):
+        minimum = min(event.frame_length for event in trace)
+        raise TrafficlabError(
+            f"Ethernet frame length must be at least 14, got {minimum}",
+            corrective_action="generate complete Ethernet frame lengths and retry",
+        )
+
+
+def _frame_for_event(event: TraceEvent, metadata: CaptureMetadata) -> bytes:
+    target = bytes.fromhex(metadata.target_mac.replace(":", ""))
+    peer = bytes.fromhex(deterministic_peer_mac(metadata.target_mac).replace(":", ""))
+    destination, source = (peer, target) if event.direction is Direction.OUTBOUND else (target, peer)
+    return destination + source + b"\x08\x00" + b"\x00" * (event.frame_length - 14)
+
+
+def _write_scapy_path(
+    path: Path,
+    trace: TrafficTrace,
+    metadata: CaptureMetadata,
+    *,
+    writer_factory: _ScapyWriterFactory,
+    ether_factory: _EtherFactory,
+) -> None:
+    try:
+        with writer_factory(str(path)) as writer:
+            for index, event in enumerate(trace):
+                packet = ether_factory(_frame_for_event(event, metadata))
+                if index == 0:
+                    writer.write_header(packet)
+                writer.write_packet(
+                    packet,
+                    sec=event.timestamp,
+                    caplen=event.frame_length,
+                    wirelen=event.frame_length,
+                )
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not write PCAPNG {path}: {error}",
+            corrective_action="verify the PCAPNG destination is writable",
+        ) from error
+    except Exception as error:
+        raise TrafficlabError(
+            f"Scapy could not encode the validated Ethernet trace ({type(error).__name__})",
+            corrective_action="report the Scapy PCAPNG writer defect",
+        ) from error
+
+
+def encode_pcapng(
+    trace: TrafficTrace,
+    metadata: CaptureMetadata,
+    *,
+    observation_window_seconds: float,
+) -> EncodedPcapng:
+    """Encode through Scapy and return only reparsed emitted output."""
+    _validate_encoding_input(trace, observation_window_seconds)
+    writer_factory, ether_factory = _writer_boundary()
+    with TemporaryDirectory(prefix="trafficlab-scapy-write-") as temporary:
+        path = Path(temporary) / "generated.pcapng"
+        _write_scapy_path(
+            path,
+            trace,
+            metadata,
+            writer_factory=writer_factory,
+            ether_factory=ether_factory,
+        )
+        try:
+            content = path.read_bytes()
+        except OSError as error:
+            raise TrafficlabError(
+                f"could not read emitted PCAPNG {path}: {error}",
+                corrective_action="verify the temporary PCAPNG output is readable",
+            ) from error
+    if not content:
+        raise TrafficlabError(
+            "Scapy emitted an empty PCAPNG",
+            corrective_action="report the Scapy PCAPNG writer defect",
+        )
+    reparsed = read_pcapng_bytes(content, metadata, source=Path("generated.pcapng"))
+    if reparsed.directions.tolist() != trace.directions.tolist():
+        raise TrafficlabError(
+            "Scapy PCAPNG changed packet directions",
+            corrective_action="report the Scapy PCAPNG writer defect",
+        )
+    if reparsed.frame_lengths.tolist() != trace.frame_lengths.tolist():
+        raise TrafficlabError(
+            "Scapy PCAPNG changed frame lengths",
+            corrective_action="report the Scapy PCAPNG writer defect",
+        )
+    if float(reparsed.timestamps[-1]) > observation_window_seconds:
+        raise TrafficlabError(
+            "Scapy PCAPNG contains a timestamp outside the closed observation window",
+            corrective_action="use a shorter generated trace and retry",
+        )
+    return EncodedPcapng(content=content, trace=reparsed)

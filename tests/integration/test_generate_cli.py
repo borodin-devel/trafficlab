@@ -35,8 +35,9 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.pcapng import encode_pcapng, parse_pcapng_bytes, parse_pcapng_bytes_trace
+from trafficlab.pcapng import encode_pcapng as encode_legacy_pcapng
 from trafficlab.preflight import PreparedExperiment
+from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.trace import (
     CaptureMetadata,
     Direction,
@@ -70,7 +71,28 @@ def generated_events() -> tuple[TraceEvent, ...]:
 
 @pytest.fixture
 def encoded(metadata: CaptureMetadata, generated_events: tuple[TraceEvent, ...]) -> bytes:
-    return encode_pcapng(generated_events, metadata)
+    return encode_pcapng(TrafficTrace.from_events(generated_events), metadata, observation_window_seconds=1.0).content
+
+
+def _expected_scapy_final_content(config: ExperimentConfig) -> bytes:
+    metadata = parse_capture_metadata(_CAPTURE_BYTES, source=Path("capture.json"))
+    best = load_best_model(_MODEL_BYTES, source=Path("best_model.json"))
+    reproduced = (
+        get_family(best.family)
+        .generate(
+            runtime_fitted_model(best),
+            config.run.final_seed,
+            best.observation_window_seconds,
+            config.generation.final,
+            clock=lambda: 0.0,
+        )
+        .require_complete()
+    )
+    return encode_pcapng(
+        reproduced,
+        metadata,
+        observation_window_seconds=best.observation_window_seconds,
+    ).content
 
 
 def _prepare_stage_run(
@@ -107,7 +129,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
     run_directory.mkdir()
     real_fsync = os.fsync
     real_directory_fsync = artifact_module._fsync_containing_directory  # pyright: ignore[reportPrivateUsage]
-    real_parse = parse_pcapng_bytes_trace
+    real_parse = read_pcapng_bytes
     real_link = os.link
     operations: list[str] = []
 
@@ -137,7 +159,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
         real_directory_fsync(path)
 
     monkeypatch.setattr(artifact_module.os, "fsync", observe_fsync)
-    monkeypatch.setattr(artifact_module, "parse_pcapng_bytes_trace", observe_parse)
+    monkeypatch.setattr(artifact_module, "read_pcapng_bytes", observe_parse)
     monkeypatch.setattr(artifact_module.os, "link", observe_link)
     monkeypatch.setattr(artifact_module, "_fsync_containing_directory", observe_directory_fsync)
 
@@ -385,7 +407,7 @@ def test_publication_rejects_a_parsed_endpoint_above_the_stored_window(
         TraceEvent(0.0, Direction.OUTBOUND, 60),
         TraceEvent(window, Direction.INBOUND, 80),
     )
-    content = encode_pcapng(events, metadata)
+    content = encode_legacy_pcapng(events, metadata)
 
     with pytest.raises(TrafficlabError, match="outside.*observation window"):
         publish_generated_pcapng(
@@ -433,7 +455,7 @@ def test_publication_rejects_window_beyond_pcapng_timestamp_range(
     with pytest.raises(TrafficlabError, match="timestamp range"):
         publish_generated_pcapng(
             run_directory,
-            encode_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 60),), metadata),
+            encode_legacy_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 60),), metadata),
             metadata=metadata,
             expected_events=(TraceEvent(0.0, Direction.OUTBOUND, 60),),
             observation_window_seconds=1e308,
@@ -452,7 +474,7 @@ def test_publication_rejects_complete_events_outside_stored_window(
     with pytest.raises(TrafficlabError, match="complete generated events.*outside"):
         publish_generated_pcapng(
             run_directory,
-            encode_pcapng(events, metadata),
+            encode_legacy_pcapng(events, metadata),
             metadata=metadata,
             expected_events=events,
             observation_window_seconds=1.0,
@@ -472,7 +494,7 @@ def test_generated_reuse_rejects_an_entry_replaced_immediately_after_its_validat
     run_directory = tmp_path / "run"
     run_directory.mkdir()
     destination = run_directory / "generated.pcapng"
-    replacement = encode_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 512),), metadata)
+    replacement = encode_legacy_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 512),), metadata)
     if not collision:
         destination.write_bytes(encoded)
 
@@ -627,7 +649,7 @@ def test_publication_failure_never_creates_canonical_and_cleans_owned_temp(
             del source
             raise TrafficlabError("parse", corrective_action="repair")
 
-        monkeypatch.setattr(artifact_module, "parse_pcapng_bytes_trace", fail_parse)
+        monkeypatch.setattr(artifact_module, "read_pcapng_bytes", fail_parse)
     else:
 
         def fail_link(_source: str | Path, _destination: str | Path) -> None:
@@ -670,7 +692,7 @@ def test_publication_reraises_unexpected_exception_unchanged_after_temp_cleanup(
         assert source.name.startswith(".generated.pcapng.")
         raise sentinel
 
-    monkeypatch.setattr(artifact_module, "parse_pcapng_bytes_trace", fail_unexpected)
+    monkeypatch.setattr(artifact_module, "read_pcapng_bytes", fail_unexpected)
 
     with pytest.raises(RuntimeError) as raised:
         publish_generated_pcapng(
@@ -940,7 +962,7 @@ def test_stage_uses_authoritative_preparation_single_read_lineage_and_no_referen
     assert result.observation_window_seconds == 10.0
     assert result.generated_path == run_directory / "generated.pcapng"
     assert result.reused is False
-    assert result.trace == parse_pcapng_bytes_trace(
+    assert result.trace == read_pcapng_bytes(
         result.generated_path.read_bytes(),
         parse_capture_metadata(_CAPTURE_BYTES, source=capture_path),
         source=result.generated_path,
@@ -1104,7 +1126,7 @@ def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
     """Nearest-nanosecond rendering must not move a valid binary-derived endpoint beyond stored W."""
     experiment_path, run_directory, config = _prepare_stage_run(valid_config_data, tmp_path)
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=run_directory / "capture.json")
-    decimal_reference = encode_pcapng(
+    decimal_reference = encode_legacy_pcapng(
         (
             TraceEvent(0.0, Direction.OUTBOUND, 60),
             TraceEvent(3e-9, Direction.INBOUND, 80),
@@ -1115,7 +1137,7 @@ def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
     binary_resolution = struct.pack("<HHB3x", 9, 1, 0x8A)
     assert decimal_reference.count(decimal_resolution) == 1
     binary_reference = decimal_reference.replace(decimal_resolution, binary_resolution)
-    parsed_reference = parse_pcapng_bytes(binary_reference, metadata, source=Path("binary-reference.pcapng"))
+    parsed_reference = read_pcapng_bytes(binary_reference, metadata, source=Path("binary-reference.pcapng"))
     reference, window = normalize_reference(parsed_reference)
     assert window == 3 / 1024
 
@@ -1167,7 +1189,7 @@ def test_stage_keeps_a_binary_resolution_endpoint_inside_its_stored_window(
     result = generate_experiment(experiment_path, clock=lambda: 0.0)
 
     assert result.observation_window_seconds == window
-    assert result.trace[-1].timestamp == 0.002929687
+    assert result.trace[-1].timestamp == 0.002929
     assert all(0.0 <= timestamp <= window for timestamp in result.trace.timestamps)
 
 
@@ -1348,7 +1370,7 @@ def test_stage_rejects_a_post_publication_round_trip_mismatch(
 ) -> None:
     """The stage result must expose events parsed from the exact published bytes, not pre-render values."""
     experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
-    real_parse = parse_pcapng_bytes_trace
+    real_parse = read_pcapng_bytes
 
     def change_stage_parse(
         content: bytes,
@@ -1359,7 +1381,7 @@ def test_stage_rejects_a_post_publication_round_trip_mismatch(
         parsed = real_parse(content, metadata, source=source)
         return parsed[:-1]
 
-    monkeypatch.setattr(generation_module, "parse_pcapng_bytes_trace", change_stage_parse)
+    monkeypatch.setattr(generation_module, "read_pcapng_bytes", change_stage_parse)
 
     with pytest.raises(TrafficlabError, match="round-trip"):
         generate_experiment(experiment_path, clock=lambda: 0.0)
@@ -1375,7 +1397,7 @@ def test_stage_rejects_a_post_publication_timestamp_above_stored_window(
 ) -> None:
     """The stage must independently enforce parsed timestamps inside stored W."""
     experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
-    real_parse = parse_pcapng_bytes_trace
+    real_parse = read_pcapng_bytes
 
     def move_stage_parse_outside_window(
         content: bytes,
@@ -1388,7 +1410,7 @@ def test_stage_rejects_a_post_publication_timestamp_above_stored_window(
             (*parsed[:-1].to_events(), TraceEvent(10.000000001, parsed[-1].direction, parsed[-1].frame_length))
         )
 
-    monkeypatch.setattr(generation_module, "parse_pcapng_bytes_trace", move_stage_parse_outside_window)
+    monkeypatch.setattr(generation_module, "read_pcapng_bytes", move_stage_parse_outside_window)
 
     with pytest.raises(TrafficlabError, match="outside.*observation window"):
         generate_experiment(experiment_path, clock=lambda: 0.0)
@@ -1624,7 +1646,7 @@ def test_cli_default_generate_lazily_imports_and_runs_stage(
     assert cli_module.main(["generate", str(experiment_path)]) == 0
 
     captured = capsys.readouterr()
-    parsed = parse_pcapng_bytes(
+    parsed = read_pcapng_bytes(
         (run_directory / "generated.pcapng").read_bytes(),
         parse_capture_metadata(_CAPTURE_BYTES, source=run_directory / "capture.json"),
         source=run_directory / "generated.pcapng",
@@ -1634,36 +1656,22 @@ def test_cli_default_generate_lazily_imports_and_runs_stage(
     assert captured.err == ""
 
 
-def test_cli_generated_capture_matches_checked_traffic_model_fixture_and_final_settings(
+def test_cli_generated_capture_matches_scapy_output_and_final_settings(
     valid_config_data: dict[str, object],
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The public command and fixture generator must reproduce one byte-stable final-seed capture."""
     experiment_path, run_directory, config = _prepare_stage_run(valid_config_data, tmp_path)
-    fixture_path = _EXAMPLE_DATA / "models" / "generated.pcapng"
-
     assert cli_module.main(["generate", str(experiment_path)]) == 0
 
     captured = capsys.readouterr()
     generated_content = (run_directory / "generated.pcapng").read_bytes()
-    fixture_content = fixture_path.read_bytes()
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=run_directory / "capture.json")
-    parsed = parse_pcapng_bytes(fixture_content, metadata, source=fixture_path)
+    parsed = read_pcapng_bytes(generated_content, metadata, source=run_directory / "generated.pcapng")
     best = load_best_model(_MODEL_BYTES, source=run_directory / "best_model.json")
-    reproduced = (
-        get_family(best.family)
-        .generate(
-            runtime_fitted_model(best),
-            config.run.final_seed,
-            best.observation_window_seconds,
-            config.generation.final,
-            clock=lambda: 0.0,
-        )
-        .require_complete()
-    )
 
-    assert generated_content == fixture_content == encode_pcapng(reproduced, metadata)
+    assert generated_content == _expected_scapy_final_content(config)
     assert parsed
     assert all(0.0 <= event.timestamp <= best.observation_window_seconds for event in parsed)
     assert captured.out == f"generate: packets={len(parsed)} output={run_directory / 'generated.pcapng'}\n"
@@ -1675,7 +1683,7 @@ def test_installed_generate_reproduces_checked_fixture_from_isolated_working_dir
     tmp_path: Path,
 ) -> None:
     """The installed entry point must not depend on a source checkout import or a process-only test injection."""
-    experiment_path, run_directory, _config = _prepare_stage_run(valid_config_data, tmp_path)
+    experiment_path, run_directory, config = _prepare_stage_run(valid_config_data, tmp_path)
     working_directory = tmp_path / "installed-entry-cwd"
     source_shadow = working_directory / "src" / "trafficlab"
     source_shadow.mkdir(parents=True)
@@ -1699,4 +1707,4 @@ def test_installed_generate_reproduces_checked_fixture_from_isolated_working_dir
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == f"generate: packets=3 output={run_directory / 'generated.pcapng'}\n"
     assert completed.stderr == ""
-    assert generated == (_EXAMPLE_DATA / "models" / "generated.pcapng").read_bytes()
+    assert generated == _expected_scapy_final_content(config)

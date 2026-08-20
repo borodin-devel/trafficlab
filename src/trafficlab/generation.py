@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
-from trafficlab.artifacts import append_run_log, publish_generated_pcapng, quantize_generated_trace
+from trafficlab.artifacts import append_run_log, publish_generated_pcapng
 from trafficlab.compatibility import identify_bytes, identify_file, require_compatible
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import (
@@ -17,8 +17,8 @@ from trafficlab.errors import (
     failure_outcome_from_error,
 )
 from trafficlab.models.registry import BestModel, get_family, load_best_model, runtime_fitted_model
-from trafficlab.pcapng import encode_pcapng_trace, parse_pcapng_bytes_trace
 from trafficlab.preflight import open_or_prepare_experiment
+from trafficlab.scapy_io import EncodedPcapng, encode_pcapng, read_pcapng_bytes
 from trafficlab.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.trace import CaptureMetadata, TrafficTrace, parse_capture_metadata
 
@@ -40,7 +40,7 @@ def reproduce_generated_pcapng(
     metadata: CaptureMetadata,
     *,
     clock: Callable[[], float] = monotonic,
-) -> tuple[TrafficTrace, TrafficTrace, bytes]:
+) -> tuple[TrafficTrace, EncodedPcapng]:
     """Reproduce the exact final trace and PCAPNG bytes bound into a best model."""
     family = get_family(best.family)
     trace = family.generate(
@@ -50,11 +50,8 @@ def reproduce_generated_pcapng(
         best.final_limits,
         clock=clock,
     ).require_complete()
-    # Fitness uses full-precision model events, while publication uses timestamps
-    # representable by PCAPNG.  Return both forms so later audit can reproduce
-    # the precise quantization boundary instead of conflating the two traces.
-    rendered_trace = quantize_generated_trace(trace, best.observation_window_seconds)
-    return trace, rendered_trace, encode_pcapng_trace(rendered_trace, metadata)
+    encoded = encode_pcapng(trace, metadata, observation_window_seconds=best.observation_window_seconds)
+    return trace, encoded
 
 
 def _read_required_bytes(path: Path, *, kind: str, corrective_action: str) -> bytes:
@@ -269,7 +266,7 @@ def generate_experiment(
             )
 
         try:
-            trace, rendered_trace, content = reproduce_generated_pcapng(best, metadata, clock=clock)
+            _trace, encoded = reproduce_generated_pcapng(best, metadata, clock=clock)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -299,9 +296,9 @@ def generate_experiment(
         try:
             publication = publish_generated_pcapng(
                 run_directory,
-                content,
+                encoded.content,
                 metadata=metadata,
-                expected_events=trace,
+                expected_events=encoded.trace,
                 observation_window_seconds=best.observation_window_seconds,
             )
         except TrafficlabError as error:
@@ -313,7 +310,7 @@ def generate_experiment(
                 evidence_state="not_published",
             ) from error
         try:
-            parsed_trace = parse_pcapng_bytes_trace(publication.content, metadata, source=publication.path)
+            parsed_trace = read_pcapng_bytes(publication.content, metadata, source=publication.path)
         except TrafficlabError as error:
             raise attach_failure_outcome(
                 error,
@@ -333,10 +330,10 @@ def generate_experiment(
                 affected_evidence="generated.pcapng",
                 evidence_state="preserved",
             )
-        if parsed_trace != rendered_trace:
+        if parsed_trace != encoded.trace:
             raise attach_failure_outcome(
                 TrafficlabError(
-                    "generated PCAPNG did not round-trip to the complete generated events",
+                    "generated PCAPNG did not round-trip to the authoritative Scapy output",
                     corrective_action="report the generated PCAPNG round-trip defect",
                 ),
                 kind="artifact_corrupt",

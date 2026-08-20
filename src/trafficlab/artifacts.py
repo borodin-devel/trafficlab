@@ -19,7 +19,7 @@ from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import render_effective_config
 from trafficlab.errors import DeadlineExceededError, FailureOutcome, TrafficlabError, attach_failure_outcome
 from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.pcapng import parse_pcapng_bytes_trace
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import CaptureMetadata, TraceEvent, TrafficTrace
 
 
@@ -450,12 +450,12 @@ def quantize_generated_events(
     events: Sequence[TraceEvent],
     observation_window_seconds: float,
 ) -> tuple[TraceEvent, ...]:
-    """Map complete generated events to the nearest PCAPNG nanosecond without crossing stored W."""
+    """Map generated events to Scapy's emitted microseconds without crossing stored W."""
     return quantize_generated_trace(TrafficTrace.from_events(events), observation_window_seconds).to_events()
 
 
 def quantize_generated_trace(trace: TrafficTrace, observation_window_seconds: float) -> TrafficTrace:
-    """Quantize one generated columnar trace without materializing event records."""
+    """Quantize one generated trace to Scapy's truncating microsecond writer."""
     if (
         type(observation_window_seconds) is not float
         or not math.isfinite(observation_window_seconds)
@@ -465,7 +465,7 @@ def quantize_generated_trace(trace: TrafficTrace, observation_window_seconds: fl
             "generated publication observation window must be a finite positive float",
             corrective_action="use the stored fitted-model observation window and retry generation",
         )
-    scaled_window = observation_window_seconds * 1_000_000_000
+    scaled_window = observation_window_seconds * 1_000_000
     if not math.isfinite(scaled_window):
         raise TrafficlabError(
             "generated publication observation window exceeds the PCAPNG timestamp range",
@@ -479,7 +479,7 @@ def quantize_generated_trace(trace: TrafficTrace, observation_window_seconds: fl
             corrective_action="report the traffic-model complete-window defect",
         )
     maximum_tick = math.floor(scaled_window)
-    quantized = np.minimum(np.rint(trace.timestamps * 1_000_000_000), maximum_tick) / 1_000_000_000
+    quantized = np.minimum(np.floor(trace.timestamps * 1_000_000), maximum_tick) / 1_000_000
     return TrafficTrace(
         np.asarray(quantized, dtype=np.float64),
         trace.directions,
@@ -499,7 +499,7 @@ def _validate_generated_content(
     expected_events: Sequence[TraceEvent] | TrafficTrace,
     observation_window_seconds: float,
 ) -> None:
-    parsed = parse_pcapng_bytes_trace(content, metadata, source=source)
+    parsed = read_pcapng_bytes(content, metadata, source=source)
     if np.any(parsed.timestamps > observation_window_seconds):
         raise TrafficlabError(
             f"generated capture {source} contains a timestamp outside the stored observation window",

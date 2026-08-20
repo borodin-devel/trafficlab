@@ -13,8 +13,8 @@ import pytest
 from tests.support.pcapng_oracle import oracle_trace
 from trafficlab import scapy_io
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.scapy_io import read_pcapng, read_pcapng_bytes, read_pcapng_packets
-from trafficlab.trace import CaptureMetadata, load_capture_metadata
+from trafficlab.scapy_io import EncodedPcapng, encode_pcapng, read_pcapng, read_pcapng_bytes, read_pcapng_packets
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, load_capture_metadata
 
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _DATA = _REPOSITORY / "examples" / "data"
@@ -212,3 +212,133 @@ def test_reader_normalizes_missing_path_error(tmp_path: Path) -> None:
     with pytest.raises(TrafficlabError, match="could not read PCAPNG") as caught:
         read_pcapng(tmp_path / "missing.pcapng", metadata)
     assert caught.value.corrective_action == "verify the PCAPNG exists and is readable"
+
+
+def test_encode_returns_exact_bytes_and_reparsed_authoritative_trace() -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+    original = TrafficTrace.from_events(
+        (
+            TraceEvent(0.000000123, Direction.OUTBOUND, 64),
+            TraceEvent(0.250000499, Direction.INBOUND, 78),
+        )
+    )
+
+    encoded = encode_pcapng(original, metadata, observation_window_seconds=1.0)
+    repeated = encode_pcapng(original, metadata, observation_window_seconds=1.0)
+
+    assert isinstance(encoded, EncodedPcapng)
+    assert encoded.content.startswith(b"\x0a\x0d\x0d\x0a")
+    assert encoded.content == repeated.content
+    assert encoded.trace == repeated.trace
+    assert encoded.trace == read_pcapng_bytes(encoded.content, metadata, source=Path("generated.pcapng"))
+    assert encoded.trace.directions.tolist() == [0, 1]
+    assert encoded.trace.frame_lengths.tolist() == [64, 78]
+    assert encoded.trace.timestamps.tolist() != original.timestamps.tolist()
+
+
+@pytest.mark.parametrize(
+    ("trace", "window", "expected_error", "message"),
+    [
+        (cast(TrafficTrace, object()), 1.0, TypeError, "trace must be a TrafficTrace"),
+        (TrafficTrace.from_events(()), 1.0, TrafficlabError, "empty traffic trace"),
+        (TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 13),)), 1.0, TrafficlabError, "at least 14"),
+        (TrafficTrace.from_events((TraceEvent(1.1, Direction.OUTBOUND, 64),)), 1.0, TrafficlabError, "outside"),
+        (
+            TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 64),)),
+            0.0,
+            TrafficlabError,
+            "finite positive",
+        ),
+    ],
+)
+def test_encode_rejects_invalid_frame_or_window(
+    trace: TrafficTrace, window: float, expected_error: type[Exception], message: str
+) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+
+    with pytest.raises(expected_error, match=message):
+        encode_pcapng(trace, metadata, observation_window_seconds=window)
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [(OSError("disk"), "could not write PCAPNG"), (RuntimeError("dynamic"), "could not encode")],
+)
+def test_encode_normalizes_writer_failures(monkeypatch: pytest.MonkeyPatch, failure: Exception, message: str) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+    trace = TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 64),))
+
+    class FailingFactory:
+        def __call__(self, filename: str) -> object:
+            del filename
+            raise failure
+
+    def boundary() -> tuple[object, object]:
+        return FailingFactory(), object()
+
+    monkeypatch.setattr(scapy_io, "_writer_boundary", boundary)
+
+    with pytest.raises(TrafficlabError, match=message):
+        encode_pcapng(trace, metadata, observation_window_seconds=1.0)
+
+
+def test_encode_normalizes_emitted_file_read_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+    trace = TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 64),))
+
+    def fail_read(path: Path) -> bytes:
+        if path.name == "generated.pcapng":
+            raise OSError("unreadable")
+        return b""
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read)
+
+    with pytest.raises(TrafficlabError, match="could not read emitted PCAPNG"):
+        encode_pcapng(trace, metadata, observation_window_seconds=1.0)
+
+
+def _install_encoded_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: TrafficTrace,
+    *,
+    content: bytes = b"pcapng",
+) -> None:
+    def write(path: Path, *_args: object, **_kwargs: object) -> None:
+        path.write_bytes(content)
+
+    def read(*_args: object, **_kwargs: object) -> TrafficTrace:
+        return candidate
+
+    monkeypatch.setattr(scapy_io, "_write_scapy_path", write)
+    monkeypatch.setattr(scapy_io, "read_pcapng_bytes", read)
+
+
+@pytest.mark.parametrize(
+    ("candidate", "message"),
+    [
+        (TrafficTrace.from_events((TraceEvent(0.0, Direction.INBOUND, 64),)), "changed packet directions"),
+        (TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 65),)), "changed frame lengths"),
+        (
+            TrafficTrace.from_events((TraceEvent(1.1, Direction.OUTBOUND, 64),)),
+            "timestamp outside the closed observation window",
+        ),
+    ],
+)
+def test_encode_rejects_reparsed_semantic_drift(
+    monkeypatch: pytest.MonkeyPatch, candidate: TrafficTrace, message: str
+) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+    trace = TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 64),))
+    _install_encoded_candidate(monkeypatch, candidate)
+
+    with pytest.raises(TrafficlabError, match=message):
+        encode_pcapng(trace, metadata, observation_window_seconds=1.0)
+
+
+def test_encode_rejects_empty_emitted_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+    trace = TrafficTrace.from_events((TraceEvent(0.0, Direction.OUTBOUND, 64),))
+    _install_encoded_candidate(monkeypatch, trace, content=b"")
+
+    with pytest.raises(TrafficlabError, match="emitted an empty PCAPNG"):
+        encode_pcapng(trace, metadata, observation_window_seconds=1.0)
