@@ -722,6 +722,7 @@ source = { editable = "." }
 dependencies = [
     { name = "numpy" },
     { name = "pydantic" },
+    { name = "scapy" },
     { name = "scipy" },
     { name = "tomli-w" },
 ]
@@ -736,13 +737,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
-    { name = "scapy" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=2,<3" },
     { name = "pydantic", specifier = ">=2.11,<3" },
+    { name = "scapy", specifier = "==2.7.0" },
     { name = "scipy", specifier = ">=1.16,<2" },
     { name = "tomli-w", specifier = ">=1.2,<2" },
 ]
@@ -757,7 +758,6 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
-    { name = "scapy", specifier = "==2.7.0" },
 ]
 
 [[package]]

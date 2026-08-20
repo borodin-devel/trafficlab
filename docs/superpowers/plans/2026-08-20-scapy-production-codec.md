@@ -54,33 +54,23 @@
 - Modify: `uv.lock`
 - Modify: `architecture/DEVELOPMENT.md`
 - Modify: `tests/unit/test_package.py`
-- Create: `tests/unit/test_development_policy.py`
 
 **Interfaces:**
 - Produces: installed runtime import `scapy==2.7.0`; stable `License policy` and `Evolution and compatibility policy` sections.
 - Preserves: uv as the only dependency interface and the existing bounded gate commands.
 
-- [ ] **[STEP-1-708121d4] Step 1: Write dependency and policy tests first**
+- [x] **[STEP-1-708121d4] Step 1: Write runtime dependency tests first**
 
 ```python
 def test_scapy_is_runtime_only() -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text())
     assert "scapy==2.7.0" in project["project"]["dependencies"]
     assert "scapy==2.7.0" not in project["dependency-groups"]["dev"]
-
-
-def test_development_policy_prefers_coherent_replacement_without_license_gates() -> None:
-    text = Path("architecture/DEVELOPMENT.md").read_text()
-    assert not any(Path(".").glob("LICENSE*"))
-    assert "## License policy" in text
-    assert "does not require a project license" in text
-    assert "do not gate dependency adoption" in text
-    assert "## Evolution and compatibility policy" in text
-    assert "Backward compatibility is not a cornerstone" in text
-    assert "adapters, shims, parallel paths" in text
 ```
 
-- [ ] **[STEP-2-7fb4be7f] Step 2: Run bounded RED and record both failures**
+Human-facing policy prose is reviewed directly; do not add source-text assertions for `DEVELOPMENT.md` or the absence of a license file.
+
+- [x] **[STEP-2-7fb4be7f] Step 2: Run bounded RED and record both failures**
 
 Run:
 
@@ -88,12 +78,12 @@ Run:
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
   uv run --locked pytest -vv -x -n 0 \
-  tests/unit/test_package.py tests/unit/test_development_policy.py
+  tests/unit/test_package.py
 ```
 
-Expected: dependency placement fails because Scapy is development-only; policy headings are absent.
+Expected: dependency placement and installed metadata fail because Scapy is development-only.
 
-- [ ] **[STEP-3-5569667c] Step 3: Move Scapy with uv and write the two stable policies**
+- [x] **[STEP-3-5569667c] Step 3: Move Scapy with uv and write the two stable policies**
 
 Run dependency commands rather than editing the lock:
 
@@ -104,7 +94,7 @@ uv add 'scapy==2.7.0'
 
 Remove the duplicate development entry if uv retains it. Add policy prose matching the approved spec: no project license requirement; dependency licenses and limitations are not reviewed or adoption gates; backward compatibility is secondary to coherent rewrites improving simplicity, precision, reproducibility, configurability, or reliability; schema bumps, deterministic rejection, complete caller migration, fixtures, documentation, and evidence remain mandatory.
 
-- [ ] **[STEP-4-43fac217] Step 4: Prove a production-only environment imports Scapy**
+- [x] **[STEP-4-43fac217] Step 4: Prove a production-only environment imports Scapy**
 
 Run:
 
@@ -117,23 +107,23 @@ uv sync --locked --all-groups
 
 Expected: both syncs succeed and the runtime-only import reports no missing dependency.
 
-- [ ] **[STEP-5-57937ca3] Step 5: Verify policy, package, lock, format, and strict types**
+- [x] **[STEP-5-57937ca3] Step 5: Verify policy, package, lock, format, and strict types**
 
 ```bash
-uv run --locked pytest -q -n 0 tests/unit/test_package.py tests/unit/test_development_policy.py
-uv run --locked ruff format --check tests/unit/test_development_policy.py tests/unit/test_package.py
-uv run --locked ruff check tests/unit/test_development_policy.py tests/unit/test_package.py
-uv run --locked pyright tests/unit/test_development_policy.py tests/unit/test_package.py
+uv run --locked pytest -q -n 0 tests/unit/test_package.py
+uv run --locked ruff format --check tests/unit/test_package.py
+uv run --locked ruff check tests/unit/test_package.py
+uv run --locked pyright tests/unit/test_package.py
 git diff --check
 ```
 
 Expected: focused tests and static checks pass; `scapy==2.7.0` appears once in project metadata.
 
-- [ ] **[STEP-6-db92462b] Step 6: Commit the runtime policy foundation**
+- [x] **[STEP-6-db92462b] Step 6: Commit the runtime policy foundation**
 
 ```bash
 git add pyproject.toml uv.lock architecture/DEVELOPMENT.md \
-  tests/unit/test_package.py tests/unit/test_development_policy.py
+  tests/unit/test_package.py docs/superpowers/plans/2026-08-20-scapy-production-codec.md
 git commit -m "build: require scapy at runtime"
 ```
 

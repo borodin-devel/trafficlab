@@ -29,9 +29,10 @@ def test_scientific_dependencies_are_in_their_intended_installation_groups() -> 
 
     assert any(requirement.startswith("numpy>=2,<3") for requirement in runtime)
     assert any(requirement.startswith("scipy>=1.16,<2") for requirement in runtime)
+    assert "scapy==2.7.0" in runtime
     assert any(requirement.startswith("hypothesis>=6,<7") for requirement in development)
     assert "pymoo==0.6.2" in development
-    assert "scapy==2.7.0" in development
+    assert "scapy==2.7.0" not in development
 
 
 def test_installed_package_exposes_only_runtime_scientific_dependencies() -> None:
@@ -41,7 +42,8 @@ def test_installed_package_exposes_only_runtime_scientific_dependencies() -> Non
     assert int(numpy.__version__.split(".", 1)[0]) >= 2
     assert tuple(int(part) for part in importlib.metadata.version("scipy").split(".")[:2]) >= (1, 16)
     assert {"numpy", "scipy"} <= runtime_names
-    assert not {"hypothesis", "pymoo", "scapy"} & runtime_names
+    assert "scapy==2.7.0" in runtime_requirements
+    assert not {"hypothesis", "pymoo"} & runtime_names
 
 
 def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:

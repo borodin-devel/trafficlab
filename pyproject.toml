@@ -6,9 +6,10 @@ readme = "architecture/README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2,<3",
-    # Runtime remains intentionally small: validated configuration plus
-    # deterministic TOML serialization are the only non-stdlib requirements.
+    # Runtime dependencies directly own validated artifacts, deterministic
+    # numerical work, packet I/O, and TOML serialization.
     "pydantic>=2.11,<3",
+    "scapy==2.7.0",
     "scipy>=1.16,<2",
     "tomli-w>=1.2,<2",
 ]
@@ -32,7 +33,6 @@ dev = [
     "pytest-cov",
     "pytest-xdist",
     "ruff",
-    "scapy==2.7.0",
 ]
 
 [tool.pytest.ini_options]

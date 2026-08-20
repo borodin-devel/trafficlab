@@ -80,6 +80,30 @@ The lock records exact resolved versions. Trafficlab does not maintain
 `requirements.txt`, Poetry, Pipenv, tox, Hatch, a custom task runner, or npm
 workflows alongside uv.
 
+## License policy
+
+Trafficlab is a personal, non-public research prototype and does not require a
+project license. Dependency licenses and their limitations are not evaluated,
+compared, approved, rejected, or used to gate dependency adoption. The project
+does not maintain licensing checklists, compatibility decisions, legal-review
+artifacts, or license-specific release gates.
+
+## Evolution and compatibility policy
+
+Backward compatibility is not a cornerstone of Trafficlab. Prefer replacing
+or deleting a large subsystem over adding adapters, shims, parallel paths,
+selectable backends, or compatibility layers when a coherent rewrite
+materially improves simplicity, precision, reproducibility, configurability,
+or reliability. It is easy to add accidental complexity and difficult to make
+a system genuinely simple; minimize authoritative concepts and execution paths
+rather than diff size.
+
+Compatibility breaks remain explicit. Bump the owning schema, reject stale
+artifacts deterministically, migrate every internal caller in the same change,
+and regenerate fixtures, examples, documentation, and evidence. Simplification
+must not silently weaken scientific definitions, validation, bounded
+execution, deterministic failure behavior, or reproducibility.
+
 ## Formatting, linting, and types
 
 Ruff owns formatting and linting. Its maximum line length is 120 characters.
