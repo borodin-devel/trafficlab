@@ -1130,6 +1130,13 @@ def test_review_benchmark_commands_are_bound_to_policy_adapter_size_and_placehol
         BenchmarkComparison.model_validate(comparison)
 
 
+def test_benchmark_evidence_command_is_checkout_relocatable() -> None:
+    command = benchmark_evidence_command("production", 100_000)
+
+    assert command[:4] == ("uv", "run", "--locked", "python")
+    assert str(Path(__file__).resolve().parents[3]) not in command
+
+
 def test_review_benchmark_identity_streams_without_path_read_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

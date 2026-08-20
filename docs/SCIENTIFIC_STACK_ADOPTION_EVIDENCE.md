@@ -157,7 +157,7 @@ The strict retained decisions are:
   authorized human. Scapy remains development-only and production is unchanged.
 
 The final retained Scapy generation measured candidate/production median wall
-ratios of 14.156 at 100,000 frames and 13.473 at 1,000,000 frames. Median peak
+ratios of 14.091 at 100,000 frames and 13.329 at 1,000,000 frames. Median peak
 RSS ratios were 1.0 and 0.607 respectively. `--check` deterministically replays
 the functional inventory and validates policy, source, commands, raw-sample
 identities, medians, gates, and decisions. It does not claim host-dependent raw

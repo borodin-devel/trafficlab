@@ -123,7 +123,7 @@ _UINT32_MAX = 2**32 - 1
 _MALFORMED_ACTION = "replace the PCAPNG with a complete valid Ethernet capture"
 _DEADLINE_ACTION = "increase the total run timeout and retry capture"
 _REPOSITORY = Path(__file__).resolve().parents[3]
-_CANONICAL_PYTHON = str(_REPOSITORY / ".venv" / "bin" / "python")
+_CANONICAL_PYTHON_COMMAND = ("uv", "run", "--locked", "python")
 
 
 def _list_to_tuple(value: object) -> object:
@@ -1246,7 +1246,7 @@ def _run_child(
     adapter: Literal["production", "scapy"], path: Path, metadata: CaptureMetadata, frame_count: int
 ) -> dict[str, object]:
     command = (
-        _CANONICAL_PYTHON,
+        *_CANONICAL_PYTHON_COMMAND,
         "-m",
         "tests.scientific.probes.scapy_pcapng",
         "benchmark-child",
@@ -1274,7 +1274,7 @@ def benchmark_evidence_command(
     adapter: Literal["production", "scapy"], frame_count: Literal[100_000, 1_000_000]
 ) -> tuple[str, ...]:
     return (
-        _CANONICAL_PYTHON,
+        *_CANONICAL_PYTHON_COMMAND,
         "-m",
         "tests.scientific.probes.scapy_pcapng",
         "benchmark-child",
