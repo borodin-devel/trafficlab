@@ -75,7 +75,7 @@ def _build_fixture() -> tuple[bytes, bytes]:
     )
     encoded = encode_pcapng(generated, metadata, observation_window_seconds=loaded.observation_window_seconds)
     generated_content = encoded.content
-    parsed_generated = encoded.trace
+    parsed_generated = read_pcapng_bytes(generated_content, metadata, source=_GENERATED_PATH)
     if parsed_generated.timestamps[-1] > loaded.observation_window_seconds:
         raise TrafficlabError(
             "traffic-model generation fixture generated capture exceeds its stored observation window",

@@ -70,7 +70,7 @@ from trafficlab.trace import TrafficTrace, align_generated, normalize_reference,
 _MANIFEST = "manifest.json"
 _INDEX = "index.json"
 _SCHEMA = 2
-_INDEX_SCHEMA = 3
+_INDEX_SCHEMA = 4
 _WORKLOADS = ("short", "streaming", "bursty")
 _REPEATS = (1, 2, 3)
 _HEX40 = re.compile(r"[0-9a-f]{40}", flags=re.ASCII)

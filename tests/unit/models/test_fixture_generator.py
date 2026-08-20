@@ -95,7 +95,7 @@ def test_builder_rejects_invalid_parsed_generated_output(
     monkeypatch: pytest.MonkeyPatch,
     defect: str,
 ) -> None:
-    real_parse = fixture_generator.parse_pcapng_bytes_trace
+    real_parse = fixture_generator.read_pcapng_bytes
 
     def parse_with_invalid_generated(
         content: bytes,
@@ -109,7 +109,7 @@ def test_builder_rejects_invalid_parsed_generated_output(
             return TrafficTrace.from_events((TraceEvent(11.0, Direction.OUTBOUND, 60),))
         return TrafficTrace.from_events((TraceEvent(0.0, Direction.INBOUND, 60),))
 
-    monkeypatch.setattr(fixture_generator, "parse_pcapng_bytes_trace", parse_with_invalid_generated)
+    monkeypatch.setattr(fixture_generator, "read_pcapng_bytes", parse_with_invalid_generated)
 
     with pytest.raises(TrafficlabError, match="observation window" if defect == "outside-window" else "round-trip"):
         fixture_generator._build_fixture()  # pyright: ignore[reportPrivateUsage]
