@@ -4,8 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
-from trafficlab.capture import _capture_failure_outcomes  # pyright: ignore[reportPrivateUsage]
-from trafficlab.capture_policy import (
+from trafficlab.capture.policy import (
     CaptureFailureOrigin,
     CaptureOutcome,
     record_capture_stopped,
@@ -14,6 +13,7 @@ from trafficlab.capture_policy import (
     record_stage_timeout,
     record_total_timeout,
 )
+from trafficlab.capture.stage import _capture_failure_outcomes  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize(

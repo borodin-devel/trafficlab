@@ -46,18 +46,18 @@ from tests.support.validation_study import (
     write_canonical_json,
     write_study_inputs,
 )
-from trafficlab.comparison import compare_experiment, parse_comparison_result
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig, SimilarityConfig
-from trafficlab.config_io import load_configuration_pair, render_effective_config
-from trafficlab.errors import FailureOutcome, TrafficlabError
-from trafficlab.fitting import fit_experiment
-from trafficlab.generation import generate_experiment
-from trafficlab.models.registry import load_best_model, rebuild_best_model, render_best_model
-from trafficlab.preflight import open_or_prepare_experiment
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig, SimilarityConfig
+from trafficlab.common.config_io import load_configuration_pair, render_effective_config
+from trafficlab.common.errors import FailureOutcome, TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import compare_experiment, parse_comparison_result
+from trafficlab.fitting.stage import fit_experiment
+from trafficlab.generation.models.registry import load_best_model, rebuild_best_model, render_best_model
+from trafficlab.generation.stage import generate_experiment
+from trafficlab.preflight.stage import open_or_prepare_experiment
 from trafficlab.run import RunDependencies, run_experiment
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
 
 VALIDATION_STUDY_LOCAL_EXCLUDE_LOCK = Path("/tmp") / (
     f"trafficlab-validation-study-{hashlib.sha256(str(ROOT).encode('utf-8')).hexdigest()}.exclude.lock"

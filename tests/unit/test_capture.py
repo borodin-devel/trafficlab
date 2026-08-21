@@ -8,22 +8,22 @@ import pytest
 import tomli_w
 
 import trafficlab.artifacts as artifact_module
-import trafficlab.capture as capture_module
-import trafficlab.compatibility as compatibility
+import trafficlab.capture.stage as capture_module
+import trafficlab.common.compatibility as compatibility
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.capture import CaptureResult, capture_experiment, capture_prepared_experiment
-from trafficlab.capture_policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
-from trafficlab.compatibility import identify_file
-from trafficlab.config import MountConfig
-from trafficlab.docker_cli import CommandResult, ServiceState
-from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.preflight import (
+from trafficlab.capture.docker_cli import CommandResult, ServiceState
+from trafficlab.capture.policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
+from trafficlab.capture.stage import CaptureResult, capture_experiment, capture_prepared_experiment
+from trafficlab.common.compatibility import identify_file
+from trafficlab.common.config import MountConfig
+from trafficlab.common.errors import DeadlineExceededError, TrafficlabError
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
+from trafficlab.preflight.stage import (
     CaptureEnvironmentIdentity,
     MountedInputIdentity,
     PreparedExperiment,
     open_or_prepare_experiment,
 )
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 
 @dataclass

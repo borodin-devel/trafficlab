@@ -14,20 +14,27 @@ from numpy.typing import NDArray
 from scipy import linalg as scipy_linalg  # pyright: ignore[reportMissingTypeStubs]
 from scipy import optimize as scipy_optimize  # pyright: ignore[reportMissingTypeStubs]
 
-from trafficlab.config import FamilyName, FloatBounds, GenerationLimits, MethodWeights, MmppConfig, SimilarityConfig
-from trafficlab.genetic.evaluation import (
+from trafficlab.common.config import (
+    FamilyName,
+    FloatBounds,
+    GenerationLimits,
+    MethodWeights,
+    MmppConfig,
+    SimilarityConfig,
+)
+from trafficlab.common.trace import Direction, TrafficTrace
+from trafficlab.fitting.genetic.evaluation import (
     EvaluationContext,
     ValidatedEvaluationContext,
     evaluate_candidate,
     validate_evaluation_context,
 )
-from trafficlab.genetic.operators import ReproductionContext, fill_next_population
-from trafficlab.genetic.population import rank_candidates
-from trafficlab.genetic.types import Candidate, CandidateId, FamilyPriority
-from trafficlab.models.common import FamilyBounds, MarkCount, MarkDistribution, make_rng
-from trafficlab.models.mmpp import MmppModel
-from trafficlab.models.registry import MMPP_FAMILY
-from trafficlab.trace import Direction, TrafficTrace
+from trafficlab.fitting.genetic.operators import ReproductionContext, fill_next_population
+from trafficlab.fitting.genetic.population import rank_candidates
+from trafficlab.fitting.genetic.types import Candidate, CandidateId, FamilyPriority
+from trafficlab.generation.models.common import FamilyBounds, MarkCount, MarkDistribution, make_rng
+from trafficlab.generation.models.mmpp import MmppModel
+from trafficlab.generation.models.registry import MMPP_FAMILY
 
 type Rates = tuple[float, float, float, float]
 type Coordinates = tuple[float, float, float, float]

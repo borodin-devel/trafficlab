@@ -11,9 +11,9 @@ from hypothesis import assume, given
 from numpy.typing import NDArray
 
 from tests.property.strategies import trace_events
-from trafficlab.models.common import MarkCount, MarkDistribution
-from trafficlab.models.markov_renewal import encode_markov_states, transition_count_matrix, type7_boundaries
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.common import MarkCount, MarkDistribution
+from trafficlab.generation.models.markov_renewal import encode_markov_states, transition_count_matrix, type7_boundaries
 
 
 def _type7(values: NDArray[np.uint32], q: float) -> float:

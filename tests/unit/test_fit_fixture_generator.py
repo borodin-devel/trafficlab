@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 from scripts import generate_fit_fixtures as fixture_generator
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config_io import load_experiment
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.checkpoint import load_checkpoint
-from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import load_capture_metadata, normalize_reference
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config_io import load_experiment
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import load_capture_metadata, normalize_reference
+from trafficlab.fitting.genetic.checkpoint import load_checkpoint
+from trafficlab.fitting.genetic.strategy import make_strategy_context
 
 _ROOT = Path(__file__).resolve().parents[2]
 _FIT_DIRECTORY = _ROOT / "examples" / "data" / "fit"

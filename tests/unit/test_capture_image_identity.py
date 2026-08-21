@@ -7,15 +7,15 @@ from typing import Any, cast
 
 import pytest
 
-import trafficlab.docker_cli as docker_cli_module
-from trafficlab.docker_cli import (
+import trafficlab.capture.docker_cli as docker_cli_module
+from trafficlab.capture.docker_cli import (
     CaptureImageLockError,
     ImageIdentity,
     load_capture_image_lock,
     parse_image_inspect,
     validate_capture_dockerfile,
 )
-from trafficlab.preflight import capture_environment_identity
+from trafficlab.preflight.stage import capture_environment_identity
 
 _BASE_DIGEST = "sha256:" + ("a" * 64)
 _IMAGE_ID = "sha256:" + ("b" * 64)

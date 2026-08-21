@@ -12,9 +12,9 @@ import pytest
 from tests.docker import support
 from tests.support import docker as docker_support
 from trafficlab.artifacts import append_run_log
-from trafficlab.compose import ComposePaths, render_production_compose
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment
+from trafficlab.capture.compose import ComposePaths, render_production_compose
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_experiment
 
 _CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
 

@@ -8,9 +8,9 @@ import pytest
 from scripts import generate_model_fixtures as fixture_generator
 from scripts import generate_similarity_fixtures as similarity_fixture_generator
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
-from trafficlab.config import ExperimentConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 
 _ROOT = Path(__file__).parents[3]
 _MODEL_BYTES = (PIPELINE_FIXTURE_ROOT / "models" / "best_model.json").read_bytes()

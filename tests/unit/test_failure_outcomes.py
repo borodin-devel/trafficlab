@@ -8,17 +8,17 @@ from typing import cast
 
 import pytest
 
-import trafficlab.capture as capture
-import trafficlab.comparison as comparison
-import trafficlab.docker_cli as docker_cli
-import trafficlab.fitting as fitting
-import trafficlab.generation as generation
-import trafficlab.preflight as preflight
+import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.capture.stage as capture
+import trafficlab.comparison.stage as comparison
+import trafficlab.fitting.stage as fitting
+import trafficlab.generation.stage as generation
+import trafficlab.preflight.stage as preflight
 import trafficlab.run as run
 from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT
-from trafficlab.capture_policy import CaptureOutcome, FailureDetail, FailureKind
-from trafficlab.config import ExperimentConfig
-from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome, failure_outcome_from_error
+from trafficlab.capture.policy import CaptureOutcome, FailureDetail, FailureKind
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import FailureOutcome, TrafficlabError, attach_failure_outcome, failure_outcome_from_error
 
 _FIXTURE = DIAGNOSTIC_FIXTURE_ROOT / "failure-outcomes.jsonl"
 

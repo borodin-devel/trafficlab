@@ -10,17 +10,12 @@ import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
-from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
-from trafficlab.genetic.strategy import make_strategy_context, run_strategy
-from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.preflight import PreflightReport, PreparedExperiment
-from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
-from trafficlab.trace import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.common.trace import (
     CaptureMetadata,
     Direction,
     TraceEvent,
@@ -29,6 +24,11 @@ from trafficlab.trace import (
     parse_capture_metadata,
     render_capture_metadata,
 )
+from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
+from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strategy
+from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
+from trafficlab.generation.models.registry import load_best_model, render_best_model
+from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 FIT_DIRECTORY = REPOSITORY / "examples" / "data" / "fit"

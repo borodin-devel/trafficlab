@@ -16,11 +16,11 @@ from trafficlab.artifacts import (
     load_or_recover_capture_pair,
     publish_capture_pair,
 )
-from trafficlab.capture_validation import CaptureInspection
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment
-from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
+from trafficlab.capture.validation import CaptureInspection
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_experiment
+from trafficlab.common.errors import DeadlineExceededError, TrafficlabError
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 
 def _config_with_run_directory(data: dict[str, object], run_directory: Path) -> ExperimentConfig:

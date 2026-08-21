@@ -17,28 +17,17 @@ import pytest
 
 import trafficlab.artifacts as artifact_module
 import trafficlab.cli as cli_module
-import trafficlab.generation as generation_module
+import trafficlab.generation.stage as generation_module
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from tests.support.scapy_fixtures import encode_events as encode_legacy_pcapng
 from tests.support.scapy_fixtures import encode_precise_events
 from trafficlab.artifacts import create_run_directory, publish_generated_pcapng
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.generation import GenerationStageResult, generate_experiment
-from trafficlab.models.common import GenerationResult, ModelFamily
-from trafficlab.models.registry import (
-    BestModel,
-    get_family,
-    load_best_model,
-    make_best_model,
-    render_best_model,
-    runtime_fitted_model,
-)
-from trafficlab.preflight import PreparedExperiment
-from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
-from trafficlab.trace import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.common.trace import (
     CaptureMetadata,
     Direction,
     TraceEvent,
@@ -46,6 +35,17 @@ from trafficlab.trace import (
     normalize_reference,
     parse_capture_metadata,
 )
+from trafficlab.generation.models.common import GenerationResult, ModelFamily
+from trafficlab.generation.models.registry import (
+    BestModel,
+    get_family,
+    load_best_model,
+    make_best_model,
+    render_best_model,
+    runtime_fitted_model,
+)
+from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment
 
 pytestmark = pytest.mark.integration
 
@@ -1606,7 +1606,7 @@ def test_cli_existing_command_isolated_from_generation_import(
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ):
-        if name == "trafficlab.generation" or name.startswith("trafficlab.generation."):
+        if name == "trafficlab.generation.stage" or name.startswith("trafficlab.generation.stage."):
             imported_generation.append(name)
         return real_import(name, globals, locals, fromlist, level)
 
@@ -1651,7 +1651,7 @@ def test_cli_default_generate_lazily_imports_and_runs_stage(
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ):
-        if name == "trafficlab.generation":
+        if name == "trafficlab.generation.stage":
             imported_generation.append(name)
         return real_import(name, globals, locals, fromlist, level)
 
@@ -1665,7 +1665,7 @@ def test_cli_default_generate_lazily_imports_and_runs_stage(
         parse_capture_metadata(_CAPTURE_BYTES, source=run_directory / "capture.json"),
         source=run_directory / "generated.pcapng",
     )
-    assert imported_generation == ["trafficlab.generation"]
+    assert imported_generation == ["trafficlab.generation.stage"]
     assert captured.out == f"generate: packets={len(parsed)} output={run_directory / 'generated.pcapng'}\n"
     assert captured.err == ""
 

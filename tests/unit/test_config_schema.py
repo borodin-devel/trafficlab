@@ -6,7 +6,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from trafficlab.config import ExperimentConfig
+from trafficlab.common.config import ExperimentConfig
 
 
 def test_complete_mapping_creates_immutable_experiment_config(valid_config_data: dict[str, object]) -> None:

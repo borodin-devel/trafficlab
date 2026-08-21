@@ -7,10 +7,10 @@ from typing import cast
 
 import pytest
 
-import trafficlab.docker_cli as docker_cli
-import trafficlab.preflight as preflight
-from trafficlab.config import ExperimentConfig
-from trafficlab.errors import FailureOutcome, TrafficlabError
+import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.preflight.stage as preflight
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import FailureOutcome, TrafficlabError
 
 
 def _prepared(run_directory: Path) -> preflight.PreparedExperiment:

@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ValidationError
 
 import trafficlab.study_evidence as study_evidence
-from trafficlab.errors import TrafficlabError
+from trafficlab.common.errors import TrafficlabError
 from trafficlab.study_evidence import (
     StudyContentIdentity,
     ValidationStudyEnvironment,

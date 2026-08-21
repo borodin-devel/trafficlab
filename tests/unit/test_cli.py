@@ -9,12 +9,12 @@ from typing import cast
 import pytest
 
 import trafficlab.cli as cli_module
-from trafficlab.capture import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.cli import main
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import FitStageResult
-from trafficlab.generation import GenerationStageResult
-from trafficlab.preflight import PreparedExperiment
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.fitting.stage import FitStageResult
+from trafficlab.generation.stage import GenerationStageResult
+from trafficlab.preflight.stage import PreparedExperiment
 from trafficlab.run import RunResult
 
 
@@ -57,7 +57,7 @@ def test_cli_fit_lazily_loads_the_production_boundary(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Leaving the boundary uninjected must import only the offline fitting stage selected by the command."""
-    import trafficlab.fitting as fitting
+    import trafficlab.fitting.stage as fitting
 
     paths: list[Path] = []
 
@@ -164,7 +164,7 @@ def test_cli_plain_preflight_lazily_uses_production_boundary(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Plain preflight must reach the full production boundary when no callback is injected."""
-    import trafficlab.preflight as preflight_module
+    import trafficlab.preflight.stage as preflight_module
 
     prepared = cast(PreparedExperiment, SimpleNamespace(run_directory=Path("/abs/run")))
     calls: list[tuple[Path, bool]] = []
@@ -204,7 +204,7 @@ def test_cli_capture_lazily_loads_production_boundary(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An uninjected capture command must import its production stage only after selection."""
-    import trafficlab.capture as capture_module
+    import trafficlab.capture.stage as capture_module
 
     paths: list[Path] = []
 

@@ -1,0 +1,386 @@
+"""Resumable generational genetic-search lifecycle orchestration."""
+
+from __future__ import annotations
+
+import platform
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from types import MappingProxyType
+from typing import Literal, cast
+
+import numpy as np
+
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import ExperimentConfig, FamilyName, FamilyOperators
+from trafficlab.common.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
+from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
+from trafficlab.common.trace import TrafficTrace
+from trafficlab.fitting.genetic.checkpoint import (
+    RNG_ENGINE,
+    CheckpointCompatibility,
+    CheckpointCorruptionError,
+    CheckpointState,
+    FamilyCheckpointSpec,
+    GeneticCheckpointSettings,
+    decode_rng_state,
+    encode_rng_state,
+    load_generation,
+    publish_generation,
+    summarize_generation,
+)
+from trafficlab.fitting.genetic.coordinates import family_coordinates
+from trafficlab.fitting.genetic.evaluation import (
+    EvaluationContext,
+    ValidatedEvaluationContext,
+    evaluate_candidate,
+    evaluate_final,
+    validate_evaluation_context,
+)
+from trafficlab.fitting.genetic.operators import ReproductionContext, fill_next_population
+from trafficlab.fitting.genetic.population import (
+    derive_family_priority,
+    initial_population,
+    priority_rank_key,
+    rank_candidates,
+)
+from trafficlab.fitting.genetic.types import Candidate, CandidateId, FamilyPriority, TerminalReason, TrialResult
+from trafficlab.generation.models.common import FamilyBounds, ModelFamily, make_rng
+from trafficlab.generation.models.registry import get_family
+
+
+@dataclass(frozen=True, slots=True)
+class StrategyContext:
+    """All resolved scientific, compatibility, and filesystem inputs for one fit."""
+
+    config: ExperimentConfig
+    evaluation: EvaluationContext
+    compatibility: CheckpointCompatibility
+    run_directory: Path
+
+
+@dataclass(frozen=True, slots=True)
+class FitOutcome:
+    """Stored winner plus fresh final evidence, with no fitted Python model state."""
+
+    winner: Candidate
+    final_trials: tuple[TrialResult, ...]
+    generation: int
+    terminal_reason: Literal["hard_limit", "early_stop"]
+    family_priority: FamilyPriority
+
+
+def _enabled_bounds(config: ExperimentConfig, families: Sequence[FamilyName]) -> dict[FamilyName, FamilyBounds]:
+    bounds: dict[FamilyName, FamilyBounds] = {}
+    for name in families:
+        value = getattr(config.models, name)
+        if value is None:
+            raise ValueError(f"enabled family {name} has no configured bounds")
+        bounds[name] = value
+    return bounds
+
+
+def _family_specs(
+    families: Sequence[FamilyName],
+    registered: Mapping[FamilyName, ModelFamily],
+    bounds: Mapping[FamilyName, FamilyBounds],
+) -> tuple[FamilyCheckpointSpec, ...]:
+    specs: list[FamilyCheckpointSpec] = []
+    for name in families:
+        family = registered[name]
+        operators = cast(FamilyOperators, bounds[name])
+        specs.append(
+            FamilyCheckpointSpec(
+                name=name,
+                gene_order=family.gene_names,
+                coordinates=family_coordinates(name, bounds[name]),
+                crossover_probability=operators.crossover_probability,
+                mutation_probability=operators.mutation_probability,
+                mutation_scale=operators.mutation_scale,
+            )
+        )
+    return tuple(specs)
+
+
+def _genetic_settings(config: ExperimentConfig) -> GeneticCheckpointSettings:
+    genetic = config.genetic
+    return GeneticCheckpointSettings(
+        master_seed=config.run.master_seed,
+        final_seed=config.run.final_seed,
+        population_size=genetic.population_size,
+        generation_count=genetic.generation_count,
+        tournament_size=genetic.tournament_size,
+        elite_count=genetic.elite_count,
+        duplicate_mutation_attempts=genetic.duplicate_mutation_attempts,
+        early_stopping_generations=genetic.early_stopping_generations,
+        early_stopping_tolerance=genetic.early_stopping_tolerance,
+        resume=genetic.resume,
+    )
+
+
+def make_strategy_context(
+    config: ExperimentConfig,
+    reference: TrafficTrace,
+    window: float,
+    run_directory: Path,
+    *,
+    experiment_identity: ContentIdentity,
+    reference_identity: ContentIdentity,
+    capture_identity: ContentIdentity,
+) -> StrategyContext:
+    """Resolve lexical registry, bounds, operators, and compatibility exactly once."""
+    families = tuple(sorted(config.models.enabled))
+    family_priority = derive_family_priority(config.run.master_seed, families)
+    registered: dict[FamilyName, ModelFamily] = {name: get_family(name) for name in families}
+    bounds = _enabled_bounds(config, families)
+    evaluation = EvaluationContext(
+        reference=reference,
+        window=window,
+        families=MappingProxyType(registered),
+        bounds=MappingProxyType(bounds),
+        trial_seeds=config.genetic.trial_seeds,
+        trial_limits=config.generation.trial,
+        similarity=config.similarity,
+    )
+    compatibility = CheckpointCompatibility(
+        scientific_artifact_schema=SCIENTIFIC_ARTIFACT_SCHEMA_VERSION,
+        experiment_identity=experiment_identity,
+        reference_identity=reference_identity,
+        capture_identity=capture_identity,
+        observation_window_seconds=window,
+        trial_seeds=config.genetic.trial_seeds,
+        trial_limits=config.generation.trial,
+        families=_family_specs(families, registered, bounds),
+        family_priority=family_priority,
+        genetic=_genetic_settings(config),
+        similarity=config.similarity,
+        python_version=platform.python_version(),
+        rng_engine=RNG_ENGINE,
+    )
+    return StrategyContext(config, evaluation, compatibility, run_directory)
+
+
+def should_stop_early(consecutive_stagnation: int, *, early_stopping_generations: int) -> bool:
+    """Return whether the positive configured stagnation limit has been reached."""
+    if type(consecutive_stagnation) is not int or consecutive_stagnation < 0:
+        raise ValueError("consecutive stagnation must be a nonnegative exact integer")
+    if type(early_stopping_generations) is not int or early_stopping_generations < 0:
+        raise ValueError("early stopping generations must be a nonnegative exact integer")
+    return early_stopping_generations > 0 and consecutive_stagnation >= early_stopping_generations
+
+
+def advance_termination_state(
+    generation: int,
+    *,
+    generation_count: int,
+    consecutive_stagnation: int,
+    early_stopping_generations: int,
+) -> TerminalReason:
+    """Choose hard termination before early stop at a simultaneous boundary."""
+    if type(generation) is not int or generation < 0:
+        raise ValueError("generation must be a nonnegative exact integer")
+    if type(generation_count) is not int or generation_count < 0 or generation > generation_count:
+        raise ValueError("generation count must be an exact bound at least as large as generation")
+    if generation == generation_count:
+        return "hard_limit"
+    if should_stop_early(
+        consecutive_stagnation,
+        early_stopping_generations=early_stopping_generations,
+    ):
+        return "early_stop"
+    return "running"
+
+
+def initialize_or_resume(context: StrategyContext) -> CheckpointState | None:
+    """Load one compatible generation or select a fresh start under the resume policy."""
+    checkpoint_path = context.run_directory / "checkpoint.json"
+    if not checkpoint_path.exists():
+        return None
+    if not context.compatibility.genetic.resume:
+        raise TrafficlabError(
+            f"checkpoint already exists at {checkpoint_path} while resume is disabled",
+            corrective_action="enable genetic resume or choose a new run directory",
+        )
+    try:
+        return load_generation(context.run_directory, context.compatibility)
+    except TrafficlabError as error:
+        if error.failure_outcome is None:
+            if isinstance(error, CheckpointCorruptionError):
+                outcome = FailureOutcome(
+                    kind="artifact_corrupt",
+                    stage="fit",
+                    detail="checkpoint.json is corrupt",
+                    affected_evidence="checkpoint.json",
+                    evidence_state="preserved",
+                    corrective_action="recreate fit in a new run directory",
+                    authority="primary",
+                )
+                error.failure_outcomes = (outcome,)
+                error.failure_outcome = outcome
+            else:
+                attach_failure_outcome(
+                    error,
+                    kind="scientific_semantics_incompatible",
+                    stage="fit",
+                    affected_evidence="checkpoint.json",
+                    evidence_state="preserved",
+                )
+        raise
+
+
+def _evaluate_population(
+    population: Sequence[Candidate],
+    evaluation: ValidatedEvaluationContext,
+) -> tuple[Candidate, ...]:
+    return tuple(
+        candidate if candidate.status == "valid" else evaluate_candidate(candidate, evaluation)
+        for candidate in population
+    )
+
+
+def _finish_evaluated_generation(
+    population: Sequence[Candidate],
+    rng: np.random.Generator,
+    *,
+    generation: int,
+    previous: CheckpointState | None,
+    context: StrategyContext,
+    evaluation: ValidatedEvaluationContext,
+    family_priority: FamilyPriority,
+) -> CheckpointState:
+    evaluated = _evaluate_population(population, evaluation)
+    family_names = cast(tuple[FamilyName, ...], tuple(family.name for family in context.compatibility.families))
+    history = (() if previous is None else previous.history) + summarize_generation(
+        generation,
+        evaluated,
+        family_names,
+        family_priority=family_priority,
+    )
+    generation_best = rank_candidates(evaluated, family_priority=family_priority)[0]
+    if previous is None:
+        best_identifier = generation_best.identifier
+        best_fitness = generation_best.fitness
+        consecutive_stagnation = 0
+    else:
+        improvement = generation_best.fitness - previous.best_fitness
+        previous_best = _candidate_by_id(previous.population, previous.best_identifier)
+        retained_best = min(
+            generation_best,
+            previous_best,
+            key=lambda candidate: priority_rank_key(
+                candidate.fitness,
+                candidate.family,
+                candidate.identifier,
+                family_priority=family_priority,
+            ),
+        )
+        best_identifier = retained_best.identifier
+        best_fitness = retained_best.fitness
+        consecutive_stagnation = (
+            0
+            if improvement > context.compatibility.genetic.early_stopping_tolerance
+            else previous.consecutive_stagnation + 1
+        )
+    genetic = context.compatibility.genetic
+    terminal_reason = advance_termination_state(
+        generation,
+        generation_count=genetic.generation_count,
+        consecutive_stagnation=consecutive_stagnation,
+        early_stopping_generations=genetic.early_stopping_generations,
+    )
+    return CheckpointState(
+        compatibility=context.compatibility,
+        generation=generation,
+        population=evaluated,
+        history=history,
+        rng_state=encode_rng_state(rng),
+        best_identifier=best_identifier,
+        best_fitness=best_fitness,
+        consecutive_stagnation=consecutive_stagnation,
+        terminal_reason=terminal_reason,
+        family_priority=family_priority,
+    )
+
+
+def _reproduce_then_evaluate(
+    state: CheckpointState,
+    context: StrategyContext,
+    evaluation: ValidatedEvaluationContext,
+    rng: np.random.Generator,
+    family_priority: FamilyPriority,
+) -> CheckpointState:
+    genetic = context.compatibility.genetic
+    generation = state.generation + 1
+    population = fill_next_population(
+        state.population,
+        generation=generation,
+        population_size=genetic.population_size,
+        elite_count=genetic.elite_count,
+        tournament_size=genetic.tournament_size,
+        context=ReproductionContext(
+            reference=context.evaluation.reference,
+            family_bounds=context.evaluation.bounds,
+            family_priority=family_priority,
+            duplicate_mutation_attempts=genetic.duplicate_mutation_attempts,
+        ),
+        rng=rng,
+    )
+    return _finish_evaluated_generation(
+        population,
+        rng,
+        generation=generation,
+        previous=state,
+        context=context,
+        evaluation=evaluation,
+        family_priority=family_priority,
+    )
+
+
+def _candidate_by_id(population: Sequence[Candidate], identifier: CandidateId) -> Candidate:
+    try:
+        return next(candidate for candidate in population if candidate.identifier == identifier)
+    except StopIteration as error:
+        raise AssertionError("validated checkpoint winner must occur in the current population") from error
+
+
+def run_strategy(context: StrategyContext) -> FitOutcome:
+    """Run or exactly resume the bounded GA and freshly validate its stored winner."""
+    evaluation = validate_evaluation_context(context.evaluation)
+    family_priority = context.compatibility.family_priority
+    state = initialize_or_resume(context)
+    if state is not None:
+        family_priority = state.family_priority
+    rng: np.random.Generator | None = None
+    if state is None:
+        rng = make_rng(context.compatibility.genetic.master_seed)
+        population = initial_population(
+            family_priority,
+            population_size=context.compatibility.genetic.population_size,
+            bounds=context.evaluation.bounds,
+            reference=context.evaluation.reference,
+            rng=rng,
+        )
+        state = _finish_evaluated_generation(
+            population,
+            rng,
+            generation=0,
+            previous=None,
+            context=context,
+            evaluation=evaluation,
+            family_priority=family_priority,
+        )
+        publish_generation(context.run_directory, state)
+    while state.terminal_reason == "running":
+        if rng is None:
+            rng = decode_rng_state(state.rng_state)
+        state = _reproduce_then_evaluate(state, context, evaluation, rng, family_priority)
+        publish_generation(context.run_directory, state)
+    winner = _candidate_by_id(state.population, state.best_identifier)
+    final_trials = evaluate_final(winner, evaluation, context.compatibility.genetic.final_seed)
+    return FitOutcome(
+        winner,
+        final_trials,
+        state.generation,
+        state.terminal_reason,
+        state.family_priority,
+    )

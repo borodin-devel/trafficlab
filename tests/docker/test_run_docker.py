@@ -11,9 +11,9 @@ from typing import Literal, cast
 
 import pytest
 
-import trafficlab.capture as capture_module
-import trafficlab.generation as generation_module
-import trafficlab.genetic.strategy as strategy_module
+import trafficlab.capture.stage as capture_module
+import trafficlab.fitting.genetic.strategy as strategy_module
+import trafficlab.generation.stage as generation_module
 import trafficlab.run as run_module
 from tests.docker.support import (
     assert_tracked_projects_clean,
@@ -22,10 +22,18 @@ from tests.docker.support import (
     write_run_docker_experiment,
 )
 from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
-from trafficlab.capture import CaptureResult, capture_prepared_experiment
-from trafficlab.capture_validation import validate_capture_pair
+from trafficlab.capture.compose import ComposePaths
+from trafficlab.capture.docker_cli import CommandResult
+from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
+from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.cli import main
-from trafficlab.comparison import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig, GenerationLimits
+from trafficlab.common.config_io import load_experiment
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import Direction, normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import (
     ComparisonResult,
     compare_experiment,
     load_comparison_result,
@@ -33,23 +41,15 @@ from trafficlab.comparison import (
     sha256_bytes,
     similarity_settings_sha256,
 )
-from trafficlab.compatibility import identify_bytes
-from trafficlab.compose import ComposePaths
-from trafficlab.config import ExperimentConfig, GenerationLimits
-from trafficlab.config_io import load_experiment
-from trafficlab.docker_cli import CommandResult
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import FitStageResult, fit_experiment
-from trafficlab.generation import GenerationStageResult, generate_experiment
-from trafficlab.genetic.checkpoint import load_checkpoint, render_history_csv
-from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.genetic.types import TrialResult
-from trafficlab.models.common import FittedModel, GenerationResult, ModelFamily
-from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment, run_preflight
+from trafficlab.fitting.genetic.checkpoint import load_checkpoint, render_history_csv
+from trafficlab.fitting.genetic.strategy import make_strategy_context
+from trafficlab.fitting.genetic.types import TrialResult
+from trafficlab.fitting.stage import FitStageResult, fit_experiment
+from trafficlab.generation.models.common import FittedModel, GenerationResult, ModelFamily
+from trafficlab.generation.models.registry import load_best_model, render_best_model
+from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment, run_preflight
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import Direction, normalize_reference, parse_capture_metadata
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
 

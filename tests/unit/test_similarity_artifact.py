@@ -7,20 +7,20 @@ from typing import cast
 import pytest
 
 import trafficlab.artifacts as artifacts
-import trafficlab.comparison as comparison
+import trafficlab.comparison.stage as comparison
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import append_run_log, create_run_directory
-from trafficlab.comparison import compare_experiment
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import (
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import (
     CaptureMetadata,
     TrafficTrace,
     parse_capture_metadata,
 )
+from trafficlab.comparison.stage import compare_experiment
 
 _REPOSITORY = Path(__file__).parents[2]
 _EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT

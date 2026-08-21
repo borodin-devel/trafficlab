@@ -40,17 +40,17 @@ from tests.support.validation_study import (
     write_study_inputs,
 )
 from trafficlab.artifacts import append_run_log
-from trafficlab.capture import CaptureResult
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import compare_experiment
-from trafficlab.compatibility import ContentIdentity, identify_bytes
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import fit_experiment
-from trafficlab.generation import generate_experiment
-from trafficlab.genetic.types import TrialResult
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent
+from trafficlab.comparison.stage import compare_experiment
+from trafficlab.fitting.genetic.types import TrialResult
+from trafficlab.fitting.stage import fit_experiment
+from trafficlab.generation.stage import generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.trace import Direction, TraceEvent
 
 STUDY_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:study-capture"
 

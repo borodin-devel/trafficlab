@@ -13,24 +13,24 @@ from typing import cast
 
 import pytest
 
-import trafficlab.docker_cli as docker_cli
-import trafficlab.genetic.strategy as genetic_strategy
+import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.fitting.genetic.strategy as genetic_strategy
 from trafficlab.artifacts import create_run_directory, load_or_recover_capture_pair
-from trafficlab.capture import CaptureResult
-from trafficlab.comparison import ComparisonResult, compare_experiment
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import ConfigurationPair, load_configuration_pair, render_effective_config
-from trafficlab.fitting import FitDependencies, FitStageResult, fit_experiment, read_fit_input
-from trafficlab.generation import GenerationStageResult, generate_experiment
-from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint
-from trafficlab.genetic.evaluation import ValidatedEvaluationContext
-from trafficlab.genetic.strategy import make_strategy_context, run_strategy
-from trafficlab.genetic.types import METHOD_ORDER, Candidate
-from trafficlab.preflight import PreflightReport, PreparedExperiment
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import ConfigurationPair, load_configuration_pair, render_effective_config
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import ComparisonResult, compare_experiment
+from trafficlab.fitting.genetic.checkpoint import CheckpointState, load_checkpoint
+from trafficlab.fitting.genetic.evaluation import ValidatedEvaluationContext
+from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strategy
+from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate
+from trafficlab.fitting.stage import FitDependencies, FitStageResult, fit_experiment, read_fit_input
+from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
 from trafficlab.run import RunDependencies, run_experiment
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 pytestmark = pytest.mark.integration
 

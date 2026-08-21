@@ -29,8 +29,8 @@ Compose integration tests.
   path.
 - Use `apply_patch` for hand-authored changes and `git mv` plus a deterministic
   bulk rewrite for mechanical moves/import changes.
-- Retain the 3,830-test collection inventory, including the 19 tests normally
-  deselected by default options.
+- Retain all 3,830 baseline tests, including the 19 tests normally deselected
+  by default options, and add three direct layout-contract tests.
 - Run strict Pyright, Ruff, branch-aware coverage at or above 90%, deterministic
   artifact checkers, available external tests, and independent review.
 - Commit each independently verified task and keep the working tree clean at
@@ -62,7 +62,7 @@ Compose integration tests.
 - Produces: the exact new import paths in the design; package initializers
   expose no compatibility aliases.
 
-- [ ] **[STEP-1-7f5b16a2] Write the failing production-layout contract**
+- [x] **[STEP-1-7f5b16a2] Write the failing production-layout contract**
 
   Add a data-driven test whose expected owned files are:
 
@@ -95,7 +95,7 @@ Compose integration tests.
   each of `fitting/genetic`, `generation/models`, and
   `comparison/similarity` contains its current Python inventory.
 
-- [ ] **[STEP-2-4d9639e4] Run the contract and verify RED**
+- [x] **[STEP-2-4d9639e4] Run the contract and verify RED**
 
   Run:
 
@@ -106,7 +106,7 @@ Compose integration tests.
   Expected: failure listing the absent subsystem paths and still-present flat
   modules.
 
-- [ ] **[STEP-3-39681ab6] Move production files with history**
+- [x] **[STEP-3-39681ab6] Move production files with history**
 
   Create the six package directories, then use `git mv` for this exact map:
 
@@ -141,7 +141,7 @@ Compose integration tests.
   """Traffic comparison stage and similarity methods."""
   ```
 
-- [ ] **[STEP-4-1cdb7395] Rewrite every live Python import atomically**
+- [x] **[STEP-4-1cdb7395] Rewrite every live Python import atomically**
 
   Apply this exact module map to Python code under `src`, `tests`, and `scripts`:
 
@@ -173,7 +173,7 @@ Compose integration tests.
   strings. Match complete module tokens so `capture` does not corrupt
   `capture_policy` or already-rewritten `capture.validation`.
 
-- [ ] **[STEP-5-7523e210] Prove collection and source layout GREEN**
+- [x] **[STEP-5-7523e210] Prove collection and source layout GREEN**
 
   Run:
 
@@ -182,10 +182,10 @@ Compose integration tests.
   uv run --locked pytest --collect-only -q
   ```
 
-  Expected: the layout test passes and collection reports
-  `3811/3830 tests collected (19 deselected)` with no import error.
+  Expected: the two layout tests pass and collection reports
+  `3813/3832 tests collected (19 deselected)` with no import error.
 
-- [ ] **[STEP-6-9ee8e9d6] Run focused production-package checks**
+- [x] **[STEP-6-9ee8e9d6] Run focused production-package checks**
 
   Run:
 
@@ -196,7 +196,7 @@ Compose integration tests.
 
   Expected: both commands pass.
 
-- [ ] **[STEP-7-e97ed8c1] Review and commit the production move**
+- [x] **[STEP-7-e97ed8c1] Review and commit the production move**
 
   Request an independent diff review, fix every Critical or Important finding,
   rerun Steps 5–6, then commit:
@@ -360,9 +360,9 @@ Compose integration tests.
 
 - [ ] **[STEP-13-cea7bcb8] Prove inventory, review, and commit the test move**
 
-  Run the layout test and full collection, require the unchanged 3,830-test
-  inventory, request independent review, fix all Critical/Important findings,
-  and commit:
+  Run the layout test and full collection, require all 3,830 baseline tests plus
+  the three new layout tests, request independent review, fix all
+  Critical/Important findings, and commit:
 
   ```bash
   uv run --locked pytest -q -n 0 tests/unit/pipeline/test_test_layout.py

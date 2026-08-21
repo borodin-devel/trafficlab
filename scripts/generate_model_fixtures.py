@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config_io import load_experiment
-from trafficlab.errors import TrafficlabError
-from trafficlab.models.registry import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config_io import load_experiment
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.common.trace import normalize_reference, parse_capture_metadata
+from trafficlab.generation.models.registry import (
     POISSON_FAMILY,
     get_family,
     load_best_model,
@@ -17,8 +19,6 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
-from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"

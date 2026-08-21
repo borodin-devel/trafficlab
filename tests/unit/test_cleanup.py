@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from trafficlab.cleanup import CleanupResult, cleanup_project
-from trafficlab.docker_cli import CommandResult, ProcessHandle
-from trafficlab.errors import TrafficlabError
+from trafficlab.capture.cleanup import CleanupResult, cleanup_project
+from trafficlab.capture.docker_cli import CommandResult, ProcessHandle
+from trafficlab.common.errors import TrafficlabError
 
 
 class _Clock:

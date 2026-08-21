@@ -6,11 +6,11 @@ from typing import cast
 import pytest
 import tomli_w
 
-import trafficlab.preflight as preflight_module
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.preflight import (
+import trafficlab.preflight.stage as preflight_module
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.preflight.stage import (
     CaptureEnvironmentIdentity,
     DockerPreflight,
     PreflightFinding,

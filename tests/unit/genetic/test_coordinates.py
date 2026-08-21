@@ -8,9 +8,10 @@ from typing import Any, cast
 
 import pytest
 
-from trafficlab.config import FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.coordinates import (
+from trafficlab.common.config import FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic.coordinates import (
     CandidateEvaluationError,
     GeneCoordinate,
     GeneticRng,
@@ -22,8 +23,7 @@ from trafficlab.genetic.coordinates import (
     mutate_coordinate,
     reflect,
 )
-from trafficlab.models.registry import MARKOV_RENEWAL_FAMILY
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.registry import MARKOV_RENEWAL_FAMILY
 
 
 @dataclass

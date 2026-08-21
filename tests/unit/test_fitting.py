@@ -15,24 +15,24 @@ import pytest
 from pydantic import BaseModel
 
 import trafficlab.artifacts as artifacts
-import trafficlab.fitting as fitting
-import trafficlab.genetic.checkpoint as checkpoint
-import trafficlab.genetic.strategy as strategy_module
+import trafficlab.fitting.genetic.checkpoint as checkpoint
+import trafficlab.fitting.genetic.strategy as strategy_module
+import trafficlab.fitting.stage as fitting
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts import publish_best_model
-from trafficlab.compatibility import ContentIdentity, identify_bytes
-from trafficlab.config import ExperimentConfig, FloatBounds, GenerationLimits, PoissonConfig
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import FailureOutcome, TrafficlabError
-from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
-from trafficlab.genetic.checkpoint import load_checkpoint, publish_checkpoint
-from trafficlab.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
-from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
-from trafficlab.models.poisson import PoissonFamily
-from trafficlab.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
-from trafficlab.preflight import PreflightReport, PreparedExperiment, open_or_prepare_experiment
-from trafficlab.scientific_schema import ScientificArtifactSchemaError
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes
+from trafficlab.common.config import ExperimentConfig, FloatBounds, GenerationLimits, PoissonConfig
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import FailureOutcome, TrafficlabError
+from trafficlab.common.scientific_schema import ScientificArtifactSchemaError
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
+from trafficlab.fitting.genetic.checkpoint import load_checkpoint, publish_checkpoint
+from trafficlab.fitting.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
+from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
+from trafficlab.generation.models.poisson import PoissonFamily
+from trafficlab.generation.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
+from trafficlab.preflight.stage import PreflightReport, PreparedExperiment, open_or_prepare_experiment
 
 
 def replace[Record](record: Record, **changes: object) -> Record:
@@ -1080,7 +1080,7 @@ def test_read_fit_input_translates_filesystem_failures(tmp_path: Path) -> None:
 
 def test_production_fit_dependencies_select_the_real_offline_boundaries() -> None:
     """The default fit route must use local preparation, exact input reads, and the in-process strategy."""
-    from trafficlab.genetic.strategy import run_strategy
+    from trafficlab.fitting.genetic.strategy import run_strategy
 
     dependencies = FitDependencies.production()
 

@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-import trafficlab.capture_validation as capture_validation_module
-from trafficlab.capture_validation import inspect_capture
-from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.scapy_io import PcapngPacket
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
+import trafficlab.capture.validation as capture_validation_module
+from trafficlab.capture.validation import inspect_capture
+from trafficlab.common.errors import DeadlineExceededError, TrafficlabError
+from trafficlab.common.scapy_io import PcapngPacket
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
 _TARGET = bytes.fromhex("0242ac110002")
 _PEER = bytes.fromhex("020000000001")

@@ -11,12 +11,13 @@ import pytest
 import tomli_w
 
 import trafficlab
+import trafficlab.capture as capture_package
 import trafficlab.cli as cli
-import trafficlab.preflight as preflight_module
+import trafficlab.preflight.stage as preflight_module
 from trafficlab.cli import main
-from trafficlab.config_io import load_experiment
-from trafficlab.errors import TrafficlabError
-from trafficlab.preflight import PreparedExperiment
+from trafficlab.common.config_io import load_experiment
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.preflight.stage import PreparedExperiment
 
 pytestmark = pytest.mark.integration
 
@@ -43,16 +44,18 @@ def _run_installed_preflight(experiment_path: Path) -> subprocess.CompletedProce
 def _is_docker_adapter_module(name: str) -> bool:
     if name == "docker" or name.startswith("docker."):
         return True
-    return name == "trafficlab.docker_cli" or name.startswith("trafficlab.docker_cli.")
+    return name == "trafficlab.capture.docker_cli" or name.startswith("trafficlab.capture.docker_cli.")
 
 
 def _is_docker_adapter_import(name: str, fromlist: tuple[str, ...] | None) -> bool:
-    return _is_docker_adapter_module(name) or (name == "trafficlab" and "docker_cli" in (fromlist or ()))
+    return _is_docker_adapter_module(name) or (name == "trafficlab.capture" and "docker_cli" in (fromlist or ()))
 
 
 def _is_run_or_capture_import(name: str, fromlist: tuple[str, ...] | None) -> bool:
-    return name in {"trafficlab.run", "trafficlab.capture"} or (
-        name == "trafficlab" and bool({"run", "capture"}.intersection(fromlist or ()))
+    return (
+        name in {"trafficlab.run", "trafficlab.capture.stage"}
+        or (name == "trafficlab" and "run" in (fromlist or ()))
+        or (name == "trafficlab.capture" and "stage" in (fromlist or ()))
     )
 
 
@@ -60,11 +63,11 @@ def _is_run_or_capture_import(name: str, fromlist: tuple[str, ...] | None) -> bo
     ("name", "fromlist", "expected"),
     [
         ("trafficlab.run", None, True),
-        ("trafficlab.capture", None, True),
+        ("trafficlab.capture.stage", None, True),
         ("trafficlab", ("run",), True),
-        ("trafficlab", ("capture",), True),
+        ("trafficlab.capture", ("stage",), True),
         ("trafficlab.runner", None, False),
-        ("trafficlab.capture_validation", None, False),
+        ("trafficlab.capture.validation", None, False),
         ("trafficlab", ("runtime",), False),
         ("trafficlab", None, False),
     ],
@@ -80,9 +83,9 @@ def test_run_or_capture_import_guard_classifies_direct_fromlist_and_close_names(
 
 def _clear_docker_adapter_import_state(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in tuple(sys.modules):
-        if name == "trafficlab.docker_cli" or name.startswith("trafficlab.docker_cli."):
+        if name == "trafficlab.capture.docker_cli" or name.startswith("trafficlab.capture.docker_cli."):
             monkeypatch.delitem(sys.modules, name)
-    monkeypatch.delattr(trafficlab, "docker_cli", raising=False)
+    monkeypatch.delattr(capture_package, "docker_cli", raising=False)
 
 
 def test_prepare_experiment_publishes_the_validated_effective_configuration(
@@ -93,7 +96,7 @@ def test_prepare_experiment_publishes_the_validated_effective_configuration(
     _write_config(experiment_path, valid_config_data)
 
     prepared = preflight_module.prepare_experiment(experiment_path)
-    from trafficlab.config_io import load_configuration_pair
+    from trafficlab.common.config_io import load_configuration_pair
 
     pair = load_configuration_pair(experiment_path)
 
@@ -160,7 +163,7 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
     experiment_path = tmp_path / "config" / "experiment.toml"
     (experiment_path.parent / "fixture-data").mkdir(parents=True)
     _write_config(experiment_path, data)
-    from trafficlab.config_io import load_configuration_pair
+    from trafficlab.common.config_io import load_configuration_pair
 
     prepared_results: list[PreparedExperiment] = []
 
@@ -186,12 +189,12 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
         return real_import(name, globals, locals, fromlist or (), level)
 
     _clear_docker_adapter_import_state(monkeypatch)
-    monkeypatch.delitem(sys.modules, "trafficlab.capture", raising=False)
-    monkeypatch.delattr(trafficlab, "capture", raising=False)
+    monkeypatch.delitem(sys.modules, "trafficlab.capture.stage", raising=False)
+    monkeypatch.delattr(capture_package, "stage", raising=False)
     monkeypatch.delitem(sys.modules, "trafficlab.run", raising=False)
     monkeypatch.delattr(trafficlab, "run", raising=False)
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
-    assert not hasattr(trafficlab, "docker_cli")
+    assert not hasattr(capture_package, "docker_cli")
     monkeypatch.setattr(subprocess, "run", reject_subprocess)
     monkeypatch.setattr(subprocess, "Popen", reject_subprocess)
     monkeypatch.setattr(builtins, "__import__", reject_eager_import)
@@ -215,9 +218,9 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
         "multiscale_rate",
     )
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
-    assert not hasattr(trafficlab, "docker_cli")
+    assert not hasattr(capture_package, "docker_cli")
     assert "trafficlab.run" not in sys.modules
-    assert "trafficlab.capture" not in sys.modules
+    assert "trafficlab.capture.stage" not in sys.modules
 
 
 def test_config_only_cli_starts_from_a_fresh_interpreter_without_loading_run_capture_or_docker(
@@ -242,12 +245,12 @@ subprocess.Popen = reject_subprocess
 from trafficlab.cli import main
 
 status = main(["preflight", sys.argv[1], "--config-only"])
-from trafficlab.preflight import run_preflight
+from trafficlab.preflight.stage import run_preflight
 direct = run_preflight(Path(sys.argv[1]), config_only=True)
 forbidden = sorted(
     name for name in sys.modules
-    if name in {"trafficlab.run", "trafficlab.capture", "trafficlab.docker_cli"}
-    or name.startswith("trafficlab.docker_cli.")
+    if name in {"trafficlab.run", "trafficlab.capture.stage", "trafficlab.capture.docker_cli"}
+    or name.startswith("trafficlab.capture.docker_cli.")
 )
 Path(sys.argv[2]).write_text(
     json.dumps({"direct_run_directory": str(direct.run_directory), "forbidden": forbidden, "status": status}),

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import (
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
@@ -13,8 +13,10 @@ from trafficlab.config import (
     MmppConfig,
     PoissonConfig,
 )
-from trafficlab.models import FamilyBounds, Genes, ModelFamily
-from trafficlab.models.registry import (
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng
+from trafficlab.common.trace import TrafficTrace, normalize_reference, parse_capture_metadata
+from trafficlab.generation.models import FamilyBounds, Genes, ModelFamily
+from trafficlab.generation.models.registry import (
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
     POISSON_FAMILY,
@@ -23,8 +25,6 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.scapy_io import encode_pcapng, read_pcapng
-from trafficlab.trace import TrafficTrace, normalize_reference, parse_capture_metadata
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DATA = _ROOT / "examples" / "data"

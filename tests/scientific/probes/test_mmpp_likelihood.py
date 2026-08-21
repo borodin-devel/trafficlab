@@ -52,7 +52,7 @@ from tests.scientific.probes.mmpp_likelihood import (
     validate_probe_evidence,
     write_probe_evidence,
 )
-from trafficlab.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
+from trafficlab.fitting.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
 
 
 def test_hand_likelihoods_match_independent_high_precision_literals() -> None:

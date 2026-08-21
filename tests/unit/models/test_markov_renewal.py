@@ -12,17 +12,17 @@ from typing import cast
 
 import pytest
 
-from trafficlab.config import FloatBounds, GenerationLimits, IntegerBounds, MarkovRenewalConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.models import markov_renewal
-from trafficlab.models.markov_renewal import (
+from trafficlab.common.config import FloatBounds, GenerationLimits, IntegerBounds, MarkovRenewalConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models import markov_renewal
+from trafficlab.generation.models.markov_renewal import (
     MarkovRenewalFamily,
     MarkovRenewalModel,
     MarkovState,
     size_bin,
     type7_quantile,
 )
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 FAMILY = MarkovRenewalFamily()
 BOUNDS = MarkovRenewalConfig(

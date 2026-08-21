@@ -7,15 +7,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
 from trafficlab import __version__
-from trafficlab.config_io import load_experiment
-from trafficlab.errors import TrafficlabError
+from trafficlab.common.config_io import load_experiment
+from trafficlab.common.errors import TrafficlabError
 
 if TYPE_CHECKING:
-    from trafficlab.capture import CaptureResult
-    from trafficlab.comparison import ComparisonResult
-    from trafficlab.fitting import FitStageResult
-    from trafficlab.generation import GenerationStageResult
-    from trafficlab.preflight import PreparedExperiment
+    from trafficlab.capture.stage import CaptureResult
+    from trafficlab.comparison.stage import ComparisonResult
+    from trafficlab.fitting.stage import FitStageResult
+    from trafficlab.generation.stage import GenerationStageResult
+    from trafficlab.preflight.stage import PreparedExperiment
     from trafficlab.run import RunResult
 
 PrepareExperiment = Callable[[Path], "PreparedExperiment"]
@@ -27,19 +27,19 @@ RunExperiment = Callable[[Path], "RunResult"]
 
 
 def _prepare_experiment(path: Path) -> "PreparedExperiment":
-    from trafficlab.preflight import open_or_prepare_experiment
+    from trafficlab.preflight.stage import open_or_prepare_experiment
 
     return open_or_prepare_experiment(path)
 
 
 def _run_full_preflight(path: Path) -> "PreparedExperiment":
-    from trafficlab.preflight import run_preflight
+    from trafficlab.preflight.stage import run_preflight
 
     return run_preflight(path, config_only=False)
 
 
 def _compare_experiment(path: Path) -> "ComparisonResult":
-    from trafficlab.comparison import compare_experiment
+    from trafficlab.comparison.stage import compare_experiment
 
     return compare_experiment(path)
 
@@ -102,7 +102,7 @@ def main(
 
         if command == "capture":
             if capture is None:
-                from trafficlab.capture import capture_experiment
+                from trafficlab.capture.stage import capture_experiment
 
                 capture = capture_experiment
             try:
@@ -115,7 +115,7 @@ def main(
 
         if command == "generate":
             if generate is None:
-                from trafficlab.generation import generate_experiment
+                from trafficlab.generation.stage import generate_experiment
 
                 generate = generate_experiment
             generated = generate(parsed.experiment)
@@ -124,7 +124,7 @@ def main(
 
         if command == "fit":
             if fit is None:
-                from trafficlab.fitting import fit_experiment
+                from trafficlab.fitting.stage import fit_experiment
 
                 fit = fit_experiment
             fitted = fit(parsed.experiment)

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.config import (
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import (
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
@@ -17,9 +17,10 @@ from trafficlab.config import (
     MmppConfig,
     PoissonConfig,
 )
-from trafficlab.errors import TrafficlabError
-from trafficlab.models import FamilyBounds, Genes, ModelFamily
-from trafficlab.models.registry import (
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models import FamilyBounds, Genes, ModelFamily
+from trafficlab.generation.models.registry import (
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
     POISSON_FAMILY,
@@ -28,7 +29,6 @@ from trafficlab.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 WINDOW = 10.0
 REFERENCE = TrafficTrace.from_events(

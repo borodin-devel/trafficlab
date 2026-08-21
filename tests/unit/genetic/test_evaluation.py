@@ -11,8 +11,8 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
-import trafficlab.comparison as comparison
-from trafficlab.config import (
+import trafficlab.comparison.stage as comparison
+from trafficlab.common.config import (
     FamilyName,
     FloatBounds,
     GenerationLimits,
@@ -20,19 +20,19 @@ from trafficlab.config import (
     PoissonConfig,
     SimilarityConfig,
 )
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic import evaluation
-from trafficlab.genetic.coordinates import CandidateEvaluationError
-from trafficlab.genetic.evaluation import (
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic import evaluation
+from trafficlab.fitting.genetic.coordinates import CandidateEvaluationError
+from trafficlab.fitting.genetic.evaluation import (
     EvaluationContext,
     evaluate_candidate,
     evaluate_final,
     validate_candidate_similarity_preconditions,
     validate_evaluation_context,
 )
-from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateFailure, CandidateId
-from trafficlab.models.common import FamilyBounds, FittedModel, Gene, GenerationResult, Genes, ModelFamily
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateFailure, CandidateId
+from trafficlab.generation.models.common import FamilyBounds, FittedModel, Gene, GenerationResult, Genes, ModelFamily
 
 
 def replace[Record](record: Record, **changes: object) -> Record:

@@ -10,11 +10,11 @@ from typing import cast
 import numpy as np
 import pytest
 
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.checkpoint import decode_rng_state, encode_rng_state
-from trafficlab.models import common
-from trafficlab.models.registry import load_best_model
-from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
+from trafficlab.fitting.genetic.checkpoint import decode_rng_state, encode_rng_state
+from trafficlab.generation.models import common
+from trafficlab.generation.models.registry import load_best_model
 
 
 def test_named_pcg64_generator_has_locked_scalar_array_and_endpoint_draws() -> None:

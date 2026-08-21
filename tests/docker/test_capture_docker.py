@@ -19,11 +19,11 @@ from tests.support.docker import (
     EndpointDockerCompose,
     inspect_project_resources,
 )
-from trafficlab.capture import capture_experiment, capture_prepared_experiment
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.docker_cli import CommandResult
-from trafficlab.preflight import run_preflight
-from trafficlab.trace import Direction
+from trafficlab.capture.docker_cli import CommandResult
+from trafficlab.capture.stage import capture_experiment, capture_prepared_experiment
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.trace import Direction
+from trafficlab.preflight.stage import run_preflight
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
 

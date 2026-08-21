@@ -10,9 +10,9 @@ import pytest
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel
 
-import trafficlab.genetic.checkpoint as checkpoint
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.config import (
+import trafficlab.fitting.genetic.checkpoint as checkpoint
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import (
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
@@ -20,8 +20,9 @@ from trafficlab.config import (
     MmppConfig,
     SimilarityConfig,
 )
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.checkpoint import (
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic.checkpoint import (
     CheckpointArtifact,
     CheckpointCompatibility,
     CheckpointCorruptionError,
@@ -43,11 +44,11 @@ from trafficlab.genetic.checkpoint import (
     summarize_generation,
     validate_compatibility,
 )
-from trafficlab.genetic.coordinates import GeneCoordinate
-from trafficlab.genetic.evaluation import EvaluationContext, evaluate_candidate, validate_evaluation_context
-from trafficlab.genetic.operators import ReproductionContext, reproduce_child
-from trafficlab.genetic.population import rank_candidates
-from trafficlab.genetic.types import (
+from trafficlab.fitting.genetic.coordinates import GeneCoordinate
+from trafficlab.fitting.genetic.evaluation import EvaluationContext, evaluate_candidate, validate_evaluation_context
+from trafficlab.fitting.genetic.operators import ReproductionContext, reproduce_child
+from trafficlab.fitting.genetic.population import rank_candidates
+from trafficlab.fitting.genetic.types import (
     METHOD_ORDER,
     Candidate,
     CandidateFailure,
@@ -57,9 +58,8 @@ from trafficlab.genetic.types import (
     MethodTrialResult,
     TrialResult,
 )
-from trafficlab.models.common import Genes, make_rng
-from trafficlab.models.registry import MMPP_FAMILY
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.common import Genes, make_rng
+from trafficlab.generation.models.registry import MMPP_FAMILY
 
 MARKOV_MODEL_DIAGNOSTICS = {
     "timing_tier_transition_count": 1,

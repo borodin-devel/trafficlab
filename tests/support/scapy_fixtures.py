@@ -5,8 +5,8 @@ from __future__ import annotations
 import struct
 from collections.abc import Iterable
 
-from trafficlab.scapy_io import encode_pcapng
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, deterministic_peer_mac
+from trafficlab.common.scapy_io import encode_pcapng
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, deterministic_peer_mac
 
 
 def encode_events(events: Iterable[TraceEvent], metadata: CaptureMetadata) -> bytes:

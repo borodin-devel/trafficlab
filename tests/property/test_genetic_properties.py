@@ -8,10 +8,10 @@ from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
 from tests.unit.genetic.test_checkpoint import COMPATIBILITY, VALID_STATE, replace
-from trafficlab.config import FloatBounds
-from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state, parse_checkpoint, render_checkpoint
-from trafficlab.genetic.coordinates import GeneCoordinate, decode_gene, encode_gene
-from trafficlab.models.common import make_rng
+from trafficlab.common.config import FloatBounds
+from trafficlab.fitting.genetic.checkpoint import CheckpointState, encode_rng_state, parse_checkpoint, render_checkpoint
+from trafficlab.fitting.genetic.coordinates import GeneCoordinate, decode_gene, encode_gene
+from trafficlab.generation.models.common import make_rng
 
 
 @given(st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False))

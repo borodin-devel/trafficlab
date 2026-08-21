@@ -10,34 +10,34 @@ from pathlib import Path
 from typing import Literal, Self
 
 from trafficlab.artifacts import FileIdentity, _file_identity, append_run_log  # pyright: ignore[reportPrivateUsage]
-from trafficlab.capture import CaptureResult, capture_prepared_experiment
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import (
-    ComparisonResult,
-    compare_experiment,
-    parse_comparison_result,
-    render_comparison_result,
-    similarity_settings_identity,
-)
-from trafficlab.compatibility import ContentIdentity, identify_bytes, require_compatible
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import (
+from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes, require_compatible
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import (
     EvidenceState,
     TrafficlabError,
     append_failure_outcome,
     attach_failure_outcome,
     failure_outcome_from_error,
 )
-from trafficlab.fitting import FitStageResult, fit_experiment
-from trafficlab.generation import GenerationStageResult, generate_experiment
-from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
-from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
-from trafficlab.genetic.types import Candidate, TrialResult
-from trafficlab.models.registry import BestModel, load_best_model, render_best_model
-from trafficlab.preflight import PreparedExperiment, run_preflight
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.scientific_schema import ScientificArtifactSchemaError
-from trafficlab.trace import TrafficTrace, normalize_reference, parse_capture_metadata
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.scientific_schema import ScientificArtifactSchemaError
+from trafficlab.common.trace import TrafficTrace, normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import (
+    ComparisonResult,
+    compare_experiment,
+    parse_comparison_result,
+    render_comparison_result,
+    similarity_settings_identity,
+)
+from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
+from trafficlab.fitting.genetic.strategy import FitOutcome, make_strategy_context
+from trafficlab.fitting.genetic.types import Candidate, TrialResult
+from trafficlab.fitting.stage import FitStageResult, fit_experiment
+from trafficlab.generation.models.registry import BestModel, load_best_model, render_best_model
+from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment, run_preflight
 
 _SUCCESSFUL_RUN_NAMES = frozenset(
     {

@@ -9,9 +9,9 @@ from typing import cast
 import pytest
 import tomli_w
 
-from trafficlab.capture import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.cli import main
-from trafficlab.errors import TrafficlabError
+from trafficlab.common.errors import TrafficlabError
 
 pytestmark = pytest.mark.integration
 

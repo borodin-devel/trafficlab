@@ -6,7 +6,7 @@ from itertools import combinations
 
 import pytest
 
-from trafficlab.capture_policy import (
+from trafficlab.capture.policy import (
     CaptureEvent,
     CaptureOutcome,
     EventObservation,

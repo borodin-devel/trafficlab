@@ -4,9 +4,9 @@ from typing import cast
 
 import pytest
 
-from trafficlab.config import ExperimentConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.preflight import PreflightFinding, check_local
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.preflight.stage import PreflightFinding, check_local
 
 
 @dataclass(frozen=True)

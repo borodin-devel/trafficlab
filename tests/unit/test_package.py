@@ -15,8 +15,8 @@ import pytest
 import trafficlab
 import trafficlab.cli as cli
 from trafficlab import __version__
-from trafficlab.capture import CaptureResult
-from trafficlab.errors import TrafficlabError
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.common.errors import TrafficlabError
 
 
 def test_version_is_project_version() -> None:

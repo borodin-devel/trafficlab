@@ -13,9 +13,8 @@ import pytest
 
 from tests.fixtures.paths import DOCKER_FIXTURE_ROOT
 from tests.support.external import external_tests_requested, require_serial_external_tests, run_external_command
-from trafficlab.compose import ComposePaths
-from trafficlab.config import ExperimentConfig
-from trafficlab.docker_cli import (
+from trafficlab.capture.compose import ComposePaths
+from trafficlab.capture.docker_cli import (
     CaptureImageLockError,
     CommandResult,
     DockerCompose,
@@ -23,6 +22,7 @@ from trafficlab.docker_cli import (
     parse_image_inspect,
     validate_capture_platform,
 )
+from trafficlab.common.config import ExperimentConfig
 
 REPOSITORY_ROOT = Path(__file__).parents[2].resolve()
 CAPTURE_IMAGE = "trafficlab-capture:docker-capture-test"
@@ -444,9 +444,9 @@ class EndpointDockerCompose(TrackedDockerCompose):
 
 
 def install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
-    import trafficlab.capture as capture_module
-    import trafficlab.preflight as preflight_module
-    from trafficlab.compose import write_production_compose
+    import trafficlab.capture.stage as capture_module
+    import trafficlab.preflight.stage as preflight_module
+    from trafficlab.capture.compose import write_production_compose
 
     original_probe_document = preflight_module._probe_document  # pyright: ignore[reportPrivateUsage]
 

@@ -6,10 +6,10 @@ from typing import cast
 import pytest
 import tomli_w
 
-import trafficlab.config_io as config_io
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.errors import TrafficlabError
+import trafficlab.common.config_io as config_io
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_experiment, render_effective_config
+from trafficlab.common.errors import TrafficlabError
 
 
 def _write_config(path: Path, data: dict[str, object]) -> None:

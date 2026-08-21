@@ -10,12 +10,20 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
-from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.coordinates import GeneticRng
-from trafficlab.genetic.operators import ReproductionContext, fill_next_population, reproduce_child
-from trafficlab.genetic.population import initial_population
-from trafficlab.genetic.types import (
+from trafficlab.common.config import (
+    FamilyName,
+    FloatBounds,
+    IntegerBounds,
+    MarkovRenewalConfig,
+    MmppConfig,
+    PoissonConfig,
+)
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic.coordinates import GeneticRng
+from trafficlab.fitting.genetic.operators import ReproductionContext, fill_next_population, reproduce_child
+from trafficlab.fitting.genetic.population import initial_population
+from trafficlab.fitting.genetic.types import (
     Candidate,
     CandidateFailure,
     CandidateFailureKind,
@@ -23,9 +31,8 @@ from trafficlab.genetic.types import (
     CandidateStatus,
     DuplicateDiagnostic,
 )
-from trafficlab.models.common import FamilyBounds, Genes, make_rng
-from trafficlab.models.registry import POISSON_FAMILY
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.common import FamilyBounds, Genes, make_rng
+from trafficlab.generation.models.registry import POISSON_FAMILY
 
 
 def replace[Record](record: Record, **changes: object) -> Record:

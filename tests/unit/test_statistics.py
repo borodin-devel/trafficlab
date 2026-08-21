@@ -7,9 +7,9 @@ from typing import cast
 
 import pytest
 
-import trafficlab.statistics as statistics
-from trafficlab.errors import TrafficlabError
-from trafficlab.statistics import _validated_sample, bootstrap_interval  # pyright: ignore[reportPrivateUsage]
+import trafficlab.common.statistics as statistics
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.statistics import _validated_sample, bootstrap_interval  # pyright: ignore[reportPrivateUsage]
 
 
 def test_bootstrap_interval_records_literal_pcg64_percentile_metadata_and_bytes() -> None:

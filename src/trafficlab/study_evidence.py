@@ -27,13 +27,13 @@ from pydantic import (
     model_validator,
 )
 
-from trafficlab.comparison import (
+from trafficlab.common.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
+from trafficlab.comparison.stage import (
     AutocorrelationDiagnostic,
     FrameSizeDiagnostic,
     IatDiagnostic,
     MultiscaleDiagnostic,
 )
-from trafficlab.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
 
 type BundleAudit = Callable[[Path], None]
 

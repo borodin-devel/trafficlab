@@ -6,14 +6,11 @@ import tempfile
 from pathlib import Path
 
 from trafficlab.artifacts import create_run_directory
-from trafficlab.comparison import compare_experiment
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.generation import reproduce_generated_pcapng
-from trafficlab.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
-from trafficlab.scapy_io import encode_pcapng, read_pcapng
-from trafficlab.trace import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config_io import load_experiment, render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng
+from trafficlab.common.trace import (
     CaptureMetadata,
     Direction,
     TraceEvent,
@@ -22,6 +19,9 @@ from trafficlab.trace import (
     normalize_reference,
     render_capture_metadata,
 )
+from trafficlab.comparison.stage import compare_experiment
+from trafficlab.generation.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
+from trafficlab.generation.stage import reproduce_generated_pcapng
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _EXAMPLE_CONFIG = _REPOSITORY / "examples" / "configs" / "minimal.toml"

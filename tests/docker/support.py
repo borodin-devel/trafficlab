@@ -15,7 +15,7 @@ from tests.support.docker import (
     inspect_project_resources,
 )
 from tests.support.external import run_external_command
-from trafficlab.docker_cli import ImageIdentity, load_capture_image_lock, parse_image_inspect
+from trafficlab.capture.docker_cli import ImageIdentity, load_capture_image_lock, parse_image_inspect
 
 
 class CaptureInspectRunner(Protocol):

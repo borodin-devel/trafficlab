@@ -9,12 +9,12 @@ import pytest
 
 from tests.docker.support import assert_tracked_projects_clean, capture_log, write_docker_experiment
 from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
-from trafficlab.capture import capture_prepared_experiment
-from trafficlab.compose import ComposePaths
-from trafficlab.config import ExperimentConfig
-from trafficlab.docker_cli import CommandResult, ServiceState
-from trafficlab.errors import TrafficlabError
-from trafficlab.preflight import run_preflight
+from trafficlab.capture.compose import ComposePaths
+from trafficlab.capture.docker_cli import CommandResult, ServiceState
+from trafficlab.capture.stage import capture_prepared_experiment
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.preflight.stage import run_preflight
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
 
@@ -88,7 +88,7 @@ class _RecordingDocker(EndpointDockerCompose):
 
 
 def _replace_capture_entrypoint(monkeypatch: pytest.MonkeyPatch, entrypoint: list[str]) -> None:
-    import trafficlab.capture as capture_module
+    import trafficlab.capture.stage as capture_module
 
     def mutate(content: bytes, *, target_image: str, capture_image: str) -> bytes:
         document = cast(dict[str, object], json.loads(content))

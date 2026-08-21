@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from trafficlab.config import ExperimentConfig
+from trafficlab.common.config import ExperimentConfig
 
 
 def _set_value(data: dict[str, object], path: tuple[str, ...], value: object) -> None:

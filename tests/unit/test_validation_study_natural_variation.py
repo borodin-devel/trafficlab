@@ -13,12 +13,12 @@ import pytest
 from scripts import audit_validation_study as auditor
 from scripts.run_validation_study import PUBLISHED_METHOD_ORDER, HeldOutEvaluation
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
-from trafficlab.comparison import ComparisonResult
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_configuration_pair
-from trafficlab.genetic.checkpoint import CheckpointState
-from trafficlab.models.registry import BestModel
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_configuration_pair
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.comparison.stage import ComparisonResult
+from trafficlab.fitting.genetic.checkpoint import CheckpointState
+from trafficlab.generation.models.registry import BestModel
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKLOADS = ("short", "streaming", "bursty")

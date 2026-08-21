@@ -10,11 +10,11 @@ from collections.abc import Sequence
 
 import pytest
 
-from trafficlab.config import FloatBounds, GenerationLimits, PoissonConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.models.common import GenerationGuard, MarkCount, MarkDistribution
-from trafficlab.models.poisson import PoissonFamily, PoissonModel, _generate_with_rng
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.common.config import FloatBounds, GenerationLimits, PoissonConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.common import GenerationGuard, MarkCount, MarkDistribution
+from trafficlab.generation.models.poisson import PoissonFamily, PoissonModel, _generate_with_rng
 
 FAMILY = PoissonFamily()
 BOUNDS = PoissonConfig(c_lambda=FloatBounds(lower=0.25, upper=4.0))

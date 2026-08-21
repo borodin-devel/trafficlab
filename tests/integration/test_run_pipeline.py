@@ -17,14 +17,14 @@ import tomli_w
 
 import trafficlab.run as run_module
 from trafficlab.artifacts import create_run_directory, load_or_recover_capture_pair
-from trafficlab.capture import CaptureResult
-from trafficlab.comparison import ComparisonResult, compare_experiment, sha256_bytes, similarity_settings_sha256
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import FitStageResult, fit_experiment
-from trafficlab.generation import GenerationStageResult, generate_experiment
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_experiment, render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.comparison.stage import ComparisonResult, compare_experiment, sha256_bytes, similarity_settings_sha256
+from trafficlab.fitting.stage import FitStageResult, fit_experiment
+from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
 
 pytestmark = pytest.mark.integration

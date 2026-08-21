@@ -34,9 +34,23 @@ from trafficlab.artifacts import (
     _file_identity,  # pyright: ignore[reportPrivateUsage]
     append_run_log,
 )
-from trafficlab.capture import CaptureResult, capture_experiment
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import (
+from trafficlab.capture.docker_cli import cold_capture_build_argv, load_capture_image_lock, validate_capture_dockerfile
+from trafficlab.capture.stage import CaptureResult, capture_experiment
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes, require_compatible
+from trafficlab.common.config import ExperimentConfig, FamilyName, SimilarityConfig
+from trafficlab.common.config_io import load_experiment, render_effective_config
+from trafficlab.common.errors import TrafficlabError, attach_failure_outcome
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.common.statistics import bootstrap_interval
+from trafficlab.common.trace import (
+    CaptureMetadata,
+    TrafficTrace,
+    align_generated,
+    normalize_reference,
+    parse_capture_metadata,
+)
+from trafficlab.comparison.stage import (
     ComparisonResult,
     MultiscaleDiagnostic,
     compare_traces,
@@ -45,37 +59,23 @@ from trafficlab.comparison import (
     sha256_bytes,
     similarity_settings_identity,
 )
-from trafficlab.compatibility import ContentIdentity, identify_bytes, require_compatible
-from trafficlab.config import ExperimentConfig, FamilyName, SimilarityConfig
-from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.docker_cli import cold_capture_build_argv, load_capture_image_lock, validate_capture_dockerfile
-from trafficlab.errors import TrafficlabError, attach_failure_outcome
-from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
-from trafficlab.genetic.evaluation import evaluate_final, validate_evaluation_context
-from trafficlab.genetic.strategy import StrategyContext, make_strategy_context
-from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, TrialResult
-from trafficlab.models.registry import (
+from trafficlab.fitting.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
+from trafficlab.fitting.genetic.evaluation import evaluate_final, validate_evaluation_context
+from trafficlab.fitting.genetic.strategy import StrategyContext, make_strategy_context
+from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, TrialResult
+from trafficlab.generation.models.registry import (
     BestModel,
     get_family,
     load_best_model,
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.preflight import open_or_prepare_experiment
+from trafficlab.preflight.stage import open_or_prepare_experiment
 from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
-from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
-from trafficlab.statistics import bootstrap_interval
 from trafficlab.study_evidence import (
     ValidationStudyPrerequisite,
     publish_accepted_bundle,
     validate_study_model,
-)
-from trafficlab.trace import (
-    CaptureMetadata,
-    TrafficTrace,
-    align_generated,
-    normalize_reference,
-    parse_capture_metadata,
 )
 
 type JsonScalar = str | int | float | bool

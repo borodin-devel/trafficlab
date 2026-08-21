@@ -4,8 +4,8 @@ from collections.abc import Sequence
 import numpy as np
 import pytest
 
-from trafficlab.errors import TrafficlabError
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace, align_generated, normalize_reference
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace, align_generated, normalize_reference
 
 
 def _invalid_event(**fields: object) -> TraceEvent:

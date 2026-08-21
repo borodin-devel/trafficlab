@@ -7,10 +7,18 @@ from typing import cast
 
 import pytest
 
-from trafficlab.config import FamilyName, FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
-from trafficlab.genetic import population as population_module
-from trafficlab.genetic.coordinates import GeneticRng
-from trafficlab.genetic.population import (
+from trafficlab.common.config import (
+    FamilyName,
+    FloatBounds,
+    IntegerBounds,
+    MarkovRenewalConfig,
+    MmppConfig,
+    PoissonConfig,
+)
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic import population as population_module
+from trafficlab.fitting.genetic.coordinates import GeneticRng
+from trafficlab.fitting.genetic.population import (
     family_champions,
     family_quotas,
     global_elites,
@@ -19,9 +27,8 @@ from trafficlab.genetic.population import (
     retained_population,
     tournament_select,
 )
-from trafficlab.genetic.types import Candidate, CandidateId, CandidateStatus
-from trafficlab.models.common import FamilyBounds, make_rng
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic.types import Candidate, CandidateId, CandidateStatus
+from trafficlab.generation.models.common import FamilyBounds, make_rng
 
 
 @dataclass

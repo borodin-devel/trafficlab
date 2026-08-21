@@ -7,9 +7,10 @@ from typing import cast
 
 import pytest
 
-from trafficlab.config import GenerationLimits
-from trafficlab.errors import TrafficlabError
-from trafficlab.models.common import (
+from trafficlab.common.config import GenerationLimits
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.common import (
     GenerationGuard,
     GenerationResult,
     IncompleteReason,
@@ -18,7 +19,6 @@ from trafficlab.models.common import (
     validate_fit_inputs,
     weighted_index,
 )
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 
 class ScriptedClock:

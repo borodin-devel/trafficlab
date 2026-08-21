@@ -11,12 +11,12 @@ from typing import cast
 
 import pytest
 
-from trafficlab.config import FloatBounds, GenerationLimits, MmppConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.models import mmpp
-from trafficlab.models.common import MarkCount
-from trafficlab.models.mmpp import MmppFamily, MmppModel, _generate_with_rng
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.common.config import FloatBounds, GenerationLimits, MmppConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models import mmpp
+from trafficlab.generation.models.common import MarkCount
+from trafficlab.generation.models.mmpp import MmppFamily, MmppModel, _generate_with_rng
 
 FAMILY = MmppFamily()
 BOUNDS = MmppConfig(

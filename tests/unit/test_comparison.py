@@ -9,8 +9,14 @@ from typing import Any, cast
 import pytest
 
 import trafficlab.artifacts as artifacts
-import trafficlab.comparison as comparison
-from trafficlab.comparison import (
+import trafficlab.comparison.stage as comparison
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import ExperimentConfig, SimilarityConfig
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace, parse_capture_metadata
+from trafficlab.comparison.similarity import SimilarityResult
+from trafficlab.comparison.stage import (
     ComparisonMethods,
     ComparisonResult,
     MethodComparison,
@@ -18,13 +24,7 @@ from trafficlab.comparison import (
     parse_comparison_result,
     render_comparison_result,
 )
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.config import ExperimentConfig, SimilarityConfig
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.models.registry import load_best_model
-from trafficlab.similarity import SimilarityResult
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace, parse_capture_metadata
+from trafficlab.generation.models.registry import load_best_model
 
 
 def _settings(data: dict[str, object]) -> SimilarityConfig:

@@ -23,8 +23,8 @@ from tests.scientific.oracles import (
     mmpp_moments,
 )
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import (
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
@@ -32,7 +32,10 @@ from trafficlab.config import (
     MmppConfig,
     PoissonConfig,
 )
-from trafficlab.models import (
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
+from trafficlab.generation.models import (
     FamilyBounds,
     FittedModel,
     Gene,
@@ -44,18 +47,15 @@ from trafficlab.models import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.models.common import GenerationResult, MarkCount, MarkDistribution
-from trafficlab.models.markov_renewal import (
+from trafficlab.generation.models.common import GenerationResult, MarkCount, MarkDistribution
+from trafficlab.generation.models.markov_renewal import (
     MarkovRenewalFamily,
     MarkovRenewalModel,
     MarkovState,
     choose_holding_sample,
 )
-from trafficlab.models.mmpp import MmppFamily, MmppModel
-from trafficlab.models.poisson import PoissonFamily, PoissonModel
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
+from trafficlab.generation.models.mmpp import MmppFamily, MmppModel
+from trafficlab.generation.models.poisson import PoissonFamily, PoissonModel
 
 _ROOT = Path(__file__).resolve().parents[2]
 _EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT

@@ -37,25 +37,32 @@ from scripts.run_validation_study import (
     retained_prerequisite_paths,
 )
 from trafficlab import USER_AGENT
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import (
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_configuration_pair, render_effective_config
+from trafficlab.common.errors import FailureKind, FailureOutcome, TrafficlabError
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.common.statistics import bootstrap_interval
+from trafficlab.common.trace import TrafficTrace, align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import (
     ComparisonResult,
     compare_traces,
     parse_comparison_result,
     render_comparison_result,
     similarity_settings_identity,
 )
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_configuration_pair, render_effective_config
-from trafficlab.errors import FailureKind, FailureOutcome, TrafficlabError
-from trafficlab.generation import reproduce_generated_pcapng
-from trafficlab.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
-from trafficlab.genetic.population import rank_candidates
-from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.models.registry import BestModel, get_family, load_best_model, render_best_model, runtime_fitted_model
-from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
-from trafficlab.statistics import bootstrap_interval
+from trafficlab.fitting.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
+from trafficlab.fitting.genetic.population import rank_candidates
+from trafficlab.fitting.genetic.strategy import make_strategy_context
+from trafficlab.generation.models.registry import (
+    BestModel,
+    get_family,
+    load_best_model,
+    render_best_model,
+    runtime_fitted_model,
+)
+from trafficlab.generation.stage import reproduce_generated_pcapng
 from trafficlab.study_evidence import (
     ValidationStudyEnvironment,
     ValidationStudyLifecycle,
@@ -65,7 +72,6 @@ from trafficlab.study_evidence import (
     ValidationStudyReport,
     ValidationStudyReportInput,
 )
-from trafficlab.trace import TrafficTrace, align_generated, normalize_reference, parse_capture_metadata
 
 _MANIFEST = "manifest.json"
 _INDEX = "index.json"

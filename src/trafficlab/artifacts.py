@@ -13,13 +13,13 @@ from typing import Literal, cast
 
 from pydantic import ValidationError
 
-from trafficlab.capture_validation import CaptureInspection, validate_capture_pair
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import DeadlineExceededError, FailureOutcome, TrafficlabError, attach_failure_outcome
-from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import CaptureMetadata, TrafficTrace
+from trafficlab.capture.validation import CaptureInspection, validate_capture_pair
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import DeadlineExceededError, FailureOutcome, TrafficlabError, attach_failure_outcome
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import CaptureMetadata, TrafficTrace
+from trafficlab.generation.models.registry import load_best_model, render_best_model
 
 
 def _artifact_error(detail: str) -> TrafficlabError:

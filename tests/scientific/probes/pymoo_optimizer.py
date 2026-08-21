@@ -17,7 +17,7 @@ from pymoo.core.population import Population  # pyright: ignore[reportMissingTyp
 from pymoo.core.problem import ElementwiseProblem  # pyright: ignore[reportMissingTypeStubs]
 from pymoo.core.variable import Integer, Real  # pyright: ignore[reportMissingTypeStubs]
 
-from trafficlab.config import (
+from trafficlab.common.config import (
     FamilyName,
     FloatBounds,
     GenerationLimits,
@@ -28,18 +28,18 @@ from trafficlab.config import (
     PoissonConfig,
     SimilarityConfig,
 )
-from trafficlab.genetic.checkpoint import RngState
-from trafficlab.genetic.evaluation import (
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic.checkpoint import RngState
+from trafficlab.fitting.genetic.evaluation import (
     EvaluationContext,
     ValidatedEvaluationContext,
     evaluate_candidate,
     evaluate_final,
     validate_evaluation_context,
 )
-from trafficlab.genetic.types import Candidate, CandidateId, TrialResult, rebuild_genetic_record
-from trafficlab.models.common import FamilyBounds, Gene, Genes, ModelFamily
-from trafficlab.models.registry import REGISTRY
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic.types import Candidate, CandidateId, TrialResult, rebuild_genetic_record
+from trafficlab.generation.models.common import FamilyBounds, Gene, Genes, ModelFamily
+from trafficlab.generation.models.registry import REGISTRY
 
 type JsonObject = dict[str, Any]
 type PymooAlgorithm = Any

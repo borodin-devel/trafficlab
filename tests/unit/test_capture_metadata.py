@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from trafficlab.errors import TrafficlabError
-from trafficlab.trace import (
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import (
     CaptureMetadata,
     deterministic_peer_mac,
     load_capture_metadata,

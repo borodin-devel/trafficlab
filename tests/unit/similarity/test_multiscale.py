@@ -9,15 +9,15 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-import trafficlab.similarity.multiscale as multiscale_module
-from trafficlab.errors import TrafficlabError
-from trafficlab.similarity.multiscale import (
+import trafficlab.comparison.similarity.multiscale as multiscale_module
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent
+from trafficlab.comparison.similarity.multiscale import (
     _exact_l1_totals,  # pyright: ignore[reportPrivateUsage]
     _snap_near_integer,  # pyright: ignore[reportPrivateUsage]
     multiscale_rate_similarity,
     normalized_l1,
 )
-from trafficlab.trace import Direction, TraceEvent
 
 
 class _Bincount(Protocol):

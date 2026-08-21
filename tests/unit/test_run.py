@@ -15,33 +15,33 @@ import pytest
 import tomli_w
 from pydantic import BaseModel
 
-import trafficlab.capture as capture_module
+import trafficlab.capture.stage as capture_module
 import trafficlab.run as run_module
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts import FileIdentity
-from trafficlab.capture import CaptureResult
-from trafficlab.capture_validation import CaptureInspection
-from trafficlab.comparison import ComparisonResult, render_comparison_result
-from trafficlab.compatibility import ContentIdentity, identify_bytes
-from trafficlab.config import FamilyName
-from trafficlab.config_io import render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import FitStageResult
-from trafficlab.generation import GenerationStageResult
-from trafficlab.genetic.checkpoint import (
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.validation import CaptureInspection
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes
+from trafficlab.common.config import FamilyName
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
+from trafficlab.comparison.stage import ComparisonResult, render_comparison_result
+from trafficlab.fitting.genetic.checkpoint import (
     CheckpointState,
     encode_rng_state,
     render_checkpoint,
     render_history_csv,
     summarize_generation,
 )
-from trafficlab.genetic.strategy import FitOutcome, make_strategy_context
-from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
-from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
-from trafficlab.models.registry import POISSON_FAMILY, make_best_model, rebuild_best_model, render_best_model
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.fitting.genetic.strategy import FitOutcome, make_strategy_context
+from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.fitting.stage import FitStageResult
+from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
+from trafficlab.generation.models.registry import POISSON_FAMILY, make_best_model, rebuild_best_model, render_best_model
+from trafficlab.generation.stage import GenerationStageResult
+from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
 
 
 def replace[Record](record: Record, **changes: object) -> Record:

@@ -8,8 +8,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 from scipy.stats import ks_2samp  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
-from trafficlab.similarity.autocorrelation import sample_autocorrelation
-from trafficlab.similarity.multiscale import normalized_l1
+from trafficlab.comparison.similarity.autocorrelation import sample_autocorrelation
+from trafficlab.comparison.similarity.multiscale import normalized_l1
 
 
 def _merged_ecdf_distance(left: list[int], right: list[int]) -> float:

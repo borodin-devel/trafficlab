@@ -20,17 +20,12 @@ if __package__ in (None, ""):
 from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
 from trafficlab.artifacts import append_run_log
-from trafficlab.comparison import compare_traces, render_comparison_result, similarity_settings_identity
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_configuration_pair, render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
-from trafficlab.generation import reproduce_generated_pcapng
-from trafficlab.genetic.strategy import run_strategy
-from trafficlab.preflight import PreflightReport, PreparedExperiment
-from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
-from trafficlab.trace import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_configuration_pair, render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.common.trace import (
     CaptureMetadata,
     TraceEvent,
     TrafficTrace,
@@ -38,6 +33,11 @@ from trafficlab.trace import (
     normalize_reference,
     parse_capture_metadata,
 )
+from trafficlab.comparison.stage import compare_traces, render_comparison_result, similarity_settings_identity
+from trafficlab.fitting.genetic.strategy import run_strategy
+from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
+from trafficlab.generation.stage import reproduce_generated_pcapng
+from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"

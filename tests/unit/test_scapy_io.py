@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 
 from tests.support.pcapng_oracle import oracle_trace
-from trafficlab import scapy_io
-from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.scapy_io import EncodedPcapng, encode_pcapng, read_pcapng, read_pcapng_bytes, read_pcapng_packets
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, load_capture_metadata
+from trafficlab.common import scapy_io
+from trafficlab.common.errors import DeadlineExceededError, TrafficlabError
+from trafficlab.common.scapy_io import EncodedPcapng, encode_pcapng, read_pcapng, read_pcapng_bytes, read_pcapng_packets
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, load_capture_metadata
 
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _DATA = _REPOSITORY / "examples" / "data"

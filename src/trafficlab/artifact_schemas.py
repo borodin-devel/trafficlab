@@ -4,10 +4,11 @@ from types import MappingProxyType
 
 from pydantic import BaseModel
 
-from trafficlab.comparison import PublishedComparisonResult
-from trafficlab.errors import FailureOutcomeRecord
-from trafficlab.genetic.checkpoint import CheckpointArtifact
-from trafficlab.models.registry import BestModel
+from trafficlab.common.errors import FailureOutcomeRecord
+from trafficlab.common.trace import CaptureMetadata
+from trafficlab.comparison.stage import PublishedComparisonResult
+from trafficlab.fitting.genetic.checkpoint import CheckpointArtifact
+from trafficlab.generation.models.registry import BestModel
 from trafficlab.study_evidence import (
     ValidationStudyEnvironment,
     ValidationStudyLifecycle,
@@ -18,7 +19,6 @@ from trafficlab.study_evidence import (
     ValidationStudyReport,
     ValidationStudyReportInput,
 )
-from trafficlab.trace import CaptureMetadata
 
 PUBLIC_ARTIFACT_MODELS: MappingProxyType[str, type[BaseModel]] = MappingProxyType(
     {

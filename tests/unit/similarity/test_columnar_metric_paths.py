@@ -5,11 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import trafficlab.similarity.multiscale as multiscale_module
-from trafficlab.errors import TrafficlabError
-from trafficlab.similarity.autocorrelation import autocorrelation_similarity, sample_autocorrelation
-from trafficlab.similarity.multiscale import multiscale_rate_similarity
-from trafficlab.trace import TrafficTrace, align_generated, normalize_reference
+import trafficlab.comparison.similarity.multiscale as multiscale_module
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import TrafficTrace, align_generated, normalize_reference
+from trafficlab.comparison.similarity.autocorrelation import autocorrelation_similarity, sample_autocorrelation
+from trafficlab.comparison.similarity.multiscale import multiscale_rate_similarity
 
 
 def _trace() -> TrafficTrace:

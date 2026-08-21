@@ -17,8 +17,8 @@ from tests.support.validation_study import (
     valid_prerequisite,
     write_prerequisite_repository_inputs,
 )
-from trafficlab.compatibility import identify_bytes
-from trafficlab.errors import TrafficlabError
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.errors import TrafficlabError
 from trafficlab.run import RunResult
 
 

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-import trafficlab.similarity.multiscale as multiscale_module
+import trafficlab.comparison.similarity.multiscale as multiscale_module
 from scripts import benchmark_scientific_stack as benchmark
 
 _ROOT = Path(__file__).parents[2]

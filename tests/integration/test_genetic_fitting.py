@@ -13,30 +13,30 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
-import trafficlab.docker_cli as docker_cli
-import trafficlab.genetic.evaluation as genetic_evaluation
-import trafficlab.genetic.operators as genetic_operators
-import trafficlab.genetic.strategy as genetic_strategy
+import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.fitting.genetic.evaluation as genetic_evaluation
+import trafficlab.fitting.genetic.operators as genetic_operators
+import trafficlab.fitting.genetic.strategy as genetic_strategy
 from trafficlab.artifacts import create_run_directory
-from trafficlab.comparison import compare_experiment, load_comparison_result
-from trafficlab.compatibility import ContentIdentity, identify_bytes
-from trafficlab.config import ExperimentConfig, FamilyName, GenerationLimits, MethodWeights
-from trafficlab.config_io import load_experiment, render_effective_config
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import FitDependencies, fit_experiment, read_fit_input
-from trafficlab.generation import generate_experiment
-from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint, render_history_csv
-from trafficlab.genetic.coordinates import GeneticRng
-from trafficlab.genetic.evaluation import ValidatedEvaluationContext
-from trafficlab.genetic.operators import ReproductionContext
-from trafficlab.genetic.population import rank_candidates
-from trafficlab.genetic.strategy import make_strategy_context, run_strategy
-from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
-from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult, Genes
-from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.preflight import PreflightReport, PreparedExperiment
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import normalize_reference, parse_capture_metadata
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes
+from trafficlab.common.config import ExperimentConfig, FamilyName, GenerationLimits, MethodWeights
+from trafficlab.common.config_io import load_experiment, render_effective_config
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import compare_experiment, load_comparison_result
+from trafficlab.fitting.genetic.checkpoint import CheckpointState, load_checkpoint, render_history_csv
+from trafficlab.fitting.genetic.coordinates import GeneticRng
+from trafficlab.fitting.genetic.evaluation import ValidatedEvaluationContext
+from trafficlab.fitting.genetic.operators import ReproductionContext
+from trafficlab.fitting.genetic.population import rank_candidates
+from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strategy
+from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
+from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult, Genes
+from trafficlab.generation.models.registry import load_best_model, render_best_model
+from trafficlab.generation.stage import generate_experiment
+from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
 
 pytestmark = pytest.mark.integration
 
@@ -530,7 +530,7 @@ def test_configuration_and_registry_permutations_keep_priority_population_childr
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Input order must not change any priority-governed search evidence."""
-    import trafficlab.models.registry as model_registry
+    import trafficlab.generation.models.registry as model_registry
 
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
@@ -582,7 +582,7 @@ def test_in_process_fairness_matrix_preserves_slots_children_and_mixed_mmpp_winn
     expected_priority: tuple[FamilyName, ...],
 ) -> None:
     """The public fit owner must retain the complete documented fairness evidence across input orders."""
-    import trafficlab.models.registry as model_registry
+    import trafficlab.generation.models.registry as model_registry
 
     _install_mixed_matrix_scoring(monkeypatch)
     initial_populations: list[tuple[Candidate, ...]] = []

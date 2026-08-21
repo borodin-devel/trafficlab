@@ -6,14 +6,14 @@ from typing import cast
 
 import pytest
 
-import trafficlab.preflight as preflight_module
+import trafficlab.preflight.stage as preflight_module
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab import USER_AGENT
-from trafficlab.config import ExperimentConfig
-from trafficlab.docker_cli import CommandResult, ServiceState
-from trafficlab.errors import TrafficlabError
-from trafficlab.preflight import check_docker
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
+from trafficlab.capture.docker_cli import CommandResult, ServiceState
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
+from trafficlab.preflight.stage import check_docker
 
 _CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
 _TARGET_IMAGE_ID = "sha256:" + ("c" * 64)

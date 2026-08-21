@@ -11,9 +11,9 @@ from typing import Any, cast
 
 import pytest
 
-import trafficlab.models.registry as registry_module
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.config import (
+import trafficlab.generation.models.registry as registry_module
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import (
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
@@ -21,9 +21,10 @@ from trafficlab.config import (
     MmppConfig,
     PoissonConfig,
 )
-from trafficlab.errors import TrafficlabError
-from trafficlab.models.common import ModelFamily
-from trafficlab.models.registry import (
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.common import ModelFamily
+from trafficlab.generation.models.registry import (
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
     POISSON_FAMILY,
@@ -35,7 +36,6 @@ from trafficlab.models.registry import (
     rebuild_best_model,
     render_best_model,
 )
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 REFERENCE = TrafficTrace.from_events(
     (
@@ -537,7 +537,7 @@ def test_best_model_renderer_translates_encoding_failure_and_rejects_roundtrip_c
 
 def test_make_best_model_rejects_a_nonregistry_family_instance() -> None:
     """Accepting another instance would create a runtime replacement hook around the closed registry."""
-    from trafficlab.models.poisson import PoissonFamily
+    from trafficlab.generation.models.poisson import PoissonFamily
 
     with pytest.raises(TrafficlabError, match="unknown model family object"):
         make_best_model(

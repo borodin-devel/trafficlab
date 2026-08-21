@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import cast
 
 from tests.support.config import valid_config_data
-from trafficlab.config import ExperimentConfig
+from trafficlab.common.config import ExperimentConfig
 
 
 def test_valid_config_builder_returns_independent_valid_mappings(tmp_path: Path) -> None:

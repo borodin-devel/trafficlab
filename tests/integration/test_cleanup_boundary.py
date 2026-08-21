@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from trafficlab.cleanup import cleanup_project
-from trafficlab.docker_cli import (
+from trafficlab.capture.cleanup import cleanup_project
+from trafficlab.capture.docker_cli import (
     CommandResult,
     DockerCompose,
     ProcessHandle,

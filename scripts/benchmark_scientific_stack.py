@@ -24,12 +24,14 @@ from numpy.typing import NDArray
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from trafficlab.similarity.autocorrelation import _sample_autocorrelations  # pyright: ignore[reportPrivateUsage]
-from trafficlab.similarity.multiscale import _binned_features  # pyright: ignore[reportPrivateUsage]
-from trafficlab.similarity.multiscale import (  # pyright: ignore[reportPrivateUsage]
+from trafficlab.common.trace import TrafficTrace, normalize_reference
+from trafficlab.comparison.similarity.autocorrelation import (
+    _sample_autocorrelations,  # pyright: ignore[reportPrivateUsage]
+)
+from trafficlab.comparison.similarity.multiscale import _binned_features  # pyright: ignore[reportPrivateUsage]
+from trafficlab.comparison.similarity.multiscale import (  # pyright: ignore[reportPrivateUsage]
     _snap_near_integer as _production_snap_near_integer,  # pyright: ignore[reportPrivateUsage]
 )
-from trafficlab.trace import TrafficTrace, normalize_reference
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 OUTPUT = REPOSITORY / "examples" / "scientific_stack" / "benchmark.json"

@@ -10,13 +10,14 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.config import ExperimentConfig
-from trafficlab.errors import FailureOutcome, TrafficlabError
-from trafficlab.genetic import strategy
-from trafficlab.genetic.checkpoint import CheckpointState, load_checkpoint, render_checkpoint
-from trafficlab.genetic.evaluation import ValidatedEvaluationContext
-from trafficlab.genetic.strategy import (
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import FailureOutcome, TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.fitting.genetic import strategy
+from trafficlab.fitting.genetic.checkpoint import CheckpointState, load_checkpoint, render_checkpoint
+from trafficlab.fitting.genetic.evaluation import ValidatedEvaluationContext
+from trafficlab.fitting.genetic.strategy import (
     StrategyContext,
     advance_termination_state,
     initialize_or_resume,
@@ -24,7 +25,7 @@ from trafficlab.genetic.strategy import (
     run_strategy,
     should_stop_early,
 )
-from trafficlab.genetic.types import (
+from trafficlab.fitting.genetic.types import (
     METHOD_ORDER,
     Candidate,
     CandidateFailure,
@@ -32,8 +33,7 @@ from trafficlab.genetic.types import (
     MethodTrialResult,
     TrialResult,
 )
-from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
 
 
 def replace[Record](record: Record, **changes: object) -> Record:

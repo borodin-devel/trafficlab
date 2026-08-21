@@ -13,8 +13,8 @@ from typing import Never
 import pytest
 
 from scripts import check_scientific_stack_example as example_run
-from trafficlab.config import ExperimentConfig, MountConfig
-from trafficlab.config_io import ConfigurationPair, load_configuration_pair, realize_configuration
+from trafficlab.common.config import ExperimentConfig, MountConfig
+from trafficlab.common.config_io import ConfigurationPair, load_configuration_pair, realize_configuration
 
 _ROOT = Path(__file__).parents[2]
 _EVIDENCE = _ROOT / "examples" / "scientific_stack" / "example_run.json"

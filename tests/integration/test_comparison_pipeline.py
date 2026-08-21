@@ -8,12 +8,12 @@ from typing import cast
 import pytest
 
 import trafficlab.artifacts as artifacts
-import trafficlab.comparison as comparison
+import trafficlab.comparison.stage as comparison
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts import create_run_directory
-from trafficlab.comparison import compare_experiment, load_comparison_result
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment, render_effective_config
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_experiment, render_effective_config
+from trafficlab.comparison.stage import compare_experiment, load_comparison_result
 
 pytestmark = pytest.mark.integration
 

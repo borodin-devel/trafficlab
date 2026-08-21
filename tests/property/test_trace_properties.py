@@ -8,7 +8,7 @@ from typing import Any, cast
 from hypothesis import given, settings
 
 from tests.property.strategies import trace_events
-from trafficlab.trace import TraceEvent, align_generated, normalize_reference
+from trafficlab.common.trace import TraceEvent, align_generated, normalize_reference
 
 
 def test_locked_hypothesis_profile() -> None:

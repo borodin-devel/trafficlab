@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from trafficlab.errors import FailureOutcome, TrafficlabError, append_failure_outcome, attach_failure_outcome
+from trafficlab.common.errors import FailureOutcome, TrafficlabError, append_failure_outcome, attach_failure_outcome
 
 
 def _outcome(*, kind: str = "metric_infeasible", stage: str = "compare") -> FailureOutcome:

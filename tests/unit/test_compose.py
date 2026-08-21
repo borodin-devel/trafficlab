@@ -11,9 +11,9 @@ from typing import Any, cast
 
 import pytest
 
-from trafficlab.compose import ComposePaths, render_production_compose, write_production_compose
-from trafficlab.config import ExperimentConfig
-from trafficlab.errors import TrafficlabError
+from trafficlab.capture.compose import ComposePaths, render_production_compose, write_production_compose
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.errors import TrafficlabError
 
 
 def _config(valid_config_data: dict[str, object], tmp_path: Path) -> ExperimentConfig:

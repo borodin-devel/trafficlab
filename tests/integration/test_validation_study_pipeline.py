@@ -18,13 +18,13 @@ from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
 from trafficlab.artifacts import append_run_log
-from trafficlab.capture import CaptureResult
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import compare_experiment
-from trafficlab.fitting import fit_experiment
-from trafficlab.generation import generate_experiment
-from trafficlab.genetic.types import METHOD_ORDER
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.comparison.stage import compare_experiment
+from trafficlab.fitting.genetic.types import METHOD_ORDER
+from trafficlab.fitting.stage import fit_experiment
+from trafficlab.generation.stage import generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, run_experiment
 
 pytestmark = pytest.mark.integration

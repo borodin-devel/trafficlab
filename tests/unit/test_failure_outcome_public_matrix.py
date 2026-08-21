@@ -11,26 +11,26 @@ from typing import Any, Literal, cast
 
 import pytest
 
-import trafficlab.capture as capture
-import trafficlab.comparison as comparison
-import trafficlab.fitting as fitting
-import trafficlab.generation as generation
-import trafficlab.genetic.strategy as strategy_module
-import trafficlab.preflight as preflight
+import trafficlab.capture.stage as capture
+import trafficlab.comparison.stage as comparison
+import trafficlab.fitting.genetic.strategy as strategy_module
+import trafficlab.fitting.stage as fitting
+import trafficlab.generation.stage as generation
+import trafficlab.preflight.stage as preflight
 import trafficlab.study_evidence as study_evidence
 from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT, PIPELINE_FIXTURE_ROOT
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.compatibility import ContentIdentity, identify_bytes
-from trafficlab.config import ExperimentConfig, FloatBounds
-from trafficlab.config_io import render_effective_config
-from trafficlab.docker_cli import CommandResult, ServiceState, load_capture_image_lock
-from trafficlab.errors import FailureOutcome, TrafficlabError
-from trafficlab.fitting import FitDependencies
-from trafficlab.genetic.strategy import FitOutcome, StrategyContext, run_strategy
-from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
-from trafficlab.models.registry import load_best_model, rebuild_best_model, render_best_model
-from trafficlab.scapy_io import EncodedPcapng
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
+from trafficlab.capture.docker_cli import CommandResult, ServiceState, load_capture_image_lock
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes
+from trafficlab.common.config import ExperimentConfig, FloatBounds
+from trafficlab.common.config_io import render_effective_config
+from trafficlab.common.errors import FailureOutcome, TrafficlabError
+from trafficlab.common.scapy_io import EncodedPcapng
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
+from trafficlab.fitting.genetic.strategy import FitOutcome, StrategyContext, run_strategy
+from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
+from trafficlab.fitting.stage import FitDependencies
+from trafficlab.generation.models.registry import load_best_model, rebuild_best_model, render_best_model
 
 _FIXTURE = DIAGNOSTIC_FIXTURE_ROOT / "failure-outcomes.jsonl"
 _ROOT = Path(__file__).parents[2]
@@ -1286,7 +1286,7 @@ def _fit_success_outcome(config: ExperimentConfig) -> FitOutcome:
         invalid=None,
         duplicate_diagnostics=(),
     )
-    from trafficlab.genetic.population import derive_family_priority
+    from trafficlab.fitting.genetic.population import derive_family_priority
 
     return FitOutcome(
         winner,

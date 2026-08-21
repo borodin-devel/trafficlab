@@ -27,21 +27,27 @@ from tests.fixtures.paths import (
 )
 from trafficlab import USER_AGENT
 from trafficlab.artifacts import append_run_log
-from trafficlab.capture import CaptureResult
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import ComparisonResult, compare_experiment, compare_traces
-from trafficlab.compatibility import ContentIdentity
-from trafficlab.fitting import fit_experiment
-from trafficlab.generation import generate_experiment
-from trafficlab.genetic.checkpoint import CheckpointState, encode_rng_state
-from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.genetic.types import Candidate, CandidateId, MethodTrialResult, TrialResult, rebuild_genetic_record
-from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
-from trafficlab.models.registry import BestModel, get_family, make_best_model
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.compatibility import ContentIdentity
+from trafficlab.common.statistics import bootstrap_interval
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.comparison.stage import ComparisonResult, compare_experiment, compare_traces
+from trafficlab.fitting.genetic.checkpoint import CheckpointState, encode_rng_state
+from trafficlab.fitting.genetic.strategy import make_strategy_context
+from trafficlab.fitting.genetic.types import (
+    Candidate,
+    CandidateId,
+    MethodTrialResult,
+    TrialResult,
+    rebuild_genetic_record,
+)
+from trafficlab.fitting.stage import fit_experiment
+from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
+from trafficlab.generation.models.registry import BestModel, get_family, make_best_model
+from trafficlab.generation.stage import generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.statistics import bootstrap_interval
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 HASH = "a" * 64
 

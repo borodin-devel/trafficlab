@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from trafficlab.config_io import load_experiment
-from trafficlab.models.common import make_rng
+from trafficlab.common.config_io import load_experiment
+from trafficlab.generation.models.common import make_rng
 
 _ROOT = Path(__file__).parents[2]
 _EXAMPLE = _ROOT / "examples" / "scientific_stack" / "experiment.toml"

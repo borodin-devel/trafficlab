@@ -8,9 +8,9 @@ import pytest
 from hypothesis import given
 
 from tests.property.strategies import PcapngCase, json_documents, pcapng_cases
-from trafficlab.errors import TrafficlabError
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import CaptureMetadata, parse_capture_metadata, render_capture_metadata
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import CaptureMetadata, parse_capture_metadata, render_capture_metadata
 
 
 @given(json_documents())

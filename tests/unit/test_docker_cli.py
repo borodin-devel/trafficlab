@@ -11,7 +11,7 @@ from typing import NoReturn, cast
 
 import pytest
 
-from trafficlab.docker_cli import (
+from trafficlab.capture.docker_cli import (
     CommandBoundary,
     CommandResult,
     DockerCompose,
@@ -19,7 +19,7 @@ from trafficlab.docker_cli import (
     ServiceState,
     SubprocessBoundary,
 )
-from trafficlab.errors import TrafficlabError
+from trafficlab.common.errors import TrafficlabError
 
 
 class _Handle:

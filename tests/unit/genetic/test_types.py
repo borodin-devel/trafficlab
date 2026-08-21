@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from trafficlab.genetic.types import (
+from trafficlab.fitting.genetic.types import (
     METHOD_ORDER,
     Candidate,
     CandidateFailure,

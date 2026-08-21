@@ -31,29 +31,29 @@ from pydantic import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from trafficlab.comparison import (
-    compare_traces,
-    parse_comparison_result,
-    render_comparison_result,
-    similarity_settings_identity,
-)
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import (
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import (
     ConfigurationPair,
     load_configuration_pair,
     load_experiment,
     realize_configuration,
     render_effective_config,
 )
-from trafficlab.errors import TrafficlabError
-from trafficlab.generation import reproduce_generated_pcapng
-from trafficlab.genetic.checkpoint import parse_checkpoint, render_history_csv
-from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.models.common import FamilyBounds, Genes
-from trafficlab.models.registry import get_family, load_best_model, make_best_model, render_best_model
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import (
+    compare_traces,
+    parse_comparison_result,
+    render_comparison_result,
+    similarity_settings_identity,
+)
+from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
+from trafficlab.fitting.genetic.strategy import make_strategy_context
+from trafficlab.generation.models.common import FamilyBounds, Genes
+from trafficlab.generation.models.registry import get_family, load_best_model, make_best_model, render_best_model
+from trafficlab.generation.stage import reproduce_generated_pcapng
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 EVIDENCE_PATH = REPOSITORY / "examples" / "scientific_stack" / "example_run.json"

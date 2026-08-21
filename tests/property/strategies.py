@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
-from trafficlab.scapy_io import encode_pcapng
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
+from trafficlab.common.scapy_io import encode_pcapng
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
+from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 
 _SECTION = 0x0A0D0D0A
 _INTERFACE = 1

@@ -6,7 +6,7 @@ import numpy as np
 from hypothesis import given
 
 from tests.property.strategies import trace_events
-from trafficlab.trace import TraceEvent, TrafficTrace
+from trafficlab.common.trace import TraceEvent, TrafficTrace
 
 
 @given(trace_events())

@@ -42,17 +42,21 @@ from tests.support.validation_study import (
     write_retained_prerequisite_evidence,
 )
 from trafficlab import USER_AGENT
-from trafficlab.comparison import ComparisonResult, compare_traces
-from trafficlab.compatibility import ContentIdentity, identify_bytes
-from trafficlab.config import GenerationLimits, SimilarityConfig
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.evaluation import ValidatedEvaluationContext, evaluate_candidate, validate_evaluation_context
-from trafficlab.genetic.population import derive_family_priority, initial_population
-from trafficlab.genetic.strategy import make_strategy_context
-from trafficlab.genetic.types import Candidate, TrialResult, rebuild_genetic_record
-from trafficlab.models.common import FittedModel, GenerationResult, make_rng
-from trafficlab.models.registry import get_family
-from trafficlab.trace import Direction, TraceEvent, TrafficTrace, align_generated, normalize_reference
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes
+from trafficlab.common.config import GenerationLimits, SimilarityConfig
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace, align_generated, normalize_reference
+from trafficlab.comparison.stage import ComparisonResult, compare_traces
+from trafficlab.fitting.genetic.evaluation import (
+    ValidatedEvaluationContext,
+    evaluate_candidate,
+    validate_evaluation_context,
+)
+from trafficlab.fitting.genetic.population import derive_family_priority, initial_population
+from trafficlab.fitting.genetic.strategy import make_strategy_context
+from trafficlab.fitting.genetic.types import Candidate, TrialResult, rebuild_genetic_record
+from trafficlab.generation.models.common import FittedModel, GenerationResult, make_rng
+from trafficlab.generation.models.registry import get_family
 
 _PRE_USER_AGENT_R6_FIXTURE = PRE_USER_AGENT_R6_FIXTURE
 

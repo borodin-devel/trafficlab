@@ -7,9 +7,9 @@ import pytest
 from tests.docker.support import write_docker_experiment
 from tests.support.docker import DockerTestEnvironment, TrackedDockerCompose
 from trafficlab import USER_AGENT
-from trafficlab.capture import capture_experiment
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.trace import Direction
+from trafficlab.capture.stage import capture_experiment
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.trace import Direction
 
 pytestmark = [pytest.mark.internet, pytest.mark.integration]
 

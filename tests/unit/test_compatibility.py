@@ -8,9 +8,9 @@ from typing import Any, cast
 
 import pytest
 
-import trafficlab.compatibility as compatibility
-from trafficlab.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
-from trafficlab.errors import TrafficlabError
+import trafficlab.common.compatibility as compatibility
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
+from trafficlab.common.errors import TrafficlabError
 
 
 def test_identify_file_returns_size_and_sha256_of_exact_bytes(tmp_path: Path) -> None:

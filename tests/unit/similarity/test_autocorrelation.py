@@ -8,14 +8,14 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-import trafficlab.similarity.autocorrelation as autocorrelation_module
-from trafficlab.errors import TrafficlabError
-from trafficlab.similarity.autocorrelation import (
+import trafficlab.comparison.similarity.autocorrelation as autocorrelation_module
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent
+from trafficlab.comparison.similarity.autocorrelation import (
     autocorrelation_similarity,
     sample_autocorrelation,
     weighted_acf_discrepancy,
 )
-from trafficlab.trace import Direction, TraceEvent
 
 
 def _events(*timestamps: float, lengths: tuple[int, ...] | None = None) -> tuple[TraceEvent, ...]:

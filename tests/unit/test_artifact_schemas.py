@@ -13,9 +13,9 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
-from trafficlab.comparison import ComparisonResult, MethodComparison, MethodDiagnostic, parse_comparison_result
-from trafficlab.errors import FailureOutcomeRecord
-from trafficlab.models.registry import FamilyPayload
+from trafficlab.common.errors import FailureOutcomeRecord
+from trafficlab.comparison.stage import ComparisonResult, MethodComparison, MethodDiagnostic, parse_comparison_result
+from trafficlab.generation.models.registry import FamilyPayload
 from trafficlab.study_evidence import StudyBootstrapInterval
 
 _ROOT = Path(__file__).parents[2]

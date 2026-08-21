@@ -9,11 +9,15 @@ from typing import cast
 import numpy as np
 import pytest
 
-import trafficlab.similarity.ks as ks_module
-from trafficlab.errors import TrafficlabError
-from trafficlab.similarity.common import JsonDiagnostics, SimilarityResult
-from trafficlab.similarity.ks import _ks_statistic, frame_size_ks, iat_ks  # pyright: ignore[reportPrivateUsage]
-from trafficlab.trace import Direction, TraceEvent
+import trafficlab.comparison.similarity.ks as ks_module
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent
+from trafficlab.comparison.similarity.common import JsonDiagnostics, SimilarityResult
+from trafficlab.comparison.similarity.ks import (
+    _ks_statistic,  # pyright: ignore[reportPrivateUsage]
+    frame_size_ks,
+    iat_ks,
+)
 
 
 def _events(*timestamps: float, lengths: tuple[int, ...] | None = None) -> tuple[TraceEvent, ...]:

@@ -24,8 +24,8 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictFloat,
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from trafficlab.scapy_io import encode_pcapng, read_pcapng
-from trafficlab.trace import CaptureMetadata, TrafficTrace
+from trafficlab.common.scapy_io import encode_pcapng, read_pcapng
+from trafficlab.common.trace import CaptureMetadata, TrafficTrace
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
 _OUTPUT = _REPOSITORY / "examples" / "scientific_stack" / "scapy_production_benchmark.json"

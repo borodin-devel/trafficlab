@@ -30,13 +30,13 @@ from tests.support.validation_study import (
     write_canonical_json,
 )
 from trafficlab import USER_AGENT
-from trafficlab.comparison import ComparisonResult, compare_traces
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig, SimilarityConfig
-from trafficlab.config_io import load_configuration_pair
-from trafficlab.errors import TrafficlabError
-from trafficlab.genetic.checkpoint import CheckpointState
-from trafficlab.trace import Direction, TraceEvent, align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig, SimilarityConfig
+from trafficlab.common.config_io import load_configuration_pair
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import Direction, TraceEvent, align_generated, normalize_reference, parse_capture_metadata
+from trafficlab.comparison.stage import ComparisonResult, compare_traces
+from trafficlab.fitting.genetic.checkpoint import CheckpointState
 
 
 def write_candidate_lifecycle(candidate: Path) -> dict[str, object]:

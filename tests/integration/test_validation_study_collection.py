@@ -16,19 +16,19 @@ from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts import append_run_log
-from trafficlab.capture import CaptureResult
-from trafficlab.capture_validation import validate_capture_pair
-from trafficlab.comparison import compare_experiment
-from trafficlab.compatibility import identify_bytes
-from trafficlab.config import ExperimentConfig
-from trafficlab.config_io import load_experiment
-from trafficlab.errors import TrafficlabError
-from trafficlab.fitting import fit_experiment
-from trafficlab.generation import generate_experiment
-from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.validation import validate_capture_pair
+from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config_io import load_experiment
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import read_pcapng_bytes
+from trafficlab.common.trace import TraceEvent, TrafficTrace, parse_capture_metadata
+from trafficlab.comparison.stage import compare_experiment
+from trafficlab.fitting.stage import fit_experiment
+from trafficlab.generation.stage import generate_experiment
+from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
 from trafficlab.run import RunDependencies, RunResult, run_experiment
-from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import TraceEvent, TrafficTrace, parse_capture_metadata
 
 pytestmark = pytest.mark.integration
 
