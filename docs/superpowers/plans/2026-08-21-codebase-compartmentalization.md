@@ -549,20 +549,20 @@ Compose integration tests.
 - Consumes: all implementation and verification commits.
 - Produces: a clean reviewed branch and concise reproducible evidence handoff.
 
-- [ ] **[STEP-28-25eeff9c] Obtain independent final review**
+- [x] **[STEP-28-25eeff9c] Obtain independent final review**
 
   Ask a reviewer to inspect the complete diff from `d0405f2` through HEAD for
   ownership mistakes, stale paths, accidental compatibility shims, missing
   tests, behavior changes, and verification gaps. Resolve every Critical or
   Important finding and rerun affected gates.
 
-- [ ] **[STEP-29-ae7a6c2b] Mark the plan accurately and commit completion state**
+- [x] **[STEP-29-ae7a6c2b] Mark the plan accurately and commit completion state**
 
   Change a checkbox to `[x]` only when its command/evidence has passed. Commit
   the completed plan and any reviewed correction with a terse conventional
   commit message.
 
-- [ ] **[STEP-30-57dac5a4] Verify the completion gate and hand off**
+- [x] **[STEP-30-57dac5a4] Verify the completion gate and hand off**
 
   Confirm `git status --short --branch` is clean, list retained commits, and
   summarize static, test, coverage, deterministic, real-program, external, and
