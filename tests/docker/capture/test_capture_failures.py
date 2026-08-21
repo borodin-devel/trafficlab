@@ -9,9 +9,9 @@ import pytest
 
 from tests.docker.support import assert_tracked_projects_clean, capture_log, write_docker_experiment
 from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
-from trafficlab.capture.compose import ComposePaths
-from trafficlab.capture.docker_cli import CommandResult, ServiceState
+from trafficlab.capture.docker.types import CommandResult, ServiceState
 from trafficlab.capture.stage import capture_prepared_experiment
+from trafficlab.capture.topology import ComposePaths
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.preflight.stage import run_preflight

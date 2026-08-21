@@ -21,7 +21,8 @@ import trafficlab.preflight.stage as preflight
 import trafficlab.study_evidence as study_evidence
 from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT, PIPELINE_FIXTURE_ROOT
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.capture.docker_cli import CommandResult, ServiceState, load_capture_image_lock
+from trafficlab.capture.docker.image import load_capture_image_lock
+from trafficlab.capture.docker.types import CommandResult, ServiceState
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import ExperimentConfig, FloatBounds
 from trafficlab.common.config_io import render_effective_config

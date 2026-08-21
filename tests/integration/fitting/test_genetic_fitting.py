@@ -13,7 +13,7 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
-import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.capture.docker.compose as docker_cli
 import trafficlab.fitting.genetic.evaluation as genetic_evaluation
 import trafficlab.fitting.genetic.operators as genetic_operators
 import trafficlab.fitting.genetic.strategy as genetic_strategy

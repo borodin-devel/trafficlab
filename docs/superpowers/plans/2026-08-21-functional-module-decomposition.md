@@ -190,35 +190,35 @@ NumPy, SciPy, Git, Docker Compose.
 - Produces typed command/service records, image authority, subprocess boundary,
   and `DockerCompose` from separate direct owners.
 
-- [ ] **[STEP-13-5978fe13] Snapshot Docker tests and write the RED owner contract**
+- [x] **[STEP-13-5978fe13] Snapshot Docker tests and write the RED owner contract**
 
   Capture normalized nodes for both Docker adapter and topology tests; require
   the new package/files and reject `docker_cli.py`/`capture/compose.py`.
 
-- [ ] **[STEP-14-039d4482] Extract Docker types and image authority**
+- [x] **[STEP-14-039d4482] Extract Docker types and image authority**
 
   Move command/service protocols to `docker.types`; move platform, lock,
   Dockerfile, build argv, and image-inspect symbols to `docker.image`. Keep
   duplicate-key parsing local to the image codec when no Compose caller uses it.
 
-- [ ] **[STEP-15-4f02bc71] Extract subprocess and Compose operations**
+- [x] **[STEP-15-4f02bc71] Extract subprocess and Compose operations**
 
   Move the subprocess implementation to `docker.process`, Compose validation
   and `DockerCompose` to `docker.compose`, rename the pure renderer to
   `topology.py`, and update injected-boundary types without a cycle.
 
-- [ ] **[STEP-16-155728f1] Split Docker tests and update lazy import guards**
+- [x] **[STEP-16-155728f1] Split Docker tests and update lazy import guards**
 
   Split by image/process/Compose behavior, rename topology tests, update dynamic
   import guards and monkeypatch strings, and prove normalized node equivalence.
 
-- [ ] **[STEP-17-c75cb637] Verify Docker adapter boundaries**
+- [x] **[STEP-17-c75cb637] Verify Docker adapter boundaries**
 
   Run Docker adapter/topology/cleanup/preflight/capture unit tests, all
   config-only and compare lazy-import integration cases, capture Docker tests
   when available, Ruff, and strict Pyright.
 
-- [ ] **[STEP-18-cde0c548] Review and commit Docker ownership**
+- [x] **[STEP-18-cde0c548] Review and commit Docker ownership**
 
   Resolve independent review findings and commit:
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from trafficlab.capture.cleanup import CleanupResult, cleanup_project
-from trafficlab.capture.docker_cli import CommandResult, ProcessHandle
+from trafficlab.capture.docker.types import CommandResult, ProcessHandle
 from trafficlab.common.errors import TrafficlabError
 
 

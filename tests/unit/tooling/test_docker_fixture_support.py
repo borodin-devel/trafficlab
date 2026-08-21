@@ -12,7 +12,7 @@ import pytest
 from tests.docker import support
 from tests.support import docker as docker_support
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.compose import ComposePaths, render_production_compose
+from trafficlab.capture.topology import ComposePaths, render_production_compose
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment
 

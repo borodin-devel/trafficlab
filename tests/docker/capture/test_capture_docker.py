@@ -19,7 +19,7 @@ from tests.support.docker import (
     EndpointDockerCompose,
     inspect_project_resources,
 )
-from trafficlab.capture.docker_cli import CommandResult
+from trafficlab.capture.docker.types import CommandResult
 from trafficlab.capture.stage import capture_experiment, capture_prepared_experiment
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.trace import Direction

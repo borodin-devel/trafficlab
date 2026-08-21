@@ -22,9 +22,9 @@ from tests.docker.support import (
     write_run_docker_experiment,
 )
 from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
-from trafficlab.capture.compose import ComposePaths
-from trafficlab.capture.docker_cli import CommandResult
+from trafficlab.capture.docker.types import CommandResult
 from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
+from trafficlab.capture.topology import ComposePaths
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.cli import main
 from trafficlab.common.compatibility import identify_bytes

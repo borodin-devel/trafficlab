@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from trafficlab import USER_AGENT
 from trafficlab.artifacts.io import append_run_log
 from trafficlab.artifacts.run_directory import create_run_directory
-from trafficlab.capture.compose import ComposePaths, render_production_compose, write_production_compose
+from trafficlab.capture.topology import ComposePaths, render_production_compose, write_production_compose
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import (
@@ -38,13 +38,8 @@ from trafficlab.common.scapy_io import read_pcapng
 from trafficlab.common.trace import load_capture_metadata
 
 if TYPE_CHECKING:
-    from trafficlab.capture.docker_cli import (
-        CaptureImageLock,
-        CapturePlatform,
-        ImageIdentity,
-        ProcessHandle,
-        ServiceState,
-    )
+    from trafficlab.capture.docker.image import CaptureImageLock, CapturePlatform, ImageIdentity
+    from trafficlab.capture.docker.types import ProcessHandle, ServiceState
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -197,7 +192,7 @@ def capture_environment_identity(
     execution_platform: CapturePlatform,
 ) -> CaptureEnvironmentIdentity:
     """Bind resolved images to the checked lock, rejecting any capture mismatch."""
-    from trafficlab.capture.docker_cli import CAPTURE_PLATFORM, CaptureImageLockError, validate_capture_platform
+    from trafficlab.capture.docker.image import CAPTURE_PLATFORM, CaptureImageLockError, validate_capture_platform
 
     if execution_platform != CAPTURE_PLATFORM:
         raise CaptureImageLockError(
@@ -436,7 +431,7 @@ def _image_ready(
     unavailable_detail: str,
     unavailable_action: str,
 ) -> ImageIdentity:
-    from trafficlab.capture.docker_cli import CaptureImageLockError, parse_image_inspect, validate_capture_platform
+    from trafficlab.capture.docker.image import CaptureImageLockError, parse_image_inspect, validate_capture_platform
 
     try:
         inspected = compose.image_inspect(image, deadline=deadline)
@@ -685,7 +680,7 @@ def check_docker(
 ) -> PreflightReport:
     """Run sequential Docker checks and one disposable capture/network probe within one deadline."""
     from trafficlab.capture.cleanup import cleanup_project
-    from trafficlab.capture.docker_cli import (
+    from trafficlab.capture.docker.image import (
         CaptureImageLockError,
         load_capture_image_lock,
         parse_docker_info_platform,
@@ -1063,7 +1058,7 @@ def run_preflight(
         return prepared
 
     if docker is None:
-        from trafficlab.capture.docker_cli import DockerCompose
+        from trafficlab.capture.docker.compose import DockerCompose
 
         docker = cast(DockerPreflight, DockerCompose(clock=clock))
     try:

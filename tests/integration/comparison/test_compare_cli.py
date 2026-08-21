@@ -11,6 +11,7 @@ import pytest
 
 import trafficlab
 import trafficlab.capture as capture_package
+import trafficlab.capture.docker as docker_package
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.cli import main
@@ -77,11 +78,13 @@ def _prepare_existing_run(tmp_path: Path, name: str, *, include_similarity: bool
 def _is_docker_adapter_module(name: str) -> bool:
     if name == "docker" or name.startswith("docker."):
         return True
-    return name == "trafficlab.capture.docker_cli" or name.startswith("trafficlab.capture.docker_cli.")
+    return name.startswith("trafficlab.capture.docker.")
 
 
 def _is_docker_adapter_import(name: str, fromlist: tuple[str, ...] | None) -> bool:
-    return _is_docker_adapter_module(name) or (name == "trafficlab.capture" and "docker_cli" in (fromlist or ()))
+    return _is_docker_adapter_module(name) or (
+        name == "trafficlab.capture.docker" and bool({"compose", "image", "process"}.intersection(fromlist or ()))
+    )
 
 
 def _is_run_or_capture_import(name: str, fromlist: tuple[str, ...] | None) -> bool:
@@ -116,35 +119,36 @@ def test_run_or_capture_import_guard_classifies_direct_fromlist_and_close_names(
 
 def _clear_docker_adapter_import_state(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in tuple(sys.modules):
-        if name == "trafficlab.capture.docker_cli" or name.startswith("trafficlab.capture.docker_cli."):
+        if name.startswith("trafficlab.capture.docker."):
             monkeypatch.delitem(sys.modules, name)
-    monkeypatch.delattr(capture_package, "docker_cli", raising=False)
+    for child in ("compose", "image", "process", "types"):
+        monkeypatch.delattr(docker_package, child, raising=False)
 
 
 def test_docker_adapter_guard_allows_pure_renderer_but_detects_preloaded_adapter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Classifying the pure renderer as Docker code would make permanent import isolation order-dependent."""
-    import trafficlab.capture.compose
+    import trafficlab.capture.topology
 
-    assert not _is_docker_adapter_module(trafficlab.capture.compose.__name__)
+    assert not _is_docker_adapter_module(trafficlab.capture.topology.__name__)
 
-    adapter = ModuleType("trafficlab.capture.docker_cli")
-    monkeypatch.setitem(sys.modules, "trafficlab.capture.docker_cli", adapter)
+    adapter = ModuleType("trafficlab.capture.docker.compose")
+    monkeypatch.setitem(sys.modules, "trafficlab.capture.docker.compose", adapter)
     monkeypatch.setitem(
-        sys.modules, "trafficlab.capture.docker_cli.child", ModuleType("trafficlab.capture.docker_cli.child")
+        sys.modules, "trafficlab.capture.docker.compose.child", ModuleType("trafficlab.capture.docker.compose.child")
     )
-    monkeypatch.setattr(capture_package, "docker_cli", adapter, raising=False)
+    monkeypatch.setattr(docker_package, "compose", adapter, raising=False)
 
-    assert "trafficlab.capture.docker_cli" in {name for name in sys.modules if _is_docker_adapter_module(name)}
-    assert capture_package.docker_cli is adapter  # type: ignore[attr-defined]
-    assert _is_docker_adapter_import("trafficlab.capture", ("docker_cli",))
-    assert not _is_docker_adapter_import("trafficlab.capture", ("compose",))
+    assert "trafficlab.capture.docker.compose" in {name for name in sys.modules if _is_docker_adapter_module(name)}
+    assert docker_package.compose is adapter  # type: ignore[attr-defined]
+    assert _is_docker_adapter_import("trafficlab.capture.docker", ("compose",))
+    assert not _is_docker_adapter_import("trafficlab.capture", ("topology",))
 
     _clear_docker_adapter_import_state(monkeypatch)
 
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
-    assert not hasattr(capture_package, "docker_cli")
+    assert not hasattr(docker_package, "compose")
 
     real_import = builtins.__import__
 
@@ -163,7 +167,7 @@ def test_docker_adapter_guard_allows_pure_renderer_but_detects_preloaded_adapter
 
     exec("import trafficlab", {})
     with pytest.raises(AssertionError, match="guard intercepted"):
-        exec("from trafficlab.capture import docker_cli", {})
+        exec("from trafficlab.capture.docker import compose", {})
 
 
 def _run_installed_compare(experiment_path: Path, *, working_directory: Path) -> subprocess.CompletedProcess[str]:
@@ -293,7 +297,7 @@ def test_in_process_compare_matches_api_without_internal_processes(
     monkeypatch.delitem(sys.modules, "trafficlab.pipeline.stage", raising=False)
     monkeypatch.delattr(trafficlab, "run", raising=False)
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
-    assert not hasattr(capture_package, "docker_cli")
+    assert not hasattr(capture_package, "compose")
     monkeypatch.setattr(subprocess, "run", reject_subprocess)
     monkeypatch.setattr(subprocess, "Popen", reject_subprocess)
     monkeypatch.setattr(builtins, "__import__", reject_eager_import)
@@ -312,7 +316,7 @@ def test_in_process_compare_matches_api_without_internal_processes(
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
     assert "trafficlab.pipeline.stage" not in sys.modules
     assert "trafficlab.capture.stage" not in sys.modules
-    assert not hasattr(capture_package, "docker_cli")
+    assert not hasattr(capture_package, "compose")
 
 
 def test_compare_cli_starts_from_a_fresh_interpreter_without_loading_run_capture_or_docker(tmp_path: Path) -> None:
@@ -336,8 +340,8 @@ from trafficlab.cli import main
 status = main(["compare", sys.argv[1]])
 forbidden = sorted(
     name for name in sys.modules
-    if name in {"trafficlab.pipeline.stage", "trafficlab.capture.stage", "trafficlab.capture.docker_cli"}
-    or name.startswith("trafficlab.capture.docker_cli.")
+    if name in {"trafficlab.pipeline.stage", "trafficlab.capture.stage"}
+    or name.startswith("trafficlab.capture.docker.")
 )
 Path(sys.argv[2]).write_text(json.dumps({"forbidden": forbidden, "status": status}), encoding="utf-8")
 """

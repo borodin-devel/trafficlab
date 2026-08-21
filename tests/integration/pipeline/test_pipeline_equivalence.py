@@ -13,7 +13,7 @@ from typing import cast
 
 import pytest
 
-import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.capture.docker.compose as docker_cli
 import trafficlab.fitting.genetic.strategy as genetic_strategy
 from trafficlab.artifacts.capture import load_or_recover_capture_pair
 from trafficlab.artifacts.run_directory import create_run_directory

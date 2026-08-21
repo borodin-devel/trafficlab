@@ -11,12 +11,9 @@ from pathlib import Path
 import pytest
 
 from trafficlab.capture.cleanup import cleanup_project
-from trafficlab.capture.docker_cli import (
-    CommandResult,
-    DockerCompose,
-    ProcessHandle,
-    SubprocessBoundary,
-)
+from trafficlab.capture.docker.compose import DockerCompose
+from trafficlab.capture.docker.process import SubprocessBoundary
+from trafficlab.capture.docker.types import CommandResult, ProcessHandle
 
 pytestmark = pytest.mark.integration
 

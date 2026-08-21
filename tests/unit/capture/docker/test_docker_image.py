@@ -7,8 +7,8 @@ from typing import Any, cast
 
 import pytest
 
-import trafficlab.capture.docker_cli as docker_cli_module
-from trafficlab.capture.docker_cli import (
+import trafficlab.capture.docker.image as docker_cli_module
+from trafficlab.capture.docker.image import (
     CaptureImageLockError,
     ImageIdentity,
     load_capture_image_lock,

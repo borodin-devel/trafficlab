@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.capture.docker.compose as docker_cli
 import trafficlab.preflight.stage as preflight
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import FailureOutcome, TrafficlabError

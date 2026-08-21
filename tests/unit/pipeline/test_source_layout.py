@@ -17,7 +17,7 @@ EXPECTED_MODULES = {
         "trace.py",
     },
     "preflight": {"stage.py"},
-    "capture": {"cleanup.py", "compose.py", "docker_cli.py", "policy.py", "stage.py", "validation.py"},
+    "capture": {"cleanup.py", "policy.py", "stage.py", "topology.py", "validation.py"},
     "fitting": {"stage.py"},
     "generation": {"stage.py"},
     "comparison": {"codec.py", "diagnostics.py", "metrics.py", "publication.py", "schema.py", "stage.py"},
@@ -49,6 +49,7 @@ EXPECTED_NESTED_PACKAGES = {
         "ks.py",
         "multiscale.py",
     },
+    "capture/docker": {"__init__.py", "compose.py", "image.py", "process.py", "types.py"},
     "pipeline": {"__init__.py", "stage.py", "types.py", "validation.py"},
 }
 

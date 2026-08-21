@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from trafficlab.capture.compose import ComposePaths, render_production_compose, write_production_compose
+from trafficlab.capture.topology import ComposePaths, render_production_compose, write_production_compose
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
 

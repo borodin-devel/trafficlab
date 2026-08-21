@@ -30,7 +30,11 @@ if __package__ in (None, ""):
 
 from trafficlab import USER_AGENT, __version__
 from trafficlab.artifacts.io import FileIdentity, append_run_log, file_identity
-from trafficlab.capture.docker_cli import cold_capture_build_argv, load_capture_image_lock, validate_capture_dockerfile
+from trafficlab.capture.docker.image import (
+    cold_capture_build_argv,
+    load_capture_image_lock,
+    validate_capture_dockerfile,
+)
 from trafficlab.capture.stage import CaptureResult, capture_experiment
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes, require_compatible

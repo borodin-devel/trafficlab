@@ -12,7 +12,7 @@ import trafficlab.artifacts.io as artifact_io
 import trafficlab.capture.stage as capture_module
 import trafficlab.common.compatibility as compatibility
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.capture.docker_cli import CommandResult, ServiceState
+from trafficlab.capture.docker.types import CommandResult, ServiceState
 from trafficlab.capture.policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
 from trafficlab.capture.stage import CaptureResult, capture_experiment, capture_prepared_experiment
 from trafficlab.common.compatibility import identify_file

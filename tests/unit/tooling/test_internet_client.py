@@ -16,7 +16,7 @@ import pytest
 
 from tests.fixtures.paths import DOCKER_FIXTURE_ROOT
 from trafficlab import USER_AGENT
-from trafficlab.capture.compose import ComposePaths
+from trafficlab.capture.topology import ComposePaths
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.preflight.stage import _probe_document  # pyright: ignore[reportPrivateUsage]
 

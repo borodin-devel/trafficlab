@@ -9,7 +9,7 @@ import pytest
 import trafficlab.preflight.stage as preflight_module
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab import USER_AGENT
-from trafficlab.capture.docker_cli import CommandResult, ServiceState
+from trafficlab.capture.docker.types import CommandResult, ServiceState
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata

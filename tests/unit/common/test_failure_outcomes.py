@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-import trafficlab.capture.docker_cli as docker_cli
+import trafficlab.capture.docker.compose as docker_cli
 import trafficlab.capture.stage as capture
 import trafficlab.comparison.stage as comparison
 import trafficlab.fitting.stage as fitting

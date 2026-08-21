@@ -24,14 +24,9 @@ from trafficlab.artifacts.capture import (
 )
 from trafficlab.artifacts.io import append_run_log
 from trafficlab.capture.cleanup import CleanupCompose, cleanup_project
-from trafficlab.capture.compose import ComposePaths, write_production_compose
-from trafficlab.capture.docker_cli import (
-    CapturePlatform,
-    CommandResult,
-    DockerCompose,
-    ServiceState,
-    load_capture_image_lock,
-)
+from trafficlab.capture.docker.compose import DockerCompose
+from trafficlab.capture.docker.image import CapturePlatform, load_capture_image_lock
+from trafficlab.capture.docker.types import CommandResult, ServiceState
 from trafficlab.capture.policy import (
     CaptureFailureOrigin,
     CaptureOutcome,
@@ -51,6 +46,7 @@ from trafficlab.capture.policy import (
     record_total_timeout,
     record_validation_failure,
 )
+from trafficlab.capture.topology import ComposePaths, write_production_compose
 from trafficlab.common.compatibility import (
     ContentIdentity,
     identify_bytes,
