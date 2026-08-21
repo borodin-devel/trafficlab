@@ -12,16 +12,16 @@ from typing import Literal, cast
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tests.scientific.probes.mmpp_likelihood import (
+from tests.scientific.fitting.probes.mmpp_likelihood import (
     build_probe_evidence as build_mmpp_evidence,
 )
-from tests.scientific.probes.mmpp_likelihood import (
+from tests.scientific.fitting.probes.mmpp_likelihood import (
     write_probe_evidence as write_mmpp_evidence,
 )
-from tests.scientific.probes.pymoo_optimizer import (
+from tests.scientific.fitting.probes.pymoo_optimizer import (
     build_probe_evidence as build_pymoo_evidence,
 )
-from tests.scientific.probes.pymoo_optimizer import (
+from tests.scientific.fitting.probes.pymoo_optimizer import (
     write_probe_evidence as write_pymoo_evidence,
 )
 

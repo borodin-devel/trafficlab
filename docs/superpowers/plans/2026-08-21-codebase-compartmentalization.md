@@ -221,7 +221,7 @@ Compose integration tests.
 - Produces: unchanged pytest node behavior under subsystem-owned paths and an
   enforced repository layout contract.
 
-- [ ] **[STEP-8-8fe38389] Write the failing test-layout contract**
+- [x] **[STEP-8-8fe38389] Write the failing test-layout contract**
 
   Use the exact allowed mapping:
 
@@ -246,7 +246,7 @@ Compose integration tests.
   path component is allowed and that no test file remains directly at the
   scope root.
 
-- [ ] **[STEP-9-f11ba95d] Run the contract and verify RED**
+- [x] **[STEP-9-f11ba95d] Run the contract and verify RED**
 
   Run:
 
@@ -257,7 +257,7 @@ Compose integration tests.
   Expected: failure listing current flat unit, integration, property,
   scientific, Docker, and Internet test files.
 
-- [ ] **[STEP-10-385fe29c] Move package-aligned and external test groups**
+- [x] **[STEP-10-385fe29c] Move package-aligned and external test groups**
 
   Use `git mv` for these exact directory/file groups:
 
@@ -281,7 +281,7 @@ Compose integration tests.
       -> tests/scientific/generation/
   ```
 
-- [ ] **[STEP-11-08be505c] Move flat unit and integration tests by ownership**
+- [x] **[STEP-11-08be505c] Move flat unit and integration tests by ownership**
 
   Move each flat unit file using this complete mapping:
 
@@ -344,7 +344,7 @@ Compose integration tests.
   Preserve each filename and add `__init__.py` only where needed to prevent
   duplicate-module collection; do not alter markers or test bodies.
 
-- [ ] **[STEP-12-04f62b41] Update repository-owned test path references**
+- [x] **[STEP-12-04f62b41] Update repository-owned test path references**
 
   Rewrite exact paths in scripts, test support, architecture testing commands,
   and current documentation. Do not rewrite historical plans/specifications.
@@ -358,7 +358,7 @@ Compose integration tests.
   Every result must point to its new subsystem directory or be an intentional
   glob documented by the test runner.
 
-- [ ] **[STEP-13-cea7bcb8] Prove inventory, review, and commit the test move**
+- [x] **[STEP-13-cea7bcb8] Prove inventory, review, and commit the test move**
 
   Run the layout test and full collection, require all 3,830 baseline tests plus
   the three new layout tests, request independent review, fix all

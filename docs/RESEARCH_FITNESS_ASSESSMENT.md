@@ -161,9 +161,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: the 2,262-test non-external gate passed, and the real Internet capture passed its exact preflight path.
-- Source: [local preflight tests](../tests/unit/test_preflight.py) cover ready, missing, unwritable, and low-space
+- Source: [local preflight tests](../tests/unit/preflight/test_preflight.py) cover ready, missing, unwritable, and low-space
   cases.
-- Source: [Docker preflight tests](../tests/unit/test_docker_preflight.py) cover images, topology, network, deadlines,
+- Source: [Docker preflight tests](../tests/unit/preflight/test_docker_preflight.py) cover images, topology, network, deadlines,
   primary failures, and cleanup detail using the production boundary semantics.
 
 **Rationale:** Effective configuration drives local and Docker checks, and direct failures name the unmet condition.
@@ -182,7 +182,7 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: the Internet smoke proved real DNS, TLS, bidirectional traffic capture, parsing, and teardown.
-- Source: [Docker capture tests](../tests/docker/test_capture_docker.py) define controlled TCP, UDP, unicast,
+- Source: [Docker capture tests](../tests/docker/capture/test_capture_docker.py) define controlled TCP, UDP, unicast,
   broadcast, address, protocol, packet-count, and direction oracles.
 - Source: [capture policy](../architecture/CAPTURE.md) fixes target `eth0`, non-promiscuous capture, target-MAC
   direction, readiness, workload stop, flush, validation, and cleanup boundaries.
@@ -203,9 +203,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: deterministic Phase 2 bytes regenerated exactly, and the Internet smoke produced a parseable real capture.
-- Source: [capture metadata tests](../tests/unit/test_capture_metadata.py) enforce an exact schema and target identity.
-- Source: [PCAPNG tests](../tests/unit/test_pcapng.py) and
-  [capture validation tests](../tests/unit/test_capture_validation.py) cover ordering, link type, timestamps,
+- Source: [capture metadata tests](../tests/unit/common/test_capture_metadata.py) enforce an exact schema and target identity.
+- Source: [PCAPNG tests](../tests/unit/common/test_scapy_io.py) and
+  [capture validation tests](../tests/unit/capture/test_capture_validation.py) cover ordering, link type, timestamps,
   directions, malformed frames, and shared deadlines.
 
 **Rationale:** Strict metadata and PCAPNG parsing produce one ordered canonical trace under an explicit observation
@@ -224,9 +224,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: all 846 focused model, similarity, and genetic tests passed.
-- Source: [checkpoint tests](../tests/unit/genetic/test_checkpoint.py) recompute candidate fitness, history, winner,
+- Source: [checkpoint tests](../tests/unit/fitting/genetic/test_checkpoint.py) recompute candidate fitness, history, winner,
   compatibility, and RNG state from strict retained values.
-- Source: [evaluation tests](../tests/unit/genetic/test_evaluation.py) prove common inputs, seeds, invalid reasons,
+- Source: [evaluation tests](../tests/unit/fitting/genetic/test_evaluation.py) prove common inputs, seeds, invalid reasons,
   and a distinct fresh final seed.
 
 **Rationale:** Candidate parameters, bounds, seeds, component scores, aggregate fitness, invalid states, stable ties,
@@ -243,7 +243,7 @@ retained real checkpoint supports excellent reconstruction across fresh and resu
 **Evidence**
 
 - Fresh reassessment: the bounded 3,464-test gates include exact RNG-order, endpoint, guard, schema, codec, and
-  [`tests/scientific/test_model_validation.py`](../tests/scientific/test_model_validation.py) oracle cases.
+  [`tests/scientific/generation/test_model_validation.py`](../tests/scientific/generation/test_model_validation.py) oracle cases.
 - Source: schema 2 implements arrival-epoch MMPP initialization and conditioned time-zero arrival; all three families
   retain the exact fitted model, seed, observation window, limits, diagnostics, and input lineage.
 - Retained r21: nine training and nine fresh-simulation traces plus three held-out traces were strictly reparsed and
@@ -266,11 +266,11 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: focused similarity tests and deterministic Phase 2 fixture regeneration passed.
-- Source: [comparison tests](../tests/unit/test_comparison.py) reconstruct configured components, diagnostics, weights,
+- Source: [comparison tests](../tests/unit/comparison/test_comparison.py) reconstruct configured components, diagnostics, weights,
   aggregate values, bounds, and strict artifact inputs.
-- Source: hand cases in [KS tests](../tests/unit/similarity/test_ks.py),
-  [ACF tests](../tests/unit/similarity/test_autocorrelation.py), and
-  [multiscale tests](../tests/unit/similarity/test_multiscale.py) cover equality, extremes, and direction reversal.
+- Source: hand cases in [KS tests](../tests/unit/comparison/similarity/test_ks.py),
+  [ACF tests](../tests/unit/comparison/similarity/test_autocorrelation.py), and
+  [multiscale tests](../tests/unit/comparison/similarity/test_multiscale.py) cover equality, extremes, and direction reversal.
 
 **Rationale:** Strictly parsed, aligned traces feed all four methods under one window, and exact component diagnostics
 and normalized weights reconstruct the reported aggregate. Malformed and changed artifacts are rejected.
@@ -286,8 +286,8 @@ absent, so excellent input-to-value reconstruction is not demonstrated.
 
 - Fresh reassessment: a recorded-source guarded no-hardlink clone audit accepted all 231 r21 manifest entries;
   representative missing, malformed, foreign, substituted-lineage, and collision mutations were rejected.
-- Source: [`tests/integration/test_pipeline_equivalence.py`](../tests/integration/test_pipeline_equivalence.py) and
-  [`tests/integration/test_run_pipeline.py`](../tests/integration/test_run_pipeline.py) reconstruct final identities
+- Source: [`tests/integration/pipeline/test_pipeline_equivalence.py`](../tests/integration/pipeline/test_pipeline_equivalence.py) and
+  [`tests/integration/pipeline/test_run_pipeline.py`](../tests/integration/pipeline/test_run_pipeline.py) reconstruct final identities
   and reject stale, partial, changed, or incompatible stage trees.
 - Retained r21: the index binds nine strict training trees, nine fresh simulations, and three held-out bundles to exact
   owners, content identities, protocol, environment, configurations, and report inputs.
@@ -348,9 +348,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: the 2,262-test gate passed with strict configuration cases included.
-- Source: [schema tests](../tests/unit/test_config_schema.py) reject unknown fields, coercion, nonfinite values, invalid
+- Source: [schema tests](../tests/unit/common/test_config_schema.py) reject unknown fields, coercion, nonfinite values, invalid
   paths, and empty argv.
-- Source: [validation tests](../tests/unit/test_config_validation.py) cover bounds, probabilities, cross-family tables,
+- Source: [validation tests](../tests/unit/common/test_config_validation.py) cover bounds, probabilities, cross-family tables,
   population feasibility, seed separation, metric vectors, and normalized weights.
 
 **Rationale:** Validation is strict, typed, finite, range-aware, relationship-aware, and rejects unknown input before
@@ -388,7 +388,7 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Source: separate `capture`, `fit`, `generate`, `compare`, and `run` commands share strict loaders and ownership rules.
-- Source: [run-pipeline tests](../tests/integration/test_run_pipeline.py) cover compatible reuse, incompatible changes,
+- Source: [run-pipeline tests](../tests/integration/pipeline/test_run_pipeline.py) cover compatible reuse, incompatible changes,
   missing artifacts, checkpoint resume, derived-history repair, and exact downstream invalidation.
 - Fresh: deterministic model and fit fixtures regenerated byte-identically.
 
@@ -449,11 +449,11 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [Poisson tests](../tests/unit/models/test_poisson.py) distinguish the complete-IAT rate estimator from an
+- Source: [Poisson tests](../tests/unit/generation/models/test_poisson.py) distinguish the complete-IAT rate estimator from an
   event-count-over-window error.
-- Source: [Markov Renewal tests](../tests/unit/models/test_markov_renewal.py) reconstruct states, smoothing, empty rows,
+- Source: [Markov Renewal tests](../tests/unit/generation/models/test_markov_renewal.py) reconstruct states, smoothing, empty rows,
   conditional holding samples, fallbacks, and strict round trips.
-- Source: [MMPP tests](../tests/unit/models/test_mmpp.py) prove rate repair and empirical marks; rates are direct GA
+- Source: [MMPP tests](../tests/unit/generation/models/test_mmpp.py) prove rate repair and empirical marks; rates are direct GA
   genes rather than likelihood estimates, matching the declared method.
 
 **Rationale:** Estimation, empirical conditioning, smoothing, repair, mark preservation, and declared degeneracies are
@@ -530,7 +530,7 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [comparison tests](../tests/unit/test_comparison.py) reconstruct normalized weighted components with full
+- Source: [comparison tests](../tests/unit/comparison/test_comparison.py) reconstruct normalized weighted components with full
   diagnostics.
 - Source: checkpoint loading recomputes aggregates, and genetic evaluation uses a stable arithmetic mean over trials.
 - Fresh: focused hand-weighted, invalid-candidate, exact-tie, and winner-use tests passed.
@@ -569,7 +569,7 @@ for every critical conversion are absent, so excellent boundary evidence is not 
 
 - Fresh reassessment: 3,464 bounded tests include hand-calculated similarity cases, analytical invariants, independent
   standard-library stochastic oracles, known simulations, family-order controls, and strict edge cases.
-- Source: [`tests/scientific/oracles.py`](../tests/scientific/oracles.py) does not call production fitting or generation
+- Source: [`tests/scientific/generation/oracles.py`](../tests/scientific/generation/oracles.py) does not call production fitting or generation
   helpers when deriving expected statistics, draw races, occupancy, or tolerance decisions.
 - Retained r21: real captures, generated traces, natural-variation pairs, fixed-seed simulations, held-out comparisons,
   and a one-factor weight analysis supplement the controlled evidence without being treated as universal validation.
@@ -611,9 +611,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: broad strict-schema, corruption, replacement, and final-tree tests passed.
-- Source: [artifact tests](../tests/unit/test_artifacts.py) cover malformed pairs, identities, replacement races,
+- Source: [artifact tests](../tests/unit/pipeline/test_artifacts.py) cover malformed pairs, identities, replacement races,
   partial sets, stale state, publication collisions, and exact-owner recovery.
-- Source: [run tests](../tests/unit/test_run.py) recheck identities before and after critical reads and reject changed,
+- Source: [run tests](../tests/unit/pipeline/test_run.py) recheck identities before and after critical reads and reject changed,
   foreign, or incomplete trees.
 
 **Rationale:** Strict parsing, cross-file validation, identity rechecks, and exact-tree ownership prevent malformed,
@@ -651,9 +651,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [capture tests](../tests/unit/test_capture.py) exercise all event-priority pairs, the critical triple,
+- Source: [capture tests](../tests/unit/capture/test_capture.py) exercise all event-priority pairs, the critical triple,
   natural and induced statuses, flush, validation, interruption, and cleanup precedence.
-- Source: [run tests](../tests/unit/test_run.py) retain stage primary failures when logging or later work also fails.
+- Source: [run tests](../tests/unit/pipeline/test_run.py) retain stage primary failures when logging or later work also fails.
 - Fresh: these non-external failure matrices passed in the broad gate.
 
 **Rationale:** A documented arbitration model preserves the exact primary cause, ordered secondary detail, stage
@@ -671,7 +671,7 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [artifact tests](../tests/unit/test_artifacts.py) cover fsynced private bytes, directory durability, ordered
+- Source: [artifact tests](../tests/unit/pipeline/test_artifacts.py) cover fsynced private bytes, directory durability, ordered
   multi-file links, collisions, rollback, replacement, and preservation of unrelated winners.
 - Source: checkpoint, model, history, generated, comparison, result, and report codecs publish validated canonical
   content through exclusive ownership rules.
@@ -692,7 +692,7 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [strategy tests](../tests/unit/genetic/test_strategy.py) compare resumed and uninterrupted population,
+- Source: [strategy tests](../tests/unit/fitting/genetic/test_strategy.py) compare resumed and uninterrupted population,
   history, winner, child IDs, repaired genes, and RNG state exactly.
 - Source: checkpoint compatibility rejects changed Python, families, bounds, operators, metrics, seeds, population,
   and lineage before reproduction.
@@ -716,9 +716,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 - Fresh reassessment: r21 lifecycle and prerequisite records bind every distinct capture project through publication
   and successful cleanup, bind the phase image to removal, and record an empty post-cleanup inspection. The retained
   19-test Docker matrix and Internet smoke both passed.
-- Source: [cleanup tests](../tests/unit/test_cleanup.py) cover idempotence, zero budget, hung commands, inventory,
+- Source: [cleanup tests](../tests/unit/capture/test_cleanup.py) cover idempotence, zero budget, hung commands, inventory,
   remaining resources, signal failures, and exact-owner scoping.
-- Source: [cleanup-boundary tests](../tests/integration/test_cleanup_boundary.py) use real subprocesses to prove bounded
+- Source: [cleanup-boundary tests](../tests/integration/capture/test_cleanup_boundary.py) use real subprocesses to prove bounded
   kill and no later Docker query after expiry.
 
 **Rationale:** Cleanup is unconditional, bounded, idempotent, owner-scoped, descendant-aware, and honest about
@@ -852,7 +852,7 @@ canonical-byte checks are absent, preventing excellent serialization evidence.
 
 **Evidence**
 
-- Fresh reassessment: [`tests/integration/test_pipeline_equivalence.py`](../tests/integration/test_pipeline_equivalence.py)
+- Fresh reassessment: [`tests/integration/pipeline/test_pipeline_equivalence.py`](../tests/integration/pipeline/test_pipeline_equivalence.py)
   passed within the full gate and independently reconstructs exact checkpoint, model, generated, comparison, result,
   failure-log, and lineage identities for uninterrupted, resumed, and reused paths.
 - Source: checkpoint tests preserve population, history, family priority, winner, IDs, complete MT19937 state, schema,

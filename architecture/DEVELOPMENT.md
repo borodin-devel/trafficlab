@@ -294,7 +294,7 @@ the controlled proof itself serially through the ordinary guard:
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 5m --kill-after 10s -- \
-  uv run --locked pytest -q -n 0 tests/integration/test_process_guard.py
+  uv run --locked pytest -q -n 0 tests/integration/capture/test_process_guard.py
 ```
 
 The proof creates separate-session, `SIGTERM`-ignoring descendants and checks
