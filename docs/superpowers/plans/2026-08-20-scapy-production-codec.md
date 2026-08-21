@@ -925,11 +925,11 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 Expected: every selected test runs and passes; exact Compose-label container/network/volume inventories are empty afterward.
 
-- [ ] **[STEP-59-6e2be932] Step 5: Obtain independent whole-branch review and resolve findings**
+- [x] **[STEP-59-6e2be932] Step 5: Obtain independent whole-branch review and resolve findings**
 
 Generate a review package from merge base `c980e9f` to HEAD. Review against the approved spec, this plan, deferred findings, production-only dependency install, deleted API/module, Scapy reader/writer semantics, test-only oracle independence, schema v4, fixture determinism, real study, history immutability, and release evidence. Fix every Critical/Important finding through bounded TDD and one scoped re-review per round; record any Minor disposition.
 
-- [ ] **[STEP-60-933ba4a9] Step 6: Record completion and invoke branch finishing**
+- [x] **[STEP-60-933ba4a9] Step 6: Record completion and invoke branch finishing**
 
 Mark every checkbox only after its evidence exists. Commit the plan update:
 
