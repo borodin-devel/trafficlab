@@ -9,7 +9,7 @@ from typing import cast
 import pytest
 
 import trafficlab.capture.docker.compose as docker_cli
-import trafficlab.capture.stage as capture
+import trafficlab.capture.failures as capture
 import trafficlab.comparison.stage as comparison
 import trafficlab.fitting.stage as fitting
 import trafficlab.generation.stage as generation
@@ -748,9 +748,7 @@ def test_capture_adapter_retains_timeout_state_and_service_status(
     """Canonical capture facts supplement, but never replace, the existing lifecycle arbitration."""
     outcome = CaptureOutcome(kind, f"{kind.value} detail")
 
-    primary, secondary = capture._capture_failure_outcomes(  # pyright: ignore[reportPrivateUsage]
-        outcome, capture_status=capture_status
-    )
+    primary, secondary = capture.capture_failure_outcomes(outcome, capture_status=capture_status)
 
     assert secondary == ()
     assert primary.kind == expected_kind
@@ -768,9 +766,7 @@ def test_capture_adapter_carries_capture_service_status_for_secondary_failure() 
         (FailureDetail(FailureKind.CAPTURE_STOPPED, "capture exited with status 42"),),
     )
 
-    _primary, secondary = capture._capture_failure_outcomes(  # pyright: ignore[reportPrivateUsage]
-        outcome, capture_status=42
-    )
+    _primary, secondary = capture.capture_failure_outcomes(outcome, capture_status=42)
 
     assert secondary[0].kind == "capture_failed"
     assert secondary[0].status == 42
@@ -789,9 +785,7 @@ def test_capture_adapter_uses_the_full_arbitration_sequence_for_combined_evidenc
         ),
     )
 
-    primary, secondary = capture._capture_failure_outcomes(  # pyright: ignore[reportPrivateUsage]
-        outcome, capture_status=42
-    )
+    primary, secondary = capture.capture_failure_outcomes(outcome, capture_status=42)
 
     assert primary == FailureOutcome(
         kind="target_failed",
@@ -829,7 +823,7 @@ def test_capture_adapter_uses_the_full_arbitration_sequence_for_combined_evidenc
 def test_capture_adapter_requires_an_existing_primary_failure() -> None:
     """The adapter cannot invent a primary when capture arbitration succeeded."""
     with pytest.raises(ValueError, match="primary failure"):
-        capture._capture_failure_outcomes(CaptureOutcome())  # pyright: ignore[reportPrivateUsage]
+        capture.capture_failure_outcomes(CaptureOutcome())
 
 
 @pytest.mark.parametrize(
@@ -897,7 +891,7 @@ def test_preflight_and_capture_adapters_preserve_primary_secondary_authority() -
         23,
         (FailureDetail(FailureKind.CLEANUP_FAILED, "capture cleanup timed out"),),
     )
-    primary, secondary = capture._capture_failure_outcomes(capture_outcome)  # pyright: ignore[reportPrivateUsage]
+    primary, secondary = capture.capture_failure_outcomes(capture_outcome)
 
     assert preflight_outcome == FailureOutcome(
         kind="docker_preflight_failed",

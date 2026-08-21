@@ -35,7 +35,8 @@ from trafficlab.capture.docker.image import (
     load_capture_image_lock,
     validate_capture_dockerfile,
 )
-from trafficlab.capture.stage import CaptureResult, capture_experiment
+from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import capture_experiment
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes, require_compatible
 from trafficlab.common.config import ExperimentConfig, FamilyName, SimilarityConfig

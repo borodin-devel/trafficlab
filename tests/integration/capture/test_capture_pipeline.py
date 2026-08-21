@@ -9,7 +9,8 @@ import tomli_w
 import trafficlab.capture.stage as capture_module
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.capture.docker.types import CommandResult, ServiceState
-from trafficlab.capture.stage import CaptureResult, capture_experiment
+from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import capture_experiment
 from trafficlab.capture.topology import ComposePaths, write_production_compose
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata

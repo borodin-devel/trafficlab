@@ -40,7 +40,7 @@ from tests.support.validation_study import (
     write_study_inputs,
 )
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.lineage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.errors import TrafficlabError

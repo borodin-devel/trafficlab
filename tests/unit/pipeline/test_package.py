@@ -15,7 +15,7 @@ import pytest
 import trafficlab
 import trafficlab.cli as cli
 from trafficlab import __version__
-from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.lineage import CaptureResult
 from trafficlab.common.errors import TrafficlabError
 
 

@@ -16,7 +16,7 @@ from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.lineage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig

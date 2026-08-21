@@ -43,10 +43,11 @@ class _ShortWaitHandle:
 
 
 class _HangingBoundary:
-    def __init__(self) -> None:
+    def __init__(self, ready_path: Path) -> None:
         self.starts: list[tuple[str, ...]] = []
         self.runs: list[tuple[str, ...]] = []
         self.handle: _ShortWaitHandle | None = None
+        self.ready_path = ready_path
 
     def run(
         self,
@@ -64,11 +65,24 @@ class _HangingBoundary:
             (
                 sys.executable,
                 "-c",
-                "import signal,time;signal.signal(signal.SIGTERM,lambda *_: None);time.sleep(30)",
+                (
+                    "import pathlib,signal,sys,time;"
+                    "signal.signal(signal.SIGTERM,lambda *_: None);"
+                    "pathlib.Path(sys.argv[1]).write_text('ready');"
+                    "time.sleep(30)"
+                ),
+                str(self.ready_path),
             ),
             environment=environment,
         )
         self.handle = _ShortWaitHandle(process)
+        ready_deadline = time.monotonic() + 1.0
+        while not self.ready_path.is_file():
+            if time.monotonic() >= ready_deadline:
+                process.kill()
+                process.wait(timeout=0.1)
+                raise AssertionError("SIGTERM-ignoring cleanup fixture did not become ready")
+            time.sleep(0.001)
         return self.handle
 
 
@@ -126,7 +140,7 @@ class _RealProcessBoundary:
 
 def test_hanging_cleanup_terminates_then_kills_local_cli_without_later_docker_query(tmp_path: Path) -> None:
     """A hung Compose CLI must be reaped promptly without a post-timeout daemon query or broader project scope."""
-    boundary = _HangingBoundary()
+    boundary = _HangingBoundary(tmp_path / "handler-ready")
     compose = DockerCompose(boundary=boundary)
     compose_path = (tmp_path / "compose.json").resolve()
     started = time.monotonic()
@@ -164,7 +178,7 @@ def test_hanging_cleanup_terminates_then_kills_local_cli_without_later_docker_qu
 
 def test_zero_budget_with_real_compose_adapter_starts_no_boundary_command(tmp_path: Path) -> None:
     """The top-level zero-budget guard must precede even the concrete Docker adapter's scope validation and launch."""
-    boundary = _HangingBoundary()
+    boundary = _HangingBoundary(tmp_path / "unused-ready")
     result = cleanup_project(
         DockerCompose(boundary=boundary),
         (tmp_path / "compose.json").resolve(),

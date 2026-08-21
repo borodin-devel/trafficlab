@@ -11,7 +11,7 @@ import tomli_w
 from pydantic import BaseModel
 
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.lineage import CaptureResult
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import FamilyName
 from trafficlab.common.config_io import render_effective_config

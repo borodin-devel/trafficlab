@@ -240,34 +240,34 @@ NumPy, SciPy, Git, Docker Compose.
 - Produces lineage/reuse validation, lifecycle operations, failure translation,
   and the unchanged public capture stage from direct owners.
 
-- [ ] **[STEP-19-cf82b2a6] Snapshot capture nodes and write RED owner tests**
+- [x] **[STEP-19-cf82b2a6] Snapshot capture nodes and write RED owner tests**
 
   Record normalized test nodes and require the three new source files before
   any symbol move. Expected RED names all absent owners.
 
-- [ ] **[STEP-20-864e3db6] Extract lineage and lifecycle symbols**
+- [x] **[STEP-20-864e3db6] Extract lineage and lifecycle symbols**
 
   Move mounted-input/snapshot/lineage/reuse symbols to `lineage.py` and
   readiness/workload/flush/interruption symbols to `lifecycle.py`. Pass
   required callbacks/records explicitly; neither module imports the stage.
 
-- [ ] **[STEP-21-3f3568ec] Extract failure translation and reduce stage**
+- [x] **[STEP-21-3f3568ec] Extract failure translation and reduce stage**
 
   Move canonical outcome/log translation to `failures.py`; keep only
   `CaptureDocker`, `CaptureResult`, `capture_prepared_experiment`, and
   `capture_experiment` plus their direct orchestration helpers in `stage.py`.
 
-- [ ] **[STEP-22-5d31fcbc] Split capture tests by functional owner**
+- [x] **[STEP-22-5d31fcbc] Split capture tests by functional owner**
 
   Move exact existing tests and owner-specific fakes, extract shared capture
   builders to `tests/support/capture.py`, and prove normalized node equivalence.
 
-- [ ] **[STEP-23-e8945a87] Verify capture behavior and coverage**
+- [x] **[STEP-23-e8945a87] Verify capture behavior and coverage**
 
   Run all capture unit/integration tests with branch coverage for the four new
   modules, capture failure/public matrix tests, Ruff, and strict Pyright.
 
-- [ ] **[STEP-24-1d4fef66] Review and commit capture ownership**
+- [x] **[STEP-24-1d4fef66] Review and commit capture ownership**
 
   Resolve independent review findings and commit:
 

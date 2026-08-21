@@ -18,7 +18,7 @@ import tomli_w
 import trafficlab.pipeline.stage as run_module
 from trafficlab.artifacts.capture import load_or_recover_capture_pair
 from trafficlab.artifacts.run_directory import create_run_directory
-from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.lineage import CaptureResult
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.common.errors import TrafficlabError

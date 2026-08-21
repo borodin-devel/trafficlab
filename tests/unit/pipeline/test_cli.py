@@ -9,7 +9,7 @@ from typing import cast
 import pytest
 
 import trafficlab.cli as cli_module
-from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.lineage import CaptureResult
 from trafficlab.cli import main
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.fitting.stage import FitStageResult

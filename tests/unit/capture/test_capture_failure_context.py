@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
+from trafficlab.capture.failures import capture_failure_outcomes
 from trafficlab.capture.policy import (
     CaptureFailureOrigin,
     CaptureOutcome,
@@ -13,7 +14,6 @@ from trafficlab.capture.policy import (
     record_stage_timeout,
     record_total_timeout,
 )
-from trafficlab.capture.stage import _capture_failure_outcomes  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize(
@@ -32,7 +32,7 @@ def test_stage_timeout_uses_structured_origin_not_detail_text(
         origin=origin,
     )
 
-    primary, secondary = _capture_failure_outcomes(outcome)
+    primary, secondary = capture_failure_outcomes(outcome)
 
     assert secondary == ()
     assert primary.kind == "stage_timeout"
@@ -72,7 +72,7 @@ def test_target_primary_is_not_published_with_one_later_nonreusable_capture_fail
     outcome = record_natural_target_status(CaptureOutcome(), 23)
     completed = failure(outcome)
 
-    primary, secondary = _capture_failure_outcomes(completed)
+    primary, secondary = capture_failure_outcomes(completed)
 
     assert primary.kind == "target_failed"
     assert primary.evidence_state == expected_state
@@ -88,7 +88,7 @@ def test_target_primary_becomes_not_published_only_for_capture_stop_and_total_ti
     outcome = record_capture_stopped(outcome, "capture stopped")
     outcome = record_total_timeout(outcome, "total timeout")
 
-    primary, secondary = _capture_failure_outcomes(outcome)
+    primary, secondary = capture_failure_outcomes(outcome)
 
     assert primary.evidence_state == "not_published"
     assert primary.corrective_action == "inspect target first, then capture and budget"
@@ -99,7 +99,7 @@ def test_target_primary_keeps_cleanup_as_diagnostic_secondary() -> None:
     outcome = record_natural_target_status(CaptureOutcome(), 23)
     outcome = record_cleanup_failure(outcome, "cleanup timed out")
 
-    primary, secondary = _capture_failure_outcomes(outcome)
+    primary, secondary = capture_failure_outcomes(outcome)
 
     assert primary.evidence_state == "diagnostic_only"
     assert primary.corrective_action == "inspect target then remove project"
@@ -111,7 +111,7 @@ def test_nonreusable_capture_pair_does_not_reclassify_cleanup_inventory() -> Non
     outcome = record_capture_stopped(outcome, "capture stopped")
     outcome = record_cleanup_failure(outcome, "cleanup timed out")
 
-    primary, secondary = _capture_failure_outcomes(outcome)
+    primary, secondary = capture_failure_outcomes(outcome)
 
     assert primary.evidence_state == "not_published"
     assert primary.corrective_action == "inspect target then remove project"
@@ -125,4 +125,4 @@ def test_nonreusable_capture_pair_does_not_reclassify_cleanup_inventory() -> Non
 
 def test_capture_failure_outcomes_require_a_primary_failure() -> None:
     with pytest.raises(ValueError, match="existing primary"):
-        _capture_failure_outcomes(CaptureOutcome())
+        capture_failure_outcomes(CaptureOutcome())

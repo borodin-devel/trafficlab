@@ -11,6 +11,9 @@ from typing import Any, Literal, cast
 
 import pytest
 
+import trafficlab.capture.failures as capture_failures
+import trafficlab.capture.lifecycle as capture_lifecycle
+import trafficlab.capture.lineage as capture_lineage
 import trafficlab.capture.stage as capture
 import trafficlab.comparison.publication as comparison
 import trafficlab.comparison.stage as comparison_stage
@@ -1035,12 +1038,12 @@ def _run_capture_boundary_case(
             return 20.0
         return 10.0 if stage in {"project creation", "total-run"} else 5.0
 
-    monkeypatch.setattr(capture, "_future_deadline", fixed_deadline)
+    monkeypatch.setattr(capture, "future_deadline", fixed_deadline)
     with pytest.raises(TrafficlabError) as caught:
         capture.capture_prepared_experiment(
             prepared.source,
             prepared,
-            docker=cast(capture.CaptureDocker, docker),
+            docker=cast(capture_lifecycle.CaptureDocker, docker),
             clock=docker.clock,
             interruption=lambda: case.scenario == "user_interrupt" and docker.target_started,
         )
@@ -1092,10 +1095,10 @@ def _run_capture_stale_boundary_case(
     original_reference = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
     metadata_path.write_bytes(metadata_content)
     reference_path.write_bytes(original_reference)
-    capture._append_event(  # pyright: ignore[reportPrivateUsage]
+    capture_failures.append_event(
         run_directory,
         "capture_published",
-        **capture._capture_lineage(run_directory, environment),  # pyright: ignore[reportPrivateUsage]
+        **capture_lineage.capture_lineage(run_directory, environment),
         packet_count=1,
         path=str(reference_path),
         project_name="matrix",
@@ -1113,7 +1116,7 @@ def _run_capture_stale_boundary_case(
     with pytest.raises(TrafficlabError) as caught:
         capture.capture_experiment(
             experiment_path,
-            docker=cast(capture.CaptureDocker, NoDocker()),
+            docker=cast(capture_lifecycle.CaptureDocker, NoDocker()),
             clock=lambda: 100.0,
             interruption=lambda: False,
         )
@@ -1144,7 +1147,7 @@ def _run_capture_mounted_input_boundary_case(
     experiment_path = tmp_path / "experiment.toml"
     experiment_path.write_bytes(render_effective_config(config))
     prepared = preflight.open_or_prepare_experiment(experiment_path)
-    mounted_inputs = capture._identify_mounted_inputs(prepared.config)  # pyright: ignore[reportPrivateUsage]
+    mounted_inputs = capture_lineage.identify_mounted_inputs(prepared.config)
     environment = preflight.CaptureEnvironmentIdentity(
         host_architecture="linux/amd64",
         target_reference=prepared.config.target.image,
@@ -1161,10 +1164,10 @@ def _run_capture_mounted_input_boundary_case(
     reference_content = encode_pcapng((TraceEvent(4.0, Direction.OUTBOUND, 64),), metadata)
     metadata_path.write_bytes(metadata_content)
     reference_path.write_bytes(reference_content)
-    capture._append_event(  # pyright: ignore[reportPrivateUsage]
+    capture_failures.append_event(
         run_directory,
         "capture_published",
-        **capture._capture_lineage(run_directory, environment),  # pyright: ignore[reportPrivateUsage]
+        **capture_lineage.capture_lineage(run_directory, environment),
         packet_count=1,
         path=str(reference_path),
         project_name="matrix",
@@ -1210,7 +1213,7 @@ def _run_capture_mounted_input_boundary_case(
     with pytest.raises(TrafficlabError) as caught:
         capture.capture_experiment(
             experiment_path,
-            docker=cast(capture.CaptureDocker, NoDocker()),
+            docker=cast(capture_lifecycle.CaptureDocker, NoDocker()),
             clock=lambda: 100.0,
             interruption=lambda: False,
         )
