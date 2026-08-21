@@ -699,7 +699,7 @@ git commit -m "docs: record production scapy workflow"
 - Consumes: sole Scapy production path and regenerated schema-v4 fixtures.
 - Produces: complete offline and Docker workflow proof with exact cleanup and failure arbitration.
 
-- [ ] **[STEP-43-0293b4f2] Step 1: Add full-workflow failure and reuse regressions**
+- [x] **[STEP-43-0293b4f2] Step 1: Add full-workflow failure and reuse regressions**
 
 Add tests proving capture success, malformed Scapy input, reader deadline, fit/generate/compare failures, interrupted runs, reuse, and full success preserve the existing authoritative failure matrix and cleanup behavior. The successful Docker run must assert all nine artifacts, schema 4, Scapy-reparsed generated trace, and no project-labeled containers/networks/volumes.
 
@@ -709,7 +709,7 @@ assert best_model.schema_version == 4
 assert docker_inventory(project_name) == {"containers": [], "networks": [], "volumes": []}
 ```
 
-- [ ] **[STEP-44-a67e53a4] Step 2: Run focused in-process RED**
+- [x] **[STEP-44-a67e53a4] Step 2: Run focused in-process RED**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -721,11 +721,11 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 Expected: old imports/schema/byte assumptions fail until every boundary uses Scapy output.
 
-- [ ] **[STEP-45-85e63fac] Step 3: Repair only Scapy/schema-dependent expectations**
+- [x] **[STEP-45-85e63fac] Step 3: Repair only Scapy/schema-dependent expectations**
 
 Update tests and support code to construct/read through `trafficlab.scapy_io`, use reparsed traces, and assert schema 4. Preserve model equations, PCG64 draw order, similarity tolerances, atomic publication, stage arbitration, and project-scoped cleanup unchanged. Do not relax a scientific tolerance merely because PCAPNG timestamp precision changed; compare the actual emitted trace.
 
-- [ ] **[STEP-46-06aa7209] Step 4: Run focused Docker and Internet-capability tests**
+- [x] **[STEP-46-06aa7209] Step 4: Run focused Docker and Internet-capability tests**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -737,7 +737,7 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
 
 Expected: every selected real Docker case passes and exact project-label inventories are empty afterward.
 
-- [ ] **[STEP-47-5a2b4dad] Step 5: Verify Ordinary, targeted coverage, and static quality**
+- [x] **[STEP-47-5a2b4dad] Step 5: Verify Ordinary, targeted coverage, and static quality**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -754,7 +754,7 @@ uv run --locked pyright
 
 Expected: Ordinary and static gates pass; Scapy boundary defect functions have 100% lines/branches.
 
-- [ ] **[STEP-48-1e21a2d4] Step 6: Commit complete pipeline migration**
+- [x] **[STEP-48-1e21a2d4] Step 6: Commit complete pipeline migration**
 
 ```bash
 git add tests architecture/TESTING.md
