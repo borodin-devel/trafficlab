@@ -19,6 +19,7 @@ import trafficlab.genetic.strategy as strategy_module
 import trafficlab.preflight as preflight
 import trafficlab.study_evidence as study_evidence
 from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT, PIPELINE_FIXTURE_ROOT
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.compatibility import ContentIdentity, identify_bytes
 from trafficlab.config import ExperimentConfig, FloatBounds
 from trafficlab.config_io import render_effective_config
@@ -28,7 +29,6 @@ from trafficlab.fitting import FitDependencies
 from trafficlab.genetic.strategy import FitOutcome, StrategyContext, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.registry import load_best_model, rebuild_best_model, render_best_model
-from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.scapy_io import EncodedPcapng
 from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, render_capture_metadata
 
@@ -743,7 +743,7 @@ _CAPTURE_FAILURE_LOGS: dict[_Scenario, _CaptureFailureLog] = {
     ),
     "user_interrupt": _CaptureFailureLog("capture interrupted during target workload", "user_interruption"),
     "malformed_capture": _CaptureFailureLog(
-        "capture validation failed: invalid PCAPNG: capture has no Interface Description Block",
+        "capture validation failed: invalid PCAPNG: Scapy observed 0 interfaces; expected exactly one",
         "validation_failed",
     ),
     "cleanup_timeout_after_success": _CaptureFailureLog(

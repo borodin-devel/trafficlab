@@ -83,7 +83,7 @@ def write_candidate_lifecycle(candidate: Path) -> dict[str, object]:
     index["lifecycle"] = "lifecycle.json"
     index["ownership"] = ownership
     index["lineage"] = lineage
-    index["schema_version"] = 3
+    index["schema_version"] = 4
     write_candidate_index(candidate, index)
     rewrite_candidate_manifest(candidate)
     return lifecycle
@@ -874,7 +874,7 @@ def test_offline_auditor_rejects_a_noninteger_collection_index_schema_version(tm
     repository, candidate = copy_validation_study_candidate(tmp_path)
     write_candidate_lifecycle(candidate)
     index = candidate_index(candidate)
-    index["schema_version"] = 3.0
+    index["schema_version"] = 4.0
     write_candidate_index(candidate, index)
     rewrite_candidate_manifest(candidate)
 

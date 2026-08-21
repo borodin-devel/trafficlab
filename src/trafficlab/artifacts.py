@@ -479,7 +479,11 @@ def quantize_generated_trace(trace: TrafficTrace, observation_window_seconds: fl
             corrective_action="report the traffic-model complete-window defect",
         )
     maximum_tick = math.floor(scaled_window)
-    quantized = np.minimum(np.floor(trace.timestamps * 1_000_000), maximum_tick) / 1_000_000
+    scaled = trace.timestamps * 1_000_000
+    nearest = np.rint(scaled)
+    snapped = np.abs(scaled - nearest) <= 4 * np.spacing(np.abs(scaled))
+    ticks = np.where(snapped, nearest, np.floor(scaled))
+    quantized = np.minimum(ticks, maximum_tick) / 1_000_000
     return TrafficTrace(
         np.asarray(quantized, dtype=np.float64),
         trace.directions,

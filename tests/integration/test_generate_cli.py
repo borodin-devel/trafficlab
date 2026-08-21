@@ -6,7 +6,6 @@ import hashlib
 import importlib
 import json
 import os
-import struct
 import subprocess
 import sys
 from collections.abc import Callable
@@ -396,11 +395,11 @@ def test_existing_equal_malformed_bytes_are_preserved_and_rejected(
     assert destination.read_bytes() == malformed
 
 
-def test_publication_rejects_a_parsed_endpoint_above_the_stored_window(
+def test_publication_accepts_scapy_truncation_inside_the_stored_window(
     tmp_path: Path,
     metadata: CaptureMetadata,
 ) -> None:
-    """Expected-event equality must not authorize a nearest-rounded timestamp outside stored W."""
+    """Scapy truncation keeps a binary-derived endpoint inside its stored window."""
     run_directory = tmp_path / "run"
     run_directory.mkdir()
     window = 3 / 1024
@@ -410,16 +409,19 @@ def test_publication_rejects_a_parsed_endpoint_above_the_stored_window(
     )
     content = encode_legacy_pcapng(events, metadata)
 
-    with pytest.raises(TrafficlabError, match="outside.*observation window"):
-        publish_generated_pcapng(
-            run_directory,
-            content,
-            metadata=metadata,
-            expected_events=events,
-            observation_window_seconds=window,
-        )
+    publication = publish_generated_pcapng(
+        run_directory,
+        content,
+        metadata=metadata,
+        expected_events=events,
+        observation_window_seconds=window,
+    )
 
-    assert not (run_directory / "generated.pcapng").exists()
+    parsed = read_pcapng_bytes(publication.content, metadata, source=publication.path)
+    assert parsed.timestamps[-1] == 0.002929
+    assert parsed.timestamps[-1] <= window
+
+    assert (run_directory / "generated.pcapng").read_bytes() == content
     assert list(run_directory.glob(".generated.pcapng.*.tmp")) == []
 
 

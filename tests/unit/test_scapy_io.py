@@ -273,8 +273,8 @@ def test_encode_normalizes_writer_failures(monkeypatch: pytest.MonkeyPatch, fail
             del filename
             raise failure
 
-    def boundary() -> tuple[object, object, type[str]]:
-        return FailingFactory(), object(), str
+    def boundary() -> tuple[object, type[str]]:
+        return FailingFactory(), str
 
     monkeypatch.setattr(scapy_io, "_writer_boundary", boundary)
 

@@ -34,8 +34,8 @@ _REFERENCE_EVENTS = (
 )
 _GENERATED_EVENTS = (
     TraceEvent(0.0, Direction.OUTBOUND, 60),
-    TraceEvent(3.522005794, Direction.INBOUND, 100),
-    TraceEvent(5.802501672, Direction.INBOUND, 100),
+    TraceEvent(3.522005, Direction.INBOUND, 100),
+    TraceEvent(5.802501, Direction.INBOUND, 100),
 )
 _NORMALIZED_REFERENCE = (
     TraceEvent(0.0, Direction.OUTBOUND, 60),
@@ -46,8 +46,8 @@ _NORMALIZED_REFERENCE = (
 )
 _ALIGNED_GENERATED = (
     TraceEvent(0.0, Direction.OUTBOUND, 60),
-    TraceEvent(3.522005794, Direction.INBOUND, 100),
-    TraceEvent(5.802501672, Direction.INBOUND, 100),
+    TraceEvent(3.522005, Direction.INBOUND, 100),
+    TraceEvent(5.802501, Direction.INBOUND, 100),
 )
 
 

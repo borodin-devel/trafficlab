@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
-from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.trace import CaptureMetadata, Direction, TraceEvent
+from trafficlab.scapy_io import encode_pcapng
+from trafficlab.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,16 +39,23 @@ def trace_events(*, min_size: int = 1) -> SearchStrategy[tuple[TraceEvent, ...]]
 
 def pcapng_cases() -> SearchStrategy[PcapngCase]:
     """Return either a valid rendered capture or a structurally malformed prefix."""
-    return trace_events().flatmap(
-        lambda events: st.just(
-            encode_pcapng(events, CaptureMetadata(interface="eth0", target_mac="02:00:00:00:00:01"))
-        ).flatmap(
-            lambda valid: st.one_of(
-                st.just(PcapngCase(valid, events)),
-                st.integers(min_value=0, max_value=len(valid) - 1).map(lambda length: PcapngCase(valid[:length], None)),
-            )
+    metadata = CaptureMetadata(interface="eth0", target_mac="02:00:00:00:00:01")
+
+    def cases(events: tuple[TraceEvent, ...]) -> SearchStrategy[PcapngCase]:
+        trace = TrafficTrace.from_events(events)
+        encoded = encode_pcapng(
+            trace,
+            metadata,
+            observation_window_seconds=max(1.0, float(trace.timestamps[-1])),
         )
-    )
+        return st.one_of(
+            st.just(PcapngCase(encoded.content, encoded.trace.to_events())),
+            st.integers(min_value=0, max_value=len(encoded.content) - 1).map(
+                lambda length: PcapngCase(encoded.content[:length], None)
+            ),
+        )
+
+    return trace_events().flatmap(cases)
 
 
 def json_documents() -> SearchStrategy[bytes]:

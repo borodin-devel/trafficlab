@@ -60,15 +60,17 @@ class _ScapyReaderFactory(Protocol):
 
 
 class _ScapyWriter(Protocol):
+    linktype: int
+
     def __enter__(self) -> Self: ...
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> object: ...
 
-    def write_header(self, packet: _ScapyPacket) -> None: ...
+    def write_header(self, packet: bytes) -> None: ...
 
     def write_packet(
         self,
-        packet: _ScapyPacket,
+        packet: bytes,
         sec: object | None = None,
         usec: int | None = None,
         caplen: int | None = None,
@@ -80,10 +82,6 @@ class _ScapyWriterFactory(Protocol):
     def __call__(self, filename: str) -> _ScapyWriter: ...
 
 
-class _EtherFactory(Protocol):
-    def __call__(self, raw_packet: bytes) -> _ScapyPacket: ...
-
-
 class _TimestampFactory(Protocol):
     def __call__(self, value: str) -> object: ...
 
@@ -93,12 +91,10 @@ def _reader_boundary() -> tuple[_ScapyReaderFactory, type[SupportsFloat]]:
     return cast(_ScapyReaderFactory, utils.PcapNgReader), cast(type[SupportsFloat], utils.EDecimal)
 
 
-def _writer_boundary() -> tuple[_ScapyWriterFactory, _EtherFactory, _TimestampFactory]:
+def _writer_boundary() -> tuple[_ScapyWriterFactory, _TimestampFactory]:
     utils = importlib.import_module("scapy.utils")
-    layers = importlib.import_module("scapy.layers.l2")
     return (
         cast(_ScapyWriterFactory, utils.PcapNgWriter),
-        cast(_EtherFactory, layers.Ether),
         cast(_TimestampFactory, utils.EDecimal),
     )
 
@@ -291,13 +287,13 @@ def _write_scapy_path(
     metadata: CaptureMetadata,
     *,
     writer_factory: _ScapyWriterFactory,
-    ether_factory: _EtherFactory,
     timestamp_factory: _TimestampFactory,
 ) -> None:
     try:
         with writer_factory(str(path)) as writer:
+            writer.linktype = 1
             for index, event in enumerate(trace):
-                packet = ether_factory(_frame_for_event(event, metadata))
+                packet = _frame_for_event(event, metadata)
                 if index == 0:
                     writer.write_header(packet)
                 writer.write_packet(
@@ -335,7 +331,7 @@ def encode_pcapng(
 ) -> EncodedPcapng:
     """Encode through Scapy and return only reparsed emitted output."""
     _validate_encoding_input(trace, observation_window_seconds)
-    writer_factory, ether_factory, timestamp_factory = _writer_boundary()
+    writer_factory, timestamp_factory = _writer_boundary()
     with TemporaryDirectory(prefix="trafficlab-scapy-write-") as temporary:
         path = Path(temporary) / "generated.pcapng"
         _write_scapy_path(
@@ -343,7 +339,6 @@ def encode_pcapng(
             trace,
             metadata,
             writer_factory=writer_factory,
-            ether_factory=ether_factory,
             timestamp_factory=timestamp_factory,
         )
         try:
