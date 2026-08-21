@@ -773,7 +773,7 @@ git commit -m "test: validate production scapy pipeline"
 - Produces: one accepted schema-v4 Scapy study bound to the final implementation source commit.
 - Preserves: historical r6/r21 bytes and failed-attempt immutability.
 
-- [ ] **[STEP-49-f9c2a123] Step 1: Write current-study and historical-immutability RED tests**
+- [x] **[STEP-49-f9c2a123] Step 1: Write current-study and historical-immutability RED tests**
 
 ```python
 def test_current_study_is_schema_v4_scapy_production() -> None:
@@ -786,7 +786,7 @@ def test_historical_r6_and_r21_are_unchanged_from_mvp3() -> None:
     assert git_diff("MVP_3", "HEAD", R6_PATH, R21_PATH) == b""
 ```
 
-- [ ] **[STEP-50-f0e52748] Step 2: Run evidence RED before collection**
+- [x] **[STEP-50-f0e52748] Step 2: Run evidence RED before collection**
 
 ```bash
 uv run --locked pytest -vv -x -n 0 tests/unit/test_study_evidence.py \

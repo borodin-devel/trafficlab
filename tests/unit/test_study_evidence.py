@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ValidationError
 
 import trafficlab.study_evidence as study_evidence
+from scripts import audit_validation_study as study_auditor
 from trafficlab.errors import TrafficlabError
 from trafficlab.study_evidence import (
     StudyContentIdentity,
@@ -29,6 +30,11 @@ from trafficlab.study_evidence import (
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 _STUDY_FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"
+_CURRENT_STUDY = REPOSITORY / "examples" / "validation_study" / "evidence" / "2026-08-20-scapy-production-r1"
+_HISTORICAL_STUDIES = (
+    "examples/validation_study/evidence/2026-08-20-stack-adoption-r6",
+    "examples/validation_study/evidence/2026-08-18-research-fitness-r21",
+)
 
 _STUDY_ROOTS: dict[str, tuple[type[BaseModel], str]] = {
     "study_environment": (ValidationStudyEnvironment, "environment.json"),
@@ -43,7 +49,28 @@ _STUDY_ROOTS: dict[str, tuple[type[BaseModel], str]] = {
 
 
 def _checked_study_paths(filename: str) -> tuple[Path, ...]:
-    return (_STUDY_FIXTURE / filename,)
+    return (_STUDY_FIXTURE / filename, _CURRENT_STUDY / filename)
+
+
+def test_current_study_is_schema_v4_scapy_production_and_passes_offline_audit() -> None:
+    """The navigated study must be the accepted schema-v4 production Scapy bundle."""
+
+    environment = ValidationStudyEnvironment.model_validate_json((_CURRENT_STUDY / "environment.json").read_bytes())
+
+    assert environment.scientific_artifact_schema == 4
+    assert study_auditor.audit_bundle(_CURRENT_STUDY, repository=REPOSITORY).bundle == _CURRENT_STUDY
+
+
+def test_historical_r6_and_r21_are_byte_unchanged_from_mvp3() -> None:
+    """Publishing current evidence must never rewrite either accepted predecessor."""
+
+    completed = subprocess.run(
+        ("git", "diff", "--quiet", "MVP_3", "HEAD", "--", *_HISTORICAL_STUDIES),
+        cwd=REPOSITORY,
+        check=False,
+    )
+
+    assert completed.returncode == 0
 
 
 def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_documents() -> None:
@@ -57,7 +84,7 @@ def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_
         schema = model.model_json_schema(mode="validation")
         Draft202012Validator.check_schema(schema)
         paths = _checked_study_paths(filename)
-        assert len(paths) == 1, name
+        assert len(paths) == 2, name
         for path in paths:
             content = path.read_bytes()
             document = json.loads(content)
