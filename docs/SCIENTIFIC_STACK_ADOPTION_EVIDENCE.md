@@ -116,8 +116,9 @@ The bounded configuration-only production preflight completed with status zero
 and prepared `runs/scientific-stack`. A bounded real Docker/Internet
 `trafficlab run` then completed the full workflow with all three families in
 the checkpoint. It selected `markov_renewal`, reported selection fitness
-`0.678663`, parsed 80 reference packets, generated 12 packets, and published
-aggregate score `0.5640787645341068` with the exact nine documented run files.
+`0.6936220494118022`, parsed 81 reference packets, generated 74 packets, and
+published aggregate score `0.6950783438592381` with the exact nine documented
+run files.
 The owned Compose project had zero labeled containers, networks, or volumes
 afterward; the temporary exact capture-image tag was removed without global
 Docker cleanup.

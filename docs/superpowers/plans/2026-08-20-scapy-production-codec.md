@@ -857,7 +857,19 @@ git commit -m "docs: publish scapy validation study"
 - Consumes: every prior task and accepted bundle.
 - Produces: clean reviewed branch with every checkbox accurate and all release gates retained locally.
 
-- [ ] **[STEP-55-c1632cf1] Step 1: Run locked sync, format, lint, and strict types**
+**Final-review ruling:** The first review found four Important and three Minor
+issues. The reader deadline/Packet-Block boundaries, exact reparsed publication
+authority, diagnostic provenance/tamper checks, schema prose, durable example,
+and fresh r3 study resolve them. The scoped re-review found one newly stale
+example-summary paragraph, corrected in the final documentation commit. Its
+remaining Minor notes that diagnostic `warmup_runs` accepts any nonnegative
+value instead of exactly one; this is deferred because measured-run counts,
+all deterministic identities, source/lock provenance, and non-gating status
+remain independently checked, while changing diagnostic source would require
+another provenance generation without changing a production or acceptance
+decision.
+
+- [x] **[STEP-55-c1632cf1] Step 1: Run locked sync, format, lint, and strict types**
 
 ```bash
 uv sync --locked --all-groups
@@ -868,7 +880,7 @@ uv run --locked pyright
 
 Expected: 0 formatting changes, lint errors, type errors, warnings, or informations.
 
-- [ ] **[STEP-56-91235279] Step 2: Run canonical Ordinary and Coverage gates separately**
+- [x] **[STEP-56-91235279] Step 2: Run canonical Ordinary and Coverage gates separately**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
@@ -884,7 +896,7 @@ scripts/run_bounded.sh --memory-high 6G --memory-max 8G --swap-max 1G \
 
 Expected: both select every offline test exactly once; total branch coverage is at least 90%.
 
-- [ ] **[STEP-57-65b98120] Step 3: Run every deterministic checker and detached audit**
+- [x] **[STEP-57-65b98120] Step 3: Run every deterministic checker and detached audit**
 
 ```bash
 uv run --locked python scripts/generate_similarity_fixtures.py --check
@@ -902,7 +914,7 @@ uv run --locked python scripts/check_fixture_layout.py --check
 
 Run the Task 9 detached regular-copy audit again. Expected: every checker and audit exits zero.
 
-- [ ] **[STEP-58-daf4f6b9] Step 4: Run combined serial Docker and Internet release gate**
+- [x] **[STEP-58-daf4f6b9] Step 4: Run combined serial Docker and Internet release gate**
 
 ```bash
 scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
