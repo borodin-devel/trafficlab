@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import errno
 import json
+import os
+import shutil
 import subprocess
 from copy import deepcopy
 from pathlib import Path
@@ -12,7 +14,6 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ValidationError
 
 import trafficlab.study_evidence as study_evidence
-from scripts import audit_validation_study as study_auditor
 from trafficlab.errors import TrafficlabError
 from trafficlab.study_evidence import (
     StudyContentIdentity,
@@ -52,13 +53,53 @@ def _checked_study_paths(filename: str) -> tuple[Path, ...]:
     return (_STUDY_FIXTURE / filename, _CURRENT_STUDY / filename)
 
 
-def test_current_study_is_schema_v4_scapy_production_and_passes_offline_audit() -> None:
+@pytest.mark.integration
+def test_current_study_is_schema_v4_scapy_production_and_passes_offline_audit(tmp_path: Path) -> None:
     """The navigated study must be the accepted schema-v4 production Scapy bundle."""
 
     environment = ValidationStudyEnvironment.model_validate_json((_CURRENT_STUDY / "environment.json").read_bytes())
+    repository = tmp_path / "recorded-source"
+    subprocess.run(
+        ("git", "clone", "--no-local", "--no-hardlinks", "--no-checkout", str(REPOSITORY), str(repository)),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ("git", "checkout", "--detach", environment.source_commit),
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    copied = repository / _CURRENT_STUDY.relative_to(REPOSITORY)
+    copied.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(_CURRENT_STUDY, copied, copy_function=shutil.copy2)
+    alternates = repository / ".git" / "objects" / "info" / "alternates"
+    files = tuple(path for path in copied.rglob("*") if path.is_file())
+    completed = subprocess.run(
+        (
+            "uv",
+            "run",
+            "--locked",
+            "--offline",
+            "python",
+            "scripts/audit_validation_study.py",
+            copied.relative_to(repository).as_posix(),
+            "--repository",
+            ".",
+        ),
+        cwd=repository,
+        env={**os.environ, "PYTHONPATH": "", "UV_OFFLINE": "1"},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
     assert environment.scientific_artifact_schema == 4
-    assert study_auditor.audit_bundle(_CURRENT_STUDY, repository=REPOSITORY).bundle == _CURRENT_STUDY
+    assert not alternates.exists() or alternates.read_bytes() == b""
+    assert files
+    assert all(not path.is_symlink() and path.stat().st_nlink == 1 for path in files)
+    assert completed.returncode == 0, completed.stderr
+    assert "validation-study-audit: accepted 231 retained files" in completed.stdout
 
 
 def test_historical_r6_and_r21_are_byte_unchanged_from_mvp3() -> None:
