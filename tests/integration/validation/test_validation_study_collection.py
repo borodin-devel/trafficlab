@@ -29,7 +29,8 @@ from trafficlab.fitting.stage import fit_experiment
 from trafficlab.generation.stage import generate_experiment
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies, RunResult
-from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.preflight.stage import open_or_prepare_experiment
+from trafficlab.preflight.types import PreparedExperiment
 
 pytestmark = pytest.mark.integration
 

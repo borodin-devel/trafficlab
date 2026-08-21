@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from trafficlab.fitting.stage import FitStageResult
     from trafficlab.generation.stage import GenerationStageResult
     from trafficlab.pipeline.types import RunResult
-    from trafficlab.preflight.stage import PreparedExperiment
+    from trafficlab.preflight.types import PreparedExperiment
 
 PrepareExperiment = Callable[[Path], "PreparedExperiment"]
 CompareExperiment = Callable[[Path], "ComparisonResult"]

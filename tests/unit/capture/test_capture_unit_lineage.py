@@ -19,10 +19,10 @@ from trafficlab.common.compatibility import identify_file
 from trafficlab.common.config import MountConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
-from trafficlab.preflight.stage import (
+from trafficlab.preflight.stage import open_or_prepare_experiment
+from trafficlab.preflight.types import (
     CaptureEnvironmentIdentity,
     MountedInputIdentity,
-    open_or_prepare_experiment,
 )
 
 

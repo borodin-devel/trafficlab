@@ -47,7 +47,7 @@ from trafficlab.generation.models.registry import (
     runtime_fitted_model,
 )
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
-from trafficlab.preflight.stage import PreparedExperiment
+from trafficlab.preflight.types import PreparedExperiment
 
 pytestmark = pytest.mark.integration
 

@@ -25,7 +25,7 @@ from trafficlab.fitting.stage import FitStageResult
 from trafficlab.generation.stage import GenerationStageResult
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies
-from trafficlab.preflight.stage import PreparedExperiment
+from trafficlab.preflight.types import PreparedExperiment
 
 
 @pytest.mark.parametrize("corruption", ["type", "source", "directory", "relative-directory"])

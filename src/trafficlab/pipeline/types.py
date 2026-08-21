@@ -13,7 +13,8 @@ from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.stage import FitStageResult, fit_experiment
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
-from trafficlab.preflight.stage import PreparedExperiment, run_preflight
+from trafficlab.preflight.stage import run_preflight
+from trafficlab.preflight.types import PreparedExperiment
 
 
 @dataclass(frozen=True, slots=True)

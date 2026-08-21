@@ -33,7 +33,11 @@ from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateI
 from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.generation.models.poisson import PoissonFamily
 from trafficlab.generation.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
-from trafficlab.preflight.stage import PreflightReport, PreparedExperiment, open_or_prepare_experiment
+from trafficlab.preflight.stage import open_or_prepare_experiment
+from trafficlab.preflight.types import (
+    PreflightReport,
+    PreparedExperiment,
+)
 
 
 def replace[Record](record: Record, **changes: object) -> Record:

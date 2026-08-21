@@ -28,7 +28,10 @@ from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_histo
 from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.generation.models.registry import load_best_model, render_best_model
-from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
+from trafficlab.preflight.types import (
+    PreflightReport,
+    PreparedExperiment,
+)
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 FIT_DIRECTORY = REPOSITORY / "examples" / "data" / "fit"

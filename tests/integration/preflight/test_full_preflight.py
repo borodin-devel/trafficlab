@@ -11,12 +11,14 @@ from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.preflight.stage import (
+    open_or_prepare_experiment,
+    run_preflight,
+)
+from trafficlab.preflight.types import (
     CaptureEnvironmentIdentity,
     DockerPreflight,
     PreflightFinding,
     PreflightReport,
-    open_or_prepare_experiment,
-    run_preflight,
 )
 
 pytestmark = pytest.mark.integration

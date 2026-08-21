@@ -30,9 +30,7 @@ from trafficlab.common.errors import (
     TrafficlabError,
 )
 from trafficlab.common.trace import load_capture_metadata
-from trafficlab.preflight.stage import (
-    DockerPreflight,
-)
+from trafficlab.preflight.types import DockerPreflight
 
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
 

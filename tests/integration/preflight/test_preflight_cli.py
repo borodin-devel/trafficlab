@@ -18,7 +18,7 @@ import trafficlab.preflight.stage as preflight_module
 from trafficlab.cli import main
 from trafficlab.common.config_io import load_experiment
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.preflight.stage import PreparedExperiment
+from trafficlab.preflight.types import PreparedExperiment
 
 pytestmark = pytest.mark.integration
 

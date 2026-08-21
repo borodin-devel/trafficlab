@@ -51,7 +51,11 @@ from trafficlab.generation.models.registry import load_best_model, render_best_m
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies, RunResult
-from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment, run_preflight
+from trafficlab.preflight.stage import (
+    open_or_prepare_experiment,
+    run_preflight,
+)
+from trafficlab.preflight.types import PreparedExperiment
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
 

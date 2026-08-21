@@ -15,7 +15,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.fitting.stage import FitStageResult
 from trafficlab.generation.stage import GenerationStageResult
 from trafficlab.pipeline.types import RunResult
-from trafficlab.preflight.stage import PreparedExperiment
+from trafficlab.preflight.types import PreparedExperiment
 
 
 def _fit_result(*, reused: bool = False) -> FitStageResult:

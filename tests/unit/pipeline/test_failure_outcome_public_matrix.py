@@ -20,7 +20,9 @@ import trafficlab.comparison.stage as comparison_stage
 import trafficlab.fitting.genetic.strategy as strategy_module
 import trafficlab.fitting.stage as fitting
 import trafficlab.generation.stage as generation
+import trafficlab.preflight.docker as preflight_docker
 import trafficlab.preflight.stage as preflight
+import trafficlab.preflight.types as preflight_types
 import trafficlab.study_evidence as study_evidence
 from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT, PIPELINE_FIXTURE_ROOT
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
@@ -173,7 +175,7 @@ def _build_boundary_cases() -> tuple[_BoundaryCase, ...]:
 _PUBLIC_BOUNDARY_CASES = _build_boundary_cases()
 
 
-def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
+def _prepared(run_directory: Path) -> preflight_types.PreparedExperiment:
     config = cast(
         ExperimentConfig,
         SimpleNamespace(
@@ -188,14 +190,14 @@ def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
             run=SimpleNamespace(directory=run_directory),
         ),
     )
-    return preflight.PreparedExperiment(
+    return preflight_types.PreparedExperiment(
         source=run_directory.parent / "experiment.toml",
         portable_config=config,
         config=config,
-        report=preflight.PreflightReport(
+        report=preflight_types.PreflightReport(
             config=config,
             findings=(),
-            environment_identity=preflight.CaptureEnvironmentIdentity(
+            environment_identity=preflight_types.CaptureEnvironmentIdentity(
                 host_architecture="linux/amd64",
                 target_reference="target:test",
                 target_content_id="sha256:" + ("c" * 64),
@@ -364,7 +366,7 @@ class _PreflightDocker:
         self.scenario = scenario
         self.mount_source = mount_source
         self.signaled = False
-        lock = load_capture_image_lock(preflight._CAPTURE_IMAGE_LOCK_PATH)  # pyright: ignore[reportPrivateUsage]
+        lock = load_capture_image_lock(preflight_docker._CAPTURE_IMAGE_LOCK_PATH)  # pyright: ignore[reportPrivateUsage]
         self.capture_id = lock.expected_capture_image_id
         self.target_id = "sha256:" + ("c" * 64)
         self.host_architecture = "linux/amd64"
@@ -656,7 +658,7 @@ def _run_preflight_case(
         preflight.run_preflight(
             experiment_path,
             config_only=True,
-            docker=cast(preflight.DockerPreflight, docker),
+            docker=cast(preflight_types.DockerPreflight, docker),
             clock=clock,
         )
     source_before = experiment_path.read_bytes()
@@ -667,7 +669,7 @@ def _run_preflight_case(
         preflight.run_preflight(
             experiment_path,
             config_only=case.scenario == "config_invalid",
-            docker=cast(preflight.DockerPreflight, docker),
+            docker=cast(preflight_types.DockerPreflight, docker),
             clock=clock,
         )
 
@@ -1002,7 +1004,7 @@ def _expected_capture_log_records(
 
 def _capture_prepared(
     valid_config_data: dict[str, object], tmp_path: Path
-) -> tuple[Path, preflight.PreparedExperiment]:
+) -> tuple[Path, preflight_types.PreparedExperiment]:
     run_directory = tmp_path / "run"
     data = copy.deepcopy(valid_config_data)
     cast(dict[str, object], data["run"])["directory"] = str(run_directory)
@@ -1011,7 +1013,7 @@ def _capture_prepared(
     experiment_path = tmp_path / "experiment.toml"
     experiment_path.write_bytes(render_effective_config(config))
     prepared = preflight.open_or_prepare_experiment(experiment_path)
-    environment = preflight.CaptureEnvironmentIdentity(
+    environment = preflight_types.CaptureEnvironmentIdentity(
         host_architecture="linux/amd64",
         target_reference=prepared.config.target.image,
         target_content_id="sha256:" + ("c" * 64),
@@ -1079,7 +1081,7 @@ def _run_capture_stale_boundary_case(
     experiment_path = tmp_path / "experiment.toml"
     experiment_path.write_bytes(render_effective_config(config))
     prepared = preflight.open_or_prepare_experiment(experiment_path)
-    environment = preflight.CaptureEnvironmentIdentity(
+    environment = preflight_types.CaptureEnvironmentIdentity(
         host_architecture="linux/amd64",
         target_reference=prepared.config.target.image,
         target_content_id="sha256:" + ("c" * 64),
@@ -1148,7 +1150,7 @@ def _run_capture_mounted_input_boundary_case(
     experiment_path.write_bytes(render_effective_config(config))
     prepared = preflight.open_or_prepare_experiment(experiment_path)
     mounted_inputs = capture_lineage.identify_mounted_inputs(prepared.config)
-    environment = preflight.CaptureEnvironmentIdentity(
+    environment = preflight_types.CaptureEnvironmentIdentity(
         host_architecture="linux/amd64",
         target_reference=prepared.config.target.image,
         target_content_id="sha256:" + ("c" * 64),
@@ -1183,9 +1185,9 @@ def _run_capture_mounted_input_boundary_case(
         path: Path,
         *,
         config_only: bool,
-        docker: preflight.DockerPreflight | None,
+        docker: preflight_types.DockerPreflight | None,
         clock: Callable[[], float],
-    ) -> preflight.PreparedExperiment:
+    ) -> preflight_types.PreparedExperiment:
         nonlocal mutated
         result = real_run_preflight(
             path,
@@ -1317,10 +1319,10 @@ def _fit_dependencies(
     inputs: dict[Path, bytes],
     strategy: Callable[[StrategyContext], FitOutcome],
 ) -> FitDependencies:
-    prepared = preflight.PreparedExperiment(
+    prepared = preflight_types.PreparedExperiment(
         experiment_path,
         config,
-        preflight.PreflightReport(config, ()),
+        preflight_types.PreflightReport(config, ()),
         config.run.directory,
     )
     return FitDependencies(lambda _path: prepared, lambda path: inputs[path], strategy)
@@ -1433,10 +1435,10 @@ def _run_fit_boundary_case(
                 return original_reference if reads == 1 else changed_reference
             return inputs[path]
 
-        prepared = preflight.PreparedExperiment(
+        prepared = preflight_types.PreparedExperiment(
             experiment_path,
             config,
-            preflight.PreflightReport(config, ()),
+            preflight_types.PreflightReport(config, ()),
             run_directory,
         )
         dependencies = FitDependencies(
@@ -1483,10 +1485,10 @@ def test_fit_changed_reference_without_resume_uses_the_generic_recovery_action(
             return original_reference if reads == 1 else original_reference + b"changed after fitting\n"
         return inputs[path]
 
-    prepared = preflight.PreparedExperiment(
+    prepared = preflight_types.PreparedExperiment(
         experiment_path,
         config,
-        preflight.PreflightReport(config, ()),
+        preflight_types.PreflightReport(config, ()),
         run_directory,
     )
     dependencies = FitDependencies(
@@ -1609,7 +1611,7 @@ def test_generation_maps_missing_capture_after_a_validated_model(
     class _Family:
         gene_names: tuple[str, ...] = ()
 
-    def open_prepared(_path: Path) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path) -> preflight_types.PreparedExperiment:
         return prepared
 
     def load_best(*_args: object, **_kwargs: object) -> SimpleNamespace:
@@ -1695,7 +1697,7 @@ def test_generation_preserves_published_bytes_when_post_publication_parse_fails(
         def generate(*_args: object, **_kwargs: object) -> _Generated:
             return _Generated()
 
-    def open_prepared(_path: Path) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path) -> preflight_types.PreparedExperiment:
         return prepared
 
     def load_best(*_args: object, **_kwargs: object) -> SimpleNamespace:

@@ -37,7 +37,10 @@ from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_i
 from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult, Genes
 from trafficlab.generation.models.registry import load_best_model, render_best_model
 from trafficlab.generation.stage import generate_experiment
-from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
+from trafficlab.preflight.types import (
+    PreflightReport,
+    PreparedExperiment,
+)
 
 pytestmark = pytest.mark.integration
 

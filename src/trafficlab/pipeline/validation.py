@@ -27,7 +27,7 @@ from trafficlab.fitting.genetic.types import Candidate, TrialResult
 from trafficlab.fitting.stage import FitStageResult
 from trafficlab.generation.models.registry import BestModel, load_best_model, render_best_model
 from trafficlab.generation.stage import GenerationStageResult
-from trafficlab.preflight.stage import PreparedExperiment
+from trafficlab.preflight.types import PreparedExperiment
 
 _SUCCESSFUL_RUN_NAMES = frozenset(
     {

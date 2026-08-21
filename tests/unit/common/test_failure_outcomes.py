@@ -14,7 +14,9 @@ import trafficlab.comparison.stage as comparison
 import trafficlab.fitting.stage as fitting
 import trafficlab.generation.stage as generation
 import trafficlab.pipeline.stage as run
+import trafficlab.preflight.docker as preflight_docker
 import trafficlab.preflight.stage as preflight
+import trafficlab.preflight.types as preflight_types
 from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT
 from trafficlab.capture.policy import CaptureOutcome, FailureDetail, FailureKind
 from trafficlab.common.config import ExperimentConfig
@@ -34,10 +36,10 @@ def _fixture_outcome(detail: str, *, authority: str = "primary") -> FailureOutco
     raise AssertionError(f"missing authoritative fixture row for {detail!r}/{authority}")
 
 
-def _prepared_preflight(tmp_path: Path) -> preflight.PreparedExperiment:
+def _prepared_preflight(tmp_path: Path) -> preflight_types.PreparedExperiment:
     config = cast(ExperimentConfig, SimpleNamespace(capture=SimpleNamespace(total_timeout_seconds=5.0)))
-    report = preflight.PreflightReport(config=config, findings=())
-    return preflight.PreparedExperiment(
+    report = preflight_types.PreflightReport(config=config, findings=())
+    return preflight_types.PreparedExperiment(
         source=tmp_path / "experiment.toml",
         config=config,
         report=report,
@@ -256,7 +258,7 @@ def test_generate_public_boundary_classifies_a_missing_best_model(
     prepared = _prepared_preflight(tmp_path)
     prepared.run_directory.mkdir()
 
-    def open_prepared(_path: Path) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path) -> preflight_types.PreparedExperiment:
         return prepared
 
     monkeypatch.setattr(generation, "open_or_prepare_experiment", open_prepared)
@@ -288,7 +290,7 @@ def test_generate_public_boundary_classifies_an_unreadable_best_model(
             raise PermissionError("injected denied model")
         return real_read_bytes(path)
 
-    def open_prepared(_path: Path) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path) -> preflight_types.PreparedExperiment:
         return prepared
 
     monkeypatch.setattr(generation, "open_or_prepare_experiment", open_prepared)
@@ -309,8 +311,8 @@ def test_generate_public_boundary_classifies_an_unreadable_best_model(
 
 def test_preflight_adapter_maps_probe_cleanup_to_remaining_inventory() -> None:
     """Probe cleanup has a distinct retained-inventory outcome from Docker availability."""
-    outcome = preflight._preflight_failure_outcome(  # pyright: ignore[reportPrivateUsage]
-        preflight.PreflightFinding("probe_cleanup", False, "probe project remained", "remove probe project")
+    outcome = preflight_docker.preflight_failure_outcome(  # pyright: ignore[reportPrivateUsage]
+        preflight_types.PreflightFinding("probe_cleanup", False, "probe project remained", "remove probe project")
     )
 
     assert outcome == FailureOutcome(
@@ -335,18 +337,18 @@ def test_run_preflight_constructs_docker_and_logs_successful_findings(
         def __init__(self, *, clock: object) -> None:
             self.clock = clock
 
-    def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         return prepared
 
     def check(
         _config: ExperimentConfig, _docker: object, *, deadline: float, clock: object
-    ) -> preflight.PreflightReport:
+    ) -> preflight_types.PreflightReport:
         del _config, _docker, clock
         assert deadline == 105.0
-        return preflight.PreflightReport(
+        return preflight_types.PreflightReport(
             config=prepared.config,
-            findings=(preflight.PreflightFinding("docker_daemon", True, "Docker is ready"),),
+            findings=(preflight_types.PreflightFinding("docker_daemon", True, "Docker is ready"),),
         )
 
     def append(_directory: Path, record: dict[str, object]) -> None:
@@ -378,7 +380,7 @@ def test_run_preflight_deadline_errors_carry_docker_outcomes(
     """Deadline construction failures are full-preflight failures even before a Docker command runs."""
     prepared = _prepared_preflight(tmp_path)
 
-    def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         return prepared
 
@@ -388,7 +390,7 @@ def test_run_preflight_deadline_errors_carry_docker_outcomes(
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=clock,
         )
 
@@ -410,16 +412,16 @@ def test_run_preflight_records_append_and_identity_failures_as_direct_outcomes(
     prepared = _prepared_preflight(tmp_path)
     calls = 0
 
-    def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         return prepared
 
     def check(
         _config: ExperimentConfig, _docker: object, *, deadline: float, clock: object
-    ) -> preflight.PreflightReport:
+    ) -> preflight_types.PreflightReport:
         del _config, _docker, deadline, clock
         identity = cast(
-            preflight.CaptureEnvironmentIdentity,
+            preflight_types.CaptureEnvironmentIdentity,
             SimpleNamespace(
                 capture_content_id="capture-id",
                 capture_reference="capture:fixed",
@@ -429,9 +431,9 @@ def test_run_preflight_records_append_and_identity_failures_as_direct_outcomes(
                 target_reference="target:fixed",
             ),
         )
-        return preflight.PreflightReport(
+        return preflight_types.PreflightReport(
             config=prepared.config,
-            findings=(preflight.PreflightFinding("docker_daemon", True, "Docker is ready"),),
+            findings=(preflight_types.PreflightFinding("docker_daemon", True, "Docker is ready"),),
             environment_identity=identity,
         )
 
@@ -450,7 +452,7 @@ def test_run_preflight_records_append_and_identity_failures_as_direct_outcomes(
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
 
@@ -464,17 +466,19 @@ def test_run_preflight_preserves_docker_failure_when_its_log_append_fails(
     """A run-log failure is secondary to the first Docker preflight failure."""
     prepared = _prepared_preflight(tmp_path)
 
-    def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         return prepared
 
     def check(
         _config: ExperimentConfig, _docker: object, *, deadline: float, clock: object
-    ) -> preflight.PreflightReport:
+    ) -> preflight_types.PreflightReport:
         del _config, _docker, deadline, clock
-        return preflight.PreflightReport(
+        return preflight_types.PreflightReport(
             config=prepared.config,
-            findings=(preflight.PreflightFinding("docker_daemon", False, "Docker is unavailable", "restore Docker"),),
+            findings=(
+                preflight_types.PreflightFinding("docker_daemon", False, "Docker is unavailable", "restore Docker"),
+            ),
         )
 
     def fail_append(_directory: Path, _record: dict[str, object]) -> None:
@@ -488,7 +492,7 @@ def test_run_preflight_preserves_docker_failure_when_its_log_append_fails(
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
 
@@ -502,21 +506,23 @@ def test_run_preflight_keeps_probe_cleanup_as_secondary_after_probe_failure(
     """A failed probe owns the primary result; later inventory cleanup is ordered secondary evidence."""
     prepared = _prepared_preflight(tmp_path)
 
-    def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         return prepared
 
     def check(
         _config: ExperimentConfig, _docker: object, *, deadline: float, clock: object
-    ) -> preflight.PreflightReport:
+    ) -> preflight_types.PreflightReport:
         del _config, _docker, deadline, clock
-        return preflight.PreflightReport(
+        return preflight_types.PreflightReport(
             config=prepared.config,
             findings=(
-                preflight.PreflightFinding(
+                preflight_types.PreflightFinding(
                     "network_probe", False, "capture prerequisite is unavailable", "repair probe"
                 ),
-                preflight.PreflightFinding("probe_cleanup", False, "probe project remained", "remove probe project"),
+                preflight_types.PreflightFinding(
+                    "probe_cleanup", False, "probe project remained", "remove probe project"
+                ),
             ),
         )
 
@@ -532,7 +538,7 @@ def test_run_preflight_keeps_probe_cleanup_as_secondary_after_probe_failure(
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
 
@@ -559,17 +565,17 @@ def test_run_preflight_keeps_an_existing_report_outcome(monkeypatch: pytest.Monk
     )
     error = TrafficlabError("Docker unavailable", corrective_action="restore Docker", failure_outcome=existing)
 
-    def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         return prepared
 
     def check(
         _config: ExperimentConfig, _docker: object, *, deadline: float, clock: object
-    ) -> preflight.PreflightReport:
+    ) -> preflight_types.PreflightReport:
         del _config, _docker, deadline, clock
-        return preflight.PreflightReport(config=prepared.config, findings=())
+        return preflight_types.PreflightReport(config=prepared.config, findings=())
 
-    def raise_existing(_report: preflight.PreflightReport) -> None:
+    def raise_existing(_report: preflight_types.PreflightReport) -> None:
         raise error
 
     def append(_directory: Path, _record: dict[str, object]) -> None:
@@ -578,13 +584,13 @@ def test_run_preflight_keeps_an_existing_report_outcome(monkeypatch: pytest.Monk
     monkeypatch.setattr(preflight, "open_or_prepare_experiment", open_prepared)
     monkeypatch.setattr(preflight, "check_docker", check)
     monkeypatch.setattr(preflight, "append_run_log", append)
-    monkeypatch.setattr(preflight.PreflightReport, "require_success", raise_existing)
+    monkeypatch.setattr(preflight_types.PreflightReport, "require_success", raise_existing)
 
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
 
@@ -882,8 +888,10 @@ def test_existing_stage_failure_log_adapters_render_canonical_outcomes(
 
 def test_preflight_and_capture_adapters_preserve_primary_secondary_authority() -> None:
     """Canonical records must mirror the existing direct preflight and capture arbitration boundaries."""
-    preflight_outcome = preflight._preflight_failure_outcome(  # pyright: ignore[reportPrivateUsage]
-        preflight.PreflightFinding("docker_engine", False, "Docker Engine is unavailable", "restore Docker Engine")
+    preflight_outcome = preflight_docker.preflight_failure_outcome(  # pyright: ignore[reportPrivateUsage]
+        preflight_types.PreflightFinding(
+            "docker_engine", False, "Docker Engine is unavailable", "restore Docker Engine"
+        )
     )
     capture_outcome = CaptureOutcome(
         FailureKind.TARGET_NONZERO_EXIT,

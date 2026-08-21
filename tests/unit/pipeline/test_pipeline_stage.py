@@ -25,7 +25,7 @@ from trafficlab.fitting.stage import FitStageResult
 from trafficlab.generation.stage import GenerationStageResult
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies, RunResult
-from trafficlab.preflight.stage import PreparedExperiment
+from trafficlab.preflight.types import PreparedExperiment
 
 
 def test_run_experiment_calls_five_stages_directly_in_order_and_returns_their_exact_results(

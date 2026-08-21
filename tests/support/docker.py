@@ -445,10 +445,10 @@ class EndpointDockerCompose(TrackedDockerCompose):
 
 def install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
     import trafficlab.capture.stage as capture_module
-    import trafficlab.preflight.stage as preflight_module
+    import trafficlab.preflight.docker as preflight_docker
     from trafficlab.capture.topology import write_production_compose
 
-    original_probe_document = preflight_module._probe_document  # pyright: ignore[reportPrivateUsage]
+    original_probe_document = preflight_docker.render_probe_compose
 
     def write_with_endpoint(
         path: Path,
@@ -476,4 +476,4 @@ def install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
         return merge_endpoint_overlay(original_probe_document(config, paths, capture_image=capture_image))
 
     monkeypatch.setattr(capture_module, "write_production_compose", write_with_endpoint)
-    monkeypatch.setattr(preflight_module, "_probe_document", probe_with_endpoint)
+    monkeypatch.setattr(preflight_docker, "render_probe_compose", probe_with_endpoint)

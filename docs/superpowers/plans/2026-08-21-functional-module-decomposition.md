@@ -288,33 +288,33 @@ NumPy, SciPy, Git, Docker Compose.
 - Produces immutable preflight contracts, host-only checks, Docker checks,
   disposable probe operations, and the unchanged public stage API.
 
-- [ ] **[STEP-25-e1ce1a47] Snapshot preflight nodes and write RED owner tests**
+- [x] **[STEP-25-e1ce1a47] Snapshot preflight nodes and write RED owner tests**
 
   Record normalized preflight unit/integration nodes and require the four new
   modules in the source-layout contract.
 
-- [ ] **[STEP-26-cf8eed13] Extract types and local checks**
+- [x] **[STEP-26-cf8eed13] Extract types and local checks**
 
   Move all protocols/records to `types.py`; move writable, mount,
   run-directory, disk-space checks, and `check_local` to `local.py`.
 
-- [ ] **[STEP-27-fe58f623] Extract Docker probe and check orchestration**
+- [x] **[STEP-27-fe58f623] Extract Docker probe and check orchestration**
 
   Move disposable probe mechanics to `probe.py`, Docker prerequisite decisions
   to `docker.py`, and retain prepare/open/run coordination in `stage.py`.
 
-- [ ] **[STEP-28-13bb0d45] Update preflight tests and prove inventory equivalence**
+- [x] **[STEP-28-13bb0d45] Update preflight tests and prove inventory equivalence**
 
   Rehome direct tests to `test_types.py`, `test_local.py`, `test_docker.py`,
   `test_probe.py`, and `test_stage.py` when ownership is clearer; preserve every
   test/parameter/marker and update lazy import targets.
 
-- [ ] **[STEP-29-8e26520a] Verify preflight behavior**
+- [x] **[STEP-29-8e26520a] Verify preflight behavior**
 
   Run preflight unit/integration, config-only CLI, capture reuse, Docker probe
   tests, Ruff, strict Pyright, and direct branch coverage of each new module.
 
-- [ ] **[STEP-30-62ab582f] Review and commit preflight ownership**
+- [x] **[STEP-30-62ab582f] Review and commit preflight ownership**
 
   Resolve independent review findings and commit:
 

@@ -53,10 +53,8 @@ from trafficlab.common.errors import (
     append_failure_outcome,
     failure_outcome_from_error,
 )
-from trafficlab.preflight.stage import (
-    PreparedExperiment,
-    run_preflight,
-)
+from trafficlab.preflight.stage import run_preflight
+from trafficlab.preflight.types import PreparedExperiment
 
 
 def capture_prepared_experiment(

@@ -38,7 +38,10 @@ from trafficlab.comparison.metrics import compare_traces
 from trafficlab.fitting.genetic.strategy import run_strategy
 from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.generation.stage import reproduce_generated_pcapng
-from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
+from trafficlab.preflight.types import (
+    PreflightReport,
+    PreparedExperiment,
+)
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"

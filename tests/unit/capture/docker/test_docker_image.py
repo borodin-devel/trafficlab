@@ -15,7 +15,7 @@ from trafficlab.capture.docker.image import (
     parse_image_inspect,
     validate_capture_dockerfile,
 )
-from trafficlab.preflight.stage import capture_environment_identity
+from trafficlab.preflight.types import capture_environment_identity
 
 _BASE_DIGEST = "sha256:" + ("a" * 64)
 _IMAGE_ID = "sha256:" + ("b" * 64)

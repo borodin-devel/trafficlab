@@ -16,7 +16,7 @@ EXPECTED_MODULES = {
         "statistics.py",
         "trace.py",
     },
-    "preflight": {"stage.py"},
+    "preflight": {"docker.py", "local.py", "probe.py", "stage.py", "types.py"},
     "capture": {
         "cleanup.py",
         "failures.py",

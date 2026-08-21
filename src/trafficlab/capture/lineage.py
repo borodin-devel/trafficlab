@@ -37,7 +37,7 @@ from trafficlab.common.errors import (
     TrafficlabError,
     failure_outcome_from_error,
 )
-from trafficlab.preflight.stage import (
+from trafficlab.preflight.types import (
     CaptureEnvironmentIdentity,
     MountedInputIdentity,
     PreparedExperiment,

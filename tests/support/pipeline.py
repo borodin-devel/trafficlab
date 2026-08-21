@@ -32,7 +32,8 @@ from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, ma
 from trafficlab.generation.models.registry import POISSON_FAMILY, make_best_model, render_best_model
 from trafficlab.generation.stage import GenerationStageResult
 from trafficlab.pipeline.types import RunDependencies
-from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
+from trafficlab.preflight.stage import open_or_prepare_experiment
+from trafficlab.preflight.types import PreparedExperiment
 
 
 def replace[Record](record: Record, **changes: object) -> Record:

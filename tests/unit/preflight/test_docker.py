@@ -6,14 +6,14 @@ from typing import cast
 
 import pytest
 
-import trafficlab.preflight.stage as preflight_module
+import trafficlab.preflight.docker as preflight_docker
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab import USER_AGENT
 from trafficlab.capture.docker.types import CommandResult, ServiceState
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
-from trafficlab.preflight.stage import check_docker
+from trafficlab.preflight.docker import check_docker
 
 _CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
 _TARGET_IMAGE_ID = "sha256:" + ("c" * 64)
@@ -504,7 +504,7 @@ def test_invalid_checked_capture_inputs_stop_before_docker(
     config = _config(valid_config_data, tmp_path)
     docker = _Docker()
     monkeypatch.setattr(
-        preflight_module,
+        preflight_docker,
         "_CAPTURE_IMAGE_LOCK_PATH",
         tmp_path / "missing-image-lock.json",
     )
@@ -655,88 +655,6 @@ def test_image_still_missing_after_pull_is_owned_by_the_image_stage(
 
     assert report.findings[-1].name == "target_image"
     assert report.findings[-1].detail == f"target image {config.target.image} is unavailable"
-
-
-def test_capture_readiness_distinguishes_missing_and_unreadable_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    output = tmp_path / "probe"
-    output.mkdir()
-    assert preflight_module._capture_ready(output) is False  # pyright: ignore[reportPrivateUsage]
-
-    metadata = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
-    (output / "capture.json").write_bytes(render_capture_metadata(metadata))
-    capture_path = output / "reference.pcapng.tmp"
-    capture_path.write_bytes(b"x" * 28)
-    real_read_bytes = Path.read_bytes
-
-    def fail_capture_read(path: Path) -> bytes:
-        if path == capture_path:
-            raise OSError("injected header read failure")
-        return real_read_bytes(path)
-
-    monkeypatch.setattr(Path, "read_bytes", fail_capture_read)
-    with pytest.raises(TrafficlabError, match="could not inspect preflight capture header"):
-        preflight_module._capture_ready(output)  # pyright: ignore[reportPrivateUsage]
-
-
-@pytest.mark.parametrize("states", [(None,), ("running", "exited")], ids=["missing", "not-ready-then-exited"])
-def test_capture_readiness_rejects_a_missing_or_stopped_service(tmp_path: Path, states: tuple[str | None, ...]) -> None:
-    output = tmp_path / "probe"
-    output.mkdir()
-
-    class States:
-        def __init__(self) -> None:
-            self.values = iter(states)
-
-        def service_state(
-            self, compose_path: Path, project_name: str, service: str, *, deadline: float
-        ) -> ServiceState | None:
-            del compose_path, project_name, service, deadline
-            state = next(self.values)
-            if state is None:
-                return None
-            return ServiceState("capture", "capture", "capture", state, 127 if state == "exited" else 0)
-
-    with pytest.raises(TrafficlabError, match="dumpcap is unavailable"):
-        preflight_module._wait_capture_ready(  # pyright: ignore[reportPrivateUsage]
-            cast(preflight_module.DockerPreflight, States()),
-            tmp_path / "compose.json",
-            "probe",
-            output,
-            deadline=2.0,
-            clock=lambda: 1.0,
-            observed={},
-        )
-
-
-def test_target_probe_waits_through_absent_and_running_states(tmp_path: Path) -> None:
-    states = iter(
-        (
-            None,
-            ServiceState("target", "target", "target", "running", 0),
-            ServiceState("target", "target", "target", "exited", 0),
-        )
-    )
-
-    class States:
-        def service_state(
-            self, compose_path: Path, project_name: str, service: str, *, deadline: float
-        ) -> ServiceState | None:
-            del compose_path, project_name, service, deadline
-            return next(states)
-
-    observed: dict[str, ServiceState] = {}
-    preflight_module._wait_target(  # pyright: ignore[reportPrivateUsage]
-        cast(preflight_module.DockerPreflight, States()),
-        tmp_path / "compose.json",
-        "probe",
-        deadline=2.0,
-        clock=lambda: 1.0,
-        observed=observed,
-    )
-
-    assert observed["target"].state == "exited"
 
 
 def test_nonmount_compose_configuration_failure_keeps_its_owner(

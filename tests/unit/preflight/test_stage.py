@@ -9,11 +9,12 @@ import pytest
 
 import trafficlab.capture.docker.compose as docker_cli
 import trafficlab.preflight.stage as preflight
+import trafficlab.preflight.types as preflight_types
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import FailureOutcome, TrafficlabError
 
 
-def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
+def _prepared(run_directory: Path) -> preflight_types.PreparedExperiment:
     config = cast(
         ExperimentConfig,
         SimpleNamespace(
@@ -21,27 +22,27 @@ def _prepared(run_directory: Path) -> preflight.PreparedExperiment:
             run=SimpleNamespace(directory=run_directory),
         ),
     )
-    return preflight.PreparedExperiment(
+    return preflight_types.PreparedExperiment(
         source=run_directory.parent / "experiment.toml",
         portable_config=config,
         config=config,
-        report=preflight.PreflightReport(config=config, findings=()),
+        report=preflight_types.PreflightReport(config=config, findings=()),
         run_directory=run_directory,
     )
 
 
 def _install_prepared(
     monkeypatch: pytest.MonkeyPatch,
-    prepared: preflight.PreparedExperiment,
-    report: preflight.PreflightReport,
+    prepared: preflight_types.PreparedExperiment,
+    report: preflight_types.PreflightReport,
 ) -> None:
-    def open_prepared(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def open_prepared(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         return prepared
 
     def check_report(
         _config: ExperimentConfig, _docker: object, *, deadline: float, clock: Callable[[], float]
-    ) -> preflight.PreflightReport:
+    ) -> preflight_types.PreflightReport:
         del _config, _docker, deadline, clock
         return report
 
@@ -50,12 +51,12 @@ def _install_prepared(
 
 
 def _report(
-    prepared: preflight.PreparedExperiment,
-    findings: tuple[preflight.PreflightFinding, ...] = (),
+    prepared: preflight_types.PreparedExperiment,
+    findings: tuple[preflight_types.PreflightFinding, ...] = (),
     *,
-    identity: preflight.CaptureEnvironmentIdentity | None = None,
-) -> preflight.PreflightReport:
-    return preflight.PreflightReport(
+    identity: preflight_types.CaptureEnvironmentIdentity | None = None,
+) -> preflight_types.PreflightReport:
+    return preflight_types.PreflightReport(
         config=prepared.config,
         findings=findings,
         environment_identity=identity,
@@ -72,7 +73,7 @@ def test_run_preflight_attaches_direct_configuration_failure_and_returns_config_
 
     source_error = TrafficlabError("target.argv is invalid", corrective_action="correct target")
 
-    def fail_open(_path: Path, *, writable: object) -> preflight.PreparedExperiment:
+    def fail_open(_path: Path, *, writable: object) -> preflight_types.PreparedExperiment:
         del writable
         raise source_error
 
@@ -102,7 +103,7 @@ def test_run_preflight_default_docker_and_deadline_failure_boundaries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     prepared = _prepared(tmp_path / "run")
-    success = preflight.PreflightFinding("docker_engine", True, "Docker Engine is available")
+    success = preflight_types.PreflightFinding("docker_engine", True, "Docker Engine is available")
     _install_prepared(monkeypatch, prepared, _report(prepared, (success,)))
     records: list[dict[str, object]] = []
     constructed: list[object] = []
@@ -136,14 +137,14 @@ def test_run_preflight_default_docker_and_deadline_failure_boundaries(
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=arithmetic_clock,
         )
     with pytest.raises(TrafficlabError, match="finite future Docker preflight deadline"):
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: float("nan"),
         )
 
@@ -158,26 +159,26 @@ def test_run_preflight_uses_preceding_findings_for_probe_cleanup_and_keeps_log_s
         records.append(record)
 
     monkeypatch.setattr(preflight, "append_run_log", append)
-    standalone = preflight.PreflightFinding("probe_cleanup", False, "probe cleanup failed", "remove project")
+    standalone = preflight_types.PreflightFinding("probe_cleanup", False, "probe cleanup failed", "remove project")
     _install_prepared(monkeypatch, prepared, _report(prepared, (standalone,)))
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
     assert [item.authority for item in caught.value.failure_outcomes] == ["primary"]
     assert records[-1]["failure_outcome"] == caught.value.failure_outcome.as_dict()  # type: ignore[union-attr]
 
     records.clear()
-    primary = preflight.PreflightFinding("docker_engine", False, "engine unavailable", "restore engine")
+    primary = preflight_types.PreflightFinding("docker_engine", False, "engine unavailable", "restore engine")
     _install_prepared(monkeypatch, prepared, _report(prepared, (primary, standalone)))
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
     outcomes = caught.value.failure_outcomes
@@ -194,7 +195,7 @@ def test_run_preflight_uses_preceding_findings_for_probe_cleanup_and_keeps_log_s
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
     outcomes = caught.value.failure_outcomes
@@ -208,7 +209,7 @@ def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
 ) -> None:
     prepared = _prepared(tmp_path / "run")
     identity = cast(
-        preflight.CaptureEnvironmentIdentity,
+        preflight_types.CaptureEnvironmentIdentity,
         SimpleNamespace(
             capture_content_id="capture-id",
             capture_reference="capture-ref",
@@ -228,7 +229,7 @@ def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
     result = preflight.run_preflight(
         tmp_path / "experiment.toml",
         config_only=False,
-        docker=cast(preflight.DockerPreflight, object()),
+        docker=cast(preflight_types.DockerPreflight, object()),
         clock=lambda: 100.0,
     )
     assert result.run_directory == prepared.run_directory
@@ -245,7 +246,7 @@ def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
     assert caught.value.failure_outcome is not None
@@ -262,16 +263,16 @@ def test_run_preflight_identity_log_failure_and_existing_failure_outcome(
     )
     error = TrafficlabError("preclassified failure", corrective_action="repair Docker", failure_outcome=established)
 
-    def raise_established(_report: preflight.PreflightReport) -> None:
+    def raise_established(_report: preflight_types.PreflightReport) -> None:
         raise error
 
-    monkeypatch.setattr(preflight.PreflightReport, "require_success", raise_established)
+    monkeypatch.setattr(preflight_types.PreflightReport, "require_success", raise_established)
     _install_prepared(monkeypatch, prepared, _report(prepared))
     with pytest.raises(TrafficlabError) as caught:
         preflight.run_preflight(
             tmp_path / "experiment.toml",
             config_only=False,
-            docker=cast(preflight.DockerPreflight, object()),
+            docker=cast(preflight_types.DockerPreflight, object()),
             clock=lambda: 100.0,
         )
     assert caught.value.failure_outcome == established

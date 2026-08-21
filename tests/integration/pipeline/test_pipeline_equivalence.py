@@ -33,7 +33,10 @@ from trafficlab.fitting.stage import FitDependencies, FitStageResult, fit_experi
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies
-from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
+from trafficlab.preflight.types import (
+    PreflightReport,
+    PreparedExperiment,
+)
 
 pytestmark = pytest.mark.integration
 

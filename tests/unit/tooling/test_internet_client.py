@@ -18,7 +18,7 @@ from tests.fixtures.paths import DOCKER_FIXTURE_ROOT
 from trafficlab import USER_AGENT
 from trafficlab.capture.topology import ComposePaths
 from trafficlab.common.config import ExperimentConfig
-from trafficlab.preflight.stage import _probe_document  # pyright: ignore[reportPrivateUsage]
+from trafficlab.preflight.probe import render_probe_compose
 
 _CLIENT_PATH = DOCKER_FIXTURE_ROOT / "images" / "client" / "client.py"
 _REPOSITORY_ROOT = Path(__file__).parents[3]
@@ -126,7 +126,7 @@ def test_probe_uses_the_project_metadata_user_agent(valid_config_data: dict[str,
     document = cast(
         dict[str, object],
         json.loads(
-            _probe_document(  # pyright: ignore[reportPrivateUsage]
+            render_probe_compose(
                 config,
                 ComposePaths("trafficlab-user-agent", tmp_path / "probe-output"),
                 capture_image="sha256:" + "a" * 64,

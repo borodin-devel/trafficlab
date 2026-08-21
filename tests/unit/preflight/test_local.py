@@ -6,7 +6,8 @@ import pytest
 
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.preflight.stage import PreflightFinding, check_local
+from trafficlab.preflight.local import check_local
+from trafficlab.preflight.types import PreflightFinding
 
 
 @dataclass(frozen=True)
