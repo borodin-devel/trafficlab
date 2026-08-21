@@ -4,7 +4,7 @@
       "additionalProperties": false,
       "properties": {
         "fitness": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "identifier": {
           "$ref": "#/$defs/CandidateIdentifierRecord"
@@ -218,13 +218,13 @@
       "additionalProperties": false,
       "properties": {
         "crossover_probability": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "mutation_probability": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "mutation_scale": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat",
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat",
           "gt": 0.0
         }
       },
@@ -397,7 +397,7 @@
           "$ref": "#/$defs/NonnegativeInt"
         },
         "early_stopping_tolerance": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "elite_count": {
           "$ref": "#/$defs/PositiveInt"
@@ -445,7 +445,7 @@
       "additionalProperties": false,
       "properties": {
         "best_fitness": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "best_identifier": {
           "$ref": "#/$defs/CandidateIdentifierRecord"
@@ -473,7 +473,7 @@
           "$ref": "#/$defs/NonnegativeInt"
         },
         "mean_fitness": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "scope": {
           "enum": [
@@ -761,7 +761,7 @@
           "$ref": "#/$defs/MethodName"
         },
         "score": {
-          "$ref": "#/$defs/trafficlab__genetic__types__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__types__UnitFloat"
         }
       },
       "required": [
@@ -940,7 +940,7 @@
           "type": "string"
         },
         "fitness": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "genes": {
           "anyOf": [
@@ -1220,7 +1220,7 @@
       "description": "All four scores from one deterministic generated-trace seed.",
       "properties": {
         "aggregate_score": {
-          "$ref": "#/$defs/trafficlab__genetic__types__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__types__UnitFloat"
         },
         "methods": {
           "maxItems": 4,
@@ -1277,7 +1277,7 @@
           "type": "string"
         },
         "fitness": {
-          "$ref": "#/$defs/trafficlab__genetic__checkpoint__UnitFloat"
+          "$ref": "#/$defs/trafficlab__fitting__genetic__checkpoint__UnitFloat"
         },
         "genes": {
           "$ref": "#/$defs/Genes"
@@ -1315,12 +1315,12 @@
       "title": "ValidCandidateRecord",
       "type": "object"
     },
-    "trafficlab__genetic__checkpoint__UnitFloat": {
+    "trafficlab__fitting__genetic__checkpoint__UnitFloat": {
       "$ref": "#/$defs/ExactFloat",
       "ge": 0.0,
       "le": 1.0
     },
-    "trafficlab__genetic__types__UnitFloat": {
+    "trafficlab__fitting__genetic__types__UnitFloat": {
       "ge": 0.0,
       "le": 1.0,
       "type": "number"

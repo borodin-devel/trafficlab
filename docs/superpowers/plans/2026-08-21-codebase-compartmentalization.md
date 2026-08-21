@@ -495,43 +495,43 @@ Compose integration tests.
 - Consumes: the complete compartmentalized repository.
 - Produces: release-level evidence that the move preserved behavior.
 
-- [ ] **[STEP-21-e13f9ec4] Verify locked environment and static gates**
+- [x] **[STEP-21-e13f9ec4] Verify locked environment and static gates**
 
   Run `uv sync --locked --all-groups`, Ruff format check, Ruff lint, and strict
   Pyright using the commands in `architecture/DEVELOPMENT.md`. Expected: pass.
 
-- [ ] **[STEP-22-89cafb79] Run the fast and ordinary bounded suites**
+- [x] **[STEP-22-89cafb79] Run the fast and ordinary bounded suites**
 
   Use the canonical bounded Fast and Ordinary commands from
   `architecture/DEVELOPMENT.md`. Expected: all non-external tests pass with no
   collection loss and no escaped process scope.
 
-- [ ] **[STEP-23-efe068c5] Run branch-aware coverage**
+- [x] **[STEP-23-efe068c5] Run branch-aware coverage**
 
   Use the canonical four-worker bounded Coverage command. Expected: all tests
   pass and total branch-aware coverage is at least 90%.
 
-- [ ] **[STEP-24-b9ffb354] Run every deterministic checker**
+- [x] **[STEP-24-b9ffb354] Run every deterministic checker**
 
   Run all fixture, schema, scientific-stack reduction, benchmark, example, and
   probe `--check` commands listed in the Release gate. Expected: all pass without
   modifying the tree.
 
-- [ ] **[STEP-25-195fd91c] Run offline real-program validation**
+- [x] **[STEP-25-195fd91c] Run offline real-program validation**
 
   Run the scientific example command and the bounded offline validation-study
   audit from its source-bound detached clone as prescribed by
   `architecture/DEVELOPMENT.md`. Expected: both pass; retain the exact commit and
   command output in the handoff.
 
-- [ ] **[STEP-26-2d2c27f8] Run available Docker and Internet validation**
+- [x] **[STEP-26-2d2c27f8] Run available Docker and Internet validation**
 
   Run the canonical External gate with the repository's credential-free HTTPS
   endpoint. Use uniquely project-scoped Docker resources and bounded cleanup.
   Expected: Docker capture/run and Internet tests pass, or document a proven
   [PROBLEM-C5] external blocker only after all local diagnostics are exhausted.
 
-- [ ] **[STEP-27-22d5c8fe] Commit any gate-proven corrections**
+- [x] **[STEP-27-22d5c8fe] Commit any gate-proven corrections**
 
   If Steps 21–26 required changes, rerun the narrow failing gate and its parent
   gate, request independent review, and commit one coherent correction. If no
