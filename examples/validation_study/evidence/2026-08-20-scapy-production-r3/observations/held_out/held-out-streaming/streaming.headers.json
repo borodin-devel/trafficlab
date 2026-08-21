@@ -1,0 +1,1 @@
+{"content_length":4194304,"content_range":"bytes 0-4194303/9520794","header_identity":{"sha256":"031039f5fe61c9464559bfbba9064eec7ad2cd17ae3c9f7192d977232c11cbcd","size":2077},"requested_end":4194303,"requested_start":0,"run_id":"held-out-streaming","scope":"held_out","status":206,"transfer_index":0,"workload":"streaming"}

@@ -165,13 +165,13 @@ optimizer superiority, or general MMPP recovery.
 ## Real-program validation and audit
 
 The accepted replacement is
-`examples/validation_study/evidence/2026-08-20-scapy-production-r2/`. It binds
-source commit `ab10cb15e90a9e306f941ebacf10247821e458b3`, tree
-`43ac13b8e510d447bc67b4ed559b7337f8f46a2d`, schema 4, CPython 3.12.3,
+`examples/validation_study/evidence/2026-08-20-scapy-production-r3/`. It binds
+source commit `7ba2764dd5810cd061fc42bcbc46dfcfda2b6103`, tree
+`80d3a7ab0666abd58ff9798274a9026ef2439dd7`, schema 4, CPython 3.12.3,
 Docker 29.7.2, Compose 5.5.0, the exact image IDs, and the checked lock. Its
 manifest SHA-256 is
-`5cce9e06325828e63422d4d9c02afc1914fdbd136607276350180d9f4f28fdc3`
-and lists 231 retained paths (232 regular files totaling 59,150,600 bytes,
+`8ad0dbd567aa8de7a043ec64a301ab36390dc15d5e827d6666da1dbbe8075134`
+and lists 231 retained paths (232 regular files totaling 61,589,436 bytes,
 including the manifest). The bundle retains nine real training captures,
 nine fixed-seed fresh simulations, three independent held-out captures,
 bootstrap summaries, prerequisite command evidence, lifecycle cleanup,
@@ -195,9 +195,11 @@ r6 then started from the clean final source with external Hypothesis storage.
 For the production-Scapy replacement, r1 failed its clean-tree prerequisite
 because a checkout-local Hypothesis cache was present; its ignored failure
 record was preserved. r2 used fresh external Hypothesis storage and passed the
-candidate and detached regular-copy audits. No source, capture, or failed study
-ID was reused. The accepted r6 and r21 predecessors remain byte-unchanged in the
-current tree.
+candidate and detached regular-copy audits. Final review then required stricter
+reader, publication, and diagnostic boundaries; r2 remains immutable, and r3
+was collected from the corrected source and passed both audits. No source,
+capture, or failed study ID was reused. The accepted r2, r6, and r21
+predecessors remain byte-unchanged in the current tree.
 
 Acceptance requires a credential-free HTTPS prerequisite, real Docker capture,
 exclusive publication under a new study ID, and this detached audit shape:
@@ -207,7 +209,7 @@ UV_OFFLINE=1 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/2026-08-20-scapy-production-r2/ \
+  examples/validation_study/evidence/2026-08-20-scapy-production-r3/ \
   --repository .
 ```
 

@@ -1,0 +1,1 @@
+{"content_length":1048576,"content_range":"bytes 0-1048575/9520794","header_identity":{"sha256":"e7043c8a56b74f226533ee7da5f7ecedc0540a69e3df7273cf61b1de71daf446","size":2077},"requested_end":1048575,"requested_start":0,"run_id":"01-short-r1","scope":"training","status":206,"transfer_index":0,"workload":"short"}

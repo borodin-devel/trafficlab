@@ -31,6 +31,7 @@ from trafficlab.study_evidence import (
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 _STUDY_FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"
+_SCAPY_R2_STUDY = REPOSITORY / "examples" / "validation_study" / "evidence" / "2026-08-20-scapy-production-r2"
 _CURRENT_STUDY = REPOSITORY / "examples" / "validation_study" / "evidence" / "2026-08-20-scapy-production-r3"
 _HISTORICAL_STUDIES = (
     "examples/validation_study/evidence/2026-08-20-stack-adoption-r6",
@@ -50,7 +51,7 @@ _STUDY_ROOTS: dict[str, tuple[type[BaseModel], str]] = {
 
 
 def _checked_study_paths(filename: str) -> tuple[Path, ...]:
-    return (_STUDY_FIXTURE / filename, _CURRENT_STUDY / filename)
+    return (_STUDY_FIXTURE / filename, _SCAPY_R2_STUDY / filename, _CURRENT_STUDY / filename)
 
 
 @pytest.mark.integration
@@ -114,6 +115,18 @@ def test_historical_r6_and_r21_are_byte_unchanged_from_mvp3() -> None:
     assert completed.returncode == 0
 
 
+def test_scapy_r2_is_byte_unchanged_after_its_publication() -> None:
+    """The superseded schema-v4 accepted study remains immutable after corrective source changes."""
+
+    completed = subprocess.run(
+        ("git", "diff", "--quiet", "efdd6d7", "HEAD", "--", _SCAPY_R2_STUDY.relative_to(REPOSITORY).as_posix()),
+        cwd=REPOSITORY,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+
+
 def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_documents() -> None:
     """A permissive or runtime-shaped root would fail to describe the checked publication bytes."""
 
@@ -125,7 +138,7 @@ def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_
         schema = model.model_json_schema(mode="validation")
         Draft202012Validator.check_schema(schema)
         paths = _checked_study_paths(filename)
-        assert len(paths) == 2, name
+        assert len(paths) == 3, name
         for path in paths:
             content = path.read_bytes()
             document = json.loads(content)

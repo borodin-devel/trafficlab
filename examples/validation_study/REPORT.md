@@ -1,21 +1,23 @@
-# Validation Study report: production Scapy r2
+# Validation Study report: production Scapy r3
 
 The current accepted study is
-[`2026-08-20-scapy-production-r2`](evidence/2026-08-20-scapy-production-r2/).
+[`2026-08-20-scapy-production-r3`](evidence/2026-08-20-scapy-production-r3/).
 Its immutable manifest retains 231 evidence paths, excluding only the manifest
 itself, across nine training run trees, nine fixed-seed same-reference fresh
 simulations, and three independent held-out evaluations. The environment binds
-source commit `ab10cb15e90a9e306f941ebacf10247821e458b3`, tree
-`43ac13b8e510d447bc67b4ed559b7337f8f46a2d`, scientific schema 4,
+source commit `7ba2764dd5810cd061fc42bcbc46dfcfda2b6103`, tree
+`80d3a7ab0666abd58ff9798274a9026ef2439dd7`, scientific schema 4,
 CPython 3.12.3, Scapy 2.7.0 through the checked lock, and exact target/capture
 images.
 
 The first production-Scapy attempt, r1, failed the clean-tree prerequisite
 because a checkout-local Hypothesis cache was present. Its ignored failure
 record was preserved, its ID was not reused, and the cache was moved intact to
-external scratch. r2 started from the same clean source with Hypothesis storage
-outside the checkout and is the accepted successor. The older checked r6 and
-r21 bundles remain byte-unchanged accepted predecessors.
+external scratch. r2 started from clean source with Hypothesis storage outside
+the checkout and remains an immutable accepted predecessor. Final review then
+required stricter reader, publication, and diagnostic boundaries, so r3 was
+collected from the corrected source and is the accepted successor. The older
+checked r6 and r21 bundles also remain byte-unchanged accepted predecessors.
 
 ## Evidence classes
 
@@ -26,13 +28,13 @@ remain different claims.
 
 | Workload | Training selection mean | Natural-variation symmetric mean | Fresh simulation, seed 97 | Independent held-out |
 | --- | ---: | ---: | ---: | ---: |
-| short | 0.730874 | 0.678735 | 0.753166 | 0.709721 |
-| streaming | 0.880693 | 0.910030 | 0.880240 | 0.866157 |
-| bursty | 0.744606 | 0.758155 | 0.667467 | 0.771568 |
+| short | 0.739651 | 0.688785 | 0.740615 | 0.706114 |
+| streaming | 0.887092 | 0.948433 | 0.888536 | 0.870293 |
+| bursty | 0.765939 | 0.857618 | 0.757930 | 0.752445 |
 
 All short and bursty training repetitions selected `markov_renewal`; all
 streaming repetitions selected `poisson_empirical`. The frozen training-only
-rule selected short r2, streaming r3, and bursty r3. These are observations from
+rule selected short r3, streaming r1, and bursty r3. These are observations from
 three repeats, not evidence that either family is generally superior.
 
 The fresh-simulation records reuse each training reference and are not held-out
@@ -47,15 +49,15 @@ scores are:
 
 | Workload | Autocorrelation | Frame-size KS | IAT KS | Multiscale rate |
 | --- | ---: | ---: | ---: | ---: |
-| short | 0.854426 | 0.969318 | 0.798373 | 0.216765 |
-| streaming | 0.959538 | 0.971604 | 0.813531 | 0.719953 |
-| bursty | 0.936196 | 0.948653 | 0.931021 | 0.270401 |
+| short | 0.995260 | 0.981830 | 0.617282 | 0.230085 |
+| streaming | 0.893911 | 0.972447 | 0.849927 | 0.764888 |
+| bursty | 0.952784 | 0.991038 | 0.787906 | 0.278052 |
 
 The multiscale component remains materially lower for short and bursty than the
 other three components. That disagreement is retained rather than hidden by the
 aggregate. The controlled one-factor weight analysis changes only aggregation:
-short `0.759553→0.804722`, streaming `0.888780→0.907827`, and bursty
-`0.788289→0.824466`. It does not justify choosing weights after observing the
+short `0.752345→0.800417`, streaming `0.893827→0.911514`, and bursty
+`0.777188→0.819667`. It does not justify choosing weights after observing the
 result.
 
 No training run retained an invalid candidate. Trial limits remain 25,000
@@ -71,9 +73,9 @@ Training runtime and selection-fitness means retain independently recomputed
 
 | Workload | Runtime mean | Runtime 95% interval | Fitness mean | Fitness 95% interval |
 | --- | ---: | ---: | ---: | ---: |
-| short | 7.258183 | [7.041288, 7.405000] | 0.730874 | [0.711581, 0.747871] |
-| streaming | 24.758951 | [24.310665, 25.014102] | 0.880693 | [0.870808, 0.892416] |
-| bursty | 7.188188 | [7.035140, 7.394529] | 0.744606 | [0.711395, 0.765062] |
+| short | 8.172837 | [7.736646, 8.884956] | 0.739651 | [0.726606, 0.755222] |
+| streaming | 27.975754 | [27.665757, 28.306091] | 0.887092 | [0.875326, 0.893137] |
+| bursty | 8.065570 | [7.972743, 8.246730] | 0.765939 | [0.758999, 0.771565] |
 
 These intervals describe three retained observations; they are not calibrated
 hypothesis tests and do not overcome the small sample.
@@ -101,7 +103,7 @@ UV_OFFLINE=1 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
   uv run --locked --offline python scripts/audit_validation_study.py \
-  examples/validation_study/evidence/2026-08-20-scapy-production-r2 \
+  examples/validation_study/evidence/2026-08-20-scapy-production-r3 \
   --repository .
 ```
 
