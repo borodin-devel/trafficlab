@@ -1,0 +1,31 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/bsa/projects/trafficlab/.worktrees/scapy-production/.venv/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'trafficlab_locked' -> database=None, deadline=None, derandomize=True
+rootdir: /home/bsa/projects/trafficlab/.worktrees/scapy-production
+configfile: pyproject.toml
+testpaths: tests
+plugins: hypothesis-6.165.10, xdist-3.8.0, cov-7.1.0
+collecting ... collected 3818 items / 3800 deselected / 18 selected
+
+tests/docker/test_capture_docker.py::test_capture_image_matches_checked_content_identity PASSED [  5%]
+tests/docker/test_capture_docker.py::test_full_preflight_and_capture_observe_controlled_tcp_udp_and_broadcast PASSED [ 11%]
+tests/docker/test_capture_docker.py::test_direct_no_shell_target_exits_zero_without_wrapper_or_exec PASSED [ 16%]
+tests/docker/test_capture_docker.py::test_background_child_is_closed_when_direct_target_exits PASSED [ 22%]
+tests/docker/test_capture_failures.py::test_natural_nonzero_status_is_exact_and_only_diagnostic_capture_remains PASSED [ 27%]
+tests/docker/test_capture_failures.py::test_workload_timeout_kills_target_and_any_child[argv0] PASSED [ 33%]
+tests/docker/test_capture_failures.py::test_workload_timeout_kills_target_and_any_child[argv1] PASSED [ 38%]
+tests/docker/test_capture_failures.py::test_capture_early_exit_kills_long_target_next_and_within_five_seconds PASSED [ 44%]
+tests/docker/test_capture_failures.py::test_capture_ignoring_sigint_reaches_flush_timeout_and_rejects_output PASSED [ 50%]
+tests/docker/test_capture_failures.py::test_malformed_output_is_rejected_after_bounded_flush PASSED [ 55%]
+tests/docker/test_capture_failures.py::test_readiness_failure_never_starts_target_and_cleans_project PASSED [ 61%]
+tests/docker/test_capture_failures.py::test_interruption_kills_target_flushes_once_and_returns_interruption_primary PASSED [ 66%]
+tests/docker/test_run_docker.py::test_cli_complete_run_publishes_strict_nine_file_result_and_cleans_every_project PASSED [ 72%]
+tests/docker/test_run_docker.py::test_real_full_preflight_probe_failure_is_primary_and_cleans_its_unique_project PASSED [ 77%]
+tests/docker/test_run_docker.py::test_post_preflight_stage_failure_preserves_prior_artifacts_stops_and_cleans_every_project[capture] PASSED [ 83%]
+tests/docker/test_run_docker.py::test_post_preflight_stage_failure_preserves_prior_artifacts_stops_and_cleans_every_project[fit] PASSED [ 88%]
+tests/docker/test_run_docker.py::test_post_preflight_stage_failure_preserves_prior_artifacts_stops_and_cleans_every_project[generate] PASSED [ 94%]
+tests/docker/test_run_docker.py::test_post_preflight_stage_failure_preserves_prior_artifacts_stops_and_cleans_every_project[compare] PASSED [100%]
+
+- generated xml file: /home/bsa/projects/trafficlab/.worktrees/scapy-production/examples/validation_study/.study-work/evidence/2026-08-20-scapy-production-r2/00-prerequisites/docker.xml -
+=============== 18 passed, 3800 deselected in 386.26s (0:06:26) ================

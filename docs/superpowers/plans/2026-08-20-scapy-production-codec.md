@@ -764,7 +764,7 @@ git commit -m "test: validate production scapy pipeline"
 ### Task 9: [TASK-9-04e17a3b] Generate and audit new real-program validation evidence
 
 **Files:**
-- Create: `examples/validation_study/evidence/2026-08-20-scapy-production-r1/`
+- Create: `examples/validation_study/evidence/2026-08-20-scapy-production-r2/`
 - Modify: `examples/validation_study/{README,REPORT}.md`
 - Modify: `docs/SCIENTIFIC_STACK_ADOPTION_EVIDENCE.md`
 - Modify: study tests that identify the current accepted bundle
@@ -773,11 +773,16 @@ git commit -m "test: validate production scapy pipeline"
 - Produces: one accepted schema-v4 Scapy study bound to the final implementation source commit.
 - Preserves: historical r6/r21 bytes and failed-attempt immutability.
 
+**Ruling:** `2026-08-20-scapy-production-r1` was consumed when the strict
+prerequisite found a checkout-local `.hypothesis/.gitignore`. Its ignored
+failure record and cache were preserved. The fresh r2 attempt used external
+Hypothesis storage and is the accepted replacement; no r1 bytes were reused.
+
 - [x] **[STEP-49-f9c2a123] Step 1: Write current-study and historical-immutability RED tests**
 
 ```python
 def test_current_study_is_schema_v4_scapy_production() -> None:
-    bundle = accepted_bundle("2026-08-20-scapy-production-r1")
+    bundle = accepted_bundle("2026-08-20-scapy-production-r2")
     assert bundle.environment.scientific_schema == 4
     assert audit(bundle).accepted
 
@@ -795,14 +800,14 @@ uv run --locked pytest -vv -x -n 0 tests/unit/test_study_evidence.py \
 
 Expected: the new accepted path does not exist and current navigation still names r6.
 
-- [ ] **[STEP-51-d599accd] Step 3: Freeze the implementation source and run prerequisites**
+- [x] **[STEP-51-d599accd] Step 3: Freeze the implementation source and run prerequisites**
 
 Commit every implementation/test/doc change except the new accepted bundle. Require a clean tree, then run:
 
 ```bash
 export TRAFFICLAB_INTERNET_URL='https://upload.wikimedia.org/wikipedia/commons/5/5b/SPACE_ELECTRIC_ROCKET_TEST%2C_SERT_II_IN_TANK_5_%28GRC-1968-C-03031%29.jpg'
-export HYPOTHESIS_STORAGE_DIRECTORY='/tmp/trafficlab-hypothesis-scapy-production-r1'
-export STUDY_ID='2026-08-20-scapy-production-r1'
+export HYPOTHESIS_STORAGE_DIRECTORY='/tmp/trafficlab-hypothesis-scapy-production-r2'
+export STUDY_ID='2026-08-20-scapy-production-r2'
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 uv run --locked python scripts/run_validation_study.py prerequisites \
   --url "$TRAFFICLAB_INTERNET_URL" --study-id "$STUDY_ID"
@@ -810,7 +815,7 @@ uv run --locked python scripts/run_validation_study.py prerequisites \
 
 Expected: Docker and Internet prerequisite records pass against the exact source/lock/schema/image identities. Any failure consumes r1; use r2 without reusing bytes.
 
-- [ ] **[STEP-52-f0cb2407] Step 4: Collect, audit, and publish the complete candidate**
+- [x] **[STEP-52-f0cb2407] Step 4: Collect, audit, and publish the complete candidate**
 
 ```bash
 uv run --locked python scripts/run_validation_study.py collect \
@@ -827,11 +832,11 @@ UV_OFFLINE=1 uv run --locked --offline python scripts/run_validation_study.py pu
 
 Expected: nine training runs, nine fresh simulations, three held-out evaluations, bootstrap records, manifest, index, lifecycle, report inputs, and report publish once.
 
-- [ ] **[STEP-53-66ca59b7] Step 5: Audit from a detached regular-copy clone and verify history**
+- [x] **[STEP-53-66ca59b7] Step 5: Audit from a detached regular-copy clone and verify history**
 
 Create a `git clone --no-local --no-hardlinks --no-checkout`, detach it at the bundle's recorded source commit, copy the accepted bundle with `cp -a --reflink=never`, prove no alternates/symlinks/link-count-above-one, then run the bounded offline audit. Also run the study test matrix and exact `git diff MVP_3 --` checks for r6/r21.
 
-- [ ] **[STEP-54-aaf17844] Step 6: Commit accepted Scapy validation evidence**
+- [x] **[STEP-54-aaf17844] Step 6: Commit accepted Scapy validation evidence**
 
 ```bash
 git add examples/validation_study docs/SCIENTIFIC_STACK_ADOPTION_EVIDENCE.md \

@@ -7,11 +7,11 @@ and the exact URL, redirect result, headers, and external observation are retain
 in the candidate bundle. Do not run the external commands below until the source
 commit, endpoint, and prerequisite coordination have been explicitly approved.
 
-## Accepted scientific-stack study
+## Accepted production-Scapy study
 
-[`evidence/2026-08-20-stack-adoption-r6/`](evidence/2026-08-20-stack-adoption-r6/)
-is the accepted scientific-stack study. Its [report](REPORT.md), schema-3
-`index.json`, and schema-2 `manifest.json` are the navigation and integrity
+[`evidence/2026-08-20-scapy-production-r2/`](evidence/2026-08-20-scapy-production-r2/)
+is the current accepted study. Its [report](REPORT.md), schema-4 `index.json`,
+and schema-4 `manifest.json` are the navigation and integrity
 roots. The manifest binds 231 retained evidence paths and excludes only itself.
 The bundle contains:
 
@@ -29,8 +29,9 @@ The bundle contains:
 
 The audited source candidate is a transient publisher work copy, not another
 accepted study. The older checked
+[`2026-08-20-stack-adoption-r6`](evidence/2026-08-20-stack-adoption-r6/) and
 [`2026-08-18-research-fitness-r21`](evidence/2026-08-18-research-fitness-r21/)
-bundle remains unchanged as an accepted predecessor. Historical material and
+bundles remain byte-unchanged accepted predecessors. Historical material and
 failed/nonfinal attempts remain ignored consistency or forensic evidence.
 
 ## Frozen protocol
@@ -103,6 +104,14 @@ history. The final-review replacement attempt r5 failed before Docker work
 because a checkout-local Hypothesis cache was present. r6 started from a new
 clean source snapshot with Hypothesis storage outside the checkout and replaced
 r4 in the current tree. No failed ID or capture was reused.
+
+For production Scapy evidence, `2026-08-20-scapy-production-r1` failed the
+strict clean-tree prerequisite because `.hypothesis/.gitignore` existed inside
+the checkout. Its ignored failure record was preserved and the cache was moved
+intact to external scratch. `2026-08-20-scapy-production-r2` used fresh external
+Hypothesis storage, completed all collection phases, passed offline candidate
+and detached regular-copy audits, and became the current accepted bundle. The
+failed ID and its bytes were not reused.
 
 ## Candidate audit and exclusive publication
 
