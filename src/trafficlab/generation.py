@@ -298,7 +298,7 @@ def generate_experiment(
                 run_directory,
                 encoded.content,
                 metadata=metadata,
-                expected_events=encoded.trace,
+                expected_trace=encoded.trace,
                 observation_window_seconds=best.observation_window_seconds,
             )
         except TrafficlabError as error:

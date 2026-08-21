@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 from io import BytesIO
 from pathlib import Path
-from typing import Literal, SupportsFloat, cast
+from typing import Any, Literal, SupportsFloat, cast
 
 import numpy as np
 import pytest
@@ -49,6 +49,19 @@ def _capture(*, endian: Endian, resolution: int = 9, interfaces: int = 1, linkty
         body = struct.pack(f"{endian}IIIII", 0, 0, index, len(frame), len(frame)) + frame
         packets += _block(6, body, endian)
     return section + interface * interfaces + packets
+
+
+def _non_enhanced_packet_capture(block_type: Literal[2, 3]) -> bytes:
+    endian: Endian = "<"
+    section = _block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1), endian)
+    interface = _block(1, struct.pack("<HHI", 1, 0, 65_535), endian)
+    frame = _PEER_BYTES + _TARGET_BYTES + b"\x08\x00" + b"\x00" * 46
+    body = (
+        struct.pack("<HHIIII", 0, 0, 0, 1, len(frame), len(frame)) + frame
+        if block_type == 2
+        else struct.pack("<I", len(frame)) + frame
+    )
+    return section + interface + _block(block_type, body, endian)
 
 
 def test_reader_returns_owned_trace_and_exact_frames() -> None:
@@ -103,6 +116,18 @@ def test_reader_rejects_noncanonical_interface_contract(content: bytes, message:
         read_pcapng_bytes(content, metadata, source=Path("interfaces.pcapng"))
 
 
+@pytest.mark.parametrize("block_type", (2, 3))
+def test_reader_rejects_every_non_enhanced_packet_block(block_type: Literal[2, 3]) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+
+    with pytest.raises(TrafficlabError, match="only Enhanced Packet Blocks are accepted"):
+        read_pcapng_bytes(
+            _non_enhanced_packet_capture(block_type),
+            metadata,
+            source=Path(f"block-{block_type}.pcapng"),
+        )
+
+
 def test_reader_rejects_empty_or_wrong_typed_content() -> None:
     metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
 
@@ -128,6 +153,7 @@ class _Reader:
 
     def __init__(self, packets: tuple[_Packet, ...] = (_Packet(),)) -> None:
         self.packets = iter(packets)
+        self.blocktypes: dict[int, object] = {}
 
     def __enter__(self) -> _Reader:
         return self
@@ -180,6 +206,39 @@ def test_reader_checks_deadline_after_each_packet(monkeypatch: pytest.MonkeyPatc
             b"unused",
             metadata,
             source=Path("deadline.pcapng"),
+            deadline=1.0,
+            clock=ticks.__next__,
+        )
+
+
+def test_reader_materializes_the_returned_trace_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+    calls = 0
+    real_from_events = TrafficTrace.from_events
+
+    def observed(events: object) -> TrafficTrace:
+        nonlocal calls
+        calls += 1
+        return real_from_events(cast(Any, events))
+
+    monkeypatch.setattr(TrafficTrace, "from_events", observed)
+    monkeypatch.setattr(scapy_io, "_reader_boundary", _fake_reader_boundary)
+
+    read_pcapng_bytes(b"unused", metadata, source=Path("single-conversion.pcapng"))
+
+    assert calls == 1
+
+
+def test_reader_deadline_wins_immediately_after_trace_materialization(monkeypatch: pytest.MonkeyPatch) -> None:
+    metadata = CaptureMetadata(interface="eth0", target_mac=_TARGET)
+    ticks = iter((0.0, 0.0, 0.0, 0.0, 1.0))
+    monkeypatch.setattr(scapy_io, "_reader_boundary", _fake_reader_boundary)
+
+    with pytest.raises(DeadlineExceededError, match="PCAPNG parsing exceeded"):
+        read_pcapng_bytes(
+            b"unused",
+            metadata,
+            source=Path("conversion-deadline.pcapng"),
             deadline=1.0,
             clock=ticks.__next__,
         )

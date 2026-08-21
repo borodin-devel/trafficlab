@@ -5,13 +5,12 @@ import math
 import os
 import tempfile
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Literal, cast
 
-import numpy as np
 from pydantic import ValidationError
 
 from trafficlab.capture_validation import CaptureInspection, validate_capture_pair
@@ -20,7 +19,7 @@ from trafficlab.config_io import render_effective_config
 from trafficlab.errors import DeadlineExceededError, FailureOutcome, TrafficlabError, attach_failure_outcome
 from trafficlab.models.registry import load_best_model, render_best_model
 from trafficlab.scapy_io import read_pcapng_bytes
-from trafficlab.trace import CaptureMetadata, TraceEvent, TrafficTrace
+from trafficlab.trace import CaptureMetadata, TrafficTrace
 
 
 def _artifact_error(detail: str) -> TrafficlabError:
@@ -446,16 +445,10 @@ class GeneratedPublication:
     content: bytes
 
 
-def quantize_generated_events(
-    events: Sequence[TraceEvent],
-    observation_window_seconds: float,
-) -> tuple[TraceEvent, ...]:
-    """Map generated events to Scapy's emitted microseconds without crossing stored W."""
-    return quantize_generated_trace(TrafficTrace.from_events(events), observation_window_seconds).to_events()
-
-
-def quantize_generated_trace(trace: TrafficTrace, observation_window_seconds: float) -> TrafficTrace:
-    """Quantize one generated trace to Scapy's truncating microsecond writer."""
+def _validate_expected_generated_trace(trace: TrafficTrace, observation_window_seconds: float) -> None:
+    """Validate the exact trace already reparsed from the bytes being published."""
+    if type(trace) is not TrafficTrace:
+        raise TypeError("expected trace must be a TrafficTrace")
     if (
         type(observation_window_seconds) is not float
         or not math.isfinite(observation_window_seconds)
@@ -465,34 +458,11 @@ def quantize_generated_trace(trace: TrafficTrace, observation_window_seconds: fl
             "generated publication observation window must be a finite positive float",
             corrective_action="use the stored fitted-model observation window and retry generation",
         )
-    scaled_window = observation_window_seconds * 1_000_000
-    if not math.isfinite(scaled_window):
+    if len(trace) > 0 and float(trace.timestamps[-1]) > observation_window_seconds:
         raise TrafficlabError(
-            "generated publication observation window exceeds the PCAPNG timestamp range",
-            corrective_action="use a shorter observation window and retry generation",
-        )
-    if type(trace) is not TrafficTrace:
-        raise TypeError("complete generated trace must be a TrafficTrace")
-    if np.any(trace.timestamps > observation_window_seconds):
-        raise TrafficlabError(
-            "complete generated events contain a timestamp outside the stored observation window",
+            "expected generated trace contains a timestamp outside the stored observation window",
             corrective_action="report the traffic-model complete-window defect",
         )
-    maximum_tick = math.floor(scaled_window)
-    scaled = trace.timestamps * 1_000_000
-    nearest = np.rint(scaled)
-    snapped = np.abs(scaled - nearest) <= 4 * np.spacing(np.abs(scaled))
-    ticks = np.where(snapped, nearest, np.floor(scaled))
-    quantized = np.minimum(ticks, maximum_tick) / 1_000_000
-    return TrafficTrace(
-        np.asarray(quantized, dtype=np.float64),
-        trace.directions,
-        trace.frame_lengths,
-    )
-
-
-def _expected_generated_trace(expected: Sequence[TraceEvent] | TrafficTrace) -> TrafficTrace:
-    return expected if type(expected) is TrafficTrace else TrafficTrace.from_events(expected)
 
 
 def _validate_generated_content(
@@ -500,18 +470,18 @@ def _validate_generated_content(
     *,
     source: Path,
     metadata: CaptureMetadata,
-    expected_events: Sequence[TraceEvent] | TrafficTrace,
+    expected_trace: TrafficTrace,
     observation_window_seconds: float,
 ) -> None:
     parsed = read_pcapng_bytes(content, metadata, source=source)
-    if np.any(parsed.timestamps > observation_window_seconds):
+    if len(parsed) > 0 and float(parsed.timestamps[-1]) > observation_window_seconds:
         raise TrafficlabError(
             f"generated capture {source} contains a timestamp outside the stored observation window",
             corrective_action="preserve the artifact and retry generation in a new run directory",
         )
-    if parsed != quantize_generated_trace(_expected_generated_trace(expected_events), observation_window_seconds):
+    if parsed != expected_trace:
         raise TrafficlabError(
-            f"generated capture {source} does not contain the expected generated events",
+            f"generated capture {source} does not contain the expected reparsed trace",
             corrective_action="preserve the artifact and retry generation in a new run directory",
         )
 
@@ -521,7 +491,7 @@ def _read_existing_generated(
     expected_content: bytes,
     *,
     metadata: CaptureMetadata,
-    expected_events: Sequence[TraceEvent] | TrafficTrace,
+    expected_trace: TrafficTrace,
     observation_window_seconds: float,
 ) -> GeneratedPublication | None:
     identity = _file_identity(
@@ -563,7 +533,7 @@ def _read_existing_generated(
         existing_content,
         source=destination,
         metadata=metadata,
-        expected_events=expected_events,
+        expected_trace=expected_trace,
         observation_window_seconds=observation_window_seconds,
     )
     current_identity = _file_identity(
@@ -614,17 +584,17 @@ def publish_generated_pcapng(
     content: bytes,
     *,
     metadata: CaptureMetadata,
-    expected_events: Sequence[TraceEvent] | TrafficTrace,
+    expected_trace: TrafficTrace,
     observation_window_seconds: float,
 ) -> GeneratedPublication:
     """Durably validate and exclusively publish or prove reuse of generated PCAPNG bytes."""
-    quantize_generated_trace(_expected_generated_trace(expected_events), observation_window_seconds)
+    _validate_expected_generated_trace(expected_trace, observation_window_seconds)
     destination = run_directory / "generated.pcapng"
     existing = _read_existing_generated(
         destination,
         content,
         metadata=metadata,
-        expected_events=expected_events,
+        expected_trace=expected_trace,
         observation_window_seconds=observation_window_seconds,
     )
     if existing is not None:
@@ -654,7 +624,7 @@ def publish_generated_pcapng(
             persisted_content,
             source=temporary_path,
             metadata=metadata,
-            expected_events=expected_events,
+            expected_trace=expected_trace,
             observation_window_seconds=observation_window_seconds,
         )
         try:
@@ -664,7 +634,7 @@ def publish_generated_pcapng(
                 destination,
                 content,
                 metadata=metadata,
-                expected_events=expected_events,
+                expected_trace=expected_trace,
                 observation_window_seconds=observation_window_seconds,
             )
             if winner is None:

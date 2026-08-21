@@ -118,7 +118,7 @@ If a packet-count, output-size, or wall-time reliability guard is reached before
 that comparison establishes full-window completion, return incomplete
 generation.
 
-Schema 3 uses one local PCG64 generator. The exact scalar order is `random()`
+Schema 4 uses one local PCG64 generator and preserves the schema-3 scalar order. The exact order is `random()`
 for the arrival-epoch regime, `choice(total_mark_count)` for the time-zero mark,
 then `exponential(scale=1.0/lambda_z)` followed by
 `exponential(scale=1.0 / (q01 if z == 0 else q10))` for every competing-clock

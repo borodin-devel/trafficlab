@@ -38,6 +38,12 @@ class EncodedPcapng:
     trace: TrafficTrace
 
 
+@dataclass(frozen=True, slots=True)
+class _DecodedPcapng:
+    packets: tuple[PcapngPacket, ...]
+    trace: TrafficTrace
+
+
 class _ScapyPacket(Protocol):
     time: SupportsFloat
     wirelen: int
@@ -47,6 +53,7 @@ class _ScapyPacket(Protocol):
 
 class _ScapyReader(Protocol):
     interfaces: list[tuple[int, int, dict[str, object]]]
+    blocktypes: dict[int, Callable[[bytes, int], object]]
 
     def __enter__(self) -> Self: ...
 
@@ -121,6 +128,13 @@ def _validate_reader(reader: _ScapyReader) -> None:
         )
 
 
+def _reject_non_enhanced_packet_block(_block: bytes, _size: int) -> object:
+    raise TrafficlabError(
+        "invalid PCAPNG: only Enhanced Packet Blocks are accepted; obsolete and Simple Packet Blocks are forbidden",
+        corrective_action=_MALFORMED_ACTION,
+    )
+
+
 def _read_scapy_packets(
     source_input: _ReaderInput,
     metadata: CaptureMetadata,
@@ -130,13 +144,15 @@ def _read_scapy_packets(
     clock: Callable[[], float],
     reader_factory: _ScapyReaderFactory,
     timestamp_type: type[SupportsFloat],
-) -> tuple[PcapngPacket, ...]:
+) -> _DecodedPcapng:
     _deadline_expired(deadline, clock)
     target = bytes.fromhex(metadata.target_mac.replace(":", ""))
     packets: list[PcapngPacket] = []
     previous_timestamp: float | None = None
     try:
         with reader_factory(source_input) as reader:
+            reader.blocktypes[2] = _reject_non_enhanced_packet_block
+            reader.blocktypes[3] = _reject_non_enhanced_packet_block
             _deadline_expired(deadline, clock)
             while True:
                 try:
@@ -190,9 +206,10 @@ def _read_scapy_packets(
             "invalid PCAPNG: Scapy capture has no packet records",
             corrective_action=_MALFORMED_ACTION,
         )
-    TrafficTrace.from_events(packet.event for packet in packets)
+    materialized_packets = tuple(packets)
+    trace = TrafficTrace.from_events(packet.event for packet in materialized_packets)
     _deadline_expired(deadline, clock)
-    return tuple(packets)
+    return _DecodedPcapng(packets=materialized_packets, trace=trace)
 
 
 def read_pcapng_packets(
@@ -214,7 +231,7 @@ def read_pcapng_packets(
         clock=clock,
         reader_factory=reader_factory,
         timestamp_type=timestamp_type,
-    )
+    ).packets
 
 
 def read_pcapng_bytes(
@@ -228,8 +245,16 @@ def read_pcapng_bytes(
     """Read owned PCAPNG bytes into a columnar TrafficTrace."""
     if type(content) is not bytes:
         raise TypeError("PCAPNG content must be bytes")
-    packets = read_pcapng_packets(BytesIO(content), metadata, source=source, deadline=deadline, clock=clock)
-    return TrafficTrace.from_events(packet.event for packet in packets)
+    reader_factory, timestamp_type = _reader_boundary()
+    return _read_scapy_packets(
+        BytesIO(content),
+        metadata,
+        source=source,
+        deadline=deadline,
+        clock=clock,
+        reader_factory=reader_factory,
+        timestamp_type=timestamp_type,
+    ).trace
 
 
 def read_pcapng(
@@ -240,8 +265,16 @@ def read_pcapng(
     clock: Callable[[], float] = monotonic,
 ) -> TrafficTrace:
     """Read one PCAPNG path into a columnar TrafficTrace."""
-    packets = read_pcapng_packets(path, metadata, source=path, deadline=deadline, clock=clock)
-    return TrafficTrace.from_events(packet.event for packet in packets)
+    reader_factory, timestamp_type = _reader_boundary()
+    return _read_scapy_packets(
+        str(path),
+        metadata,
+        source=path,
+        deadline=deadline,
+        clock=clock,
+        reader_factory=reader_factory,
+        timestamp_type=timestamp_type,
+    ).trace
 
 
 def _validate_encoding_input(trace: TrafficTrace, observation_window_seconds: float) -> None:

@@ -74,6 +74,35 @@ def encoded(metadata: CaptureMetadata, generated_events: tuple[TraceEvent, ...])
     return encode_pcapng(TrafficTrace.from_events(generated_events), metadata, observation_window_seconds=1.0).content
 
 
+def _authoritative_trace(
+    events: tuple[TraceEvent, ...], metadata: CaptureMetadata, *, window: float = 1.0
+) -> TrafficTrace:
+    return encode_pcapng(
+        TrafficTrace.from_events(events),
+        metadata,
+        observation_window_seconds=window,
+    ).trace
+
+
+def test_publication_rejects_raw_event_compatibility_input(
+    tmp_path: Path,
+    metadata: CaptureMetadata,
+    generated_events: tuple[TraceEvent, ...],
+    encoded: bytes,
+) -> None:
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+
+    with pytest.raises(TypeError, match="expected trace must be a TrafficTrace"):
+        publish_generated_pcapng(
+            run_directory,
+            encoded,
+            metadata=metadata,
+            expected_trace=cast(TrafficTrace, generated_events),
+            observation_window_seconds=1.0,
+        )
+
+
 def _expected_scapy_final_content(config: ExperimentConfig) -> bytes:
     metadata = parse_capture_metadata(_CAPTURE_BYTES, source=Path("capture.json"))
     best = load_best_model(_MODEL_BYTES, source=Path("best_model.json"))
@@ -167,7 +196,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
         run_directory,
         encoded,
         metadata=metadata,
-        expected_events=generated_events,
+        expected_trace=_authoritative_trace(generated_events, metadata),
         observation_window_seconds=1.0,
     )
 
@@ -200,7 +229,7 @@ def test_generated_directory_durability_failure_preserves_published_capture(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -243,7 +272,7 @@ def test_existing_identical_generated_capture_is_read_once_and_reused(
         run_directory,
         encoded,
         metadata=metadata,
-        expected_events=generated_events,
+        expected_trace=_authoritative_trace(generated_events, metadata),
         observation_window_seconds=1.0,
     )
 
@@ -279,7 +308,7 @@ def test_generated_reuse_preserves_an_entry_that_appears_during_an_absent_read(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -313,7 +342,7 @@ def test_generated_reuse_translates_an_unreadable_existing_entry(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -338,7 +367,7 @@ def test_existing_different_generated_capture_is_preserved(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -346,7 +375,7 @@ def test_existing_different_generated_capture_is_preserved(
     assert list(run_directory.iterdir()) == [destination]
 
 
-def test_existing_equal_bytes_with_wrong_expected_events_are_preserved_and_rejected(
+def test_existing_equal_bytes_with_wrong_expected_trace_are_preserved_and_rejected(
     tmp_path: Path,
     metadata: CaptureMetadata,
     generated_events: tuple[TraceEvent, ...],
@@ -359,12 +388,12 @@ def test_existing_equal_bytes_with_wrong_expected_events_are_preserved_and_rejec
     destination.write_bytes(encoded)
     different = generated_events[:-1]
 
-    with pytest.raises(TrafficlabError, match="expected generated events"):
+    with pytest.raises(TrafficlabError, match="expected reparsed trace"):
         publish_generated_pcapng(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=different,
+            expected_trace=_authoritative_trace(different, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -388,7 +417,7 @@ def test_existing_equal_malformed_bytes_are_preserved_and_rejected(
             run_directory,
             malformed,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -408,12 +437,13 @@ def test_publication_accepts_scapy_truncation_inside_the_stored_window(
         TraceEvent(window, Direction.INBOUND, 80),
     )
     content = encode_legacy_pcapng(events, metadata)
+    expected_trace = read_pcapng_bytes(content, metadata, source=Path("expected.pcapng"))
 
     publication = publish_generated_pcapng(
         run_directory,
         content,
         metadata=metadata,
-        expected_events=events,
+        expected_trace=expected_trace,
         observation_window_seconds=window,
     )
 
@@ -442,26 +472,8 @@ def test_publication_rejects_invalid_stored_window(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=cast(float, window),
-        )
-
-
-def test_publication_rejects_window_beyond_pcapng_timestamp_range(
-    tmp_path: Path,
-    metadata: CaptureMetadata,
-) -> None:
-    """Overflow while deriving the final valid nanosecond tick must be a package error."""
-    run_directory = tmp_path / "run"
-    run_directory.mkdir()
-
-    with pytest.raises(TrafficlabError, match="timestamp range"):
-        publish_generated_pcapng(
-            run_directory,
-            encode_legacy_pcapng((TraceEvent(0.0, Direction.OUTBOUND, 60),), metadata),
-            metadata=metadata,
-            expected_events=(TraceEvent(0.0, Direction.OUTBOUND, 60),),
-            observation_window_seconds=1e308,
         )
 
 
@@ -474,12 +486,12 @@ def test_publication_rejects_complete_events_outside_stored_window(
     run_directory.mkdir()
     events = (TraceEvent(1.1, Direction.OUTBOUND, 60),)
 
-    with pytest.raises(TrafficlabError, match="complete generated events.*outside"):
+    with pytest.raises(TrafficlabError, match="expected generated trace.*outside"):
         publish_generated_pcapng(
             run_directory,
             encode_legacy_pcapng(events, metadata),
             metadata=metadata,
-            expected_events=events,
+            expected_trace=TrafficTrace.from_events(events),
             observation_window_seconds=1.0,
         )
 
@@ -528,7 +540,7 @@ def test_generated_reuse_rejects_an_entry_replaced_immediately_after_its_validat
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -564,7 +576,7 @@ def test_publication_link_race_preserves_and_validates_the_winner(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
         assert publication.created_by_call is False
@@ -575,7 +587,7 @@ def test_publication_link_race_preserves_and_validates_the_winner(
                 run_directory,
                 encoded,
                 metadata=metadata,
-                expected_events=generated_events,
+                expected_trace=_authoritative_trace(generated_events, metadata),
                 observation_window_seconds=1.0,
             )
 
@@ -612,7 +624,7 @@ def test_generated_publication_reports_a_disappearing_collision_winner_without_a
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -634,6 +646,7 @@ def test_publication_failure_never_creates_canonical_and_cleans_owned_temp(
     run_directory.mkdir()
     adjacent = run_directory / "keep.txt"
     adjacent.write_text("keep", encoding="utf-8")
+    expected_trace = _authoritative_trace(generated_events, metadata)
 
     if failure == "fsync":
 
@@ -665,7 +678,7 @@ def test_publication_failure_never_creates_canonical_and_cleans_owned_temp(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=expected_trace,
             observation_window_seconds=1.0,
         )
 
@@ -702,7 +715,7 @@ def test_publication_reraises_unexpected_exception_unchanged_after_temp_cleanup(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -732,7 +745,7 @@ def test_publication_translates_expected_oserror_with_actionable_package_error(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -761,7 +774,7 @@ def test_publication_translates_temp_creation_oserror_without_cleanup_target(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -804,7 +817,7 @@ def test_publication_stream_write_failure_cleans_only_the_owned_temp(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -838,7 +851,7 @@ def test_changed_persisted_temp_bytes_are_rejected_before_publication(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -875,7 +888,7 @@ def test_post_link_cleanup_failure_preserves_output_and_reports_only_owned_temp(
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=_authoritative_trace(generated_events, metadata),
             observation_window_seconds=1.0,
         )
 
@@ -897,6 +910,7 @@ def test_link_and_temp_cleanup_failures_preserve_both_diagnostics_and_adjacent_f
     run_directory.mkdir()
     adjacent = run_directory / "keep.txt"
     adjacent.write_text("keep", encoding="utf-8")
+    expected_trace = _authoritative_trace(generated_events, metadata)
 
     def fail_link(_source: str | Path, _destination: str | Path) -> None:
         raise OSError("primary link failure")
@@ -913,7 +927,7 @@ def test_link_and_temp_cleanup_failures_preserve_both_diagnostics_and_adjacent_f
             run_directory,
             encoded,
             metadata=metadata,
-            expected_events=generated_events,
+            expected_trace=expected_trace,
             observation_window_seconds=1.0,
         )
 

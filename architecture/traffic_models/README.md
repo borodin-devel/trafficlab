@@ -35,13 +35,14 @@ reopening the reference capture. Numbers must be finite. Loading repeats
 structural and bound validation.
 
 Fitted models and checkpoints carry global scientific artifact schema version
-3. That version identifies their scientific semantics, not only
+4. That version identifies their scientific semantics, not only
 their JSON shape. The version with corrected MMPP arrival-epoch initialization
 must reject artifacts carrying the older MMPP semantics as incompatible before
 generation, resume, or stage reuse. It does not migrate them or add per-family
 schema or plug-in mechanisms; models must be refitted under the current global
-version. Schema-2 models and checkpoints use the former MT19937 draw protocol
-and require explicit refitting; they are never replayed as PCG64 artifacts.
+version. Schema-3 models and checkpoints use the pre-Scapy publication
+semantics, while schema-2 artifacts also use the former MT19937 draw protocol.
+Both require explicit refitting and are never replayed as schema-4 artifacts.
 
 ## Direct scientific evidence
 

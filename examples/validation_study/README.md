@@ -11,7 +11,7 @@ commit, endpoint, and prerequisite coordination have been explicitly approved.
 
 [`evidence/2026-08-20-scapy-production-r2/`](evidence/2026-08-20-scapy-production-r2/)
 is the current accepted study. Its [report](REPORT.md), schema-4 `index.json`,
-and schema-4 `manifest.json` are the navigation and integrity
+and schema-2 `manifest.json` are the navigation and integrity
 roots. The manifest binds 231 retained evidence paths and excludes only itself.
 The bundle contains:
 

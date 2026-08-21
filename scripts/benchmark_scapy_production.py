@@ -14,6 +14,7 @@ import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import perf_counter
 from typing import Annotated, Literal, Self, cast
 
@@ -23,7 +24,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictFloat,
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from trafficlab.scapy_io import encode_pcapng, read_pcapng_bytes
+from trafficlab.scapy_io import encode_pcapng, read_pcapng
 from trafficlab.trace import CaptureMetadata, TrafficTrace
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
@@ -51,6 +52,11 @@ _COMMAND = (
     "scripts/benchmark_scapy_production.py",
 )
 _METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+_SOURCE_PATHS = (
+    Path(__file__),
+    _REPOSITORY / "src" / "trafficlab" / "scapy_io.py",
+    _REPOSITORY / "src" / "trafficlab" / "trace.py",
+)
 
 
 def _list_to_tuple(value: object) -> object:
@@ -67,6 +73,7 @@ class _StrictModel(BaseModel):
 class SampleRecord(_StrictModel):
     encode_wall_seconds: Annotated[StrictFloat, Field(gt=0.0)]
     frame_count: Annotated[StrictInt, Field(gt=0)]
+    input_trace_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     output_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     output_size_bytes: Annotated[StrictInt, Field(gt=0)]
     peak_rss_kib: Annotated[StrictInt, Field(gt=0)]
@@ -109,8 +116,21 @@ class CaseRecord(_StrictModel):
             raise ValueError("case medians and run counts must derive from raw samples")
         if any(sample.frame_count != self.frame_count for sample in self.samples):
             raise ValueError("every sample must match the case frame count")
-        if len({(sample.output_sha256, sample.output_size_bytes, sample.trace_digest) for sample in self.samples}) != 1:
-            raise ValueError("every repeated sample must produce identical bytes and trace columns")
+        if (
+            len(
+                {
+                    (
+                        sample.input_trace_sha256,
+                        sample.output_sha256,
+                        sample.output_size_bytes,
+                        sample.trace_digest,
+                    )
+                    for sample in self.samples
+                }
+            )
+            != 1
+        ):
+            raise ValueError("every repeated sample must produce identical input, bytes, and trace columns")
         return self
 
 
@@ -120,11 +140,13 @@ class EnvironmentRecord(_StrictModel):
     platform: str
     python: str
     scapy: Literal["2.7.0"]
+    source_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    source_tree: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
     uv_lock_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
 class DiagnosticRecord(_StrictModel):
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     codec: Literal["scapy-2.7.0"]
     production: Literal[True]
     command: StrictTuple[str]
@@ -174,14 +196,18 @@ def _sample(frame_count: int) -> SampleRecord:
     started = perf_counter()
     encoded = encode_pcapng(trace, _METADATA, observation_window_seconds=window)
     encode_wall = perf_counter() - started
-    started = perf_counter()
-    parsed = read_pcapng_bytes(encoded.content, _METADATA, source=Path("diagnostic.pcapng"))
-    read_wall = perf_counter() - started
+    with TemporaryDirectory(prefix="trafficlab-scapy-diagnostic-") as temporary:
+        capture = Path(temporary) / "diagnostic.pcapng"
+        capture.write_bytes(encoded.content)
+        started = perf_counter()
+        parsed = read_pcapng(capture, _METADATA)
+        read_wall = perf_counter() - started
     if parsed != encoded.trace:
         raise RuntimeError("diagnostic read does not match encoded Scapy output")
     return SampleRecord(
         encode_wall_seconds=encode_wall,
         frame_count=frame_count,
+        input_trace_sha256=_trace_digest(trace),
         output_sha256=hashlib.sha256(encoded.content).hexdigest(),
         output_size_bytes=len(encoded.content),
         peak_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
@@ -216,7 +242,7 @@ def _run_child(frame_count: int) -> SampleRecord:
 
 def _implementation_sha256() -> str:
     digest = hashlib.sha256()
-    for path in (Path(__file__), _REPOSITORY / "src" / "trafficlab" / "scapy_io.py"):
+    for path in _SOURCE_PATHS:
         digest.update(path.relative_to(_REPOSITORY).as_posix().encode("utf-8"))
         digest.update(b"\x00")
         digest.update(path.read_bytes())
@@ -224,14 +250,76 @@ def _implementation_sha256() -> str:
     return digest.hexdigest()
 
 
+def _current_lock_sha256() -> str:
+    return hashlib.sha256((_REPOSITORY / "uv.lock").read_bytes()).hexdigest()
+
+
+def _git_output(*arguments: str) -> str:
+    return subprocess.run(
+        ("git", *arguments),
+        cwd=_REPOSITORY,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _source_identity() -> tuple[str, str]:
+    if _git_output("status", "--porcelain=v1", "--untracked-files=all", "--no-renames"):
+        raise RuntimeError("production Scapy diagnostic requires a clean source checkout")
+    return _git_output("rev-parse", "HEAD"), _git_output("rev-parse", "HEAD^{tree}")
+
+
+def _recorded_source_matches(environment: EnvironmentRecord) -> bool:
+    try:
+        recorded_tree = _git_output("rev-parse", f"{environment.source_commit}^{{tree}}")
+        changed = subprocess.run(
+            (
+                "git",
+                "diff",
+                "--quiet",
+                environment.source_commit,
+                "HEAD",
+                "--",
+                *(path.relative_to(_REPOSITORY).as_posix() for path in _SOURCE_PATHS),
+            ),
+            cwd=_REPOSITORY,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return recorded_tree == environment.source_tree and changed.returncode == 0
+
+
+def _deterministic_identities(frame_count: int) -> tuple[str, str, int, str]:
+    trace = _trace(frame_count)
+    window = max(1.0, float(trace.timestamps[-1]))
+    encoded = encode_pcapng(trace, _METADATA, observation_window_seconds=window)
+    with TemporaryDirectory(prefix="trafficlab-scapy-diagnostic-check-") as temporary:
+        capture = Path(temporary) / "diagnostic.pcapng"
+        capture.write_bytes(encoded.content)
+        parsed = read_pcapng(capture, _METADATA)
+    if parsed != encoded.trace:
+        raise RuntimeError("diagnostic path read does not match encoded Scapy output")
+    return (
+        _trace_digest(trace),
+        hashlib.sha256(encoded.content).hexdigest(),
+        len(encoded.content),
+        _trace_digest(parsed),
+    )
+
+
 def _environment() -> EnvironmentRecord:
+    source_commit, source_tree = _source_identity()
     return EnvironmentRecord(
         implementation_sha256=_implementation_sha256(),
         machine=platform.machine(),
         platform=platform.platform(),
         python=platform.python_version(),
         scapy=cast(Literal["2.7.0"], importlib.metadata.version("scapy")),
-        uv_lock_sha256=hashlib.sha256((_REPOSITORY / "uv.lock").read_bytes()).hexdigest(),
+        source_commit=source_commit,
+        source_tree=source_tree,
+        uv_lock_sha256=_current_lock_sha256(),
     )
 
 
@@ -244,7 +332,7 @@ def build_diagnostic() -> dict[str, object]:
         samples = tuple(_run_child(frame_count) for _ in range(_REPETITIONS))
         cases.append(CaseRecord.from_samples(frame_count, samples, warmup_runs=_WARMUPS))
     record = DiagnosticRecord(
-        schema_version=1,
+        schema_version=2,
         codec="scapy-2.7.0",
         production=True,
         command=_COMMAND,
@@ -267,17 +355,43 @@ def _load_checked(path: Path) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
-def check_diagnostic(path: Path) -> bool:
+def check_diagnostic(
+    path: Path,
+    *,
+    expected_frame_counts: tuple[int, ...] = _FRAME_COUNTS,
+    expected_repetitions: int = _REPETITIONS,
+) -> bool:
     document = _load_checked(path)
-    rendered = render_diagnostic(document)
+    rendered = render_diagnostic(
+        document,
+        expected_frame_counts=expected_frame_counts,
+        expected_repetitions=expected_repetitions,
+    )
     record = DiagnosticRecord.model_validate(document)
-    return (
+    static_identity_matches = (
         rendered == path.read_bytes()
         and record.environment.implementation_sha256 == _implementation_sha256()
-        and record.environment.uv_lock_sha256 == hashlib.sha256((_REPOSITORY / "uv.lock").read_bytes()).hexdigest()
+        and record.environment.uv_lock_sha256 == _current_lock_sha256()
         and record.environment.python == platform.python_version()
         and record.environment.scapy == importlib.metadata.version("scapy")
+        and _recorded_source_matches(record.environment)
     )
+    if not static_identity_matches:
+        return False
+    for case in record.cases:
+        expected = _deterministic_identities(case.frame_count)
+        if any(
+            (
+                sample.input_trace_sha256,
+                sample.output_sha256,
+                sample.output_size_bytes,
+                sample.trace_digest,
+            )
+            != expected
+            for sample in case.samples
+        ):
+            return False
+    return True
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
