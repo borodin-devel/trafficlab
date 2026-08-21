@@ -18,7 +18,7 @@ OUTPUT = REPOSITORY / "examples" / "scientific_stack" / "code_reduction.json"
 _HEX40 = re.compile(r"[0-9a-f]{40}")
 
 _NUMPY_BASELINE = "2d1a2dafd3b31787d4b48e4bce508492b89b6c7c"
-_NUMPY_AFTER = "6248c24eea97e280d3f1687e5c82124f7008dfd0"
+_NUMPY_AFTER = "cd05f02e50a005df02d9e0c81a0d1ca97b9cbe18"
 _NUMPY_BEFORE_LOOP_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
     "src/trafficlab/models/common.py": ("MarkDistribution.from_reference",),
     "src/trafficlab/models/markov_renewal.py": ("_fit_events",),
