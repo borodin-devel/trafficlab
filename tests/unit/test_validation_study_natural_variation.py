@@ -18,7 +18,7 @@ from trafficlab.config import ExperimentConfig
 from trafficlab.config_io import load_configuration_pair
 from trafficlab.genetic.checkpoint import CheckpointState
 from trafficlab.models.registry import BestModel
-from trafficlab.trace import Direction, TraceEvent
+from trafficlab.trace import Direction, TraceEvent, TrafficTrace
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKLOADS = ("short", "streaming", "bursty")
@@ -40,9 +40,11 @@ def _training(config: ExperimentConfig) -> tuple[auditor._Training, ...]:  # pyr
                     directory=Path(f"training/{workload}/r{repeat}"),
                     contents={},
                     config=config,
-                    reference=(
-                        TraceEvent(0.0, Direction.OUTBOUND, 64),
-                        TraceEvent(raw_window, Direction.INBOUND, 96),
+                    reference=TrafficTrace.from_events(
+                        (
+                            TraceEvent(0.0, Direction.OUTBOUND, 64),
+                            TraceEvent(raw_window, Direction.INBOUND, 96),
+                        )
                     ),
                     window=raw_window,
                     runtime_seconds=float(repeat),
@@ -66,7 +68,7 @@ def _held() -> dict[str, HeldOutEvaluation]:
 
 def _patch_nonvariation_report_dependencies(
     monkeypatch: pytest.MonkeyPatch,
-    captured: list[tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], float]],
+    captured: list[tuple[TrafficTrace, TrafficTrace, float]],
 ) -> None:
     score: dict[str, object] = {
         "aggregate": 0.5,
@@ -86,8 +88,8 @@ def _patch_nonvariation_report_dependencies(
         return "mmpp"
 
     def capture_comparison(
-        reference: tuple[TraceEvent, ...],
-        generated: tuple[TraceEvent, ...],
+        reference: TrafficTrace,
+        generated: TrafficTrace,
         window: float,
         _settings: object,
     ) -> ComparisonResult:
@@ -106,7 +108,7 @@ def test_report_inputs_derives_each_directional_reference_window(
 ) -> None:
     config = _config()
     training = _training(config)
-    captured: list[tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], float]] = []
+    captured: list[tuple[TrafficTrace, TrafficTrace, float]] = []
     _patch_nonvariation_report_dependencies(monkeypatch, captured)
     report = auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
         training,
@@ -154,7 +156,7 @@ def test_report_inputs_rejects_mixed_similarity_settings(monkeypatch: pytest.Mon
             )
         }
     )
-    captured: list[tuple[tuple[TraceEvent, ...], tuple[TraceEvent, ...], float]] = []
+    captured: list[tuple[TrafficTrace, TrafficTrace, float]] = []
     _patch_nonvariation_report_dependencies(monkeypatch, captured)
 
     with pytest.raises(auditor._Issue, match="common similarity settings"):  # pyright: ignore[reportPrivateUsage]

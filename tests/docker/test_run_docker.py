@@ -46,9 +46,9 @@ from trafficlab.genetic.strategy import make_strategy_context
 from trafficlab.genetic.types import TrialResult
 from trafficlab.models.common import FittedModel, GenerationResult, ModelFamily
 from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import PreparedExperiment, open_or_prepare_experiment, run_preflight
 from trafficlab.run import RunDependencies, RunResult, run_experiment
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import Direction, normalize_reference, parse_capture_metadata
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]

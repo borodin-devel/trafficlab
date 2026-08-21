@@ -87,6 +87,7 @@ class EncodedPcapng:
     content: bytes
     trace: TrafficTrace  # reparsed emitted bytes
 
+
 def read_pcapng_bytes(
     content: bytes,
     metadata: CaptureMetadata,
@@ -96,6 +97,7 @@ def read_pcapng_bytes(
     clock: Callable[[], float] = monotonic,
 ) -> TrafficTrace: ...
 
+
 def read_pcapng(
     path: Path,
     metadata: CaptureMetadata,
@@ -103,6 +105,7 @@ def read_pcapng(
     deadline: float | None = None,
     clock: Callable[[], float] = monotonic,
 ) -> TrafficTrace: ...
+
 
 def encode_pcapng(
     trace: TrafficTrace,

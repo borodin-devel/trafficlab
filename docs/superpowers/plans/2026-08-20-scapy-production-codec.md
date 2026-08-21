@@ -273,8 +273,10 @@ def test_encode_returns_exact_bytes_and_reparsed_authoritative_trace(metadata: C
 
 def test_identical_locked_writes_are_byte_identical(metadata: CaptureMetadata) -> None:
     trace = TrafficTrace.from_events((TraceEvent(0.25, Direction.INBOUND, 64),))
-    assert encode_pcapng(trace, metadata, observation_window_seconds=1.0).content == \
+    assert (
         encode_pcapng(trace, metadata, observation_window_seconds=1.0).content
+        == encode_pcapng(trace, metadata, observation_window_seconds=1.0).content
+    )
 ```
 
 Cover both directions, target/peer MAC roles, 14-byte minimum, uint32 limits, closed-window checks, nonfinite/decreasing inputs, writer I/O/type/dynamic errors, flush/close, and exact post-write reparse.

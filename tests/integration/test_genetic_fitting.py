@@ -34,8 +34,8 @@ from trafficlab.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult, Genes
 from trafficlab.models.registry import load_best_model, render_best_model
-from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.preflight import PreflightReport, PreparedExperiment
+from trafficlab.scapy_io import read_pcapng_bytes
 from trafficlab.trace import normalize_reference, parse_capture_metadata
 
 pytestmark = pytest.mark.integration

@@ -10,13 +10,13 @@ import tomli_w
 import trafficlab.artifacts as artifact_module
 import trafficlab.capture as capture_module
 import trafficlab.compatibility as compatibility
+from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.capture import CaptureResult, capture_experiment, capture_prepared_experiment
 from trafficlab.capture_policy import CaptureOutcome, FailureKind, record_flush_failure, record_natural_target_status
 from trafficlab.compatibility import identify_file
 from trafficlab.config import MountConfig
 from trafficlab.docker_cli import CommandResult, ServiceState
 from trafficlab.errors import DeadlineExceededError, TrafficlabError
-from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.preflight import (
     CaptureEnvironmentIdentity,
     MountedInputIdentity,
