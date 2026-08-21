@@ -69,24 +69,47 @@ Compose integration tests.
   ```python
   EXPECTED = {
       "common": {
-          "compatibility.py", "config.py", "config_io.py", "errors.py",
-          "scapy_io.py", "scientific_schema.py", "statistics.py", "trace.py",
+          "compatibility.py",
+          "config.py",
+          "config_io.py",
+          "errors.py",
+          "scapy_io.py",
+          "scientific_schema.py",
+          "statistics.py",
+          "trace.py",
       },
       "preflight": {"stage.py"},
       "capture": {
-          "cleanup.py", "compose.py", "docker_cli.py", "policy.py",
-          "stage.py", "validation.py",
+          "cleanup.py",
+          "compose.py",
+          "docker_cli.py",
+          "policy.py",
+          "stage.py",
+          "validation.py",
       },
       "fitting": {"stage.py"},
       "generation": {"stage.py"},
       "comparison": {"stage.py"},
   }
   FORBIDDEN_ROOT_MODULES = {
-      "capture.py", "capture_policy.py", "capture_validation.py", "cleanup.py",
-      "comparison.py", "compatibility.py", "compose.py", "config.py",
-      "config_io.py", "docker_cli.py", "errors.py", "fitting.py",
-      "generation.py", "preflight.py", "scapy_io.py", "scientific_schema.py",
-      "statistics.py", "trace.py",
+      "capture.py",
+      "capture_policy.py",
+      "capture_validation.py",
+      "cleanup.py",
+      "comparison.py",
+      "compatibility.py",
+      "compose.py",
+      "config.py",
+      "config_io.py",
+      "docker_cli.py",
+      "errors.py",
+      "fitting.py",
+      "generation.py",
+      "preflight.py",
+      "scapy_io.py",
+      "scientific_schema.py",
+      "statistics.py",
+      "trace.py",
   }
   FORBIDDEN_ROOT_PACKAGES = {"genetic", "models", "similarity"}
   ```
@@ -228,12 +251,24 @@ Compose integration tests.
   ```python
   ALLOWED = {
       "unit": {
-          "common", "preflight", "capture", "fitting", "generation",
-          "comparison", "pipeline", "validation", "tooling",
+          "common",
+          "preflight",
+          "capture",
+          "fitting",
+          "generation",
+          "comparison",
+          "pipeline",
+          "validation",
+          "tooling",
       },
       "integration": {
-          "preflight", "capture", "fitting", "generation", "comparison",
-          "pipeline", "validation",
+          "preflight",
+          "capture",
+          "fitting",
+          "generation",
+          "comparison",
+          "pipeline",
+          "validation",
       },
       "docker": {"capture", "pipeline"},
       "internet": {"capture"},
@@ -417,26 +452,26 @@ Compose integration tests.
   Keep recorded algorithms, thresholds, timing samples, and before-revision
   evidence unchanged.
 
-- [ ] **[STEP-17-8456ba6e] Regenerate only checker-owned current records**
+- [x] **[STEP-17-8456ba6e] Regenerate only checker-owned current records**
 
   When a deterministic generator owns a checked record that includes current
   source paths or hashes, run its non-`--check` command once, then rerun with
   `--check`. Do not edit performance samples manually and do not alter accepted
   validation-study evidence bound to an earlier source commit.
 
-- [ ] **[STEP-18-0e290fe6] Verify no live old import or path remains**
+- [x] **[STEP-18-0e290fe6] Verify no live old import or path remains**
 
   Search Python and current docs for old imports and paths. Expected: no result
   outside historical `docs/superpowers/plans/**` and prior design records.
   Confirm `python -m trafficlab --help` and all six command help surfaces still
   expose the existing CLI names.
 
-- [ ] **[STEP-19-2143f8d6] Run focused tooling and architecture tests**
+- [x] **[STEP-19-2143f8d6] Run focused tooling and architecture tests**
 
   Run all tests under `tests/unit/tooling` plus the two layout tests, then Ruff
   and strict Pyright for `src`, `tests`, and `scripts`. Expected: all pass.
 
-- [ ] **[STEP-20-d889eb2f] Review and commit path evidence**
+- [x] **[STEP-20-d889eb2f] Review and commit path evidence**
 
   Request independent review, resolve all Critical/Important findings, repeat
   Steps 18–19, and commit:

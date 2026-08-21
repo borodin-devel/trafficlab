@@ -129,7 +129,9 @@ def test_docker_adapter_guard_allows_pure_renderer_but_detects_preloaded_adapter
 
     adapter = ModuleType("trafficlab.capture.docker_cli")
     monkeypatch.setitem(sys.modules, "trafficlab.capture.docker_cli", adapter)
-    monkeypatch.setitem(sys.modules, "trafficlab.capture.docker_cli.child", ModuleType("trafficlab.capture.docker_cli.child"))
+    monkeypatch.setitem(
+        sys.modules, "trafficlab.capture.docker_cli.child", ModuleType("trafficlab.capture.docker_cli.child")
+    )
     monkeypatch.setattr(capture_package, "docker_cli", adapter, raising=False)
 
     assert "trafficlab.capture.docker_cli" in {name for name in sys.modules if _is_docker_adapter_module(name)}
