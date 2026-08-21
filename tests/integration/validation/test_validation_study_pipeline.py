@@ -17,7 +17,7 @@ import pytest
 from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
-from trafficlab.artifacts import append_run_log
+from trafficlab.artifacts.io import append_run_log
 from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.comparison.stage import compare_experiment

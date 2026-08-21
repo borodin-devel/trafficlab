@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
-from trafficlab.artifacts import append_run_log, publish_generated_pcapng
+from trafficlab.artifacts.generated import publish_generated_pcapng
+from trafficlab.artifacts.io import append_run_log
 from trafficlab.common.compatibility import identify_bytes, identify_file, require_compatible
 from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.errors import (

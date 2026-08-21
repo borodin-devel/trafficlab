@@ -6,10 +6,11 @@ from typing import cast
 
 import pytest
 
-import trafficlab.artifacts as artifacts
+import trafficlab.artifacts.io as artifacts
 import trafficlab.comparison.stage as comparison
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
-from trafficlab.artifacts import append_run_log, create_run_directory
+from trafficlab.artifacts.io import append_run_log
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import render_effective_config

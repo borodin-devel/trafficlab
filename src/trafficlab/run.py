@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Self
 
-from trafficlab.artifacts import FileIdentity, _file_identity, append_run_log  # pyright: ignore[reportPrivateUsage]
+from trafficlab.artifacts.io import FileIdentity, append_run_log, file_identity
 from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes, require_compatible
@@ -301,13 +301,13 @@ def _final_artifact_error(
 
 def _read_final_artifact(path: Path, *, owner: _FinalOwner, identities: _FinalIdentities) -> bytes:
     try:
-        identity = _file_identity(
+        identity = file_identity(
             path,
             kind="final artifact entry",
             corrective_action="verify the final run artifact entries are inspectable and retry the complete run",
         )
         content = path.read_bytes()
-        current_identity = _file_identity(
+        current_identity = file_identity(
             path,
             kind="final artifact entry",
             corrective_action="verify the final run artifact entries are inspectable and retry the complete run",
@@ -491,7 +491,7 @@ def _validate_final_artifacts(
         raise _final_artifact_error("compare", "similarity.json lineage does not match the strict final artifacts")
     for path, (owner, identity) in identities.items():
         try:
-            current_identity = _file_identity(
+            current_identity = file_identity(
                 path,
                 kind="final artifact entry",
                 corrective_action="verify the final run artifact entries are inspectable and retry the complete run",

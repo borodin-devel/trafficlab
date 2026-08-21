@@ -15,13 +15,15 @@ from typing import Any, cast
 
 import pytest
 
-import trafficlab.artifacts as artifact_module
+import trafficlab.artifacts.generated as artifact_module
+import trafficlab.artifacts.io as artifact_io
 import trafficlab.cli as cli_module
 import trafficlab.generation.stage as generation_module
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from tests.support.scapy_fixtures import encode_events as encode_legacy_pcapng
 from tests.support.scapy_fixtures import encode_precise_events
-from trafficlab.artifacts import create_run_directory, publish_generated_pcapng
+from trafficlab.artifacts.generated import publish_generated_pcapng
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import render_effective_config
@@ -157,7 +159,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
     run_directory = tmp_path / "run"
     run_directory.mkdir()
     real_fsync = os.fsync
-    real_directory_fsync = artifact_module._fsync_containing_directory  # pyright: ignore[reportPrivateUsage]
+    real_directory_fsync = artifact_io.fsync_containing_directory
     real_parse = read_pcapng_bytes
     real_link = os.link
     operations: list[str] = []
@@ -190,7 +192,7 @@ def test_publication_fsyncs_and_validates_owned_temp_before_exclusive_link(
     monkeypatch.setattr(artifact_module.os, "fsync", observe_fsync)
     monkeypatch.setattr(artifact_module, "read_pcapng_bytes", observe_parse)
     monkeypatch.setattr(artifact_module.os, "link", observe_link)
-    monkeypatch.setattr(artifact_module, "_fsync_containing_directory", observe_directory_fsync)
+    monkeypatch.setattr(artifact_io, "fsync_containing_directory", observe_directory_fsync)
 
     publication = publish_generated_pcapng(
         run_directory,
@@ -222,7 +224,7 @@ def test_generated_directory_durability_failure_preserves_published_capture(
     def fail_directory_fsync(_path: Path) -> None:
         raise TrafficlabError("injected generated directory fsync failure", corrective_action="repair storage")
 
-    monkeypatch.setattr(artifact_module, "_fsync_containing_directory", fail_directory_fsync)
+    monkeypatch.setattr(artifact_io, "fsync_containing_directory", fail_directory_fsync)
 
     with pytest.raises(TrafficlabError, match="generated directory fsync failure") as caught:
         publish_generated_pcapng(

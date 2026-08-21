@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
-from trafficlab.artifacts import append_run_log, publish_best_model, validate_existing_best_model
+from trafficlab.artifacts.best_model import publish_best_model, validate_existing_best_model
+from trafficlab.artifacts.io import append_run_log
 from trafficlab.common.compatibility import identify_bytes, require_compatible
 from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.errors import (

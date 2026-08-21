@@ -5,7 +5,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
-from trafficlab.artifacts import create_run_directory
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.common.errors import TrafficlabError

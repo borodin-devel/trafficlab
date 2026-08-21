@@ -12,7 +12,7 @@ import pytest
 import trafficlab
 import trafficlab.capture as capture_package
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
-from trafficlab.artifacts import create_run_directory
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.cli import main
 from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.common.errors import TrafficlabError

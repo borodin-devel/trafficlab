@@ -19,7 +19,7 @@ if __package__ in (None, ""):
 
 from scripts import audit_validation_study as auditor
 from scripts import run_validation_study as study
-from trafficlab.artifacts import append_run_log
+from trafficlab.artifacts.io import append_run_log
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_configuration_pair, render_effective_config

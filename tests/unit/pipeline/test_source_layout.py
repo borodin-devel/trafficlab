@@ -74,6 +74,15 @@ FORBIDDEN_ROOT_MODULES = {
 
 FORBIDDEN_ROOT_PACKAGES = {"genetic", "models", "similarity"}
 
+EXPECTED_ARTIFACT_MODULES = {
+    "__init__.py",
+    "best_model.py",
+    "capture.py",
+    "generated.py",
+    "io.py",
+    "run_directory.py",
+}
+
 
 def _python_inventory(directory: Path) -> set[str]:
     if not directory.is_dir():
@@ -99,3 +108,11 @@ def test_production_root_has_no_superseded_flat_modules_or_packages() -> None:
 
     assert present_modules == set()
     assert present_packages == set()
+
+
+def test_artifact_persistence_is_owned_by_artifact_kind() -> None:
+    artifacts = PACKAGE / "artifacts"
+
+    assert artifacts.is_dir()
+    assert _python_inventory(artifacts) == EXPECTED_ARTIFACT_MODULES
+    assert not (PACKAGE / "artifacts.py").exists()

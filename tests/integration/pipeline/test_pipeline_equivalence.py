@@ -15,7 +15,8 @@ import pytest
 
 import trafficlab.capture.docker_cli as docker_cli
 import trafficlab.fitting.genetic.strategy as genetic_strategy
-from trafficlab.artifacts import create_run_directory, load_or_recover_capture_pair
+from trafficlab.artifacts.capture import load_or_recover_capture_pair
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import ExperimentConfig

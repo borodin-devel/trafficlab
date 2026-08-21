@@ -24,7 +24,7 @@ from pydantic import (
     model_validator,
 )
 
-from trafficlab.artifacts import atomic_replace as _atomic_replace
+from trafficlab.artifacts.io import atomic_replace as _atomic_replace
 from trafficlab.common.compatibility import ContentIdentity, require_compatible
 from trafficlab.common.config import FamilyName, FloatBounds, GenerationLimits, IntegerBounds, SimilarityConfig
 from trafficlab.common.errors import EvidenceState, FailureAuthority, FailureOutcome, TrafficlabError

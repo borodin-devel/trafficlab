@@ -63,7 +63,7 @@ NumPy, SciPy, Git, Docker Compose.
   `create_run_directory` from `artifacts.run_directory`; and the capture-pair
   identity/publication API from `artifacts.capture`.
 
-- [ ] **[STEP-1-789ca4ae] Snapshot artifact tests and write the failing ownership contract**
+- [x] **[STEP-1-789ca4ae] Snapshot artifact tests and write the failing ownership contract**
 
   Save normalized node suffixes from the current artifact test, then extend the
   source-layout test to require the six new modules and reject
@@ -75,13 +75,13 @@ NumPy, SciPy, Git, Docker Compose.
     > /tmp/trafficlab-task1-artifact-nodes.txt
   ```
 
-- [ ] **[STEP-2-5c993e9c] Verify the artifact ownership contract is RED**
+- [x] **[STEP-2-5c993e9c] Verify the artifact ownership contract is RED**
 
   Run the source-layout node under the canonical bounded Focused command.
   Expected: failure naming the absent `trafficlab/artifacts/` owner modules and
   still-present `artifacts.py`.
 
-- [ ] **[STEP-3-8cb87586] Extract artifact implementations by the spec's symbol ranges**
+- [x] **[STEP-3-8cb87586] Extract artifact implementations by the spec's symbol ranges**
 
   Create the package, move each complete symbol body to its exact owner, import
   shared filesystem primitives only from `artifacts.io`, update every caller to
@@ -91,21 +91,21 @@ NumPy, SciPy, Git, Docker Compose.
   """Durable experiment artifact persistence by artifact kind."""
   ```
 
-- [ ] **[STEP-4-a3285153] Split artifact tests without changing their cases**
+- [x] **[STEP-4-a3285153] Split artifact tests without changing their cases**
 
   Move fixtures/helpers beside the one artifact kind that consumes them; put
   genuinely shared builders in `tests/support/artifacts.py`. Collect the new
   directory, normalize node suffixes, and require an empty diff against
   `/tmp/trafficlab-task1-artifact-nodes.txt`.
 
-- [ ] **[STEP-5-cf3fb23f] Verify artifact behavior and static boundaries**
+- [x] **[STEP-5-cf3fb23f] Verify artifact behavior and static boundaries**
 
   Run the new artifact test directory, capture integration tests, fitting,
   generation, comparison, and pipeline integration tests; then Ruff and strict
   Pyright. Run `generate_artifact_schemas.py --check` and every fixture checker
   that imports artifact publishers.
 
-- [ ] **[STEP-6-d08bceaf] Review and commit artifact ownership**
+- [x] **[STEP-6-d08bceaf] Review and commit artifact ownership**
 
   Request independent review, resolve every Critical/Important finding, repeat
   Step 5, and commit:

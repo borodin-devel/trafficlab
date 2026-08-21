@@ -7,7 +7,8 @@ from typing import Any, cast
 import pytest
 import tomli_w
 
-import trafficlab.artifacts as artifact_module
+import trafficlab.artifacts.capture as artifact_module
+import trafficlab.artifacts.io as artifact_io
 import trafficlab.capture.stage as capture_module
 import trafficlab.common.compatibility as compatibility
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
@@ -236,7 +237,7 @@ def _prepared(
 def _seed_capture_lineage(prepared: PreparedExperiment) -> None:
     environment = prepared.report.environment_identity
     assert environment is not None
-    artifact_module.append_run_log(
+    artifact_io.append_run_log(
         prepared.run_directory,
         {
             "capture_environment_identity": {

@@ -7,10 +7,10 @@ from typing import cast
 
 import pytest
 
-import trafficlab.artifacts as artifacts
+import trafficlab.artifacts.io as artifacts
 import trafficlab.comparison.stage as comparison
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
-from trafficlab.artifacts import create_run_directory
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.comparison.stage import compare_experiment, load_comparison_result

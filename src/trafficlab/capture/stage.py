@@ -15,14 +15,14 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Protocol, cast
 
-from trafficlab.artifacts import (
+from trafficlab.artifacts.capture import (
     CapturePublication,
-    append_run_log,
     load_or_recover_capture_pair,
     publish_capture_pair,
     remove_stable_capture_diagnostics,
     rollback_capture_publication,
 )
+from trafficlab.artifacts.io import append_run_log
 from trafficlab.capture.cleanup import CleanupCompose, cleanup_project
 from trafficlab.capture.compose import ComposePaths, write_production_compose
 from trafficlab.capture.docker_cli import (

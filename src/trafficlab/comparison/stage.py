@@ -24,7 +24,7 @@ from pydantic import (
     model_validator,
 )
 
-from trafficlab.artifacts import append_run_log, fsync_published_artifact
+from trafficlab.artifacts.io import append_run_log, fsync_published_artifact
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes, identify_file, require_compatible
 from trafficlab.common.config import SimilarityConfig
 from trafficlab.common.config_io import load_experiment, render_effective_config

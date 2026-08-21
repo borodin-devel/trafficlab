@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-import trafficlab.artifacts as artifacts
+import trafficlab.artifacts.io as artifact_io
 import trafficlab.comparison.stage as comparison
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import ExperimentConfig, SimilarityConfig
@@ -1662,7 +1662,7 @@ def test_publication_directory_durability_failure_preserves_similarity(
     def fail_directory_fsync(_path: Path) -> None:
         raise TrafficlabError("injected similarity directory fsync failure", corrective_action="repair storage")
 
-    monkeypatch.setattr(artifacts, "_fsync_containing_directory", fail_directory_fsync)
+    monkeypatch.setattr(artifact_io, "fsync_containing_directory", fail_directory_fsync)
 
     with pytest.raises(TrafficlabError, match="similarity directory fsync failure") as caught:
         comparison._publish_comparison_result(destination, expected)  # pyright: ignore[reportPrivateUsage]

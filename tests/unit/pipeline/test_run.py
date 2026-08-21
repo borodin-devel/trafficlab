@@ -18,7 +18,7 @@ from pydantic import BaseModel
 import trafficlab.capture.stage as capture_module
 import trafficlab.run as run_module
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.artifacts import FileIdentity
+from trafficlab.artifacts.io import FileIdentity
 from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import CaptureInspection
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
@@ -777,7 +777,7 @@ def test_run_experiment_translates_a_final_identity_recheck_failure(
     experiment_path, prepared = _prepared_experiment(valid_config_data, tmp_path)
     dependencies, _results = _success_dependencies(experiment_path, prepared, [])
     destination = prepared.run_directory / "similarity.json"
-    real_identity = run_module._file_identity  # pyright: ignore[reportPrivateUsage]
+    real_identity = run_module.file_identity
     destination_calls = 0
 
     def fail_recheck(path: Path, *, kind: str, corrective_action: str) -> FileIdentity | None:
@@ -788,7 +788,7 @@ def test_run_experiment_translates_a_final_identity_recheck_failure(
                 raise TrafficlabError("simulated final identity failure", corrective_action="stabilize entry")
         return real_identity(path, kind=kind, corrective_action=corrective_action)
 
-    monkeypatch.setattr(run_module, "_file_identity", fail_recheck)
+    monkeypatch.setattr(run_module, "file_identity", fail_recheck)
 
     with pytest.raises(TrafficlabError, match="could not inspect similarity.json.*final identity failure"):
         run_experiment(experiment_path, dependencies=dependencies)

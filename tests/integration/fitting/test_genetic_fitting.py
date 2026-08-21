@@ -17,7 +17,7 @@ import trafficlab.capture.docker_cli as docker_cli
 import trafficlab.fitting.genetic.evaluation as genetic_evaluation
 import trafficlab.fitting.genetic.operators as genetic_operators
 import trafficlab.fitting.genetic.strategy as genetic_strategy
-from trafficlab.artifacts import create_run_directory
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import ExperimentConfig, FamilyName, GenerationLimits, MethodWeights
 from trafficlab.common.config_io import load_experiment, render_effective_config

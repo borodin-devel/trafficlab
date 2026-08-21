@@ -14,12 +14,13 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
-import trafficlab.artifacts as artifacts
+import trafficlab.artifacts.best_model as artifacts
+import trafficlab.artifacts.io as artifact_io
 import trafficlab.fitting.genetic.checkpoint as checkpoint
 import trafficlab.fitting.genetic.strategy as strategy_module
 import trafficlab.fitting.stage as fitting
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.artifacts import publish_best_model
+from trafficlab.artifacts.best_model import publish_best_model
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import ExperimentConfig, FloatBounds, GenerationLimits, PoissonConfig
 from trafficlab.common.config_io import render_effective_config
@@ -492,7 +493,7 @@ def test_final_validation_fit_precedes_one_publication_refit_and_uses_same_genes
         nonlocal phase
         if record["event"] == "final_validation_succeeded":
             phase = "make_best_model"
-        artifacts.append_run_log(run_directory, record)
+        artifact_io.append_run_log(run_directory, record)
 
     monkeypatch.setattr(fitting, "append_run_log", switch_to_publication)
     result = fit_experiment(experiment_path, dependencies=_dependencies(config, experiment_path, inputs, strategy))
@@ -1021,7 +1022,7 @@ def test_fit_success_logging_failure_reports_the_preserved_artifact(
     run_directory.mkdir()
     config = _config(valid_config_data, run_directory)
     inputs = _inputs(config)
-    real_append = artifacts.append_run_log
+    real_append = artifact_io.append_run_log
 
     def fail_final_log(directory: Path, record: dict[str, object]) -> None:
         if record["event"] == "best_model_published":

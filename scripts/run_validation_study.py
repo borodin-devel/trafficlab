@@ -29,11 +29,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from trafficlab import USER_AGENT, __version__
-from trafficlab.artifacts import (
-    FileIdentity,
-    _file_identity,  # pyright: ignore[reportPrivateUsage]
-    append_run_log,
-)
+from trafficlab.artifacts.io import FileIdentity, append_run_log, file_identity
 from trafficlab.capture.docker_cli import cold_capture_build_argv, load_capture_image_lock, validate_capture_dockerfile
 from trafficlab.capture.stage import CaptureResult, capture_experiment
 from trafficlab.capture.validation import validate_capture_pair
@@ -1907,7 +1903,7 @@ def _read_exact_artifact_set(run_directory: Path) -> dict[str, bytes]:
 def _artifact_identities(run_directory: Path) -> dict[str, FileIdentity]:
     identities: dict[str, FileIdentity] = {}
     for name in ARTIFACT_NAMES:
-        identity = _file_identity(
+        identity = file_identity(
             run_directory / name,
             kind="Validation Study evidence artifact",
             corrective_action="preserve the run and inspect its exact nine artifact files",

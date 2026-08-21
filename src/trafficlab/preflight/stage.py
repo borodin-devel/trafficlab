@@ -16,7 +16,8 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Protocol, cast
 
 from trafficlab import USER_AGENT
-from trafficlab.artifacts import append_run_log, create_run_directory
+from trafficlab.artifacts.io import append_run_log
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.capture.compose import ComposePaths, render_production_compose, write_production_compose
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import ExperimentConfig
