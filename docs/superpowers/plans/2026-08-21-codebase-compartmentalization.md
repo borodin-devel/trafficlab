@@ -390,13 +390,13 @@ Compose integration tests.
 - Produces: current documentation and checked deterministic records that name
   only existing files while retaining their scientific thresholds and results.
 
-- [ ] **[STEP-14-e01d6058] Find every stale live path**
+- [x] **[STEP-14-e01d6058] Find every stale live path**
 
   Run a repository search for each removed module and filesystem path, excluding
   only `docs/superpowers/plans/**` and superseded design specifications. Record
   all current architecture, TASK, script, test, example, and schema hits.
 
-- [ ] **[STEP-15-786003df] Run path-sensitive checkers and verify RED**
+- [x] **[STEP-15-786003df] Run path-sensitive checkers and verify RED**
 
   Run:
 
@@ -410,7 +410,7 @@ Compose integration tests.
   specifically on missing/mismatched source identity; scientific value or
   threshold failures are not expected from a path-only refactor.
 
-- [ ] **[STEP-16-8baff31a] Update authoritative path inventories**
+- [x] **[STEP-16-8baff31a] Update authoritative path inventories**
 
   Apply the Task 1 path map to current architecture, `TASK.md`, benchmark source
   inventories, reduction-measurement AST paths, and their unit expectations.

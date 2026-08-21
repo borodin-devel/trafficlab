@@ -35,7 +35,7 @@ Packets at both endpoints are included.
 
 `TrafficTrace.from_events()` and `TrafficTrace.to_events()` are the external
 boundary for immutable `TraceEvent` records. Scapy PCAPNG reading and writing
-may use those records only inside `trafficlab.scapy_io`. Normalization,
+may use those records only inside `trafficlab.common.scapy_io`. Normalization,
 strategy setup, genetic evaluation, model repair/fit/generation, all four
 similarity methods, final comparison, and validation-study reconstruction retain
 the exact `TrafficTrace` in memory. Generation results contain an immutable
@@ -50,7 +50,7 @@ The rule applies to valid Ethernet frames captured on the target's
 non-promiscuous `eth0`. Parsing requires the accompanying `capture.json`; a
 missing file, invalid MAC, unsupported link type, or malformed frame is an error.
 The research core works on canonical values, not on Scapy packets, file handles,
-or Docker objects. `trafficlab.scapy_io` is the sole production PCAPNG boundary;
+or Docker objects. `trafficlab.common.scapy_io` is the sole production PCAPNG boundary;
 there is no selectable or fallback codec.
 
 Generated Ethernet frames use `capture.json`'s target MAC. Their peer MAC is

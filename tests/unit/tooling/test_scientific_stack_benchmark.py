@@ -120,9 +120,9 @@ def test_checked_benchmark_retains_five_fresh_samples_and_recomputes_gate() -> N
     source_files = evidence["environment"]["source_files"]
     assert set(source_files) == {
         "scripts/benchmark_scientific_stack.py",
-        "src/trafficlab/similarity/autocorrelation.py",
-        "src/trafficlab/similarity/multiscale.py",
-        "src/trafficlab/trace.py",
+        "src/trafficlab/common/trace.py",
+        "src/trafficlab/comparison/similarity/autocorrelation.py",
+        "src/trafficlab/comparison/similarity/multiscale.py",
     }
     for relative, identity in source_files.items():
         content_at_path = (_ROOT / relative).read_bytes()

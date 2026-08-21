@@ -62,47 +62,47 @@ _NUMPY_BEFORE_VALIDATION_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
     ),
 }
 _NUMPY_AFTER_LOOP_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
-    "src/trafficlab/models/common.py": ("MarkDistribution.from_trace",),
-    "src/trafficlab/models/markov_renewal.py": (
+    "src/trafficlab/generation/models/common.py": ("MarkDistribution.from_trace",),
+    "src/trafficlab/generation/models/markov_renewal.py": (
         "_fit_trace",
         "encode_markov_states",
         "transition_count_matrix",
     ),
-    "src/trafficlab/similarity/ks.py": ("_ks_statistic",),
-    "src/trafficlab/similarity/autocorrelation.py": ("_sample_autocorrelations",),
-    "src/trafficlab/similarity/multiscale.py": ("_binned_trace_features",),
+    "src/trafficlab/comparison/similarity/ks.py": ("_ks_statistic",),
+    "src/trafficlab/comparison/similarity/autocorrelation.py": ("_sample_autocorrelations",),
+    "src/trafficlab/comparison/similarity/multiscale.py": ("_binned_trace_features",),
 }
 _NUMPY_AFTER_VALIDATION_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
-    "src/trafficlab/trace.py": (
+    "src/trafficlab/common/trace.py": (
         "TrafficTrace.__post_init__",
         "validate_traffic_trace",
         "normalize_reference",
         "align_generated",
     ),
-    "src/trafficlab/models/common.py": (
+    "src/trafficlab/generation/models/common.py": (
         "_validate_frame_length",
         "GenerationResult.__post_init__",
         "validate_fit_inputs",
         "MarkDistribution.__post_init__",
         "make_generation_trace",
     ),
-    "src/trafficlab/models/markov_renewal.py": (
+    "src/trafficlab/generation/models/markov_renewal.py": (
         "type7_boundaries",
         "encode_markov_states",
         "transition_count_matrix",
     ),
-    "src/trafficlab/similarity/ks.py": ("_validate_diagnostic_quantile",),
-    "src/trafficlab/similarity/autocorrelation.py": (
+    "src/trafficlab/comparison/similarity/ks.py": ("_validate_diagnostic_quantile",),
+    "src/trafficlab/comparison/similarity/autocorrelation.py": (
         "_validated_lag",
         "_validated_lags",
         "_validate_lags_fit_samples",
     ),
-    "src/trafficlab/similarity/common.py": (
+    "src/trafficlab/comparison/similarity/common.py": (
         "validated_numeric_sample",
         "validated_numeric_array",
         "validated_weights",
     ),
-    "src/trafficlab/similarity/multiscale.py": ("_validated_cells", "_validated_widths_and_bin_counts"),
+    "src/trafficlab/comparison/similarity/multiscale.py": ("_validated_cells", "_validated_widths_and_bin_counts"),
 }
 
 _LOOP_AND_VALIDATION_DEFINITION = (

@@ -50,9 +50,9 @@ _IMPLEMENTATIONS = ("scalar", "vector")
 type _KernelValue = NDArray[np.generic] | tuple[NDArray[np.int64], NDArray[np.int64]]
 _SOURCE_PATHS = (
     "scripts/benchmark_scientific_stack.py",
-    "src/trafficlab/similarity/autocorrelation.py",
-    "src/trafficlab/similarity/multiscale.py",
-    "src/trafficlab/trace.py",
+    "src/trafficlab/common/trace.py",
+    "src/trafficlab/comparison/similarity/autocorrelation.py",
+    "src/trafficlab/comparison/similarity/multiscale.py",
 )
 _PARENT_COMMAND = (
     "scripts/run_bounded.sh",
