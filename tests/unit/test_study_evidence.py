@@ -31,7 +31,7 @@ from trafficlab.study_evidence import (
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 _STUDY_FIXTURE = REPOSITORY / "tests" / "fixtures" / "data" / "validation_study" / "candidate"
-_CURRENT_STUDY = REPOSITORY / "examples" / "validation_study" / "evidence" / "2026-08-20-scapy-production-r2"
+_CURRENT_STUDY = REPOSITORY / "examples" / "validation_study" / "evidence" / "2026-08-20-scapy-production-r3"
 _HISTORICAL_STUDIES = (
     "examples/validation_study/evidence/2026-08-20-stack-adoption-r6",
     "examples/validation_study/evidence/2026-08-18-research-fitness-r21",
