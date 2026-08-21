@@ -12,11 +12,11 @@ from trafficlab.common.errors import TrafficlabError
 
 if TYPE_CHECKING:
     from trafficlab.capture.stage import CaptureResult
-    from trafficlab.comparison.stage import ComparisonResult
+    from trafficlab.comparison.schema import ComparisonResult
     from trafficlab.fitting.stage import FitStageResult
     from trafficlab.generation.stage import GenerationStageResult
+    from trafficlab.pipeline.types import RunResult
     from trafficlab.preflight.stage import PreparedExperiment
-    from trafficlab.run import RunResult
 
 PrepareExperiment = Callable[[Path], "PreparedExperiment"]
 CompareExperiment = Callable[[Path], "ComparisonResult"]
@@ -137,7 +137,7 @@ def main(
 
         if command == "run":
             if run is None:
-                from trafficlab.run import run_experiment
+                from trafficlab.pipeline.stage import run_experiment
 
                 run = run_experiment
             try:

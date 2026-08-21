@@ -19,7 +19,7 @@ from tests.support.validation_study import (
 )
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.run import RunResult
+from trafficlab.pipeline.types import RunResult
 
 
 def write_legacy_prerequisite_root(

@@ -7,7 +7,11 @@ from typing import cast
 import pytest
 
 import trafficlab.artifacts.io as artifacts
-import trafficlab.comparison.stage as comparison
+import trafficlab.comparison.codec as comparison_codec
+import trafficlab.comparison.metrics as comparison_metrics
+import trafficlab.comparison.publication as comparison_publication
+import trafficlab.comparison.schema as comparison_schema
+import trafficlab.comparison.stage as comparison_stage
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts.io import append_run_log
 from trafficlab.artifacts.run_directory import create_run_directory
@@ -21,6 +25,7 @@ from trafficlab.common.trace import (
     TrafficTrace,
     parse_capture_metadata,
 )
+from trafficlab.comparison.similarity.common import SimilarityResult
 from trafficlab.comparison.stage import compare_experiment
 
 _REPOSITORY = Path(__file__).parents[3]
@@ -134,7 +139,7 @@ def test_compare_experiment_rejects_when_input_paths_change_after_evaluation(
     evaluated_sha256: dict[str, str] = {}
 
     def mutate_after_metadata_read(content: bytes, *, source: Path) -> CaptureMetadata:
-        evaluated_sha256["capture_json"] = comparison.sha256_bytes(content)
+        evaluated_sha256["capture_json"] = comparison_codec.sha256_bytes(content)
         source.write_bytes(b"changed metadata after read")
         return parse_capture_metadata(content, source=source)
 
@@ -145,12 +150,12 @@ def test_compare_experiment_rejects_when_input_paths_change_after_evaluation(
         source: Path,
     ) -> TrafficTrace:
         input_name = "reference_pcapng" if source.name == "reference.pcapng" else "generated_pcapng"
-        evaluated_sha256[input_name] = comparison.sha256_bytes(content)
+        evaluated_sha256[input_name] = comparison_codec.sha256_bytes(content)
         source.write_bytes(f"changed {source.name} after read".encode())
         return read_pcapng_bytes(content, metadata, source=source)
 
-    monkeypatch.setattr(comparison, "parse_capture_metadata", mutate_after_metadata_read)
-    monkeypatch.setattr(comparison, "read_pcapng_bytes", mutate_after_pcapng_read)
+    monkeypatch.setattr(comparison_stage, "parse_capture_metadata", mutate_after_metadata_read)
+    monkeypatch.setattr(comparison_stage, "read_pcapng_bytes", mutate_after_pcapng_read)
 
     with pytest.raises(TrafficlabError, match="capture.json changed during compare") as caught:
         compare_experiment(caller_path)
@@ -215,7 +220,7 @@ def test_publication_collision_preserves_the_winner_and_cleans_only_its_temp(
         destination_path.write_bytes(winner)
         real_link(source, destination)
 
-    monkeypatch.setattr(comparison.os, "link", collide)
+    monkeypatch.setattr(comparison_publication.os, "link", collide)
 
     with pytest.raises(TrafficlabError, match="already exists"):
         compare_experiment(caller_path)
@@ -243,8 +248,8 @@ def test_publication_failure_reports_temp_cleanup_failure_without_removing_unown
             raise OSError("injected temp cleanup failure")
         real_unlink(path, *args, **kwargs)
 
-    monkeypatch.setattr(comparison.os, "link", fail_link)
-    monkeypatch.setattr(comparison.os, "unlink", fail_temp_unlink)
+    monkeypatch.setattr(comparison_publication.os, "link", fail_link)
+    monkeypatch.setattr(comparison_publication.os, "unlink", fail_temp_unlink)
 
     with pytest.raises(TrafficlabError, match="injected link failure.*cleanup incomplete.*temp cleanup failure"):
         compare_experiment(caller_path)
@@ -274,7 +279,7 @@ def test_post_link_temp_cleanup_failure_is_attempted_once_and_preserves_a_replac
                 raise OSError("injected post-link cleanup failure")
         real_unlink(path, *args, **kwargs)
 
-    monkeypatch.setattr(comparison.os, "unlink", replace_after_failed_unlink)
+    monkeypatch.setattr(comparison_publication.os, "unlink", replace_after_failed_unlink)
 
     with pytest.raises(
         TrafficlabError,
@@ -285,7 +290,7 @@ def test_post_link_temp_cleanup_failure_is_attempted_once_and_preserves_a_replac
     assert len(unlink_attempts) == 1
     assert unlink_attempts[0].read_bytes() == replacement
     assert (
-        comparison.load_comparison_result(run_directory / "similarity.json").aggregate_score
+        comparison_codec.load_comparison_result(run_directory / "similarity.json").aggregate_score
         == _EXPECTED_AGGREGATE_SCORE
     )
     assert _log_records(run_directory)[-1]["failure_kind"] == "publication"
@@ -296,9 +301,9 @@ def test_valid_but_changed_rendered_result_is_rejected_before_temporary_publicat
 ) -> None:
     """Schema validation alone must not publish valid JSON that differs from the evaluated typed result."""
     caller_path, run_directory, _config = _prepare_run(valid_config_data, tmp_path)
-    real_render = comparison.render_comparison_result
+    real_render = comparison_codec.render_comparison_result
 
-    def render_different_result(result: comparison.ComparisonResult) -> bytes:
+    def render_different_result(result: comparison_schema.ComparisonResult) -> bytes:
         changed_document = result.as_dict()
         methods = cast(dict[str, object], changed_document["methods"])
         cast(dict[str, object], methods["autocorrelation"])["weight"] = 0.1
@@ -307,9 +312,9 @@ def test_valid_but_changed_rendered_result_is_rejected_before_temporary_publicat
             cast(float, method["score"]) * cast(float, method["weight"])
             for method in cast(dict[str, dict[str, object]], methods).values()
         )
-        return real_render(comparison.ComparisonResult.from_dict(changed_document))
+        return real_render(comparison_schema.ComparisonResult.from_dict(changed_document))
 
-    monkeypatch.setattr(comparison, "render_comparison_result", render_different_result)
+    monkeypatch.setattr(comparison_publication, "render_comparison_result", render_different_result)
 
     with pytest.raises(TrafficlabError, match="rendered similarity artifact.*canonical evaluated result"):
         compare_experiment(caller_path)
@@ -323,16 +328,16 @@ def test_numeric_type_tampering_is_rejected_by_canonical_temporary_validation(
 ) -> None:
     """Typed equality treats diagnostic integer 3 and float 3.0 alike, but their artifact bytes are not equivalent."""
     caller_path, run_directory, _config = _prepare_run(valid_config_data, tmp_path)
-    real_load = comparison.load_comparison_result
+    real_load = comparison_codec.load_comparison_result
 
-    def tamper_count_type(path: Path) -> comparison.ComparisonResult:
+    def tamper_count_type(path: Path) -> comparison_schema.ComparisonResult:
         content = path.read_bytes()
         changed = content.replace(b'"reference_count":5', b'"reference_count":5.0', 1)
         assert changed != content
         path.write_bytes(changed)
         return real_load(path)
 
-    monkeypatch.setattr(comparison, "load_comparison_result", tamper_count_type)
+    monkeypatch.setattr(comparison_publication, "load_comparison_result", tamper_count_type)
 
     with pytest.raises(TrafficlabError, match="reference_count must be an integer"):
         compare_experiment(caller_path)
@@ -349,10 +354,10 @@ def test_serialization_failure_before_temp_creation_is_reported_without_cleanup_
     unowned = run_directory / "unowned.txt"
     unowned.write_text("keep", encoding="utf-8")
 
-    def fail_render(_result: comparison.ComparisonResult) -> bytes:
+    def fail_render(_result: comparison_schema.ComparisonResult) -> bytes:
         raise ValueError("injected serialization failure")
 
-    monkeypatch.setattr(comparison, "render_comparison_result", fail_render)
+    monkeypatch.setattr(comparison_publication, "render_comparison_result", fail_render)
 
     with pytest.raises(TrafficlabError, match="injected serialization failure"):
         compare_experiment(caller_path)
@@ -365,7 +370,7 @@ def test_serialization_failure_before_temp_creation_is_reported_without_cleanup_
 def test_malformed_nested_method_cannot_render_or_publish(tmp_path: Path) -> None:
     """A model_copy-mutated diagnostic must fail before bytes or a destination become visible."""
     source = _EXAMPLE_DATA / "similarity.json"
-    valid = comparison.parse_comparison_result(source.read_bytes())
+    valid = comparison_codec.parse_comparison_result(source.read_bytes())
     original = valid.methods["frame_size_ks"]
     corrupted_diagnostics = original.diagnostics.model_copy(update={"reference_count": 0})
     corrupted_method = original.model_copy(update={"diagnostics": corrupted_diagnostics})
@@ -374,11 +379,11 @@ def test_malformed_nested_method_cannot_render_or_publish(tmp_path: Path) -> Non
     corrupted = valid.model_copy(update={"methods": methods})
 
     with pytest.raises(ValueError, match="reference_count"):
-        comparison.render_comparison_result(corrupted)
+        comparison_codec.render_comparison_result(corrupted)
 
     destination = tmp_path / "similarity.json"
     with pytest.raises(TrafficlabError, match="reference_count"):
-        comparison._publish_comparison_result(destination, corrupted)  # pyright: ignore[reportPrivateUsage]
+        comparison_publication.publish_comparison_result(destination, corrupted)  # pyright: ignore[reportPrivateUsage]
     assert not destination.exists()
     assert list(tmp_path.glob(".similarity.json.*.tmp")) == []
 
@@ -389,30 +394,30 @@ def test_parser_and_publication_reject_null_lineage_and_cross_key_diagnostics(tm
     missing_lineage = copy.deepcopy(document)
     missing_lineage["input_identities"] = None
     with pytest.raises(ValueError, match="input_identities"):
-        comparison.parse_comparison_result(json.dumps(missing_lineage).encode())
+        comparison_codec.parse_comparison_result(json.dumps(missing_lineage).encode())
 
     wrong_method = copy.deepcopy(document)
     wrong_method["methods"]["frame_size_ks"] = copy.deepcopy(wrong_method["methods"]["iat_ks"])
     with pytest.raises(ValueError, match="frame_size_ks.*wrong method discriminator"):
-        comparison.parse_comparison_result(json.dumps(wrong_method).encode())
+        comparison_codec.parse_comparison_result(json.dumps(wrong_method).encode())
 
     with pytest.raises(ValueError, match="comparison result"):
-        comparison.parse_comparison_result(b"[]")
+        comparison_codec.parse_comparison_result(b"[]")
 
     non_object_method = copy.deepcopy(document)
     non_object_method["methods"]["frame_size_ks"] = 1
     with pytest.raises(ValueError, match="frame_size_ks"):
-        comparison.parse_comparison_result(json.dumps(non_object_method).encode())
+        comparison_codec.parse_comparison_result(json.dumps(non_object_method).encode())
 
     invalid_window = copy.deepcopy(document)
     invalid_window["methods"]["frame_size_ks"]["diagnostics"]["observation_window_seconds"] = 10
     with pytest.raises(ValueError, match="finite positive float"):
-        comparison.parse_comparison_result(json.dumps(invalid_window).encode())
+        comparison_codec.parse_comparison_result(json.dumps(invalid_window).encode())
 
-    operational = comparison.ComparisonResult.model_validate(missing_lineage)
+    operational = comparison_schema.ComparisonResult.model_validate(missing_lineage)
     destination = tmp_path / "similarity.json"
     with pytest.raises(TrafficlabError, match="identities are required"):
-        comparison._publish_comparison_result(destination, operational)  # pyright: ignore[reportPrivateUsage]
+        comparison_publication.publish_comparison_result(destination, operational)  # pyright: ignore[reportPrivateUsage]
     assert not destination.exists()
 
 
@@ -420,33 +425,33 @@ def test_comparison_renderer_rejects_invalid_outer_methods_and_changed_roundtrip
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Renderer validation must reject invalid outer state and a parser result that changes identity."""
-    valid = comparison.parse_comparison_result((_EXAMPLE_DATA / "similarity.json").read_bytes())
+    valid = comparison_codec.parse_comparison_result((_EXAMPLE_DATA / "similarity.json").read_bytes())
     invalid = valid.model_copy(update={"methods": object()})
     with pytest.raises(ValueError, match="canonical methods object"):
-        comparison.render_comparison_result(invalid)
+        comparison_codec.render_comparison_result(invalid)
 
     assert valid.input_identities is not None
     identities = valid.input_identities.as_content_identities()
     identities["capture_json"] = ContentIdentity(size=1, sha256="0" * 64)
     changed = valid.with_input_identities(identities)
-    changed_published = comparison.PublishedComparisonResult.model_validate(changed.as_dict())
-    real_validate = comparison.PublishedComparisonResult.model_validate
+    changed_published = comparison_schema.PublishedComparisonResult.model_validate(changed.as_dict())
+    real_validate = comparison_schema.PublishedComparisonResult.model_validate
     calls = 0
 
     def changed_on_reparse(
-        _cls: type[comparison.PublishedComparisonResult], value: object
-    ) -> comparison.PublishedComparisonResult:
+        _cls: type[comparison_schema.PublishedComparisonResult], value: object
+    ) -> comparison_schema.PublishedComparisonResult:
         nonlocal calls
         calls += 1
         return changed_published if calls == 2 else real_validate(value)
 
     monkeypatch.setattr(
-        comparison.PublishedComparisonResult,
+        comparison_schema.PublishedComparisonResult,
         "model_validate",
         classmethod(changed_on_reparse),
     )
     with pytest.raises(ValueError, match="changed the validated comparison result"):
-        comparison.render_comparison_result(valid)
+        comparison_codec.render_comparison_result(valid)
 
 
 def test_input_failure_remains_primary_when_failure_logging_also_fails(
@@ -459,7 +464,7 @@ def test_input_failure_remains_primary_when_failure_logging_also_fails(
     def fail_log(_run_directory: Path, _record: object) -> None:
         raise TrafficlabError("injected logging failure", corrective_action="repair logging")
 
-    monkeypatch.setattr(comparison, "append_run_log", fail_log)
+    monkeypatch.setattr(comparison_stage, "append_run_log", fail_log)
 
     with pytest.raises(TrafficlabError, match="capture metadata.*additionally.*injected logging failure") as error:
         compare_experiment(caller_path)
@@ -473,10 +478,10 @@ def test_comparison_result_assembly_failure_is_translated_and_logged(
     """A valid experiment must not leak a raw ValueError when retained component diagnostics break result invariants."""
     caller_path, run_directory, _config = _prepare_run(valid_config_data, tmp_path)
 
-    def invalid_window_type(*_args: object) -> comparison.SimilarityResult:
-        return comparison.SimilarityResult(1.0, {"observation_window_seconds": 3})
+    def invalid_window_type(*_args: object) -> SimilarityResult:
+        return SimilarityResult(1.0, {"observation_window_seconds": 3})
 
-    monkeypatch.setattr(comparison, "frame_size_ks", invalid_window_type)
+    monkeypatch.setattr(comparison_metrics, "frame_size_ks", invalid_window_type)
 
     with pytest.raises(TrafficlabError, match="invalid comparison result") as error:
         compare_experiment(caller_path)
@@ -508,13 +513,13 @@ def test_success_logging_failure_is_reported_after_the_valid_artifact_is_publish
     def fail_log(_run_directory: Path, _record: object) -> None:
         raise TrafficlabError("injected logging failure", corrective_action="repair logging")
 
-    monkeypatch.setattr(comparison, "append_run_log", fail_log)
+    monkeypatch.setattr(comparison_stage, "append_run_log", fail_log)
 
     with pytest.raises(TrafficlabError, match="comparison result was published.*injected logging failure"):
         compare_experiment(caller_path)
 
     assert (
-        comparison.load_comparison_result(run_directory / "similarity.json").aggregate_score
+        comparison_codec.load_comparison_result(run_directory / "similarity.json").aggregate_score
         == _EXPECTED_AGGREGATE_SCORE
     )
 

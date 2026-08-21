@@ -45,13 +45,9 @@ from trafficlab.common.errors import FailureKind, FailureOutcome, TrafficlabErro
 from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.common.statistics import bootstrap_interval
 from trafficlab.common.trace import TrafficTrace, align_generated, normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import (
-    ComparisonResult,
-    compare_traces,
-    parse_comparison_result,
-    render_comparison_result,
-    similarity_settings_identity,
-)
+from trafficlab.comparison.codec import parse_comparison_result, render_comparison_result, similarity_settings_identity
+from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.population import rank_candidates
 from trafficlab.fitting.genetic.strategy import make_strategy_context

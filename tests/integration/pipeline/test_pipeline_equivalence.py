@@ -23,15 +23,17 @@ from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import ConfigurationPair, load_configuration_pair, render_effective_config
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import ComparisonResult, compare_experiment
+from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, load_checkpoint
 from trafficlab.fitting.genetic.evaluation import ValidatedEvaluationContext
 from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate
 from trafficlab.fitting.stage import FitDependencies, FitStageResult, fit_experiment, read_fit_input
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunDependencies
 from trafficlab.preflight.stage import PreflightReport, PreparedExperiment
-from trafficlab.run import RunDependencies, run_experiment
 
 pytestmark = pytest.mark.integration
 

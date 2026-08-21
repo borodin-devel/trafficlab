@@ -14,7 +14,9 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
 from trafficlab.common.errors import FailureOutcomeRecord
-from trafficlab.comparison.stage import ComparisonResult, MethodComparison, MethodDiagnostic, parse_comparison_result
+from trafficlab.comparison.codec import parse_comparison_result
+from trafficlab.comparison.diagnostics import MethodDiagnostic
+from trafficlab.comparison.schema import ComparisonResult, MethodComparison
 from trafficlab.generation.models.registry import FamilyPayload
 from trafficlab.study_evidence import StudyBootstrapInterval
 

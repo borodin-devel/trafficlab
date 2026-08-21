@@ -14,8 +14,8 @@ from trafficlab.cli import main
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.fitting.stage import FitStageResult
 from trafficlab.generation.stage import GenerationStageResult
+from trafficlab.pipeline.types import RunResult
 from trafficlab.preflight.stage import PreparedExperiment
-from trafficlab.run import RunResult
 
 
 def _fit_result(*, reused: bool = False) -> FitStageResult:
@@ -250,7 +250,7 @@ def test_cli_run_lazily_loads_production_boundary(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An uninjected run command must import the coordinator only after run is selected."""
-    import trafficlab.run as run_module
+    import trafficlab.pipeline.stage as run_module
 
     paths: list[Path] = []
 

@@ -11,7 +11,7 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel
 
-import trafficlab.comparison.stage as comparison
+import trafficlab.comparison.metrics as comparison
 from trafficlab.common.config import (
     FamilyName,
     FloatBounds,

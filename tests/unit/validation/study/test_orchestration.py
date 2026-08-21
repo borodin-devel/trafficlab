@@ -49,8 +49,9 @@ from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.genetic.types import TrialResult
 from trafficlab.fitting.stage import fit_experiment
 from trafficlab.generation.stage import generate_experiment
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunDependencies, RunResult
 from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
-from trafficlab.run import RunDependencies, RunResult, run_experiment
 
 STUDY_PHASE_CAPTURE_TAG = "trafficlab-validation-study-1:study-capture"
 

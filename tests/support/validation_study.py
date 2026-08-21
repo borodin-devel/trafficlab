@@ -32,7 +32,9 @@ from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.statistics import bootstrap_interval
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
-from trafficlab.comparison.stage import ComparisonResult, compare_experiment, compare_traces
+from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, encode_rng_state
 from trafficlab.fitting.genetic.strategy import make_strategy_context
 from trafficlab.fitting.genetic.types import (
@@ -46,8 +48,9 @@ from trafficlab.fitting.stage import fit_experiment
 from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
 from trafficlab.generation.models.registry import BestModel, get_family, make_best_model
 from trafficlab.generation.stage import generate_experiment
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunDependencies, RunResult
 from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
-from trafficlab.run import RunDependencies, RunResult, run_experiment
 
 HASH = "a" * 64
 

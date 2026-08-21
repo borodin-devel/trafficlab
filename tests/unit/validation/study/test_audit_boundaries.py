@@ -35,7 +35,8 @@ from trafficlab.common.config import ExperimentConfig, SimilarityConfig
 from trafficlab.common.config_io import load_configuration_pair
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, align_generated, normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import ComparisonResult, compare_traces
+from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState
 
 

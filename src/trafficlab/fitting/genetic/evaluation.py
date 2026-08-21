@@ -13,7 +13,8 @@ from pydantic import ValidationError
 from trafficlab.common.config import FamilyName, GenerationLimits, SimilarityConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import TrafficTrace
-from trafficlab.comparison.stage import ComparisonResult, compare_traces
+from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.coordinates import CandidateEvaluationError
 from trafficlab.fitting.genetic.types import (
     METHOD_ORDER,

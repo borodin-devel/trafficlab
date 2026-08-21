@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from trafficlab.common.errors import FailureOutcomeRecord
 from trafficlab.common.trace import CaptureMetadata
-from trafficlab.comparison.stage import PublishedComparisonResult
+from trafficlab.comparison.schema import PublishedComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointArtifact
 from trafficlab.generation.models.registry import BestModel
 from trafficlab.study_evidence import (

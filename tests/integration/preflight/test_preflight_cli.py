@@ -53,8 +53,8 @@ def _is_docker_adapter_import(name: str, fromlist: tuple[str, ...] | None) -> bo
 
 def _is_run_or_capture_import(name: str, fromlist: tuple[str, ...] | None) -> bool:
     return (
-        name in {"trafficlab.run", "trafficlab.capture.stage"}
-        or (name == "trafficlab" and "run" in (fromlist or ()))
+        name in {"trafficlab.pipeline.stage", "trafficlab.capture.stage"}
+        or (name == "trafficlab.pipeline" and "stage" in (fromlist or ()))
         or (name == "trafficlab.capture" and "stage" in (fromlist or ()))
     )
 
@@ -62,9 +62,9 @@ def _is_run_or_capture_import(name: str, fromlist: tuple[str, ...] | None) -> bo
 @pytest.mark.parametrize(
     ("name", "fromlist", "expected"),
     [
-        ("trafficlab.run", None, True),
+        ("trafficlab.pipeline.stage", None, True),
         ("trafficlab.capture.stage", None, True),
-        ("trafficlab", ("run",), True),
+        ("trafficlab.pipeline", ("stage",), True),
         ("trafficlab.capture", ("stage",), True),
         ("trafficlab.runner", None, False),
         ("trafficlab.capture.validation", None, False),
@@ -191,7 +191,7 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
     _clear_docker_adapter_import_state(monkeypatch)
     monkeypatch.delitem(sys.modules, "trafficlab.capture.stage", raising=False)
     monkeypatch.delattr(capture_package, "stage", raising=False)
-    monkeypatch.delitem(sys.modules, "trafficlab.run", raising=False)
+    monkeypatch.delitem(sys.modules, "trafficlab.pipeline.stage", raising=False)
     monkeypatch.delattr(trafficlab, "run", raising=False)
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
     assert not hasattr(capture_package, "docker_cli")
@@ -219,7 +219,7 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
     )
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
     assert not hasattr(capture_package, "docker_cli")
-    assert "trafficlab.run" not in sys.modules
+    assert "trafficlab.pipeline.stage" not in sys.modules
     assert "trafficlab.capture.stage" not in sys.modules
 
 
@@ -249,7 +249,7 @@ from trafficlab.preflight.stage import run_preflight
 direct = run_preflight(Path(sys.argv[1]), config_only=True)
 forbidden = sorted(
     name for name in sys.modules
-    if name in {"trafficlab.run", "trafficlab.capture.stage", "trafficlab.capture.docker_cli"}
+    if name in {"trafficlab.pipeline.stage", "trafficlab.capture.stage", "trafficlab.capture.docker_cli"}
     or name.startswith("trafficlab.capture.docker_cli.")
 )
 Path(sys.argv[2]).write_text(

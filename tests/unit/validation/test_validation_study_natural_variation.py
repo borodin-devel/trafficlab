@@ -16,7 +16,7 @@ from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDA
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_configuration_pair
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
-from trafficlab.comparison.stage import ComparisonResult
+from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState
 from trafficlab.generation.models.registry import BestModel
 

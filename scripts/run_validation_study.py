@@ -46,15 +46,15 @@ from trafficlab.common.trace import (
     normalize_reference,
     parse_capture_metadata,
 )
-from trafficlab.comparison.stage import (
-    ComparisonResult,
-    MultiscaleDiagnostic,
-    compare_traces,
+from trafficlab.comparison.codec import (
     parse_comparison_result,
     render_comparison_result,
     sha256_bytes,
     similarity_settings_identity,
 )
+from trafficlab.comparison.diagnostics import MultiscaleDiagnostic
+from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.evaluation import evaluate_final, validate_evaluation_context
 from trafficlab.fitting.genetic.strategy import StrategyContext, make_strategy_context
@@ -66,8 +66,10 @@ from trafficlab.generation.models.registry import (
     render_best_model,
     runtime_fitted_model,
 )
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunResult
+from trafficlab.pipeline.validation import validate_final_artifacts
 from trafficlab.preflight.stage import open_or_prepare_experiment
-from trafficlab.run import RunResult, _validate_final_artifacts, run_experiment  # pyright: ignore[reportPrivateUsage]
 from trafficlab.study_evidence import (
     ValidationStudyPrerequisite,
     publish_accepted_bundle,
@@ -2010,7 +2012,7 @@ def _load_run_evidence(spec: StudyRunSpec, result: RunResult) -> _LoadedRunEvide
         prepared.run_directory == spec.run_directory,
         "effective run directory must equal the selected study run directory",
     )
-    _validate_final_artifacts(
+    validate_final_artifacts(
         prepared,
         result.capture,
         result.fit,

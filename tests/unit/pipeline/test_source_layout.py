@@ -20,7 +20,7 @@ EXPECTED_MODULES = {
     "capture": {"cleanup.py", "compose.py", "docker_cli.py", "policy.py", "stage.py", "validation.py"},
     "fitting": {"stage.py"},
     "generation": {"stage.py"},
-    "comparison": {"stage.py"},
+    "comparison": {"codec.py", "diagnostics.py", "metrics.py", "publication.py", "schema.py", "stage.py"},
 }
 
 EXPECTED_NESTED_PACKAGES = {
@@ -49,6 +49,7 @@ EXPECTED_NESTED_PACKAGES = {
         "ks.py",
         "multiscale.py",
     },
+    "pipeline": {"__init__.py", "stage.py", "types.py", "validation.py"},
 }
 
 FORBIDDEN_ROOT_MODULES = {
@@ -70,6 +71,7 @@ FORBIDDEN_ROOT_MODULES = {
     "scientific_schema.py",
     "statistics.py",
     "trace.py",
+    "run.py",
 }
 
 FORBIDDEN_ROOT_PACKAGES = {"genetic", "models", "similarity"}

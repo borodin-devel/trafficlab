@@ -14,7 +14,7 @@ import pytest
 import trafficlab.capture.stage as capture_module
 import trafficlab.fitting.genetic.strategy as strategy_module
 import trafficlab.generation.stage as generation_module
-import trafficlab.run as run_module
+import trafficlab.pipeline.stage as run_module
 from tests.docker.support import (
     assert_tracked_projects_clean,
     capture_log,
@@ -33,14 +33,14 @@ from trafficlab.common.config_io import load_experiment
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import Direction, normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import (
-    ComparisonResult,
-    compare_experiment,
+from trafficlab.comparison.codec import (
     load_comparison_result,
     render_comparison_result,
     sha256_bytes,
     similarity_settings_sha256,
 )
+from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.genetic.checkpoint import load_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.strategy import make_strategy_context
 from trafficlab.fitting.genetic.types import TrialResult
@@ -48,8 +48,9 @@ from trafficlab.fitting.stage import FitStageResult, fit_experiment
 from trafficlab.generation.models.common import FittedModel, GenerationResult, ModelFamily
 from trafficlab.generation.models.registry import load_best_model, render_best_model
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunDependencies, RunResult
 from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment, run_preflight
-from trafficlab.run import RunDependencies, RunResult, run_experiment
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
 

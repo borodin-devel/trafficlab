@@ -33,7 +33,8 @@ from trafficlab.common.trace import (
     normalize_reference,
     parse_capture_metadata,
 )
-from trafficlab.comparison.stage import compare_traces, render_comparison_result, similarity_settings_identity
+from trafficlab.comparison.codec import render_comparison_result, similarity_settings_identity
+from trafficlab.comparison.metrics import compare_traces
 from trafficlab.fitting.genetic.strategy import run_strategy
 from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.generation.stage import reproduce_generated_pcapng

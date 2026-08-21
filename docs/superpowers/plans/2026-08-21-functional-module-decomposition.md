@@ -135,38 +135,38 @@ NumPy, SciPy, Git, Docker Compose.
   validators from `pipeline.validation`, and `run_experiment` from
   `pipeline.stage`.
 
-- [ ] **[STEP-7-735d4010] Snapshot comparison/pipeline nodes and write RED path tests**
+- [x] **[STEP-7-735d4010] Snapshot comparison/pipeline nodes and write RED path tests**
 
   Record normalized node suffixes for both current test files. Extend the
   source-layout contract with every new comparison/pipeline file and absence of
   `run.py`; run it and require RED on the old layout.
 
-- [ ] **[STEP-8-66b12c71] Extract comparison contracts, codec, metrics, publication, and stage**
+- [x] **[STEP-8-66b12c71] Extract comparison contracts, codec, metrics, publication, and stage**
 
   Move the exact symbol groups from the spec, order dependencies as
   `diagnostics -> schema -> codec/metrics -> publication -> stage`, update all
   callers, and leave no moved body in `comparison/stage.py`.
 
-- [ ] **[STEP-9-a5aa6137] Extract pipeline types, validation, and coordinator**
+- [x] **[STEP-9-a5aa6137] Extract pipeline types, validation, and coordinator**
 
   Move `RunResult`/`RunDependencies`, every immediate/final validator, and the
   coordinator into the three direct owners. Update CLI lazy-import guards to
   classify `trafficlab.pipeline.stage`, not the deleted `trafficlab.run`.
 
-- [ ] **[STEP-10-d3c39fd2] Split tests and prove inventory equivalence**
+- [x] **[STEP-10-d3c39fd2] Split tests and prove inventory equivalence**
 
   Split tests by the paths in the spec, migrate monkeypatch strings to direct
   owners, and require normalized comparison and pipeline node inventories to
   equal their snapshots exactly.
 
-- [ ] **[STEP-11-9a38fe74] Verify comparison and pipeline behavior**
+- [x] **[STEP-11-9a38fe74] Verify comparison and pipeline behavior**
 
   Run new comparison/pipeline unit directories, comparison and pipeline
   integration directories, CLI tests, schema generation check, Ruff, and strict
   Pyright. Require no old comparison-stage private import outside historical
   docs.
 
-- [ ] **[STEP-12-fd755bc7] Review and commit comparison/pipeline ownership**
+- [x] **[STEP-12-fd755bc7] Review and commit comparison/pipeline ownership**
 
   Resolve independent review findings, repeat Step 11, and commit:
 

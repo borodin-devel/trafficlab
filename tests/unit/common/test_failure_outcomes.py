@@ -13,8 +13,8 @@ import trafficlab.capture.stage as capture
 import trafficlab.comparison.stage as comparison
 import trafficlab.fitting.stage as fitting
 import trafficlab.generation.stage as generation
+import trafficlab.pipeline.stage as run
 import trafficlab.preflight.stage as preflight
-import trafficlab.run as run
 from tests.fixtures.paths import DIAGNOSTIC_FIXTURE_ROOT
 from trafficlab.capture.policy import CaptureOutcome, FailureDetail, FailureKind
 from trafficlab.common.config import ExperimentConfig

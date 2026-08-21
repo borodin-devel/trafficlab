@@ -8,12 +8,14 @@ from typing import cast
 import pytest
 
 import trafficlab.artifacts.io as artifacts
-import trafficlab.comparison.stage as comparison
+import trafficlab.comparison.codec as comparison_codec
+import trafficlab.comparison.publication as comparison_publication
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment, render_effective_config
-from trafficlab.comparison.stage import compare_experiment, load_comparison_result
+from trafficlab.comparison.codec import load_comparison_result
+from trafficlab.comparison.stage import compare_experiment
 
 pytestmark = pytest.mark.integration
 
@@ -69,8 +71,8 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
         linked.append((source_path, destination_path))
         real_link(source, destination)
 
-    monkeypatch.setattr(comparison.os, "fsync", observed_fsync)
-    monkeypatch.setattr(comparison.os, "link", observed_link)
+    monkeypatch.setattr(comparison_publication.os, "fsync", observed_fsync)
+    monkeypatch.setattr(comparison_publication.os, "link", observed_link)
     monkeypatch.setattr(artifacts.os, "fsync", observed_fsync)
 
     result = compare_experiment(caller_path)
@@ -87,7 +89,7 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
         "capture_json": hashlib.sha256(capture_bytes).hexdigest(),
         "generated_pcapng": hashlib.sha256((run_directory / "generated.pcapng").read_bytes()).hexdigest(),
         "reference_pcapng": hashlib.sha256((run_directory / "reference.pcapng").read_bytes()).hexdigest(),
-        "similarity_settings": comparison.similarity_settings_sha256(config.similarity),
+        "similarity_settings": comparison_codec.similarity_settings_sha256(config.similarity),
     }
     assert linked == [(linked[0][0], run_directory / "similarity.json")]
     assert not linked[0][0].exists()

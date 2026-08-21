@@ -18,7 +18,9 @@ from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng
 from trafficlab.common.trace import Direction, TraceEvent, align_generated, load_capture_metadata, normalize_reference
-from trafficlab.comparison.stage import compare_experiment, compare_traces, load_comparison_result
+from trafficlab.comparison.codec import load_comparison_result
+from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.stage import compare_experiment
 
 pytestmark = pytest.mark.integration
 
@@ -84,8 +86,8 @@ def _is_docker_adapter_import(name: str, fromlist: tuple[str, ...] | None) -> bo
 
 def _is_run_or_capture_import(name: str, fromlist: tuple[str, ...] | None) -> bool:
     return (
-        name in {"trafficlab.run", "trafficlab.capture.stage"}
-        or (name == "trafficlab" and "run" in (fromlist or ()))
+        name in {"trafficlab.pipeline.stage", "trafficlab.capture.stage"}
+        or (name == "trafficlab.pipeline" and "stage" in (fromlist or ()))
         or (name == "trafficlab.capture" and "stage" in (fromlist or ()))
     )
 
@@ -93,9 +95,9 @@ def _is_run_or_capture_import(name: str, fromlist: tuple[str, ...] | None) -> bo
 @pytest.mark.parametrize(
     ("name", "fromlist", "expected"),
     [
-        ("trafficlab.run", None, True),
+        ("trafficlab.pipeline.stage", None, True),
         ("trafficlab.capture.stage", None, True),
-        ("trafficlab", ("run",), True),
+        ("trafficlab.pipeline", ("stage",), True),
         ("trafficlab.capture", ("stage",), True),
         ("trafficlab.runner", None, False),
         ("trafficlab.capture.validation", None, False),
@@ -288,7 +290,7 @@ def test_in_process_compare_matches_api_without_internal_processes(
     _clear_docker_adapter_import_state(monkeypatch)
     monkeypatch.delitem(sys.modules, "trafficlab.capture.stage", raising=False)
     monkeypatch.delattr(capture_package, "stage", raising=False)
-    monkeypatch.delitem(sys.modules, "trafficlab.run", raising=False)
+    monkeypatch.delitem(sys.modules, "trafficlab.pipeline.stage", raising=False)
     monkeypatch.delattr(trafficlab, "run", raising=False)
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
     assert not hasattr(capture_package, "docker_cli")
@@ -308,7 +310,7 @@ def test_in_process_compare_matches_api_without_internal_processes(
     assert load_comparison_result(cli_run / "similarity.json") == expected
     assert (cli_run / "similarity.json").read_bytes() == (_EXAMPLE_DATA / "similarity.json").read_bytes()
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
-    assert "trafficlab.run" not in sys.modules
+    assert "trafficlab.pipeline.stage" not in sys.modules
     assert "trafficlab.capture.stage" not in sys.modules
     assert not hasattr(capture_package, "docker_cli")
 
@@ -334,7 +336,7 @@ from trafficlab.cli import main
 status = main(["compare", sys.argv[1]])
 forbidden = sorted(
     name for name in sys.modules
-    if name in {"trafficlab.run", "trafficlab.capture.stage", "trafficlab.capture.docker_cli"}
+    if name in {"trafficlab.pipeline.stage", "trafficlab.capture.stage", "trafficlab.capture.docker_cli"}
     or name.startswith("trafficlab.capture.docker_cli.")
 )
 Path(sys.argv[2]).write_text(json.dumps({"forbidden": forbidden, "status": status}), encoding="utf-8")

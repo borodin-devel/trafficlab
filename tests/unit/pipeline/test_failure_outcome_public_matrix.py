@@ -12,7 +12,8 @@ from typing import Any, Literal, cast
 import pytest
 
 import trafficlab.capture.stage as capture
-import trafficlab.comparison.stage as comparison
+import trafficlab.comparison.publication as comparison
+import trafficlab.comparison.stage as comparison_stage
 import trafficlab.fitting.genetic.strategy as strategy_module
 import trafficlab.fitting.stage as fitting
 import trafficlab.generation.stage as generation
@@ -1779,7 +1780,7 @@ def _run_comparison_boundary_case(
     def append(_directory: Path, record: dict[str, object]) -> None:
         records.append(record)
 
-    monkeypatch.setattr(comparison, "append_run_log", append)
+    monkeypatch.setattr(comparison_stage, "append_run_log", append)
     if case.scenario == "foreign_generated":
         generated_path = run_directory / "generated.pcapng"
         foreign_generated = (run_directory / "reference.pcapng").read_bytes()
@@ -1798,7 +1799,7 @@ def _run_comparison_boundary_case(
     log_before = _log_snapshot(run_directory)
 
     with pytest.raises(TrafficlabError) as caught:
-        comparison.compare_experiment(experiment_path)
+        comparison_stage.compare_experiment(experiment_path)
 
     assert tuple(caught.value.failure_outcomes) == case.outcomes
     detail = (

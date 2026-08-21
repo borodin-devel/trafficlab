@@ -15,18 +15,21 @@ from typing import Any, cast
 import pytest
 import tomli_w
 
-import trafficlab.run as run_module
+import trafficlab.pipeline.stage as run_module
 from trafficlab.artifacts.capture import load_or_recover_capture_pair
 from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.comparison.stage import ComparisonResult, compare_experiment, sha256_bytes, similarity_settings_sha256
+from trafficlab.comparison.codec import sha256_bytes, similarity_settings_sha256
+from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.stage import FitStageResult, fit_experiment
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunDependencies, RunResult
 from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
-from trafficlab.run import RunDependencies, RunResult, run_experiment
 
 pytestmark = pytest.mark.integration
 

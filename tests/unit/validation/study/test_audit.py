@@ -52,12 +52,14 @@ from trafficlab.common.config_io import load_configuration_pair, render_effectiv
 from trafficlab.common.errors import FailureOutcome, TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import TraceEvent, TrafficTrace, normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import compare_experiment, parse_comparison_result
+from trafficlab.comparison.codec import parse_comparison_result
+from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.stage import fit_experiment
 from trafficlab.generation.models.registry import load_best_model, rebuild_best_model, render_best_model
 from trafficlab.generation.stage import generate_experiment
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunDependencies
 from trafficlab.preflight.stage import open_or_prepare_experiment
-from trafficlab.run import RunDependencies, run_experiment
 
 VALIDATION_STUDY_LOCAL_EXCLUDE_LOCK = Path("/tmp") / (
     f"trafficlab-validation-study-{hashlib.sha256(str(ROOT).encode('utf-8')).hexdigest()}.exclude.lock"

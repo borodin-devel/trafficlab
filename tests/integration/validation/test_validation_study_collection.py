@@ -27,8 +27,9 @@ from trafficlab.common.trace import TraceEvent, TrafficTrace, parse_capture_meta
 from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.stage import fit_experiment
 from trafficlab.generation.stage import generate_experiment
+from trafficlab.pipeline.stage import run_experiment
+from trafficlab.pipeline.types import RunDependencies, RunResult
 from trafficlab.preflight.stage import PreparedExperiment, open_or_prepare_experiment
-from trafficlab.run import RunDependencies, RunResult, run_experiment
 
 pytestmark = pytest.mark.integration
 

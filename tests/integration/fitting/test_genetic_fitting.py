@@ -24,7 +24,8 @@ from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import compare_experiment, load_comparison_result
+from trafficlab.comparison.codec import load_comparison_result
+from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, load_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.coordinates import GeneticRng
 from trafficlab.fitting.genetic.evaluation import ValidatedEvaluationContext

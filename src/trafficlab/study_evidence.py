@@ -28,7 +28,7 @@ from pydantic import (
 )
 
 from trafficlab.common.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
-from trafficlab.comparison.stage import (
+from trafficlab.comparison.diagnostics import (
     AutocorrelationDiagnostic,
     FrameSizeDiagnostic,
     IatDiagnostic,

@@ -43,12 +43,8 @@ from trafficlab.common.config_io import (
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import align_generated, normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import (
-    compare_traces,
-    parse_comparison_result,
-    render_comparison_result,
-    similarity_settings_identity,
-)
+from trafficlab.comparison.codec import parse_comparison_result, render_comparison_result, similarity_settings_identity
+from trafficlab.comparison.metrics import compare_traces
 from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.strategy import make_strategy_context
 from trafficlab.generation.models.common import FamilyBounds, Genes

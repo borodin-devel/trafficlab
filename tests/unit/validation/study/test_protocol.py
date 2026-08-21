@@ -46,7 +46,8 @@ from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import GenerationLimits, SimilarityConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace, align_generated, normalize_reference
-from trafficlab.comparison.stage import ComparisonResult, compare_traces
+from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.evaluation import (
     ValidatedEvaluationContext,
     evaluate_candidate,

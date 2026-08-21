@@ -1,43 +1,33 @@
-"""Explicit in-process orchestration for one complete Trafficlab experiment."""
+"""Full pipeline validation ownership."""
 
 from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal
 
-from trafficlab.artifacts.io import FileIdentity, append_run_log, file_identity
-from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
+from trafficlab.artifacts.io import FileIdentity, file_identity
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes, require_compatible
 from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.errors import (
-    EvidenceState,
     TrafficlabError,
-    append_failure_outcome,
     attach_failure_outcome,
-    failure_outcome_from_error,
 )
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.common.trace import TrafficTrace, normalize_reference, parse_capture_metadata
-from trafficlab.comparison.stage import (
-    ComparisonResult,
-    compare_experiment,
-    parse_comparison_result,
-    render_comparison_result,
-    similarity_settings_identity,
-)
+from trafficlab.comparison.codec import parse_comparison_result, render_comparison_result, similarity_settings_identity
+from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.fitting.genetic.types import Candidate, TrialResult
-from trafficlab.fitting.stage import FitStageResult, fit_experiment
+from trafficlab.fitting.stage import FitStageResult
 from trafficlab.generation.models.registry import BestModel, load_best_model, render_best_model
-from trafficlab.generation.stage import GenerationStageResult, generate_experiment
-from trafficlab.preflight.stage import PreparedExperiment, run_preflight
+from trafficlab.generation.stage import GenerationStageResult
+from trafficlab.preflight.stage import PreparedExperiment
 
 _SUCCESSFUL_RUN_NAMES = frozenset(
     {
@@ -54,42 +44,6 @@ _SUCCESSFUL_RUN_NAMES = frozenset(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class RunResult:
-    """Validated results returned by the five complete-experiment stages."""
-
-    experiment_path: Path
-    run_directory: Path
-    capture: CaptureResult
-    fit: FitStageResult
-    generation: GenerationStageResult
-    comparison: ComparisonResult
-
-
-@dataclass(frozen=True, slots=True)
-class RunDependencies:
-    """The five concrete stage boundaries used by the explicit coordinator."""
-
-    preflight: Callable[[Path], PreparedExperiment]
-    capture: Callable[[Path, PreparedExperiment], CaptureResult]
-    fit: Callable[[Path], FitStageResult]
-    generate: Callable[[Path], GenerationStageResult]
-    compare: Callable[[Path], ComparisonResult]
-
-    @classmethod
-    def production(cls) -> Self:
-        """Return the ordinary in-process stage functions with one full preflight."""
-        return cls(_full_preflight, _capture_prepared, fit_experiment, generate_experiment, compare_experiment)
-
-
-def _full_preflight(path: Path) -> PreparedExperiment:
-    return run_preflight(path, config_only=False)
-
-
-def _capture_prepared(path: Path, prepared: PreparedExperiment) -> CaptureResult:
-    return capture_prepared_experiment(path, prepared)
-
-
 def _invalid_stage_result(stage: str, detail: str) -> TrafficlabError:
     return TrafficlabError(
         f"{stage} returned invalid result: {detail}",
@@ -104,7 +58,7 @@ def _read_stage_bytes(path: Path, *, stage: str, kind: str) -> bytes:
         raise _invalid_stage_result(stage, f"could not read {kind} {path}: {error}") from error
 
 
-def _validate_preflight_result(
+def validate_preflight_result(
     experiment_path: Path,
     prepared: PreparedExperiment,
 ) -> None:
@@ -116,7 +70,7 @@ def _validate_preflight_result(
         raise _invalid_stage_result("preflight", "run directory does not match the effective configuration")
 
 
-def _validate_capture_result(result: CaptureResult, prepared: PreparedExperiment) -> None:
+def validate_capture_result(result: CaptureResult, prepared: PreparedExperiment) -> None:
     if type(result) is not CaptureResult:
         raise _invalid_stage_result("capture", "expected an exact CaptureResult")
     if result.run_directory != prepared.run_directory:
@@ -127,7 +81,7 @@ def _validate_capture_result(result: CaptureResult, prepared: PreparedExperiment
         raise _invalid_stage_result("capture", "target_status is not zero")
 
 
-def _validate_fit_result(
+def validate_fit_result(
     result: FitStageResult,
     experiment_path: Path,
     prepared: PreparedExperiment,
@@ -206,7 +160,7 @@ def _validate_fit_result(
     )
 
 
-def _validate_generation_result(
+def validate_generation_result(
     result: GenerationStageResult,
     prepared: PreparedExperiment,
     observation_window_seconds: float,
@@ -242,7 +196,7 @@ def _validate_generation_result(
     return identify_bytes(generated_content)
 
 
-def _validate_comparison_result(
+def validate_comparison_result(
     result: ComparisonResult,
     observation_window_seconds: float,
     expected_input_identities: dict[str, ContentIdentity],
@@ -263,10 +217,11 @@ def _validate_comparison_result(
 
 
 type _FinalOwner = Literal["preflight", "capture", "fit", "generate", "compare", "run"]
+
 type _FinalIdentities = dict[Path, tuple[_FinalOwner, FileIdentity]]
 
 
-class _FinalArtifactError(TrafficlabError):
+class FinalArtifactError(TrafficlabError):
     """Final validation failure carrying its artifact-owning stage."""
 
     owner: _FinalOwner
@@ -295,8 +250,8 @@ def _final_artifact_error(
     detail: str,
     *,
     originating_error: TrafficlabError | None = None,
-) -> _FinalArtifactError:
-    return _FinalArtifactError(owner, detail, originating_error=originating_error)
+) -> FinalArtifactError:
+    return FinalArtifactError(owner, detail, originating_error=originating_error)
 
 
 def _read_final_artifact(path: Path, *, owner: _FinalOwner, identities: _FinalIdentities) -> bytes:
@@ -351,7 +306,7 @@ def _validate_final_run_log(content: bytes) -> None:
         raise _final_artifact_error("preflight", f"run.log is invalid: {error}") from error
 
 
-def _validate_final_artifacts(
+def validate_final_artifacts(
     prepared: PreparedExperiment,
     capture: CaptureResult,
     fit: FitStageResult,
@@ -501,138 +456,3 @@ def _validate_final_artifacts(
         if current_identity != identity:
             raise _final_artifact_error(owner, f"{path.name} changed during final validation")
     _validate_successful_run_tree(run_directory)
-
-
-def _append_run_failure(
-    run_directory: Path,
-    primary: TrafficlabError,
-    *,
-    failed_stage: str,
-    completed_stages: tuple[str, ...],
-) -> None:
-    outcome_by_stage: dict[str, tuple[str, str, str, EvidenceState]] = {
-        "capture": ("capture_malformed", "capture", "capture pair", "diagnostic_only"),
-        "fit": ("artifact_corrupt", "fit", "fit inputs", "preserved"),
-        "generate": ("generation_incomplete", "generate", "generated.pcapng", "not_published"),
-        "compare": ("metric_infeasible", "compare", "similarity.json", "not_published"),
-        "preflight": ("configuration_invalid", "preflight", "run evidence", "not_published"),
-        "run": ("artifact_corrupt", "publication", "run evidence", "preserved"),
-    }
-    outcome = primary.failure_outcome
-    if outcome is None:
-        kind, canonical_stage, evidence, evidence_state = outcome_by_stage[failed_stage]
-        outcome = failure_outcome_from_error(
-            primary,
-            kind=kind,
-            stage=canonical_stage,
-            affected_evidence=evidence,
-            evidence_state=evidence_state,
-        )
-        primary.failure_outcomes = (outcome,)
-        primary.failure_outcome = outcome
-    secondary_outcomes = primary.failure_outcomes[1:]
-    try:
-        record: dict[str, object] = {
-            "completed_stages": list(completed_stages),
-            "corrective_action": primary.corrective_action,
-            "detail": str(primary),
-            "event": "run_failed",
-            "failed_stage": failed_stage,
-            "failure_outcome": outcome.as_dict(),
-            "stage": "run",
-        }
-        if secondary_outcomes:
-            record["secondary_outcomes"] = [item.as_dict() for item in secondary_outcomes]
-        append_run_log(run_directory, record)
-    except TrafficlabError as logging_error:
-        append_failure_outcome(
-            primary,
-            failure_outcome_from_error(
-                logging_error,
-                kind="publication_failed",
-                stage=outcome.stage,
-                affected_evidence="run.log",
-                evidence_state="not_published",
-                authority="secondary",
-            ),
-        )
-        primary.args = (f"{primary}; additionally could not append run failure to run.log: {logging_error}",)
-
-
-def run_experiment(
-    experiment_path: Path,
-    *,
-    dependencies: RunDependencies | None = None,
-) -> RunResult:
-    """Run and immediately validate preflight, capture, fit, generate, and compare."""
-    active = dependencies or RunDependencies.production()
-    prepared = active.preflight(experiment_path)
-    _validate_preflight_result(experiment_path, prepared)
-
-    current_stage = "capture"
-    completed_stages: tuple[str, ...] = ("preflight",)
-    try:
-        capture = active.capture(experiment_path, prepared)
-        _validate_capture_result(capture, prepared)
-        completed_stages = (*completed_stages, "capture")
-
-        current_stage = "fit"
-        fit = active.fit(experiment_path)
-        observation_window_seconds, capture_content, expected_input_identities = _validate_fit_result(
-            fit, experiment_path, prepared
-        )
-        completed_stages = (*completed_stages, "fit")
-
-        current_stage = "generate"
-        generation = active.generate(experiment_path)
-        expected_input_identities["generated_pcapng"] = _validate_generation_result(
-            generation,
-            prepared,
-            observation_window_seconds,
-            capture_content,
-        )
-        completed_stages = (*completed_stages, "generate")
-
-        current_stage = "compare"
-        comparison = active.compare(experiment_path)
-        _validate_comparison_result(comparison, observation_window_seconds, expected_input_identities)
-        completed_stages = (*completed_stages, "compare")
-        current_stage = "run"
-        _validate_final_artifacts(prepared, capture, fit, generation, comparison)
-
-        try:
-            append_run_log(
-                prepared.run_directory,
-                {
-                    "aggregate_score": comparison.aggregate_score,
-                    "event": "run_completed",
-                    "family": fit.outcome.winner.family,
-                    "fitness": fit.outcome.winner.fitness,
-                    "generated_packet_count": len(generation.trace),
-                    "reference_packet_count": capture.packet_count,
-                    "run_directory": str(prepared.run_directory),
-                    "stage": "run",
-                },
-            )
-        except TrafficlabError as logging_error:
-            raise attach_failure_outcome(
-                TrafficlabError(
-                    f"final run completion logging failed: {logging_error}",
-                    corrective_action=logging_error.corrective_action,
-                ),
-                kind="publication_failed",
-                stage="publication",
-                affected_evidence="run.log",
-                evidence_state="preserved",
-            ) from logging_error
-    except TrafficlabError as error:
-        failed_stage = error.owner if isinstance(error, _FinalArtifactError) else current_stage
-        _append_run_failure(
-            prepared.run_directory,
-            error,
-            failed_stage=failed_stage,
-            completed_stages=completed_stages,
-        )
-        raise
-
-    return RunResult(experiment_path, prepared.run_directory, capture, fit, generation, comparison)
