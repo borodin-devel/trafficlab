@@ -18,7 +18,7 @@ from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.diagnostics import MethodDiagnostic
 from trafficlab.comparison.schema import ComparisonResult, MethodComparison
 from trafficlab.generation.models.fitted_schema import FamilyPayload
-from trafficlab.study_evidence import StudyBootstrapInterval
+from trafficlab.study_evidence.report import StudyBootstrapInterval
 
 _ROOT = Path(__file__).parents[3]
 _SIMILARITY_FIXTURE = Path(__file__).parents[3] / "examples" / "data" / "similarity.json"

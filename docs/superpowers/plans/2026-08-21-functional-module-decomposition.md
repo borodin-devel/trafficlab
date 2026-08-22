@@ -438,33 +438,33 @@ NumPy, SciPy, Git, Docker Compose.
 - Produces protocol/identity schemas, report schemas, and audited publication
   from separate direct owners without changing wire bytes.
 
-- [ ] **[STEP-43-da9b25a0] Snapshot study-evidence nodes and write RED owner tests**
+- [x] **[STEP-43-da9b25a0] Snapshot study-evidence nodes and write RED owner tests**
 
   Record normalized study-evidence tests and require the three implementation
   modules while rejecting `study_evidence.py`.
 
-- [ ] **[STEP-44-041f0c6a] Extract protocol and report schema symbols**
+- [x] **[STEP-44-041f0c6a] Extract protocol and report schema symbols**
 
   Move strict aliases and environment/prerequisite/lineage/manifest/lifecycle/
   protocol records to `protocol.py`; move score/statistics/report records to
   `report.py`; preserve exact Pydantic validation order.
 
-- [ ] **[STEP-45-78e5089b] Extract accepted-bundle publication**
+- [x] **[STEP-45-78e5089b] Extract accepted-bundle publication**
 
   Move publication errors and filesystem operations to `publication.py`, import
   only the audit callable contract, and update all callers to direct owners.
 
-- [ ] **[STEP-46-f10223a8] Rehome direct tests and verify inventory**
+- [x] **[STEP-46-f10223a8] Rehome direct tests and verify inventory**
 
   Split schema/report/publication tests when it improves ownership, reuse the
   existing accepted-bundle builders, and prove normalized node equivalence.
 
-- [ ] **[STEP-47-a8a5d431] Verify study schemas and immutable evidence**
+- [x] **[STEP-47-a8a5d431] Verify study schemas and immutable evidence**
 
   Run study evidence/audit/schema tests, artifact schema generator/check,
   historical byte-identity tests, Ruff, strict Pyright, and direct coverage.
 
-- [ ] **[STEP-48-a75d7b8e] Review and commit study-evidence ownership**
+- [x] **[STEP-48-a75d7b8e] Review and commit study-evidence ownership**
 
   Resolve independent review findings and commit:
 

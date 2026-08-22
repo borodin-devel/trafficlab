@@ -77,11 +77,8 @@ from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunResult
 from trafficlab.pipeline.validation import validate_final_artifacts
 from trafficlab.preflight.stage import open_or_prepare_experiment
-from trafficlab.study_evidence import (
-    ValidationStudyPrerequisite,
-    publish_accepted_bundle,
-    validate_study_model,
-)
+from trafficlab.study_evidence.protocol import ValidationStudyPrerequisite, validate_study_model
+from trafficlab.study_evidence.publication import publish_accepted_bundle
 
 type JsonScalar = str | int | float | bool
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]

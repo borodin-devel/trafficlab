@@ -76,6 +76,7 @@ EXPECTED_NESTED_PACKAGES = {
         "parameters.py",
         "sampling.py",
     },
+    "study_evidence": {"__init__.py", "protocol.py", "report.py", "publication.py"},
 }
 
 FORBIDDEN_ROOT_MODULES = {
@@ -96,6 +97,7 @@ FORBIDDEN_ROOT_MODULES = {
     "scapy_io.py",
     "scientific_schema.py",
     "statistics.py",
+    "study_evidence.py",
     "trace.py",
     "run.py",
 }

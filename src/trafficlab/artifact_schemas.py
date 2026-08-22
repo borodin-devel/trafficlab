@@ -9,13 +9,15 @@ from trafficlab.common.trace import CaptureMetadata
 from trafficlab.comparison.schema import PublishedComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointArtifact
 from trafficlab.generation.models.fitted_model import BestModel
-from trafficlab.study_evidence import (
+from trafficlab.study_evidence.protocol import (
     ValidationStudyEnvironment,
     ValidationStudyLifecycle,
     ValidationStudyLineage,
     ValidationStudyManifest,
     ValidationStudyPrerequisite,
     ValidationStudyProtocol,
+)
+from trafficlab.study_evidence.report import (
     ValidationStudyReport,
     ValidationStudyReportInput,
 )

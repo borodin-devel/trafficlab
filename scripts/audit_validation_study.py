@@ -61,12 +61,14 @@ from trafficlab.generation.models.registry import (
     get_family,
 )
 from trafficlab.generation.stage import reproduce_generated_pcapng
-from trafficlab.study_evidence import (
+from trafficlab.study_evidence.protocol import (
     ValidationStudyEnvironment,
     ValidationStudyLifecycle,
     ValidationStudyLineage,
     ValidationStudyManifest,
     ValidationStudyProtocol,
+)
+from trafficlab.study_evidence.report import (
     ValidationStudyReport,
     ValidationStudyReportInput,
 )
