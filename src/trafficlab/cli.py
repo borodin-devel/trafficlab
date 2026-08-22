@@ -11,7 +11,7 @@ from trafficlab.common.config_io import load_experiment
 from trafficlab.common.errors import TrafficlabError
 
 if TYPE_CHECKING:
-    from trafficlab.capture.lineage import CaptureResult
+    from trafficlab.capture.stage import CaptureResult
     from trafficlab.comparison.schema import ComparisonResult
     from trafficlab.fitting.stage import FitStageResult
     from trafficlab.generation.stage import GenerationStageResult

@@ -145,6 +145,7 @@ def test_columnar_multiscale_exact_byte_fallback_preserves_cells(monkeypatch: py
         return _TinyIntegerInfo()
 
     monkeypatch.setattr(multiscale_module.np, "iinfo", tiny_iinfo)
-    assert multiscale_module._binned_trace_features(  # pyright: ignore[reportPrivateUsage]
-        trace, width=1.0, bins_per_direction=2
-    ) == ((1, 0, 0, 1), (2, 0, 0, 3))
+    assert multiscale_module.binned_direction_features(trace, width=1.0, bins_per_direction=2) == (
+        (1, 0, 0, 1),
+        (2, 0, 0, 3),
+    )

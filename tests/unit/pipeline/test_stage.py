@@ -18,7 +18,7 @@ from tests.support.pipeline import (
     stage_results,
     success_dependencies,
 )
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.stage import FitStageResult

@@ -602,25 +602,25 @@ NumPy, SciPy, Git, Docker Compose.
 - Consumes the complete decomposed repository.
 - Produces a clean local branch with reproducible completion evidence.
 
-- [ ] **[STEP-62-9d2814e7] Run locked static and complete offline gates**
+- [x] **[STEP-62-9d2814e7] Run locked static and complete offline gates**
 
   Run `uv sync --locked --all-groups`, Python 3.12.3 check, Ruff format/lint,
   strict Pyright, Fast, Ordinary, and four-worker branch-aware Coverage. Require
   all tests pass and total coverage remain at least 90%.
 
-- [ ] **[STEP-63-6fbd099e] Run every deterministic and real-program checker**
+- [x] **[STEP-63-6fbd099e] Run every deterministic and real-program checker**
 
   Run all fixture, schema, reduction, benchmark, example, probe, module-size,
   and symbol-owner checks. Regenerate only checker-owned path/hash records using
   their real programs, then rerun the complete parent gate.
 
-- [ ] **[STEP-64-1a9008c5] Run detached audit and external validation**
+- [x] **[STEP-64-1a9008c5] Run detached audit and external validation**
 
   Audit the current accepted study from its recorded detached source checkout,
   then run the combined serial Docker/Internet gate with the accepted
   credential-free endpoint and verify no Trafficlab Docker resource remains.
 
-- [ ] **[STEP-65-5a9e6ffa] Obtain independent final review and resolve findings**
+- [x] **[STEP-65-5a9e6ffa] Obtain independent final review and resolve findings**
 
   Review the full diff from `720944a` through HEAD for missing/misowned
   symbols, arbitrary fragments, cycles, stale paths, compatibility shims, test

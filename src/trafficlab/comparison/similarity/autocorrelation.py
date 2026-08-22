@@ -55,9 +55,7 @@ def _validated_lag(lag: object, *, sample_length: int) -> int:
     return lag
 
 
-def _sample_autocorrelations(
-    values: Iterable[object] | NDArray[np.generic], lags: tuple[int, ...]
-) -> tuple[float, ...]:
+def sample_autocorrelations(values: Iterable[object] | NDArray[np.generic], lags: tuple[int, ...]) -> tuple[float, ...]:
     """Evaluate selected lags after one validation, centering, and denominator pass."""
     sample = cast(
         NDArray[np.float64],
@@ -99,7 +97,7 @@ def _sample_autocorrelations(
 
 def sample_autocorrelation(values: Iterable[object], lag: object) -> float:
     """Return the documented whole-series-mean sample autocorrelation at one lag."""
-    return _sample_autocorrelations(values, (cast(int, lag),))[0]
+    return sample_autocorrelations(values, (cast(int, lag),))[0]
 
 
 def _validated_lags(lags: Iterable[object]) -> tuple[int, ...]:
@@ -149,8 +147,8 @@ def _feature_diagnostics(
     lag_weights: tuple[float, ...],
 ) -> tuple[dict[str, FrozenJsonValue], float]:
     """Calculate complete diagnostics for one feature's two autocorrelation vectors."""
-    reference_acf = _sample_autocorrelations(reference_values, lags)
-    generated_acf = _sample_autocorrelations(generated_values, lags)
+    reference_acf = sample_autocorrelations(reference_values, lags)
+    generated_acf = sample_autocorrelations(generated_values, lags)
     differences = tuple(
         abs(reference_value - generated_value)
         for reference_value, generated_value in zip(reference_acf, generated_acf, strict=True)

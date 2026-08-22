@@ -6,6 +6,8 @@ from typing import cast
 import pytest
 
 import trafficlab.comparison.codec as comparison_codec
+import trafficlab.comparison.schema as comparison_schema
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from tests.support.comparison import (
     add_acf_feature_weight,
     add_input_identity_field,
@@ -33,6 +35,7 @@ from tests.support.comparison import (
 from tests.support.comparison import (
     trace as _trace,
 )
+from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.comparison.codec import parse_comparison_result, render_comparison_result
@@ -278,3 +281,36 @@ def test_sha256_file_reports_an_unreadable_input(tmp_path: Path) -> None:
         comparison_codec.sha256_file(tmp_path / "missing.pcapng")
 
     assert error.value.corrective_action == "verify missing.pcapng exists and is readable"
+
+
+def test_comparison_renderer_rejects_invalid_outer_methods_and_changed_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Renderer validation must reject invalid outer state and a parser result that changes identity."""
+    valid = comparison_codec.parse_comparison_result((PIPELINE_FIXTURE_ROOT / "similarity.json").read_bytes())
+    invalid = valid.model_copy(update={"methods": object()})
+    with pytest.raises(ValueError, match="canonical methods object"):
+        comparison_codec.render_comparison_result(invalid)
+
+    assert valid.input_identities is not None
+    identities = valid.input_identities.as_content_identities()
+    identities["capture_json"] = ContentIdentity(size=1, sha256="0" * 64)
+    changed = valid.with_input_identities(identities)
+    changed_published = comparison_schema.PublishedComparisonResult.model_validate(changed.as_dict())
+    real_validate = comparison_schema.PublishedComparisonResult.model_validate
+    calls = 0
+
+    def changed_on_reparse(
+        _cls: type[comparison_schema.PublishedComparisonResult], value: object
+    ) -> comparison_schema.PublishedComparisonResult:
+        nonlocal calls
+        calls += 1
+        return changed_published if calls == 2 else real_validate(value)
+
+    monkeypatch.setattr(
+        comparison_schema.PublishedComparisonResult,
+        "model_validate",
+        classmethod(changed_on_reparse),
+    )
+    with pytest.raises(ValueError, match="changed the validated comparison result"):
+        comparison_codec.render_comparison_result(valid)

@@ -16,7 +16,7 @@ from typing import Literal, cast
 from urllib.parse import urlsplit
 
 from trafficlab import USER_AGENT, __version__
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import ExperimentConfig, FamilyName
 from trafficlab.common.errors import TrafficlabError

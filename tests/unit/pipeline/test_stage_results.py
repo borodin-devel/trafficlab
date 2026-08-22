@@ -16,7 +16,7 @@ from tests.support.pipeline import (
     trial,
 )
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent

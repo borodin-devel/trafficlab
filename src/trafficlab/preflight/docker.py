@@ -18,7 +18,6 @@ from trafficlab.preflight.local import check_mounts
 from trafficlab.preflight.probe import render_probe_compose, run_probe, write_probe_compose
 from trafficlab.preflight.types import (
     DockerPreflight,
-    DockerResult,
     PreflightFinding,
     PreflightReport,
     capture_environment_identity,
@@ -26,7 +25,7 @@ from trafficlab.preflight.types import (
 
 if TYPE_CHECKING:
     from trafficlab.capture.docker.image import ImageIdentity
-    from trafficlab.capture.docker.types import ServiceState
+    from trafficlab.capture.docker.types import DockerResult, ServiceState
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 _CAPTURE_IMAGE_LOCK_PATH = _REPOSITORY_ROOT / "docker" / "capture" / "image-lock.json"
@@ -289,7 +288,7 @@ def check_docker(
         try:
             result = action()
             if name == "docker_compose":
-                _parse_compose_plugin_version(cast(DockerResult, result))
+                _parse_compose_plugin_version(cast("DockerResult", result))
         except TrafficlabError as source_error:
             error = source_error
             if name == "docker_compose":

@@ -15,3 +15,11 @@ def capture_sources(directory: Path, *, timestamp: float = 0.0) -> tuple[Path, P
     metadata_path.write_bytes(render_capture_metadata(metadata))
     pcapng_path.write_bytes(encode_pcapng((TraceEvent(timestamp, Direction.OUTBOUND, 14),), metadata))
     return metadata_path, pcapng_path
+
+
+def capture_publication_setup(root: Path) -> tuple[tuple[Path, Path], Path]:
+    """Create distinct valid sources and an empty canonical publication directory."""
+    sources = capture_sources(root / "sources")
+    run_directory = root / "run"
+    run_directory.mkdir()
+    return sources, run_directory

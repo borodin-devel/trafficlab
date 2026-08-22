@@ -102,7 +102,7 @@ def normalized_l1(reference_cells: Iterable[object], generated_cells: Iterable[o
     return _bounded_discrepancy(discrepancy, name="normalized L1 discrepancy")
 
 
-def _snap_near_integer(quotient: float) -> float:
+def snap_near_integer(quotient: float) -> float:
     """Snap a finite quotient only within four ULPs of its nearest integer."""
     # Values such as ``(k * width) / width`` can land a few representable
     # floats either side of k.  Snapping only within an ULP-scale tolerance
@@ -157,7 +157,7 @@ def _validated_widths_and_bin_counts(
                 corrective_action="increase the width so its bin count is finite and within the configured cap",
             )
         validated_widths.append(width)
-        bin_counts.append(math.ceil(_snap_near_integer(quotient)))
+        bin_counts.append(math.ceil(snap_near_integer(quotient)))
         previous_width = width
 
     # Account for both directions before allocating any lists.  This makes the
@@ -186,7 +186,7 @@ def _validated_widths_and_bin_counts(
     )
 
 
-def _binned_trace_features(
+def binned_direction_features(
     trace: TrafficTrace, *, width: float, bins_per_direction: int
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """Build exact cells directly from one validated columnar trace."""
@@ -208,13 +208,6 @@ def _binned_trace_features(
     for index, frame_length in zip(flat_indices, trace.frame_lengths, strict=True):
         fallback[int(index)] += int(frame_length)
     return tuple(int(value) for value in packets), tuple(fallback)
-
-
-def _binned_features(
-    trace: TrafficTrace, *, width: float, bins_per_direction: int
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """Build outbound-then-inbound cells from one validated columnar trace."""
-    return _binned_trace_features(trace, width=width, bins_per_direction=bins_per_direction)
 
 
 def _direction_totals(
@@ -270,12 +263,12 @@ def multiscale_rate_similarity(
     for width, bins_per_direction, direction_cell_count in zip(
         validated_widths, bin_counts, direction_cell_counts, strict=True
     ):
-        reference_packets, reference_bytes = _binned_features(
+        reference_packets, reference_bytes = binned_direction_features(
             reference_trace,
             width=width,
             bins_per_direction=bins_per_direction,
         )
-        generated_packets, generated_bytes = _binned_features(
+        generated_packets, generated_bytes = binned_direction_features(
             generated_trace,
             width=width,
             bins_per_direction=bins_per_direction,

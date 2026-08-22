@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Scientific pymoo policy, adapter, schema, and evidence probe."""

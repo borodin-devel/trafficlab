@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
-from trafficlab.capture.lineage import CaptureResult
-from trafficlab.capture.stage import capture_prepared_experiment
+from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.stage import FitStageResult, fit_experiment

@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Offline validation-study environment, artifact, science, and lifecycle audits."""

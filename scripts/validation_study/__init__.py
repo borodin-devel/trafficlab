@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Validation-study collection, evidence, audit, and fixture tooling."""

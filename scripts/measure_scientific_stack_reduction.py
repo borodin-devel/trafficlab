@@ -110,6 +110,14 @@ _NUMPY_AFTER_VALIDATION_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
 # measurement.  Task 7 only relocated these measured functions; the check
 # below compares their ASTs at the new owners rather than rewriting history.
 _NUMPY_CURRENT_RELOCATIONS: Mapping[tuple[str, str], tuple[str, str]] = {
+    ("src/trafficlab/comparison/similarity/autocorrelation.py", "_sample_autocorrelations"): (
+        "src/trafficlab/comparison/similarity/autocorrelation.py",
+        "sample_autocorrelations",
+    ),
+    ("src/trafficlab/comparison/similarity/multiscale.py", "_binned_trace_features"): (
+        "src/trafficlab/comparison/similarity/multiscale.py",
+        "binned_direction_features",
+    ),
     ("src/trafficlab/generation/models/markov_renewal.py", "_fit_trace"): (
         "src/trafficlab/generation/models/markov_renewal/model.py",
         "fit_trace",

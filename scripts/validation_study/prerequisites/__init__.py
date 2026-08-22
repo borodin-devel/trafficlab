@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Validation-study prerequisite commands, codecs, and execution."""

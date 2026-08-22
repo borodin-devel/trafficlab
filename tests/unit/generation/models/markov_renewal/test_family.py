@@ -1,5 +1,4 @@
 """Behavioral tests for one Markov renewal owner."""
-# pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
@@ -340,7 +339,9 @@ def test_empirical_flow_accepts_one_state_with_a_self_transition() -> None:
     """The one-state boundary is connected by definition when its observed flow is internally consistent."""
     state = MarkovState(Direction.OUTBOUND, 0, (20, 20), (1.0,))
 
-    markov_renewal._validate_empirical_flow((state,), (((1.0,),),), (1.0,))
+    markov_renewal._validate_empirical_flow(  # pyright: ignore[reportPrivateUsage]
+        (state,), (((1.0,),),), (1.0,)
+    )
 
 
 def test_load_rejects_thresholds_that_differ_from_outer_gene_type7_quantiles() -> None:

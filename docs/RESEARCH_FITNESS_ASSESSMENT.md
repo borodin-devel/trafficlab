@@ -161,9 +161,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: the 2,262-test non-external gate passed, and the real Internet capture passed its exact preflight path.
-- Source: [local preflight tests](../tests/unit/preflight/test_preflight.py) cover ready, missing, unwritable, and low-space
+- Source: [local preflight tests](../tests/unit/preflight/test_local.py) cover ready, missing, unwritable, and low-space
   cases.
-- Source: [Docker preflight tests](../tests/unit/preflight/test_docker_preflight.py) cover images, topology, network, deadlines,
+- Source: [Docker preflight tests](../tests/unit/preflight/test_docker.py) cover images, topology, network, deadlines,
   primary failures, and cleanup detail using the production boundary semantics.
 
 **Rationale:** Effective configuration drives local and Docker checks, and direct failures name the unmet condition.
@@ -268,8 +268,10 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: focused similarity tests and deterministic Phase 2 fixture regeneration passed.
-- Source: [comparison tests](../tests/unit/comparison/test_comparison.py) reconstruct configured components, diagnostics, weights,
-  aggregate values, bounds, and strict artifact inputs.
+- Source: comparison [schema](../tests/unit/comparison/test_schema.py),
+  [codec](../tests/unit/comparison/test_codec.py), and
+  [metrics](../tests/unit/comparison/test_metrics.py) tests reconstruct configured components, diagnostics,
+  weights, aggregate values, bounds, and strict artifact inputs.
 - Source: hand cases in [KS tests](../tests/unit/comparison/similarity/test_ks.py),
   [ACF tests](../tests/unit/comparison/similarity/test_autocorrelation.py), and
   [multiscale tests](../tests/unit/comparison/similarity/test_multiscale.py) cover equality, extremes, and direction reversal.
@@ -453,11 +455,11 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 - Source: [Poisson tests](../tests/unit/generation/models/test_poisson.py) distinguish the complete-IAT rate estimator from an
   event-count-over-window error.
-- Source: Markov Renewal owner tests for [parameters](../tests/unit/generation/models/test_markov_parameters.py),
-  [sampling](../tests/unit/generation/models/test_markov_sampling.py),
-  [model fitting](../tests/unit/generation/models/test_markov_model.py),
-  [generation](../tests/unit/generation/models/test_markov_generation.py), and
-  [family codecs](../tests/unit/generation/models/test_markov_family.py) reconstruct states, smoothing, empty rows,
+- Source: Markov Renewal owner tests for [parameters](../tests/unit/generation/models/markov_renewal/test_parameters.py),
+  [sampling](../tests/unit/generation/models/markov_renewal/test_sampling.py),
+  [model fitting](../tests/unit/generation/models/markov_renewal/test_model.py),
+  [generation](../tests/unit/generation/models/markov_renewal/test_generation.py), and
+  [family codecs](../tests/unit/generation/models/markov_renewal/test_family.py) reconstruct states, smoothing, empty rows,
   conditional holding samples, fallbacks, and strict round trips.
 - Source: [MMPP tests](../tests/unit/generation/models/test_mmpp.py) prove rate repair and empirical marks; rates are direct GA
   genes rather than likelihood estimates, matching the declared method.
@@ -536,8 +538,8 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [comparison tests](../tests/unit/comparison/test_comparison.py) reconstruct normalized weighted components with full
-  diagnostics.
+- Source: [comparison metric tests](../tests/unit/comparison/test_metrics.py) reconstruct normalized weighted
+  components with full diagnostics.
 - Source: checkpoint loading recomputes aggregates, and genetic evaluation uses a stable arithmetic mean over trials.
 - Fresh: focused hand-weighted, invalid-candidate, exact-tie, and winner-use tests passed.
 
@@ -617,9 +619,9 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: broad strict-schema, corruption, replacement, and final-tree tests passed.
-- Source: [artifact tests](../tests/unit/pipeline/test_artifacts.py) cover malformed pairs, identities, replacement races,
+- Source: [artifact-owner tests](../tests/unit/pipeline/artifacts/) cover malformed pairs, identities, replacement races,
   partial sets, stale state, publication collisions, and exact-owner recovery.
-- Source: [run tests](../tests/unit/pipeline/test_run.py) recheck identities before and after critical reads and reject changed,
+- Source: [pipeline validation tests](../tests/unit/pipeline/test_final_validation.py) recheck identities before and after critical reads and reject changed,
   foreign, or incomplete trees.
 
 **Rationale:** Strict parsing, cross-file validation, identity rechecks, and exact-tree ownership prevent malformed,
@@ -657,9 +659,10 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [capture tests](../tests/unit/capture/test_capture.py) exercise all event-priority pairs, the critical triple,
+- Source: capture [failure](../tests/unit/capture/test_failures.py) and
+  [lifecycle](../tests/unit/capture/test_lifecycle.py) tests exercise all event-priority pairs, the critical triple,
   natural and induced statuses, flush, validation, interruption, and cleanup precedence.
-- Source: [run tests](../tests/unit/pipeline/test_run.py) retain stage primary failures when logging or later work also fails.
+- Source: [pipeline stage tests](../tests/unit/pipeline/test_stage.py) retain stage primary failures when logging or later work also fails.
 - Fresh: these non-external failure matrices passed in the broad gate.
 
 **Rationale:** A documented arbitration model preserves the exact primary cause, ordered secondary detail, stage
@@ -677,7 +680,7 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 **Evidence**
 
-- Source: [artifact tests](../tests/unit/pipeline/test_artifacts.py) cover fsynced private bytes, directory durability, ordered
+- Source: [artifact-owner tests](../tests/unit/pipeline/artifacts/) cover fsynced private bytes, directory durability, ordered
   multi-file links, collisions, rollback, replacement, and preservation of unrelated winners.
 - Source: checkpoint, model, history, generated, comparison, result, and report codecs publish validated canonical
   content through exclusive ownership rules.

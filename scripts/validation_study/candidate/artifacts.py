@@ -27,7 +27,7 @@ from scripts.validation_study.prerequisites.codec import (
     retained_prerequisite_paths,
 )
 from scripts.validation_study.rotation.schema import collection_attempt_root
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment, render_effective_config

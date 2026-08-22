@@ -5,9 +5,9 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from trafficlab.artifacts.capture import (
     CapturePublication,
@@ -15,12 +15,11 @@ from trafficlab.artifacts.capture import (
     remove_stable_capture_diagnostics,
     rollback_capture_publication,
 )
-from trafficlab.capture.cleanup import cleanup_project
+from trafficlab.capture.cleanup import CleanupCompose, cleanup_project
 from trafficlab.capture.docker.compose import DockerCompose
-from trafficlab.capture.docker.types import ServiceState
+from trafficlab.capture.docker.types import CaptureLifecycleOperations, CaptureLogOperations, ServiceState
 from trafficlab.capture.failures import append_event, capture_failure_logs, capture_failure_outcomes, outcome_error
 from trafficlab.capture.lifecycle import (
-    CaptureDocker,
     flush_capture,
     future_deadline,
     interrupt_lifecycle,
@@ -30,7 +29,6 @@ from trafficlab.capture.lifecycle import (
     wait_readiness,
 )
 from trafficlab.capture.lineage import (
-    CaptureResult,
     capture_lineage,
     identify_mounted_inputs,
     record_capture_input_failure,
@@ -54,7 +52,44 @@ from trafficlab.common.errors import (
     failure_outcome_from_error,
 )
 from trafficlab.preflight.stage import run_preflight
-from trafficlab.preflight.types import PreparedExperiment
+from trafficlab.preflight.types import DockerPreflight, PreparedExperiment
+
+
+class CaptureDocker(
+    DockerPreflight,
+    CleanupCompose,
+    CaptureLifecycleOperations,
+    CaptureLogOperations,
+    Protocol,
+):
+    """Complete injected Docker boundary for the public capture stage."""
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureResult:
+    """Published result of one successful reference capture."""
+
+    run_directory: Path
+    reference_path: Path
+    packet_count: int
+    target_status: int
+    reused: bool = False
+
+    def __post_init__(self) -> None:
+        run_directory = cast(object, self.run_directory)
+        reference_path = cast(object, self.reference_path)
+        if not isinstance(run_directory, Path) or not run_directory.is_absolute():
+            raise TypeError("run_directory must be an absolute Path")
+        if not isinstance(reference_path, Path) or not reference_path.is_absolute():
+            raise TypeError("reference_path must be an absolute Path")
+        if type(self.packet_count) is not int:
+            raise TypeError("packet_count must be a positive integer")
+        if self.packet_count <= 0:
+            raise ValueError("packet_count must be a positive integer")
+        if type(self.target_status) is not int:
+            raise TypeError("target_status must be an integer")
+        if type(self.reused) is not bool:
+            raise TypeError("reused must be a boolean")
 
 
 def capture_prepared_experiment(
@@ -66,7 +101,12 @@ def capture_prepared_experiment(
     interruption: Callable[[], bool] = lambda: False,
 ) -> CaptureResult:
     """Capture an already-preflighted experiment or reuse its stable valid pair."""
-    reused, run_directory, experiment_identity = try_reuse_prepared_capture(path, prepared, clock=clock)
+    reused, run_directory, experiment_identity = try_reuse_prepared_capture(
+        path,
+        prepared,
+        clock=clock,
+        result_factory=CaptureResult,
+    )
     if reused is not None:
         return reused
 
@@ -438,7 +478,12 @@ def capture_experiment(
 ) -> CaptureResult:
     """Reuse after local preparation, otherwise run full preflight and capture."""
     locally_prepared = run_preflight(path, config_only=True, docker=docker, clock=clock)
-    reused, _, _ = try_reuse_prepared_capture(path, locally_prepared, clock=clock)
+    reused, _, _ = try_reuse_prepared_capture(
+        path,
+        locally_prepared,
+        clock=clock,
+        result_factory=CaptureResult,
+    )
     if reused is not None:
         return reused
     prepared = run_preflight(path, config_only=False, docker=docker, clock=clock)

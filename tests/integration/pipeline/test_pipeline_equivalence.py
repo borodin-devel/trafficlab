@@ -17,7 +17,7 @@ import trafficlab.capture.docker.compose as docker_cli
 import trafficlab.fitting.genetic.strategy as genetic_strategy
 from trafficlab.artifacts.capture import load_or_recover_capture_pair
 from trafficlab.artifacts.run_directory import create_run_directory
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import ConfigurationPair, load_configuration_pair, render_effective_config

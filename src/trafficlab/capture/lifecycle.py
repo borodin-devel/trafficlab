@@ -7,10 +7,8 @@ import tempfile
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Protocol
 
-from trafficlab.capture.cleanup import CleanupCompose
-from trafficlab.capture.docker.types import CommandResult, ServiceState
+from trafficlab.capture.docker.types import CaptureLifecycleOperations, ServiceState
 from trafficlab.capture.policy import (
     CaptureFailureOrigin,
     CaptureOutcome,
@@ -30,19 +28,8 @@ from trafficlab.common.errors import (
     TrafficlabError,
 )
 from trafficlab.common.trace import load_capture_metadata
-from trafficlab.preflight.types import DockerPreflight
 
 _PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
-
-
-class CaptureDocker(DockerPreflight, CleanupCompose, Protocol):
-    """Docker operations used after full preflight."""
-
-    def service_logs(self, compose_path: Path, project_name: str, service: str, *, deadline: float) -> str: ...
-
-    def kill_target(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult: ...
-
-    def kill_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> CommandResult: ...
 
 
 @contextmanager
@@ -133,7 +120,7 @@ def _record_observation(
 
 
 def wait_readiness(
-    docker: CaptureDocker,
+    docker: CaptureLifecycleOperations,
     compose_path: Path,
     project_name: str,
     metadata_path: Path,
@@ -191,7 +178,7 @@ def wait_readiness(
 
 
 def observe_workload(
-    docker: CaptureDocker,
+    docker: CaptureLifecycleOperations,
     compose_path: Path,
     project_name: str,
     states: dict[str, ServiceState],
@@ -273,7 +260,7 @@ def _record_flush_expiry(
 
 
 def _kill_after_flush_timeout(
-    docker: CaptureDocker,
+    docker: CaptureLifecycleOperations,
     compose_path: Path,
     project_name: str,
     outcome: CaptureOutcome,
@@ -291,7 +278,7 @@ def _kill_after_flush_timeout(
 
 
 def flush_capture(
-    docker: CaptureDocker,
+    docker: CaptureLifecycleOperations,
     compose_path: Path,
     project_name: str,
     states: dict[str, ServiceState],
@@ -387,7 +374,7 @@ def flush_capture(
 
 
 def interrupt_lifecycle(
-    docker: CaptureDocker,
+    docker: CaptureLifecycleOperations,
     compose_path: Path,
     project_name: str,
     states: dict[str, ServiceState],

@@ -10,7 +10,6 @@ from typing import cast
 import pytest
 
 import trafficlab.capture.failures as capture_failures
-import trafficlab.capture.lifecycle as capture_lifecycle
 import trafficlab.capture.lineage as capture_lineage
 import trafficlab.capture.stage as capture
 import trafficlab.comparison.publication as comparison
@@ -195,7 +194,7 @@ def run_capture_boundary_case(
         capture.capture_prepared_experiment(
             prepared.source,
             prepared,
-            docker=cast(capture_lifecycle.CaptureDocker, docker),
+            docker=cast(capture.CaptureDocker, docker),
             clock=docker.clock,
             interruption=lambda: case.scenario == "user_interrupt" and docker.target_started,
         )
@@ -268,7 +267,7 @@ def run_capture_stale_boundary_case(
     with pytest.raises(TrafficlabError) as caught:
         capture.capture_experiment(
             experiment_path,
-            docker=cast(capture_lifecycle.CaptureDocker, NoDocker()),
+            docker=cast(capture.CaptureDocker, NoDocker()),
             clock=lambda: 100.0,
             interruption=lambda: False,
         )
@@ -365,7 +364,7 @@ def run_capture_mounted_input_boundary_case(
     with pytest.raises(TrafficlabError) as caught:
         capture.capture_experiment(
             experiment_path,
-            docker=cast(capture_lifecycle.CaptureDocker, NoDocker()),
+            docker=cast(capture.CaptureDocker, NoDocker()),
             clock=lambda: 100.0,
             interruption=lambda: False,
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 
@@ -25,6 +26,39 @@ class ServiceState:
     service: str
     state: str
     exit_code: int
+
+
+class DockerResult(Protocol):
+    """Read-only decoded Docker command result shared by operation protocols."""
+
+    @property
+    def returncode(self) -> int: ...
+
+    @property
+    def stdout(self) -> str: ...
+
+    @property
+    def stderr(self) -> str: ...
+
+
+class CaptureLifecycleOperations(Protocol):
+    """Docker operations used only by capture lifecycle transitions."""
+
+    def service_state(
+        self, compose_path: Path, project_name: str, service: str, *, deadline: float
+    ) -> ServiceState | None: ...
+
+    def signal_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+    def kill_target(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+    def kill_capture(self, compose_path: Path, project_name: str, *, deadline: float) -> DockerResult: ...
+
+
+class CaptureLogOperations(Protocol):
+    """Docker operation used only to retain capture failure diagnostics."""
+
+    def service_logs(self, compose_path: Path, project_name: str, service: str, *, deadline: float) -> str: ...
 
 
 class ProcessHandle(Protocol):

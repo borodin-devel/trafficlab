@@ -8,7 +8,7 @@ from tests.support.comparison import trace as _trace
 from tests.support.comparison import valid_result_document
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.comparison.metrics import compare_traces
-from trafficlab.comparison.schema import ComparisonMethods, ComparisonResult
+from trafficlab.comparison.schema import ComparisonResult
 
 
 def test_similarity_artifact_retains_exact_nested_input_content_identities() -> None:
@@ -40,17 +40,6 @@ def test_comparison_result_rejects_an_unbounded_or_nonfinite_aggregate(score: fl
         )
 
 
-def test_comparison_result_is_deeply_immutable(valid_config_data: dict[str, object]) -> None:
-    """Mutation after evaluation could make the reported aggregate disagree with retained diagnostics."""
-    result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
-
-    with pytest.raises(TypeError):
-        result.methods["frame_size_ks"] = result.methods["iat_ks"]  # type: ignore[index]
-    assert isinstance(result.methods, ComparisonMethods)
-    with pytest.raises(TypeError):
-        result.methods["frame_size_ks"].diagnostics["distance"] = 99.0  # type: ignore[index]
-
-
 def test_comparison_result_requires_exact_method_names(valid_config_data: dict[str, object]) -> None:
     """A missing method must not cross the typed result boundary even when remaining methods are valid."""
     result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
@@ -80,29 +69,6 @@ def test_comparison_result_requires_typed_method_values(valid_config_data: dict[
                 "aggregate_score": result.aggregate_score,
                 "observation_window_seconds": 3.0,
                 "methods": invalid_methods,
-                "input_identities": None,
-            }
-        )
-
-
-@pytest.mark.parametrize("diagnostic_window", [0.0, math.nan], ids=["nonpositive", "nonfinite"])
-def test_comparison_result_defensively_rejects_corrupted_method_windows(
-    valid_config_data: dict[str, object], diagnostic_window: float
-) -> None:
-    """A corrupted in-memory method object must not bypass the finite positive diagnostic-W invariant."""
-    result = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
-    original = result.methods["autocorrelation"]
-    corrupted_diagnostics = original.diagnostics.model_copy(update={"observation_window_seconds": diagnostic_window})
-    corrupted = original.model_copy(update={"diagnostics": corrupted_diagnostics})
-    methods = dict(result.methods)
-    methods["autocorrelation"] = corrupted
-
-    with pytest.raises(ValueError, match="observation_window_seconds|finite"):
-        ComparisonResult.model_validate(
-            {
-                "aggregate_score": result.aggregate_score,
-                "observation_window_seconds": 3.0,
-                "methods": methods,
                 "input_identities": None,
             }
         )

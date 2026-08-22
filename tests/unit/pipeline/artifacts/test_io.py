@@ -6,6 +6,7 @@ import pytest
 
 import trafficlab.artifacts.io as artifacts
 from trafficlab.artifacts.io import (
+    append_run_log,
     atomic_replace,
 )
 from trafficlab.common.errors import TrafficlabError
@@ -269,3 +270,50 @@ def test_atomic_replace_post_replace_cleanup_sees_already_moved_temp_as_success(
 
     atomic_replace(destination, b"new\n", validator=validate)
     assert destination.read_bytes() == b"new\n"
+
+
+def test_append_run_log_writes_one_sorted_fsynced_json_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A buffered or nondeterministic detail record could disappear or vary after a reported stage result."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    (run_directory / "run.log").write_bytes(b'{"prior":true}\n')
+    real_fsync = os.fsync
+    fsync_calls: list[int] = []
+
+    def observed_fsync(file_descriptor: int) -> None:
+        fsync_calls.append(file_descriptor)
+        real_fsync(file_descriptor)
+
+    monkeypatch.setattr(artifacts.os, "fsync", observed_fsync)
+
+    append_run_log(run_directory, {"z": 2, "event": "comparison_succeeded", "a": 1})
+
+    assert (run_directory / "run.log").read_bytes() == (
+        b'{"prior":true}\n{"a":1,"event":"comparison_succeeded","z":2}\n'
+    )
+    assert len(fsync_calls) == 1
+
+
+def test_append_run_log_rejects_non_json_detail_before_opening_the_log(tmp_path: Path) -> None:
+    """Invalid detail must not create or partially append run.log."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+
+    with pytest.raises(TrafficlabError, match="could not encode run log record"):
+        append_run_log(run_directory, {"invalid": object()})
+
+    assert not (run_directory / "run.log").exists()
+
+
+def test_append_run_log_reports_a_durability_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed record fsync must be reported instead of allowing the stage to claim durable logging."""
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+
+    def fail_fsync(_file_descriptor: int) -> None:
+        raise OSError("injected append fsync failure")
+
+    monkeypatch.setattr(artifacts.os, "fsync", fail_fsync)
+
+    with pytest.raises(TrafficlabError, match="could not append run log.*append fsync failure"):
+        append_run_log(run_directory, {"event": "comparison_failed"})

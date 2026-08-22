@@ -6,7 +6,7 @@ import json
 import re
 import stat
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import cast
 
@@ -68,33 +68,6 @@ class _MountedInputUnavailableError(TrafficlabError):
 
 class _MountedInputIncompatibleError(TrafficlabError):
     """A regular-file mounted input no longer has its recorded identity."""
-
-
-@dataclass(frozen=True, slots=True)
-class CaptureResult:
-    """Published result of one successful reference capture."""
-
-    run_directory: Path
-    reference_path: Path
-    packet_count: int
-    target_status: int
-    reused: bool = False
-
-    def __post_init__(self) -> None:
-        run_directory = cast(object, self.run_directory)
-        reference_path = cast(object, self.reference_path)
-        if not isinstance(run_directory, Path) or not run_directory.is_absolute():
-            raise TypeError("run_directory must be an absolute Path")
-        if not isinstance(reference_path, Path) or not reference_path.is_absolute():
-            raise TypeError("reference_path must be an absolute Path")
-        if type(self.packet_count) is not int:
-            raise TypeError("packet_count must be a positive integer")
-        if self.packet_count <= 0:
-            raise ValueError("packet_count must be a positive integer")
-        if type(self.target_status) is not int:
-            raise TypeError("target_status must be an integer")
-        if type(self.reused) is not bool:
-            raise TypeError("reused must be a boolean")
 
 
 def _capture_environment_document(identity: CaptureEnvironmentIdentity) -> dict[str, object]:
@@ -406,12 +379,13 @@ def _validate_prepared_capture(path: Path, prepared: PreparedExperiment) -> Path
     return run_directory
 
 
-def try_reuse_prepared_capture(
+def try_reuse_prepared_capture[CaptureResultT](
     path: Path,
     prepared: PreparedExperiment,
     *,
     clock: Callable[[], float],
-) -> tuple[CaptureResult | None, Path, ContentIdentity]:
+    result_factory: Callable[[Path, Path, int, int, bool], CaptureResultT],
+) -> tuple[CaptureResultT | None, Path, ContentIdentity]:
     run_directory = _validate_prepared_capture(path, prepared)
     experiment_identity = identify_bytes(render_effective_config(prepared.config))
     existing = load_or_recover_capture_pair(run_directory, deadline=None, clock=clock)
@@ -423,18 +397,19 @@ def try_reuse_prepared_capture(
         prepared.report.environment_identity,
     )
     remove_stable_capture_diagnostics(run_directory)
-    result = CaptureResult(
-        run_directory=run_directory,
-        reference_path=run_directory / "reference.pcapng",
-        packet_count=existing.packet_count,
-        target_status=0,
-        reused=True,
+    reference_path = run_directory / "reference.pcapng"
+    result = result_factory(
+        run_directory,
+        reference_path,
+        existing.packet_count,
+        0,
+        True,
     )
     append_event(
         run_directory,
         "capture_reused",
-        packet_count=result.packet_count,
-        path=str(result.reference_path),
+        packet_count=existing.packet_count,
+        path=str(reference_path),
         reused=True,
     )
     return result, run_directory, experiment_identity

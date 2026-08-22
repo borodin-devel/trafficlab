@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Validation-study result codecs, reporting, and reproduction."""

@@ -1,5 +1,4 @@
 """Behavioral tests for one Markov renewal owner."""
-# pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 

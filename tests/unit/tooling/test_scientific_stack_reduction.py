@@ -85,6 +85,14 @@ def test_reduction_check_compares_relocated_markov_function_asts() -> None:
     """A moved measured function must retain the historical AST, not merely its name."""
     relocated = reduction._NUMPY_CURRENT_RELOCATIONS  # pyright: ignore[reportPrivateUsage]
     assert relocated == {
+        ("src/trafficlab/comparison/similarity/autocorrelation.py", "_sample_autocorrelations"): (
+            "src/trafficlab/comparison/similarity/autocorrelation.py",
+            "sample_autocorrelations",
+        ),
+        ("src/trafficlab/comparison/similarity/multiscale.py", "_binned_trace_features"): (
+            "src/trafficlab/comparison/similarity/multiscale.py",
+            "binned_direction_features",
+        ),
         ("src/trafficlab/generation/models/markov_renewal.py", "_fit_trace"): (
             "src/trafficlab/generation/models/markov_renewal/model.py",
             "fit_trace",

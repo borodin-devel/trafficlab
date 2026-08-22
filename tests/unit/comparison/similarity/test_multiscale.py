@@ -14,9 +14,9 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent
 from trafficlab.comparison.similarity.multiscale import (
     _exact_l1_totals,  # pyright: ignore[reportPrivateUsage]
-    _snap_near_integer,  # pyright: ignore[reportPrivateUsage]
     multiscale_rate_similarity,
     normalized_l1,
+    snap_near_integer,
 )
 
 
@@ -157,8 +157,8 @@ def test_snap_near_integer_includes_exactly_four_ulps_but_not_the_next_float(int
     four_ulps_away = _nextafter_steps(integer, toward, 4)
     immediately_outside = math.nextafter(four_ulps_away, toward)
 
-    assert _snap_near_integer(four_ulps_away) == integer
-    assert _snap_near_integer(immediately_outside) == immediately_outside
+    assert snap_near_integer(four_ulps_away) == integer
+    assert snap_near_integer(immediately_outside) == immediately_outside
 
 
 def test_snap_near_integer_handles_zero_and_the_subnormal_boundary() -> None:
@@ -166,9 +166,9 @@ def test_snap_near_integer_handles_zero_and_the_subnormal_boundary() -> None:
     four_ulps_from_zero = 4.0 * subnormal_ulp
     immediately_outside = math.nextafter(four_ulps_from_zero, math.inf)
 
-    assert _snap_near_integer(0.0) == 0.0
-    assert _snap_near_integer(four_ulps_from_zero) == 0.0
-    assert _snap_near_integer(immediately_outside) == immediately_outside
+    assert snap_near_integer(0.0) == 0.0
+    assert snap_near_integer(four_ulps_from_zero) == 0.0
+    assert snap_near_integer(immediately_outside) == immediately_outside
 
 
 def test_multiscale_returns_every_hand_calculated_multiscale_diagnostic() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.lifecycle import CaptureDocker
+from trafficlab.capture.docker.types import CaptureLogOperations
 from trafficlab.capture.policy import (
     CaptureFailureOrigin,
     CaptureOutcome,
@@ -228,7 +228,7 @@ def capture_failure_outcomes(
 
 
 def capture_failure_logs(
-    docker: CaptureDocker,
+    docker: CaptureLogOperations,
     compose_path: Path,
     project_name: str,
     run_directory: Path,

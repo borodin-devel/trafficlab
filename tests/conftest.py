@@ -127,8 +127,7 @@ def endpoint_docker(
     docker_project_tracker: DockerProjectTracker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> EndpointDockerCompose:
-    del docker_test_environment
-    install_endpoint_overlay(monkeypatch)
+    install_endpoint_overlay(monkeypatch, endpoint_image=docker_test_environment.endpoint_image)
     return EndpointDockerCompose(docker_project_tracker)
 
 

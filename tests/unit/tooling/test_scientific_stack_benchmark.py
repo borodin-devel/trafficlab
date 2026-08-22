@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import json
@@ -16,6 +17,21 @@ from scripts import benchmark_scientific_stack as benchmark
 
 _ROOT = Path(__file__).parents[3]
 _EVIDENCE = _ROOT / "examples" / "scientific_stack" / "benchmark.json"
+
+
+def test_benchmark_imports_only_owner_facing_production_names() -> None:
+    """Measured kernels must be owner-facing boundaries, never production implementation details."""
+    path = _ROOT / "scripts" / "benchmark_scientific_stack.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    private_imports = {
+        f"{node.module}.{alias.name}"
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module is not None and node.module.startswith("trafficlab.")
+        for alias in node.names
+        if alias.name.startswith("_")
+    }
+
+    assert private_imports == set()
 
 
 def test_benchmark_input_is_the_locked_pcg64_sequence() -> None:
@@ -80,8 +96,8 @@ def test_scalar_multiscale_does_not_call_production_snapping(monkeypatch: pytest
     def fail_production_snap(_quotient: float) -> float:
         raise AssertionError("scalar oracle called production snapping")
 
-    monkeypatch.setattr(multiscale_module, "_snap_near_integer", fail_production_snap)
-    monkeypatch.setattr(benchmark, "_production_snap_near_integer", fail_production_snap)
+    monkeypatch.setattr(multiscale_module, "snap_near_integer", fail_production_snap)
+    monkeypatch.setattr(benchmark, "snap_near_integer", fail_production_snap)
     trace = benchmark.generate_benchmark_trace(512)
     packets, byte_counts = benchmark._scalar_multiscale(trace)  # pyright: ignore[reportPrivateUsage]
 

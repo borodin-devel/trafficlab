@@ -27,7 +27,7 @@ from tests.unit.validation.study.orchestration._support import (
     install_primary_orchestration_doubles,
     write_collection_compatible_inputs,
 )
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.pipeline.types import RunResult

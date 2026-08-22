@@ -23,8 +23,7 @@ from tests.docker.support import (
 )
 from tests.support.docker import DockerTestEnvironment, EndpointDockerCompose
 from trafficlab.capture.docker.types import CommandResult
-from trafficlab.capture.lineage import CaptureResult
-from trafficlab.capture.stage import capture_prepared_experiment
+from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
 from trafficlab.capture.topology import ComposePaths
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.cli import main

@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Shared validation-study builders, repositories, runners, and artifact support."""

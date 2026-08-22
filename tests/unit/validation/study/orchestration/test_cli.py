@@ -27,7 +27,7 @@ from tests.unit.validation.study.orchestration._support import (
     COLLECTION_PHASE_CAPTURE_TAG,
 )
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.genetic.types import TrialResult

@@ -1,11 +1,17 @@
+import copy
 import json
 import math
 from pathlib import Path
 from typing import cast
 
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
+from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.config import ExperimentConfig, SimilarityConfig
+from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.trace import Direction, TraceEvent
 from trafficlab.comparison.schema import ComparisonResult
+
+EXPECTED_AGGREGATE_SCORE = 0.5662202380952381
 
 
 def settings(data: dict[str, object]) -> SimilarityConfig:
@@ -18,6 +24,25 @@ def trace() -> tuple[TraceEvent, ...]:
         TraceEvent(1.0, Direction.INBOUND, 80),
         TraceEvent(3.0, Direction.OUTBOUND, 100),
     )
+
+
+def prepare_comparison_run(valid_config_data: dict[str, object], tmp_path: Path) -> tuple[Path, Path, ExperimentConfig]:
+    """Create one complete comparison input tree from checked scientific bytes."""
+    data = copy.deepcopy(valid_config_data)
+    run_directory = tmp_path / "run"
+    cast(dict[str, object], data["run"])["directory"] = str(run_directory)
+    config = ExperimentConfig.model_validate(data)
+    caller_path = tmp_path / "caller.toml"
+    caller_path.write_bytes(render_effective_config(config))
+    create_run_directory(config)
+    for artifact_name in ("capture.json", "reference.pcapng", "best_model.json", "generated.pcapng"):
+        (run_directory / artifact_name).write_bytes((PIPELINE_FIXTURE_ROOT / artifact_name).read_bytes())
+    return caller_path, run_directory, config
+
+
+def comparison_log_records(run_directory: Path) -> list[dict[str, object]]:
+    """Load the canonical run-log objects published by a comparison test."""
+    return [json.loads(line) for line in (run_directory / "run.log").read_text(encoding="utf-8").splitlines()]
 
 
 def _add_top_level_field(document: dict[str, object]) -> None:

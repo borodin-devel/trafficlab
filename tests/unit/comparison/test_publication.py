@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,8 @@ import pytest
 import trafficlab.artifacts.io as artifact_io
 import trafficlab.comparison.codec as comparison_codec
 import trafficlab.comparison.publication as comparison_publication
+import trafficlab.comparison.schema as comparison_schema
+from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from tests.support.comparison import settings as _settings
 from tests.support.comparison import trace as _trace
 from tests.support.comparison import valid_result, valid_result_document
@@ -477,3 +480,57 @@ def test_publication_propagates_unexpected_cleanup_by_identity_after_success(
     assert error.value is cleanup
     assert destination.read_bytes() == render_comparison_result(expected)
     assert len(list(tmp_path.glob(".similarity.json.*.tmp"))) == 1
+
+
+def test_malformed_nested_method_cannot_render_or_publish(tmp_path: Path) -> None:
+    """A model_copy-mutated diagnostic must fail before bytes or a destination become visible."""
+    source = PIPELINE_FIXTURE_ROOT / "similarity.json"
+    valid = comparison_codec.parse_comparison_result(source.read_bytes())
+    original = valid.methods["frame_size_ks"]
+    corrupted_diagnostics = original.diagnostics.model_copy(update={"reference_count": 0})
+    corrupted_method = original.model_copy(update={"diagnostics": corrupted_diagnostics})
+    methods = dict(valid.methods)
+    methods["frame_size_ks"] = corrupted_method
+    corrupted = valid.model_copy(update={"methods": methods})
+
+    with pytest.raises(ValueError, match="reference_count"):
+        comparison_codec.render_comparison_result(corrupted)
+
+    destination = tmp_path / "similarity.json"
+    with pytest.raises(TrafficlabError, match="reference_count"):
+        comparison_publication.publish_comparison_result(destination, corrupted)  # pyright: ignore[reportPrivateUsage]
+    assert not destination.exists()
+    assert list(tmp_path.glob(".similarity.json.*.tmp")) == []
+
+
+def test_parser_and_publication_reject_null_lineage_and_cross_key_diagnostics(tmp_path: Path) -> None:
+    """Only the exact publication wire shape may parse or reach an immutable destination."""
+    document = json.loads((PIPELINE_FIXTURE_ROOT / "similarity.json").read_bytes())
+    missing_lineage = copy.deepcopy(document)
+    missing_lineage["input_identities"] = None
+    with pytest.raises(ValueError, match="input_identities"):
+        comparison_codec.parse_comparison_result(json.dumps(missing_lineage).encode())
+
+    wrong_method = copy.deepcopy(document)
+    wrong_method["methods"]["frame_size_ks"] = copy.deepcopy(wrong_method["methods"]["iat_ks"])
+    with pytest.raises(ValueError, match="frame_size_ks.*wrong method discriminator"):
+        comparison_codec.parse_comparison_result(json.dumps(wrong_method).encode())
+
+    with pytest.raises(ValueError, match="comparison result"):
+        comparison_codec.parse_comparison_result(b"[]")
+
+    non_object_method = copy.deepcopy(document)
+    non_object_method["methods"]["frame_size_ks"] = 1
+    with pytest.raises(ValueError, match="frame_size_ks"):
+        comparison_codec.parse_comparison_result(json.dumps(non_object_method).encode())
+
+    invalid_window = copy.deepcopy(document)
+    invalid_window["methods"]["frame_size_ks"]["diagnostics"]["observation_window_seconds"] = 10
+    with pytest.raises(ValueError, match="finite positive float"):
+        comparison_codec.parse_comparison_result(json.dumps(invalid_window).encode())
+
+    operational = comparison_schema.ComparisonResult.model_validate(missing_lineage)
+    destination = tmp_path / "similarity.json"
+    with pytest.raises(TrafficlabError, match="identities are required"):
+        comparison_publication.publish_comparison_result(destination, operational)  # pyright: ignore[reportPrivateUsage]
+    assert not destination.exists()

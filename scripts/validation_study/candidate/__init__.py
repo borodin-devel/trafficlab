@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Candidate artifact, reporting, and held-out evaluation collection."""

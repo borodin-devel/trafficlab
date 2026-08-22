@@ -27,7 +27,7 @@ from scripts.validation_study.workloads import (
 from tests.support.validation_study.builders import frozen, response_headers
 from tests.support.validation_study.constants import CAPTURE_BYTES, CAPTURE_DOCKERFILE, CAPTURE_SCRIPT, REFERENCE_BYTES
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.comparison.stage import compare_experiment

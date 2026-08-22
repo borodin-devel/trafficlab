@@ -44,7 +44,8 @@ def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
     )
 
     assert set(_services(production)) == {"capture", "target"}
-    overlay_services = _services(docker_support.merge_endpoint_overlay(production))
+    endpoint_image = "trafficlab-endpoint:session-owned"
+    overlay_services = _services(docker_support.merge_endpoint_overlay(production, endpoint_image=endpoint_image))
     assert set(overlay_services) == {
         "capture",
         "endpoint",
@@ -55,11 +56,15 @@ def test_endpoint_overlay_is_test_only_and_production_remains_two_services(
     overlay_addresses: list[object] = []
     for service_name in ("endpoint", "noise", "orphan"):
         service = cast(dict[str, object], overlay_services[service_name])
+        assert service["image"] == endpoint_image
         networks = cast(dict[str, object], service.get("networks", {}))
         default_network = cast(dict[str, object], networks.get("default", {}))
         overlay_addresses.append(default_network.get("ipv4_address"))
     assert overlay_addresses == ["172.31.254.2", "172.31.254.3", "172.31.254.4"]
-    merged = cast(dict[str, object], json.loads(docker_support.merge_endpoint_overlay(production)))
+    merged = cast(
+        dict[str, object],
+        json.loads(docker_support.merge_endpoint_overlay(production, endpoint_image=endpoint_image)),
+    )
     assert merged["volumes"] == {"lifecycle": {}}
     endpoint = cast(dict[str, object], overlay_services["endpoint"])
     assert endpoint["volumes"] == [{"type": "volume", "source": "lifecycle", "target": "/trafficlab-test-volume"}]

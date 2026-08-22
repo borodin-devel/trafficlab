@@ -26,11 +26,11 @@ if __package__ in (None, ""):
 
 from trafficlab.common.trace import TrafficTrace, normalize_reference
 from trafficlab.comparison.similarity.autocorrelation import (
-    _sample_autocorrelations,  # pyright: ignore[reportPrivateUsage]
+    sample_autocorrelations,
 )
-from trafficlab.comparison.similarity.multiscale import _binned_features  # pyright: ignore[reportPrivateUsage]
-from trafficlab.comparison.similarity.multiscale import (  # pyright: ignore[reportPrivateUsage]
-    _snap_near_integer as _production_snap_near_integer,  # pyright: ignore[reportPrivateUsage]
+from trafficlab.comparison.similarity.multiscale import (
+    binned_direction_features,
+    snap_near_integer,
 )
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -159,8 +159,8 @@ def _vector_multiscale(trace: TrafficTrace) -> tuple[NDArray[np.int64], NDArray[
     packet_parts: list[NDArray[np.int64]] = []
     byte_parts: list[NDArray[np.int64]] = []
     for width in _widths(trace):
-        bin_count = math.ceil(_production_snap_near_integer(float(normalized.timestamps[-1]) / width))
-        packets, byte_counts = _binned_features(normalized, width=width, bins_per_direction=bin_count)
+        bin_count = math.ceil(snap_near_integer(float(normalized.timestamps[-1]) / width))
+        packets, byte_counts = binned_direction_features(normalized, width=width, bins_per_direction=bin_count)
         packet_parts.append(np.asarray(packets, dtype=np.int64))
         byte_parts.append(np.asarray(byte_counts, dtype=np.int64))
     return np.concatenate(packet_parts), np.concatenate(byte_parts)
@@ -184,7 +184,7 @@ def _scalar_selected_acf(trace: TrafficTrace) -> NDArray[np.float64]:
 
 
 def _vector_selected_acf(trace: TrafficTrace) -> NDArray[np.float64]:
-    return np.asarray(_sample_autocorrelations(trace.frame_lengths, SELECTED_LAGS), dtype=np.float64)
+    return np.asarray(sample_autocorrelations(trace.frame_lengths, SELECTED_LAGS), dtype=np.float64)
 
 
 def _kernel_results(

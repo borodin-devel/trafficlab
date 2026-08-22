@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Durable validation-study prerequisite rotation and recovery."""

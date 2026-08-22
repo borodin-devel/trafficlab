@@ -12,7 +12,7 @@ from trafficlab.common.errors import TrafficlabError
 
 if TYPE_CHECKING:
     from trafficlab.capture.docker.image import CaptureImageLock, CapturePlatform, ImageIdentity
-    from trafficlab.capture.docker.types import ProcessHandle, ServiceState
+    from trafficlab.capture.docker.types import DockerResult, ProcessHandle, ServiceState
 
 
 class SupportsFree(Protocol):
@@ -32,17 +32,6 @@ class Writable(Protocol):
     """Callable boundary for checking directory writability."""
 
     def __call__(self, path: Path) -> bool: ...
-
-
-class DockerResult(Protocol):
-    @property
-    def returncode(self) -> int: ...
-
-    @property
-    def stdout(self) -> str: ...
-
-    @property
-    def stderr(self) -> str: ...
 
 
 # This narrow protocol is also the seam used by in-process tests.  Keeping it at

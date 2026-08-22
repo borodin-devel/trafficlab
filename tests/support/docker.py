@@ -334,7 +334,7 @@ class DockerProjectTracker:
             raise
 
 
-def merge_endpoint_overlay(production: bytes) -> bytes:
+def merge_endpoint_overlay(production: bytes, *, endpoint_image: str) -> bytes:
     """Merge the checked-in endpoint into a test document without changing production rendering."""
     production_document = cast(dict[str, object], json.loads(production))
     overlay_document = cast(dict[str, object], json.loads((DOCKER_FIXTURE_ROOT / "compose.endpoint.json").read_bytes()))
@@ -343,6 +343,8 @@ def merge_endpoint_overlay(production: bytes) -> bytes:
     production_services.update(overlay_services)
     production_document["networks"] = overlay_document["networks"]
     production_document["volumes"] = {"lifecycle": {}}
+    for service_name in ("endpoint", "noise", "orphan"):
+        cast(dict[str, object], production_services[service_name])["image"] = endpoint_image
     endpoint = cast(dict[str, object], production_services["endpoint"])
     endpoint["volumes"] = [{"type": "volume", "source": "lifecycle", "target": "/trafficlab-test-volume"}]
     return (json.dumps(production_document, sort_keys=True, separators=(",", ":")) + "\n").encode()
@@ -443,7 +445,7 @@ class EndpointDockerCompose(TrackedDockerCompose):
         return DockerCompose.create_capture(self, compose_path, project_name, timeout=timeout, deadline=deadline)
 
 
-def install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
+def install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch, *, endpoint_image: str) -> None:
     import trafficlab.capture.stage as capture_module
     import trafficlab.preflight.docker as preflight_docker
     from trafficlab.capture.topology import write_production_compose
@@ -465,7 +467,7 @@ def install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
             target_image=target_image,
             capture_image=capture_image,
         )
-        path.write_bytes(merge_endpoint_overlay(path.read_bytes()))
+        path.write_bytes(merge_endpoint_overlay(path.read_bytes(), endpoint_image=endpoint_image))
 
     def probe_with_endpoint(
         config: ExperimentConfig,
@@ -473,7 +475,10 @@ def install_endpoint_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
         *,
         capture_image: str,
     ) -> bytes:
-        return merge_endpoint_overlay(original_probe_document(config, paths, capture_image=capture_image))
+        return merge_endpoint_overlay(
+            original_probe_document(config, paths, capture_image=capture_image),
+            endpoint_image=endpoint_image,
+        )
 
     monkeypatch.setattr(capture_module, "write_production_compose", write_with_endpoint)
     monkeypatch.setattr(preflight_docker, "render_probe_compose", probe_with_endpoint)

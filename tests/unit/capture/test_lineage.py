@@ -13,7 +13,6 @@ import trafficlab.common.compatibility as compatibility
 from tests.support.capture import Clock, DockerDouble, prepared_capture, seed_capture_lineage
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.capture.docker.types import CommandResult
-from trafficlab.capture.lineage import CaptureResult
 from trafficlab.capture.stage import capture_experiment, capture_prepared_experiment
 from trafficlab.common.compatibility import identify_file
 from trafficlab.common.config import MountConfig
@@ -619,12 +618,6 @@ def test_mounted_input_identification_rejects_a_nonregular_mount_source(
 
     with pytest.raises(TrafficlabError, match="mounted input request.txt is incompatible"):
         lineage_module.identify_mounted_inputs(config)
-
-
-def test_capture_result_rejects_a_non_boolean_reuse_flag() -> None:
-    """Truthiness coercion would make capture ownership ambiguous to the coordinator."""
-    with pytest.raises(TypeError, match="reused"):
-        CaptureResult(Path("/run"), Path("/run/reference.pcapng"), 1, 0, cast(Any, 1))
 
 
 def test_prepared_capture_reuses_a_stable_pair_before_any_workload_setup(

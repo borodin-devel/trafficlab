@@ -26,7 +26,7 @@ import scripts.validation_study.workloads as vs_workloads
 import trafficlab.common.trace as trafficlab_common_trace
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig

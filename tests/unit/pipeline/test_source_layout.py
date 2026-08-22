@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -153,6 +154,25 @@ def test_artifact_persistence_is_owned_by_artifact_kind() -> None:
     assert artifacts.is_dir()
     assert _python_inventory(artifacts) == EXPECTED_ARTIFACT_MODULES
     assert not (PACKAGE / "artifacts.py").exists()
+
+
+def test_capture_public_records_are_owned_only_by_the_stage() -> None:
+    """The public capture boundary must not be defined below or imported upward from its operations."""
+    capture = PACKAGE / "capture"
+    stage_tree = ast.parse((capture / "stage.py").read_text(encoding="utf-8"))
+    stage_classes = {node.name for node in stage_tree.body if isinstance(node, ast.ClassDef)}
+
+    assert {"CaptureDocker", "CaptureResult"} <= stage_classes
+    for owner in ("lineage.py", "lifecycle.py", "failures.py"):
+        tree = ast.parse((capture / owner).read_text(encoding="utf-8"))
+        classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+        upward_imports = {
+            node.module
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom) and node.module == "trafficlab.capture.stage"
+        }
+        assert not ({"CaptureDocker", "CaptureResult"} & classes), owner
+        assert upward_imports == set(), owner
 
 
 def test_production_modules_stay_within_the_cohesion_backstop() -> None:

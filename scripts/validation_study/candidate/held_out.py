@@ -23,7 +23,7 @@ from scripts.validation_study.records import HeldOutEvaluation
 from scripts.validation_study.transfer import archive_transfer_evidence, prepare_transfer_scratch
 from scripts.validation_study.workloads import config_with_run_directory, render_realized_config
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import identify_bytes, require_compatible
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError

@@ -23,7 +23,7 @@ import scripts.validation_study.workloads as vs_workloads
 import trafficlab.pipeline.stage as trafficlab_pipeline_stage
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
 from trafficlab.artifacts.io import append_run_log
-from trafficlab.capture.lineage import CaptureResult
+from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.genetic.types import METHOD_ORDER

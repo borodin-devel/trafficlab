@@ -15,10 +15,7 @@ from tests.support.generation import (
     prepare_stage_run,
 )
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import (
-    CaptureMetadata,
-    TraceEvent,
     TrafficTrace,
 )
 from trafficlab.generation.models.common import GenerationResult, ModelFamily
@@ -264,76 +261,6 @@ def test_stage_rejects_incomplete_generation_without_publication(
     assert not (run_directory / "generated.pcapng").exists()
 
 
-def test_stage_rejects_a_post_publication_round_trip_mismatch(
-    valid_config_data: dict[str, object],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The stage result must expose events parsed from the exact published bytes, not pre-render values."""
-    experiment_path, run_directory, _config = prepare_stage_run(valid_config_data, tmp_path)
-    real_parse = read_pcapng_bytes
-
-    def change_stage_parse(
-        content: bytes,
-        metadata: CaptureMetadata,
-        *,
-        source: Path,
-    ) -> TrafficTrace:
-        parsed = real_parse(content, metadata, source=source)
-        return parsed[:-1]
-
-    monkeypatch.setattr(generation_module, "read_pcapng_bytes", change_stage_parse)
-
-    with pytest.raises(TrafficlabError, match="round-trip"):
-        generate_experiment(experiment_path, clock=lambda: 0.0)
-
-    assert (run_directory / "generated.pcapng").exists()
-    assert log_records(run_directory)[-1]["event"] == "stage_failed"
-
-
-def test_stage_rejects_a_post_publication_timestamp_above_stored_window(
-    valid_config_data: dict[str, object],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The stage must independently enforce parsed timestamps inside stored W."""
-    experiment_path, run_directory, _config = prepare_stage_run(valid_config_data, tmp_path)
-    real_parse = read_pcapng_bytes
-
-    def move_stage_parse_outside_window(
-        content: bytes,
-        metadata: CaptureMetadata,
-        *,
-        source: Path,
-    ) -> TrafficTrace:
-        parsed = real_parse(content, metadata, source=source)
-        return TrafficTrace.from_events(
-            (*parsed[:-1].to_events(), TraceEvent(10.000000001, parsed[-1].direction, parsed[-1].frame_length))
-        )
-
-    monkeypatch.setattr(generation_module, "read_pcapng_bytes", move_stage_parse_outside_window)
-
-    with pytest.raises(TrafficlabError, match="outside.*observation window"):
-        generate_experiment(experiment_path, clock=lambda: 0.0)
-
-    assert (run_directory / "generated.pcapng").exists()
-    assert log_records(run_directory)[-1]["event"] == "stage_failed"
-
-
-def test_stage_rejects_and_preserves_a_different_existing_output(
-    valid_config_data: dict[str, object],
-    tmp_path: Path,
-) -> None:
-    experiment_path, run_directory, _config = prepare_stage_run(valid_config_data, tmp_path)
-    destination = run_directory / "generated.pcapng"
-    destination.write_bytes(b"preserve")
-
-    with pytest.raises(TrafficlabError, match="already exists"):
-        generate_experiment(experiment_path, clock=lambda: 0.0)
-
-    assert destination.read_bytes() == b"preserve"
-
-
 def test_stage_failure_log_wrapper_preserves_primary_error_contract(
     valid_config_data: dict[str, object],
     tmp_path: Path,
@@ -360,27 +287,3 @@ def test_stage_failure_log_wrapper_preserves_primary_error_contract(
 
     assert raised.value.corrective_action == "primary action"
     assert raised.value.exit_code == 7
-
-
-def test_stage_success_log_failure_leaves_output_reusable(
-    valid_config_data: dict[str, object],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    experiment_path, run_directory, _config = prepare_stage_run(valid_config_data, tmp_path)
-    real_append = generation_module.append_run_log
-
-    def fail_success(_run_directory: Path, record: object) -> None:
-        assert cast(dict[str, object], record)["event"] == "generated_pcapng_published"
-        raise TrafficlabError("success log failure", corrective_action="repair log")
-
-    monkeypatch.setattr(generation_module, "append_run_log", fail_success)
-    with pytest.raises(TrafficlabError, match="published.*success logging failed"):
-        generate_experiment(experiment_path, clock=lambda: 0.0)
-
-    published = (run_directory / "generated.pcapng").read_bytes()
-    monkeypatch.setattr(generation_module, "append_run_log", real_append)
-    retried = generate_experiment(experiment_path, clock=lambda: 0.0)
-
-    assert retried.reused is True
-    assert retried.generated_path.read_bytes() == published

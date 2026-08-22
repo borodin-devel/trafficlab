@@ -1,1 +1,1 @@
-"""Functional owners for the decomposed module."""
+"""Scientific MMPP likelihood schema, kernel, fit, and evidence probe."""
