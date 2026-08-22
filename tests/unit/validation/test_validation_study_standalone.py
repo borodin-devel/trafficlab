@@ -22,8 +22,7 @@ def test_standalone_runner_bootstraps_repository_before_late_auditor_import(monk
     namespace = runpy.run_path(str(_ROOT / "scripts" / "run_validation_study.py"), run_name="__trafficlab_standalone__")
 
     assert str(_ROOT) == sys.path[0]
-    exec("from scripts import audit_validation_study as auditor", namespace)
-    assert namespace["auditor"].__name__ == "scripts.audit_validation_study"
+    assert namespace["main"].__module__ == "scripts.validation_study.cli"
 
 
 def test_package_runner_leaves_the_import_path_unchanged() -> None:
@@ -53,8 +52,8 @@ try:
     runpy.run_path(str(script), run_name="__main__")
 except SystemExit as error:
     assert error.code == 0
-from scripts import audit_validation_study as auditor
-assert auditor.__name__ == "scripts.audit_validation_study"
+from scripts.validation_study import cli
+assert cli.main.__module__ == "scripts.validation_study.cli"
 """
     completed = subprocess.run(
         (sys.executable, "-c", program),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import runpy
@@ -12,6 +13,45 @@ import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 CHECKER_PATH = REPOSITORY / "scripts" / "check_fixture_layout.py"
+
+VALIDATION_STUDY_TOOLING = {
+    "__init__.py",
+    "audit/__init__.py",
+    "audit/artifacts.py",
+    "audit/common.py",
+    "audit/environment.py",
+    "audit/lifecycle.py",
+    "audit/science.py",
+    "candidate/__init__.py",
+    "candidate/artifacts.py",
+    "candidate/held_out.py",
+    "candidate/reporting.py",
+    "cli.py",
+    "collection.py",
+    "common.py",
+    "evidence.py",
+    "fixture.py",
+    "prerequisites/__init__.py",
+    "prerequisites/codec.py",
+    "prerequisites/commands.py",
+    "prerequisites/run.py",
+    "records.py",
+    "results/__init__.py",
+    "results/codec.py",
+    "results/reporting.py",
+    "results/reproduction.py",
+    "rotation/__init__.py",
+    "rotation/run.py",
+    "rotation/schema.py",
+    "transfer.py",
+    "workloads.py",
+}
+
+VALIDATION_STUDY_WRAPPERS = {
+    "audit_validation_study.py": "scripts.validation_study.audit.lifecycle",
+    "generate_validation_study_fixture.py": "scripts.validation_study.fixture",
+    "run_validation_study.py": "scripts.validation_study.cli",
+}
 
 
 class _ManifestEntry(Protocol):
@@ -224,4 +264,43 @@ def test_repository_owned_fixture_manifests_match() -> None:
     checker.check_manifest(
         REPOSITORY / "tests" / "fixtures" / "data",
         REPOSITORY / "tests" / "fixtures" / "data" / "manifest.json",
+    )
+
+
+def test_validation_study_tooling_has_the_declared_functional_owners() -> None:
+    root = REPOSITORY / "scripts" / "validation_study"
+
+    assert {
+        path.relative_to(root).as_posix() for path in root.rglob("*.py") if "__pycache__" not in path.parts
+    } == VALIDATION_STUDY_TOOLING
+    records = ast.parse((root / "records.py").read_text(encoding="utf-8"))
+    assert "HeldOutEvaluation" in {
+        node.name for node in records.body if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+    }
+    for path in (root / "audit").glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        assert not any(
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.module.startswith("scripts.validation_study.candidate")
+            for node in tree.body
+        )
+
+
+@pytest.mark.parametrize(("wrapper_name", "owner"), tuple(VALIDATION_STUDY_WRAPPERS.items()))
+def test_validation_study_executables_are_thin_main_only_wrappers(wrapper_name: str, owner: str) -> None:
+    path = REPOSITORY / "scripts" / wrapper_name
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    owner_imports = [node for node in tree.body if isinstance(node, ast.ImportFrom) and node.module == owner]
+
+    assert len(source.splitlines()) <= 40
+    assert len(owner_imports) == 1
+    assert tuple(alias.name for alias in owner_imports[0].names) == ("main",)
+    assert not any(
+        isinstance(node, ast.ImportFrom)
+        and node.module is not None
+        and node.module.startswith("scripts.validation_study")
+        and node is not owner_imports[0]
+        for node in tree.body
     )

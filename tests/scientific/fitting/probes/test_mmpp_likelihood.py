@@ -13,10 +13,25 @@ from pathlib import Path
 
 import pytest
 
-from tests.scientific.fitting.probes import mmpp_likelihood as probe
-from tests.scientific.fitting.probes.mmpp_likelihood import (
-    AGGREGATE_GATE_NAMES,
+from tests.scientific.fitting.probes.mmpp_likelihood import fit as probe
+from tests.scientific.fitting.probes.mmpp_likelihood import likelihood as likelihood_probe
+from tests.scientific.fitting.probes.mmpp_likelihood import schema as mmpp_schema
+from tests.scientific.fitting.probes.mmpp_likelihood.evidence import (
+    build_probe_evidence,
+    render_probe_evidence,
+    validate_probe_evidence,
+    write_probe_evidence,
+)
+from tests.scientific.fitting.probes.mmpp_likelihood.fit import decide_probe, fit_mmpp_likelihood
+from tests.scientific.fitting.probes.mmpp_likelihood.likelihood import (
     COMMON_START_RATES,
+    decode_rates,
+    likelihood_evaluation_count,
+    mmpp_log_likelihood,
+    simulation_evaluation_count,
+)
+from tests.scientific.fitting.probes.mmpp_likelihood.schema import (
+    AGGREGATE_GATE_NAMES,
     EVALUATION_BUDGET,
     EXTREME_CASES,
     HAND_CASES,
@@ -41,16 +56,6 @@ from tests.scientific.fitting.probes.mmpp_likelihood import (
     LikelihoodEvaluation,
     SimulationCandidateHistory,
     SimulationGenerationHistory,
-    build_probe_evidence,
-    decide_probe,
-    decode_rates,
-    fit_mmpp_likelihood,
-    likelihood_evaluation_count,
-    mmpp_log_likelihood,
-    render_probe_evidence,
-    simulation_evaluation_count,
-    validate_probe_evidence,
-    write_probe_evidence,
 )
 from trafficlab.fitting.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
 
@@ -175,7 +180,7 @@ def test_optimizer_history_retains_invalid_objective_evaluations(monkeypatch: py
     def fail_exponential(_matrix: object) -> object:
         raise ValueError("controlled matrix failure")
 
-    monkeypatch.setattr(probe, "_expm", fail_exponential)
+    monkeypatch.setattr(likelihood_probe, "expm", fail_exponential)
     result = fit_mmpp_likelihood((0.1,), 0.2, PROBE_BOUNDS, seed=RECOVERY_SEEDS[0])
     assert result.history
     assert result.evaluations == likelihood_evaluation_count(result.history)
@@ -205,6 +210,10 @@ def test_probe_policy_is_predeclared_before_results() -> None:
         (104301,),
     )
     assert tuple(plan.held_out_data_seed for plan in TRIAL_PLANS) == (34101, 34201, 34301)
+    assert not hasattr(mmpp_schema, "expm")
+    assert not hasattr(mmpp_schema, "differential_evolution")
+    assert callable(likelihood_probe.expm)
+    assert callable(probe.differential_evolution)
 
 
 def test_simulation_distance_fit_rejects_an_invalid_final_population(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,7 +237,7 @@ def test_simulation_distance_fit_rejects_an_invalid_final_population(monkeypatch
         ),
         duplicate_diagnostics=(),
     )
-    reference = probe._generate_trace(TRUE_RATES, seed=99, window=20.0)  # pyright: ignore[reportPrivateUsage]
+    reference = probe.generate_trace(TRUE_RATES, seed=99, window=20.0)
 
     def invalid_rank(_candidates: Sequence[Candidate], *, family_priority: FamilyPriority) -> tuple[Candidate, ...]:
         del family_priority
@@ -237,7 +246,7 @@ def test_simulation_distance_fit_rejects_an_invalid_final_population(monkeypatch
     monkeypatch.setattr(probe, "PRODUCTION_GENERATIONS", 0)
     monkeypatch.setattr(probe, "rank_candidates", invalid_rank)
     with pytest.raises(AssertionError, match="no valid winner"):
-        probe._simulation_distance_fit(  # pyright: ignore[reportPrivateUsage]
+        probe.simulation_distance_fit(
             reference,
             window=float(reference.timestamps[-1]),
             seed=199,

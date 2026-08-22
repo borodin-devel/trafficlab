@@ -10,8 +10,11 @@ from typing import cast
 
 import pytest
 
-from scripts import audit_validation_study as auditor
-from scripts.run_validation_study import PUBLISHED_METHOD_ORDER, HeldOutEvaluation
+import scripts.validation_study.audit.common as vs_audit_common
+import scripts.validation_study.audit.environment as vs_audit_environment
+import scripts.validation_study.audit.science as vs_audit_science
+from scripts.validation_study.common import PUBLISHED_METHOD_ORDER
+from scripts.validation_study.records import HeldOutEvaluation
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_configuration_pair
@@ -28,13 +31,13 @@ def _config() -> ExperimentConfig:
     return load_configuration_pair(PIPELINE_FIXTURE_ROOT / "fit" / "experiment.toml").realized
 
 
-def _training(config: ExperimentConfig) -> tuple[auditor._Training, ...]:  # pyright: ignore[reportPrivateUsage]
-    records: list[auditor._Training] = []  # pyright: ignore[reportPrivateUsage]
+def _training(config: ExperimentConfig) -> tuple[vs_audit_common.Training, ...]:
+    records: list[vs_audit_common.Training] = []
     for workload in _WORKLOADS:
         for repeat in (1, 2, 3):
             raw_window = 0.05 + (repeat - 1) * 0.25
             records.append(
-                auditor._Training(  # pyright: ignore[reportPrivateUsage]
+                vs_audit_common.Training(
                     workload=workload,
                     repeat=repeat,
                     directory=Path(f"training/{workload}/r{repeat}"),
@@ -96,11 +99,11 @@ def _patch_nonvariation_report_dependencies(
         captured.append((reference, generated, window))
         return cast(ComparisonResult, object())
 
-    monkeypatch.setattr(auditor, "_score", score_for)
-    monkeypatch.setattr(auditor, "_controlled_weight_analysis", no_weight_analysis)
-    monkeypatch.setattr(auditor, "_invalid_chromosome_diagnostics", no_invalid_chromosomes)
-    monkeypatch.setattr(auditor, "_winner_family", mmpp_winner_family)
-    monkeypatch.setattr(auditor, "compare_traces", capture_comparison)
+    monkeypatch.setattr(vs_audit_science, "comparison_score", score_for)
+    monkeypatch.setattr(vs_audit_science, "_controlled_weight_analysis", no_weight_analysis)
+    monkeypatch.setattr(vs_audit_science, "_invalid_chromosome_diagnostics", no_invalid_chromosomes)
+    monkeypatch.setattr(vs_audit_science, "_winner_family", mmpp_winner_family)
+    monkeypatch.setattr(vs_audit_science, "compare_traces", capture_comparison)
 
 
 def test_report_inputs_derives_each_directional_reference_window(
@@ -110,7 +113,7 @@ def test_report_inputs_derives_each_directional_reference_window(
     training = _training(config)
     captured: list[tuple[TrafficTrace, TrafficTrace, float]] = []
     _patch_nonvariation_report_dependencies(monkeypatch, captured)
-    report = auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
+    report = vs_audit_science.rebuild_report_inputs(
         training,
         _held(),
     )
@@ -140,8 +143,8 @@ def test_protocol_rejects_each_noncanonical_schema_three_control(field: str, val
     protocol = cast(dict[str, object], json.loads(protocol_path.read_text(encoding="utf-8")))
     protocol[field] = value
 
-    with pytest.raises(auditor._Issue):  # pyright: ignore[reportPrivateUsage]
-        auditor._protocol(  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(vs_audit_common.Issue):
+        vs_audit_environment.load_protocol(
             (json.dumps(protocol, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
         )
 
@@ -159,8 +162,8 @@ def test_report_inputs_rejects_mixed_similarity_settings(monkeypatch: pytest.Mon
     captured: list[tuple[TrafficTrace, TrafficTrace, float]] = []
     _patch_nonvariation_report_dependencies(monkeypatch, captured)
 
-    with pytest.raises(auditor._Issue, match="common similarity settings"):  # pyright: ignore[reportPrivateUsage]
-        auditor._report_inputs(  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(vs_audit_common.Issue, match="common similarity settings"):
+        vs_audit_science.rebuild_report_inputs(
             (replace(training[0], config=incompatible), *training[1:]),
             _held(),
         )

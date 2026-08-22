@@ -14,8 +14,13 @@ from typing import cast
 
 import pytest
 
-from scripts import audit_validation_study as auditor
-from scripts import run_validation_study as study
+import scripts.validation_study.audit.artifacts as vs_audit_artifacts
+import scripts.validation_study.audit.lifecycle as vs_audit_lifecycle
+import scripts.validation_study.common as vs_common
+import scripts.validation_study.evidence as vs_evidence
+import scripts.validation_study.records as vs_records
+import scripts.validation_study.workloads as vs_workloads
+import trafficlab.pipeline.stage as trafficlab_pipeline_stage
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT, VALIDATION_STUDY_CANDIDATE
 from trafficlab.artifacts.io import append_run_log
 from trafficlab.capture.lineage import CaptureResult
@@ -154,9 +159,9 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
     study_id = "study-1"
     run_id = "01-short-r1"
     url = "https://downloads.example.test/object.bin"
-    workload = study.workload_specs(url)[0]
+    workload = vs_workloads.workload_specs(url)[0]
     (repository_root / "examples" / "validation_study" / ".study-work" / "mount" / study_id).mkdir(parents=True)
-    config = study.build_base_config(
+    config = vs_workloads.build_base_config(
         workload,
         repository_root=repository_root,
         study_id=study_id,
@@ -167,7 +172,7 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
     assert config.genetic.generation_count == 1
     assert config.genetic.trial_seeds == (17, 29)
     experiment_path = repository_root / "runs" / "validation_study" / study_id / "realized-configs" / f"{run_id}.toml"
-    study._render_realized_config(config, experiment_path)  # pyright: ignore[reportPrivateUsage]
+    vs_workloads.render_realized_config(config, experiment_path)
 
     def capture(_path: Path, prepared: PreparedExperiment) -> CaptureResult:
         metadata_path = prepared.run_directory / "capture.json"
@@ -206,7 +211,7 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
     header_path = evidence_directory / "short.headers"
     header_path.write_bytes(header_bytes)
     header_path.chmod(0o600)
-    transfer_responses: tuple[study.JsonObject, ...] = (
+    transfer_responses: tuple[vs_common.JsonObject, ...] = (
         {
             "transfer_index": 0,
             "requested_start": 0,
@@ -221,7 +226,7 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
             "inode_preserved": True,
         },
     )
-    run_spec = study.StudyRunSpec(
+    run_spec = vs_records.StudyRunSpec(
         1,
         run_id,
         "short",
@@ -231,7 +236,7 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
         evidence_directory,
     )
 
-    record = study.extract_primary_record(
+    record = vs_evidence.extract_primary_record(
         repository_root,
         run_spec,
         workload,
@@ -246,12 +251,12 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
         "poisson_empirical",
     )
     assert all(item["selection_seeds"] == (17, 29) for item in record.family_champions)
-    fresh_simulation = cast(study.JsonObject, study._thaw_json(record.fresh_simulation))  # pyright: ignore[reportPrivateUsage]
-    fresh_simulation_score = cast(study.JsonObject, fresh_simulation["score"])
-    methods = cast(study.JsonObject, fresh_simulation_score["methods"])
+    fresh_simulation = cast(vs_common.JsonObject, vs_common.thaw_json(record.fresh_simulation))
+    fresh_simulation_score = cast(vs_common.JsonObject, fresh_simulation["score"])
+    methods = cast(vs_common.JsonObject, fresh_simulation_score["methods"])
     artifact_sha256 = cast(
-        study.JsonObject,
-        study._thaw_json(record.artifact_sha256),  # pyright: ignore[reportPrivateUsage]
+        vs_common.JsonObject,
+        vs_common.thaw_json(record.artifact_sha256),
     )
     input_sha256 = result.comparison.input_sha256
     assert input_sha256 is not None
@@ -260,7 +265,7 @@ def test_validation_study_extraction_uses_real_three_family_artifacts_fresh_seed
     assert artifact_sha256["capture.json"] == input_sha256["capture_json"]
     assert artifact_sha256["reference.pcapng"] == input_sha256["reference_pcapng"]
     assert artifact_sha256["generated.pcapng"] == input_sha256["generated_pcapng"]
-    assert sorted(path.name for path in config.run.directory.iterdir()) == sorted(study.ARTIFACT_NAMES)
+    assert sorted(path.name for path in config.run.directory.iterdir()) == sorted(vs_common.ARTIFACT_NAMES)
 
 
 def test_audit_cli_accepts_only_a_reconstructed_offline_candidate(
@@ -283,9 +288,9 @@ def test_audit_cli_accepts_only_a_reconstructed_offline_candidate(
         raise AssertionError("offline audit attempted a non-Git subprocess")
 
     monkeypatch.setattr(subprocess, "run", local_git_only)
-    monkeypatch.setattr(study, "run_experiment", reject_external)
+    monkeypatch.setattr(trafficlab_pipeline_stage, "run_experiment", reject_external)
 
-    assert auditor.main([str(candidate), "--repository", str(repository)]) == 0
+    assert vs_audit_lifecycle.main([str(candidate), "--repository", str(repository)]) == 0
     assert capsys.readouterr().out.startswith("validation-study-audit: accepted ")
 
 
@@ -343,7 +348,7 @@ def test_clean_checkout_auditor_rejects_a_candidate_bound_to_a_different_source_
         json.dumps(environment, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
     )
     index = cast(dict[str, object], json.loads((candidate / "index.json").read_text(encoding="utf-8")))
-    auditor.write_manifest(
+    vs_audit_artifacts.write_manifest(
         candidate,
         ownership=cast(dict[str, str], index["ownership"]),
         lineage=cast(dict[str, object], index["lineage"]),

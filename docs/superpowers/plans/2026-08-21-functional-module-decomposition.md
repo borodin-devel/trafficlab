@@ -490,43 +490,43 @@ NumPy, SciPy, Git, Docker Compose.
   tooling modules consumed directly by tests; unchanged retained evidence
   codecs, collection, audit, probe, and fixture behavior.
 
-- [ ] **[STEP-49-b9719f8b] Snapshot validation/probe nodes and write RED tooling tests**
+- [x] **[STEP-49-b9719f8b] Snapshot validation/probe nodes and write RED tooling tests**
 
   Save normalized inventories for all validation-study and scientific-probe
   tests. Extend repository layout tests to require the tooling package tree and
   wrappers of at most 40 lines; run RED against the monoliths.
 
-- [ ] **[STEP-50-a8e7a97a] Extract common, workload, transfer, record, and evidence modules**
+- [x] **[STEP-50-a8e7a97a] Extract common, workload, transfer, record, and evidence modules**
 
   Move strict JSON primitives, configs, HTTP transfer archive logic, immutable
   records, persisted-run loading, trace summaries, and primary extraction to
   the exact spec owners. Update callers before deleting each original body.
 
-- [ ] **[STEP-51-f9d0c99c] Extract prerequisites, results, rotation, candidate, and collection**
+- [x] **[STEP-51-f9d0c99c] Extract prerequisites, results, rotation, candidate, and collection**
 
   Build the named subpackages, moving each complete symbol group once. Enforce
   dependency direction from codecs/records to operations to collection; retain
   historic schema-one codecs with prerequisite codec ownership.
 
-- [ ] **[STEP-52-6b0904f7] Extract audit, fixture, CLI, support, and probe packages**
+- [x] **[STEP-52-6b0904f7] Extract audit, fixture, CLI, support, and probe packages**
 
   Split audit by environment/artifacts/science/lifecycle, fixture generation to
   `fixture.py`, CLI dispatch to `cli.py`, validation test support to its five
   owners, and MMPP/pymoo probes to their schema/math/adapter/evidence owners.
 
-- [ ] **[STEP-53-9b8ff136] Split validation tests and prove exact inventory**
+- [x] **[STEP-53-9b8ff136] Split validation tests and prove exact inventory**
 
   Rehome every existing test by audit/protocol/orchestration/prerequisite owner,
   update imports to direct tooling/support modules, and require normalized node
   inventories, markers, and the 3,833-test baseline to remain complete.
 
-- [ ] **[STEP-54-3a52ceec] Verify tooling, probes, fixture, and audit behavior**
+- [x] **[STEP-54-3a52ceec] Verify tooling, probes, fixture, and audit behavior**
 
   Run all validation unit/integration/scientific tests, standalone wrapper
   tests, every validation/probe/fixture checker, the detached accepted-study
   audit, Ruff, strict Pyright, and module-size checks.
 
-- [ ] **[STEP-55-6569817f] Review and commit validation tooling ownership**
+- [x] **[STEP-55-6569817f] Review and commit validation tooling ownership**
 
   Resolve independent review findings and commit:
 

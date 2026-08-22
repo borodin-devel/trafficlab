@@ -12,8 +12,18 @@ from typing import Literal, cast
 
 import pytest
 
-from scripts import audit_validation_study as auditor
-from scripts import run_validation_study as study
+import scripts.validation_study.audit.lifecycle as vs_audit_lifecycle
+import scripts.validation_study.audit.science as vs_audit_science
+import scripts.validation_study.candidate.artifacts as vs_candidate_artifacts
+import scripts.validation_study.candidate.reporting as vs_candidate_reporting
+import scripts.validation_study.collection as vs_collection
+import scripts.validation_study.common as vs_common
+import scripts.validation_study.prerequisites.codec as vs_prereq_codec
+import scripts.validation_study.prerequisites.commands as vs_prereq_commands
+import scripts.validation_study.results.reproduction as vs_results_reproduction
+import scripts.validation_study.rotation.run as vs_rotation_run
+import scripts.validation_study.workloads as vs_workloads
+import trafficlab.common.trace as trafficlab_common_trace
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.artifacts.io import append_run_log
 from trafficlab.capture.lineage import CaptureResult
@@ -93,8 +103,8 @@ def _retained_prerequisites(
     commands: list[dict[str, object]] = []
     junit = b'<testsuite errors="0" failures="0" name="fixture" skipped="0" tests="1"/>\n'
     for kind in ("docker_matrix", "internet_smoke"):
-        argv = list(study.prerequisite_command_argv(kind, study_id=study_id, url=url))
-        tests = study.prerequisite_junit_counts(junit)
+        argv = list(vs_prereq_commands.prerequisite_command_argv(kind, study_id=study_id, url=url))
+        tests = vs_prereq_commands.prerequisite_junit_counts(junit)
         records = {
             "command": _canonical({"argv": argv}),
             "junit": junit,
@@ -123,7 +133,7 @@ def _retained_prerequisites(
         )
     capability_header = b"HTTP/1.1 206 Partial Content\r\nContent-Length: 1\r\nContent-Range: bytes 0-0/4194304\r\n\r\n"
     outputs["headers/prerequisites/00-prerequisites/capability.headers"] = capability_header
-    document = study.render_retained_prerequisites(
+    document = vs_prereq_codec.render_retained_prerequisites(
         {
             "capability": {
                 "canary_sha256": hashlib.sha256(capability_header).hexdigest(),
@@ -156,7 +166,7 @@ def _retained_prerequisites(
 
 def _collection_inputs(
     root: Path,
-) -> tuple[dict[str, object], bytes, dict[str, bytes], dict[study.WorkloadName, ExperimentConfig]]:
+) -> tuple[dict[str, object], bytes, dict[str, bytes], dict[vs_common.WorkloadName, ExperimentConfig]]:
     study_id = "study-1"
     url = "https://downloads.example.test/object.bin"
     commit, tree, image_lock = _initialize_repository(root)
@@ -179,8 +189,8 @@ def _collection_inputs(
         "scientific_artifact_schema": 4,
         "source_commit": commit,
         "source_tree": tree,
-        "target_image_id": f"sha256:{study.TARGET_REFERENCE.rsplit(':', 1)[-1]}",
-        "target_image_reference": study.TARGET_REFERENCE,
+        "target_image_id": f"sha256:{vs_common.TARGET_REFERENCE.rsplit(':', 1)[-1]}",
+        "target_image_reference": vs_common.TARGET_REFERENCE,
         "uv_lock_identity": identify_bytes((root / "uv.lock").read_bytes()).as_dict(),
     }
     prerequisite, files = _retained_prerequisites(study_id=study_id, url=url, environment=environment)
@@ -198,9 +208,9 @@ def _collection_inputs(
             }
         )
     )
-    configs: dict[study.WorkloadName, ExperimentConfig] = {}
-    for workload in study.workload_specs(url):
-        base = study.build_base_config(
+    configs: dict[vs_common.WorkloadName, ExperimentConfig] = {}
+    for workload in vs_workloads.workload_specs(url):
+        base = vs_workloads.build_base_config(
             workload,
             repository_root=root,
             study_id=study_id,
@@ -283,7 +293,7 @@ def _offline_stage_runners(
 
     def run_training(path: Path) -> RunResult:
         config = load_experiment(path)
-        workload = study._workload_for_config(config)  # pyright: ignore[reportPrivateUsage]
+        workload = vs_workloads.config_workload(config)
         calls.append(f"training:{workload.name}")
         number = next(sequence)
 
@@ -310,7 +320,7 @@ def _offline_stage_runners(
 
     def capture_held_out(path: Path) -> CaptureResult:
         config = load_experiment(path)
-        workload = study._workload_for_config(config)  # pyright: ignore[reportPrivateUsage]
+        workload = vs_workloads.config_workload(config)
         protocol = candidate / "protocol.json"
         assert protocol.exists(), "held-out capture started before training selection was frozen"
         calls.append(f"held-out:{workload.name}")
@@ -342,7 +352,7 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     assert {config.genetic.generation_count for config in configs.values()} == {1}
     assert {config.genetic.trial_seeds for config in configs.values()} == {(17, 29)}
 
-    validation_profile = auditor._validation_profile  # pyright: ignore[reportPrivateUsage]
+    validation_profile = vs_audit_science._validation_profile  # pyright: ignore[reportPrivateUsage]
 
     def one_generation_validation_profile(
         *,
@@ -353,18 +363,18 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         profile = validation_profile(workload=workload, url=url, environment=environment)
         return profile.model_copy(update={"genetic": profile.genetic.model_copy(update={"generation_count": 1})})
 
-    monkeypatch.setattr(auditor, "_validation_profile", one_generation_validation_profile)
+    monkeypatch.setattr(vs_audit_science, "_validation_profile", one_generation_validation_profile)
     candidate = repository / "examples" / "validation_study" / "evidence" / ".candidates" / "study-1"
     run_training, capture_held_out, calls = _offline_stage_runners(
         repository, candidate=candidate, environment=environment
     )
-    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = vs_rotation_run.begin_phase_attempt(
         repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
         phase="collection",
     )
-    tag = study._phase_capture_tag("study-1", "collection")  # pyright: ignore[reportPrivateUsage]
+    tag = vs_common.phase_capture_tag("study-1", "collection")
     phase_commands: list[tuple[str, ...]] = []
 
     def phase_runner(
@@ -382,7 +392,7 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         assert capture_output is True
         assert shell is False
         assert input is None
-        assert timeout == study.SUBPROCESS_TIMEOUTS["image_pull_or_build"]
+        assert timeout == vs_common.SUBPROCESS_TIMEOUTS["image_pull_or_build"]
         command = tuple(argv)
         phase_commands.append(command)
         if command == ("docker", "image", "rm", "--force", tag):
@@ -390,7 +400,7 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         assert command == ("docker", "image", "inspect", tag, "--format", "{{.Id}}")
         return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"")
 
-    collected = study.collect_validation_candidate(
+    collected = vs_collection.collect_validation_candidate(
         repository_root=repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
@@ -402,12 +412,12 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         run=run_training,
         capture=capture_held_out,
         object_size_bytes=4_194_304,
-        owned_capture_image=study._PhaseCaptureImage(tag=tag, build_attempted=True),  # pyright: ignore[reportPrivateUsage]
+        owned_capture_image=vs_collection.PhaseCaptureImage(tag=tag, build_attempted=True),
         runner=phase_runner,
     )
 
     assert collected == candidate
-    assert auditor.audit_bundle(candidate, repository=repository).bundle == candidate
+    assert vs_audit_lifecycle.audit_bundle(candidate, repository=repository).bundle == candidate
     index = cast(dict[str, object], json.loads((candidate / "index.json").read_text()))
     assert len(cast(list[object], index["training"])) == 9
     assert len(cast(list[object], index["fresh_simulation"])) == 9
@@ -415,14 +425,14 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     expected_headers = (
         {
             f"headers/training/{run_id}/{filename}"
-            for _order, run_id, workload, _repeat in study.PRIMARY_ORDER
-            for _start, _end, filename in study.workload_specs("https://downloads.example.test/object.bin")[
+            for _order, run_id, workload, _repeat in vs_common.PRIMARY_ORDER
+            for _start, _end, filename in vs_workloads.workload_specs("https://downloads.example.test/object.bin")[
                 ("short", "streaming", "bursty").index(workload)
             ].transfers
         }
         | {
             f"headers/held_out/held-out-{workload.name}/{filename}"
-            for workload in study.workload_specs("https://downloads.example.test/object.bin")
+            for workload in vs_workloads.workload_specs("https://downloads.example.test/object.bin")
             for _start, _end, filename in workload.transfers
         }
         | {"headers/prerequisites/00-prerequisites/capability.headers"}
@@ -518,7 +528,7 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         "tag": tag,
     }
     assert [cast(dict[str, object], row)["run_id"] for row in cast(list[object], lifecycle["training"])] == [
-        run_id for _order, run_id, _workload, _repeat in study.PRIMARY_ORDER
+        run_id for _order, run_id, _workload, _repeat in vs_common.PRIMARY_ORDER
     ]
     assert [cast(dict[str, object], row)["run_id"] for row in cast(list[object], lifecycle["held_out"])] == [
         "held-out-short",
@@ -539,11 +549,11 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
         ("docker", "image", "rm", "--force", tag),
         ("docker", "image", "inspect", tag, "--format", "{{.Id}}"),
     ]
-    published = study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
+    published = vs_results_reproduction.publish_audited_bundle(candidate, "study-1", repository_root=repository)
     assert published == repository / "examples" / "validation_study" / "evidence" / "study-1"
-    assert auditor.audit_bundle(published, repository=repository).bundle == published
+    assert vs_audit_lifecycle.audit_bundle(published, repository=repository).bundle == published
     with pytest.raises(TrafficlabError, match="already exists"):
-        study.publish_audited_bundle(candidate, "study-1", repository_root=repository)
+        vs_results_reproduction.publish_audited_bundle(candidate, "study-1", repository_root=repository)
 
 
 def test_collection_rejects_late_capture_project_record_before_final_artifacts(tmp_path: Path) -> None:
@@ -556,13 +566,13 @@ def test_collection_rejects_late_capture_project_record_before_final_artifacts(t
     run_training, capture_held_out, _calls = _offline_stage_runners(
         repository, candidate=candidate, environment=environment
     )
-    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = vs_rotation_run.begin_phase_attempt(
         repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
         phase="collection",
     )
-    tag = study._phase_capture_tag("study-1", "collection")  # pyright: ignore[reportPrivateUsage]
+    tag = vs_common.phase_capture_tag("study-1", "collection")
 
     def late_created_capture(path: Path) -> CaptureResult:
         result = capture_held_out(path)
@@ -602,7 +612,7 @@ def test_collection_rejects_late_capture_project_record_before_final_artifacts(t
     with pytest.raises(
         TrafficlabError, match="collection capture must bind its exact created project name to publication"
     ):
-        study.collect_validation_candidate(
+        vs_collection.collect_validation_candidate(
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
@@ -614,7 +624,7 @@ def test_collection_rejects_late_capture_project_record_before_final_artifacts(t
             run=run_training,
             capture=late_created_capture,
             object_size_bytes=4_194_304,
-            owned_capture_image=study._PhaseCaptureImage(tag=tag, build_attempted=True),  # pyright: ignore[reportPrivateUsage]
+            owned_capture_image=vs_collection.PhaseCaptureImage(tag=tag, build_attempted=True),
             runner=phase_runner,
         )
 
@@ -639,13 +649,13 @@ def test_collection_refuses_to_finalize_when_phase_image_cleanup_is_not_verified
     run_training, capture_held_out, _calls = _offline_stage_runners(
         repository, candidate=candidate, environment=environment
     )
-    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = vs_rotation_run.begin_phase_attempt(
         repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
         phase="collection",
     )
-    tag = study._phase_capture_tag("study-1", "collection")  # pyright: ignore[reportPrivateUsage]
+    tag = vs_common.phase_capture_tag("study-1", "collection")
 
     def retained_tag_runner(
         argv: Sequence[str],
@@ -662,7 +672,7 @@ def test_collection_refuses_to_finalize_when_phase_image_cleanup_is_not_verified
         assert capture_output is True
         assert shell is False
         assert input is None
-        assert timeout == study.SUBPROCESS_TIMEOUTS["image_pull_or_build"]
+        assert timeout == vs_common.SUBPROCESS_TIMEOUTS["image_pull_or_build"]
         command = tuple(argv)
         if command == ("docker", "image", "rm", "--force", tag):
             return subprocess.CompletedProcess(
@@ -675,7 +685,7 @@ def test_collection_refuses_to_finalize_when_phase_image_cleanup_is_not_verified
         return subprocess.CompletedProcess(command, 0, stdout=b"sha256:still-owned\n", stderr=b"")
 
     with pytest.raises(TrafficlabError, match="capture image cleanup"):
-        study.collect_validation_candidate(
+        vs_collection.collect_validation_candidate(
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
@@ -687,7 +697,7 @@ def test_collection_refuses_to_finalize_when_phase_image_cleanup_is_not_verified
             run=run_training,
             capture=capture_held_out,
             object_size_bytes=4_194_304,
-            owned_capture_image=study._PhaseCaptureImage(tag=tag, build_attempted=True),  # pyright: ignore[reportPrivateUsage]
+            owned_capture_image=vs_collection.PhaseCaptureImage(tag=tag, build_attempted=True),
             runner=retained_tag_runner,
         )
 
@@ -702,7 +712,7 @@ def test_collection_failure_locks_the_study_id_to_a_new_attempt(tmp_path: Path) 
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
     calls = 0
-    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = vs_rotation_run.begin_phase_attempt(
         repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
@@ -718,7 +728,7 @@ def test_collection_failure_locks_the_study_id_to_a_new_attempt(tmp_path: Path) 
         raise AssertionError("held-out capture must not begin after a training failure")
 
     def collect() -> Path:
-        return study.collect_validation_candidate(
+        return vs_collection.collect_validation_candidate(
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
@@ -757,18 +767,18 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
     run_training, capture_held_out, calls = _offline_stage_runners(
         repository, candidate=candidate, environment=environment
     )
-    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = vs_rotation_run.begin_phase_attempt(
         repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
         phase="collection",
     )
-    original_align_generated = study.align_generated
-    original_natural_variation = study._candidate_natural_variation  # pyright: ignore[reportPrivateUsage]
+    original_align_generated = trafficlab_common_trace.align_generated
+    original_natural_variation = vs_candidate_reporting.candidate_natural_variation
     targeted_underflows = 0
 
     def underflow_natural_variation(
-        training: Sequence[study._CandidateTraining],  # pyright: ignore[reportPrivateUsage]
+        training: Sequence[vs_candidate_artifacts.CandidateTraining],
     ) -> object:
         nonlocal targeted_underflows
         assert training[0].workload == "short"
@@ -787,13 +797,13 @@ def test_collection_rejects_natural_variation_before_fresh_protocol_or_held_out(
             return aligned
 
         with monkeypatch.context() as variation_patch:
-            variation_patch.setattr(study, "align_generated", underflow_generated)
+            variation_patch.setattr(vs_candidate_reporting, "align_generated", underflow_generated)
             return original_natural_variation(training)
 
-    monkeypatch.setattr(study, "_candidate_natural_variation", underflow_natural_variation)
+    monkeypatch.setattr(vs_collection, "candidate_natural_variation", underflow_natural_variation)
 
     with pytest.raises(TrafficlabError, match="invalid generated trace: at least two events") as error:
-        study.collect_validation_candidate(
+        vs_collection.collect_validation_candidate(
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
@@ -842,7 +852,7 @@ def test_collection_preserves_unexpected_programming_errors_after_freezing_the_a
     repository = tmp_path / "repository"
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
-    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = vs_rotation_run.begin_phase_attempt(
         repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
@@ -853,7 +863,7 @@ def test_collection_preserves_unexpected_programming_errors_after_freezing_the_a
         raise ValueError("offline programming defect")
 
     with pytest.raises(ValueError, match="offline programming defect"):
-        study.collect_validation_candidate(
+        vs_collection.collect_validation_candidate(
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",
@@ -875,7 +885,7 @@ def test_collection_wraps_operational_os_errors_after_freezing_the_attempt(tmp_p
     repository = tmp_path / "repository"
     repository.mkdir()
     environment, prerequisite, prerequisite_files, configs = _collection_inputs(repository)
-    attempt = study._begin_phase_attempt(  # pyright: ignore[reportPrivateUsage]
+    attempt = vs_rotation_run.begin_phase_attempt(
         repository,
         study_id="study-1",
         url="https://downloads.example.test/object.bin",
@@ -886,7 +896,7 @@ def test_collection_wraps_operational_os_errors_after_freezing_the_attempt(tmp_p
         raise OSError("offline filesystem failure")
 
     with pytest.raises(TrafficlabError, match="offline filesystem failure"):
-        study.collect_validation_candidate(
+        vs_collection.collect_validation_candidate(
             repository_root=repository,
             study_id="study-1",
             url="https://downloads.example.test/object.bin",

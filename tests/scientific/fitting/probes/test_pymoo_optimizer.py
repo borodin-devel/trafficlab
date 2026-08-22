@@ -14,8 +14,22 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from tests.scientific.fitting.probes import pymoo_optimizer as probe
-from tests.scientific.fitting.probes.pymoo_optimizer import (
+from tests.scientific.fitting.probes.pymoo_optimizer import adapter as pymoo_adapter
+from tests.scientific.fitting.probes.pymoo_optimizer import policy as pymoo_policy
+from tests.scientific.fitting.probes.pymoo_optimizer import schema as pymoo_schema
+from tests.scientific.fitting.probes.pymoo_optimizer.evidence import (
+    build_probe_evidence,
+    render_probe_evidence,
+    validate_probe_evidence,
+    write_probe_evidence,
+)
+from tests.scientific.fitting.probes.pymoo_optimizer.policy import (
+    attempt_history_is_complete,
+    decide_probe,
+    derive_gates,
+    semantic_root_is_consistent,
+)
+from tests.scientific.fitting.probes.pymoo_optimizer.schema import (
     CACHE_KEY_FIELDS,
     CHAMPION_SEED,
     CHECKPOINT_FIELDS,
@@ -38,14 +52,6 @@ from tests.scientific.fitting.probes.pymoo_optimizer import (
     ProbeEvidence,
     PublicStateSnapshot,
     VariableSpec,
-    attempt_history_is_complete,
-    build_probe_evidence,
-    decide_probe,
-    derive_gates,
-    render_probe_evidence,
-    semantic_root_is_consistent,
-    validate_probe_evidence,
-    write_probe_evidence,
 )
 
 
@@ -402,6 +408,22 @@ def test_loc_gate_is_indeterminate_without_designing_the_rejected_adapter() -> N
     assert loc["required_reduction_percent"] == 40.0
     assert loc["gate_passed"] is False
     assert loc["current_inventory"]
+    assert [item["path"] for item in loc["current_inventory"]] == [
+        "__init__.py",
+        "checkpoint/__init__.py",
+        "checkpoint/codec.py",
+        "checkpoint/compatibility.py",
+        "checkpoint/history.py",
+        "checkpoint/schema.py",
+        "checkpoint/state.py",
+        "coordinates.py",
+        "evaluation.py",
+        "operators.py",
+        "population.py",
+        "strategy.py",
+        "types.py",
+    ]
+    assert loc["current_sloc"] == 3_055
     assert "line-level" in loc["reason"]
     assert "rejected adapter" in loc["reason"]
     assert "maximum" not in loc
@@ -479,13 +501,18 @@ def test_public_config_scalar_and_class_serializers_cover_supported_values() -> 
         def get(self) -> object:
             return self.value
 
-    assert probe._qualified_name(Getter) == f"{__name__}.Getter"  # pyright: ignore[reportPrivateUsage]
-    assert probe._qualified_name(Getter(1)) == f"{__name__}.Getter"  # pyright: ignore[reportPrivateUsage]
+    assert pymoo_adapter._qualified_name(Getter) == f"{__name__}.Getter"  # pyright: ignore[reportPrivateUsage]
+    assert pymoo_adapter._qualified_name(Getter(1)) == f"{__name__}.Getter"  # pyright: ignore[reportPrivateUsage]
     for value in (None, 1, 1.5, False, np.int64(2), np.float64(2.5)):
-        assert probe._operator_scalar(Getter(value)) == value  # pyright: ignore[reportPrivateUsage]
-        assert probe._operator_scalar(value) == value  # pyright: ignore[reportPrivateUsage]
+        assert pymoo_adapter._operator_scalar(Getter(value)) == value  # pyright: ignore[reportPrivateUsage]
+        assert pymoo_adapter._operator_scalar(value) == value  # pyright: ignore[reportPrivateUsage]
     with pytest.raises(TypeError, match="deterministic scalar"):
-        probe._operator_scalar(Getter(object()))  # pyright: ignore[reportPrivateUsage]
+        pymoo_adapter._operator_scalar(Getter(object()))  # pyright: ignore[reportPrivateUsage]
+    assert not hasattr(pymoo_schema, "PYMOO_GA_CLASS")
+    assert not hasattr(pymoo_schema, "MIXED_VARIABLE_GA")
+    assert not hasattr(pymoo_schema, "POPULATION")
+    assert callable(pymoo_adapter.PYMOO_GA_CLASS)
+    assert callable(pymoo_adapter.MIXED_VARIABLE_GA)
 
 
 @pytest.mark.parametrize(
@@ -705,11 +732,16 @@ def test_strict_schema_rejects_bad_bounds_cardinality_and_evidence_sets() -> Non
 def test_known_variable_semantic_helper_covers_names_types_and_bounds() -> None:
     model = ProbeEvidence.model_validate(build_probe_evidence())
     continuous, mixed = model.known_cases
-    assert probe._known_variables_are_valid(continuous, continuous.runs[0].variables) is True  # pyright: ignore[reportPrivateUsage]
-    assert probe._known_variables_are_valid(continuous, {"x0": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
-    assert probe._known_variables_are_valid(continuous, {"x0": 0, "x1": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
-    assert probe._known_variables_are_valid(mixed, {"count": 3.0, "scale": 1.25}) is False  # pyright: ignore[reportPrivateUsage]
-    assert probe._known_variables_are_valid(continuous, {"x0": 3.0, "x1": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
+    assert (
+        pymoo_policy._known_variables_are_valid(  # pyright: ignore[reportPrivateUsage]
+            continuous, continuous.runs[0].variables
+        )
+        is True
+    )
+    assert pymoo_policy._known_variables_are_valid(continuous, {"x0": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
+    assert pymoo_policy._known_variables_are_valid(continuous, {"x0": 0, "x1": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
+    assert pymoo_policy._known_variables_are_valid(mixed, {"count": 3.0, "scale": 1.25}) is False  # pyright: ignore[reportPrivateUsage]
+    assert pymoo_policy._known_variables_are_valid(continuous, {"x0": 3.0, "x1": 0.0}) is False  # pyright: ignore[reportPrivateUsage]
 
 
 def test_decision_requires_exact_boolean_gate_membership() -> None:
