@@ -1,0 +1,152 @@
+"""Direct history checkpoint behavior tests."""
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+import trafficlab.fitting.genetic.checkpoint.codec as checkpoint_codec
+import trafficlab.fitting.genetic.checkpoint.compatibility as checkpoint_compatibility
+import trafficlab.fitting.genetic.checkpoint.history as checkpoint_history
+from tests.support.checkpoint import (
+    COMPATIBILITY,
+    MMPP_TRIAL,
+    OVERALL_ROW,
+    POISSON_TRIAL,
+    VALID_STATE,
+)
+from trafficlab.common.errors import TrafficlabError
+from trafficlab.fitting.genetic.checkpoint import (
+    CheckpointState,
+    load_checkpoint,
+    load_generation,
+    publish_checkpoint,
+    publish_generation,
+    publish_history_csv,
+    render_checkpoint,
+    render_history_csv,
+)
+from trafficlab.fitting.genetic.types import (
+    HistoryRow,
+)
+
+
+def test_checkpoint_and_history_publication_round_trip_through_real_atomic_replace(tmp_path: Path) -> None:
+    publish_checkpoint(tmp_path / "checkpoint.json", VALID_STATE)
+    assert load_checkpoint(tmp_path / "checkpoint.json", COMPATIBILITY) == VALID_STATE
+    publish_history_csv(tmp_path / "ga_history.csv", VALID_STATE)
+    assert (tmp_path / "ga_history.csv").read_bytes() == render_history_csv(VALID_STATE)
+
+
+def test_checkpoint_load_and_generation_history_repair_preserve_authoritative_bytes(tmp_path: Path) -> None:
+    with pytest.raises(TrafficlabError, match="could not read checkpoint"):
+        load_checkpoint(tmp_path / "missing.json", COMPATIBILITY)
+
+    checkpoint_path = tmp_path / "checkpoint.json"
+    checkpoint_path.write_bytes(render_checkpoint(VALID_STATE))
+    authoritative = checkpoint_path.read_bytes()
+    history_path = tmp_path / "ga_history.csv"
+    for existing in (None, b"stale\n", render_history_csv(VALID_STATE)):
+        history_path.unlink(missing_ok=True)
+        if existing is not None:
+            history_path.write_bytes(existing)
+        assert load_generation(tmp_path, COMPATIBILITY) == VALID_STATE
+        assert checkpoint_path.read_bytes() == authoritative
+        assert history_path.read_bytes() == render_history_csv(VALID_STATE)
+
+
+def test_history_repair_read_or_publication_failure_never_changes_valid_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_path = tmp_path / "checkpoint.json"
+    checkpoint_path.write_bytes(render_checkpoint(VALID_STATE))
+    authoritative = checkpoint_path.read_bytes()
+    real_read = Path.read_bytes
+
+    def fail_history_read(path: Path) -> bytes:
+        if path.name == "ga_history.csv":
+            raise OSError("injected history read failure")
+        return real_read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_history_read)
+    with pytest.raises(TrafficlabError, match="history read failure"):
+        load_generation(tmp_path, COMPATIBILITY)
+    assert checkpoint_path.read_bytes() == authoritative
+
+    monkeypatch.undo()
+
+    def fail_history_publication(_path: Path, _state: CheckpointState) -> None:
+        raise TrafficlabError("injected history publication failure", corrective_action="preserve checkpoint")
+
+    monkeypatch.setattr(checkpoint_history, "publish_history_csv", fail_history_publication)
+    with pytest.raises(TrafficlabError, match="history publication failure"):
+        load_generation(tmp_path, COMPATIBILITY)
+    assert checkpoint_path.read_bytes() == authoritative
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"\xff",
+        b"wrong\n",
+        b"generation,scope,family,candidate_count,valid_count,best_fitness,mean_fitness,"
+        b"best_birth_generation,best_birth_index\n0,family,mmpp\n",
+        render_history_csv(VALID_STATE).replace(b",family,mmpp,", b",other,mmpp,", 1),
+        render_history_csv(VALID_STATE).replace(b",overall,,", b",overall,mmpp,", 1),
+        render_history_csv(VALID_STATE).replace(b",family,mmpp,", b",family,markov_renewal,", 1),
+        render_history_csv(VALID_STATE).replace(b"0,family", b"00,family", 1),
+        render_history_csv(VALID_STATE).replace(b",0.4,0.4,", b",nan,0.4,", 1),
+    ],
+)
+def test_history_csv_validator_rejects_malformed_header_rows_scalars_and_families(content: bytes) -> None:
+    with pytest.raises(ValueError):
+        checkpoint_history._parse_history_csv(  # pyright: ignore[reportPrivateUsage]
+            content, frozenset(("mmpp", "poisson_empirical"))
+        )
+
+
+def test_checkpoint_atomic_wrapper_rejects_changed_persisted_temporary_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def corrupt(_path: Path, _content: bytes, *, validator: Any) -> None:
+        validator(b"changed\n")
+
+    monkeypatch.setattr(checkpoint_compatibility, "_atomic_replace", corrupt)
+    with pytest.raises(TrafficlabError, match="persisted temporary artifact"):
+        checkpoint_compatibility.atomic_replace(tmp_path / "checkpoint.json", b"expected\n")
+
+
+def test_render_history_csv_rejects_a_projection_that_does_not_reconstruct_exact_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def return_no_rows(_content: bytes, _families: frozenset[Any]) -> tuple[HistoryRow, ...]:
+        return ()
+
+    monkeypatch.setattr(checkpoint_history, "_parse_history_csv", return_no_rows)
+    with pytest.raises(TrafficlabError, match="reconstruct"):
+        render_history_csv(VALID_STATE)
+
+
+def test_checkpoint_publishes_before_derived_history_repair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def record(path: Path, _content: bytes) -> None:
+        calls.append(path.name)
+
+    monkeypatch.setattr(checkpoint_codec, "atomic_replace", record)
+    monkeypatch.setattr(checkpoint_history, "atomic_replace", record)
+    publish_generation(tmp_path, VALID_STATE)
+    assert calls == ["checkpoint.json", "ga_history.csv"]
+
+
+def test_history_rows_have_exact_header_lexical_family_rows_then_overall(tmp_path: Path) -> None:
+    publish_history_csv(tmp_path / "ga_history.csv", VALID_STATE)
+    assert (tmp_path / "ga_history.csv").read_text() == (
+        "generation,scope,family,candidate_count,valid_count,best_fitness,mean_fitness,"
+        "best_birth_generation,best_birth_index\n"
+        f"0,family,mmpp,1,1,{MMPP_TRIAL.aggregate_score!r},{MMPP_TRIAL.aggregate_score!r},0,0\n"
+        f"0,family,poisson_empirical,2,1,{POISSON_TRIAL.aggregate_score!r},"
+        f"{(POISSON_TRIAL.aggregate_score / 2.0)!r},0,2\n"
+        f"0,overall,,3,2,{POISSON_TRIAL.aggregate_score!r},{OVERALL_ROW.mean_fitness!r},0,2\n"
+    )
+    assert (tmp_path / "ga_history.csv").read_bytes() == render_history_csv(VALID_STATE)

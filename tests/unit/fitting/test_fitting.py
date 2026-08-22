@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import trafficlab.artifacts.best_model as artifacts
 import trafficlab.artifacts.io as artifact_io
-import trafficlab.fitting.genetic.checkpoint as checkpoint
+import trafficlab.fitting.genetic.checkpoint.history as checkpoint_history
 import trafficlab.fitting.genetic.strategy as strategy_module
 import trafficlab.fitting.stage as fitting
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
@@ -763,8 +763,8 @@ def test_real_terminal_checkpoint_repairs_history_validates_refits_and_reuses_be
     history_expected = (run_directory / "ga_history.csv").read_bytes()
     (run_directory / "ga_history.csv").write_bytes(b"stale derived history\n")
     events: list[str] = []
-    original_load_checkpoint = checkpoint.load_checkpoint
-    original_publish_history = checkpoint.publish_history_csv
+    original_load_checkpoint = checkpoint_history.load_checkpoint
+    original_publish_history = checkpoint_history.publish_history_csv
     original_evaluate_final = strategy_module.evaluate_final
     original_make_best_model = fitting.make_best_model
     original_publish_best_model = fitting.publish_best_model
@@ -791,8 +791,8 @@ def test_real_terminal_checkpoint_repairs_history_validates_refits_and_reuses_be
         events.append("reuse")
         return publication
 
-    monkeypatch.setattr(checkpoint, "load_checkpoint", observed_load)
-    monkeypatch.setattr(checkpoint, "publish_history_csv", observed_history)
+    monkeypatch.setattr(checkpoint_history, "load_checkpoint", observed_load)
+    monkeypatch.setattr(checkpoint_history, "publish_history_csv", observed_history)
     monkeypatch.setattr(strategy_module, "evaluate_final", observed_final)
     monkeypatch.setattr(fitting, "make_best_model", observed_make)
     monkeypatch.setattr(fitting, "publish_best_model", observed_publish)

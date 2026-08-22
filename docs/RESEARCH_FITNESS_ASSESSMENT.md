@@ -224,8 +224,10 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 **Evidence**
 
 - Fresh: all 846 focused model, similarity, and genetic tests passed.
-- Source: [checkpoint tests](../tests/unit/fitting/genetic/test_checkpoint.py) recompute candidate fitness, history, winner,
-  compatibility, and RNG state from strict retained values.
+- Source: [checkpoint state tests](../tests/unit/fitting/genetic/checkpoint/test_state.py) recompute candidate fitness,
+  history, and winners from strict retained values.
+- Source: [checkpoint compatibility tests](../tests/unit/fitting/genetic/checkpoint/test_compatibility.py) validate
+  compatibility metadata and exact RNG state.
 - Source: [evaluation tests](../tests/unit/fitting/genetic/test_evaluation.py) prove common inputs, seeds, invalid reasons,
   and a distinct fresh final seed.
 

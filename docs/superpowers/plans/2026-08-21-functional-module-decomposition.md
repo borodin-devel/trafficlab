@@ -338,35 +338,35 @@ NumPy, SciPy, Git, Docker Compose.
 - Produces the same checkpoint wire records and public checkpoint/history API,
   each from the direct functional module named in the spec.
 
-- [ ] **[STEP-31-aac487cf] Snapshot checkpoint/operator nodes and write RED path tests**
+- [x] **[STEP-31-aac487cf] Snapshot checkpoint/operator nodes and write RED path tests**
 
   Record both normalized inventories and require the checkpoint package modules
   while rejecting the old single file.
 
-- [ ] **[STEP-32-0f8b590d] Extract checkpoint schema and compatibility/RNG**
+- [x] **[STEP-32-0f8b590d] Extract checkpoint schema and compatibility/RNG**
 
   Move strict wire models to `schema.py`; move corruption/scalar/JSON,
   family/genetic compatibility, and RNG state codec to `compatibility.py`.
 
-- [ ] **[STEP-33-197e4a93] Extract state semantics and JSON/CSV codecs**
+- [x] **[STEP-33-197e4a93] Extract state semantics and JSON/CSV codecs**
 
   Move candidate/history/state invariants to `state.py`, canonical checkpoint
   JSON to `codec.py`, and history CSV plus generation pair publication to
   `history.py`. Keep `__init__.py` limited to the documented public boundary.
 
-- [ ] **[STEP-34-562a5065] Split checkpoint and operator tests**
+- [x] **[STEP-34-562a5065] Split checkpoint and operator tests**
 
   Move existing tests by direct owner, move shared immutable records to
   `tests/support/checkpoint.py`, and prove both normalized inventories are
   unchanged.
 
-- [ ] **[STEP-35-a77c6cd4] Verify checkpoint behavior and generated schemas**
+- [x] **[STEP-35-a77c6cd4] Verify checkpoint behavior and generated schemas**
 
   Run checkpoint/operator/fitting integration tests with branch coverage,
   regenerate/check public schemas only through the schema generator, run fit
   fixture checks, Ruff, and strict Pyright.
 
-- [ ] **[STEP-36-a4ea95af] Review and commit checkpoint ownership**
+- [x] **[STEP-36-a4ea95af] Review and commit checkpoint ownership**
 
   Resolve independent review findings and commit:
 

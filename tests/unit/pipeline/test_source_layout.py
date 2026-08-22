@@ -35,7 +35,6 @@ EXPECTED_MODULES = {
 EXPECTED_NESTED_PACKAGES = {
     "fitting/genetic": {
         "__init__.py",
-        "checkpoint.py",
         "coordinates.py",
         "evaluation.py",
         "operators.py",
@@ -59,6 +58,14 @@ EXPECTED_NESTED_PACKAGES = {
         "multiscale.py",
     },
     "capture/docker": {"__init__.py", "compose.py", "image.py", "process.py", "types.py"},
+    "fitting/genetic/checkpoint": {
+        "__init__.py",
+        "codec.py",
+        "compatibility.py",
+        "history.py",
+        "schema.py",
+        "state.py",
+    },
     "pipeline": {"__init__.py", "stage.py", "types.py", "validation.py"},
 }
 

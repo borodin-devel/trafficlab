@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
-from tests.unit.fitting.genetic.test_checkpoint import COMPATIBILITY, VALID_STATE, replace
+from tests.support.checkpoint import COMPATIBILITY, VALID_STATE, replace
 from trafficlab.common.config import FloatBounds
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, encode_rng_state, parse_checkpoint, render_checkpoint
 from trafficlab.fitting.genetic.coordinates import GeneCoordinate, decode_gene, encode_gene
