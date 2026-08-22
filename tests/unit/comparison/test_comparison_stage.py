@@ -15,7 +15,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import TraceEvent, TrafficTrace, parse_capture_metadata
 from trafficlab.comparison.schema import ComparisonResult
-from trafficlab.generation.models.registry import load_best_model
+from trafficlab.generation.models.fitted_model import load_best_model
 
 
 def _prepare_comparison_run(

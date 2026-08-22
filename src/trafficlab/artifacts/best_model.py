@@ -7,7 +7,7 @@ from pathlib import Path
 
 from trafficlab.artifacts.io import file_identity, fsync_containing_directory, publisher_outcomes
 from trafficlab.common.errors import FailureOutcome, TrafficlabError, attach_failure_outcome
-from trafficlab.generation.models.registry import load_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import load_best_model, render_best_model
 
 
 @dataclass(frozen=True, slots=True)

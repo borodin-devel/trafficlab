@@ -13,7 +13,9 @@ from trafficlab.common.trace import TrafficTrace
 from trafficlab.fitting.genetic.coordinates import CandidateEvaluationError, GeneticRng, initialize_candidate
 from trafficlab.fitting.genetic.types import Candidate, CandidateFailure, CandidateId, FamilyPriority
 from trafficlab.generation.models.common import FamilyBounds, make_rng
-from trafficlab.generation.models.registry import get_family
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 
 
 def validate_family_priority(

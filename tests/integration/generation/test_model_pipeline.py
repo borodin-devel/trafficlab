@@ -16,14 +16,16 @@ from trafficlab.common.config import (
 from trafficlab.common.scapy_io import encode_pcapng, read_pcapng
 from trafficlab.common.trace import TrafficTrace, normalize_reference, parse_capture_metadata
 from trafficlab.generation.models import FamilyBounds, Genes, ModelFamily
-from trafficlab.generation.models.registry import (
-    MARKOV_RENEWAL_FAMILY,
-    MMPP_FAMILY,
-    POISSON_FAMILY,
+from trafficlab.generation.models.fitted_model import (
     load_best_model,
     make_best_model,
     render_best_model,
     runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    MARKOV_RENEWAL_FAMILY,
+    MMPP_FAMILY,
+    POISSON_FAMILY,
 )
 
 _ROOT = Path(__file__).resolve().parents[3]

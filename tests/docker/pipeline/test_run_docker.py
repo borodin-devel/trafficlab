@@ -47,7 +47,7 @@ from trafficlab.fitting.genetic.strategy import make_strategy_context
 from trafficlab.fitting.genetic.types import TrialResult
 from trafficlab.fitting.stage import FitStageResult, fit_experiment
 from trafficlab.generation.models.common import FittedModel, GenerationResult, ModelFamily
-from trafficlab.generation.models.registry import load_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import load_best_model, render_best_model
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies, RunResult

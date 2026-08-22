@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import copy
 import json
 import re
 import subprocess
@@ -103,6 +104,28 @@ _NUMPY_AFTER_VALIDATION_FUNCTIONS: Mapping[str, tuple[str, ...]] = {
         "validated_weights",
     ),
     "src/trafficlab/comparison/similarity/multiscale.py": ("_validated_cells", "_validated_widths_and_bin_counts"),
+}
+
+# The historical post-migration revision remains the source of the accepted
+# measurement.  Task 7 only relocated these measured functions; the check
+# below compares their ASTs at the new owners rather than rewriting history.
+_NUMPY_CURRENT_RELOCATIONS: Mapping[tuple[str, str], tuple[str, str]] = {
+    ("src/trafficlab/generation/models/markov_renewal.py", "_fit_trace"): (
+        "src/trafficlab/generation/models/markov_renewal/model.py",
+        "fit_trace",
+    ),
+    ("src/trafficlab/generation/models/markov_renewal.py", "encode_markov_states"): (
+        "src/trafficlab/generation/models/markov_renewal/model.py",
+        "encode_markov_states",
+    ),
+    ("src/trafficlab/generation/models/markov_renewal.py", "transition_count_matrix"): (
+        "src/trafficlab/generation/models/markov_renewal/model.py",
+        "transition_count_matrix",
+    ),
+    ("src/trafficlab/generation/models/markov_renewal.py", "type7_boundaries"): (
+        "src/trafficlab/generation/models/markov_renewal/parameters.py",
+        "type7_boundaries",
+    ),
 }
 
 _LOOP_AND_VALIDATION_DEFINITION = (
@@ -256,6 +279,13 @@ def _qualified_functions(tree: ast.Module) -> dict[str, ast.FunctionDef | ast.As
 
     visit(tree.body)
     return functions
+
+
+def _function_ast_identity(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """Return a function AST identity while allowing an intentional visibility rename."""
+    normalized = copy.deepcopy(function)
+    normalized.name = "function"
+    return ast.dump(normalized, include_attributes=False)
 
 
 def _git_source(repository: Path, revision: str, path: str) -> str:
@@ -640,13 +670,39 @@ def _stored_numpy_after_revision(content: bytes) -> str:
 
 
 def _verify_numpy_sources_match_revision(repository: Path, revision: str) -> None:
-    for path in sorted(set(_NUMPY_AFTER_LOOP_FUNCTIONS) | set(_NUMPY_AFTER_VALIDATION_FUNCTIONS)):
+    paths = set(_NUMPY_AFTER_LOOP_FUNCTIONS) | set(_NUMPY_AFTER_VALIDATION_FUNCTIONS)
+    relocated_paths = {path for path, _name in _NUMPY_CURRENT_RELOCATIONS}
+    for path in sorted(paths - relocated_paths):
         try:
             current = (repository / path).read_text(encoding="utf-8")
         except OSError as error:
             raise ValueError(f"cannot read current measured source {path}: {error}") from error
         if current != _git_source(repository, revision, path):
             raise ValueError(f"current measured source differs from NumPy after revision: {path}")
+
+    historical_sources = {
+        path: _qualified_functions(ast.parse(_git_source(repository, revision, path), filename=path))
+        for path in relocated_paths
+    }
+    current_sources: dict[str, dict[str, ast.FunctionDef | ast.AsyncFunctionDef]] = {}
+    for (historical_path, historical_name), (current_path, current_name) in _NUMPY_CURRENT_RELOCATIONS.items():
+        historical = historical_sources[historical_path].get(historical_name)
+        if historical is None:
+            raise ValueError(f"missing historical measured function {historical_path}:{historical_name}")
+        if current_path not in current_sources:
+            try:
+                current_text = (repository / current_path).read_text(encoding="utf-8")
+            except OSError as error:
+                raise ValueError(f"cannot read current relocated source {current_path}: {error}") from error
+            current_sources[current_path] = _qualified_functions(ast.parse(current_text, filename=current_path))
+        current = current_sources[current_path].get(current_name)
+        if current is None:
+            raise ValueError(f"missing current relocated function {current_path}:{current_name}")
+        if _function_ast_identity(historical) != _function_ast_identity(current):
+            raise ValueError(
+                "current relocated function differs from NumPy after revision: "
+                f"{historical_path}:{historical_name} -> {current_path}:{current_name}"
+            )
 
 
 def build_parser() -> argparse.ArgumentParser:

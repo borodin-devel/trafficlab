@@ -18,7 +18,7 @@ from trafficlab.common.config_io import load_configuration_pair
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState
-from trafficlab.generation.models.registry import BestModel
+from trafficlab.generation.models.fitted_model import BestModel
 
 _ROOT = Path(__file__).resolve().parents[3]
 _WORKLOADS = ("short", "streaming", "bursty")

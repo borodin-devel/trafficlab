@@ -25,7 +25,11 @@ from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_histo
 from trafficlab.fitting.genetic.strategy import FitOutcome, make_strategy_context
 from trafficlab.fitting.genetic.types import Candidate, TrialResult
 from trafficlab.fitting.stage import FitStageResult
-from trafficlab.generation.models.registry import BestModel, load_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import (
+    BestModel,
+    load_best_model,
+    render_best_model,
+)
 from trafficlab.generation.stage import GenerationStageResult
 from trafficlab.preflight.types import PreparedExperiment
 

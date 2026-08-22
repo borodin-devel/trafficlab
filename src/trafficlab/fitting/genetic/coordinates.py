@@ -13,7 +13,11 @@ from trafficlab.common.errors import EvidenceState, FailureAuthority, Trafficlab
 from trafficlab.common.trace import TrafficTrace
 from trafficlab.fitting.genetic.types import CandidateFailure, CandidateFailureKind
 from trafficlab.generation.models.common import FamilyBounds, Gene, Genes, ModelFamily
-from trafficlab.generation.models.registry import MARKOV_RENEWAL_FAMILY, REGISTRY, get_family
+from trafficlab.generation.models.registry import (
+    MARKOV_RENEWAL_FAMILY,
+    REGISTRY,
+    get_family,
+)
 
 type CoordinateKind = Literal["linear", "log", "integer"]
 

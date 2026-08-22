@@ -81,6 +81,33 @@ def test_checked_reduction_evidence_is_exact_and_fail_closed() -> None:
         reduction.validate_reduction_evidence(mixed_metric)
 
 
+def test_reduction_check_compares_relocated_markov_function_asts() -> None:
+    """A moved measured function must retain the historical AST, not merely its name."""
+    relocated = reduction._NUMPY_CURRENT_RELOCATIONS  # pyright: ignore[reportPrivateUsage]
+    assert relocated == {
+        ("src/trafficlab/generation/models/markov_renewal.py", "_fit_trace"): (
+            "src/trafficlab/generation/models/markov_renewal/model.py",
+            "fit_trace",
+        ),
+        ("src/trafficlab/generation/models/markov_renewal.py", "encode_markov_states"): (
+            "src/trafficlab/generation/models/markov_renewal/model.py",
+            "encode_markov_states",
+        ),
+        ("src/trafficlab/generation/models/markov_renewal.py", "transition_count_matrix"): (
+            "src/trafficlab/generation/models/markov_renewal/model.py",
+            "transition_count_matrix",
+        ),
+        ("src/trafficlab/generation/models/markov_renewal.py", "type7_boundaries"): (
+            "src/trafficlab/generation/models/markov_renewal/parameters.py",
+            "type7_boundaries",
+        ),
+    }
+    reduction._verify_numpy_sources_match_revision(  # pyright: ignore[reportPrivateUsage]
+        _ROOT,
+        reduction._full_revision(_ROOT, reduction._NUMPY_AFTER),  # pyright: ignore[reportPrivateUsage]
+    )
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

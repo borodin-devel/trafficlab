@@ -32,7 +32,9 @@ from trafficlab.fitting.genetic.types import (
     FamilyPriority,
 )
 from trafficlab.generation.models.common import FamilyBounds, Gene, Genes
-from trafficlab.generation.models.registry import get_family
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 
 
 @dataclass(frozen=True, slots=True, init=False)

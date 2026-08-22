@@ -31,8 +31,15 @@ from trafficlab.fitting.genetic.checkpoint import load_checkpoint, publish_check
 from trafficlab.fitting.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
 from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
+from trafficlab.generation.models.fitted_model import (
+    load_best_model,
+    make_best_model,
+    render_best_model,
+)
 from trafficlab.generation.models.poisson import PoissonFamily
-from trafficlab.generation.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
+from trafficlab.generation.models.registry import (
+    POISSON_FAMILY,
+)
 from trafficlab.preflight.stage import open_or_prepare_experiment
 from trafficlab.preflight.types import (
     PreflightReport,

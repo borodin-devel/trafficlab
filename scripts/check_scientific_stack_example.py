@@ -48,7 +48,14 @@ from trafficlab.comparison.metrics import compare_traces
 from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.strategy import make_strategy_context
 from trafficlab.generation.models.common import FamilyBounds, Genes
-from trafficlab.generation.models.registry import get_family, load_best_model, make_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import (
+    load_best_model,
+    make_best_model,
+    render_best_model,
+)
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 from trafficlab.generation.stage import reproduce_generated_pcapng
 
 REPOSITORY = Path(__file__).resolve().parents[1]

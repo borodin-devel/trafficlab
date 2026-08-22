@@ -55,7 +55,7 @@ from trafficlab.common.trace import TraceEvent, TrafficTrace, normalize_referenc
 from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.stage import fit_experiment
-from trafficlab.generation.models.registry import load_best_model, rebuild_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import load_best_model, rebuild_best_model, render_best_model
 from trafficlab.generation.stage import generate_experiment
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies

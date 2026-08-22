@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-import trafficlab.generation.models.registry as registry_module
+import trafficlab.generation.models.fitted_model as registry_module
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import (
     FloatBounds,
@@ -24,17 +24,19 @@ from trafficlab.common.config import (
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.generation.models.common import ModelFamily
+from trafficlab.generation.models.fitted_model import (
+    BestModel,
+    load_best_model,
+    make_best_model,
+    rebuild_best_model,
+    render_best_model,
+)
 from trafficlab.generation.models.registry import (
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
     POISSON_FAMILY,
     REGISTRY,
-    BestModel,
     get_family,
-    load_best_model,
-    make_best_model,
-    rebuild_best_model,
-    render_best_model,
 )
 
 REFERENCE = TrafficTrace.from_events(

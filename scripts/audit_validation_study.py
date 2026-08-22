@@ -51,12 +51,14 @@ from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.population import rank_candidates
 from trafficlab.fitting.genetic.strategy import make_strategy_context
-from trafficlab.generation.models.registry import (
+from trafficlab.generation.models.fitted_model import (
     BestModel,
-    get_family,
     load_best_model,
     render_best_model,
     runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    get_family,
 )
 from trafficlab.generation.stage import reproduce_generated_pcapng
 from trafficlab.study_evidence import (

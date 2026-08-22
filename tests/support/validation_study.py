@@ -46,7 +46,13 @@ from trafficlab.fitting.genetic.types import (
 )
 from trafficlab.fitting.stage import fit_experiment
 from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
-from trafficlab.generation.models.registry import BestModel, get_family, make_best_model
+from trafficlab.generation.models.fitted_model import (
+    BestModel,
+    make_best_model,
+)
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 from trafficlab.generation.stage import generate_experiment
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunDependencies, RunResult

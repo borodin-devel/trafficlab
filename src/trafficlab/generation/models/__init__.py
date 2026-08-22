@@ -14,14 +14,16 @@ from trafficlab.generation.models.common import (
     validate_fit_inputs,
     weighted_index,
 )
-from trafficlab.generation.models.registry import (
-    REGISTRY,
+from trafficlab.generation.models.fitted_model import (
     BestModel,
-    get_family,
     load_best_model,
     make_best_model,
     render_best_model,
     runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    REGISTRY,
+    get_family,
 )
 
 __all__ = [

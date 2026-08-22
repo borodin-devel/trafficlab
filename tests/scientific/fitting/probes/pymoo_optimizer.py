@@ -39,7 +39,9 @@ from trafficlab.fitting.genetic.evaluation import (
 )
 from trafficlab.fitting.genetic.types import Candidate, CandidateId, TrialResult, rebuild_genetic_record
 from trafficlab.generation.models.common import FamilyBounds, Gene, Genes, ModelFamily
-from trafficlab.generation.models.registry import REGISTRY
+from trafficlab.generation.models.registry import (
+    REGISTRY,
+)
 
 type JsonObject = dict[str, Any]
 type PymooAlgorithm = Any

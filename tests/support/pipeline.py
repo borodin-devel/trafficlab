@@ -29,7 +29,13 @@ from trafficlab.fitting.genetic.strategy import FitOutcome, make_strategy_contex
 from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.fitting.stage import FitStageResult
 from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, make_rng
-from trafficlab.generation.models.registry import POISSON_FAMILY, make_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import (
+    make_best_model,
+    render_best_model,
+)
+from trafficlab.generation.models.registry import (
+    POISSON_FAMILY,
+)
 from trafficlab.generation.stage import GenerationStageResult
 from trafficlab.pipeline.types import RunDependencies
 from trafficlab.preflight.stage import open_or_prepare_experiment

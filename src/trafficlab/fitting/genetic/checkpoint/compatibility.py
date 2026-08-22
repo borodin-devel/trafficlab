@@ -27,7 +27,9 @@ from trafficlab.fitting.genetic.checkpoint.schema import (
 from trafficlab.fitting.genetic.coordinates import GeneCoordinate
 from trafficlab.fitting.genetic.population import validate_family_priority
 from trafficlab.generation.models.common import make_rng
-from trafficlab.generation.models.registry import get_family
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 
 RNG_ENGINE: Literal["numpy.random.Generator/PCG64"] = "numpy.random.Generator/PCG64"
 _FAMILY_NAMES = frozenset(("markov_renewal", "mmpp", "poisson_empirical"))

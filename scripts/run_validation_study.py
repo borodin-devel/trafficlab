@@ -64,12 +64,14 @@ from trafficlab.fitting.genetic.checkpoint import CheckpointState, parse_checkpo
 from trafficlab.fitting.genetic.evaluation import evaluate_final, validate_evaluation_context
 from trafficlab.fitting.genetic.strategy import StrategyContext, make_strategy_context
 from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, TrialResult
-from trafficlab.generation.models.registry import (
+from trafficlab.generation.models.fitted_model import (
     BestModel,
-    get_family,
     load_best_model,
     render_best_model,
     runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    get_family,
 )
 from trafficlab.pipeline.stage import run_experiment
 from trafficlab.pipeline.types import RunResult

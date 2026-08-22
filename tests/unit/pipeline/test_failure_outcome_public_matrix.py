@@ -37,7 +37,7 @@ from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, Traf
 from trafficlab.fitting.genetic.strategy import FitOutcome, StrategyContext, run_strategy
 from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.fitting.stage import FitDependencies
-from trafficlab.generation.models.registry import load_best_model, rebuild_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import load_best_model, rebuild_best_model, render_best_model
 
 _FIXTURE = DIAGNOSTIC_FIXTURE_ROOT / "failure-outcomes.jsonl"
 _ROOT = Path(__file__).parents[3]

@@ -45,7 +45,8 @@ EXPECTED_NESTED_PACKAGES = {
     "generation/models": {
         "__init__.py",
         "common.py",
-        "markov_renewal.py",
+        "fitted_model.py",
+        "fitted_schema.py",
         "mmpp.py",
         "poisson.py",
         "registry.py",
@@ -67,6 +68,14 @@ EXPECTED_NESTED_PACKAGES = {
         "state.py",
     },
     "pipeline": {"__init__.py", "stage.py", "types.py", "validation.py"},
+    "generation/models/markov_renewal": {
+        "__init__.py",
+        "family.py",
+        "generation.py",
+        "model.py",
+        "parameters.py",
+        "sampling.py",
+    },
 }
 
 FORBIDDEN_ROOT_MODULES = {
@@ -127,6 +136,11 @@ def test_production_root_has_no_superseded_flat_modules_or_packages() -> None:
 
     assert present_modules == set()
     assert present_packages == set()
+
+
+def test_markov_renewal_is_a_owned_package_not_a_superseded_module() -> None:
+    """A flat owner would re-couple fitting, sampling, and generation internals."""
+    assert not (PACKAGE / "generation" / "models" / "markov_renewal.py").exists()
 
 
 def test_artifact_persistence_is_owned_by_artifact_kind() -> None:

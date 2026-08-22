@@ -33,7 +33,9 @@ from trafficlab.generation.models.common import (
     ModelFamily,
     validate_fit_inputs,
 )
-from trafficlab.generation.models.registry import REGISTRY
+from trafficlab.generation.models.registry import (
+    REGISTRY,
+)
 
 
 @dataclass(frozen=True, slots=True)

@@ -26,7 +26,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent
 from trafficlab.comparison.codec import render_comparison_result
 from trafficlab.comparison.schema import ComparisonResult
-from trafficlab.generation.models.registry import rebuild_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import rebuild_best_model, render_best_model
 from trafficlab.pipeline.stage import run_experiment
 
 

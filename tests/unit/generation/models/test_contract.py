@@ -20,14 +20,16 @@ from trafficlab.common.config import (
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.generation.models import FamilyBounds, Genes, ModelFamily
-from trafficlab.generation.models.registry import (
-    MARKOV_RENEWAL_FAMILY,
-    MMPP_FAMILY,
-    POISSON_FAMILY,
+from trafficlab.generation.models.fitted_model import (
     load_best_model,
     make_best_model,
     render_best_model,
     runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    MARKOV_RENEWAL_FAMILY,
+    MMPP_FAMILY,
+    POISSON_FAMILY,
 )
 
 WINDOW = 10.0

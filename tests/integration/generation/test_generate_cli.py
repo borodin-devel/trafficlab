@@ -38,13 +38,15 @@ from trafficlab.common.trace import (
     parse_capture_metadata,
 )
 from trafficlab.generation.models.common import GenerationResult, ModelFamily
-from trafficlab.generation.models.registry import (
+from trafficlab.generation.models.fitted_model import (
     BestModel,
-    get_family,
     load_best_model,
     make_best_model,
     render_best_model,
     runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    get_family,
 )
 from trafficlab.generation.stage import GenerationStageResult, generate_experiment
 from trafficlab.preflight.types import PreparedExperiment

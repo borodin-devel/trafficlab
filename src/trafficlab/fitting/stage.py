@@ -21,7 +21,14 @@ from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.common.trace import normalize_reference, parse_capture_metadata
 from trafficlab.fitting.genetic.strategy import FitOutcome, StrategyContext, make_strategy_context, run_strategy
-from trafficlab.generation.models.registry import BestModel, get_family, make_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import (
+    BestModel,
+    make_best_model,
+    render_best_model,
+)
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 from trafficlab.preflight.stage import open_or_prepare_experiment
 from trafficlab.preflight.types import PreparedExperiment
 

@@ -34,7 +34,9 @@ from trafficlab.fitting.genetic.population import rank_candidates
 from trafficlab.fitting.genetic.types import Candidate, CandidateId, FamilyPriority
 from trafficlab.generation.models.common import FamilyBounds, MarkCount, MarkDistribution, make_rng
 from trafficlab.generation.models.mmpp import MmppModel
-from trafficlab.generation.models.registry import MMPP_FAMILY
+from trafficlab.generation.models.registry import (
+    MMPP_FAMILY,
+)
 
 type Rates = tuple[float, float, float, float]
 type Coordinates = tuple[float, float, float, float]

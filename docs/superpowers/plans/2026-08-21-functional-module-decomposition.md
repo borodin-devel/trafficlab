@@ -389,35 +389,35 @@ NumPy, SciPy, Git, Docker Compose.
 - Produces unchanged model equations, fit/generation draw order, ModelFamily
   adapter, registry, and best-model artifact API.
 
-- [ ] **[STEP-37-752187b4] Snapshot model nodes and write RED owner tests**
+- [x] **[STEP-37-752187b4] Snapshot model nodes and write RED owner tests**
 
   Record Markov/registry test inventories; require every new source module and
   reject the old Markov module path.
 
-- [ ] **[STEP-38-74562d18] Extract Markov parameters, sampling, model, and generation**
+- [x] **[STEP-38-74562d18] Extract Markov parameters, sampling, model, and generation**
 
   Move exact spec symbol groups, keep stochastic draw validators with sampling,
   and ensure generation depends on the fitted model without the family adapter.
 
-- [ ] **[STEP-39-275896ea] Extract family adapter and fitted-model schema/codec**
+- [x] **[STEP-39-275896ea] Extract family adapter and fitted-model schema/codec**
 
   Move loading/document helpers and `MarkovRenewalFamily` to `family.py`; move
-  wire payloads/`BestModel` to `fitted_schema.py`; move validation,
+  wire payloads to `fitted_schema.py`; move `BestModel`, validation,
   construction, runtime conversion, load/render to `fitted_model.py`; reduce
   registry to closed family/bounds ownership.
 
-- [ ] **[STEP-40-ddc1b58e] Split Markov tests and update registry callers**
+- [x] **[STEP-40-ddc1b58e] Split Markov tests and update registry callers**
 
   Rehome tests by parameters/sampling/model/generation/family, update all best
   model imports and monkeypatch paths, and prove normalized test inventories.
 
-- [ ] **[STEP-41-69bd2ed3] Verify scientific behavior and evidence**
+- [x] **[STEP-41-69bd2ed3] Verify scientific behavior and evidence**
 
   Run model/registry/property/scientific/fitting/generation tests, deterministic
   model/fit fixtures, reduction and benchmark checks, Ruff, strict Pyright, and
   direct branch coverage.
 
-- [ ] **[STEP-42-5cae9cdf] Review and commit model ownership**
+- [x] **[STEP-42-5cae9cdf] Review and commit model ownership**
 
   Resolve independent review findings and commit:
 

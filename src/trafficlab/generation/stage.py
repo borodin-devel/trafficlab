@@ -20,7 +20,14 @@ from trafficlab.common.errors import (
 from trafficlab.common.scapy_io import EncodedPcapng, encode_pcapng, read_pcapng_bytes
 from trafficlab.common.scientific_schema import ScientificArtifactSchemaError
 from trafficlab.common.trace import CaptureMetadata, TrafficTrace, parse_capture_metadata
-from trafficlab.generation.models.registry import BestModel, get_family, load_best_model, runtime_fitted_model
+from trafficlab.generation.models.fitted_model import (
+    BestModel,
+    load_best_model,
+    runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 from trafficlab.preflight.stage import open_or_prepare_experiment
 
 

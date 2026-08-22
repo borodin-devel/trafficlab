@@ -453,7 +453,11 @@ rubric still supports the original Acceptable grade; dated 2026-08-14 evidence b
 
 - Source: [Poisson tests](../tests/unit/generation/models/test_poisson.py) distinguish the complete-IAT rate estimator from an
   event-count-over-window error.
-- Source: [Markov Renewal tests](../tests/unit/generation/models/test_markov_renewal.py) reconstruct states, smoothing, empty rows,
+- Source: Markov Renewal owner tests for [parameters](../tests/unit/generation/models/test_markov_parameters.py),
+  [sampling](../tests/unit/generation/models/test_markov_sampling.py),
+  [model fitting](../tests/unit/generation/models/test_markov_model.py),
+  [generation](../tests/unit/generation/models/test_markov_generation.py), and
+  [family codecs](../tests/unit/generation/models/test_markov_family.py) reconstruct states, smoothing, empty rows,
   conditional holding samples, fallbacks, and strict round trips.
 - Source: [MMPP tests](../tests/unit/generation/models/test_mmpp.py) prove rate repair and empirical marks; rates are direct GA
   genes rather than likelihood estimates, matching the declared method.

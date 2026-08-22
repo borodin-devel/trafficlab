@@ -44,7 +44,9 @@ from trafficlab.fitting.genetic.types import (
     DuplicateDiagnostic,
 )
 from trafficlab.generation.models.common import Genes, make_rng
-from trafficlab.generation.models.registry import MMPP_FAMILY
+from trafficlab.generation.models.registry import (
+    MMPP_FAMILY,
+)
 
 
 def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnostics() -> None:

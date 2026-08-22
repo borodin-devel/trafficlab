@@ -46,7 +46,9 @@ from trafficlab.fitting.genetic.population import (
 )
 from trafficlab.fitting.genetic.types import Candidate, CandidateId, FamilyPriority, TerminalReason, TrialResult
 from trafficlab.generation.models.common import FamilyBounds, ModelFamily, make_rng
-from trafficlab.generation.models.registry import get_family
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 
 
 @dataclass(frozen=True, slots=True)

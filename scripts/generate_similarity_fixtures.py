@@ -20,7 +20,14 @@ from trafficlab.common.trace import (
     render_capture_metadata,
 )
 from trafficlab.comparison.stage import compare_experiment
-from trafficlab.generation.models.registry import POISSON_FAMILY, load_best_model, make_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import (
+    load_best_model,
+    make_best_model,
+    render_best_model,
+)
+from trafficlab.generation.models.registry import (
+    POISSON_FAMILY,
+)
 from trafficlab.generation.stage import reproduce_generated_pcapng
 
 _REPOSITORY = Path(__file__).resolve().parents[1]

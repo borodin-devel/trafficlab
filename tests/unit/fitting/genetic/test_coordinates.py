@@ -23,7 +23,9 @@ from trafficlab.fitting.genetic.coordinates import (
     mutate_coordinate,
     reflect,
 )
-from trafficlab.generation.models.registry import MARKOV_RENEWAL_FAMILY
+from trafficlab.generation.models.registry import (
+    MARKOV_RENEWAL_FAMILY,
+)
 
 
 @dataclass

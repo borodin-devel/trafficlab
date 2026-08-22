@@ -27,7 +27,7 @@ from trafficlab.common.trace import (
 from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strategy
 from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
-from trafficlab.generation.models.registry import load_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import load_best_model, render_best_model
 from trafficlab.preflight.types import (
     PreflightReport,
     PreparedExperiment,

@@ -57,7 +57,9 @@ from trafficlab.fitting.genetic.population import derive_family_priority, initia
 from trafficlab.fitting.genetic.strategy import make_strategy_context
 from trafficlab.fitting.genetic.types import Candidate, TrialResult, rebuild_genetic_record
 from trafficlab.generation.models.common import FittedModel, GenerationResult, make_rng
-from trafficlab.generation.models.registry import get_family
+from trafficlab.generation.models.registry import (
+    get_family,
+)
 
 _PRE_USER_AGENT_R6_FIXTURE = PRE_USER_AGENT_R6_FIXTURE
 

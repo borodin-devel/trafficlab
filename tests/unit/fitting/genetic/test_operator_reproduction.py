@@ -31,7 +31,9 @@ from trafficlab.fitting.genetic.types import (
     DuplicateDiagnostic,
 )
 from trafficlab.generation.models.common import Genes
-from trafficlab.generation.models.registry import POISSON_FAMILY
+from trafficlab.generation.models.registry import (
+    POISSON_FAMILY,
+)
 
 
 def test_missing_fitter_genes_create_invalid_child_without_operator_draws() -> None:

@@ -23,7 +23,9 @@ from trafficlab.fitting.genetic.types import (
     CandidateId,
 )
 from trafficlab.generation.models.common import Genes
-from trafficlab.generation.models.registry import POISSON_FAMILY
+from trafficlab.generation.models.registry import (
+    POISSON_FAMILY,
+)
 
 
 def test_multi_gene_mutation_draws_all_decisions_before_selected_gaussians() -> None:

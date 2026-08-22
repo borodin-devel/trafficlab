@@ -35,7 +35,7 @@ from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strat
 from trafficlab.fitting.genetic.types import METHOD_ORDER, Candidate, CandidateId, MethodTrialResult, TrialResult
 from trafficlab.fitting.stage import FitDependencies, fit_experiment, read_fit_input
 from trafficlab.generation.models.common import MARKOV_MODEL_DIAGNOSTIC_KEYS, FittedModel, GenerationResult, Genes
-from trafficlab.generation.models.registry import load_best_model, render_best_model
+from trafficlab.generation.models.fitted_model import load_best_model, render_best_model
 from trafficlab.generation.stage import generate_experiment
 from trafficlab.preflight.types import (
     PreflightReport,

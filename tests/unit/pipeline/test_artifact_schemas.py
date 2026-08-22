@@ -17,7 +17,7 @@ from trafficlab.common.errors import FailureOutcomeRecord
 from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.diagnostics import MethodDiagnostic
 from trafficlab.comparison.schema import ComparisonResult, MethodComparison
-from trafficlab.generation.models.registry import FamilyPayload
+from trafficlab.generation.models.fitted_schema import FamilyPayload
 from trafficlab.study_evidence import StudyBootstrapInterval
 
 _ROOT = Path(__file__).parents[3]

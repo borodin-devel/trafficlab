@@ -26,7 +26,7 @@ from trafficlab.comparison.codec import (
 from trafficlab.comparison.metrics import compare_traces
 from trafficlab.comparison.publication import PublicationError, publish_comparison_result
 from trafficlab.comparison.schema import ComparisonResult
-from trafficlab.generation.models.registry import load_best_model
+from trafficlab.generation.models.fitted_model import load_best_model
 from trafficlab.generation.stage import reproduce_generated_pcapng
 
 

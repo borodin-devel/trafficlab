@@ -11,13 +11,15 @@ from trafficlab.common.config_io import load_experiment
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.common.trace import normalize_reference, parse_capture_metadata
-from trafficlab.generation.models.registry import (
-    POISSON_FAMILY,
-    get_family,
+from trafficlab.generation.models.fitted_model import (
     load_best_model,
     make_best_model,
     render_best_model,
     runtime_fitted_model,
+)
+from trafficlab.generation.models.registry import (
+    POISSON_FAMILY,
+    get_family,
 )
 
 _REPOSITORY = Path(__file__).resolve().parents[1]
