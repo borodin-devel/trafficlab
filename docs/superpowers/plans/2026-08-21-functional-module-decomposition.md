@@ -627,7 +627,7 @@ NumPy, SciPy, Git, Docker Compose.
   loss, evidence drift, and verification gaps. Resolve all Critical/Important
   findings and rerun affected parent gates.
 
-- [ ] **[STEP-66-5ce5cccf] Commit completion state and hand off cleanly**
+- [x] **[STEP-66-5ce5cccf] Commit completion state and hand off cleanly**
 
   Mark only evidenced checkboxes, commit the completed plan, verify no unchecked
   item or Git/Docker residue, list retained commits, and report exact static,
