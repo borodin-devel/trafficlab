@@ -53,6 +53,10 @@ VALIDATION_STUDY_WRAPPERS = {
     "run_validation_study.py": "scripts.validation_study.cli",
 }
 
+TOOLING_MODULE_LINE_LIMIT = 800
+
+FAILURE_MATRIX_SUPPORT = {"__init__.py", "cases.py", "doubles.py", "oracle.py", "runners.py"}
+
 
 class _ManifestEntry(Protocol):
     path: str
@@ -304,3 +308,20 @@ def test_validation_study_executables_are_thin_main_only_wrappers(wrapper_name: 
         and node is not owner_imports[0]
         for node in tree.body
     )
+
+
+def test_python_tooling_stays_within_the_cohesion_backstop() -> None:
+    scripts = REPOSITORY / "scripts"
+    offenders = {
+        path.relative_to(REPOSITORY).as_posix(): len(path.read_text(encoding="utf-8").splitlines())
+        for path in scripts.rglob("*.py")
+        if len(path.read_text(encoding="utf-8").splitlines()) > TOOLING_MODULE_LINE_LIMIT
+    }
+
+    assert offenders == {}
+
+
+def test_failure_matrix_support_has_only_focused_typed_owners() -> None:
+    root = REPOSITORY / "tests" / "support" / "failure_matrix"
+
+    assert {path.name for path in root.glob("*.py")} == FAILURE_MATRIX_SUPPORT

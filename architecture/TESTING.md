@@ -66,6 +66,34 @@ test selection do not require revalidating the execution mechanism. Historical
 measurements and their exact inventories remain in the
 [testing-infrastructure evidence](../docs/TESTING_INFRASTRUCTURE_EVIDENCE.md).
 
+## Test ownership and cohesion
+
+Test kind and subsystem are the first ownership axes; behavior is the next.
+Ownership precedes size. A test module groups one coherent boundary such as
+input validation, reuse, publication, stage behavior, CLI dispatch, failure
+mapping, or reproduction. The 1,000-physical-line limit is a final regression
+backstop, not a reason to split tests into equally sized files.
+
+Fitting tests live under `tests/unit/fitting/` as `test_input.py`,
+`test_reuse.py`, `test_publication.py`, and `test_stage.py`. Generation
+integration tests live under `tests/integration/generation/` as
+`test_generate_cli.py`, `test_generate_publication.py`,
+`test_generate_failures.py`, and `test_generate_reproduction.py`. Shared
+builders have focused typed owners under `tests/support/`; setup is not copied
+between behavioral owners.
+
+The canonical failure-outcome matrix keeps case records, doubles, runners, and
+log/inventory oracles in `tests/support/failure_matrix/cases.py`, `doubles.py`,
+`runners.py`, and `oracle.py`. Only direct boundary and oracle behavior tests
+remain under `tests/unit/pipeline/failure_matrix/`. These support modules are
+test-only owners, not compatibility layers or generic utility collections.
+
+When tests move between owners, compare the sorted normalized node suffix after
+the first `::`, including every parameter ID and every non-`parametrize` marker.
+The normalized inventory must be identical; moving a test must not drop an
+assertion, case, marker, fixture scope, failure authority, or deterministic
+byte expectation.
+
 ## Unit tests
 
 Unit tests are deterministic and do not start Docker. They cover:

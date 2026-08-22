@@ -550,39 +550,39 @@ NumPy, SciPy, Git, Docker Compose.
 - Produces cohesive remaining tests, normalized node inventory parity, and
   documented/enforced module-size regression backstops.
 
-- [ ] **[STEP-56-f10c116c] Snapshot remaining nodes and write final RED size tests**
+- [x] **[STEP-56-f10c116c] Snapshot remaining nodes and write final RED size tests**
 
   Record normalized inventories. Add literal tests that enumerate every Python
   file above 600/800/1,000 lines for production/tooling/tests respectively and
   require empty offender sets. Expected RED lists only the remaining files in
   this task or missed earlier work.
 
-- [ ] **[STEP-57-90f4a613] Split fitting and generation integration tests**
+- [x] **[STEP-57-90f4a613] Split fitting and generation integration tests**
 
   Rehome fit-input/reuse/publication/stage tests and generate CLI/publication/
   failure/reproduction tests; extract shared builders only to typed support
   modules; prove normalized inventory equality.
 
-- [ ] **[STEP-58-ece907fc] Extract failure-matrix support and concise boundary tests**
+- [x] **[STEP-58-ece907fc] Extract failure-matrix support and concise boundary tests**
 
   Move case records, doubles, runners, and oracle helpers to
   `tests/support/failure_matrix/{cases,doubles,runners,oracle}.py`; keep only
   direct matrix/oracle behavior tests under `unit/pipeline/failure_matrix/` and
   preserve every parametrized case.
 
-- [ ] **[STEP-59-6e741f84] Document and satisfy final cohesion backstops**
+- [x] **[STEP-59-6e741f84] Document and satisfy final cohesion backstops**
 
   Add stable development/testing wording that ownership precedes size, update
   layout expectations for every new package, and make all production/tooling/
   test offender sets empty without exclusions.
 
-- [ ] **[STEP-60-a17b3590] Verify complete collection and ordinary gates**
+- [x] **[STEP-60-a17b3590] Verify complete collection and ordinary gates**
 
   Require at least the 3,833 original tests plus structural additions, then run
   Ruff format/lint, strict Pyright, Fast, Ordinary, branch-aware coverage, and
   all deterministic checkers.
 
-- [ ] **[STEP-61-1d94bb9d] Review and commit final test decomposition**
+- [x] **[STEP-61-1d94bb9d] Review and commit final test decomposition**
 
   Resolve independent review findings and commit:
 

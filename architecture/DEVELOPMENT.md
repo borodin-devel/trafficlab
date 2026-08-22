@@ -104,6 +104,20 @@ and regenerate fixtures, examples, documentation, and evidence. Simplification
 must not silently weaken scientific definitions, validation, bounded
 execution, deterministic failure behavior, or reproducibility.
 
+## Module ownership and cohesion backstops
+
+Assign each Python module one behavioral owner before considering its size.
+Line limits are regression backstops, not decomposition targets: split a module
+at a real ownership boundary and move shared test setup to a focused typed
+support owner rather than distributing lines evenly, copying setup, or adding a
+compatibility shim.
+
+Every production module under `src/trafficlab/` is at most 600 physical lines,
+every Python tooling module under `scripts/` is at most 800 physical lines, and
+every test, test-support, or scientific-probe module under `tests/` is at most
+1,000 physical lines. The repository layout tests count all `*.py` files in
+these trees with `splitlines()` and permit no path exclusions or exemptions.
+
 ## Formatting, linting, and types
 
 Ruff owns formatting and linting. Its maximum line length is 120 characters.

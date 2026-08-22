@@ -113,6 +113,8 @@ EXPECTED_ARTIFACT_MODULES = {
     "run_directory.py",
 }
 
+PRODUCTION_MODULE_LINE_LIMIT = 600
+
 
 def _python_inventory(directory: Path) -> set[str]:
     if not directory.is_dir():
@@ -151,3 +153,13 @@ def test_artifact_persistence_is_owned_by_artifact_kind() -> None:
     assert artifacts.is_dir()
     assert _python_inventory(artifacts) == EXPECTED_ARTIFACT_MODULES
     assert not (PACKAGE / "artifacts.py").exists()
+
+
+def test_production_modules_stay_within_the_cohesion_backstop() -> None:
+    offenders = {
+        path.relative_to(REPOSITORY).as_posix(): len(path.read_text(encoding="utf-8").splitlines())
+        for path in PACKAGE.rglob("*.py")
+        if len(path.read_text(encoding="utf-8").splitlines()) > PRODUCTION_MODULE_LINE_LIMIT
+    }
+
+    assert offenders == {}
