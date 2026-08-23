@@ -35,6 +35,39 @@ accepted study. The older checked
 bundles remain byte-unchanged accepted predecessors. Historical material and
 failed/nonfinal attempts remain ignored consistency or forensic evidence.
 
+## Directory contents and `results.json` fields
+
+[`evidence/`](evidence/) contains immutable accepted bundles and has its own
+[record and JSON field dictionary](evidence/README.md). `REPORT.md` interprets
+the current accepted production-Scapy study. `results.json` is an earlier
+standalone retained study summary; it remains reproducibility evidence but is
+not the navigation root for the accepted schema-4 bundle named above.
+
+| `results.json` field | Description |
+| --- | --- |
+| `schema_version` | Standalone result-summary format version. |
+| `environment` | Study date, source commit, Trafficlab/Python/platform/Docker versions, and capture/target image IDs. |
+| `protocol` | Study ID, URL/capability record, workload definitions and execution order, model families, methods, seeds, configuration/prerequisite digests, images, and runtime boundary. |
+| `runs` | Nine primary training-run records ordered by `execution_order`. |
+| `reproduction` | Dedicated unchanged-configuration reproduction run and its comparison with the source run. |
+| `natural_variation` | Per-workload repeated-reference comparison pairs and reference descriptors. |
+| `workload_summaries` | Per-workload descriptive statistics for runtime, winners, family champions, published/fresh scores, and reference traffic. |
+
+Each `runs[]` record contains its workload/repeat `key`, run ID/directory and
+config path, elapsed time, cleanup result, artifact digests, transfer evidence,
+reference/generated descriptors, family champions, winner, published score,
+fresh-simulation score, raw-sequence reproduction checks, and explicit artifact
+reuse flags. `reproduction` adds `source_key`, changed configuration fields,
+guard command/status/digests, comparison deltas, and the same core run fields.
+
+Traffic descriptors contain `packet_count`, inbound/outbound packet and byte
+totals, `observation_window_seconds`, frame-length and IAT summaries, and
+per-width scale totals. A numeric summary contains `count`, `minimum`, `maximum`,
+`range`, `mean`, `sample_variance`, and `sample_standard_deviation`. A score
+contains `aggregate` and all four named method values. A transfer response
+contains requested byte bounds, HTTP `status`, content range/length, transfer
+index, retained-header path/digest, file modes, and inode-preservation proof.
+
 ## Frozen protocol
 
 Use a new study ID matching `[a-z0-9][a-z0-9-]{0,31}` for every attempt. Before

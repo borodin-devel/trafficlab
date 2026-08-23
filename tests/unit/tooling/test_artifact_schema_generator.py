@@ -45,6 +45,17 @@ def test_schema_directory_check_rejects_changed_missing_and_foreign_files(tmp_pa
     )
 
 
+def test_schema_directory_preserves_its_readme(tmp_path: Path) -> None:
+    """Regenerating schemas must not delete the documentation stored beside them."""
+    readme = tmp_path / "README.md"
+    readme.write_text("# Public schemas\n", encoding="utf-8")
+
+    schemas.write_schema_directory(tmp_path)
+
+    assert readme.read_text(encoding="utf-8") == "# Public schemas\n"
+    assert schemas.schema_directory_mismatches(tmp_path) == ()
+
+
 def test_schema_directory_check_rejects_symlink_and_nonregular_entries(tmp_path: Path) -> None:
     """Following a link or ignoring a special file would make the checked schema tree nonportable."""
     schemas.write_schema_directory(tmp_path)

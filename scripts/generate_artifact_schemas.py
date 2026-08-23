@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or verify every public scientific-artifact v3 JSON Schema."""
+"""Generate or verify every public scientific-artifact v4 JSON Schema."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from trafficlab.common.json import render_json_document
 REPOSITORY = Path(__file__).resolve().parents[1]
 OUTPUT_DIRECTORY = REPOSITORY / "examples" / "schemas" / "scientific-artifact-v4"
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
+_DOCUMENTATION_NAMES = frozenset({"README.md"})
 
 
 def canonical_schema_bytes(document: Mapping[str, object]) -> bytes:
@@ -65,7 +66,9 @@ def schema_directory_mismatches(directory: Path = OUTPUT_DIRECTORY) -> tuple[str
             actual = b""
         if actual != content:
             mismatches.append(f"changed:{name}")
-    mismatches.extend(f"foreign:{name}" for name in actual_names - set(expected) if entries[name])
+    mismatches.extend(
+        f"foreign:{name}" for name in actual_names - set(expected) - _DOCUMENTATION_NAMES if entries[name]
+    )
     return tuple(sorted(mismatches))
 
 
@@ -78,7 +81,7 @@ def write_schema_directory(directory: Path = OUTPUT_DIRECTORY) -> None:
     if nonregular:
         raise ValueError("schema directory contains nonregular entries: " + ", ".join(nonregular))
     for name, _regular in entries:
-        if name not in expected:
+        if name not in expected and name not in _DOCUMENTATION_NAMES:
             path = directory / name
             path.unlink()
     for name, content in expected.items():
