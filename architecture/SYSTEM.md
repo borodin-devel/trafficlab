@@ -283,6 +283,13 @@ enable or disable method execution.
 
 ## Run directory
 
+Standalone JSON documents produced by Trafficlab and its repository tooling use
+sorted object keys, two-space indentation, UTF-8 encoding, finite JSON numbers,
+and exactly one trailing LF. JSON Lines records remain sorted and compact so one
+physical line is one record. Compact encodings used only as internal hash
+preimages or subprocess messages are not standalone artifact documents and keep
+their established byte contracts.
+
 ```text
 experiment.toml
 reference.pcapng

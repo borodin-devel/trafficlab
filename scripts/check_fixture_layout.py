@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
 
+from trafficlab.common.json import render_json_document
+
 _MANIFEST_EXCLUSIONS = frozenset({"README.md", "manifest.json"})
 _GENERATED_CACHE_DIRECTORY = "__pycache__"
 _MISPLACED_FIXTURE_PATHS = (
@@ -75,9 +77,7 @@ def _manifest_document(entries: tuple[ManifestEntry, ...]) -> dict[str, object]:
 
 
 def _manifest_bytes(entries: tuple[ManifestEntry, ...]) -> bytes:
-    return (
-        json.dumps(_manifest_document(entries), sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
-    ).encode("utf-8")
+    return render_json_document(_manifest_document(entries), ensure_ascii=True)
 
 
 def _load_manifest(path: Path) -> tuple[ManifestEntry, ...]:

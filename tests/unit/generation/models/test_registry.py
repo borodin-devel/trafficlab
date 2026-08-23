@@ -106,7 +106,7 @@ def _document(model: BestModel) -> dict[str, Any]:
 
 
 def _encoded(document: object) -> bytes:
-    return json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=True).encode()
+    return (json.dumps(document, sort_keys=True, indent=2, allow_nan=True) + "\n").encode()
 
 
 def test_make_best_model_repairs_and_owns_all_outer_metadata() -> None:
@@ -146,7 +146,6 @@ def test_best_model_render_is_canonical(valid_best_model: BestModel) -> None:
     """Noncanonical JSON would make byte identity depend on the writing caller."""
     rendered = render_best_model(valid_best_model)
     assert rendered.endswith(b"\n")
-    assert b" " not in rendered
     document = json.loads(rendered)
     assert set(document) == {
         "version",
@@ -163,10 +162,18 @@ def test_best_model_render_is_canonical(valid_best_model: BestModel) -> None:
         "estimator_choices",
         "seed_policy",
     }
-    assert rendered == (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    assert rendered == (json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
     loaded = load_best_model(rendered, source=Path("best_model.json"))
     assert type(loaded.genes) is tuple
     assert render_best_model(loaded) == rendered
+
+
+def test_best_model_loader_rejects_compact_equivalent_json(valid_best_model: BestModel) -> None:
+    document = json.loads(render_best_model(valid_best_model))
+    compact = (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+
+    with pytest.raises(TrafficlabError, match="not canonical"):
+        load_best_model(compact, source=Path("best_model.json"))
 
 
 @pytest.mark.parametrize(
@@ -201,9 +208,9 @@ def test_best_model_rejects_duplicate_keys_at_every_object_depth(valid_best_mode
     """Last-value-wins parsing at any nesting level would bypass exact artifact validation."""
     rendered = render_best_model(valid_best_model).decode()
     duplicates = (
-        rendered.replace("{", '{"version":1,', 1),
-        rendered.replace('"c_lambda":{"lower":', '"c_lambda":{"lower":0.25,"lower":', 1),
-        rendered.replace('"direction":"outbound"', '"direction":"outbound","direction":"outbound"', 1),
+        rendered.replace("{", '{\n  "version": 1,', 1),
+        rendered.replace('"lower": 0.25,', '"lower": 0.25,\n      "lower": 0.25,', 1),
+        rendered.replace('"direction": "outbound",', '"direction": "outbound",\n        "direction": "outbound",', 1),
     )
     for content in duplicates:
         with pytest.raises(TrafficlabError, match="duplicate JSON key"):

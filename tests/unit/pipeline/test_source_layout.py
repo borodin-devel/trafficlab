@@ -12,6 +12,7 @@ EXPECTED_MODULES = {
         "config.py",
         "config_io.py",
         "errors.py",
+        "json.py",
         "scapy_io.py",
         "scientific_schema.py",
         "statistics.py",

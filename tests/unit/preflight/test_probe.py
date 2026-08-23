@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import cast
 
@@ -5,10 +6,22 @@ import pytest
 
 import trafficlab.preflight.probe as probe_module
 from trafficlab.capture.docker.types import ServiceState
+from trafficlab.capture.topology import ComposePaths
+from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import CaptureMetadata, render_capture_metadata
 from trafficlab.preflight.docker import require_deadline
 from trafficlab.preflight.types import DockerPreflight
+
+
+def test_probe_compose_is_sorted_readable_json(valid_config_data: dict[str, object], tmp_path: Path) -> None:
+    config = ExperimentConfig.model_validate(valid_config_data)
+    paths = ComposePaths(project_name="trafficlab-probe-readable", output_directory=tmp_path / "output")
+
+    content = probe_module.render_probe_compose(config, paths, capture_image="trafficlab-capture:local")
+
+    document = json.loads(content)
+    assert content == (json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
 
 
 def test_capture_readiness_distinguishes_missing_and_unreadable_output(

@@ -1,1 +1,81 @@
-{"capture_identity":{"sha256":"2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315","size":63},"estimator_choices":{"first_event":"zero","marks":"joint_empirical_first_appearance","rate":"interval_count_over_window"},"family":"poisson_empirical","final_limits":{"max_output_bytes":2000000,"max_packets":1000,"max_wall_seconds":10.0},"final_seed":97,"fitted":{"base_rate":2.0,"marks":[{"count":4,"direction":"outbound","frame_length":60},{"count":5,"direction":"inbound","frame_length":96},{"count":1,"direction":"outbound","frame_length":128},{"count":4,"direction":"outbound","frame_length":256},{"count":2,"direction":"inbound","frame_length":512},{"count":3,"direction":"inbound","frame_length":128},{"count":2,"direction":"outbound","frame_length":512}],"rate":2.213463578786912},"gene_bounds":{"c_lambda":{"lower":0.5,"upper":1.5}},"genes":[1.106731789393456],"observation_window_seconds":10.0,"reference_identity":{"sha256":"fd1d361da6829381293c84018928ce3e329108af8d4308094b7a790485a887f6","size":5024},"scientific_artifact_schema":4,"seed_policy":{"empirical":"choice_scalar_index","exponential":"exponential_scale_inverse_rate","generator":"numpy.random.Generator/PCG64","weighted":"random_cumulative"},"version":1}
+{
+  "capture_identity": {
+    "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
+    "size": 63
+  },
+  "estimator_choices": {
+    "first_event": "zero",
+    "marks": "joint_empirical_first_appearance",
+    "rate": "interval_count_over_window"
+  },
+  "family": "poisson_empirical",
+  "final_limits": {
+    "max_output_bytes": 2000000,
+    "max_packets": 1000,
+    "max_wall_seconds": 10.0
+  },
+  "final_seed": 97,
+  "fitted": {
+    "base_rate": 2.0,
+    "marks": [
+      {
+        "count": 4,
+        "direction": "outbound",
+        "frame_length": 60
+      },
+      {
+        "count": 5,
+        "direction": "inbound",
+        "frame_length": 96
+      },
+      {
+        "count": 1,
+        "direction": "outbound",
+        "frame_length": 128
+      },
+      {
+        "count": 4,
+        "direction": "outbound",
+        "frame_length": 256
+      },
+      {
+        "count": 2,
+        "direction": "inbound",
+        "frame_length": 512
+      },
+      {
+        "count": 3,
+        "direction": "inbound",
+        "frame_length": 128
+      },
+      {
+        "count": 2,
+        "direction": "outbound",
+        "frame_length": 512
+      }
+    ],
+    "rate": 2.213463578786912
+  },
+  "gene_bounds": {
+    "c_lambda": {
+      "lower": 0.5,
+      "upper": 1.5
+    }
+  },
+  "genes": [
+    1.106731789393456
+  ],
+  "observation_window_seconds": 10.0,
+  "reference_identity": {
+    "sha256": "fd1d361da6829381293c84018928ce3e329108af8d4308094b7a790485a887f6",
+    "size": 5024
+  },
+  "scientific_artifact_schema": 4,
+  "seed_policy": {
+    "empirical": "choice_scalar_index",
+    "exponential": "exponential_scale_inverse_rate",
+    "generator": "numpy.random.Generator/PCG64",
+    "weighted": "random_cumulative"
+  },
+  "version": 1
+}

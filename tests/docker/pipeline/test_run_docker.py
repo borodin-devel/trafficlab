@@ -31,6 +31,7 @@ from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig, GenerationLimits
 from trafficlab.common.config_io import load_experiment
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import Direction, normalize_reference, parse_capture_metadata
 from trafficlab.comparison.codec import (
@@ -135,7 +136,7 @@ def _install_unready_capture(monkeypatch: pytest.MonkeyPatch) -> None:
         services = cast(dict[str, object], document["services"])
         capture = cast(dict[str, object], services["capture"])
         capture["entrypoint"] = ["/bin/sh", "-c", "sleep 300"]
-        path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+        path.write_bytes(render_json_document(document))
 
     monkeypatch.setattr(capture_module, "write_production_compose", write)
 

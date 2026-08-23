@@ -11,6 +11,7 @@ from trafficlab import USER_AGENT
 from trafficlab.capture.topology import ComposePaths, render_production_compose
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 from trafficlab.common.scapy_io import read_pcapng
 from trafficlab.common.trace import load_capture_metadata
 from trafficlab.preflight.types import DockerPreflight
@@ -67,7 +68,7 @@ def render_probe_compose(
             "network_mode": "service:capture",
         }
     )
-    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    return render_json_document(document)
 
 
 def write_probe_compose(path: Path, content: bytes) -> None:

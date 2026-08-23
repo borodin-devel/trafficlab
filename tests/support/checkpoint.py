@@ -242,7 +242,7 @@ def decoded_checkpoint(content: bytes | None = None) -> dict[str, object]:
 
 
 def encoded_checkpoint(data: object) -> bytes:
-    return (json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=True) + "\n").encode()
+    return (json.dumps(data, sort_keys=True, indent=2, allow_nan=True) + "\n").encode()
 
 
 def changed_checkpoint(path: tuple[str | int, ...], value: object) -> bytes:

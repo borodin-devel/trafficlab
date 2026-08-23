@@ -784,7 +784,7 @@ def parse_study_results(content: bytes, *, repository_root: Path) -> StudyResult
     document = load_json(content)
     result = validate_study_document(document, repository_root=repository_root)
     if canonical_json(study_document(result)) != content:
-        raise ValueError("study results JSON must use canonical sorted compact encoding with one trailing newline")
+        raise ValueError("study results JSON must use canonical sorted readable encoding with one trailing newline")
     return result
 
 

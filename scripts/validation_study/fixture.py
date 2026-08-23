@@ -42,6 +42,7 @@ from trafficlab.common.trace import (
     align_generated,
     normalize_reference,
     parse_capture_metadata,
+    render_capture_metadata,
 )
 from trafficlab.comparison.codec import render_comparison_result, similarity_settings_identity
 from trafficlab.comparison.metrics import compare_traces
@@ -250,12 +251,7 @@ def _write_training_tree(
 ) -> tuple[dict[str, object], dict[str, bytes], ComparisonResult, TrafficTrace, float]:
     directory_relative = f"training/{workload}/r{repeat}"
     experiment = render_effective_config(config)
-    capture = (
-        json.dumps(
-            {"interface": metadata.interface, "target_mac": metadata.target_mac}, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
-        + b"\n"
-    )
+    capture = render_capture_metadata(metadata)
     reference = _encode_events(events, metadata)
     with tempfile.TemporaryDirectory(prefix="trafficlab-validation-study-fixture-") as temporary:
         run_directory = Path(temporary) / "run"
@@ -389,12 +385,7 @@ def _write_held_out(
     directory_relative = f"held_out/{workload}"
     directory = root / directory_relative
     directory.mkdir(parents=True, exist_ok=True)
-    capture = (
-        json.dumps(
-            {"interface": metadata.interface, "target_mac": metadata.target_mac}, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
-        + b"\n"
-    )
+    capture = render_capture_metadata(metadata)
     reference = _encode_events(events, metadata)
     portable = _config_bytes(config, ".")
     realized = _config_bytes(config, f"/retained/{directory_relative}")

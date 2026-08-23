@@ -41,6 +41,7 @@ from trafficlab.common.config_io import (
     render_effective_config,
 )
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import align_generated, normalize_reference, parse_capture_metadata
 from trafficlab.comparison.codec import parse_comparison_result, render_comparison_result, similarity_settings_identity
@@ -237,6 +238,10 @@ class ExampleRunEvidence(_StrictModel):
 
 
 def canonical_json_bytes(document: Mapping[str, object]) -> bytes:
+    return render_json_document(document)
+
+
+def canonical_json_line_bytes(document: Mapping[str, object]) -> bytes:
     return (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
 
 
@@ -275,7 +280,7 @@ def _run_log(path: Path) -> list[dict[str, object]]:
         if not all(isinstance(key, str) for key in raw_mapping):
             raise ValueError("example run log must contain JSON objects")
         record = cast(dict[str, object], value)
-        if raw_line.encode("utf-8") + b"\n" != canonical_json_bytes(record):
+        if raw_line.encode("utf-8") + b"\n" != canonical_json_line_bytes(record):
             raise ValueError("example run log is not canonical JSONL")
         records.append(record)
     if not records:

@@ -283,6 +283,6 @@ def test_benchmark_agreement_validator_rejects_incomplete_and_inconsistent_gates
 def test_benchmark_evidence_rejects_noncanonical_json() -> None:
     """Equivalent but noncanonical JSON must not masquerade as the retained checked evidence."""
     document = json.loads(_EVIDENCE.read_bytes())
-    noncanonical = json.dumps(document, indent=2).encode("utf-8")
+    noncanonical = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     with pytest.raises(ValueError, match="canonical"):
         benchmark.parse_and_validate_evidence(noncanonical, repository_root=_ROOT)

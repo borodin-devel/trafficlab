@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Final, Literal, cast
 
 from trafficlab.capture.docker.types import reject_duplicate_json_keys
+from trafficlab.common.json import render_json_document
 
 _SHA256_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
@@ -155,7 +156,7 @@ class ImageIdentity:
 
 
 def _canonical_lock_bytes(payload: Mapping[str, object]) -> bytes:
-    return (json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True) + "\n").encode("ascii")
+    return render_json_document(payload, ensure_ascii=True)
 
 
 def _lock_string(payload: Mapping[str, object], field: str) -> str:

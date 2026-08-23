@@ -57,6 +57,9 @@ TOOLING_MODULE_LINE_LIMIT = 800
 
 FAILURE_MATRIX_SUPPORT = {"__init__.py", "cases.py", "doubles.py", "oracle.py", "runners.py"}
 
+IMMUTABLE_VALIDATION_EVIDENCE_PREFIX = "examples/validation_study/evidence/"
+HUMAN_AUTHORED_JSON_PREFIX = ".vscode/"
+
 
 class _ManifestEntry(Protocol):
     path: str
@@ -69,6 +72,8 @@ class _Checker(Protocol):
     class FixtureLayoutError(ValueError): ...
 
     def build_manifest(self, root: Path) -> tuple[_ManifestEntry, ...]: ...
+
+    def write_manifest(self, root: Path, manifest_path: Path) -> None: ...
 
     def check_manifest(self, root: Path, manifest_path: Path) -> None: ...
 
@@ -87,6 +92,30 @@ def _load_checker() -> _Checker:
     return cast(_Checker, module)
 
 
+def test_regenerable_tracked_json_documents_are_readable() -> None:
+    completed = subprocess.run(
+        ("git", "ls-files", "*.json"),
+        cwd=REPOSITORY,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    mismatches: list[str] = []
+    for relative in completed.stdout.splitlines():
+        if relative.startswith((HUMAN_AUTHORED_JSON_PREFIX, IMMUTABLE_VALIDATION_EVIDENCE_PREFIX)):
+            continue
+        path = REPOSITORY / relative
+        content = path.read_bytes()
+        document = json.loads(content)
+        expected = (json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n").encode(
+            "utf-8"
+        )
+        if content != expected:
+            mismatches.append(relative)
+
+    assert mismatches == []
+
+
 def _write_manifest(path: Path, entries: tuple[_ManifestEntry, ...]) -> None:
     path.write_text(
         json.dumps(
@@ -103,7 +132,8 @@ def _write_manifest(path: Path, entries: tuple[_ManifestEntry, ...]) -> None:
                 ],
             },
             sort_keys=True,
-            separators=(",", ":"),
+            indent=2,
+            allow_nan=False,
         )
         + "\n",
         encoding="utf-8",
@@ -131,6 +161,13 @@ def test_manifest_is_sorted_and_binds_regular_fixture_bytes_and_modes(tmp_path: 
     assert entries[0].sha256 == "3a37782e8974c48eebf2a0517c866ad15641c53b3d31993188796b56aeb79624"
     assert entries[0].mode == 0o644
     assert entries[1].mode == 0o755
+
+    manifest = tmp_path / "manifest.json"
+    checker.write_manifest(root, manifest)
+    document = json.loads(manifest.read_bytes())
+    assert manifest.read_bytes() == (json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n").encode(
+        "utf-8"
+    )
 
 
 def test_manifest_ignores_generated_python_cache_files(tmp_path: Path) -> None:

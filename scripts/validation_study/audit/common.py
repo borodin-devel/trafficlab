@@ -19,6 +19,7 @@ from trafficlab import USER_AGENT
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import FailureKind
+from trafficlab.common.json import render_json_document
 from trafficlab.common.trace import TrafficTrace
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState
@@ -248,6 +249,10 @@ def fail(kind: FailureKind, affected: str, detail: str, action: str) -> NoReturn
 
 
 def canonical_json_bytes(value: object) -> bytes:
+    return render_json_document(value, ensure_ascii=False)
+
+
+def canonical_json_line_bytes(value: object) -> bytes:
     return (
         json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
         + b"\n"
@@ -492,7 +497,7 @@ def canonical_jsonl(content: bytes, *, name: str) -> None:
         if not raw.endswith(b"\n"):
             fail("artifact_corrupt", name, "run log must use LF-terminated records", "restore canonical run log")
         record = parse_json_object(raw, name=f"{name}:{line_number}", canonical=False)
-        if canonical_json_bytes(record) != raw:
+        if canonical_json_line_bytes(record) != raw:
             fail("artifact_corrupt", name, "run log record is not canonical JSONL", "restore canonical run log")
 
 

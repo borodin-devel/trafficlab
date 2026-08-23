@@ -187,7 +187,7 @@ def parse_retained_prerequisites(content: bytes) -> dict[str, object]:
     document = _retained_prerequisite_document(load_json(content))
     if canonical_json(cast(JsonObject, document)) != content:
         raise ValueError(
-            "retained prerequisite JSON must use canonical sorted compact encoding with one trailing newline"
+            "retained prerequisite JSON must use canonical sorted readable encoding with one trailing newline"
         )
     return document
 
@@ -525,7 +525,7 @@ def parse_prerequisite_results(content: bytes, *, repository_root: Path) -> Prer
     document = load_json(content)
     result = validate_prerequisite_document(document, repository_root=repository_root)
     if canonical_json(prerequisite_document(result)) != content:
-        raise ValueError("prerequisite JSON must use canonical sorted compact encoding with one trailing newline")
+        raise ValueError("prerequisite JSON must use canonical sorted readable encoding with one trailing newline")
     return result
 
 

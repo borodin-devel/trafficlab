@@ -30,6 +30,7 @@ from trafficlab.artifacts.io import append_run_log
 from trafficlab.capture.stage import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.json import render_json_document
 from trafficlab.comparison.stage import compare_experiment
 from trafficlab.fitting.stage import fit_experiment
 from trafficlab.generation.stage import generate_experiment
@@ -253,10 +254,7 @@ def rewrite_candidate_manifest(candidate: Path) -> None:
 
 
 def write_canonical_json(path: Path, document: object) -> None:
-    path.write_bytes(
-        json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
-        + b"\n"
-    )
+    path.write_bytes(render_json_document(document, ensure_ascii=False))
 
 
 def candidate_index(candidate: Path) -> dict[str, object]:

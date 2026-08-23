@@ -22,7 +22,7 @@ from tests.support.docker import (
 from trafficlab.capture.docker.types import CommandResult
 from trafficlab.capture.stage import capture_experiment, capture_prepared_experiment
 from trafficlab.capture.validation import validate_capture_pair
-from trafficlab.common.trace import Direction
+from trafficlab.common.trace import Direction, parse_capture_metadata, render_capture_metadata
 from trafficlab.preflight.stage import run_preflight
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
@@ -82,8 +82,11 @@ def test_full_preflight_and_capture_observe_controlled_tcp_udp_and_broadcast(
         result.reference_path,
         deadline=None,
     )
+    capture_content = (result.run_directory / "capture.json").read_bytes()
+    metadata = parse_capture_metadata(capture_content, source=result.run_directory / "capture.json")
 
     assert result.target_status == 0
+    assert capture_content == render_capture_metadata(metadata)
     assert docker.target_started_after_ready
     assert result.packet_count == inspection.packet_count > 0
     assert inspection.protocol_counts["tcp"] >= 4

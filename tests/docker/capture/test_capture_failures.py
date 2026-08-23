@@ -14,6 +14,7 @@ from trafficlab.capture.stage import capture_prepared_experiment
 from trafficlab.capture.topology import ComposePaths
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 from trafficlab.preflight.stage import run_preflight
 
 pytestmark = [pytest.mark.docker, pytest.mark.integration]
@@ -98,7 +99,7 @@ def _replace_capture_entrypoint(monkeypatch: pytest.MonkeyPatch, entrypoint: lis
         assert target["image"] == target_image
         assert capture["image"] == capture_image
         capture["entrypoint"] = entrypoint
-        return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        return render_json_document(document)
 
     original_write = capture_module.write_production_compose
 
@@ -291,7 +292,8 @@ def test_malformed_output_is_rejected_after_bounded_flush(
         [
             "/bin/sh",
             "-c",
-            'mac=$(cat /sys/class/net/eth0/address); printf \'{"interface":"eth0","target_mac":"%s"}\\n\' '
+            'mac=$(cat /sys/class/net/eth0/address); printf \'{\\n  "interface": "eth0",\\n'
+            '  "target_mac": "%s"\\n}\\n\' '
             '"$$mac" > /trafficlab/capture.json; printf "\\012\\015\\015\\012bad" '
             "> /trafficlab/reference.pcapng.tmp; "
             "trap 'exit 0' INT; while :; do sleep 0.1; done",

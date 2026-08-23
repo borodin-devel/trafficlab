@@ -38,7 +38,7 @@ def test_best_model_rejects_malformed_prospective_or_existing_bytes_without_repl
     assert not destination.exists()
 
     document = json.loads(valid_best_bytes())
-    noncanonical = (json.dumps(document, indent=2) + "\n").encode()
+    noncanonical = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
     with pytest.raises(TrafficlabError, match="not canonical"):
         publish_best_model(destination, noncanonical)
     assert not destination.exists()

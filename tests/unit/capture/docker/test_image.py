@@ -37,7 +37,7 @@ def _lock_payload() -> dict[str, Any]:
 
 
 def _canonical_json(payload: dict[str, Any]) -> bytes:
-    return (json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True) + "\n").encode()
+    return (json.dumps(payload, ensure_ascii=True, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
 
 
 def _write_lock(path: Path, payload: dict[str, Any] | None = None) -> None:
@@ -144,7 +144,7 @@ def test_capture_image_lock_rejects_invalid_fields(
 
 def test_capture_image_lock_rejects_noncanonical_json(tmp_path: Path) -> None:
     lock_path = tmp_path / "image-lock.json"
-    lock_path.write_text(json.dumps(_lock_payload(), indent=2) + "\n")
+    lock_path.write_text(json.dumps(_lock_payload(), sort_keys=True, separators=(",", ":")) + "\n")
 
     with pytest.raises(CaptureImageLockError, match="canonical"):
         load_capture_image_lock(lock_path)

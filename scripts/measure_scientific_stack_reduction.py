@@ -14,6 +14,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from trafficlab.common.json import render_json_document
+
 REPOSITORY = Path(__file__).resolve().parents[1]
 OUTPUT = REPOSITORY / "examples" / "scientific_stack" / "code_reduction.json"
 _HEX40 = re.compile(r"[0-9a-f]{40}")
@@ -660,7 +662,7 @@ def validate_reduction_evidence(evidence: Mapping[str, object]) -> None:
 
 
 def canonical_json_bytes(document: Mapping[str, object]) -> bytes:
-    return (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+    return render_json_document(document)
 
 
 def _stored_numpy_after_revision(content: bytes) -> str:

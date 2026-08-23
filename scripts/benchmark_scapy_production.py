@@ -24,6 +24,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictFloat,
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from trafficlab.common.json import render_json_document
 from trafficlab.common.scapy_io import encode_pcapng, read_pcapng
 from trafficlab.common.trace import CaptureMetadata, TrafficTrace
 
@@ -155,6 +156,10 @@ class DiagnosticRecord(_StrictModel):
 
 
 def _canonical_json(document: Mapping[str, object]) -> bytes:
+    return render_json_document(document)
+
+
+def _canonical_json_line(document: Mapping[str, object]) -> bytes:
     return (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
 
 
@@ -404,7 +409,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
     child_frame_count = cast(int | None, parsed.child_frame_count)
     if child_frame_count is not None:
         print(
-            _canonical_json(cast(dict[str, object], _sample(child_frame_count).model_dump(mode="json"))).decode(),
+            _canonical_json_line(cast(dict[str, object], _sample(child_frame_count).model_dump(mode="json"))).decode(),
             end="",
         )
         return 0

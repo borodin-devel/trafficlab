@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import FloatBounds, IntegerBounds, SimilarityConfig
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 from trafficlab.common.scientific_schema import require_current_scientific_schema
 from trafficlab.comparison.similarity.common import FrozenJsonValue
 from trafficlab.fitting.genetic.checkpoint.compatibility import (
@@ -248,7 +249,7 @@ def _compatibility_from_artifact(artifact: CheckpointArtifact) -> CheckpointComp
 
 
 def render_checkpoint(state: CheckpointState) -> bytes:
-    """Render one validated checkpoint as sorted compact finite JSON with a trailing newline."""
+    """Render one validated checkpoint as sorted readable finite JSON with a trailing newline."""
     try:
         validate_state(state)
         document = _checkpoint_document(state)
@@ -257,12 +258,12 @@ def render_checkpoint(state: CheckpointState) -> bytes:
         validated_document = artifact.model_dump(mode="json")
         if validated_document != wire_document:
             raise ValueError("checkpoint schema validation changed the canonical document")
-        text = json.dumps(validated_document, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        content = render_json_document(validated_document)
     except ValidationError as error:
         raise invalid_checkpoint(validation_error_detail(error)) from error
     except (KeyError, TypeError, ValueError) as error:
         raise invalid_checkpoint(str(error)) from error
-    return f"{text}\n".encode()
+    return content
 
 
 def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> CheckpointState:
@@ -298,7 +299,7 @@ def parse_checkpoint(content: bytes, compatibility: CheckpointCompatibility) -> 
         )
         validate_state(state)
         if render_checkpoint(state) != content:
-            raise ValueError("checkpoint JSON must use the canonical sorted compact encoding with one final newline")
+            raise ValueError("checkpoint JSON must use the canonical sorted readable encoding with one final newline")
         return state
     except TrafficlabError:
         raise

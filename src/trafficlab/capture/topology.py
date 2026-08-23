@@ -1,11 +1,11 @@
 """Deterministic Docker Compose rendering for the production capture topology."""
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from trafficlab.common.config import ExperimentConfig, MountConfig
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 
 _CAPTURE_OUTPUT_DIRECTORY = "/trafficlab"
 
@@ -64,8 +64,7 @@ def render_production_compose(
         "name": paths.project_name,
         "services": {"capture": capture, "target": target},
     }
-    rendered = json.dumps(document, sort_keys=True, separators=(",", ":"))
-    return f"{rendered}\n".encode()
+    return render_json_document(document)
 
 
 def write_production_compose(

@@ -55,7 +55,7 @@ def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnost
     assert loaded == VALID_STATE
     assert content.endswith(b"\n")
     decoded = json.loads(content)
-    assert content == (json.dumps(decoded, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    assert content == (json.dumps(decoded, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
     assert decoded["scientific_artifact_schema"] == 4
     assert tuple(method.name for method in loaded.population[0].trials[0].methods) == METHOD_ORDER
     with pytest.raises(TypeError):
@@ -300,7 +300,7 @@ def test_checkpoint_rejects_nested_shape_type_and_number_errors(content: bytes) 
 
 def test_checkpoint_rejects_duplicate_json_keys() -> None:
     content = render_checkpoint(VALID_STATE)
-    duplicate_key = content.replace(b'{"best":', b'{"best":null,"best":', 1)
+    duplicate_key = content.replace(b'{\n  "best":', b'{\n  "best": null,\n  "best":', 1)
     with pytest.raises(TrafficlabError, match="duplicate JSON key"):
         parse_checkpoint(duplicate_key, COMPATIBILITY)
 
@@ -385,6 +385,6 @@ def test_checkpoint_parser_rejects_non_bytes_before_json_parsing() -> None:
 def test_checkpoint_rejects_noncanonical_but_equivalent_json() -> None:
     canonical = render_checkpoint(VALID_STATE)
     data = json.loads(canonical)
-    noncanonical = json.dumps(data, indent=2).encode()
+    noncanonical = (json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n").encode()
     with pytest.raises(TrafficlabError, match="canonical"):
         parse_checkpoint(noncanonical, COMPATIBILITY)

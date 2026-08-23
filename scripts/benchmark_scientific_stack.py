@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from trafficlab.common.json import render_json_document
 from trafficlab.common.trace import TrafficTrace, normalize_reference
 from trafficlab.comparison.similarity.autocorrelation import (
     sample_autocorrelations,
@@ -76,7 +77,7 @@ _PARENT_COMMAND = (
 
 
 def canonical_json_bytes(document: Mapping[str, object]) -> bytes:
-    return (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+    return render_json_document(document)
 
 
 def generate_benchmark_trace(event_count: int = EVENT_COUNT) -> TrafficTrace:
@@ -664,9 +665,9 @@ def parse_and_validate_evidence(content: bytes, *, repository_root: Path = REPOS
         evidence = cast(dict[str, Any], json.loads(content))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("benchmark evidence is not valid JSON") from error
-    validate_evidence(evidence, repository_root=repository_root)
     if content != canonical_json_bytes(evidence):
         raise ValueError("benchmark evidence is not canonical JSON")
+    validate_evidence(evidence, repository_root=repository_root)
     return evidence
 
 

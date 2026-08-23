@@ -117,7 +117,10 @@ def test_example_run_parser_rejects_invalid_and_noncanonical_json() -> None:
         example_run.parse_and_validate_evidence(b"{")
     document = json.loads(_EVIDENCE.read_bytes())
     with pytest.raises(ValueError, match="canonical"):
-        example_run.parse_and_validate_evidence(json.dumps(document, indent=2).encode("utf-8"), repository_root=_ROOT)
+        example_run.parse_and_validate_evidence(
+            (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"),
+            repository_root=_ROOT,
+        )
 
 
 def test_example_run_recording_requires_a_clean_checkout_at_the_exact_source_commit(
@@ -182,7 +185,7 @@ def test_example_run_derivation_rejects_cross_artifact_contradictions(
             record["family"] = "mmpp"
         else:
             record["reference_packet_count"] += 1
-        path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
+        path.write_bytes(b"".join(example_run.canonical_json_line_bytes(item) for item in records))
 
     with pytest.raises(ValueError):
         example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]
@@ -230,7 +233,7 @@ def test_example_run_derivation_rejects_effective_snapshot_policy_drift_with_mat
     records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     capture = next(item for item in records if item["event"] == "capture_published")
     capture["experiment_identity"] = identity_document
-    log_path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
+    log_path.write_bytes(b"".join(example_run.canonical_json_line_bytes(item) for item in records))
 
     with pytest.raises(ValueError, match="checked configuration"):
         example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]
@@ -281,7 +284,7 @@ def test_example_run_rejects_arbitrary_run_directory_with_matching_artifact_line
                 record[name] = changed_directory + value.removeprefix(original_directory)
     capture = next(item for item in records if item["event"] == "capture_published")
     capture["experiment_identity"] = identity_document
-    log_path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
+    log_path.write_bytes(b"".join(example_run.canonical_json_line_bytes(item) for item in records))
 
     evidence = json.loads(_EVIDENCE.read_bytes())
     evidence["artifacts"] = {
@@ -543,7 +546,7 @@ def test_example_run_rejects_coherent_reference_derived_fitted_payload_replaceme
     completed = next(item for item in records if item["event"] == "run_completed")
     completed["aggregate_score"] = comparison.aggregate_score
     completed["generated_packet_count"] = len(generated)
-    log_path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
+    log_path.write_bytes(b"".join(example_run.canonical_json_line_bytes(item) for item in records))
 
     changed_evidence = json.loads(_EVIDENCE.read_bytes())
 
@@ -586,7 +589,10 @@ def test_example_run_derivation_rejects_noncanonical_or_foreign_artifacts(
     shutil.copytree(source, copied)
     if mutation == "best_noncanonical":
         path = copied / "best_model.json"
-        path.write_text(json.dumps(json.loads(path.read_bytes()), indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(json.loads(path.read_bytes()), sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
     elif mutation == "experiment_noncanonical":
         path = copied / "experiment.toml"
         path.write_bytes(path.read_bytes() + b"\n")
@@ -602,7 +608,10 @@ def test_example_run_derivation_rejects_noncanonical_or_foreign_artifacts(
         shutil.copy2(copied / "reference.pcapng", copied / "generated.pcapng")
     else:
         path = copied / "similarity.json"
-        path.write_text(json.dumps(json.loads(path.read_bytes()), indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(json.loads(path.read_bytes()), sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
 
     with pytest.raises(ValueError, match=message):
         example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]
@@ -665,7 +674,7 @@ def test_example_run_derivation_recomputes_similarity_instead_of_trusting_valid_
         next(item for item in records if item["event"] == "run_completed")["aggregate_score"] = similarity[
             "aggregate_score"
         ]
-        log_path.write_bytes(b"".join(example_run.canonical_json_bytes(item) for item in records))
+        log_path.write_bytes(b"".join(example_run.canonical_json_line_bytes(item) for item in records))
     similarity_path.write_bytes(example_run.canonical_json_bytes(similarity))
 
     with pytest.raises(ValueError, match="similarity"):

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import stat
 import sys
 from collections.abc import Mapping, Sequence
@@ -15,6 +14,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
+from trafficlab.common.json import render_json_document
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 OUTPUT_DIRECTORY = REPOSITORY / "examples" / "schemas" / "scientific-artifact-v4"
@@ -23,7 +23,7 @@ DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 
 def canonical_schema_bytes(document: Mapping[str, object]) -> bytes:
     """Render one public schema with deterministic UTF-8 bytes."""
-    return (json.dumps(document, sort_keys=True, indent=2, ensure_ascii=True, allow_nan=False) + "\n").encode("utf-8")
+    return render_json_document(document, ensure_ascii=True)
 
 
 def build_schema_documents() -> dict[str, bytes]:

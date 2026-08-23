@@ -919,6 +919,13 @@ per-format tests retain the exhaustive corruption matrices, so the audit adds no
 duplicate codec, similarity implementation, generic experiment framework,
 recovery system, security system, or publication service.
 
+Canonical JSON tests distinguish standalone documents from line-framed data.
+Standalone documents byte-compare against the sorted, two-space-indented UTF-8
+form with one trailing LF. JSONL tests require one sorted compact object per
+physical LF-terminated line. Repository layout coverage applies the standalone
+format to every tracked regenerable JSON file while excluding provenance-bound
+historical validation-study bundles and human-authored editor configuration.
+
 ## Continuous integration
 
 CI uses the same selections and process-tree bounds as the canonical Release

@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import FamilyName, FloatBounds, GenerationLimits, IntegerBounds
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION, require_current_scientific_schema
 from trafficlab.generation.models.common import FamilyBounds, FittedModel, Gene, Genes, ModelFamily, ReferenceTrace
 from trafficlab.generation.models.fitted_schema import FamilyPayload, tuple_input, validate_family_payload
@@ -417,6 +418,11 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
         )
     document = cast(dict[str, object], raw)
     require_current_scientific_schema(document.get("scientific_artifact_schema"), artifact="best model")
+    if render_json_document(document) != content:
+        raise invalid_best_model(
+            "best model is not canonical JSON",
+            corrective_action="render best_model.json as sorted two-space-indented JSON with one trailing newline",
+        )
     if set(document) != _OUTER_KEYS:
         raise invalid_best_model(
             "invalid best-model outer object",
@@ -466,7 +472,7 @@ def load_best_model(content: bytes, *, source: Path) -> BestModel:
 
 
 def render_best_model(model: BestModel) -> bytes:
-    """Render one revalidated best model as canonical compact UTF-8 JSON."""
+    """Render one revalidated best model as canonical readable UTF-8 JSON."""
     if type(model) is not BestModel:
         raise TypeError("model must be a BestModel")
     _validate_best_model(model)
@@ -487,7 +493,7 @@ def render_best_model(model: BestModel) -> bytes:
         "seed_policy": dumped["seed_policy"],
     }
     try:
-        content = (json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+        content = render_json_document(document)
     except (TypeError, ValueError) as error:
         raise invalid_best_model(
             f"invalid best model for JSON rendering: {error}",

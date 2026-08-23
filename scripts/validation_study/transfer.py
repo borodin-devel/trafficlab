@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import stat
@@ -22,6 +21,7 @@ from scripts.validation_study.common import (
 )
 from scripts.validation_study.workloads import workload_specs
 from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.json import render_json_document
 
 if TYPE_CHECKING:
     from scripts.validation_study.common import JsonObject, WorkloadName
@@ -35,10 +35,7 @@ OBJECT_SIZE_BYTES = 4 * 1024 * 1024
 
 
 def fixture_canonical_json(value: object) -> bytes:
-    return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
-        + b"\n"
-    )
+    return render_json_document(value, ensure_ascii=False)
 
 
 def _transfer_header(start: int, end: int) -> bytes:

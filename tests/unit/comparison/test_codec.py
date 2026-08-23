@@ -43,14 +43,14 @@ from trafficlab.comparison.metrics import compare_traces
 from trafficlab.comparison.schema import ComparisonResult, MethodComparison
 
 
-def test_strict_result_json_round_trip_has_the_documented_sorted_compact_shape() -> None:
+def test_strict_result_json_round_trip_has_the_documented_sorted_readable_shape() -> None:
     """Permissive or unstable JSON would make similarity identity and reuse ambiguous."""
     document = valid_result_document()
 
     result = ComparisonResult.from_dict(document)
     rendered = render_comparison_result(result)
 
-    assert rendered == (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    assert rendered == (json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
     assert parse_comparison_result(rendered) == result
     assert result.as_dict() == document
     assert result.as_dict() is not result.as_dict()

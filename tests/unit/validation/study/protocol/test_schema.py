@@ -40,6 +40,14 @@ from tests.unit.validation.study.protocol._support import (
 from trafficlab.common.errors import TrafficlabError
 
 
+def test_study_json_rendering_is_sorted_and_readable() -> None:
+    document = cast(vs_common.JsonObject, {"zeta": [2, 1], "alpha": {"enabled": True}})
+
+    assert vs_common.canonical_json(document) == (
+        b'{\n  "alpha": {\n    "enabled": true\n  },\n  "zeta": [\n    2,\n    1\n  ]\n}\n'
+    )
+
+
 def test_study_id_url_repository_path_and_utc_validators_are_exact(tmp_path: Path) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
@@ -220,7 +228,7 @@ def test_prerequisite_codec_round_trips_exact_canonical_schema(tmp_path: Path) -
     assert vs_prereq_codec.render_prerequisite_results(parsed) == rendered
     assert rendered.endswith(b"\n")
     assert not rendered.endswith(b" \n")
-    assert b": " not in rendered
+    assert rendered.startswith(b'{\n  "capability": {\n')
     assert b", " not in rendered
     decoded = json.loads(rendered)
     assert not contains_none(decoded)
@@ -263,9 +271,13 @@ def test_prerequisite_codec_rejects_each_contract_violation(
         document["unknown"] = "value"
         invalid = json.dumps(document, separators=(",", ":")).encode()
     elif mutation == "duplicate-key":
-        invalid = rendered.replace(b'{"capability":', b'{"schema_version":1,"capability":', 1)
+        invalid = rendered.replace(
+            b'{\n  "capability":',
+            b'{\n  "schema_version": 1,\n  "capability":',
+            1,
+        )
     elif mutation == "nan":
-        invalid = rendered.replace(b'"schema_version":1', b'"schema_version":NaN', 1)
+        invalid = rendered.replace(b'"schema_version": 1', b'"schema_version": NaN', 1)
     else:
         mutated = copy.deepcopy(document)
         commands = cast(list[dict[str, object]], mutated["commands"])
@@ -312,7 +324,7 @@ def test_prerequisite_codec_accepts_a_valid_credential_free_https_final_redirect
     capability = cast(dict[str, object], document["capability"])
     capability["final_url"] = "https://cdn.example.test/object.bin"
     capability["redirect_count"] = 1
-    redirected = json.dumps(document, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+    redirected = vs_common.canonical_json(cast(vs_common.JsonObject, document))
 
     parsed = vs_prereq_codec.parse_prerequisite_results(redirected, repository_root=repository_root)
 

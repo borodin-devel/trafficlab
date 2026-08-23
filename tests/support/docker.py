@@ -23,6 +23,7 @@ from trafficlab.capture.docker.image import (
 from trafficlab.capture.docker.types import CommandResult
 from trafficlab.capture.topology import ComposePaths
 from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.json import render_json_document
 
 REPOSITORY_ROOT = Path(__file__).parents[2].resolve()
 CAPTURE_IMAGE = "trafficlab-capture:docker-capture-test"
@@ -347,7 +348,7 @@ def merge_endpoint_overlay(production: bytes, *, endpoint_image: str) -> bytes:
         cast(dict[str, object], production_services[service_name])["image"] = endpoint_image
     endpoint = cast(dict[str, object], production_services["endpoint"])
     endpoint["volumes"] = [{"type": "volume", "source": "lifecycle", "target": "/trafficlab-test-volume"}]
-    return (json.dumps(production_document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    return render_json_document(production_document)
 
 
 class TrackedDockerCompose(DockerCompose):
@@ -438,10 +439,7 @@ class EndpointDockerCompose(TrackedDockerCompose):
         document = cast(dict[str, object], json.loads(compose_path.read_bytes()))
         services = cast(dict[str, object], document["services"])
         del services["orphan"]
-        compose_path.write_text(
-            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
+        compose_path.write_bytes(render_json_document(document))
         return DockerCompose.create_capture(self, compose_path, project_name, timeout=timeout, deadline=deadline)
 
 

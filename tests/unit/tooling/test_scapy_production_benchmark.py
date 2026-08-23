@@ -88,12 +88,12 @@ def _document() -> dict[str, object]:
 def test_diagnostic_schema_has_bound_measurements_without_adoption_or_license_fields() -> None:
     rendered = render_diagnostic(_document(), expected_frame_counts=(100_000,), expected_repetitions=2)
 
-    assert b'"median_encode_wall_seconds":2.0' in rendered
-    assert b'"median_read_wall_seconds":3.0' in rendered
-    assert b'"median_peak_rss_kib":15' in rendered
-    assert b'"input_trace_sha256":"' + b"e" * 64 + b'"' in rendered
-    assert b'"source_commit":"' + b"1" * 40 + b'"' in rendered
-    assert b'"source_tree":"' + b"2" * 40 + b'"' in rendered
+    assert b'"median_encode_wall_seconds": 2.0' in rendered
+    assert b'"median_read_wall_seconds": 3.0' in rendered
+    assert b'"median_peak_rss_kib": 15' in rendered
+    assert b'"input_trace_sha256": "' + b"e" * 64 + b'"' in rendered
+    assert b'"source_commit": "' + b"1" * 40 + b'"' in rendered
+    assert b'"source_tree": "' + b"2" * 40 + b'"' in rendered
     for forbidden in (b'"license"', b'"decision"', b'"gates"', b'"production_adoption"'):
         assert forbidden not in rendered
 

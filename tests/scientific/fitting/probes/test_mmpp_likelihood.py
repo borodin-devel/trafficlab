@@ -441,6 +441,7 @@ def test_canonical_evidence_bytes_and_check_mode(tmp_path: Path) -> None:
         validate_probe_evidence(mismatched_trial)
     rendered = render_probe_evidence(evidence)
     assert rendered.endswith(b"\n")
+    assert rendered == (json.dumps(evidence, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
     assert json.loads(rendered) == evidence
     destination = tmp_path / "mmpp_cases.json"
     assert write_probe_evidence(destination, evidence, check=False) is True

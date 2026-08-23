@@ -771,6 +771,7 @@ def test_canonical_evidence_is_deterministic_and_checkable(tmp_path: Path) -> No
     assert validate_probe_evidence(evidence) is evidence
     rendered = render_probe_evidence(evidence)
     assert rendered.endswith(b"\n")
+    assert rendered == (json.dumps(evidence, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
     assert json.loads(rendered) == evidence
     destination = tmp_path / "pymoo_cases.json"
     assert write_probe_evidence(destination, evidence, check=True) is False

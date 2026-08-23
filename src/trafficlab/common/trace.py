@@ -16,6 +16,7 @@ from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, StrictStr, ValidationError, field_validator
 
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 
 _MAC_PATTERN = re.compile(r"[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}")
 
@@ -313,12 +314,18 @@ def parse_capture_metadata(content: bytes, *, source: Path) -> CaptureMetadata:
         ) from error
 
     try:
-        return CaptureMetadata.model_validate(document)
+        metadata = CaptureMetadata.model_validate(document)
     except ValidationError as error:
         raise TrafficlabError(
             f"invalid capture metadata {source}: {_format_validation_errors(error)}",
             corrective_action="correct capture.json and retry",
         ) from error
+    if render_capture_metadata(metadata) != content:
+        raise TrafficlabError(
+            f"capture metadata {source} is not canonical JSON",
+            corrective_action="render capture.json as sorted two-space-indented JSON with one trailing newline",
+        )
+    return metadata
 
 
 def load_capture_metadata(path: Path) -> CaptureMetadata:
@@ -336,7 +343,7 @@ def load_capture_metadata(path: Path) -> CaptureMetadata:
 def render_capture_metadata(metadata: CaptureMetadata) -> bytes:
     """Render metadata as one deterministic, human-readable UTF-8 JSON document."""
     document = {"interface": metadata.interface, "target_mac": metadata.target_mac}
-    return (json.dumps(document, indent=2) + "\n").encode("utf-8")
+    return render_json_document(document)
 
 
 def deterministic_peer_mac(target_mac: str) -> str:

@@ -120,8 +120,8 @@ done
 case " $* " in
   *" config --format json "*) printf '{}\\n' ;;
   *" create capture "*)
-    output=$(sed -n 's/.*"source":"\\([^"]*\\)".*/\\1/p' "$compose_file" | head -n 1)
-    printf '{"interface":"eth0","target_mac":"02:42:ac:11:00:02"}\\n' > "$output/capture.json"
+    output=$(sed -n 's/.*"source": *"\\([^"]*\\)".*/\\1/p' "$compose_file" | head -n 1)
+    printf '{\\n  "interface": "eth0",\\n  "target_mac": "02:42:ac:11:00:02"\\n}\\n' > "$output/capture.json"
     cp "$TRAFFICLAB_FAKE_PCAPNG" "$output/reference.pcapng.tmp"
     printf running > "$TRAFFICLAB_FAKE_DOCKER_STATE"
     ;;

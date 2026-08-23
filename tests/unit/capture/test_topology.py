@@ -86,7 +86,7 @@ def test_render_production_compose_has_exact_two_service_topology(
     }
 
 
-def test_render_production_compose_is_sorted_compact_and_deterministic(
+def test_render_production_compose_is_sorted_readable_and_deterministic(
     valid_config_data: dict[str, object], tmp_path: Path
 ) -> None:
     config = _config(valid_config_data, tmp_path)
@@ -107,8 +107,7 @@ def test_render_production_compose_is_sorted_compact_and_deterministic(
     document = json.loads(first)
 
     assert first == second
-    assert first == (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-    assert b"\n" not in first[:-1]
+    assert first == (json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
     assert b'"capture"' in first
     assert first.index(b'"capture"') < first.index(b'"target"')
 
@@ -315,7 +314,7 @@ def test_capture_entrypoint_normalizes_mac_clears_stale_files_and_executes_dumpc
 
     assert completed.returncode == 0, completed.stderr
     assert (output_directory / "capture.json").read_text(encoding="utf-8") == (
-        '{"interface":"eth0","target_mac":"02:42:ac:11:00:02"}\n'
+        '{\n  "interface": "eth0",\n  "target_mac": "02:42:ac:11:00:02"\n}\n'
     )
     assert not (output_directory / "capture.json.tmp").exists()
     capture_path = output_directory / "reference.pcapng.tmp"

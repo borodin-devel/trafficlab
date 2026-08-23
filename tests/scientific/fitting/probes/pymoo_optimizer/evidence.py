@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -46,6 +45,7 @@ from tests.scientific.fitting.probes.pymoo_optimizer.schema import (
 from trafficlab.common.config import (
     FamilyName,
 )
+from trafficlab.common.json import render_json_document
 
 if TYPE_CHECKING:
     from tests.scientific.fitting.probes.pymoo_optimizer.adapter import FamilyExecution
@@ -197,7 +197,7 @@ def validate_probe_evidence(evidence: JsonObject) -> JsonObject:
 
 def render_probe_evidence(evidence: JsonObject) -> bytes:
     validated = validate_probe_evidence(evidence)
-    return (json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+    return render_json_document(validated)
 
 
 def write_probe_evidence(destination: Path, evidence: JsonObject, *, check: bool) -> bool:

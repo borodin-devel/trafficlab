@@ -876,5 +876,5 @@ def test_retained_prerequisite_codec_rejects_invalid_public_forms() -> None:
             study_id="fixture-study",
             url="https://downloads.example.test/object.bin",
         )
-    with pytest.raises(ValueError, match="canonical sorted compact"):
+    with pytest.raises(ValueError, match="canonical sorted readable"):
         vs_prereq_codec.parse_retained_prerequisites(noncanonical)

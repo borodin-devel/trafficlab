@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,6 +34,7 @@ from tests.scientific.fitting.probes.mmpp_likelihood.schema import (
     TRIAL_PLANS,
     TRUE_RATES,
 )
+from trafficlab.common.json import render_json_document
 
 if TYPE_CHECKING:
     from tests.scientific.fitting.probes.mmpp_likelihood.schema import (
@@ -205,9 +205,9 @@ def validate_probe_evidence(evidence: ProbeEvidence) -> ProbeEvidence:
 
 
 def render_probe_evidence(evidence: ProbeEvidence) -> bytes:
-    """Render canonical UTF-8 JSON with sorted compact keys and one final newline."""
+    """Render canonical UTF-8 JSON with sorted readable keys and one final newline."""
     validated = validate_probe_evidence(evidence)
-    return (json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+    return render_json_document(validated)
 
 
 def write_probe_evidence(destination: Path, evidence: ProbeEvidence, *, check: bool) -> bool:

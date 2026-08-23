@@ -15,6 +15,7 @@ from trafficlab.common.errors import (
     TrafficlabError,
     attach_failure_outcome,
 )
+from trafficlab.common.json import render_json_document
 from trafficlab.comparison.diagnostics import diagnostic_discriminator
 from trafficlab.comparison.schema import (
     ComparisonResult,
@@ -75,9 +76,7 @@ def parse_comparison_result(content: bytes) -> ComparisonResult:
 
 def canonical_comparison_bytes(result: ComparisonResult) -> bytes:
     published = published_comparison_result(result)
-    content = (
-        json.dumps(published.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
-    ).encode("utf-8")
+    content = render_json_document(published.model_dump(mode="json"))
     reparsed = PublishedComparisonResult.model_validate(json.loads(content.decode("utf-8")))
     if reparsed != published:
         raise ValueError("canonical similarity rendering changed the validated comparison result")
@@ -85,7 +84,7 @@ def canonical_comparison_bytes(result: ComparisonResult) -> bytes:
 
 
 def render_comparison_result(result: ComparisonResult) -> bytes:
-    """Render one complete result as deterministic sorted compact JSON."""
+    """Render one complete result as deterministic sorted readable JSON."""
     return canonical_comparison_bytes(result)
 
 

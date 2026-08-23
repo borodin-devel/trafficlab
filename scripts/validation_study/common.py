@@ -20,6 +20,7 @@ from trafficlab.capture.stage import CaptureResult
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.config import ExperimentConfig, FamilyName
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.json import render_json_document
 from trafficlab.fitting.genetic.types import METHOD_ORDER
 from trafficlab.pipeline.types import RunResult
 
@@ -576,10 +577,9 @@ def thaw_json(value: FrozenJsonValue) -> JsonValue:
 
 def canonical_json(document: JsonObject) -> bytes:
     try:
-        rendered = json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return render_json_document(document)
     except (TypeError, ValueError) as error:
         raise ValueError(f"could not render canonical JSON: {error}") from error
-    return f"{rendered}\n".encode()
 
 
 def load_json(content: bytes) -> JsonObject:

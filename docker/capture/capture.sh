@@ -37,7 +37,7 @@ case "$second_nibble" in
         ;;
 esac
 
-printf '{"interface":"eth0","target_mac":"%s"}\n' "$target_mac" > "$metadata_temporary_path"
+printf '{\n  "interface": "eth0",\n  "target_mac": "%s"\n}\n' "$target_mac" > "$metadata_temporary_path"
 mv -f "$metadata_temporary_path" "$metadata_path"
 
 finalize_capture() {

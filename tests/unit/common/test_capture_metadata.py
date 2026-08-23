@@ -26,24 +26,33 @@ class CaptureMetadataWithLabel(CaptureMetadata):
     label: str
 
 
-def test_capture_metadata_loads_exact_fields_and_normalizes_target_mac(tmp_path: Path) -> None:
-    """Losing the canonical MAC form would misclassify Ethernet frame directions."""
+def test_capture_metadata_loads_exact_canonical_fields(tmp_path: Path) -> None:
     path = tmp_path / "capture.json"
-    path.write_text('{"interface":"eth0","target_mac":"02:42:AC:11:00:02"}', encoding="utf-8")
+    expected = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    path.write_bytes(render_capture_metadata(expected))
 
     metadata = load_capture_metadata(path)
 
-    assert metadata == CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    assert metadata == expected
 
 
 def test_capture_metadata_parses_exact_in_memory_bytes_with_source_context(tmp_path: Path) -> None:
     """Forcing comparison to reopen a path would separate evaluated metadata from its byte identity."""
     source = tmp_path / "capture.json"
-    content = b'{"interface":"eth0","target_mac":"02:42:AC:11:00:02"}'
+    expected = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    content = render_capture_metadata(expected)
 
     metadata = parse_capture_metadata(content, source=source)
 
-    assert metadata == CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
+    assert metadata == expected
+
+
+def test_capture_metadata_rejects_compact_equivalent_json() -> None:
+    source = Path("run/capture.json")
+    compact = b'{"interface":"eth0","target_mac":"02:42:ac:11:00:02"}\n'
+
+    with pytest.raises(TrafficlabError, match="not canonical"):
+        parse_capture_metadata(compact, source=source)
 
 
 def test_capture_metadata_byte_parser_reports_its_source() -> None:

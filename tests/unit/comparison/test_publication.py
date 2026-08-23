@@ -89,7 +89,7 @@ def test_publication_rejects_renderer_bytes_for_a_different_valid_result_before_
     "existing_content",
     [
         b"not-json\n",
-        (json.dumps(valid_result_document(), indent=2, sort_keys=True) + "\n").encode(),
+        (json.dumps(valid_result_document(), sort_keys=True, separators=(",", ":")) + "\n").encode(),
     ],
     ids=["malformed", "noncanonical"],
 )
