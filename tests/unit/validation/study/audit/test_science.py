@@ -624,7 +624,6 @@ def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
     assert b'"fresh_simulation"' in content
     assert b'"held_out"' not in content
     assert vs_results_codec.render_study_results(result) == content
-
     near_miss = copy.deepcopy(document)
     near_miss_capability = cast(dict[str, object], cast(dict[str, object], near_miss["protocol"])["capability"])
     near_miss_argv = cast(list[str], near_miss_capability["argv"])
@@ -646,6 +645,21 @@ def test_checked_study_result_uses_canonical_fresh_simulation_records() -> None:
             json.dumps(workload_near_miss, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n",
             repository_root=ROOT,
         )
+
+
+def test_historic_result_renderer_does_not_extend_compact_encoding_to_mutations() -> None:
+    content = (ROOT / "examples" / "validation_study" / "results.json").read_bytes()
+    result = vs_results_codec.parse_study_results(content, repository_root=ROOT)
+    environment = cast(vs_common.JsonObject, vs_common.thaw_json(result.environment))
+    environment["platform"] = "mutated-platform"
+    mutated = replace(result, environment=vs_common.freeze_object(environment))
+
+    rendered = vs_results_codec.render_study_results(mutated)
+
+    assert rendered.startswith(b"{\n")
+    compact = (json.dumps(json.loads(rendered), sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    with pytest.raises(ValueError, match="canonical sorted readable"):
+        vs_results_codec.parse_study_results(compact, repository_root=ROOT)
 
 
 @pytest.mark.parametrize(

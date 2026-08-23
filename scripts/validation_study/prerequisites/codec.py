@@ -57,6 +57,7 @@ from scripts.validation_study.rotation.schema import collection_attempt_root
 from scripts.validation_study.workloads import WorkloadSpec
 from trafficlab import USER_AGENT
 from trafficlab.common.compatibility import identify_bytes
+from trafficlab.common.json import render_json_line
 from trafficlab.study_evidence.protocol import ValidationStudyPrerequisite, validate_study_model
 
 if TYPE_CHECKING:
@@ -546,7 +547,10 @@ def parse_preserved_pre_user_agent_r6_predecessor(
                 PRESERVED_PRE_USER_AGENT_R6_STUDY_ID, PRESERVED_PRE_USER_AGENT_R6_URL
             ),
         )
-        require(canonical_json(document) == content, "preserved pre-User-Agent r6 predecessor must use canonical JSON")
+        require(
+            render_json_line(document) == content,
+            "preserved pre-User-Agent r6 predecessor must use its historical compact canonical JSON",
+        )
         require(
             result.study_id == PRESERVED_PRE_USER_AGENT_R6_STUDY_ID
             and result.url == PRESERVED_PRE_USER_AGENT_R6_URL
@@ -633,7 +637,15 @@ def require_successful_prerequisite_marker_content(
         ("phase", "prerequisites_identity", "study_id", "url"),
         name="successful prerequisite marker",
     )
-    require(canonical_json(cast(JsonObject, document)) == content, "successful prerequisite marker must be canonical")
+    current_canonical = canonical_json(cast(JsonObject, document)) == content
+    preserved_legacy = (
+        document["study_id"] == PRESERVED_PRE_USER_AGENT_R6_STUDY_ID
+        and identify_bytes(content).as_dict() == PRESERVED_PRE_USER_AGENT_R6_MARKER_IDENTITY
+    )
+    require(
+        current_canonical or preserved_legacy,
+        "successful prerequisite marker must be current canonical JSON or the exact preserved legacy marker",
+    )
     require(
         document["phase"] == "prerequisites" and document["study_id"] == study_id and (document["url"] == url),
         "collection requires a matching successful prerequisite marker",

@@ -116,7 +116,7 @@ def test_offline_auditor_rejects_non_evidence_worktree_changes(
         changed = repository / "scripts" / "audit_validation_study.py"
         changed.write_bytes(changed.read_bytes() + b"\n# dirty auditor\n")
     elif case == "tracked_source":
-        changed = repository / "src" / "trafficlab" / "comparison.py"
+        changed = repository / "src" / "trafficlab" / "comparison" / "codec.py"
         changed.write_bytes(changed.read_bytes() + b"\n# dirty source\n")
     else:
         (repository / "untracked_source.py").write_text("sentinel = True\n", encoding="utf-8")
@@ -608,10 +608,7 @@ def test_offline_bundle_audit_reconstructs_environment_and_final_controls(
         (repository / "uv.lock").write_bytes(b"different lock\n")
     else:
         cast(list[dict[str, object]], index["fresh_simulation"])[0]["seed"] = 98
-        index_path.write_text(
-            json.dumps(index, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
+        write_canonical_json(index_path, index)
         rewrite_candidate_manifest(candidate)
 
     with pytest.raises(TrafficlabError) as error:

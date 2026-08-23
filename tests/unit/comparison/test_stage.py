@@ -325,7 +325,7 @@ def test_compare_rejects_foreign_best_model_provenance_before_similarity(
     else:
         limits = cast(dict[str, object], document[field])
         limits["max_packets"] = 20_001
-    model_path.write_bytes((json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+    model_path.write_bytes((json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     generated_before = (run_directory / "generated.pcapng").read_bytes()
 
     def prohibit_similarity(*_args: object, **_kwargs: object) -> ComparisonResult:
@@ -806,7 +806,7 @@ def test_numeric_type_tampering_is_rejected_by_canonical_temporary_validation(
 
     def tamper_count_type(path: Path) -> comparison_schema.ComparisonResult:
         content = path.read_bytes()
-        changed = content.replace(b'"reference_count":5', b'"reference_count":5.0', 1)
+        changed = content.replace(b'"reference_count": 5', b'"reference_count": 5.0', 1)
         assert changed != content
         path.write_bytes(changed)
         return real_load(path)

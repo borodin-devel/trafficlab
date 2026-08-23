@@ -29,6 +29,7 @@ from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.common.config import FloatBounds
 from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.trace import CaptureMetadata, render_capture_metadata
 from trafficlab.fitting.genetic.checkpoint import load_checkpoint, publish_checkpoint
 from trafficlab.fitting.genetic.strategy import FitOutcome, StrategyContext, run_strategy
 from trafficlab.fitting.genetic.types import TrialResult
@@ -292,7 +293,9 @@ def test_real_existing_best_model_never_bypasses_ordered_checkpoint_compatibilit
         changed_reference = tuple(replace(event, frame_length=event.frame_length + 1) for event in RAW_REFERENCE)
         active_inputs[run_directory / "reference.pcapng"] = encode_pcapng(changed_reference, METADATA)
     elif change == "capture_hash":
-        active_inputs[run_directory / "capture.json"] = b'{"interface":"eth0","target_mac":"02:42:ac:11:00:02"}\n'
+        active_inputs[run_directory / "capture.json"] = render_capture_metadata(
+            CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:03")
+        )
     elif change == "checkpoint":
         (run_directory / "checkpoint.json").write_bytes(b"{}\n")
     else:

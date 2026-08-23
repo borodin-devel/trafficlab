@@ -128,7 +128,9 @@ def test_check_mode_rejects_a_missing_or_modified_best_model(
     generated_path.write_bytes(_GENERATED_BYTES)
     if defect == "modified":
         model_path.write_bytes(
-            _MODEL_BYTES.replace(b'"capture_identity":{"sha256":"', b'"capture_identity":{"sha256":"0', 1)
+            _MODEL_BYTES.replace(
+                b'"capture_identity": {\n    "sha256": "', b'"capture_identity": {\n    "sha256": "0', 1
+            )
         )
     monkeypatch.setattr(fixture_generator, "_MODEL_PATH", model_path)
     monkeypatch.setattr(fixture_generator, "_GENERATED_PATH", generated_path)

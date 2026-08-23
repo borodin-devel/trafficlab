@@ -17,6 +17,7 @@ from scripts.validation_study.common import (
     JsonObject,
     JsonValue,
     WorkloadName,
+    canonical_json,
     exact_object,
     require,
     require_type,
@@ -27,7 +28,9 @@ from scripts.validation_study.common import (
     thaw_json,
 )
 from scripts.validation_study.records import ReproductionRecord, StudyResults, StudyRunRecord
+from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import FamilyName, SimilarityConfig
+from trafficlab.common.json import render_json_line
 from trafficlab.common.statistics import bootstrap_interval
 from trafficlab.common.trace import (
     TrafficTrace,
@@ -41,6 +44,11 @@ from trafficlab.fitting.genetic.types import Candidate, CandidateId, TrialResult
 from trafficlab.generation.models.fitted_model import (
     BestModel,
 )
+
+_HISTORIC_RESULT_IDENTITY = {
+    "sha256": "f9af96e53199f68f1f5fa1eff3df366780245d76ca5df53c453bb25ef42e98d9",
+    "size": 106383,
+}
 
 
 def _numeric_sample(values: Sequence[int | float], *, name: str) -> tuple[float, ...]:
@@ -682,6 +690,15 @@ def study_document(value: StudyResults) -> JsonObject:
         "workload_summaries": [thaw_json(item) for item in value.workload_summaries],
         "reproduction": _reproduction_document(value.reproduction),
     }
+
+
+def render_study_document(value: StudyResults) -> bytes:
+    """Render a current readable result or the one provenance-bound legacy result."""
+    document = study_document(value)
+    compact = render_json_line(document)
+    if identify_bytes(compact).as_dict() == _HISTORIC_RESULT_IDENTITY:
+        return compact
+    return canonical_json(document)
 
 
 def score_delta(reproduction: JsonObject, source: JsonObject) -> JsonObject:

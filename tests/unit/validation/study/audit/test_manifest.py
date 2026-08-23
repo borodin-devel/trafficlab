@@ -68,10 +68,7 @@ def test_offline_bundle_audit_rejects_first_manifest_or_artifact_mismatch(
         mapping_name = "ownership" if mutation == "owner" else "lineage"
         mapping = cast(dict[str, object], index[mapping_name])
         mapping[relative] = f"changed-{mutation}"
-        index_path.write_text(
-            json.dumps(index, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
+        write_canonical_json(index_path, index)
         rewrite_candidate_manifest(candidate)
 
     with pytest.raises(TrafficlabError) as error:

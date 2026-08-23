@@ -1,1 +1,23 @@
-{"comparison_identity":{"sha256":"2053bf6641854577963963263ac1e38a55b15868f64be1870001d0439c900172","size":3197},"generated_identity":{"sha256":"301f074bb7633212152595557b734bba20817c576c834f0f50c48860edc2b672","size":3952},"path":"fresh_simulation/bursty/r2.json","reference_identity":{"sha256":"f0e42193d65779e7f49cad33908e24e0732f9163474f1a72a520cdfa31538616","size":5360},"repeat":2,"seed":97,"training_directory":"training/bursty/r2","training_model_identity":{"sha256":"d4e52d81332050643fef9e0c313218304a283dabec8582c56b26fa304a30ab6a","size":3778},"workload":"bursty"}
+{
+  "comparison_identity": {
+    "sha256": "201d3f086e75a695053c3b9ea8b59dafc80719892d04c283b31d0720d7461e54",
+    "size": 5352
+  },
+  "generated_identity": {
+    "sha256": "301f074bb7633212152595557b734bba20817c576c834f0f50c48860edc2b672",
+    "size": 3952
+  },
+  "path": "fresh_simulation/bursty/r2.json",
+  "reference_identity": {
+    "sha256": "f0e42193d65779e7f49cad33908e24e0732f9163474f1a72a520cdfa31538616",
+    "size": 5360
+  },
+  "repeat": 2,
+  "seed": 97,
+  "training_directory": "training/bursty/r2",
+  "training_model_identity": {
+    "sha256": "23f198fb7b6248f75a0694d9cfdca6edfe77862107b35c8a0066e00eb3a7ffd3",
+    "size": 6493
+  },
+  "workload": "bursty"
+}

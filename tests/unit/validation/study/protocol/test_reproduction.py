@@ -52,7 +52,7 @@ def test_result_codec_round_trips_nine_runs_reproduction_and_recomputed_summarie
     )
     assert len(parsed.reproduction.document) == 27
     assert rendered.endswith(b"\n")
-    assert b": " not in rendered
+    assert rendered.startswith(b'{\n  "environment": {\n')
     assert not contains_none(json.loads(rendered))
     destination = repository_root / "examples" / "validation_study" / "results.json"
     destination.parent.mkdir(parents=True)

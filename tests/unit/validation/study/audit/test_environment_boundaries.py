@@ -89,11 +89,19 @@ def test_offline_auditor_covers_retained_prerequisite_rejection_branches(
         (candidate / cast(str, output["path"])).write_bytes(b"changed stdout\n")
         render_document = False
     elif case == "command":
-        replace_output("command", b'{"argv":[]}\n')
+        replace_output("command", vs_common.canonical_json(cast(vs_common.JsonObject, {"argv": []})))
     elif case == "status":
         replace_output(
             "status",
-            b'{"exit_status":0,"tests":{"errors":0,"failed":0,"passed":999,"skipped":0,"total":999}}\n',
+            vs_common.canonical_json(
+                cast(
+                    vs_common.JsonObject,
+                    {
+                        "exit_status": 0,
+                        "tests": {"errors": 0, "failed": 0, "passed": 999, "skipped": 0, "total": 999},
+                    },
+                )
+            ),
         )
     elif case == "utf8":
         replace_output("stdout", b"\xff")

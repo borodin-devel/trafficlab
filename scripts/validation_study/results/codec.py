@@ -30,7 +30,6 @@ from scripts.validation_study.common import (
     JsonObject,
     JsonValue,
     WorkloadName,
-    canonical_json,
     exact_object,
     freeze_object,
     git_commit_value,
@@ -60,6 +59,7 @@ from scripts.validation_study.prerequisites.commands import guard_prefix
 from scripts.validation_study.records import ReproductionRecord, StudyResults, StudyRunRecord
 from scripts.validation_study.results.reporting import (
     bounded_score,
+    render_study_document,
     study_document,
     validate_candidate_id,
     validate_genes,
@@ -775,15 +775,13 @@ def validate_study_document(document: JsonObject, *, repository_root: Path) -> S
 
 
 def render_study_results(value: StudyResults) -> bytes:
-    document = study_document(value)
-    validated = validate_study_document(document, repository_root=REPOSITORY_ROOT)
-    return canonical_json(study_document(validated))
+    validated = validate_study_document(study_document(value), repository_root=REPOSITORY_ROOT)
+    return render_study_document(validated)
 
 
 def parse_study_results(content: bytes, *, repository_root: Path) -> StudyResults:
-    document = load_json(content)
-    result = validate_study_document(document, repository_root=repository_root)
-    if canonical_json(study_document(result)) != content:
+    result = validate_study_document(load_json(content), repository_root=repository_root)
+    if render_study_document(result) != content:
         raise ValueError("study results JSON must use canonical sorted readable encoding with one trailing newline")
     return result
 

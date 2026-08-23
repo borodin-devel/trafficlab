@@ -1,1 +1,196 @@
-{"aggregate_score":0.7391572277672528,"input_identities":{"capture_json":{"sha256":"9662e2ad0049a24a4115e347a9ce45fd35ef7699905295d0aad97bfece62c1ce","size":54},"generated_pcapng":{"sha256":"8cc7a90c9f7f02a683ce27cf17da8f449d6d9a60405cfa9c1c61a8147f939be6","size":3900},"reference_pcapng":{"sha256":"a63e5b1127c01a6aeabfe327c65cc5332c23cfaf519d26e9c52cd7ce2dc9cf38","size":5304},"similarity_settings":{"sha256":"c58b1cb82f18a6054c1184aeaeec224f45d1bdf9288075f067de1ff0128e95a8","size":379}},"methods":{"autocorrelation":{"diagnostics":{"discrepancy":0.08477419306864109,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.1818442670897762],"discrepancy":0.0909221335448881,"generated_acf":[-0.04724597502320539],"generated_sample_count":17,"reference_acf":[-0.2290902421129816],"reference_sample_count":20},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":10.0,"size":{"absolute_differences":[0.15725250518478817],"discrepancy":0.07862625259239409,"generated_acf":[-0.28478334232083635],"generated_sample_count":18,"reference_acf":[-0.4420358475056245],"reference_sample_count":21}},"score":0.9152258069313589,"weight":0.25},"frame_size_ks":{"diagnostics":{"distance":0.19047619047619047,"generated_count":18,"generated_maximum_length":530,"generated_minimum_length":66,"observation_window_seconds":10.0,"reference_count":21,"reference_maximum_length":530,"reference_minimum_length":66},"score":0.8095238095238095,"weight":0.25},"iat_ks":{"diagnostics":{"diagnostic_quantile":0.75,"distance":0.47058823529411764,"generated_iat_count":17,"generated_median_iat_seconds":0.512723,"generated_quantile_iat_seconds":0.6390089999999997,"generated_zero_iat_count":0,"observation_window_seconds":10.0,"reference_iat_count":20,"reference_median_iat_seconds":0.5060000000000002,"reference_quantile_iat_seconds":0.5760000000000005,"reference_zero_iat_count":0},"score":0.5294117647058824,"weight":0.25},"multiscale_rate":{"diagnostics":{"direction_bin_cell_counts":[20,8],"discrepancy":0.29753247009203965,"feature_discrepancies":{"byte":0.4155777606968998,"packet":0.1794871794871795},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":10.0,"scale_discrepancies":[0.43605510554011706,0.15900983464396223],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":10,"direction_bin_cell_count":20,"discrepancy":0.43605510554011706,"feature_discrepancies":{"byte":0.5900589290289521,"packet":0.28205128205128205},"generated_totals":{"byte":{"inbound":1734,"outbound":1516},"packet":{"inbound":8,"outbound":10}},"reference_totals":{"byte":{"inbound":2008,"outbound":2548},"packet":{"inbound":10,"outbound":11}},"width_seconds":1.0},{"bins_per_direction":4,"direction_bin_cell_count":8,"discrepancy":0.15900983464396223,"feature_discrepancies":{"byte":0.24109659236484754,"packet":0.07692307692307693},"generated_totals":{"byte":{"inbound":1734,"outbound":1516},"packet":{"inbound":8,"outbound":10}},"reference_totals":{"byte":{"inbound":2008,"outbound":2548},"packet":{"inbound":10,"outbound":11}},"width_seconds":2.5}],"total_direction_bin_cells":28,"widths":[1.0,2.5]},"score":0.7024675299079604,"weight":0.25}},"observation_window_seconds":10.0}
+{
+  "aggregate_score": 0.7391572277672528,
+  "input_identities": {
+    "capture_json": {
+      "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
+      "size": 63
+    },
+    "generated_pcapng": {
+      "sha256": "8cc7a90c9f7f02a683ce27cf17da8f449d6d9a60405cfa9c1c61a8147f939be6",
+      "size": 3900
+    },
+    "reference_pcapng": {
+      "sha256": "a63e5b1127c01a6aeabfe327c65cc5332c23cfaf519d26e9c52cd7ce2dc9cf38",
+      "size": 5304
+    },
+    "similarity_settings": {
+      "sha256": "c58b1cb82f18a6054c1184aeaeec224f45d1bdf9288075f067de1ff0128e95a8",
+      "size": 379
+    }
+  },
+  "methods": {
+    "autocorrelation": {
+      "diagnostics": {
+        "discrepancy": 0.08477419306864109,
+        "feature_weights": {
+          "iat": 0.5,
+          "size": 0.5
+        },
+        "iat": {
+          "absolute_differences": [
+            0.1818442670897762
+          ],
+          "discrepancy": 0.0909221335448881,
+          "generated_acf": [
+            -0.04724597502320539
+          ],
+          "generated_sample_count": 17,
+          "reference_acf": [
+            -0.2290902421129816
+          ],
+          "reference_sample_count": 20
+        },
+        "lag_weights": [
+          1.0
+        ],
+        "lags": [
+          1
+        ],
+        "observation_window_seconds": 10.0,
+        "size": {
+          "absolute_differences": [
+            0.15725250518478817
+          ],
+          "discrepancy": 0.07862625259239409,
+          "generated_acf": [
+            -0.28478334232083635
+          ],
+          "generated_sample_count": 18,
+          "reference_acf": [
+            -0.4420358475056245
+          ],
+          "reference_sample_count": 21
+        }
+      },
+      "score": 0.9152258069313589,
+      "weight": 0.25
+    },
+    "frame_size_ks": {
+      "diagnostics": {
+        "distance": 0.19047619047619047,
+        "generated_count": 18,
+        "generated_maximum_length": 530,
+        "generated_minimum_length": 66,
+        "observation_window_seconds": 10.0,
+        "reference_count": 21,
+        "reference_maximum_length": 530,
+        "reference_minimum_length": 66
+      },
+      "score": 0.8095238095238095,
+      "weight": 0.25
+    },
+    "iat_ks": {
+      "diagnostics": {
+        "diagnostic_quantile": 0.75,
+        "distance": 0.47058823529411764,
+        "generated_iat_count": 17,
+        "generated_median_iat_seconds": 0.512723,
+        "generated_quantile_iat_seconds": 0.6390089999999997,
+        "generated_zero_iat_count": 0,
+        "observation_window_seconds": 10.0,
+        "reference_iat_count": 20,
+        "reference_median_iat_seconds": 0.5060000000000002,
+        "reference_quantile_iat_seconds": 0.5760000000000005,
+        "reference_zero_iat_count": 0
+      },
+      "score": 0.5294117647058824,
+      "weight": 0.25
+    },
+    "multiscale_rate": {
+      "diagnostics": {
+        "direction_bin_cell_counts": [
+          20,
+          8
+        ],
+        "discrepancy": 0.29753247009203965,
+        "feature_discrepancies": {
+          "byte": 0.4155777606968998,
+          "packet": 0.1794871794871795
+        },
+        "feature_weights": {
+          "byte": 0.5,
+          "packet": 0.5
+        },
+        "observation_window_seconds": 10.0,
+        "scale_discrepancies": [
+          0.43605510554011706,
+          0.15900983464396223
+        ],
+        "scale_weights": [
+          0.5,
+          0.5
+        ],
+        "scales": [
+          {
+            "bins_per_direction": 10,
+            "direction_bin_cell_count": 20,
+            "discrepancy": 0.43605510554011706,
+            "feature_discrepancies": {
+              "byte": 0.5900589290289521,
+              "packet": 0.28205128205128205
+            },
+            "generated_totals": {
+              "byte": {
+                "inbound": 1734,
+                "outbound": 1516
+              },
+              "packet": {
+                "inbound": 8,
+                "outbound": 10
+              }
+            },
+            "reference_totals": {
+              "byte": {
+                "inbound": 2008,
+                "outbound": 2548
+              },
+              "packet": {
+                "inbound": 10,
+                "outbound": 11
+              }
+            },
+            "width_seconds": 1.0
+          },
+          {
+            "bins_per_direction": 4,
+            "direction_bin_cell_count": 8,
+            "discrepancy": 0.15900983464396223,
+            "feature_discrepancies": {
+              "byte": 0.24109659236484754,
+              "packet": 0.07692307692307693
+            },
+            "generated_totals": {
+              "byte": {
+                "inbound": 1734,
+                "outbound": 1516
+              },
+              "packet": {
+                "inbound": 8,
+                "outbound": 10
+              }
+            },
+            "reference_totals": {
+              "byte": {
+                "inbound": 2008,
+                "outbound": 2548
+              },
+              "packet": {
+                "inbound": 10,
+                "outbound": 11
+              }
+            },
+            "width_seconds": 2.5
+          }
+        ],
+        "total_direction_bin_cells": 28,
+        "widths": [
+          1.0,
+          2.5
+        ]
+      },
+      "score": 0.7024675299079604,
+      "weight": 0.25
+    }
+  },
+  "observation_window_seconds": 10.0
+}

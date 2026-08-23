@@ -1,1 +1,49 @@
-{"candidate_id":"fixture-study","destination_id":"fixture-study","final_seed":97,"model_selection":{"rule":"highest_best_fitness_then_lowest_repeat","selected":[{"best_model_identity":{"sha256":"887d90d333b3a0ace550bd3cdc131b4b7169b1ca6bb4f4e60fdc13e2118d20b8","size":3767},"repeat":3,"training_directory":"training/short/r3","workload":"short"},{"best_model_identity":{"sha256":"cc642f49f9647a790bee2530105101bdf2c67cacc78be98588d21bd063af8a85","size":3774},"repeat":3,"training_directory":"training/streaming/r3","workload":"streaming"},{"best_model_identity":{"sha256":"24aedde155cfd964a78bd3138ff92f96756c6a5afe23a0c2d40c4dfd58006ffc","size":3777},"repeat":3,"training_directory":"training/bursty/r3","workload":"bursty"}]},"prerequisite_path":"examples/validation_study/prerequisites.json","schema_version":4,"selection_seeds":[17],"study_id":"fixture-study","training_repetitions":3,"workloads":["short","streaming","bursty"]}
+{
+  "candidate_id": "fixture-study",
+  "destination_id": "fixture-study",
+  "final_seed": 97,
+  "model_selection": {
+    "rule": "highest_best_fitness_then_lowest_repeat",
+    "selected": [
+      {
+        "best_model_identity": {
+          "sha256": "ee4abae2d914b82f80acd729c4277970c5e706fe099f58596b9505e38d8b929c",
+          "size": 6482
+        },
+        "repeat": 3,
+        "training_directory": "training/short/r3",
+        "workload": "short"
+      },
+      {
+        "best_model_identity": {
+          "sha256": "dbd805b054db26ac0f92e0f7fc3c86f8fd1fdf43d514a560eb3aca4017a7b5eb",
+          "size": 6489
+        },
+        "repeat": 3,
+        "training_directory": "training/streaming/r3",
+        "workload": "streaming"
+      },
+      {
+        "best_model_identity": {
+          "sha256": "6ab7b0203c849fb1576f8954c705a4435516b6a376405e4688711cfdad3cfa34",
+          "size": 6492
+        },
+        "repeat": 3,
+        "training_directory": "training/bursty/r3",
+        "workload": "bursty"
+      }
+    ]
+  },
+  "prerequisite_path": "examples/validation_study/prerequisites.json",
+  "schema_version": 4,
+  "selection_seeds": [
+    17
+  ],
+  "study_id": "fixture-study",
+  "training_repetitions": 3,
+  "workloads": [
+    "short",
+    "streaming",
+    "bursty"
+  ]
+}

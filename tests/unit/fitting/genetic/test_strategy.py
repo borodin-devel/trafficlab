@@ -471,8 +471,8 @@ def test_resume_checkpoint_failures_retain_the_canonical_preserved_outcome(
     elif checkpoint_state == "schema":
         checkpoint_path.write_bytes(b"{}\n")
     else:
-        marker = b'"sha256":"' + (b"a" * 64) + b'"'
-        checkpoint_path.write_bytes(original.replace(marker, b'"sha256":"' + (b"0" * 64) + b'"', 1))
+        marker = b'"sha256": "' + (b"a" * 64) + b'"'
+        checkpoint_path.write_bytes(original.replace(marker, b'"sha256": "' + (b"0" * 64) + b'"', 1))
 
     with pytest.raises(TrafficlabError) as captured:
         initialize_or_resume(context)

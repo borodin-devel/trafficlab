@@ -1,1 +1,37 @@
-{"capture_identity":{"sha256":"9662e2ad0049a24a4115e347a9ce45fd35ef7699905295d0aad97bfece62c1ce","size":54},"capture_lineage":{"capture_identity":{"sha256":"9662e2ad0049a24a4115e347a9ce45fd35ef7699905295d0aad97bfece62c1ce","size":54},"capture_image_id":"sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c","capture_image_reference":"trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c","capture_tool_version":"4.0.17","target_image_id":"sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b","target_image_reference":"curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"},"comparison_identity":{"sha256":"ef02417203771abc3cb39ecb1e33e374d36451a7332aeac88bb742c495e48ce9","size":3132},"generated_identity":{"sha256":"665f4c89505f480e8fc7421c4080811fa3d7750980d8572f033fbb68d6731e69","size":2884},"observation_window_seconds":8.0,"reference_identity":{"sha256":"e84a49dc92fddcbed7e99eb5c2a43da06f424cfde94a1b53344cf3bd90f578f7","size":5976},"seed":97,"training_directory":"training/bursty/r3","training_model_identity":{"sha256":"24aedde155cfd964a78bd3138ff92f96756c6a5afe23a0c2d40c4dfd58006ffc","size":3777},"workload":"bursty"}
+{
+  "capture_identity": {
+    "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
+    "size": 63
+  },
+  "capture_lineage": {
+    "capture_identity": {
+      "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
+      "size": 63
+    },
+    "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+    "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+    "capture_tool_version": "4.0.17",
+    "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
+    "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
+  },
+  "comparison_identity": {
+    "sha256": "d28552c9dfe994849da865b06c6487e5ec9d569c553048f54314729b2c276f79",
+    "size": 5287
+  },
+  "generated_identity": {
+    "sha256": "665f4c89505f480e8fc7421c4080811fa3d7750980d8572f033fbb68d6731e69",
+    "size": 2884
+  },
+  "observation_window_seconds": 8.0,
+  "reference_identity": {
+    "sha256": "e84a49dc92fddcbed7e99eb5c2a43da06f424cfde94a1b53344cf3bd90f578f7",
+    "size": 5976
+  },
+  "seed": 97,
+  "training_directory": "training/bursty/r3",
+  "training_model_identity": {
+    "sha256": "6ab7b0203c849fb1576f8954c705a4435516b6a376405e4688711cfdad3cfa34",
+    "size": 6492
+  },
+  "workload": "bursty"
+}

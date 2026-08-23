@@ -59,6 +59,8 @@ FAILURE_MATRIX_SUPPORT = {"__init__.py", "cases.py", "doubles.py", "oracle.py", 
 
 IMMUTABLE_VALIDATION_EVIDENCE_PREFIX = "examples/validation_study/evidence/"
 HUMAN_AUTHORED_JSON_PREFIX = ".vscode/"
+IMMUTABLE_LEGACY_JSON_PREFIX = "tests/fixtures/data/validation_study/pre-user-agent-r6/"
+IMMUTABLE_LEGACY_JSON_PATHS = frozenset({"examples/validation_study/results.json"})
 
 
 class _ManifestEntry(Protocol):
@@ -102,7 +104,9 @@ def test_regenerable_tracked_json_documents_are_readable() -> None:
     )
     mismatches: list[str] = []
     for relative in completed.stdout.splitlines():
-        if relative.startswith((HUMAN_AUTHORED_JSON_PREFIX, IMMUTABLE_VALIDATION_EVIDENCE_PREFIX)):
+        if relative in IMMUTABLE_LEGACY_JSON_PATHS or relative.startswith(
+            (HUMAN_AUTHORED_JSON_PREFIX, IMMUTABLE_LEGACY_JSON_PREFIX, IMMUTABLE_VALIDATION_EVIDENCE_PREFIX)
+        ):
             continue
         path = REPOSITORY / relative
         content = path.read_bytes()

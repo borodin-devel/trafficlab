@@ -1,1 +1,23 @@
-{"comparison_identity":{"sha256":"ce9a01112777037869f95c71415eccd4d50b797db386e98ccd8b01be13e7365e","size":3197},"generated_identity":{"sha256":"944867d5be7023dbd983db2e89b3f1cadcb9acca47f384fbd1718f48e2aa7cf7","size":3744},"path":"fresh_simulation/short/r2.json","reference_identity":{"sha256":"68adc2cdbbc7a10ce43c143f0cefe83ee8a0c82605dcc6de2e1bfde6a732b17b","size":5136},"repeat":2,"seed":97,"training_directory":"training/short/r2","training_model_identity":{"sha256":"f8e352d05a2ac098f75ea3628c02cfe07393a66b701da48d10d0a218a58bb343","size":3774},"workload":"short"}
+{
+  "comparison_identity": {
+    "sha256": "a00f6806260758f4923cd39f2b976b78db4842bf554ea45c6329a02cb5726340",
+    "size": 5352
+  },
+  "generated_identity": {
+    "sha256": "944867d5be7023dbd983db2e89b3f1cadcb9acca47f384fbd1718f48e2aa7cf7",
+    "size": 3744
+  },
+  "path": "fresh_simulation/short/r2.json",
+  "reference_identity": {
+    "sha256": "68adc2cdbbc7a10ce43c143f0cefe83ee8a0c82605dcc6de2e1bfde6a732b17b",
+    "size": 5136
+  },
+  "repeat": 2,
+  "seed": 97,
+  "training_directory": "training/short/r2",
+  "training_model_identity": {
+    "sha256": "0ac23244748df4391755ff9500f77560712902ff72b8ae1ba59beb66bd810887",
+    "size": 6489
+  },
+  "workload": "short"
+}

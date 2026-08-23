@@ -1,1 +1,196 @@
-{"aggregate_score":0.4873949486343182,"input_identities":{"capture_json":{"sha256":"9662e2ad0049a24a4115e347a9ce45fd35ef7699905295d0aad97bfece62c1ce","size":54},"generated_pcapng":{"sha256":"79e21efbfcf68af78570d534872f7ba348fe282c7d047cf8888cd9b22d8b5dd2","size":2136},"reference_pcapng":{"sha256":"d9536539aeaa0a932e61ac9b25cc96aa343df67b7b8995695fab7fbc94fd0bba","size":5864},"similarity_settings":{"sha256":"c58b1cb82f18a6054c1184aeaeec224f45d1bdf9288075f067de1ff0128e95a8","size":379}},"methods":{"autocorrelation":{"diagnostics":{"discrepancy":0.19644576184356946,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.5383599117180115],"discrepancy":0.2691799558590057,"generated_acf":[0.3420128797545393],"generated_sample_count":8,"reference_acf":[-0.19634703196347214],"reference_sample_count":20},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":5.0,"size":{"absolute_differences":[0.24742313565626642],"discrepancy":0.12371156782813321,"generated_acf":[-0.18437028515483359],"generated_sample_count":9,"reference_acf":[-0.4317934208111],"reference_sample_count":21}},"score":0.8035542381564306,"weight":0.25},"frame_size_ks":{"diagnostics":{"distance":0.39682539682539675,"generated_count":9,"generated_maximum_length":521,"generated_minimum_length":63,"observation_window_seconds":5.0,"reference_count":21,"reference_maximum_length":572,"reference_minimum_length":80},"score":0.6031746031746033,"weight":0.25},"iat_ks":{"diagnostics":{"diagnostic_quantile":0.75,"distance":1.0,"generated_iat_count":8,"generated_median_iat_seconds":0.5663945,"generated_quantile_iat_seconds":0.6352200000000003,"generated_zero_iat_count":0,"observation_window_seconds":5.0,"reference_iat_count":20,"reference_median_iat_seconds":0.2599999999999998,"reference_quantile_iat_seconds":0.2599999999999998,"reference_zero_iat_count":0},"score":0.0,"weight":0.25},"multiscale_rate":{"diagnostics":{"direction_bin_cell_counts":[10,4],"discrepancy":0.45714904679376084,"feature_discrepancies":{"byte":0.5142980935875217,"packet":0.4},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":5.0,"scale_discrepancies":[0.47137492778740614,0.4429231658001156],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":5,"direction_bin_cell_count":10,"discrepancy":0.47137492778740614,"feature_discrepancies":{"byte":0.5427498555748123,"packet":0.4},"generated_totals":{"byte":{"inbound":859,"outbound":921},"packet":{"inbound":4,"outbound":5}},"reference_totals":{"byte":{"inbound":2288,"outbound":2856},"packet":{"inbound":10,"outbound":11}},"width_seconds":1.0},{"bins_per_direction":2,"direction_bin_cell_count":4,"discrepancy":0.4429231658001156,"feature_discrepancies":{"byte":0.4858463316002311,"packet":0.4},"generated_totals":{"byte":{"inbound":859,"outbound":921},"packet":{"inbound":4,"outbound":5}},"reference_totals":{"byte":{"inbound":2288,"outbound":2856},"packet":{"inbound":10,"outbound":11}},"width_seconds":2.5}],"total_direction_bin_cells":14,"widths":[1.0,2.5]},"score":0.5428509532062391,"weight":0.25}},"observation_window_seconds":5.0}
+{
+  "aggregate_score": 0.4873949486343182,
+  "input_identities": {
+    "capture_json": {
+      "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
+      "size": 63
+    },
+    "generated_pcapng": {
+      "sha256": "79e21efbfcf68af78570d534872f7ba348fe282c7d047cf8888cd9b22d8b5dd2",
+      "size": 2136
+    },
+    "reference_pcapng": {
+      "sha256": "d9536539aeaa0a932e61ac9b25cc96aa343df67b7b8995695fab7fbc94fd0bba",
+      "size": 5864
+    },
+    "similarity_settings": {
+      "sha256": "c58b1cb82f18a6054c1184aeaeec224f45d1bdf9288075f067de1ff0128e95a8",
+      "size": 379
+    }
+  },
+  "methods": {
+    "autocorrelation": {
+      "diagnostics": {
+        "discrepancy": 0.19644576184356946,
+        "feature_weights": {
+          "iat": 0.5,
+          "size": 0.5
+        },
+        "iat": {
+          "absolute_differences": [
+            0.5383599117180115
+          ],
+          "discrepancy": 0.2691799558590057,
+          "generated_acf": [
+            0.3420128797545393
+          ],
+          "generated_sample_count": 8,
+          "reference_acf": [
+            -0.19634703196347214
+          ],
+          "reference_sample_count": 20
+        },
+        "lag_weights": [
+          1.0
+        ],
+        "lags": [
+          1
+        ],
+        "observation_window_seconds": 5.0,
+        "size": {
+          "absolute_differences": [
+            0.24742313565626642
+          ],
+          "discrepancy": 0.12371156782813321,
+          "generated_acf": [
+            -0.18437028515483359
+          ],
+          "generated_sample_count": 9,
+          "reference_acf": [
+            -0.4317934208111
+          ],
+          "reference_sample_count": 21
+        }
+      },
+      "score": 0.8035542381564306,
+      "weight": 0.25
+    },
+    "frame_size_ks": {
+      "diagnostics": {
+        "distance": 0.39682539682539675,
+        "generated_count": 9,
+        "generated_maximum_length": 521,
+        "generated_minimum_length": 63,
+        "observation_window_seconds": 5.0,
+        "reference_count": 21,
+        "reference_maximum_length": 572,
+        "reference_minimum_length": 80
+      },
+      "score": 0.6031746031746033,
+      "weight": 0.25
+    },
+    "iat_ks": {
+      "diagnostics": {
+        "diagnostic_quantile": 0.75,
+        "distance": 1.0,
+        "generated_iat_count": 8,
+        "generated_median_iat_seconds": 0.5663945,
+        "generated_quantile_iat_seconds": 0.6352200000000003,
+        "generated_zero_iat_count": 0,
+        "observation_window_seconds": 5.0,
+        "reference_iat_count": 20,
+        "reference_median_iat_seconds": 0.2599999999999998,
+        "reference_quantile_iat_seconds": 0.2599999999999998,
+        "reference_zero_iat_count": 0
+      },
+      "score": 0.0,
+      "weight": 0.25
+    },
+    "multiscale_rate": {
+      "diagnostics": {
+        "direction_bin_cell_counts": [
+          10,
+          4
+        ],
+        "discrepancy": 0.45714904679376084,
+        "feature_discrepancies": {
+          "byte": 0.5142980935875217,
+          "packet": 0.4
+        },
+        "feature_weights": {
+          "byte": 0.5,
+          "packet": 0.5
+        },
+        "observation_window_seconds": 5.0,
+        "scale_discrepancies": [
+          0.47137492778740614,
+          0.4429231658001156
+        ],
+        "scale_weights": [
+          0.5,
+          0.5
+        ],
+        "scales": [
+          {
+            "bins_per_direction": 5,
+            "direction_bin_cell_count": 10,
+            "discrepancy": 0.47137492778740614,
+            "feature_discrepancies": {
+              "byte": 0.5427498555748123,
+              "packet": 0.4
+            },
+            "generated_totals": {
+              "byte": {
+                "inbound": 859,
+                "outbound": 921
+              },
+              "packet": {
+                "inbound": 4,
+                "outbound": 5
+              }
+            },
+            "reference_totals": {
+              "byte": {
+                "inbound": 2288,
+                "outbound": 2856
+              },
+              "packet": {
+                "inbound": 10,
+                "outbound": 11
+              }
+            },
+            "width_seconds": 1.0
+          },
+          {
+            "bins_per_direction": 2,
+            "direction_bin_cell_count": 4,
+            "discrepancy": 0.4429231658001156,
+            "feature_discrepancies": {
+              "byte": 0.4858463316002311,
+              "packet": 0.4
+            },
+            "generated_totals": {
+              "byte": {
+                "inbound": 859,
+                "outbound": 921
+              },
+              "packet": {
+                "inbound": 4,
+                "outbound": 5
+              }
+            },
+            "reference_totals": {
+              "byte": {
+                "inbound": 2288,
+                "outbound": 2856
+              },
+              "packet": {
+                "inbound": 10,
+                "outbound": 11
+              }
+            },
+            "width_seconds": 2.5
+          }
+        ],
+        "total_direction_bin_cells": 14,
+        "widths": [
+          1.0,
+          2.5
+        ]
+      },
+      "score": 0.5428509532062391,
+      "weight": 0.25
+    }
+  },
+  "observation_window_seconds": 5.0
+}

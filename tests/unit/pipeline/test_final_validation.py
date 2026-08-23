@@ -117,9 +117,7 @@ def test_run_experiment_strictly_reloads_every_owned_artifact_before_completion(
         checkpoint_document = cast(dict[str, Any], json.loads(changed_path.read_bytes()))
         population = cast(list[dict[str, Any]], checkpoint_document["population"])
         population[0]["genes"] = [1.25]
-        changed_content = (
-            json.dumps(checkpoint_document, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
-        ).encode()
+        changed_content = (json.dumps(checkpoint_document, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
     elif corruption == "history":
         changed_path = run_directory / "ga_history.csv"
         changed_content = b"not the checkpoint projection\n"

@@ -1,1 +1,15 @@
-{"content_length":32768,"content_range":"bytes 524288-557055/4194304","header_identity":{"sha256":"2f0f1652f49335de7e9ae5b580dfd5e04326c9cdbbe40e7da75dd25c8e1e0433","size":99},"requested_end":557055,"requested_start":524288,"run_id":"03-bursty-r1","scope":"training","status":206,"transfer_index":1,"workload":"bursty"}
+{
+  "content_length": 32768,
+  "content_range": "bytes 524288-557055/4194304",
+  "header_identity": {
+    "sha256": "2f0f1652f49335de7e9ae5b580dfd5e04326c9cdbbe40e7da75dd25c8e1e0433",
+    "size": 99
+  },
+  "requested_end": 557055,
+  "requested_start": 524288,
+  "run_id": "03-bursty-r1",
+  "scope": "training",
+  "status": 206,
+  "transfer_index": 1,
+  "workload": "bursty"
+}
