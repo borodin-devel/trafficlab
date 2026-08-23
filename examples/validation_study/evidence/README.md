@@ -5,10 +5,12 @@ bundle. The current bundle is identified in [`../README.md`](../README.md);
 older accepted bundles remain immutable predecessors. Hidden `.candidates/` and
 temporary paths are publication workspaces, not accepted evidence.
 
-Do not add, remove, rename, or edit files inside an accepted bundle. Its
-`manifest.json` binds every retained path and `index.json` binds ownership and
-lineage. This README lives above those bundles and is intentionally outside
-their manifests.
+Do not add, remove, rename, or edit files inside an accepted bundle.
+`manifest.json` binds every other retained path, while `index.json` binds
+ownership and lineage for the same inventoried entries. The manifest cannot
+recursively hash itself, so its checked Git blob anchors its own bytes. The
+current accepted bundle has 231 such entries. This README lives above those
+bundles and is intentionally outside their manifests.
 
 ## Bundle map
 
@@ -20,13 +22,14 @@ their manifests.
 | `lifecycle.json` | Per-run and temporary-image cleanup proof. |
 | `report_inputs.json` | Typed arithmetic inputs independently recomputed by the auditor. |
 | `report.json` | Published summary bound to the exact report-input bytes. |
-| `index.json` | Root artifact identities plus complete typed ownership and lineage maps. |
-| `manifest.json` | Canonical path/size/digest/owner/lineage inventory. |
+| `index.json` | Root artifact identities plus typed ownership and lineage maps for every manifest entry. |
+| `manifest.json` | Canonical path/size/digest/owner/lineage inventory of every retained file except itself. |
 | `configs/` | Portable and environment-realized training configurations. |
 | `training/` | Nine strict fit artifact trees: three workloads by three repetitions. |
 | `fresh_simulation/` | Fixed-final-seed same-reference model-generation records. |
 | `held_out/` | Three independent captures evaluated with already selected models. |
 | `prerequisites/` | Exact command argv, outputs, JUnit records, and test status summaries. |
+| `headers/` | Exact raw HTTP response-header files retained from prerequisite, training, and held-out transfers. |
 | `observations/` | Parsed retained HTTP transfer-header observations. |
 
 The machine-readable public contracts are under
@@ -94,15 +97,15 @@ Each selected model records `workload`, `repeat`, `training_directory`, and
 | `training` | Per-workload/repeat directories, configs, reference identity, and capture/image lineage. |
 | `fresh_simulation` | Per-workload/repeat model, reference, generated, comparison, seed, and path lineage. |
 | `held_out` | Per-workload directory, selected training directory, and capture/image lineage. |
-| `ownership` | Exclusive evidence owner for every retained relative path. |
-| `lineage` | Typed relationship for every retained path. |
+| `ownership` | Exclusive evidence owner for every manifest-inventoried relative path. |
+| `lineage` | Typed relationship for every manifest-inventoried path. |
 
 ### `manifest.json`
 
 | Field | Description |
 | --- | --- |
 | `schema_version` | Manifest format version. |
-| `files` | Canonically path-sorted complete retained-file inventory. |
+| `files` | Canonically path-sorted inventory of every retained regular file except `manifest.json` itself. |
 | `files[].path` | Bundle-relative POSIX path. |
 | `files[].sha256`, `files[].size` | Exact file identity. |
 | `files[].owner` | Owner that must match `index.json`. |

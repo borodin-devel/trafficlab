@@ -62,11 +62,14 @@ guard command/status/digests, comparison deltas, and the same core run fields.
 
 Traffic descriptors contain `packet_count`, inbound/outbound packet and byte
 totals, `observation_window_seconds`, frame-length and IAT summaries, and
-per-width scale totals. A numeric summary contains `count`, `minimum`, `maximum`,
-`range`, `mean`, `sample_variance`, and `sample_standard_deviation`. A score
-contains `aggregate` and all four named method values. A transfer response
-contains requested byte bounds, HTTP `status`, content range/length, transfer
-index, retained-header path/digest, file modes, and inode-preservation proof.
+per-width scale totals. Each frame-length or IAT summary contains `count`,
+`minimum`, `maximum`, `median`, `quantile`, `quantile_probability`, and
+`zero_count`. A numeric summary under `workload_summaries` contains `count`,
+`minimum`, `maximum`, `range`, `mean`, `sample_variance`, and
+`sample_standard_deviation`. A score contains `aggregate` and all four named
+method values. A transfer response contains requested byte bounds, HTTP
+`status`, content range/length, transfer index, retained-header path/digest,
+file modes, and inode-preservation proof.
 
 ## Frozen protocol
 

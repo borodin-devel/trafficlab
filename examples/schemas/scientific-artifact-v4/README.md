@@ -14,7 +14,7 @@ and the offline Validation Study auditor.
 | `best_model.schema.json` | Self-contained fitted model | capture/reference identities, estimator and seed policy, family, genes/bounds, fitted payload, final seed/limits, observation window, schema/version |
 | `checkpoint.schema.json` | Resumable genetic-search state | input identities, family/search/similarity settings, population, best candidate, history, RNG, generation and termination state |
 | `comparison_result.schema.json` | Published four-method comparison | `aggregate_score`, `input_identities`, `methods`, `observation_window_seconds` |
-| `failure_outcome.schema.json` | Canonical expected failure | affected evidence, authority, correction, detail, evidence state, kind, stage, status |
+| `failure_outcome.schema.json` | Canonical expected failure | affected evidence, authority, `corrective_action`, detail, evidence state, kind, stage, optional status |
 | `study_environment.schema.json` | Accepted-study source/runtime/image environment | source and dependency identities, runtime versions, image IDs/references, compatibility decision |
 | `study_lifecycle.schema.json` | Study cleanup proof | study ID, training and held-out lifecycle rows, phase capture-image lifecycle |
 | `study_lineage.schema.json` | Typed accepted-bundle index and ownership maps | root artifact identities plus training, held-out, fresh-simulation, ownership, and lineage maps |
@@ -119,7 +119,7 @@ and feature discrepancies, weights, and the final discrepancy.
 
 | Field | Description |
 | --- | --- |
-| `status` | Constant marker that the operation failed as an expected scientific or lifecycle outcome. |
+| `status` | Optional exact integer or nonblank string carrying an underlying process or service status; canonical records omit it when the value is `None`. |
 | `stage` | Workflow stage that detected the failure. |
 | `kind` | Stable machine-readable failure classification. |
 | `detail` | Specific human-readable explanation. |
