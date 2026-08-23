@@ -613,7 +613,8 @@ def test_example_run_derivation_rejects_noncanonical_or_foreign_artifacts(
             encoding="utf-8",
         )
 
-    with pytest.raises(ValueError, match=message):
+    error_type = (ValueError, example_run.TrafficlabError) if mutation == "best_noncanonical" else ValueError
+    with pytest.raises(error_type, match=message):
         example_run._derived_result(copied)  # pyright: ignore[reportPrivateUsage]
 
 

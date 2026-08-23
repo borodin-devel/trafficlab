@@ -1,1 +1,1508 @@
-{"best":{"fitness":0.6936220494118022,"identifier":[0,1]},"capture_identity":{"sha256":"8c97fac4575d26510320ce845a745dd893813fa5b4b4e3863164a1c0a79126ab","size":54},"consecutive_stagnation":1,"experiment_identity":{"sha256":"53c5a4a41ef744ad561b1b477c0d99c5cba3b0876156d38f3a99ed2b1db7c4cb","size":2914},"families":[{"coordinates":[{"kind":"linear","lower":0.15,"name":"q1","upper":0.45},{"kind":"linear","lower":0.55,"name":"q2","upper":0.9},{"kind":"linear","lower":0.05,"name":"alpha","upper":1.5},{"kind":"integer","lower":1,"name":"r","upper":4},{"kind":"log","lower":0.5,"name":"c_t","upper":1.5}],"gene_order":["q1","q2","alpha","r","c_t"],"name":"markov_renewal","operators":{"crossover_probability":0.9,"mutation_probability":0.25,"mutation_scale":0.1}},{"coordinates":[{"kind":"log","lower":0.2,"name":"q01","upper":2.0},{"kind":"log","lower":0.2,"name":"q10","upper":2.0},{"kind":"log","lower":0.5,"name":"lambda0","upper":3.0},{"kind":"log","lower":3.0,"name":"lambda1","upper":8.0}],"gene_order":["q01","q10","lambda0","lambda1"],"name":"mmpp","operators":{"crossover_probability":0.9,"mutation_probability":0.25,"mutation_scale":0.1}},{"coordinates":[{"kind":"log","lower":0.5,"name":"c_lambda","upper":1.5}],"gene_order":["c_lambda"],"name":"poisson_empirical","operators":{"crossover_probability":0.9,"mutation_probability":0.25,"mutation_scale":0.1}}],"family_priority":["markov_renewal","poisson_empirical","mmpp"],"generation":1,"genetic":{"duplicate_mutation_attempts":1,"early_stopping_generations":0,"early_stopping_tolerance":0.0,"elite_count":1,"final_seed":97,"generation_count":1,"master_seed":20260819,"population_size":6,"resume":false,"tournament_size":2},"history":[{"best_fitness":0.6936220494118022,"best_identifier":[0,1],"candidate_count":2,"family":"markov_renewal","generation":0,"mean_fitness":0.6805458395648585,"scope":"family","valid_count":2},{"best_fitness":0.3934342596128797,"best_identifier":[0,4],"candidate_count":2,"family":"mmpp","generation":0,"mean_fitness":0.3934342596128797,"scope":"family","valid_count":2},{"best_fitness":0.5502515195465219,"best_identifier":[0,2],"candidate_count":2,"family":"poisson_empirical","generation":0,"mean_fitness":0.5444414746547501,"scope":"family","valid_count":2},{"best_fitness":0.6936220494118022,"best_identifier":[0,1],"candidate_count":6,"family":null,"generation":0,"mean_fitness":0.5394738579441628,"scope":"overall","valid_count":6},{"best_fitness":0.6936220494118022,"best_identifier":[0,1],"candidate_count":3,"family":"markov_renewal","generation":1,"mean_fitness":0.6761871029492106,"scope":"family","valid_count":3},{"best_fitness":0.3934342596128797,"best_identifier":[0,4],"candidate_count":1,"family":"mmpp","generation":1,"mean_fitness":0.3934342596128797,"scope":"family","valid_count":1},{"best_fitness":0.5502515195465219,"best_identifier":[0,2],"candidate_count":2,"family":"poisson_empirical","generation":1,"mean_fitness":0.5458161834646311,"scope":"family","valid_count":2},{"best_fitness":0.6936220494118022,"best_identifier":[0,1],"candidate_count":6,"family":null,"generation":1,"mean_fitness":0.5856046558982956,"scope":"overall","valid_count":6}],"observation_window_seconds":0.8714351654052734,"population":[{"duplicate_diagnostics":[],"family":"markov_renewal","fitness":0.6936220494118022,"genes":[0.3897454648360612,0.7926380613941226,1.4653444938760862,4,0.9163465260773139],"identifier":[0,1],"invalid":null,"status":"valid","trials":[{"aggregate_score":0.6936220494118022,"methods":[{"diagnostics":{"discrepancy":0.1593916166859279,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.4593613450574509],"discrepancy":0.22968067252872545,"generated_acf":[-0.02909803735138308],"generated_sample_count":92,"reference_acf":[0.43026330770606785],"reference_sample_count":80},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":0.8714351654052734,"size":{"absolute_differences":[0.1782051216862607],"discrepancy":0.08910256084313035,"generated_acf":[-0.1935076861506507],"generated_sample_count":93,"reference_acf":[-0.3717128078369114],"reference_sample_count":81}},"name":"autocorrelation","score":0.8406083833140721},{"diagnostics":{"distance":0.07447232178414975,"generated_count":93,"generated_maximum_length":2822,"generated_minimum_length":42,"observation_window_seconds":0.8714351654052734,"reference_count":81,"reference_maximum_length":2822,"reference_minimum_length":42},"name":"frame_size_ks","score":0.9255276782158502},{"diagnostics":{"diagnostic_quantile":0.75,"distance":0.167391304347826,"generated_iat_count":92,"generated_median_iat_seconds":3.014941706624974e-05,"generated_quantile_iat_seconds":0.0034499235137193107,"generated_zero_iat_count":0,"observation_window_seconds":0.8714351654052734,"reference_iat_count":80,"reference_median_iat_seconds":0.00014400482177734375,"reference_quantile_iat_seconds":0.003465414047241211,"reference_zero_iat_count":0},"name":"iat_ks","score":0.832608695652174},{"diagnostics":{"direction_bin_cell_counts":[1744,176],"discrepancy":0.8242565595348874,"feature_discrepancies":{"byte":0.8151797857364416,"packet":0.8333333333333334},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":0.8714351654052734,"scale_discrepancies":[0.9794985652410129,0.669014553828762],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":872,"direction_bin_cell_count":1744,"discrepancy":0.9794985652410129,"feature_discrepancies":{"byte":0.9819856362291522,"packet":0.9770114942528736},"generated_totals":{"byte":{"inbound":85808,"outbound":3624},"packet":{"inbound":48,"outbound":45}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.001},{"bins_per_direction":88,"direction_bin_cell_count":176,"discrepancy":0.669014553828762,"feature_discrepancies":{"byte":0.6483739352437308,"packet":0.6896551724137931},"generated_totals":{"byte":{"inbound":85808,"outbound":3624},"packet":{"inbound":48,"outbound":45}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.01}],"total_direction_bin_cells":1920,"widths":[0.001,0.01]},"name":"multiscale_rate","score":0.1757434404651126}],"model_diagnostics":{"timing_tier_global_count":0,"timing_tier_source_count":27,"timing_tier_transition_count":66,"uniform_unobserved_row_count":0},"seed":17}]},{"duplicate_diagnostics":[],"family":"poisson_empirical","fitness":0.5502515195465219,"genes":[0.8836037152682525],"identifier":[0,2],"invalid":null,"status":"valid","trials":[{"aggregate_score":0.5502515195465219,"methods":[{"diagnostics":{"discrepancy":0.1809637094027197,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.38515729895876877],"discrepancy":0.19257864947938438,"generated_acf":[0.04510600874729907],"generated_sample_count":72,"reference_acf":[0.43026330770606785],"reference_sample_count":80},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":0.8714351654052734,"size":{"absolute_differences":[0.33869753865211],"discrepancy":0.169348769326055,"generated_acf":[-0.0330152691848014],"generated_sample_count":73,"reference_acf":[-0.3717128078369114],"reference_sample_count":81}},"name":"autocorrelation","score":0.8190362905972803},{"diagnostics":{"distance":0.06511077287332989,"generated_count":73,"generated_maximum_length":2822,"generated_minimum_length":42,"observation_window_seconds":0.8714351654052734,"reference_count":81,"reference_maximum_length":2822,"reference_minimum_length":42},"name":"frame_size_ks","score":0.9348892271266701},{"diagnostics":{"diagnostic_quantile":0.75,"distance":0.6388888888888888,"generated_iat_count":72,"generated_median_iat_seconds":0.007034429156530492,"generated_quantile_iat_seconds":0.013996721281687163,"generated_zero_iat_count":0,"observation_window_seconds":0.8714351654052734,"reference_iat_count":80,"reference_median_iat_seconds":0.00014400482177734375,"reference_quantile_iat_seconds":0.003465414047241211,"reference_zero_iat_count":0},"name":"iat_ks","score":0.36111111111111116},{"diagnostics":{"direction_bin_cell_counts":[1744,176],"discrepancy":0.914030550648974,"feature_discrepancies":{"byte":0.9124766857135325,"packet":0.9155844155844155},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":0.8714351654052734,"scale_discrepancies":[0.9859848516945616,0.8420762496033865],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":872,"direction_bin_cell_count":1744,"discrepancy":0.9859848516945616,"feature_discrepancies":{"byte":0.9979437293631492,"packet":0.974025974025974},"generated_totals":{"byte":{"inbound":71173,"outbound":2346},"packet":{"inbound":38,"outbound":35}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.001},{"bins_per_direction":88,"direction_bin_cell_count":176,"discrepancy":0.8420762496033865,"feature_discrepancies":{"byte":0.8270096420639157,"packet":0.8571428571428571},"generated_totals":{"byte":{"inbound":71173,"outbound":2346},"packet":{"inbound":38,"outbound":35}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.01}],"total_direction_bin_cells":1920,"widths":[0.001,0.01]},"name":"multiscale_rate","score":0.08596944935102602}],"model_diagnostics":{},"seed":17}]},{"duplicate_diagnostics":[],"family":"mmpp","fitness":0.3934342596128797,"genes":[1.4238117306074816,0.3681500578263495,1.8140282082335524,3.412631891052826],"identifier":[0,4],"invalid":null,"status":"valid","trials":[{"aggregate_score":0.3934342596128797,"methods":[{"diagnostics":{"discrepancy":0.24246666525218483,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.7626812529415998],"discrepancy":0.3813406264707999,"generated_acf":[-0.33241794523553203],"generated_sample_count":8,"reference_acf":[0.43026330770606785],"reference_sample_count":80},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":0.8714351654052734,"size":{"absolute_differences":[0.20718540806713945],"discrepancy":0.10359270403356972,"generated_acf":[-0.16452739976977196],"generated_sample_count":9,"reference_acf":[-0.3717128078369114],"reference_sample_count":81}},"name":"autocorrelation","score":0.7575333347478151},{"diagnostics":{"distance":0.2962962962962963,"generated_count":9,"generated_maximum_length":2822,"generated_minimum_length":66,"observation_window_seconds":0.8714351654052734,"reference_count":81,"reference_maximum_length":2822,"reference_minimum_length":42},"name":"frame_size_ks","score":0.7037037037037037},{"diagnostics":{"diagnostic_quantile":0.75,"distance":0.8875000000000001,"generated_iat_count":8,"generated_median_iat_seconds":0.10857915913216884,"generated_quantile_iat_seconds":0.11712343478360765,"generated_zero_iat_count":0,"observation_window_seconds":0.8714351654052734,"reference_iat_count":80,"reference_median_iat_seconds":0.00014400482177734375,"reference_quantile_iat_seconds":0.003465414047241211,"reference_zero_iat_count":0},"name":"iat_ks","score":0.11249999999999993},{"diagnostics":{"direction_bin_cell_counts":[1744,176],"discrepancy":1.0,"feature_discrepancies":{"byte":1.0,"packet":1.0},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":0.8714351654052734,"scale_discrepancies":[1.0,1.0],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":872,"direction_bin_cell_count":1744,"discrepancy":1.0,"feature_discrepancies":{"byte":1.0,"packet":1.0},"generated_totals":{"byte":{"inbound":3175,"outbound":396},"packet":{"inbound":3,"outbound":6}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.001},{"bins_per_direction":88,"direction_bin_cell_count":176,"discrepancy":1.0,"feature_discrepancies":{"byte":1.0,"packet":1.0},"generated_totals":{"byte":{"inbound":3175,"outbound":396},"packet":{"inbound":3,"outbound":6}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.01}],"total_direction_bin_cells":1920,"widths":[0.001,0.01]},"name":"multiscale_rate","score":0.0}],"model_diagnostics":{},"seed":17}]},{"duplicate_diagnostics":[],"family":"poisson_empirical","fitness":0.5413808473827404,"genes":[0.8489622352692362],"identifier":[1,0],"invalid":null,"status":"valid","trials":[{"aggregate_score":0.5413808473827404,"methods":[{"diagnostics":{"discrepancy":0.17633425675384354,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.3915942439146911],"discrepancy":0.19579712195734555,"generated_acf":[0.03866906379137675],"generated_sample_count":69,"reference_acf":[0.43026330770606785],"reference_sample_count":80},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":0.8714351654052734,"size":{"absolute_differences":[0.31374278310068304],"discrepancy":0.15687139155034152,"generated_acf":[-0.057970024736228365],"generated_sample_count":70,"reference_acf":[-0.3717128078369114],"reference_sample_count":81}},"name":"autocorrelation","score":0.8236657432461565},{"diagnostics":{"distance":0.08800705467372127,"generated_count":70,"generated_maximum_length":2822,"generated_minimum_length":42,"observation_window_seconds":0.8714351654052734,"reference_count":81,"reference_maximum_length":2822,"reference_minimum_length":42},"name":"frame_size_ks","score":0.9119929453262787},{"diagnostics":{"diagnostic_quantile":0.75,"distance":0.645108695652174,"generated_iat_count":69,"generated_median_iat_seconds":0.007309000790683973,"generated_quantile_iat_seconds":0.016043686337790353,"generated_zero_iat_count":0,"observation_window_seconds":0.8714351654052734,"reference_iat_count":80,"reference_median_iat_seconds":0.00014400482177734375,"reference_quantile_iat_seconds":0.003465414047241211,"reference_zero_iat_count":0},"name":"iat_ks","score":0.354891304347826},{"diagnostics":{"direction_bin_cell_counts":[1744,176],"discrepancy":0.9250266033892995,"feature_discrepancies":{"byte":0.9361459220103872,"packet":0.9139072847682119},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":0.8714351654052734,"scale_discrepancies":[0.9360492499546467,0.9140039568239524],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":872,"direction_bin_cell_count":1744,"discrepancy":0.9360492499546467,"feature_discrepancies":{"byte":0.9383236654722074,"packet":0.9337748344370861},"generated_totals":{"byte":{"inbound":71173,"outbound":2148},"packet":{"inbound":38,"outbound":32}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.001},{"bins_per_direction":88,"direction_bin_cell_count":176,"discrepancy":0.9140039568239524,"feature_discrepancies":{"byte":0.933968178548567,"packet":0.8940397350993378},"generated_totals":{"byte":{"inbound":71173,"outbound":2148},"packet":{"inbound":38,"outbound":32}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.01}],"total_direction_bin_cells":1920,"widths":[0.001,0.01]},"name":"multiscale_rate","score":0.07497339661070046}],"model_diagnostics":{},"seed":17}]},{"duplicate_diagnostics":[],"family":"markov_renewal","fitness":0.6674696297179147,"genes":[0.3456948925495636,0.679251771983478,0.7410006046519431,3,1.1019350591949293],"identifier":[1,1],"invalid":null,"status":"valid","trials":[{"aggregate_score":0.6674696297179147,"methods":[{"diagnostics":{"discrepancy":0.15037980277211588,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.4857945556180733],"discrepancy":0.24289727780903664,"generated_acf":[-0.05553124791200542],"generated_sample_count":65,"reference_acf":[0.43026330770606785],"reference_sample_count":80},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":0.8714351654052734,"size":{"absolute_differences":[0.11572465547039029],"discrepancy":0.057862327735195146,"generated_acf":[-0.4874374633073017],"generated_sample_count":66,"reference_acf":[-0.3717128078369114],"reference_sample_count":81}},"name":"autocorrelation","score":0.8496201972278841},{"diagnostics":{"distance":0.03310886644219979,"generated_count":66,"generated_maximum_length":2822,"generated_minimum_length":42,"observation_window_seconds":0.8714351654052734,"reference_count":81,"reference_maximum_length":2822,"reference_minimum_length":42},"name":"frame_size_ks","score":0.9668911335578002},{"diagnostics":{"diagnostic_quantile":0.75,"distance":0.1576923076923078,"generated_iat_count":65,"generated_median_iat_seconds":0.0002214744698766022,"generated_quantile_iat_seconds":0.004148639802872452,"generated_zero_iat_count":0,"observation_window_seconds":0.8714351654052734,"reference_iat_count":80,"reference_median_iat_seconds":0.00014400482177734375,"reference_quantile_iat_seconds":0.003465414047241211,"reference_zero_iat_count":0},"name":"iat_ks","score":0.8423076923076922},{"diagnostics":{"direction_bin_cell_counts":[1744,176],"discrepancy":0.9889405042217179,"feature_discrepancies":{"byte":0.9982891717087419,"packet":0.9795918367346939},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":0.8714351654052734,"scale_discrepancies":[0.99257136612208,0.9853096423213559],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":872,"direction_bin_cell_count":1744,"discrepancy":0.99257136612208,"feature_discrepancies":{"byte":0.9987481744210307,"packet":0.9863945578231292},"generated_totals":{"byte":{"inbound":63286,"outbound":2292},"packet":{"inbound":32,"outbound":34}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.001},{"bins_per_direction":88,"direction_bin_cell_count":176,"discrepancy":0.9853096423213559,"feature_discrepancies":{"byte":0.9978301689964532,"packet":0.9727891156462585},"generated_totals":{"byte":{"inbound":63286,"outbound":2292},"packet":{"inbound":32,"outbound":34}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.01}],"total_direction_bin_cells":1920,"widths":[0.001,0.01]},"name":"multiscale_rate","score":0.011059495778282136}],"model_diagnostics":{"timing_tier_global_count":0,"timing_tier_source_count":13,"timing_tier_transition_count":53,"uniform_unobserved_row_count":0},"seed":17}]},{"duplicate_diagnostics":[],"family":"markov_renewal","fitness":0.6674696297179147,"genes":[0.3456948925495636,0.7005578144528445,0.7410006046519431,3,1.1019350591949293],"identifier":[1,2],"invalid":null,"status":"valid","trials":[{"aggregate_score":0.6674696297179147,"methods":[{"diagnostics":{"discrepancy":0.15037980277211588,"feature_weights":{"iat":0.5,"size":0.5},"iat":{"absolute_differences":[0.4857945556180733],"discrepancy":0.24289727780903664,"generated_acf":[-0.05553124791200542],"generated_sample_count":65,"reference_acf":[0.43026330770606785],"reference_sample_count":80},"lag_weights":[1.0],"lags":[1],"observation_window_seconds":0.8714351654052734,"size":{"absolute_differences":[0.11572465547039029],"discrepancy":0.057862327735195146,"generated_acf":[-0.4874374633073017],"generated_sample_count":66,"reference_acf":[-0.3717128078369114],"reference_sample_count":81}},"name":"autocorrelation","score":0.8496201972278841},{"diagnostics":{"distance":0.03310886644219979,"generated_count":66,"generated_maximum_length":2822,"generated_minimum_length":42,"observation_window_seconds":0.8714351654052734,"reference_count":81,"reference_maximum_length":2822,"reference_minimum_length":42},"name":"frame_size_ks","score":0.9668911335578002},{"diagnostics":{"diagnostic_quantile":0.75,"distance":0.1576923076923078,"generated_iat_count":65,"generated_median_iat_seconds":0.0002214744698766022,"generated_quantile_iat_seconds":0.004148639802872452,"generated_zero_iat_count":0,"observation_window_seconds":0.8714351654052734,"reference_iat_count":80,"reference_median_iat_seconds":0.00014400482177734375,"reference_quantile_iat_seconds":0.003465414047241211,"reference_zero_iat_count":0},"name":"iat_ks","score":0.8423076923076922},{"diagnostics":{"direction_bin_cell_counts":[1744,176],"discrepancy":0.9889405042217179,"feature_discrepancies":{"byte":0.9982891717087419,"packet":0.9795918367346939},"feature_weights":{"byte":0.5,"packet":0.5},"observation_window_seconds":0.8714351654052734,"scale_discrepancies":[0.99257136612208,0.9853096423213559],"scale_weights":[0.5,0.5],"scales":[{"bins_per_direction":872,"direction_bin_cell_count":1744,"discrepancy":0.99257136612208,"feature_discrepancies":{"byte":0.9987481744210307,"packet":0.9863945578231292},"generated_totals":{"byte":{"inbound":63286,"outbound":2292},"packet":{"inbound":32,"outbound":34}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.001},{"bins_per_direction":88,"direction_bin_cell_count":176,"discrepancy":0.9853096423213559,"feature_discrepancies":{"byte":0.9978301689964532,"packet":0.9727891156462585},"generated_totals":{"byte":{"inbound":63286,"outbound":2292},"packet":{"inbound":32,"outbound":34}},"reference_totals":{"byte":{"inbound":74686,"outbound":3526},"packet":{"inbound":39,"outbound":42}},"width_seconds":0.01}],"total_direction_bin_cells":1920,"widths":[0.001,0.01]},"name":"multiscale_rate","score":0.011059495778282136}],"model_diagnostics":{"timing_tier_global_count":0,"timing_tier_source_count":13,"timing_tier_transition_count":53,"uniform_unobserved_row_count":0},"seed":17}]}],"reference_identity":{"sha256":"9baa871134487ab3a5ded5f7314a2ef7d45a4a4cee31c67c6d1acd6f5f4de72a","size":81240},"rng":{"engine":"numpy.random.Generator/PCG64","python_version":"3.12.3","state":{"bit_generator":"PCG64","has_uint32":0,"state":{"inc":313386238064130078450704156869577063669,"state":219168010659535874775946885370467915786},"uinteger":3605937703}},"scientific_artifact_schema":4,"similarity":{"acf_iat_weight":0.5,"acf_lag_weights":[1.0],"acf_lags":[1],"acf_size_weight":0.5,"iat_diagnostic_quantile":0.75,"max_direction_bin_cells":100000,"method_weights":{"autocorrelation":0.25,"frame_size_ks":0.25,"iat_ks":0.25,"multiscale_rate":0.25},"multiscale_byte_weight":0.5,"multiscale_packet_weight":0.5,"multiscale_scale_weights":[0.5,0.5],"multiscale_widths_seconds":[0.001,0.01]},"terminal_reason":"hard_limit","trial_limits":{"max_output_bytes":4000000,"max_packets":2000,"max_wall_seconds":3.0},"trial_seeds":[17]}
+{
+  "best": {
+    "fitness": 0.6824799460045088,
+    "identifier": [
+      0,
+      1
+    ]
+  },
+  "capture_identity": {
+    "sha256": "375ab1337e039d983af32e658c42ef4154cf6707d3f872e8e8d672ef9a833abe",
+    "size": 63
+  },
+  "consecutive_stagnation": 1,
+  "experiment_identity": {
+    "sha256": "fbac93fd5218397b65b18825d5b091509f0eaa434bcfeda095a1902f53fe6c3b",
+    "size": 2911
+  },
+  "families": [
+    {
+      "coordinates": [
+        {
+          "kind": "linear",
+          "lower": 0.15,
+          "name": "q1",
+          "upper": 0.45
+        },
+        {
+          "kind": "linear",
+          "lower": 0.55,
+          "name": "q2",
+          "upper": 0.9
+        },
+        {
+          "kind": "linear",
+          "lower": 0.05,
+          "name": "alpha",
+          "upper": 1.5
+        },
+        {
+          "kind": "integer",
+          "lower": 1,
+          "name": "r",
+          "upper": 4
+        },
+        {
+          "kind": "log",
+          "lower": 0.5,
+          "name": "c_t",
+          "upper": 1.5
+        }
+      ],
+      "gene_order": [
+        "q1",
+        "q2",
+        "alpha",
+        "r",
+        "c_t"
+      ],
+      "name": "markov_renewal",
+      "operators": {
+        "crossover_probability": 0.9,
+        "mutation_probability": 0.25,
+        "mutation_scale": 0.1
+      }
+    },
+    {
+      "coordinates": [
+        {
+          "kind": "log",
+          "lower": 0.2,
+          "name": "q01",
+          "upper": 2.0
+        },
+        {
+          "kind": "log",
+          "lower": 0.2,
+          "name": "q10",
+          "upper": 2.0
+        },
+        {
+          "kind": "log",
+          "lower": 0.5,
+          "name": "lambda0",
+          "upper": 3.0
+        },
+        {
+          "kind": "log",
+          "lower": 3.0,
+          "name": "lambda1",
+          "upper": 8.0
+        }
+      ],
+      "gene_order": [
+        "q01",
+        "q10",
+        "lambda0",
+        "lambda1"
+      ],
+      "name": "mmpp",
+      "operators": {
+        "crossover_probability": 0.9,
+        "mutation_probability": 0.25,
+        "mutation_scale": 0.1
+      }
+    },
+    {
+      "coordinates": [
+        {
+          "kind": "log",
+          "lower": 0.5,
+          "name": "c_lambda",
+          "upper": 1.5
+        }
+      ],
+      "gene_order": [
+        "c_lambda"
+      ],
+      "name": "poisson_empirical",
+      "operators": {
+        "crossover_probability": 0.9,
+        "mutation_probability": 0.25,
+        "mutation_scale": 0.1
+      }
+    }
+  ],
+  "family_priority": [
+    "markov_renewal",
+    "poisson_empirical",
+    "mmpp"
+  ],
+  "generation": 1,
+  "genetic": {
+    "duplicate_mutation_attempts": 1,
+    "early_stopping_generations": 0,
+    "early_stopping_tolerance": 0.0,
+    "elite_count": 1,
+    "final_seed": 97,
+    "generation_count": 1,
+    "master_seed": 20260819,
+    "population_size": 6,
+    "resume": false,
+    "tournament_size": 2
+  },
+  "history": [
+    {
+      "best_fitness": 0.6824799460045088,
+      "best_identifier": [
+        0,
+        1
+      ],
+      "candidate_count": 2,
+      "family": "markov_renewal",
+      "generation": 0,
+      "mean_fitness": 0.6777517481211898,
+      "scope": "family",
+      "valid_count": 2
+    },
+    {
+      "best_fitness": 0.45387362136551523,
+      "best_identifier": [
+        0,
+        5
+      ],
+      "candidate_count": 2,
+      "family": "mmpp",
+      "generation": 0,
+      "mean_fitness": 0.4519584148005406,
+      "scope": "family",
+      "valid_count": 2
+    },
+    {
+      "best_fitness": 0.5901073609315415,
+      "best_identifier": [
+        0,
+        3
+      ],
+      "candidate_count": 2,
+      "family": "poisson_empirical",
+      "generation": 0,
+      "mean_fitness": 0.5812436304218321,
+      "scope": "family",
+      "valid_count": 2
+    },
+    {
+      "best_fitness": 0.6824799460045088,
+      "best_identifier": [
+        0,
+        1
+      ],
+      "candidate_count": 6,
+      "family": null,
+      "generation": 0,
+      "mean_fitness": 0.5703179311145209,
+      "scope": "overall",
+      "valid_count": 6
+    },
+    {
+      "best_fitness": 0.6824799460045088,
+      "best_identifier": [
+        0,
+        1
+      ],
+      "candidate_count": 3,
+      "family": "markov_renewal",
+      "generation": 1,
+      "mean_fitness": 0.6761756821600834,
+      "scope": "family",
+      "valid_count": 3
+    },
+    {
+      "best_fitness": 0.45387362136551523,
+      "best_identifier": [
+        0,
+        5
+      ],
+      "candidate_count": 1,
+      "family": "mmpp",
+      "generation": 1,
+      "mean_fitness": 0.45387362136551523,
+      "scope": "family",
+      "valid_count": 1
+    },
+    {
+      "best_fitness": 0.591022521139303,
+      "best_identifier": [
+        1,
+        0
+      ],
+      "candidate_count": 2,
+      "family": "poisson_empirical",
+      "generation": 1,
+      "mean_fitness": 0.5905649410354222,
+      "scope": "family",
+      "valid_count": 2
+    },
+    {
+      "best_fitness": 0.6824799460045088,
+      "best_identifier": [
+        0,
+        1
+      ],
+      "candidate_count": 6,
+      "family": null,
+      "generation": 1,
+      "mean_fitness": 0.6105884249861017,
+      "scope": "overall",
+      "valid_count": 6
+    }
+  ],
+  "observation_window_seconds": 0.9207994937896729,
+  "population": [
+    {
+      "duplicate_diagnostics": [],
+      "family": "markov_renewal",
+      "fitness": 0.6824799460045088,
+      "genes": [
+        0.3897454648360612,
+        0.7926380613941226,
+        1.4653444938760862,
+        4,
+        0.9163465260773139
+      ],
+      "identifier": [
+        0,
+        1
+      ],
+      "invalid": null,
+      "status": "valid",
+      "trials": [
+        {
+          "aggregate_score": 0.6824799460045088,
+          "methods": [
+            {
+              "diagnostics": {
+                "discrepancy": 0.08206649378003907,
+                "feature_weights": {
+                  "iat": 0.5,
+                  "size": 0.5
+                },
+                "iat": {
+                  "absolute_differences": [
+                    0.12846446448160648
+                  ],
+                  "discrepancy": 0.06423223224080324,
+                  "generated_acf": [
+                    -0.06048092061133567
+                  ],
+                  "generated_sample_count": 94,
+                  "reference_acf": [
+                    0.06798354387027082
+                  ],
+                  "reference_sample_count": 73
+                },
+                "lag_weights": [
+                  1.0
+                ],
+                "lags": [
+                  1
+                ],
+                "observation_window_seconds": 0.9207994937896729,
+                "size": {
+                  "absolute_differences": [
+                    0.19980151063854978
+                  ],
+                  "discrepancy": 0.09990075531927489,
+                  "generated_acf": [
+                    0.02136242396614922
+                  ],
+                  "generated_sample_count": 95,
+                  "reference_acf": [
+                    -0.17843908667240055
+                  ],
+                  "reference_sample_count": 74
+                }
+              },
+              "name": "autocorrelation",
+              "score": 0.917933506219961
+            },
+            {
+              "diagnostics": {
+                "distance": 0.10896159317211945,
+                "generated_count": 95,
+                "generated_maximum_length": 2946,
+                "generated_minimum_length": 42,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_count": 74,
+                "reference_maximum_length": 2946,
+                "reference_minimum_length": 42
+              },
+              "name": "frame_size_ks",
+              "score": 0.8910384068278805
+            },
+            {
+              "diagnostics": {
+                "diagnostic_quantile": 0.75,
+                "distance": 0.1636549111046342,
+                "generated_iat_count": 94,
+                "generated_median_iat_seconds": 2.9712468992831864e-05,
+                "generated_quantile_iat_seconds": 0.0028274909831267825,
+                "generated_zero_iat_count": 0,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_iat_count": 73,
+                "reference_median_iat_seconds": 4.00543212890625e-05,
+                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "reference_zero_iat_count": 0
+              },
+              "name": "iat_ks",
+              "score": 0.8363450888953659
+            },
+            {
+              "diagnostics": {
+                "direction_bin_cell_counts": [
+                  1842,
+                  186
+                ],
+                "discrepancy": 0.915397217925172,
+                "feature_discrepancies": {
+                  "byte": 0.9550547908799298,
+                  "packet": 0.8757396449704142
+                },
+                "feature_weights": {
+                  "byte": 0.5,
+                  "packet": 0.5
+                },
+                "observation_window_seconds": 0.9207994937896729,
+                "scale_discrepancies": [
+                  0.9619382795147677,
+                  0.8688561563355761
+                ],
+                "scale_weights": [
+                  0.5,
+                  0.5
+                ],
+                "scales": [
+                  {
+                    "bins_per_direction": 921,
+                    "direction_bin_cell_count": 1842,
+                    "discrepancy": 0.9619382795147677,
+                    "feature_discrepancies": {
+                      "byte": 0.9948824761892989,
+                      "packet": 0.9289940828402367
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 78326,
+                        "outbound": 5465
+                      },
+                      "packet": {
+                        "inbound": 50,
+                        "outbound": 45
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.001
+                  },
+                  {
+                    "bins_per_direction": 93,
+                    "direction_bin_cell_count": 186,
+                    "discrepancy": 0.8688561563355761,
+                    "feature_discrepancies": {
+                      "byte": 0.9152271055705606,
+                      "packet": 0.8224852071005917
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 78326,
+                        "outbound": 5465
+                      },
+                      "packet": {
+                        "inbound": 50,
+                        "outbound": 45
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.01
+                  }
+                ],
+                "total_direction_bin_cells": 2028,
+                "widths": [
+                  0.001,
+                  0.01
+                ]
+              },
+              "name": "multiscale_rate",
+              "score": 0.08460278207482796
+            }
+          ],
+          "model_diagnostics": {
+            "timing_tier_global_count": 0,
+            "timing_tier_source_count": 37,
+            "timing_tier_transition_count": 58,
+            "uniform_unobserved_row_count": 0
+          },
+          "seed": 17
+        }
+      ]
+    },
+    {
+      "duplicate_diagnostics": [],
+      "family": "poisson_empirical",
+      "fitness": 0.5901073609315415,
+      "genes": [
+        0.8046167701820202
+      ],
+      "identifier": [
+        0,
+        3
+      ],
+      "invalid": null,
+      "status": "valid",
+      "trials": [
+        {
+          "aggregate_score": 0.5901073609315415,
+          "methods": [
+            {
+              "diagnostics": {
+                "discrepancy": 0.033413130722623106,
+                "feature_weights": {
+                  "iat": 0.5,
+                  "size": 0.5
+                },
+                "iat": {
+                  "absolute_differences": [
+                    0.028980843724841665
+                  ],
+                  "discrepancy": 0.014490421862420833,
+                  "generated_acf": [
+                    0.039002700145429156
+                  ],
+                  "generated_sample_count": 60,
+                  "reference_acf": [
+                    0.06798354387027082
+                  ],
+                  "reference_sample_count": 73
+                },
+                "lag_weights": [
+                  1.0
+                ],
+                "lags": [
+                  1
+                ],
+                "observation_window_seconds": 0.9207994937896729,
+                "size": {
+                  "absolute_differences": [
+                    0.10467167916565076
+                  ],
+                  "discrepancy": 0.05233583958282538,
+                  "generated_acf": [
+                    -0.07376740750674979
+                  ],
+                  "generated_sample_count": 61,
+                  "reference_acf": [
+                    -0.17843908667240055
+                  ],
+                  "reference_sample_count": 74
+                }
+              },
+              "name": "autocorrelation",
+              "score": 0.9665868692773769
+            },
+            {
+              "diagnostics": {
+                "distance": 0.08639787328311921,
+                "generated_count": 61,
+                "generated_maximum_length": 2946,
+                "generated_minimum_length": 42,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_count": 74,
+                "reference_maximum_length": 2946,
+                "reference_minimum_length": 42
+              },
+              "name": "frame_size_ks",
+              "score": 0.9136021267168808
+            },
+            {
+              "diagnostics": {
+                "diagnostic_quantile": 0.75,
+                "distance": 0.6493150684931506,
+                "generated_iat_count": 60,
+                "generated_median_iat_seconds": 0.008945290129177885,
+                "generated_quantile_iat_seconds": 0.017798847630115855,
+                "generated_zero_iat_count": 0,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_iat_count": 73,
+                "reference_median_iat_seconds": 4.00543212890625e-05,
+                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "reference_zero_iat_count": 0
+              },
+              "name": "iat_ks",
+              "score": 0.35068493150684943
+            },
+            {
+              "diagnostics": {
+                "direction_bin_cell_counts": [
+                  1842,
+                  186
+                ],
+                "discrepancy": 0.870444483774941,
+                "feature_discrepancies": {
+                  "byte": 0.866814893475808,
+                  "packet": 0.8740740740740741
+                },
+                "feature_weights": {
+                  "byte": 0.5,
+                  "packet": 0.5
+                },
+                "observation_window_seconds": 0.9207994937896729,
+                "scale_discrepancies": [
+                  0.9764636475594197,
+                  0.7644253199904624
+                ],
+                "scale_weights": [
+                  0.5,
+                  0.5
+                ],
+                "scales": [
+                  {
+                    "bins_per_direction": 921,
+                    "direction_bin_cell_count": 1842,
+                    "discrepancy": 0.9764636475594197,
+                    "feature_discrepancies": {
+                      "byte": 0.997371739563284,
+                      "packet": 0.9555555555555556
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 69910,
+                        "outbound": 2754
+                      },
+                      "packet": {
+                        "inbound": 35,
+                        "outbound": 26
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.001
+                  },
+                  {
+                    "bins_per_direction": 93,
+                    "direction_bin_cell_count": 186,
+                    "discrepancy": 0.7644253199904624,
+                    "feature_discrepancies": {
+                      "byte": 0.7362580473883321,
+                      "packet": 0.7925925925925926
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 69910,
+                        "outbound": 2754
+                      },
+                      "packet": {
+                        "inbound": 35,
+                        "outbound": 26
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.01
+                  }
+                ],
+                "total_direction_bin_cells": 2028,
+                "widths": [
+                  0.001,
+                  0.01
+                ]
+              },
+              "name": "multiscale_rate",
+              "score": 0.129555516225059
+            }
+          ],
+          "model_diagnostics": {},
+          "seed": 17
+        }
+      ]
+    },
+    {
+      "duplicate_diagnostics": [],
+      "family": "mmpp",
+      "fitness": 0.45387362136551523,
+      "genes": [
+        0.5710158207161586,
+        0.674355449492361,
+        2.0537653702658814,
+        6.7805113322620745
+      ],
+      "identifier": [
+        0,
+        5
+      ],
+      "invalid": null,
+      "status": "valid",
+      "trials": [
+        {
+          "aggregate_score": 0.45387362136551523,
+          "methods": [
+            {
+              "diagnostics": {
+                "discrepancy": 0.1820372928916354,
+                "feature_weights": {
+                  "iat": 0.5,
+                  "size": 0.5
+                },
+                "iat": {
+                  "absolute_differences": [
+                    0.40040148910580303
+                  ],
+                  "discrepancy": 0.20020074455290152,
+                  "generated_acf": [
+                    -0.3324179452355322
+                  ],
+                  "generated_sample_count": 8,
+                  "reference_acf": [
+                    0.06798354387027082
+                  ],
+                  "reference_sample_count": 73
+                },
+                "lag_weights": [
+                  1.0
+                ],
+                "lags": [
+                  1
+                ],
+                "observation_window_seconds": 0.9207994937896729,
+                "size": {
+                  "absolute_differences": [
+                    0.3277476824607385
+                  ],
+                  "discrepancy": 0.16387384123036924,
+                  "generated_acf": [
+                    0.1493085957883379
+                  ],
+                  "generated_sample_count": 9,
+                  "reference_acf": [
+                    -0.17843908667240055
+                  ],
+                  "reference_sample_count": 74
+                }
+              },
+              "name": "autocorrelation",
+              "score": 0.8179627071083646
+            },
+            {
+              "diagnostics": {
+                "distance": 0.15315315315315303,
+                "generated_count": 9,
+                "generated_maximum_length": 2946,
+                "generated_minimum_length": 66,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_count": 74,
+                "reference_maximum_length": 2946,
+                "reference_minimum_length": 42
+              },
+              "name": "frame_size_ks",
+              "score": 0.846846846846847
+            },
+            {
+              "diagnostics": {
+                "diagnostic_quantile": 0.75,
+                "distance": 0.8493150684931506,
+                "generated_iat_count": 8,
+                "generated_median_iat_seconds": 0.054647899398838025,
+                "generated_quantile_iat_seconds": 0.05894823401155501,
+                "generated_zero_iat_count": 0,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_iat_count": 73,
+                "reference_median_iat_seconds": 4.00543212890625e-05,
+                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "reference_zero_iat_count": 0
+              },
+              "name": "iat_ks",
+              "score": 0.15068493150684936
+            },
+            {
+              "diagnostics": {
+                "direction_bin_cell_counts": [
+                  1842,
+                  186
+                ],
+                "discrepancy": 1.0,
+                "feature_discrepancies": {
+                  "byte": 1.0,
+                  "packet": 1.0
+                },
+                "feature_weights": {
+                  "byte": 0.5,
+                  "packet": 0.5
+                },
+                "observation_window_seconds": 0.9207994937896729,
+                "scale_discrepancies": [
+                  1.0,
+                  1.0
+                ],
+                "scale_weights": [
+                  0.5,
+                  0.5
+                ],
+                "scales": [
+                  {
+                    "bins_per_direction": 921,
+                    "direction_bin_cell_count": 1842,
+                    "discrepancy": 1.0,
+                    "feature_discrepancies": {
+                      "byte": 1.0,
+                      "packet": 1.0
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 7488,
+                        "outbound": 330
+                      },
+                      "packet": {
+                        "inbound": 4,
+                        "outbound": 5
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.001
+                  },
+                  {
+                    "bins_per_direction": 93,
+                    "direction_bin_cell_count": 186,
+                    "discrepancy": 1.0,
+                    "feature_discrepancies": {
+                      "byte": 1.0,
+                      "packet": 1.0
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 7488,
+                        "outbound": 330
+                      },
+                      "packet": {
+                        "inbound": 4,
+                        "outbound": 5
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.01
+                  }
+                ],
+                "total_direction_bin_cells": 2028,
+                "widths": [
+                  0.001,
+                  0.01
+                ]
+              },
+              "name": "multiscale_rate",
+              "score": 0.0
+            }
+          ],
+          "model_diagnostics": {},
+          "seed": 17
+        }
+      ]
+    },
+    {
+      "duplicate_diagnostics": [],
+      "family": "poisson_empirical",
+      "fitness": 0.591022521139303,
+      "genes": [
+        0.8489622352692362
+      ],
+      "identifier": [
+        1,
+        0
+      ],
+      "invalid": null,
+      "status": "valid",
+      "trials": [
+        {
+          "aggregate_score": 0.591022521139303,
+          "methods": [
+            {
+              "diagnostics": {
+                "discrepancy": 0.03145693039870904,
+                "feature_weights": {
+                  "iat": 0.5,
+                  "size": 0.5
+                },
+                "iat": {
+                  "absolute_differences": [
+                    0.022938173280301337
+                  ],
+                  "discrepancy": 0.011469086640150668,
+                  "generated_acf": [
+                    0.045045370589969484
+                  ],
+                  "generated_sample_count": 62,
+                  "reference_acf": [
+                    0.06798354387027082
+                  ],
+                  "reference_sample_count": 73
+                },
+                "lag_weights": [
+                  1.0
+                ],
+                "lags": [
+                  1
+                ],
+                "observation_window_seconds": 0.9207994937896729,
+                "size": {
+                  "absolute_differences": [
+                    0.10288954831453483
+                  ],
+                  "discrepancy": 0.05144477415726741,
+                  "generated_acf": [
+                    -0.07554953835786572
+                  ],
+                  "generated_sample_count": 63,
+                  "reference_acf": [
+                    -0.17843908667240055
+                  ],
+                  "reference_sample_count": 74
+                }
+              },
+              "name": "autocorrelation",
+              "score": 0.968543069601291
+            },
+            {
+              "diagnostics": {
+                "distance": 0.08665808665808672,
+                "generated_count": 63,
+                "generated_maximum_length": 2946,
+                "generated_minimum_length": 42,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_count": 74,
+                "reference_maximum_length": 2946,
+                "reference_minimum_length": 42
+              },
+              "name": "frame_size_ks",
+              "score": 0.9133419133419133
+            },
+            {
+              "diagnostics": {
+                "diagnostic_quantile": 0.75,
+                "distance": 0.6259390190013256,
+                "generated_iat_count": 62,
+                "generated_median_iat_seconds": 0.008478033713475636,
+                "generated_quantile_iat_seconds": 0.016869126444198024,
+                "generated_zero_iat_count": 0,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_iat_count": 73,
+                "reference_median_iat_seconds": 4.00543212890625e-05,
+                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "reference_zero_iat_count": 0
+              },
+              "name": "iat_ks",
+              "score": 0.37406098099867435
+            },
+            {
+              "diagnostics": {
+                "direction_bin_cell_counts": [
+                  1842,
+                  186
+                ],
+                "discrepancy": 0.8918558793846667,
+                "feature_discrepancies": {
+                  "byte": 0.8713029996452457,
+                  "packet": 0.9124087591240876
+                },
+                "feature_weights": {
+                  "byte": 0.5,
+                  "packet": 0.5
+                },
+                "observation_window_seconds": 0.9207994937896729,
+                "scale_discrepancies": [
+                  0.9654563810854064,
+                  0.8182553776839268
+                ],
+                "scale_weights": [
+                  0.5,
+                  0.5
+                ],
+                "scales": [
+                  {
+                    "bins_per_direction": 921,
+                    "direction_bin_cell_count": 1842,
+                    "discrepancy": 0.9654563810854064,
+                    "feature_discrepancies": {
+                      "byte": 0.9601098424627836,
+                      "packet": 0.9708029197080292
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 71416,
+                        "outbound": 2796
+                      },
+                      "packet": {
+                        "inbound": 36,
+                        "outbound": 27
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.001
+                  },
+                  {
+                    "bins_per_direction": 93,
+                    "direction_bin_cell_count": 186,
+                    "discrepancy": 0.8182553776839268,
+                    "feature_discrepancies": {
+                      "byte": 0.7824961568277077,
+                      "packet": 0.8540145985401459
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 71416,
+                        "outbound": 2796
+                      },
+                      "packet": {
+                        "inbound": 36,
+                        "outbound": 27
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.01
+                  }
+                ],
+                "total_direction_bin_cells": 2028,
+                "widths": [
+                  0.001,
+                  0.01
+                ]
+              },
+              "name": "multiscale_rate",
+              "score": 0.1081441206153333
+            }
+          ],
+          "model_diagnostics": {},
+          "seed": 17
+        }
+      ]
+    },
+    {
+      "duplicate_diagnostics": [],
+      "family": "markov_renewal",
+      "fitness": 0.6730235502378707,
+      "genes": [
+        0.3456948925495636,
+        0.679251771983478,
+        0.7410006046519431,
+        3,
+        1.1019350591949293
+      ],
+      "identifier": [
+        1,
+        1
+      ],
+      "invalid": null,
+      "status": "valid",
+      "trials": [
+        {
+          "aggregate_score": 0.6730235502378707,
+          "methods": [
+            {
+              "diagnostics": {
+                "discrepancy": 0.019910173030053376,
+                "feature_weights": {
+                  "iat": 0.5,
+                  "size": 0.5
+                },
+                "iat": {
+                  "absolute_differences": [
+                    0.04063888931314817
+                  ],
+                  "discrepancy": 0.020319444656574086,
+                  "generated_acf": [
+                    0.10862243318341899
+                  ],
+                  "generated_sample_count": 37,
+                  "reference_acf": [
+                    0.06798354387027082
+                  ],
+                  "reference_sample_count": 73
+                },
+                "lag_weights": [
+                  1.0
+                ],
+                "lags": [
+                  1
+                ],
+                "observation_window_seconds": 0.9207994937896729,
+                "size": {
+                  "absolute_differences": [
+                    0.03900180280706533
+                  ],
+                  "discrepancy": 0.019500901403532667,
+                  "generated_acf": [
+                    -0.13943728386533522
+                  ],
+                  "generated_sample_count": 38,
+                  "reference_acf": [
+                    -0.17843908667240055
+                  ],
+                  "reference_sample_count": 74
+                }
+              },
+              "name": "autocorrelation",
+              "score": 0.9800898269699466
+            },
+            {
+              "diagnostics": {
+                "distance": 0.12588904694167846,
+                "generated_count": 38,
+                "generated_maximum_length": 2946,
+                "generated_minimum_length": 42,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_count": 74,
+                "reference_maximum_length": 2946,
+                "reference_minimum_length": 42
+              },
+              "name": "frame_size_ks",
+              "score": 0.8741109530583215
+            },
+            {
+              "diagnostics": {
+                "diagnostic_quantile": 0.75,
+                "distance": 0.18141429100333206,
+                "generated_iat_count": 37,
+                "generated_median_iat_seconds": 0.00010456327284802391,
+                "generated_quantile_iat_seconds": 0.006590376129127717,
+                "generated_zero_iat_count": 0,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_iat_count": 73,
+                "reference_median_iat_seconds": 4.00543212890625e-05,
+                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "reference_zero_iat_count": 0
+              },
+              "name": "iat_ks",
+              "score": 0.8185857089966679
+            },
+            {
+              "diagnostics": {
+                "direction_bin_cell_counts": [
+                  1842,
+                  186
+                ],
+                "discrepancy": 0.980692288073453,
+                "feature_discrepancies": {
+                  "byte": 0.9970988618611918,
+                  "packet": 0.9642857142857142
+                },
+                "feature_weights": {
+                  "byte": 0.5,
+                  "packet": 0.5
+                },
+                "observation_window_seconds": 0.9207994937896729,
+                "scale_discrepancies": [
+                  0.9902345618006185,
+                  0.9711500143462874
+                ],
+                "scale_weights": [
+                  0.5,
+                  0.5
+                ],
+                "scales": [
+                  {
+                    "bins_per_direction": 921,
+                    "direction_bin_cell_count": 1842,
+                    "discrepancy": 0.9902345618006185,
+                    "feature_discrepancies": {
+                      "byte": 0.9983262664583799,
+                      "packet": 0.9821428571428571
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 26011,
+                        "outbound": 3527
+                      },
+                      "packet": {
+                        "inbound": 18,
+                        "outbound": 20
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.001
+                  },
+                  {
+                    "bins_per_direction": 93,
+                    "direction_bin_cell_count": 186,
+                    "discrepancy": 0.9711500143462874,
+                    "feature_discrepancies": {
+                      "byte": 0.9958714572640036,
+                      "packet": 0.9464285714285714
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 26011,
+                        "outbound": 3527
+                      },
+                      "packet": {
+                        "inbound": 18,
+                        "outbound": 20
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.01
+                  }
+                ],
+                "total_direction_bin_cells": 2028,
+                "widths": [
+                  0.001,
+                  0.01
+                ]
+              },
+              "name": "multiscale_rate",
+              "score": 0.01930771192654701
+            }
+          ],
+          "model_diagnostics": {
+            "timing_tier_global_count": 0,
+            "timing_tier_source_count": 14,
+            "timing_tier_transition_count": 24,
+            "uniform_unobserved_row_count": 0
+          },
+          "seed": 17
+        }
+      ]
+    },
+    {
+      "duplicate_diagnostics": [],
+      "family": "markov_renewal",
+      "fitness": 0.6730235502378707,
+      "genes": [
+        0.3456948925495636,
+        0.7005578144528445,
+        0.7410006046519431,
+        3,
+        1.1019350591949293
+      ],
+      "identifier": [
+        1,
+        2
+      ],
+      "invalid": null,
+      "status": "valid",
+      "trials": [
+        {
+          "aggregate_score": 0.6730235502378707,
+          "methods": [
+            {
+              "diagnostics": {
+                "discrepancy": 0.019910173030053376,
+                "feature_weights": {
+                  "iat": 0.5,
+                  "size": 0.5
+                },
+                "iat": {
+                  "absolute_differences": [
+                    0.04063888931314817
+                  ],
+                  "discrepancy": 0.020319444656574086,
+                  "generated_acf": [
+                    0.10862243318341899
+                  ],
+                  "generated_sample_count": 37,
+                  "reference_acf": [
+                    0.06798354387027082
+                  ],
+                  "reference_sample_count": 73
+                },
+                "lag_weights": [
+                  1.0
+                ],
+                "lags": [
+                  1
+                ],
+                "observation_window_seconds": 0.9207994937896729,
+                "size": {
+                  "absolute_differences": [
+                    0.03900180280706533
+                  ],
+                  "discrepancy": 0.019500901403532667,
+                  "generated_acf": [
+                    -0.13943728386533522
+                  ],
+                  "generated_sample_count": 38,
+                  "reference_acf": [
+                    -0.17843908667240055
+                  ],
+                  "reference_sample_count": 74
+                }
+              },
+              "name": "autocorrelation",
+              "score": 0.9800898269699466
+            },
+            {
+              "diagnostics": {
+                "distance": 0.12588904694167846,
+                "generated_count": 38,
+                "generated_maximum_length": 2946,
+                "generated_minimum_length": 42,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_count": 74,
+                "reference_maximum_length": 2946,
+                "reference_minimum_length": 42
+              },
+              "name": "frame_size_ks",
+              "score": 0.8741109530583215
+            },
+            {
+              "diagnostics": {
+                "diagnostic_quantile": 0.75,
+                "distance": 0.18141429100333206,
+                "generated_iat_count": 37,
+                "generated_median_iat_seconds": 0.00010456327284802391,
+                "generated_quantile_iat_seconds": 0.006590376129127717,
+                "generated_zero_iat_count": 0,
+                "observation_window_seconds": 0.9207994937896729,
+                "reference_iat_count": 73,
+                "reference_median_iat_seconds": 4.00543212890625e-05,
+                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "reference_zero_iat_count": 0
+              },
+              "name": "iat_ks",
+              "score": 0.8185857089966679
+            },
+            {
+              "diagnostics": {
+                "direction_bin_cell_counts": [
+                  1842,
+                  186
+                ],
+                "discrepancy": 0.980692288073453,
+                "feature_discrepancies": {
+                  "byte": 0.9970988618611918,
+                  "packet": 0.9642857142857142
+                },
+                "feature_weights": {
+                  "byte": 0.5,
+                  "packet": 0.5
+                },
+                "observation_window_seconds": 0.9207994937896729,
+                "scale_discrepancies": [
+                  0.9902345618006185,
+                  0.9711500143462874
+                ],
+                "scale_weights": [
+                  0.5,
+                  0.5
+                ],
+                "scales": [
+                  {
+                    "bins_per_direction": 921,
+                    "direction_bin_cell_count": 1842,
+                    "discrepancy": 0.9902345618006185,
+                    "feature_discrepancies": {
+                      "byte": 0.9983262664583799,
+                      "packet": 0.9821428571428571
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 26011,
+                        "outbound": 3527
+                      },
+                      "packet": {
+                        "inbound": 18,
+                        "outbound": 20
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.001
+                  },
+                  {
+                    "bins_per_direction": 93,
+                    "direction_bin_cell_count": 186,
+                    "discrepancy": 0.9711500143462874,
+                    "feature_discrepancies": {
+                      "byte": 0.9958714572640036,
+                      "packet": 0.9464285714285714
+                    },
+                    "generated_totals": {
+                      "byte": {
+                        "inbound": 26011,
+                        "outbound": 3527
+                      },
+                      "packet": {
+                        "inbound": 18,
+                        "outbound": 20
+                      }
+                    },
+                    "reference_totals": {
+                      "byte": {
+                        "inbound": 74639,
+                        "outbound": 3367
+                      },
+                      "packet": {
+                        "inbound": 38,
+                        "outbound": 36
+                      }
+                    },
+                    "width_seconds": 0.01
+                  }
+                ],
+                "total_direction_bin_cells": 2028,
+                "widths": [
+                  0.001,
+                  0.01
+                ]
+              },
+              "name": "multiscale_rate",
+              "score": 0.01930771192654701
+            }
+          ],
+          "model_diagnostics": {
+            "timing_tier_global_count": 0,
+            "timing_tier_source_count": 14,
+            "timing_tier_transition_count": 24,
+            "uniform_unobserved_row_count": 0
+          },
+          "seed": 17
+        }
+      ]
+    }
+  ],
+  "reference_identity": {
+    "sha256": "52317ce380301ce35dd7d4f4cc1bbfed1b8960ec6c8a8a347cc040cef2149b5c",
+    "size": 80804
+  },
+  "rng": {
+    "engine": "numpy.random.Generator/PCG64",
+    "python_version": "3.12.3",
+    "state": {
+      "bit_generator": "PCG64",
+      "has_uint32": 0,
+      "state": {
+        "inc": 313386238064130078450704156869577063669,
+        "state": 219168010659535874775946885370467915786
+      },
+      "uinteger": 3605937703
+    }
+  },
+  "scientific_artifact_schema": 4,
+  "similarity": {
+    "acf_iat_weight": 0.5,
+    "acf_lag_weights": [
+      1.0
+    ],
+    "acf_lags": [
+      1
+    ],
+    "acf_size_weight": 0.5,
+    "iat_diagnostic_quantile": 0.75,
+    "max_direction_bin_cells": 100000,
+    "method_weights": {
+      "autocorrelation": 0.25,
+      "frame_size_ks": 0.25,
+      "iat_ks": 0.25,
+      "multiscale_rate": 0.25
+    },
+    "multiscale_byte_weight": 0.5,
+    "multiscale_packet_weight": 0.5,
+    "multiscale_scale_weights": [
+      0.5,
+      0.5
+    ],
+    "multiscale_widths_seconds": [
+      0.001,
+      0.01
+    ]
+  },
+  "terminal_reason": "hard_limit",
+  "trial_limits": {
+    "max_output_bytes": 4000000,
+    "max_packets": 2000,
+    "max_wall_seconds": 3.0
+  },
+  "trial_seeds": [
+    17
+  ]
+}

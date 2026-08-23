@@ -143,13 +143,13 @@ def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_
             Draft202012Validator(schema).validate(document)  # pyright: ignore[reportUnknownMemberType]
             rendered = model.model_validate(document).model_dump(mode="json")
             assert rendered == document, path
-            assert (
-                json.dumps(
+            if path.is_relative_to(_STUDY_FIXTURE):
+                expected = json.dumps(rendered, ensure_ascii=False, allow_nan=False, sort_keys=True, indent=2)
+            else:
+                expected = json.dumps(
                     rendered, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")
-                ).encode()
-                + b"\n"
-                == content
-            ), path
+                )
+            assert expected.encode() + b"\n" == content, path
 
 
 def test_historical_schema_v2_evidence_is_retained_for_its_recorded_source_checkout() -> None:

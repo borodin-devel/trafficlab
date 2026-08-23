@@ -1,5 +1,5 @@
 [run]
-directory = "/home/bsa/projects/trafficlab/.worktrees/scapy-production/runs/scientific-stack"
+directory = "/home/bsa/projects/trafficlab/.worktrees/readable-json/runs/scientific-stack"
 minimum_free_bytes = 1048576
 master_seed = 20260819
 final_seed = 97
