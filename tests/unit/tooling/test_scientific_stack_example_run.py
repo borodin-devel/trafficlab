@@ -20,7 +20,7 @@ _ROOT = Path(__file__).parents[3]
 _EVIDENCE = _ROOT / "examples" / "scientific_stack" / "example_run.json"
 
 
-def test_durable_example_tracks_all_nine_artifacts_for_clean_checkouts() -> None:
+def test_durable_example_tracks_all_nine_artifacts_and_readme_for_clean_checkouts() -> None:
     artifact_root = "examples/scientific_stack/example_run_artifacts"
     required = {
         f"{artifact_root}/best_model.json",
@@ -42,7 +42,7 @@ def test_durable_example_tracks_all_nine_artifacts_for_clean_checkouts() -> None
         text=True,
     )
 
-    assert set(completed.stdout.splitlines()) == required
+    assert set(completed.stdout.splitlines()) == required | {f"{artifact_root}/README.md"}
 
 
 def test_checked_example_run_recomputes_artifacts_and_result() -> None:
