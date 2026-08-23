@@ -345,7 +345,8 @@ def test_clean_checkout_auditor_rejects_a_candidate_bound_to_a_different_source_
     environment = cast(dict[str, object], json.loads(environment_path.read_text(encoding="utf-8")))
     environment["source_commit"] = parent
     environment_path.write_text(
-        json.dumps(environment, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+        json.dumps(environment, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
     )
     index = cast(dict[str, object], json.loads((candidate / "index.json").read_text(encoding="utf-8")))
     vs_audit_artifacts.write_manifest(
