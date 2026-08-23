@@ -1,6 +1,6 @@
 {
-  "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-  "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+  "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+  "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
   "capture_tool_version": "4.0.17",
   "compatibility_decision": {
     "reason": "source, lock, and image-lock identities are compatible",
@@ -13,8 +13,8 @@
   "python_implementation": "CPython",
   "python_version": "3.12.3",
   "scientific_artifact_schema": 4,
-  "source_commit": "cba7f5fc7a391b740e2d3a7e32fe17ae215061b4",
-  "source_tree": "af12a62d7743ecd18c65fe62c1e0c2e2f7a4fd85",
+  "source_commit": "946bc29571a2ff3b2c8ca8a0fea585e3186be7bf",
+  "source_tree": "2e3c954fdeddbe8e7cee1813973ca497d4f33d2d",
   "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
   "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
   "uv_lock_identity": {

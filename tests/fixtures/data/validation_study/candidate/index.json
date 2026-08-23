@@ -216,8 +216,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -232,8 +232,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -248,8 +248,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2006,8 +2006,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2015,12 +2015,12 @@
       "directory": "training/short/r1",
       "portable_config": "configs/training-short-r1.portable.toml",
       "portable_config_identity": {
-        "sha256": "697664753b5a009b0232d09b5a715e10b8610a66dbf37f7c363ad06220a7d653",
+        "sha256": "1ed759f424e5862cceed333b5cb3d84344e5be3fb120201bebedbd375730ef9a",
         "size": 2871
       },
       "realized_config": "configs/training-short-r1.realized.toml",
       "realized_config_identity": {
-        "sha256": "50ae20dea64deecc3e1e002af61669e30d286bb04aeea34fa80147c5e5e42112",
+        "sha256": "9e791cb2a03d6a4e940088607e4833440fa21780bf4154fccef435105f42fe8f",
         "size": 2878
       },
       "reference_identity": {
@@ -2029,7 +2029,7 @@
       },
       "repeat": 1,
       "run_config_identity": {
-        "sha256": "207410ea471df4dbe98a15e93e6ffe91a2517363c6c5e2edd977e21ab0c5748c",
+        "sha256": "f1bbd9cd99bb700fddb8be61102f109b05a958ac8c6d4759ea7d9c9db48ef5dd",
         "size": 2852
       },
       "workload": "short"
@@ -2040,8 +2040,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2049,12 +2049,12 @@
       "directory": "training/short/r2",
       "portable_config": "configs/training-short-r2.portable.toml",
       "portable_config_identity": {
-        "sha256": "057054f6f610b3b710a520197e1ea93a65b387d833ac89104d0b26b17000f63b",
+        "sha256": "6533e5be58fbee88666eaf144d3bfbf09bc23927a7f206f38473f4727f46829b",
         "size": 2871
       },
       "realized_config": "configs/training-short-r2.realized.toml",
       "realized_config_identity": {
-        "sha256": "28c9bcc1c2fb5fe6ee07567edc000d316a94d289e9e07a0ea4e015b610504359",
+        "sha256": "bdb55968a0960228e5ee3bcc221f7502607b6e88e3390498b999ab00f9321a42",
         "size": 2878
       },
       "reference_identity": {
@@ -2063,7 +2063,7 @@
       },
       "repeat": 2,
       "run_config_identity": {
-        "sha256": "207410ea471df4dbe98a15e93e6ffe91a2517363c6c5e2edd977e21ab0c5748c",
+        "sha256": "f1bbd9cd99bb700fddb8be61102f109b05a958ac8c6d4759ea7d9c9db48ef5dd",
         "size": 2852
       },
       "workload": "short"
@@ -2074,8 +2074,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2083,12 +2083,12 @@
       "directory": "training/short/r3",
       "portable_config": "configs/training-short-r3.portable.toml",
       "portable_config_identity": {
-        "sha256": "08d68a031fdb1659f93f8ae9d2042c5d23d7ef5d4efba4238b141b2580f50630",
+        "sha256": "aabe3a0f91120e67ccd29cf982e41814570e3dea282c16e635ddcde6fe2105ea",
         "size": 2871
       },
       "realized_config": "configs/training-short-r3.realized.toml",
       "realized_config_identity": {
-        "sha256": "affa6ba9d442ceff43245a3ace14972ebfa050f4b6bd8843fae254b35038967e",
+        "sha256": "645d4e43f1998ed6983ede47146b958c25831c398915f0e734a5103a2d5b7d0e",
         "size": 2878
       },
       "reference_identity": {
@@ -2097,7 +2097,7 @@
       },
       "repeat": 3,
       "run_config_identity": {
-        "sha256": "207410ea471df4dbe98a15e93e6ffe91a2517363c6c5e2edd977e21ab0c5748c",
+        "sha256": "f1bbd9cd99bb700fddb8be61102f109b05a958ac8c6d4759ea7d9c9db48ef5dd",
         "size": 2852
       },
       "workload": "short"
@@ -2108,8 +2108,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2117,12 +2117,12 @@
       "directory": "training/streaming/r1",
       "portable_config": "configs/training-streaming-r1.portable.toml",
       "portable_config_identity": {
-        "sha256": "c8998ef85f245e236c5b38f5368cd9e646c44cb8cacfe19418b8f20e05179856",
+        "sha256": "055cc1067c1419aff49abcb240144c649c11054bb9f346446ede764eb4283b81",
         "size": 2881
       },
       "realized_config": "configs/training-streaming-r1.realized.toml",
       "realized_config_identity": {
-        "sha256": "8bc31618fbf575d5153744c64542d73faa4ca5b3882ef94224a23335c665bcb9",
+        "sha256": "2c527ef126bc6e0e28346bf408e057b0d8435cd1bc4e1ff56e528bfd90d6ef28",
         "size": 2888
       },
       "reference_identity": {
@@ -2131,7 +2131,7 @@
       },
       "repeat": 1,
       "run_config_identity": {
-        "sha256": "9a3fe91562f024f16f33d619aa78e3502ced876892ae51e42a26b23465e0a305",
+        "sha256": "c53bcbcc616607e96b5b810e028622aa4dc6e1dbfe4a6701b44d759b85e9cf41",
         "size": 2858
       },
       "workload": "streaming"
@@ -2142,8 +2142,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2151,12 +2151,12 @@
       "directory": "training/streaming/r2",
       "portable_config": "configs/training-streaming-r2.portable.toml",
       "portable_config_identity": {
-        "sha256": "49ba4c577b53887b5e2cf17d1df247f778d2b4a9fa8565e39bbe541363702513",
+        "sha256": "a3345cb478dc68b7c025b93b83d016fabd04a62a9fb6037f1877c245bbafb8b3",
         "size": 2881
       },
       "realized_config": "configs/training-streaming-r2.realized.toml",
       "realized_config_identity": {
-        "sha256": "17d8668efd5bbbd220be412d54c1a8fa07991f814d558c60aa483dd30e0c71cb",
+        "sha256": "60eef9d8a98b2b158df47fc17724190fe590aed0c7612417d541c63aebcef520",
         "size": 2888
       },
       "reference_identity": {
@@ -2165,7 +2165,7 @@
       },
       "repeat": 2,
       "run_config_identity": {
-        "sha256": "9a3fe91562f024f16f33d619aa78e3502ced876892ae51e42a26b23465e0a305",
+        "sha256": "c53bcbcc616607e96b5b810e028622aa4dc6e1dbfe4a6701b44d759b85e9cf41",
         "size": 2858
       },
       "workload": "streaming"
@@ -2176,8 +2176,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2185,12 +2185,12 @@
       "directory": "training/streaming/r3",
       "portable_config": "configs/training-streaming-r3.portable.toml",
       "portable_config_identity": {
-        "sha256": "2ddbd2e11faeb50dbaedda22cc04a650a1d437f0c2ec75823271b51361a80f53",
+        "sha256": "b32fa4b26cb17ae06308484a6249b7e4d76bf9443c5315c1805717f17a319400",
         "size": 2881
       },
       "realized_config": "configs/training-streaming-r3.realized.toml",
       "realized_config_identity": {
-        "sha256": "56111198f9b8115ab32eec03176dea4a29fe3a37e1c3e8e2dba1a8727cf9d77d",
+        "sha256": "5d94994a25d1e935cc21364324149c516a526bc45012a97047f528eaafab890e",
         "size": 2888
       },
       "reference_identity": {
@@ -2199,7 +2199,7 @@
       },
       "repeat": 3,
       "run_config_identity": {
-        "sha256": "9a3fe91562f024f16f33d619aa78e3502ced876892ae51e42a26b23465e0a305",
+        "sha256": "c53bcbcc616607e96b5b810e028622aa4dc6e1dbfe4a6701b44d759b85e9cf41",
         "size": 2858
       },
       "workload": "streaming"
@@ -2210,8 +2210,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2219,12 +2219,12 @@
       "directory": "training/bursty/r1",
       "portable_config": "configs/training-bursty-r1.portable.toml",
       "portable_config_identity": {
-        "sha256": "afa30a4ec845249b5c0b861260e632c1d33b29d04ab6ba8de6c8b0beb78845c0",
+        "sha256": "489095ef9830d158e0b36692ea4708c6994ce81c1bcc1feb60a4521a4de39bb0",
         "size": 6947
       },
       "realized_config": "configs/training-bursty-r1.realized.toml",
       "realized_config_identity": {
-        "sha256": "ef606abcd3c636e07b9fc34c65350b63d7a9180d48effe753f97e010095dfd2c",
+        "sha256": "a6577a2f07a1e305de4c537dc6afd28d7da8492186614e0d8d65b3023076f26c",
         "size": 6954
       },
       "reference_identity": {
@@ -2233,7 +2233,7 @@
       },
       "repeat": 1,
       "run_config_identity": {
-        "sha256": "8eb426546ac370821650064c475be4cf4ae4487043ff4f5c2d6c0c3a32197dac",
+        "sha256": "241345c0452dd112792b451517700fbc6a5f0684fd0071ed70f678fcebc6ab5a",
         "size": 6927
       },
       "workload": "bursty"
@@ -2244,8 +2244,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2253,12 +2253,12 @@
       "directory": "training/bursty/r2",
       "portable_config": "configs/training-bursty-r2.portable.toml",
       "portable_config_identity": {
-        "sha256": "74d01e429f1258613baf76a4674f25abba6b4f5839b30b421c53ebac3bb2b8ab",
+        "sha256": "8136910bb882b3799fb13e60da1cc26ed366ad3dd0e69659fa801c2a24017d5e",
         "size": 6947
       },
       "realized_config": "configs/training-bursty-r2.realized.toml",
       "realized_config_identity": {
-        "sha256": "5cc9e0e10052a8ecb2205cf79a839df31d7e51bb7337dddbced79c11968be24f",
+        "sha256": "c56182bff784bcc884e30b5ff2f9e22bba7fc7ddb26441cdb22a8eba6ceaa23e",
         "size": 6954
       },
       "reference_identity": {
@@ -2267,7 +2267,7 @@
       },
       "repeat": 2,
       "run_config_identity": {
-        "sha256": "8eb426546ac370821650064c475be4cf4ae4487043ff4f5c2d6c0c3a32197dac",
+        "sha256": "241345c0452dd112792b451517700fbc6a5f0684fd0071ed70f678fcebc6ab5a",
         "size": 6927
       },
       "workload": "bursty"
@@ -2278,8 +2278,8 @@
           "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
           "size": 63
         },
-        "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
-        "capture_image_reference": "trafficlab-capture@sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
+        "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         "capture_tool_version": "4.0.17",
         "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
         "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
@@ -2287,12 +2287,12 @@
       "directory": "training/bursty/r3",
       "portable_config": "configs/training-bursty-r3.portable.toml",
       "portable_config_identity": {
-        "sha256": "34f43308d5b0c82d9cc50eba183f8cacd55283ec12baa2c9a2aeb3eb141b1a51",
+        "sha256": "39de498eee4e124a686e0ce1c2cf81f76d51b3afd0de68bb4d1a114786127fc4",
         "size": 6947
       },
       "realized_config": "configs/training-bursty-r3.realized.toml",
       "realized_config_identity": {
-        "sha256": "226bcb925e8a60a481533531efdcad1b6f30ef9d5883add0cab10bece217eb0c",
+        "sha256": "376da626720f53adf0c0f7e00b977328d660cdd993e75bb3a070d04418694521",
         "size": 6954
       },
       "reference_identity": {
@@ -2301,7 +2301,7 @@
       },
       "repeat": 3,
       "run_config_identity": {
-        "sha256": "8eb426546ac370821650064c475be4cf4ae4487043ff4f5c2d6c0c3a32197dac",
+        "sha256": "241345c0452dd112792b451517700fbc6a5f0684fd0071ed70f678fcebc6ab5a",
         "size": 6927
       },
       "workload": "bursty"

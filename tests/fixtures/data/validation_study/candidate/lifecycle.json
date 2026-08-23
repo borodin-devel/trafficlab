@@ -20,7 +20,7 @@
     }
   ],
   "phase_capture_image": {
-    "capture_image_id": "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+    "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
     "cleanup_verified": true,
     "post_cleanup_inspect_exit_status": 1,
     "tag": "trafficlab-validation-fixture-study:collection-capture"
