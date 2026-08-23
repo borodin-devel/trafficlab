@@ -138,6 +138,8 @@ _NUMPY_CURRENT_RELOCATIONS: Mapping[tuple[str, str], tuple[str, str]] = {
     ),
 }
 
+_NUMPY_ACCEPTED_SYMBOL_RENAMES = {"_snap_near_integer": "snap_near_integer"}
+
 _LOOP_AND_VALIDATION_DEFINITION = (
     "unique ast.stmt lines in complete explicitly named migrated functions, including nested loop bodies and "
     "straight-line custom validation"
@@ -295,6 +297,9 @@ def _function_ast_identity(function: ast.FunctionDef | ast.AsyncFunctionDef) -> 
     """Return a function AST identity while allowing an intentional visibility rename."""
     normalized = copy.deepcopy(function)
     normalized.name = "function"
+    for node in ast.walk(normalized):
+        if isinstance(node, ast.Name):
+            node.id = _NUMPY_ACCEPTED_SYMBOL_RENAMES.get(node.id, node.id)
     return ast.dump(normalized, include_attributes=False)
 
 
@@ -680,22 +685,22 @@ def _stored_numpy_after_revision(content: bytes) -> str:
 
 
 def _verify_numpy_sources_match_revision(repository: Path, revision: str) -> None:
-    paths = set(_NUMPY_AFTER_LOOP_FUNCTIONS) | set(_NUMPY_AFTER_VALIDATION_FUNCTIONS)
-    relocated_paths = {path for path, _name in _NUMPY_CURRENT_RELOCATIONS}
-    for path in sorted(paths - relocated_paths):
-        try:
-            current = (repository / path).read_text(encoding="utf-8")
-        except OSError as error:
-            raise ValueError(f"cannot read current measured source {path}: {error}") from error
-        if current != _git_source(repository, revision, path):
-            raise ValueError(f"current measured source differs from NumPy after revision: {path}")
-
-    historical_sources = {
-        path: _qualified_functions(ast.parse(_git_source(repository, revision, path), filename=path))
-        for path in relocated_paths
+    measured = {
+        (path, name)
+        for inventory in (_NUMPY_AFTER_LOOP_FUNCTIONS, _NUMPY_AFTER_VALIDATION_FUNCTIONS)
+        for path, names in inventory.items()
+        for name in names
     }
+    historical_sources: dict[str, dict[str, ast.FunctionDef | ast.AsyncFunctionDef]] = {}
     current_sources: dict[str, dict[str, ast.FunctionDef | ast.AsyncFunctionDef]] = {}
-    for (historical_path, historical_name), (current_path, current_name) in _NUMPY_CURRENT_RELOCATIONS.items():
+    for historical_path, historical_name in sorted(measured):
+        current_path, current_name = _NUMPY_CURRENT_RELOCATIONS.get(
+            (historical_path, historical_name), (historical_path, historical_name)
+        )
+        if historical_path not in historical_sources:
+            historical_sources[historical_path] = _qualified_functions(
+                ast.parse(_git_source(repository, revision, historical_path), filename=historical_path)
+            )
         historical = historical_sources[historical_path].get(historical_name)
         if historical is None:
             raise ValueError(f"missing historical measured function {historical_path}:{historical_name}")
@@ -710,7 +715,7 @@ def _verify_numpy_sources_match_revision(repository: Path, revision: str) -> Non
             raise ValueError(f"missing current relocated function {current_path}:{current_name}")
         if _function_ast_identity(historical) != _function_ast_identity(current):
             raise ValueError(
-                "current relocated function differs from NumPy after revision: "
+                "current measured function differs from NumPy after revision: "
                 f"{historical_path}:{historical_name} -> {current_path}:{current_name}"
             )
 

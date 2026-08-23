@@ -116,6 +116,26 @@ def test_reduction_check_compares_relocated_markov_function_asts() -> None:
     )
 
 
+def test_reduction_check_covers_unrelocated_functions_in_partially_relocated_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    multiscale_path = _ROOT / "src" / "trafficlab" / "comparison" / "similarity" / "multiscale.py"
+    real_read_text = Path.read_text
+
+    def changed_measured_function(path: Path, *args: object, **kwargs: object) -> str:
+        content = real_read_text(path, *args, **kwargs)  # type: ignore[arg-type]
+        if path == multiscale_path:
+            return content.replace("previous_width = width", "previous_width = width + 1", 1)
+        return content
+
+    monkeypatch.setattr(Path, "read_text", changed_measured_function)
+    with pytest.raises(ValueError, match="_validated_widths_and_bin_counts"):
+        reduction._verify_numpy_sources_match_revision(  # pyright: ignore[reportPrivateUsage]
+            _ROOT,
+            reduction._full_revision(_ROOT, reduction._NUMPY_AFTER),  # pyright: ignore[reportPrivateUsage]
+        )
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
