@@ -15,7 +15,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 from trafficlab.preflight.docker import check_docker
 
-_CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
+_CAPTURE_IMAGE_ID = "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859"
 _TARGET_IMAGE_ID = "sha256:" + ("c" * 64)
 
 

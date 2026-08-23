@@ -193,7 +193,7 @@ class EnvironmentRecord(_StrictModel):
 
 class ImageRecord(_StrictModel):
     capture_reference: Literal["trafficlab-capture:local"]
-    capture_image_id: Literal["sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"]
+    capture_image_id: Literal["sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859"]
     capture_tool_version: Literal["4.0.17"]
     target_reference: Literal["curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"]
     target_image_id: Literal["sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"]

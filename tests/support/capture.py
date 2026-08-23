@@ -213,7 +213,7 @@ def prepared_capture(
                     target_reference=prepared.config.target.image,
                     target_content_id="sha256:" + ("c" * 64),
                     capture_reference=prepared.config.capture.image,
-                    capture_content_id=("sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"),
+                    capture_content_id=("sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859"),
                     capture_tool_version="4.0.17",
                 ),
                 mounted_inputs=lineage_module.identify_mounted_inputs(prepared.config),

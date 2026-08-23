@@ -59,7 +59,7 @@ class _HappyDocker:
 
     def image_inspect(self, image: str, *, deadline: float) -> CommandResult:
         content_id = (
-            "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
+            "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859"
             if image.startswith("trafficlab-capture:")
             else "sha256:" + ("c" * 64)
         )
@@ -216,7 +216,7 @@ def test_capture_happy_path_orders_full_lifecycle_and_publishes_reference(
     assert result.target_status == 0
     assert docker.production_images == (
         "sha256:" + ("c" * 64),
-        "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
     )
     assert events == [
         "run_preflight",

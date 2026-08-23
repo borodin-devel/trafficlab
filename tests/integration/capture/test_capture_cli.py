@@ -96,7 +96,7 @@ if [ "$1" = info ]; then
 fi
 if [ "$1" = image ] && [ "$2" = inspect ]; then
     case "$3" in
-      trafficlab-capture:*) content_id=sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c ;;
+      trafficlab-capture:*) content_id=sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859 ;;
       *) content_id=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc ;;
     esac
     printf '[{"Id":"%s","Architecture":"amd64","Os":"linux","RepoDigests":[],"RepoTags":["%s"]}]\\n' "$content_id" "$3"

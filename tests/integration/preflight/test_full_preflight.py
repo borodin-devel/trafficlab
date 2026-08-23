@@ -196,7 +196,7 @@ def test_run_preflight_propagates_resolved_environment_identity(
         target_reference="curlimages/curl:8.10.1",
         target_content_id="sha256:" + ("c" * 64),
         capture_reference="trafficlab-capture:docker-capture-test",
-        capture_content_id="sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c",
+        capture_content_id="sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
         capture_tool_version="4.0.17",
     )
 

@@ -16,7 +16,7 @@ from trafficlab.capture.topology import ComposePaths, render_production_compose
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment
 
-_CAPTURE_IMAGE_ID = "sha256:d2976a55253100d3cf2382ac3a8dc9862d4457ad1397481b8e75c254ad4a858c"
+_CAPTURE_IMAGE_ID = "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859"
 
 
 def _services(document: bytes) -> dict[str, object]:
