@@ -120,6 +120,12 @@ def test_regenerable_tracked_json_documents_are_readable() -> None:
     assert mismatches == []
 
 
+def test_vscode_uses_the_project_virtual_environment_for_python_analysis() -> None:
+    settings = json.loads((REPOSITORY / ".vscode" / "settings.json").read_bytes())
+
+    assert settings["python.defaultInterpreterPath"] == "${workspaceFolder}/.venv/bin/python"
+
+
 def _write_manifest(path: Path, entries: tuple[_ManifestEntry, ...]) -> None:
     path.write_text(
         json.dumps(
