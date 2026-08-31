@@ -215,6 +215,8 @@ def preflight_organized_conversions(
     prefix: str,
 ) -> tuple[OrganizedConversion, ...]:
     """Validate organized-mode inputs before any conversion or publication."""
+    if prefix != _DEFAULT_PREFIX:
+        raise ValueError(f"organized output requires the default prefix {_DEFAULT_PREFIX!r}")
     if organized_root.exists() and not organized_root.is_dir():
         raise ValueError(f"organized output root must be a directory path: {organized_root}")
     missing = tuple(path for path in paths if not path.exists())
@@ -323,6 +325,7 @@ def convert_capture_to_organized_directory(
 ) -> CaptureInspection:
     """Convert, infer metadata, validate the pair, and atomically publish one directory."""
     stage_parent = conversion.directory.parent.parent
+    stage_parent.mkdir(parents=True, exist_ok=True)
     stage_directory: Path | None = Path(
         tempfile.mkdtemp(dir=stage_parent, prefix=f".trafficlab-dump-{conversion.source.stem}-")
     )

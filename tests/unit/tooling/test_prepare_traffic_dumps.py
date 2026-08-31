@@ -13,6 +13,7 @@ from scripts import prepare_traffic_dumps as prepare
 from tests.support.scapy_fixtures import encode_events
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scapy_io import PcapngPacket
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent
 
 _METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
@@ -281,6 +282,31 @@ def test_infer_target_mac_prefers_transmissions_then_total_appearances_then_mac_
     assert inferred.total_appearances == 4
 
 
+def test_infer_target_mac_breaks_equal_transmissions_and_totals_by_ascending_mac_text(tmp_path: Path) -> None:
+    lower = bytes.fromhex("00163e0ca5da")
+    higher = bytes.fromhex("02163e0ca5da")
+    lower_peer = bytes.fromhex("020000000010")
+    higher_peer = bytes.fromhex("020000000011")
+    ignored_source = bytes.fromhex("010000000001")
+    capture = tmp_path / "capture.pcapng"
+    capture.write_bytes(
+        _capture(
+            _ethernet(lower, lower_peer),
+            _ethernet(ignored_source, lower),
+            _ethernet(higher, higher_peer),
+            _ethernet(ignored_source, higher),
+        )
+    )
+
+    inferred = prepare.infer_target_mac(capture)
+
+    assert inferred.target_mac == "00:16:3e:0c:a5:da"
+    assert inferred.transmitted_packet_count == 1
+    assert inferred.source_count == 1
+    assert inferred.destination_count == 1
+    assert inferred.total_appearances == 2
+
+
 def test_infer_target_mac_rejects_captures_without_an_eligible_bidirectional_unicast_candidate(
     tmp_path: Path,
 ) -> None:
@@ -293,6 +319,30 @@ def test_infer_target_mac_rejects_captures_without_an_eligible_bidirectional_uni
     )
 
     with pytest.raises(ValueError, match="no eligible target MAC"):
+        prepare.infer_target_mac(capture)
+
+
+def test_infer_target_mac_rejects_a_short_ethernet_frame(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    capture = tmp_path / "capture.pcapng"
+    capture.write_bytes(b"unused")
+    short_packet = PcapngPacket(
+        event=TraceEvent(0.0, Direction.OUTBOUND, 7),
+        ethernet_frame=b"shorty!",
+    )
+
+    def stub_read_pcapng_packets(
+        _source_input: Path,
+        _metadata: CaptureMetadata,
+        *,
+        source: Path,
+        deadline: float | None = None,
+    ) -> tuple[PcapngPacket, ...]:
+        del _source_input, _metadata, source, deadline
+        return (short_packet,)
+
+    monkeypatch.setattr(prepare, "read_pcapng_packets", stub_read_pcapng_packets)
+
+    with pytest.raises(ValueError, match="invalid Ethernet frame"):
         prepare.infer_target_mac(capture)
 
 
@@ -491,9 +541,90 @@ def test_cli_creates_one_validated_capture_pair_per_source_when_organized_root_i
     assert str(capture_path) in completed.stdout
     assert str(metadata_path) in completed.stdout
     assert "02:42:ac:11:00:02" in completed.stdout
+    assert "packets=3" in completed.stdout
+    assert "outbound=2" in completed.stdout
+    assert "inbound=1" in completed.stdout
     inspection = validate_capture_pair(metadata_path, capture_path, deadline=None)
     assert inspection.packet_count == 3
     assert source.read_bytes() == content
+    assert sorted(path.name for path in output_directory.iterdir()) == [
+        "capture.json",
+        "trafficlab-ready-capture.pcapng",
+    ]
+
+
+def test_cli_rejects_a_non_default_prefix_in_organized_mode(tmp_path: Path) -> None:
+    source = tmp_path / "capture.pcapng"
+    source.write_bytes(
+        encode_events(
+            (
+                TraceEvent(1.0, Direction.OUTBOUND, 60),
+                TraceEvent(2.0, Direction.INBOUND, 80),
+            ),
+            _METADATA,
+        )
+    )
+    completed = subprocess.run(
+        (
+            sys.executable,
+            str(_ROOT / "scripts" / "prepare_traffic_dumps.py"),
+            str(source),
+            "--organized-root",
+            str(tmp_path / "prepared"),
+            "--prefix",
+            "custom-",
+        ),
+        cwd=_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "organized output requires the default prefix" in completed.stderr
+
+
+def test_cli_creates_a_nested_organized_root_when_missing(tmp_path: Path) -> None:
+    source = tmp_path / "capture.pcapng"
+    content = encode_events(
+        (
+            TraceEvent(1.0, Direction.OUTBOUND, 60),
+            TraceEvent(1.5, Direction.OUTBOUND, 60),
+            TraceEvent(2.0, Direction.INBOUND, 80),
+        ),
+        _METADATA,
+    )
+    source.write_bytes(content)
+    organized_root = tmp_path / "out" / "prepared"
+    bin_directory = tmp_path / "bin"
+    bin_directory.mkdir()
+    editcap = bin_directory / "editcap"
+    editcap.write_text('#!/bin/sh\ncp "$3" "$4"\n', encoding="utf-8")
+    editcap.chmod(0o755)
+    reordercap = bin_directory / "reordercap"
+    reordercap.write_text('#!/bin/sh\ncp "$1" "$2"\n', encoding="utf-8")
+    reordercap.chmod(0o755)
+    environment = dict(os.environ)
+    environment["PATH"] = f"{bin_directory}:{environment['PATH']}"
+
+    completed = subprocess.run(
+        (
+            sys.executable,
+            str(_ROOT / "scripts" / "prepare_traffic_dumps.py"),
+            str(source),
+            "--organized-root",
+            str(organized_root),
+        ),
+        cwd=_ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    output_directory = organized_root / "capture"
+    assert completed.returncode == 0, completed.stderr
+    assert output_directory.is_dir()
     assert sorted(path.name for path in output_directory.iterdir()) == [
         "capture.json",
         "trafficlab-ready-capture.pcapng",
