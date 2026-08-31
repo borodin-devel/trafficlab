@@ -44,7 +44,7 @@
 - Produces: root console script `trafficlab-dashboard`
 - Produces: dashboard test environment with `QT_QPA_PLATFORM=offscreen`
 
-- [ ] **[STEP-1-fe8cd3d6] Write packaging and shell tests first**
+- [x] **[STEP-1-fe8cd3d6] Write packaging and shell tests first**
 
 ```python
 def test_dashboard_distribution_and_entrypoint_are_declared() -> None:
@@ -64,7 +64,7 @@ def test_dashboard_shell_accepts_run_path_and_shows_one_window(qtbot, tmp_path: 
 
 Set `QT_QPA_PLATFORM=offscreen` at module import time in dashboard `conftest.py`, before any PySide import.
 
-- [ ] **[STEP-2-6785826c] Run the new tests and record RED**
+- [x] **[STEP-2-6785826c] Run the new tests and record RED**
 
 Run:
 
@@ -76,7 +76,7 @@ uv run --locked pytest -q \
 
 Expected: collection/import failure because `trafficlab_dashboard` and dashboard dependencies do not exist.
 
-- [ ] **[STEP-3-1082b2fa] Add the optional extra, build packages, entry point, and minimal shell**
+- [x] **[STEP-3-1082b2fa] Add the optional extra, build packages, entry point, and minimal shell**
 
 Add to `pyproject.toml`:
 
@@ -123,7 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return application.exec()
 ```
 
-- [ ] **[STEP-4-8ee62759] Lock dependencies and verify GREEN**
+- [x] **[STEP-4-8ee62759] Lock dependencies and verify GREEN**
 
 Run:
 
@@ -137,7 +137,7 @@ uv run --all-extras pyright src/trafficlab_dashboard tests/trafficlab_dashboard
 
 Expected: dashboard tests pass, Ruff clean, Pyright zero errors.
 
-- [ ] **[STEP-5-f9e117cf] Self-review package isolation and root CLI compatibility**
+- [x] **[STEP-5-f9e117cf] Self-review package isolation and root CLI compatibility**
 
 Run existing package and CLI smoke tests in addition to dashboard tests:
 
@@ -147,7 +147,7 @@ uv run --all-extras pytest -q tests/unit/pipeline/test_package.py tests/unit/pip
 
 Confirm `uv run --locked trafficlab --version` remains independent of Qt imports and `uv run --extra dashboard trafficlab-dashboard --help` exits zero without creating a window.
 
-- [ ] **[STEP-6-60e84675] Commit Task 1**
+- [x] **[STEP-6-60e84675] Commit Task 1**
 
 ```bash
 git add pyproject.toml uv.lock src/trafficlab_dashboard tests/trafficlab_dashboard
@@ -171,7 +171,7 @@ git commit -m "feat(dashboard): add desktop package shell"
 - Produces: `load_dashboard_run(directory: Path) -> DashboardRun`
 - Consumes: `load_capture_metadata`, `read_pcapng`, `normalize_reference`, `align_generated`, `load_comparison_result`, `load_best_model`, and `load_experiment`
 
-- [ ] **[STEP-7-17ef76e3] Write failing core-history and run-loader tests**
+- [x] **[STEP-7-17ef76e3] Write failing core-history and run-loader tests**
 
 ```python
 def test_load_dashboard_run_normalizes_and_aligns_required_traces(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def test_missing_optional_artifact_disables_only_its_aspect(tmp_path: Path) -> N
 
 Add core tests proving public history loading rejects a malformed header, unknown family, and noncanonical float and returns immutable `HistoryRow` values for valid CSV.
 
-- [ ] **[STEP-8-87506b72] Run loader tests and record RED**
+- [x] **[STEP-8-87506b72] Run loader tests and record RED**
 
 Run:
 
@@ -206,7 +206,7 @@ uv run --all-extras pytest -q \
 
 Expected: imports/functions missing.
 
-- [ ] **[STEP-9-f0575be4] Implement public history loading and DashboardRun**
+- [x] **[STEP-9-f0575be4] Implement public history loading and DashboardRun**
 
 Core wrapper:
 
@@ -258,7 +258,7 @@ class DashboardRun:
 
 Read exact bytes once where byte-based parsers require them. Hash exact artifacts. Required failures raise `TrafficlabError` naming the artifact. Optional failures populate `unavailable` and leave the loaded run usable.
 
-- [ ] **[STEP-10-9b952413] Verify loader GREEN and immutability**
+- [x] **[STEP-10-9b952413] Verify loader GREEN and immutability**
 
 Run the RED command again, then:
 
@@ -269,7 +269,7 @@ uv run --all-extras pyright src/trafficlab_dashboard/run_data.py src/trafficlab_
 
 Add assertions that every trace array is non-writable, `unavailable` is a `MappingProxyType`, and a failed second load does not mutate a previously returned `DashboardRun`.
 
-- [ ] **[STEP-11-ec921485] Run checked-artifact integration loading**
+- [x] **[STEP-11-ec921485] Run checked-artifact integration loading**
 
 Use a copied checked canonical run from `examples/scientific_stack/example_run_artifacts/` or the smallest complete checked run available in `examples/`. Do not read ignored `runs/` in ordinary tests.
 
@@ -281,7 +281,7 @@ QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q \
 
 Expected: complete run loads; malformed required artifact rejects; missing optional artifact disables only dependent aspects.
 
-- [ ] **[STEP-12-759b453f] Commit Task 2**
+- [x] **[STEP-12-759b453f] Commit Task 2**
 
 ```bash
 git add src/trafficlab/fitting/genetic/checkpoint/history.py src/trafficlab_dashboard tests/unit/fitting tests/trafficlab_dashboard
@@ -306,7 +306,7 @@ git commit -m "feat(dashboard): load canonical run data"
 - Produces: `choose_time_bin_width`, `shared_time_edges`, `shared_histogram_edges`, `ecdf_points`, `minmax_envelope`
 - Produces: `AspectCache.get/put/clear`
 
-- [ ] **[STEP-13-029c75a9] Write failing numerical invariant, protocol, registry, and cache tests**
+- [x] **[STEP-13-029c75a9] Write failing numerical invariant, protocol, registry, and cache tests**
 
 ```python
 def test_choose_time_bin_width_uses_125_sequence_and_target_range() -> None:
@@ -328,7 +328,7 @@ def test_visibility_change_does_not_change_cache_key(run) -> None:
     assert AspectCache.key(run, "throughput", settings) == AspectCache.key(run, "throughput", settings)
 ```
 
-- [ ] **[STEP-14-9cf8e00a] Run Task 3 tests and record RED**
+- [x] **[STEP-14-9cf8e00a] Run Task 3 tests and record RED**
 
 ```bash
 uv run --all-extras pytest -q \
@@ -339,7 +339,7 @@ uv run --all-extras pytest -q \
 
 Expected: missing package modules.
 
-- [ ] **[STEP-15-ebffd09c] Implement immutable plot records and Aspect protocol**
+- [x] **[STEP-15-ebffd09c] Implement immutable plot records and Aspect protocol**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -362,7 +362,7 @@ class Aspect(Protocol):
 
 Every NumPy member is copied to an owned C-contiguous array and marked non-writable in `__post_init__`. Store labels/units/sample counts/bin width/lag range in plot-data metadata so renderers never infer scientific facts.
 
-- [ ] **[STEP-16-72f68126] Implement shared numerics and cache minimally**
+- [x] **[STEP-16-72f68126] Implement shared numerics and cache minimally**
 
 `choose_time_bin_width` enumerates positive `1, 2, 5 × 10ⁿ` widths and chooses the smallest width whose bin count is at most the maximum while preferring counts at least the minimum. `shared_time_edges` includes `0` and `W` and never places an edge above `W` except the histogram's right boundary required to include `W`.
 
@@ -380,7 +380,7 @@ class AspectCache:
     def clear(self) -> None: ...
 ```
 
-- [ ] **[STEP-17-05f1b1b0] Verify numerical GREEN and property invariants**
+- [x] **[STEP-17-05f1b1b0] Verify numerical GREEN and property invariants**
 
 Run Task 3 tests. Add Hypothesis coverage for finite ordered traces, constant samples, ties, zero IATs, very small samples, and random display limits. Assert reduction preserves order/endpoints/extrema, ECDF monotonicity, shared edges, immutability, and maximum display count.
 
@@ -388,7 +388,7 @@ Run Task 3 tests. Add Hypothesis coverage for finite ordered traces, constant sa
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_numerics.py tests/trafficlab_dashboard/unit/test_cache.py
 ```
 
-- [ ] **[STEP-18-954eac21] Commit Task 3**
+- [x] **[STEP-18-954eac21] Commit Task 3**
 
 ```bash
 git add src/trafficlab_dashboard/aspects src/trafficlab_dashboard/cache.py tests/trafficlab_dashboard/unit
@@ -405,7 +405,7 @@ git commit -m "feat(dashboard): add aspect data contracts"
 - Produces Aspect implementations: `ThroughputAspect`, `PacketRateAspect`, `CumulativeBytesAspect`, `CumulativePacketsAspect`, `FrameSizeTimelineAspect`, `IatTimelineAspect`
 - Consumes shared time edges and min/max display envelope from Task 3
 
-- [ ] **[STEP-19-e2499cb7] Write failing hand-calculated time-domain tests**
+- [x] **[STEP-19-e2499cb7] Write failing hand-calculated time-domain tests**
 
 Use a reference trace at times `[0, 1, 2]`, lengths `[100, 200, 300]`, and a generated trace at `[0, 1.5, 2]`, lengths `[50, 100, 150]` over `W=2`.
 
@@ -424,7 +424,7 @@ def test_cumulative_packets_include_both_window_endpoints(run) -> None:
 
 Add direct tests for packet rate, cumulative MiB, frame-size timeline, IAT timeline, sample counts, units, and display-only envelope reduction.
 
-- [ ] **[STEP-20-b0b877d0] Run time-domain tests and record RED**
+- [x] **[STEP-20-b0b877d0] Run time-domain tests and record RED**
 
 ```bash
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_time_domain.py
@@ -432,7 +432,7 @@ uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_time_domain.p
 
 Expected: aspect classes missing.
 
-- [ ] **[STEP-21-c7bf4746] Implement time-domain calculations**
+- [x] **[STEP-21-c7bf4746] Implement time-domain calculations**
 
 Throughput calculation:
 
@@ -445,7 +445,7 @@ def throughput_mbps(trace: TrafficTrace, edges: NDArray[np.float64]) -> NDArray[
 
 Packet rate uses unweighted histogram counts divided by widths. Cumulative aspects use exact trace timestamps and cumulative full-sample values. IAT timeline uses `timestamps[1:]` and `trace.iats()`, retaining zeros. Timeline display applies `minmax_envelope`; cumulative display keeps monotone representative points and endpoints.
 
-- [ ] **[STEP-22-5eb616fc] Verify time-domain GREEN and overlay invariants**
+- [x] **[STEP-22-5eb616fc] Verify time-domain GREEN and overlay invariants**
 
 Run the focused tests. Assert both datasets use byte-identical edges/x coordinates for binned aspects, full samples determine totals, and toggling visibility is absent from calculations.
 
@@ -453,7 +453,7 @@ Run the focused tests. Assert both datasets use byte-identical edges/x coordinat
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_time_domain.py tests/trafficlab_dashboard/unit/test_numerics.py
 ```
 
-- [ ] **[STEP-23-29b1266a] Run strict static checks for Task 4**
+- [x] **[STEP-23-29b1266a] Run strict static checks for Task 4**
 
 ```bash
 uv run --all-extras ruff format --check src/trafficlab_dashboard/aspects/time_domain.py tests/trafficlab_dashboard/unit/test_time_domain.py
@@ -461,7 +461,7 @@ uv run --all-extras ruff check src/trafficlab_dashboard/aspects/time_domain.py t
 uv run --all-extras pyright src/trafficlab_dashboard/aspects/time_domain.py tests/trafficlab_dashboard/unit/test_time_domain.py
 ```
 
-- [ ] **[STEP-24-b7d5b3c9] Commit Task 4**
+- [x] **[STEP-24-b7d5b3c9] Commit Task 4**
 
 ```bash
 git add src/trafficlab_dashboard/aspects/time_domain.py tests/trafficlab_dashboard/unit/test_time_domain.py
@@ -478,7 +478,7 @@ git commit -m "feat(dashboard): add time-domain aspects"
 - Produces: `FrameSizeEcdfAspect`, `IatEcdfAspect`, `FrameSizeHistogramAspect`, `IatHistogramAspect`, `ThroughputEcdfAspect`
 - Consumes: `ecdf_points`, `shared_histogram_edges`, `shared_time_edges`, and time-domain throughput
 
-- [ ] **[STEP-25-c0d2835f] Write failing distribution tests with literal oracles**
+- [x] **[STEP-25-c0d2835f] Write failing distribution tests with literal oracles**
 
 ```python
 def test_frame_size_ecdf_retains_ties(run) -> None:
@@ -498,7 +498,7 @@ def test_iat_histogram_annotates_zeros_and_uses_common_log_edges(run_with_zero_i
 
 Add normalized-density integral checks, combined-data edge checks independent of visibility, constant-sample fallback, and throughput ECDF shared-bin tests.
 
-- [ ] **[STEP-26-59dbd2e5] Run distribution tests and record RED**
+- [x] **[STEP-26-59dbd2e5] Run distribution tests and record RED**
 
 ```bash
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_distributions.py
@@ -506,11 +506,11 @@ uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_distributions
 
 Expected: distribution aspects missing.
 
-- [ ] **[STEP-27-2edce273] Implement ECDF and histogram aspects**
+- [x] **[STEP-27-2edce273] Implement ECDF and histogram aspects**
 
 Frame-size histograms call `np.histogram(..., density=True)` with common edges from combined reference/generated lengths. IAT histograms split exact zeros from positive samples, create common logarithmic edges with `np.geomspace`, and store zero annotations. Throughput ECDF first calculates both full binned throughput arrays using common time edges, then uses `ecdf_points` independently.
 
-- [ ] **[STEP-28-be63ffe2] Verify distribution GREEN and scientific boundaries**
+- [x] **[STEP-28-be63ffe2] Verify distribution GREEN and scientific boundaries**
 
 Run focused tests and existing TrafficLab statistics tests:
 
@@ -522,7 +522,7 @@ uv run --all-extras pytest -q \
 
 Expected: all pass; dashboard never uses SciPy p-values or drops zero IATs.
 
-- [ ] **[STEP-29-c964cf74] Run Task 5 static checks**
+- [x] **[STEP-29-c964cf74] Run Task 5 static checks**
 
 ```bash
 uv run --all-extras ruff format --check src/trafficlab_dashboard/aspects/distributions.py tests/trafficlab_dashboard/unit/test_distributions.py
@@ -530,7 +530,7 @@ uv run --all-extras ruff check src/trafficlab_dashboard/aspects/distributions.py
 uv run --all-extras pyright src/trafficlab_dashboard/aspects/distributions.py tests/trafficlab_dashboard/unit/test_distributions.py
 ```
 
-- [ ] **[STEP-30-a9a34691] Commit Task 5**
+- [x] **[STEP-30-a9a34691] Commit Task 5**
 
 ```bash
 git add src/trafficlab_dashboard/aspects/distributions.py tests/trafficlab_dashboard/unit/test_distributions.py
@@ -550,7 +550,7 @@ git commit -m "feat(dashboard): add distribution aspects"
 - Produces: `FrameSizeAutocorrelationAspect`, `IatAutocorrelationAspect`, `FrameSizeIatHexbinAspect`
 - Consumes: `Direction`, `TrafficTrace.direction_mask`, TrafficLab ACF estimator, and Task 3 plot records
 
-- [ ] **[STEP-31-dea47607] Write failing direction and dependence tests**
+- [x] **[STEP-31-dea47607] Write failing direction and dependence tests**
 
 ```python
 def test_direction_balance_uses_uplink_downlink_labels_and_packet_byte_shares(run) -> None:
@@ -571,7 +571,7 @@ def test_large_size_iat_relation_uses_hexbin_full_samples(run_large) -> None:
     assert data.render_mode == "hexbin"
 ```
 
-- [ ] **[STEP-32-47ad27bd] Run Task 6 tests and record RED**
+- [x] **[STEP-32-47ad27bd] Run Task 6 tests and record RED**
 
 ```bash
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_direction.py tests/trafficlab_dashboard/unit/test_dependence.py
@@ -579,15 +579,15 @@ uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_direction.py 
 
 Expected: aspect modules/classes missing.
 
-- [ ] **[STEP-33-30aa172b] Implement direction aspects with shared bins**
+- [x] **[STEP-33-30aa172b] Implement direction aspects with shared bins**
 
 Map internal `Direction.OUTBOUND` to display label Uplink and `Direction.INBOUND` to Downlink. Directional throughput and packet rate produce four series when both datasets render: Reference/Generated × Uplink/Downlink. Dataset remains color metadata; direction remains dash-style metadata. Direction balance stores packet and byte proportions independently for each dataset.
 
-- [ ] **[STEP-34-aece8288] Implement dependence aspects using full arrays**
+- [x] **[STEP-34-aece8288] Implement dependence aspects using full arrays**
 
 Call TrafficLab's public ACF function directly for each requested lag; do not copy the estimator. Represent a lag unavailable in either trace as masked/unavailable metadata, not zero. Pair `frame_lengths[1:]` with `iats()` for frame-size/IAT relation. Store complete x/y arrays; renderer chooses raw scatter below the threshold and hexbin above it.
 
-- [ ] **[STEP-35-d9c9b21e] Verify Task 6 GREEN and terminology**
+- [x] **[STEP-35-d9c9b21e] Verify Task 6 GREEN and terminology**
 
 ```bash
 uv run --all-extras pytest -q \
@@ -598,7 +598,7 @@ uv run --all-extras pytest -q \
 
 Search dashboard UI strings and assert no visible `inbound` or `outbound` labels remain; internal enum references are allowed.
 
-- [ ] **[STEP-36-40c0e3a4] Commit Task 6**
+- [x] **[STEP-36-40c0e3a4] Commit Task 6**
 
 ```bash
 git add src/trafficlab_dashboard/aspects/direction.py src/trafficlab_dashboard/aspects/dependence.py tests/trafficlab_dashboard/unit
@@ -618,7 +618,7 @@ git commit -m "feat(dashboard): add direction and dependence views"
 - Produces: `ASPECTS: tuple[Aspect, ...]`, `aspect_by_id(identifier: str) -> Aspect`
 - Pair/run-level aspects declare `trace_controls = False`
 
-- [ ] **[STEP-37-37c7d332] Write failing canonical-artifact and registry tests**
+- [x] **[STEP-37-37c7d332] Write failing canonical-artifact and registry tests**
 
 ```python
 def test_similarity_scores_use_stored_values_without_recomputation(loaded_run) -> None:
@@ -634,7 +634,7 @@ def test_registry_order_is_complete_and_pair_aspects_disable_trace_controls() ->
 
 Build literal `ComparisonResult` and `HistoryRow` fixtures through public schemas, not ad-hoc dictionaries.
 
-- [ ] **[STEP-38-a778cea3] Run run-level tests and record RED**
+- [x] **[STEP-38-a778cea3] Run run-level tests and record RED**
 
 ```bash
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_run_level.py tests/trafficlab_dashboard/unit/test_aspect_registry.py
@@ -642,13 +642,13 @@ uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_run_level.py 
 
 Expected: run-level aspects and complete registry missing.
 
-- [ ] **[STEP-39-d07ffe35] Implement canonical similarity and GA-history projections**
+- [x] **[STEP-39-d07ffe35] Implement canonical similarity and GA-history projections**
 
 Read all similarity component scores, aggregate, configured method order, and multiscale per-scale packet/byte discrepancies from the validated `ComparisonResult`. Never call `compare_traces` in dashboard code. Group GA `HistoryRow` records into ordered Reference-independent line series for each family and overall; x is generation and y is best fitness.
 
 If the required optional artifact is absent, the registry retains the aspect while `DashboardRun.unavailable` disables it with the exact reason.
 
-- [ ] **[STEP-40-e6e2d056] Complete the explicit ordered registry**
+- [x] **[STEP-40-e6e2d056] Complete the explicit ordered registry**
 
 Declare all 20 first-release identifiers verbatim:
 
@@ -679,7 +679,7 @@ EXPECTED_ASPECT_IDS = (
 
 `aspect_by_id` raises `KeyError(identifier)` for unknown identifiers; UI catches this only as an internal defect.
 
-- [ ] **[STEP-41-91e5e0c0] Verify Task 7 GREEN and optional availability**
+- [x] **[STEP-41-91e5e0c0] Verify Task 7 GREEN and optional availability**
 
 ```bash
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_run_level.py tests/trafficlab_dashboard/unit/test_aspect_registry.py tests/trafficlab_dashboard/unit/test_run_loader.py
@@ -687,7 +687,7 @@ uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_run_level.py 
 
 Assert missing similarity disables two aspects, missing history disables GA history, and every trace aspect remains usable.
 
-- [ ] **[STEP-42-08ecb17a] Commit Task 7**
+- [x] **[STEP-42-08ecb17a] Commit Task 7**
 
 ```bash
 git add src/trafficlab_dashboard/aspects tests/trafficlab_dashboard/unit
@@ -711,7 +711,7 @@ git commit -m "feat(dashboard): add run-level aspects"
 - Produces: pure `zoom_limits`, `pan_limits`
 - Produces: `export_figure(figure: Figure, destination: Path, format: Literal["png", "svg"]) -> None`
 
-- [ ] **[STEP-43-7feb81ec] Write failing render, interaction, and export tests**
+- [x] **[STEP-43-7feb81ec] Write failing render, interaction, and export tests**
 
 ```python
 def test_zoom_is_centered_at_cursor_and_shift_limits_x_only() -> None:
@@ -732,7 +732,7 @@ def test_export_svg_contains_current_title_and_visible_series(tmp_path: Path, ca
     assert "Generated" not in text
 ```
 
-- [ ] **[STEP-44-e18f144f] Run plotting tests and record RED**
+- [x] **[STEP-44-e18f144f] Run plotting tests and record RED**
 
 ```bash
 QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q \
@@ -743,21 +743,21 @@ QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q \
 
 Expected: plotting modules missing.
 
-- [ ] **[STEP-45-968824d9] Implement plot renderers and fixed visual encoding**
+- [x] **[STEP-45-968824d9] Implement plot renderers and fixed visual encoding**
 
 `DashboardCanvas` owns one `Figure`, one `Axes`, and one `FigureCanvasQTAgg`. It clears axes only on aspect render, records calculated complete bounds, and renders plot-data unions by type. Dataset colors are blue/orange; direction styles are solid/dashed. Pair-level bars ignore visibility. Every render sets title, labels, units, legend, grid, and complete-data bounds from metadata.
 
 Set `matplotlib.rcParams["svg.fonttype"] = "none"` in the dashboard plotting initialization so exported SVG titles and legend labels remain accessible text for both users and integration tests.
 
-- [ ] **[STEP-46-0f817563] Implement pure pan/zoom and connect mouse events**
+- [x] **[STEP-46-0f817563] Implement pure pan/zoom and connect mouse events**
 
 `zoom_limits` uses cursor-relative affine scaling and rejects nonfinite cursor/limits. Wheel factor is `0.8` for zoom-in and `1.25` for zoom-out. `Shift` selects x only, `Control` selects y only, otherwise both. Left press stores data coordinates and limits; motion applies `pan_limits`; release clears drag state. Double-click calls reset. Ignore events outside axes or while axes lack finite limits.
 
-- [ ] **[STEP-47-788645f5] Implement exclusive PNG/SVG export and verify GREEN**
+- [x] **[STEP-47-788645f5] Implement exclusive PNG/SVG export and verify GREEN**
 
 Validate suffix/format agreement, write to a same-directory temporary file, ensure nonempty output, and publish with no overwrite so an existing research figure is never replaced silently. Surface `OSError` with destination and corrective action. Run plotting tests; assert PNG signature/dimensions via Pillow supplied by Matplotlib and parse SVG XML/text.
 
-- [ ] **[STEP-48-e8395864] Commit Task 8**
+- [x] **[STEP-48-e8395864] Commit Task 8**
 
 ```bash
 git add src/trafficlab_dashboard/plotting tests/trafficlab_dashboard/unit/test_interaction.py tests/trafficlab_dashboard/integration
@@ -781,7 +781,7 @@ git commit -m "feat(dashboard): add interactive plotting"
 - Produces: `LoadRunWorker`, `CalculateAspectWorker` carrying generation token
 - Consumes: `load_dashboard_run`, `ASPECTS`, `AspectCache`, `DashboardCanvas`, `export_figure`
 
-- [ ] **[STEP-49-9f3e68f2] Write failing window and worker-state tests**
+- [x] **[STEP-49-9f3e68f2] Write failing window and worker-state tests**
 
 ```python
 def test_trace_buttons_prevent_empty_trace_plot(qtbot, loaded_window) -> None:
@@ -804,7 +804,7 @@ def test_stale_worker_result_cannot_replace_newer_aspect(window) -> None:
     assert window.canvas.current_aspect != "throughput"
 ```
 
-- [ ] **[STEP-50-fff9e117] Run window tests and record RED**
+- [x] **[STEP-50-fff9e117] Run window tests and record RED**
 
 ```bash
 QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q \
@@ -815,7 +815,7 @@ QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q \
 
 Expected: window/state/worker APIs missing.
 
-- [ ] **[STEP-51-88fed181] Implement immutable state and generation-token workers**
+- [x] **[STEP-51-88fed181] Implement immutable state and generation-token workers**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -830,15 +830,15 @@ class DashboardState:
 
 Workers emit typed success/failure objects containing their request token. Worker functions do no Qt or Matplotlib mutation. Window slots compare token with current generation before accepting. Opening a run, selecting an aspect, and invalidating current work increment generation.
 
-- [ ] **[STEP-52-11f7803b] Build the approved single-window controls and behavior**
+- [x] **[STEP-52-11f7803b] Build the approved single-window controls and behavior**
 
 Create the horizontal control row in exact order: Open Run, Aspect combo, Reference toggle, Generated toggle, Reset, Export. Canvas fills remaining central space; status bar shows run name, packet counts, `W`, and progress. Both trace toggles default on. Trace aspects reject the last-off action. Pair aspects disable both. Aspect change resets viewport; visibility redraw preserves viewport and uses cache. Failed load/calculation leaves previous plot. Optional unavailable aspects remain listed but disabled with tooltip/status reason.
 
-- [ ] **[STEP-53-66f0b0ad] Complete CLI, chooser, dialogs, and export flow**
+- [x] **[STEP-53-66f0b0ad] Complete CLI, chooser, dialogs, and export flow**
 
 If CLI path is present, schedule load after the window is shown. Without path, call `QFileDialog.getExistingDirectory`. Open Run repeats chooser. Error dialogs contain artifact path and corrective action. Export dialog offers `.png` and `.svg`, then calls `export_figure`. Add a nonmodal progress overlay that does not replace the current canvas.
 
-- [ ] **[STEP-54-f894250e] Verify GUI GREEN and cached redraw behavior**
+- [x] **[STEP-54-f894250e] Verify GUI GREEN and cached redraw behavior**
 
 ```bash
 QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q tests/trafficlab_dashboard/integration
@@ -849,7 +849,7 @@ uv run --all-extras pyright src/trafficlab_dashboard tests/trafficlab_dashboard
 
 Inject parser/calculation counters and prove visibility changes do not parse or calculate again. Prove failed second run leaves first selected. Verify `trafficlab-dashboard --help` without display and one offscreen launch with a checked run.
 
-- [ ] **[STEP-55-8f931598] Self-review event-loop ownership and commit Task 9**
+- [x] **[STEP-55-8f931598] Self-review event-loop ownership and commit Task 9**
 
 Inspect every Qt signal target and Matplotlib call. Confirm worker threads emit data only, stale results are ignored, and application/window lifetimes remain strongly referenced through `main`.
 
@@ -874,7 +874,7 @@ git commit -m "feat(dashboard): add application window"
 - Documents stable dashboard artifact, aspect, interaction, performance, terminology, and non-goal contracts
 - Produces final release evidence under the root locked all-extras environment
 
-- [ ] **[STEP-56-169a4422] Write failing checked-run, performance, and layout tests**
+- [x] **[STEP-56-169a4422] Write failing checked-run, performance, and layout tests**
 
 ```python
 def test_checked_run_supports_every_available_aspect(checked_dashboard_run: Path) -> None:
@@ -891,11 +891,11 @@ def test_large_trace_calculates_full_totals_but_bounds_display(run_with_200k_pac
 
 Extend layout tests to include `src/trafficlab_dashboard`, dashboard tests, module line limits, and the new architecture document.
 
-- [ ] **[STEP-57-619d74b4] Run Task 10 RED and add stable architecture documents**
+- [x] **[STEP-57-619d74b4] Run Task 10 RED and add stable architecture documents**
 
 Run the new tests and record missing docs/behavior. Write `architecture/VISUALIZATION.md` from the approved spec as stable behavior only—no task checklist or completion ledger. Update architecture index, development all-extras commands, headless Qt evidence, root install/launch/control docs, and supported optional companion boundaries.
 
-- [ ] **[STEP-58-f1226925] Verify checked run, large trace, export, and user command**
+- [x] **[STEP-58-f1226925] Verify checked run, large trace, export, and user command**
 
 ```bash
 uv sync --locked --all-groups --all-extras
@@ -905,7 +905,7 @@ uv run --all-extras trafficlab-dashboard --help
 
 Use a checked canonical run fixture, not ignored local `runs/`. Record load duration and cached redraw duration without creating a universal performance benchmark gate; assert event-loop responsiveness, full-sample totals, and display bounds.
 
-- [ ] **[STEP-59-862559b3] Run complete release gates and independent final review**
+- [x] **[STEP-59-862559b3] Run complete release gates and independent final review**
 
 Run, serializing heavy gates:
 
@@ -925,7 +925,7 @@ scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M --wall-t
 
 Request independent phase reviews throughout implementation and one most-capable whole-branch review. Fix all Critical and Important findings, rerun affected focused tests, then rerun the complete final gates after the last source change.
 
-- [ ] **[STEP-60-d4d4b2d4] Commit documentation/evidence and finish the branch**
+- [x] **[STEP-60-d4d4b2d4] Commit documentation/evidence and finish the branch**
 
 ```bash
 git add architecture README.md pyproject.toml uv.lock src/trafficlab src/trafficlab_dashboard tests
