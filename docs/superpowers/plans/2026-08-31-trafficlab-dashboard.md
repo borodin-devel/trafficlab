@@ -905,7 +905,7 @@ uv run --all-extras trafficlab-dashboard --help
 
 Use a checked canonical run fixture, not ignored local `runs/`. Record load duration and cached redraw duration without creating a universal performance benchmark gate; assert event-loop responsiveness, full-sample totals, and display bounds.
 
-- [ ] **[STEP-59-862559b3] Run complete release gates and independent final review**
+- [x] **[STEP-59-862559b3] Run complete release gates and independent final review**
 
 Run, serializing heavy gates:
 
