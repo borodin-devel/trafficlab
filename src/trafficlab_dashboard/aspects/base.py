@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal, Protocol, cast, runtime_checkable
 
 import numpy as np
@@ -12,6 +14,8 @@ from trafficlab_dashboard.run_data import DashboardRun
 type SeriesDataset = Literal["reference", "generated"] | None
 type RenderMode = Literal["scatter", "hexbin"]
 type AxisScale = Literal["linear", "log"]
+type MetadataValue = str | int | float | bool | None | tuple["MetadataValue", ...] | Mapping[str, "MetadataValue"]
+type PlotMetadata = Mapping[str, MetadataValue]
 
 
 def _owned_float64_array(values: object) -> NDArray[np.float64]:
@@ -54,6 +58,30 @@ def _require_axis_scale(value: AxisScale, *, name: str) -> AxisScale:
     if value not in {"linear", "log"}:
         raise ValueError(f"{name} must be a supported axis scale")
     return value
+
+
+def _freeze_metadata_value(value: object, *, name: str) -> MetadataValue:
+    if value is None or type(value) is str or type(value) is bool or type(value) is int:
+        return cast(MetadataValue, value)
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must contain only finite floats")
+        return value
+    if type(value) is tuple:
+        return tuple(_freeze_metadata_value(item, name=f"{name}[]") for item in cast(tuple[object, ...], value))
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
+        frozen: dict[str, MetadataValue] = {}
+        for key, item in mapping.items():
+            if type(key) is not str or not key:
+                raise TypeError(f"{name} keys must be non-empty strings")
+            frozen[key] = _freeze_metadata_value(item, name=f"{name}.{key}")
+        return MappingProxyType(frozen)
+    raise TypeError(f"{name} must contain only immutable scalar, tuple, or mapping values")
+
+
+def _freeze_metadata(value: PlotMetadata) -> PlotMetadata:
+    return cast(PlotMetadata, _freeze_metadata_value(value, name="metadata"))
 
 
 def _require_requested_lags(
@@ -168,6 +196,7 @@ class LinePlotData:
     bin_edges: NDArray[np.float64] | None = None
     reference_sample_count: int = 0
     generated_sample_count: int = 0
+    metadata: PlotMetadata = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
         for name in ("identifier", "label", "title", "x_label", "y_label", "unit"):
@@ -229,6 +258,7 @@ class LinePlotData:
         object.__setattr__(
             self, "generated_sample_count", _require_count(self.generated_sample_count, name="generated_sample_count")
         )
+        object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -281,6 +311,7 @@ class HistogramPlotData:
     y_scale: AxisScale = "linear"
     reference_sample_count: int = 0
     generated_sample_count: int = 0
+    metadata: PlotMetadata = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
         for name in ("identifier", "label", "title", "x_label", "y_label", "unit"):
@@ -297,6 +328,7 @@ class HistogramPlotData:
         object.__setattr__(
             self, "generated_sample_count", _require_count(self.generated_sample_count, name="generated_sample_count")
         )
+        object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -326,6 +358,7 @@ class BarPlotData:
     y_limits: tuple[float, float]
     x_scale: AxisScale = "linear"
     y_scale: AxisScale = "linear"
+    metadata: PlotMetadata = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
         for name in ("identifier", "label", "title", "y_label", "unit"):
@@ -341,6 +374,7 @@ class BarPlotData:
         object.__setattr__(self, "x_scale", _require_axis_scale(self.x_scale, name="x_scale"))
         object.__setattr__(self, "y_scale", _require_axis_scale(self.y_scale, name="y_scale"))
         object.__setattr__(self, "y_limits", _require_bounds(self.y_limits, name="y_limits"))
+        object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
     @property
     def values(self) -> NDArray[np.float64]:
@@ -368,6 +402,7 @@ class HexbinPlotData:
     x_scale: AxisScale = "linear"
     y_scale: AxisScale = "linear"
     render_mode: RenderMode = "scatter"
+    metadata: PlotMetadata = field(default_factory=lambda: MappingProxyType({}))
 
     def __post_init__(self) -> None:
         for name in ("identifier", "label", "title", "x_label", "y_label", "unit"):
@@ -394,6 +429,7 @@ class HexbinPlotData:
         )
         if self.render_mode not in {"scatter", "hexbin"}:
             raise ValueError("render_mode must be 'scatter' or 'hexbin'")
+        object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
 
 
 type PlotData = LinePlotData | HistogramPlotData | BarPlotData | HexbinPlotData

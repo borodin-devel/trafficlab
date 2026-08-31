@@ -68,6 +68,20 @@ def test_ga_history_requires_a_valid_experiment_configuration(tmp_path: Path) ->
     assert "experiment.toml" in loaded.unavailable["ga_fitness_history"]
 
 
+def test_missing_ga_history_disables_only_the_history_aspect_when_experiment_is_valid(tmp_path: Path) -> None:
+    run_directory = write_complete_dashboard_run(tmp_path)
+    (run_directory / "ga_history.csv").unlink()
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.experiment is not None
+    assert loaded.similarity is not None
+    assert loaded.history is None
+    assert loaded.unavailable["ga_fitness_history"] == "ga_history.csv is missing"
+    assert "similarity_scores" not in loaded.unavailable
+    assert "multiscale_discrepancy" not in loaded.unavailable
+
+
 def test_loaded_dashboard_run_exposes_immutable_arrays_and_mapping(tmp_path: Path) -> None:
     run_directory = write_complete_dashboard_run(tmp_path)
 

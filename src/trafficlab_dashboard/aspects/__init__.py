@@ -39,6 +39,11 @@ from trafficlab_dashboard.aspects.numerics import (
     shared_time_edges,
 )
 from trafficlab_dashboard.aspects.registry import ASPECTS, aspect_by_id
+from trafficlab_dashboard.aspects.run_level import (
+    GaFitnessHistoryAspect,
+    MultiscaleDiscrepancyAspect,
+    SimilarityScoresAspect,
+)
 from trafficlab_dashboard.aspects.time_domain import (
     CumulativeBytesAspect,
     CumulativePacketsAspect,
@@ -66,6 +71,7 @@ __all__ = [
     "FrameSizeHistogramAspect",
     "FrameSizeIatHexbinAspect",
     "FrameSizeTimelineAspect",
+    "GaFitnessHistoryAspect",
     "HistogramPlotData",
     "HistogramSeries",
     "IatAutocorrelationAspect",
@@ -76,9 +82,11 @@ __all__ = [
     "LineSeries",
     "PacketRateAspect",
     "PlotData",
+    "SimilarityScoresAspect",
     "TraceVisibility",
     "ThroughputAspect",
     "ThroughputEcdfAspect",
+    "MultiscaleDiscrepancyAspect",
     "aspect_by_id",
     "choose_time_bin_width",
     "ecdf_points",

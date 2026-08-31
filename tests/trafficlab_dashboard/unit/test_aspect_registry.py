@@ -6,6 +6,7 @@ from types import MappingProxyType
 import numpy as np
 import pytest
 
+from tests.trafficlab_dashboard.support.dashboard_fixtures import write_complete_dashboard_run
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 from trafficlab_dashboard.aspects.base import Aspect, CalculationSettings, LinePlotData, LineSeries
 from trafficlab_dashboard.aspects.distributions import (
@@ -16,6 +17,11 @@ from trafficlab_dashboard.aspects.distributions import (
     ThroughputEcdfAspect,
 )
 from trafficlab_dashboard.aspects.registry import ASPECTS, aspect_by_id
+from trafficlab_dashboard.aspects.run_level import (
+    GaFitnessHistoryAspect,
+    MultiscaleDiscrepancyAspect,
+    SimilarityScoresAspect,
+)
 from trafficlab_dashboard.aspects.time_domain import (
     CumulativeBytesAspect,
     CumulativePacketsAspect,
@@ -25,8 +31,9 @@ from trafficlab_dashboard.aspects.time_domain import (
     ThroughputAspect,
 )
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
+from trafficlab_dashboard.run_loader import load_dashboard_run
 
-EXPECTED_INITIAL_ASPECT_IDS = (
+EXPECTED_ASPECT_IDS = (
     "throughput",
     "packet_rate",
     "cumulative_bytes",
@@ -44,6 +51,9 @@ EXPECTED_INITIAL_ASPECT_IDS = (
     "frame_size_acf",
     "iat_acf",
     "frame_size_iat_hexbin",
+    "similarity_scores",
+    "multiscale_discrepancy",
+    "ga_fitness_history",
 )
 
 
@@ -114,7 +124,7 @@ def test_aspect_protocol_is_runtime_checkable() -> None:
 
 
 def test_registry_order_matches_the_initial_dashboard_plan() -> None:
-    assert tuple(aspect.identifier for aspect in ASPECTS) == EXPECTED_INITIAL_ASPECT_IDS
+    assert tuple(aspect.identifier for aspect in ASPECTS) == EXPECTED_ASPECT_IDS
 
 
 def test_registry_uses_concrete_time_domain_aspects_in_the_planned_order() -> None:
@@ -141,7 +151,40 @@ def test_registry_replaces_distribution_placeholders_with_concrete_aspects() -> 
 def test_registry_aspects_conform_to_the_protocol() -> None:
     assert ASPECTS
     assert all(isinstance(aspect, Aspect) for aspect in ASPECTS)
-    assert all(aspect.trace_controls for aspect in ASPECTS)
+    assert all(aspect.trace_controls for aspect in ASPECTS[:-3])
+    assert all(not aspect.trace_controls for aspect in ASPECTS[-3:])
+
+
+def test_registry_replaces_run_level_placeholders_with_concrete_aspects() -> None:
+    assert type(aspect_by_id("similarity_scores")) is SimilarityScoresAspect
+    assert type(aspect_by_id("multiscale_discrepancy")) is MultiscaleDiscrepancyAspect
+    assert type(aspect_by_id("ga_fitness_history")) is GaFitnessHistoryAspect
+    assert tuple(type(aspect) for aspect in ASPECTS[17:20]) == (
+        SimilarityScoresAspect,
+        MultiscaleDiscrepancyAspect,
+        GaFitnessHistoryAspect,
+    )
+
+
+def test_registry_remains_complete_and_trace_aspects_stay_usable_when_run_level_artifacts_are_missing(
+    tmp_path: Path,
+) -> None:
+    run_directory = write_complete_dashboard_run(tmp_path)
+    (run_directory / "similarity.json").unlink()
+    (run_directory / "ga_history.csv").unlink()
+    loaded = load_dashboard_run(run_directory)
+
+    assert tuple(aspect.identifier for aspect in ASPECTS) == EXPECTED_ASPECT_IDS
+    assert loaded.unavailable == MappingProxyType(
+        {
+            "similarity_scores": "similarity.json is missing",
+            "multiscale_discrepancy": "similarity.json is missing",
+            "ga_fitness_history": "ga_history.csv is missing",
+        }
+    )
+    for aspect in ASPECTS:
+        if aspect.trace_controls:
+            assert aspect.calculate(loaded, CalculationSettings.default()).identifier == aspect.identifier
 
 
 def test_aspect_lookup_raises_exact_keyerror_for_unknown_identifier() -> None:

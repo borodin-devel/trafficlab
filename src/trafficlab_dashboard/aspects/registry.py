@@ -18,6 +18,11 @@ from trafficlab_dashboard.aspects.distributions import (
     IatHistogramAspect,
     ThroughputEcdfAspect,
 )
+from trafficlab_dashboard.aspects.run_level import (
+    GaFitnessHistoryAspect,
+    MultiscaleDiscrepancyAspect,
+    SimilarityScoresAspect,
+)
 from trafficlab_dashboard.aspects.time_domain import (
     CumulativeBytesAspect,
     CumulativePacketsAspect,
@@ -45,6 +50,9 @@ ASPECTS: tuple[Aspect, ...] = (
     FrameSizeAutocorrelationAspect(),
     IatAutocorrelationAspect(),
     FrameSizeIatHexbinAspect(),
+    SimilarityScoresAspect(),
+    MultiscaleDiscrepancyAspect(),
+    GaFitnessHistoryAspect(),
 )
 
 _ASPECTS_BY_ID = {aspect.identifier: aspect for aspect in ASPECTS}
