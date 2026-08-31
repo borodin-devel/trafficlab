@@ -96,9 +96,10 @@ def _histogram_plot(
     x_scale: AxisScale,
     reference: HistogramSeries,
     generated: HistogramSeries,
+    x_limits: tuple[float, float] | None = None,
 ) -> HistogramPlotData:
     edges = tuple(series.edges for series in (reference, generated) if len(series.edges) > 0)
-    x_limits = _combined_limits(*edges) if edges else (0.0, 0.0)
+    resolved_x_limits = x_limits if x_limits is not None else (_combined_limits(*edges) if edges else (0.0, 0.0))
     maxima = tuple(series.values for series in (reference, generated) if len(series.values) > 0)
     _, y_max = _combined_limits(*maxima) if maxima else (0.0, 0.0)
     return HistogramPlotData(
@@ -109,7 +110,7 @@ def _histogram_plot(
         y_label="Density",
         unit=unit,
         series=(reference, generated),
-        x_limits=x_limits,
+        x_limits=resolved_x_limits,
         y_limits=(0.0, y_max),
         x_scale=x_scale,
         reference_sample_count=reference.sample_count,
@@ -142,6 +143,10 @@ def _throughput_sample(trace: TrafficTrace, edges: NDArray[np.float64]) -> NDArr
     bytes_per_bin, _ = np.histogram(trace.timestamps, bins=edges, weights=trace.frame_lengths)
     widths = np.diff(edges)
     return np.asarray(bytes_per_bin * 8.0 / widths / 1_000_000.0, dtype=np.float64)
+
+
+def _annotation_only_log_domain() -> tuple[float, float]:
+    return 1.0, 10.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,6 +292,7 @@ class IatHistogramAspect:
             x_scale="log",
             reference=reference,
             generated=generated,
+            x_limits=_annotation_only_log_domain() if len(edges) == 0 else None,
         )
 
 

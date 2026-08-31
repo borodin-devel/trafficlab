@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from types import MappingProxyType
+from typing import Any, cast
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -276,7 +279,8 @@ def test_all_zero_iat_histogram_returns_only_zero_annotations() -> None:
     assert data.reference_sample_count == 2
     assert data.generated_sample_count == 1
     assert data.x_scale == "log"
-    assert data.x_limits == (0.0, 0.0)
+    assert data.x_limits[0] > 0.0
+    assert data.x_limits[1] > data.x_limits[0]
     assert data.y_limits == (0.0, 0.0)
     assert data.series[0].sample_count == 2
     assert data.series[1].sample_count == 1
@@ -288,6 +292,19 @@ def test_all_zero_iat_histogram_returns_only_zero_annotations() -> None:
     assert data.series[1].edges.tolist() == []
     assert data.series[0].values.tolist() == []
     assert data.series[1].values.tolist() == []
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        figure, axes = plt.subplots()
+        axes = cast(Any, axes)
+        try:
+            axes.set_xscale(data.x_scale)
+            axes.set_xlim(*data.x_limits)
+            assert axes.get_xlim() == pytest.approx(data.x_limits)
+        finally:
+            plt.close(figure)
+
+    assert caught == []
 
 
 def test_constant_frame_size_histogram_uses_numpy_fallback_edges() -> None:
