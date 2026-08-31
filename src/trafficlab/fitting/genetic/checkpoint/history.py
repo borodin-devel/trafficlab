@@ -95,6 +95,24 @@ def _parse_history_csv(content: bytes, family_names: frozenset[FamilyName]) -> t
     return tuple(parsed)
 
 
+def load_history_csv(path: Path, family_names: frozenset[FamilyName]) -> tuple[HistoryRow, ...]:
+    """Load and strictly validate one derived history CSV artifact."""
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not read history artifact {path}: {error}",
+            corrective_action="verify ga_history.csv exists and is readable",
+        ) from error
+    try:
+        return _parse_history_csv(content, family_names)
+    except ValueError as error:
+        raise TrafficlabError(
+            f"invalid history artifact {path}: {error}",
+            corrective_action="rerun fitting to publish canonical ga_history.csv",
+        ) from error
+
+
 def render_history_csv(state: CheckpointState) -> bytes:
     """Render and reparse the exact CSV projection derived solely from checkpoint history."""
     try:

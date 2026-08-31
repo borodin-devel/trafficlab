@@ -1,9 +1,11 @@
 """Direct history checkpoint behavior tests."""
 
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 import trafficlab.fitting.genetic.checkpoint.codec as checkpoint_codec
 import trafficlab.fitting.genetic.checkpoint.compatibility as checkpoint_compatibility
@@ -20,6 +22,7 @@ from trafficlab.fitting.genetic.checkpoint import (
     CheckpointState,
     load_checkpoint,
     load_generation,
+    load_history_csv,
     publish_checkpoint,
     publish_generation,
     publish_history_csv,
@@ -150,3 +153,40 @@ def test_history_rows_have_exact_header_lexical_family_rows_then_overall(tmp_pat
         f"0,overall,,3,2,{POISSON_TRIAL.aggregate_score!r},{OVERALL_ROW.mean_fitness!r},0,2\n"
     )
     assert (tmp_path / "ga_history.csv").read_bytes() == render_history_csv(VALID_STATE)
+
+
+def test_public_history_loader_returns_exact_immutable_rows(tmp_path: Path) -> None:
+    history_path = tmp_path / "ga_history.csv"
+    publish_history_csv(history_path, VALID_STATE)
+
+    loaded = load_history_csv(history_path, frozenset(("mmpp", "poisson_empirical")))
+
+    assert loaded == VALID_STATE.history
+    assert type(loaded) is tuple
+    assert all(type(row) is HistoryRow for row in loaded)
+    with pytest.raises(ValidationError):  # pyright: ignore[reportUnknownMemberType]
+        loaded[0].generation = 1  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (b"wrong\n", "history CSV has the wrong header"),
+        (
+            render_history_csv(VALID_STATE).replace(b",family,mmpp,", b",family,markov_renewal,", 1),
+            "history CSV family is not enabled",
+        ),
+        (
+            render_history_csv(VALID_STATE).replace(b",0.4,0.4,", b",0.400,0.4,", 1),
+            "history CSV best_fitness must be a finite Python float repr in [0, 1]",
+        ),
+    ],
+)
+def test_public_history_loader_rejects_invalid_artifacts(
+    tmp_path: Path, content: bytes, expected: str
+) -> None:
+    history_path = tmp_path / "ga_history.csv"
+    history_path.write_bytes(content)
+
+    with pytest.raises(TrafficlabError, match=re.escape(expected)):
+        load_history_csv(history_path, frozenset(("mmpp", "poisson_empirical")))

@@ -15,6 +15,7 @@ from trafficlab.fitting.genetic.checkpoint.compatibility import (
 )
 from trafficlab.fitting.genetic.checkpoint.history import (
     load_generation,
+    load_history_csv,
     publish_generation,
     publish_history_csv,
     render_history_csv,
@@ -44,6 +45,7 @@ __all__ = [
     "encode_rng_state",
     "load_checkpoint",
     "load_generation",
+    "load_history_csv",
     "parse_checkpoint",
     "publish_checkpoint",
     "publish_generation",
