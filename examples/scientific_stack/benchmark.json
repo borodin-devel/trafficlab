@@ -18,7 +18,7 @@
     }
   },
   "comparison": {
-    "combined_multiscale_acf_speedup": 20.509555377006716,
+    "combined_multiscale_acf_speedup": 21.960060983829052,
     "peak_rss_ratio": 1.0
   },
   "dataset": {
@@ -68,19 +68,19 @@
       }
     },
     "uv_lock_identity": {
-      "sha256": "b11e9c4f8ec7e0110b0c9823aadcb17b309bddd4a48fbc5ad41c7794d9219357",
-      "size": 104376
+      "sha256": "b66ad35ff61e66b02cfd380eb0396916a7271b07421183b9253f489a2e1498f9",
+      "size": 112618
     }
   },
   "implementations": {
     "scalar": {
       "medians": {
-        "combined_multiscale_acf": 2.8176892679994126,
-        "iat": 0.12922316299955128,
-        "multiscale": 1.8573052829997323,
-        "normalization": 0.06191372000012052,
-        "peak_rss_kib": 231400,
-        "selected_lag_acf": 0.9682750009997108
+        "combined_multiscale_acf": 2.6255834749972564,
+        "iat": 0.1183905389989377,
+        "multiscale": 1.7342126939984155,
+        "normalization": 0.05707483799778856,
+        "peak_rss_kib": 230420,
+        "selected_lag_acf": 0.8913707809988409
       },
       "samples": [
         {
@@ -92,7 +92,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 1,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -100,11 +100,11 @@
             "selected_lag_acf": "bbb40c8fe7067615f3e7980cc6651e0ae2790f4ea53f35af10c42078d7541855"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 2.8446785959995395,
-            "iat": 0.1306210779994217,
-            "multiscale": 1.8604517690000648,
-            "normalization": 0.06191372000012052,
-            "selected_lag_acf": 0.9842268269994747
+            "combined_multiscale_acf": 2.6255834749972564,
+            "iat": 0.11765200799709419,
+            "multiscale": 1.7342126939984155,
+            "normalization": 0.05707483799778856,
+            "selected_lag_acf": 0.8913707809988409
           }
         },
         {
@@ -116,7 +116,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 2,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -124,11 +124,11 @@
             "selected_lag_acf": "bbb40c8fe7067615f3e7980cc6651e0ae2790f4ea53f35af10c42078d7541855"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 2.8176892679994126,
-            "iat": 0.12922316299955128,
-            "multiscale": 1.8573052829997323,
-            "normalization": 0.0721207480000885,
-            "selected_lag_acf": 0.9603839849996803
+            "combined_multiscale_acf": 2.6168627350052702,
+            "iat": 0.12426059400604572,
+            "multiscale": 1.7383718080018298,
+            "normalization": 0.05731145900062984,
+            "selected_lag_acf": 0.8784909270034404
           }
         },
         {
@@ -140,7 +140,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 3,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -148,11 +148,11 @@
             "selected_lag_acf": "bbb40c8fe7067615f3e7980cc6651e0ae2790f4ea53f35af10c42078d7541855"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 2.804838643999574,
-            "iat": 0.128854902999592,
-            "multiscale": 1.845331597999575,
-            "normalization": 0.06251732200053084,
-            "selected_lag_acf": 0.9595070459999988
+            "combined_multiscale_acf": 2.597305118004442,
+            "iat": 0.11566411800595233,
+            "multiscale": 1.7086775080024381,
+            "normalization": 0.05403363300138153,
+            "selected_lag_acf": 0.8886276100020041
           }
         },
         {
@@ -164,7 +164,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 4,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -172,11 +172,11 @@
             "selected_lag_acf": "bbb40c8fe7067615f3e7980cc6651e0ae2790f4ea53f35af10c42078d7541855"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 2.814120512000045,
-            "iat": 0.13560591200075578,
-            "multiscale": 1.8458455110003342,
-            "normalization": 0.05858419500054879,
-            "selected_lag_acf": 0.9682750009997108
+            "combined_multiscale_acf": 2.664438178995624,
+            "iat": 0.1183905389989377,
+            "multiscale": 1.7552171459974488,
+            "normalization": 0.05290148500353098,
+            "selected_lag_acf": 0.9092210329981754
           }
         },
         {
@@ -188,7 +188,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 5,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -196,11 +196,11 @@
             "selected_lag_acf": "bbb40c8fe7067615f3e7980cc6651e0ae2790f4ea53f35af10c42078d7541855"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 2.8455787470011273,
-            "iat": 0.12870701199972245,
-            "multiscale": 1.8679842130004545,
-            "normalization": 0.05586898599995038,
-            "selected_lag_acf": 0.9775945340006729
+            "combined_multiscale_acf": 2.6489269430021523,
+            "iat": 0.11852107100276044,
+            "multiscale": 1.7255040890013333,
+            "normalization": 0.057288220996269956,
+            "selected_lag_acf": 0.9234228540008189
           }
         }
       ],
@@ -214,7 +214,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 1,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -222,23 +222,23 @@
             "selected_lag_acf": "bbb40c8fe7067615f3e7980cc6651e0ae2790f4ea53f35af10c42078d7541855"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 2.8279861359997085,
-            "iat": 0.12846719999924971,
-            "multiscale": 1.8555031429996234,
-            "normalization": 0.06641867899998033,
-            "selected_lag_acf": 0.9724829930000851
+            "combined_multiscale_acf": 2.642707391998556,
+            "iat": 0.1197208329977002,
+            "multiscale": 1.7360111629968742,
+            "normalization": 0.05457118900085334,
+            "selected_lag_acf": 0.9066962290016818
           }
         }
       ]
     },
     "vector": {
       "medians": {
-        "combined_multiscale_acf": 0.13738421999914863,
-        "iat": 0.0032690170000932994,
-        "multiscale": 0.06946029099981388,
-        "normalization": 0.006912452000506164,
-        "peak_rss_kib": 231400,
-        "selected_lag_acf": 0.06792392899933475
+        "combined_multiscale_acf": 0.11956175699742744,
+        "iat": 0.0034352149959886447,
+        "multiscale": 0.06278510500123957,
+        "normalization": 0.007216600999527145,
+        "peak_rss_kib": 230420,
+        "selected_lag_acf": 0.05421591600315878
       },
       "samples": [
         {
@@ -250,7 +250,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 1,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -258,11 +258,11 @@
             "selected_lag_acf": "60f9ea2cd5bf82f0ae8faedaa4a201bda191d6a866b87f725e1b00b918c6126a"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 0.13289934300064488,
-            "iat": 0.002594077000139805,
-            "multiscale": 0.06979813399993873,
-            "normalization": 0.0059346420002839295,
-            "selected_lag_acf": 0.06310120900070615
+            "combined_multiscale_acf": 0.11956175699742744,
+            "iat": 0.0034352149959886447,
+            "multiscale": 0.06979345199943054,
+            "normalization": 0.0059853690036106855,
+            "selected_lag_acf": 0.04976830499799689
           }
         },
         {
@@ -274,7 +274,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 2,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -282,11 +282,11 @@
             "selected_lag_acf": "60f9ea2cd5bf82f0ae8faedaa4a201bda191d6a866b87f725e1b00b918c6126a"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 0.1596299109996835,
-            "iat": 0.003466543999820715,
-            "multiscale": 0.07451128299999255,
-            "normalization": 0.006912452000506164,
-            "selected_lag_acf": 0.08511862799969094
+            "combined_multiscale_acf": 0.12359203900268767,
+            "iat": 0.004000599998107646,
+            "multiscale": 0.06864959000085946,
+            "normalization": 0.008135001000482589,
+            "selected_lag_acf": 0.05494244900182821
           }
         },
         {
@@ -298,7 +298,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 3,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -306,11 +306,11 @@
             "selected_lag_acf": "60f9ea2cd5bf82f0ae8faedaa4a201bda191d6a866b87f725e1b00b918c6126a"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 0.13738421999914863,
-            "iat": 0.0026953699998557568,
-            "multiscale": 0.06946029099981388,
-            "normalization": 0.006549949000145716,
-            "selected_lag_acf": 0.06792392899933475
+            "combined_multiscale_acf": 0.10936826300167013,
+            "iat": 0.0035752679978031665,
+            "multiscale": 0.05841388599947095,
+            "normalization": 0.006401145001291297,
+            "selected_lag_acf": 0.05095437700219918
           }
         },
         {
@@ -322,7 +322,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 4,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -330,11 +330,11 @@
             "selected_lag_acf": "60f9ea2cd5bf82f0ae8faedaa4a201bda191d6a866b87f725e1b00b918c6126a"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 0.15525839600104518,
-            "iat": 0.0035007989999940037,
-            "multiscale": 0.06415381600072578,
-            "normalization": 0.008706098000402562,
-            "selected_lag_acf": 0.0911045800003194
+            "combined_multiscale_acf": 0.1167222820004099,
+            "iat": 0.0033414229983463883,
+            "multiscale": 0.06250636599725112,
+            "normalization": 0.007216600999527145,
+            "selected_lag_acf": 0.05421591600315878
           }
         },
         {
@@ -346,7 +346,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 5,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -354,11 +354,11 @@
             "selected_lag_acf": "60f9ea2cd5bf82f0ae8faedaa4a201bda191d6a866b87f725e1b00b918c6126a"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 0.11907892799990805,
-            "iat": 0.0032690170000932994,
-            "multiscale": 0.06417945900011546,
-            "normalization": 0.007605626999975357,
-            "selected_lag_acf": 0.05489946899979259
+            "combined_multiscale_acf": 0.1218214979962795,
+            "iat": 0.002446251004585065,
+            "multiscale": 0.06278510500123957,
+            "normalization": 0.008753488000365905,
+            "selected_lag_acf": 0.05903639299503993
           }
         }
       ],
@@ -372,7 +372,7 @@
             "timestamps": "c3b2068d6703fe44af56a9adfff434d71c1e12c3925a69b16919f3f2b71fae11"
           },
           "ordinal": 1,
-          "peak_rss_kib": 231400,
+          "peak_rss_kib": 230420,
           "result_identities": {
             "iat": "bbf7b85c07a146add60566cb8bd216c6fed6bde101027e3c89fc157b4f3ddce4",
             "multiscale": "5e7ba47a376afcbb276f5c56745d65c7f4d5238ea3ebbeafd1592da57a19c409",
@@ -380,11 +380,11 @@
             "selected_lag_acf": "60f9ea2cd5bf82f0ae8faedaa4a201bda191d6a866b87f725e1b00b918c6126a"
           },
           "wall_seconds": {
-            "combined_multiscale_acf": 0.14326820299902465,
-            "iat": 0.0025487930006420356,
-            "multiscale": 0.07463305399960518,
-            "normalization": 0.005772245000116527,
-            "selected_lag_acf": 0.06863514899941947
+            "combined_multiscale_acf": 0.13504053200449562,
+            "iat": 0.0031101940039661713,
+            "multiscale": 0.06752648999827215,
+            "normalization": 0.005880425000214018,
+            "selected_lag_acf": 0.06751404200622346
           }
         }
       ]
