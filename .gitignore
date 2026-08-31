@@ -46,3 +46,6 @@ runs/
 # Local agent state and the user's private task record.
 /.superpowers/
 /TASK.md
+
+# User-provided traffic dumps for experimentation
+/dumps/
