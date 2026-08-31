@@ -24,14 +24,11 @@ from trafficlab_dashboard.aspects.numerics import (
 from trafficlab_dashboard.run_data import DashboardRun
 
 
-def _title(label: str, unit: str, reference_count: int, generated_count: int) -> str:
-    return " · ".join(
-        (
-            f"{label} ({unit})",
-            f"Reference n={reference_count}",
-            f"Generated n={generated_count}",
-        )
-    )
+def _title(label: str, unit: str, reference_count: int, generated_count: int, *, bin_width: float | None = None) -> str:
+    parts = [f"{label} ({unit})", f"Reference n={reference_count}", f"Generated n={generated_count}"]
+    if bin_width is not None:
+        parts.append(f"Bin width {bin_width:g} s")
+    return " · ".join(parts)
 
 
 def _combined_limits(*arrays: NDArray[np.float64]) -> tuple[float, float]:
@@ -71,17 +68,21 @@ def _line_plot(
     reference: LineSeries,
     generated: LineSeries,
     x_limits: tuple[float, float],
+    bin_width: float | None = None,
+    bin_edges: NDArray[np.float64] | None = None,
 ) -> LinePlotData:
     return LinePlotData(
         identifier=identifier,
         label=label,
-        title=_title(label, unit, reference.sample_count, generated.sample_count),
+        title=_title(label, unit, reference.sample_count, generated.sample_count, bin_width=bin_width),
         x_label=x_label,
         y_label="ECDF",
         unit=unit,
         series=(reference, generated),
         x_limits=x_limits,
         y_limits=(0.0, 1.0),
+        bin_width=bin_width,
+        bin_edges=bin_edges,
         reference_sample_count=reference.sample_count,
         generated_sample_count=generated.sample_count,
     )
@@ -326,4 +327,6 @@ class ThroughputEcdfAspect:
                 maximum_points=settings.maximum_display_points,
             ),
             x_limits=_combined_limits(reference_sample, generated_sample),
+            bin_width=width,
+            bin_edges=edges,
         )

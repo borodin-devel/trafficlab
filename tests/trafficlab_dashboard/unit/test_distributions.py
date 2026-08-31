@@ -316,7 +316,7 @@ def test_constant_frame_size_histogram_uses_numpy_fallback_edges() -> None:
     assert data.series[1].values.tolist() == pytest.approx([1.0])
 
 
-def test_throughput_ecdf_reuses_task4_shared_time_binning() -> None:
+def test_throughput_ecdf_reuses_task4_shared_time_binning_and_self_describes_it() -> None:
     data = ThroughputEcdfAspect().calculate(_throughput_run(), _settings(bins=2))
 
     _assert_ecdf_metadata(
@@ -328,6 +328,11 @@ def test_throughput_ecdf_reuses_task4_shared_time_binning() -> None:
     )
     assert data.reference_sample_count == 2
     assert data.generated_sample_count == 2
+    assert data.bin_width == 1.0
+    assert data.bin_edges is not None
+    assert data.bin_edges.tolist() == pytest.approx([0.0, 1.0, 2.0])
+    assert not data.bin_edges.flags.writeable
+    assert "Bin width 1 s" in data.title
     assert data.series[0].x.tolist() == pytest.approx([0.0008, 0.004])
     assert data.series[0].y.tolist() == pytest.approx([0.5, 1.0])
     assert data.series[1].x.tolist() == pytest.approx([0.0004, 0.002])
