@@ -11,9 +11,12 @@ from trafficlab_dashboard.state import (
     accept_run_load,
     begin_aspect_request,
     begin_run_load,
+    commit_pending_run,
     prepare_shutdown,
     reject_aspect,
+    reject_pending_run,
     set_visibility,
+    stage_run_load,
 )
 
 
@@ -91,6 +94,75 @@ def test_accept_run_load_keeps_requested_aspect_only_when_it_is_available() -> N
     assert accepted.calculating is False
 
 
+def test_stage_run_load_preserves_the_accepted_run_until_the_first_replacement_plot_is_ready() -> None:
+    current = DashboardState(
+        generation=4,
+        run=_run(),
+        selected_aspect="throughput",
+        requested_aspect="throughput",
+    )
+
+    staged = stage_run_load(
+        current,
+        token=4,
+        run=_run(),
+        aspect_order=("throughput", "similarity_scores"),
+    )
+
+    assert staged.run is current.run
+    assert staged.pending_run is not None
+    assert staged.pending_run_token == 4
+    assert staged.pending_aspect == "throughput"
+    assert staged.selected_aspect == "throughput"
+    assert staged.requested_aspect == "throughput"
+    assert staged.calculating is True
+
+
+def test_commit_pending_run_atomically_swaps_the_accepted_run_after_first_plot_success() -> None:
+    current = DashboardState(
+        run=_run(),
+        selected_aspect="throughput",
+        requested_aspect="throughput",
+        pending_run=_run(),
+        pending_run_token=7,
+        pending_aspect="packet_rate",
+        calculating=True,
+    )
+
+    committed = commit_pending_run(current, "packet_rate")
+
+    assert committed.run is current.pending_run
+    assert committed.pending_run is None
+    assert committed.pending_run_token is None
+    assert committed.pending_aspect is None
+    assert committed.selected_aspect == "packet_rate"
+    assert committed.requested_aspect == "packet_rate"
+    assert committed.calculating is False
+
+
+def test_reject_pending_run_keeps_the_previous_accepted_run_when_replacement_plot_fails() -> None:
+    current = DashboardState(
+        run=_run(),
+        selected_aspect="throughput",
+        requested_aspect="throughput",
+        pending_run=_run(),
+        pending_run_token=8,
+        pending_aspect="throughput",
+        calculating=True,
+    )
+
+    rejected = reject_pending_run(current, "replacement failed")
+
+    assert rejected.run is current.run
+    assert rejected.pending_run is None
+    assert rejected.pending_run_token is None
+    assert rejected.pending_aspect is None
+    assert rejected.selected_aspect == "throughput"
+    assert rejected.requested_aspect == "throughput"
+    assert rejected.calculating is False
+    assert rejected.progress_text == ""
+
+
 def test_begin_aspect_request_tracks_the_requested_identifier_without_changing_current_plot() -> None:
     current = DashboardState(generation=3, selected_aspect="throughput", requested_aspect="throughput")
 
@@ -119,6 +191,9 @@ def test_prepare_shutdown_invalidates_late_results_without_clearing_visible_plot
         run=_run(),
         selected_aspect="throughput",
         requested_aspect="throughput",
+        pending_run=_run(),
+        pending_run_token=7,
+        pending_aspect="packet_rate",
         loading_run=True,
         calculating=True,
     )
@@ -129,6 +204,9 @@ def test_prepare_shutdown_invalidates_late_results_without_clearing_visible_plot
     assert updated.run is current.run
     assert updated.selected_aspect == "throughput"
     assert updated.requested_aspect == "throughput"
+    assert updated.pending_run is None
+    assert updated.pending_run_token is None
+    assert updated.pending_aspect is None
     assert updated.loading_run is False
     assert updated.calculating is False
 

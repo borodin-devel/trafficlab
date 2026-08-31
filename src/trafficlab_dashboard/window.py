@@ -31,13 +31,15 @@ from trafficlab_dashboard.run_loader import load_dashboard_run
 from trafficlab_dashboard.state import (
     DashboardState,
     accept_aspect,
-    accept_run_load,
     begin_aspect_request,
     begin_run_load,
+    commit_pending_run,
     prepare_shutdown,
     reject_aspect,
+    reject_pending_run,
     reject_run_load,
     set_visibility,
+    stage_run_load,
 )
 from trafficlab_dashboard.workers import (
     CalculateAspectFailure,
@@ -139,19 +141,17 @@ class DashboardWindow(QMainWindow):
             self._show_status()
             self._show_error_dialog("Open Run Failed", message)
             return
-        self.cache.clear()
-        self._current_plot = None
-        self.state = accept_run_load(
+        self.state = stage_run_load(
             self.state,
-            load_result.run,
+            token=load_result.token,
+            run=load_result.run,
             aspect_order=tuple(aspect.identifier for aspect in self.aspects),
         )
-        self._update_aspect_availability(load_result.run)
         self._sync_aspect_selection()
         self._update_controls()
         self._show_status()
-        if self.state.selected_aspect is not None:
-            self.request_aspect(self.state.selected_aspect)
+        if self.state.pending_aspect is not None:
+            self._request_plot_for_run(load_result.run, self.state.pending_aspect, load_result.token)
 
     @Slot(object)
     def accept_calculation(self, result: object) -> None:
@@ -161,11 +161,29 @@ class DashboardWindow(QMainWindow):
             return
         if isinstance(calculation_result, CalculateAspectFailure):
             message = self._format_error(calculation_result.error)
-            self.state = reject_aspect(self.state, message)
+            if self.state.pending_run is not None and self.state.pending_run_token == calculation_result.token:
+                self.state = reject_pending_run(self.state, message)
+            else:
+                self.state = reject_aspect(self.state, message)
             self._sync_aspect_selection()
             self._update_controls()
             self._show_status()
             self._show_error_dialog("Aspect Calculation Failed", message)
+            return
+        if self.state.pending_run is not None and self.state.pending_run_token == calculation_result.token:
+            pending_run = self.state.pending_run
+            key = self.cache.key(pending_run, calculation_result.aspect_id, self.settings)
+            self.cache.clear()
+            self.cache.put(key, calculation_result.data)
+            self._current_plot = calculation_result.data
+            self.state = commit_pending_run(self.state, calculation_result.aspect_id)
+            committed_run = self.state.run
+            assert committed_run is not None
+            self._update_aspect_availability(committed_run)
+            self.canvas.render(calculation_result.data, self.state.visibility, preserve_viewport=False)
+            self._sync_aspect_selection()
+            self._update_controls()
+            self._show_status()
             return
         run = self.state.run
         if run is None:
@@ -206,25 +224,7 @@ class DashboardWindow(QMainWindow):
         self._sync_aspect_selection()
         self._update_controls()
         self._show_status()
-        key = self.cache.key(run, aspect_id, self.settings)
-        cached = self.cache.get(key)
-        if cached is not None:
-            self._current_plot = cached
-            self.state = accept_aspect(self.state, aspect_id)
-            self.canvas.render(cached, self.state.visibility, preserve_viewport=False)
-            self._sync_aspect_selection()
-            self._update_controls()
-            self._show_status()
-            return
-        worker = CalculateAspectWorker(
-            token=self.state.generation,
-            aspect=self._aspects_by_id[aspect_id],
-            run=run,
-            settings=self.settings,
-        )
-        worker.signals.result.connect(self.accept_calculation)
-        self._active_workers[self.state.generation] = worker
-        self._thread_pool.start(worker)
+        self._request_plot_for_run(run, aspect_id, self.state.generation)
 
     def _build_window(self) -> None:
         self.setWindowTitle("TrafficLab Dashboard")
@@ -311,7 +311,7 @@ class DashboardWindow(QMainWindow):
 
     def _update_controls(self) -> None:
         active_aspect = self._active_aspect()
-        trace_controls_enabled = self.state.run is not None and active_aspect.trace_controls
+        trace_controls_enabled = self.state.run is not None and self._current_plot is not None and active_aspect.trace_controls
         self._syncing_controls = True
         try:
             self.reference_button.setChecked(self.state.visibility.reference)
@@ -321,11 +321,13 @@ class DashboardWindow(QMainWindow):
         finally:
             self._syncing_controls = False
         plot_available = self._current_plot is not None
+        conflicting_work = self.state.loading_run or self.state.calculating
+        self.open_button.setEnabled(not conflicting_work)
+        self.aspect_combo.setEnabled(self.state.run is not None and not conflicting_work)
         self.reset_button.setEnabled(plot_available)
         self.export_button.setEnabled(plot_available)
-        busy = self.state.loading_run or self.state.calculating
         self.progress_overlay.setText(self.state.progress_text or "Working…")
-        if plot_available and busy:
+        if conflicting_work:
             self.progress_overlay.resize(self.canvas.size())
             self.progress_overlay.show()
             self.progress_overlay.raise_()
@@ -379,7 +381,7 @@ class DashboardWindow(QMainWindow):
         return destination.with_suffix(".png"), "png"
 
     def _active_aspect(self) -> Aspect:
-        aspect_id = self.state.requested_aspect or self.state.selected_aspect or self.aspects[0].identifier
+        aspect_id = self.state.selected_aspect or self.state.requested_aspect or self.aspects[0].identifier
         return self._aspects_by_id.get(aspect_id, self.aspects[0])
 
     def _on_aspect_selected(self, index: int) -> None:
@@ -426,3 +428,33 @@ class DashboardWindow(QMainWindow):
         if self._closing:
             return
         QMessageBox.critical(self, title, message)
+
+    def _request_plot_for_run(self, run: DashboardRun, aspect_id: str, token: int) -> None:
+        key = self.cache.key(run, aspect_id, self.settings)
+        cached = self.cache.get(key)
+        if cached is not None:
+            if self.state.pending_run is not None and self.state.pending_run_token == token:
+                self.cache.clear()
+                self.cache.put(key, cached)
+                self._current_plot = cached
+                self.state = commit_pending_run(self.state, aspect_id)
+                committed_run = self.state.run
+                assert committed_run is not None
+                self._update_aspect_availability(committed_run)
+            else:
+                self._current_plot = cached
+                self.state = accept_aspect(self.state, aspect_id)
+            self.canvas.render(cached, self.state.visibility, preserve_viewport=False)
+            self._sync_aspect_selection()
+            self._update_controls()
+            self._show_status()
+            return
+        worker = CalculateAspectWorker(
+            token=token,
+            aspect=self._aspects_by_id[aspect_id],
+            run=run,
+            settings=self.settings,
+        )
+        worker.signals.result.connect(self.accept_calculation)
+        self._active_workers[token] = worker
+        self._thread_pool.start(worker)

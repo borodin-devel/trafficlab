@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import MappingProxyType
+from typing import cast
 
 import numpy as np
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QMessageBox
 from pytestqt.qtbot import QtBot
@@ -105,6 +106,18 @@ class _CountingAspect:
         return _plot(self.identifier)
 
 
+class _RecordingThreadPool:
+    def __init__(self) -> None:
+        self.started: list[object] = []
+        self.cleared = False
+
+    def start(self, worker: object) -> None:
+        self.started.append(worker)
+
+    def clear(self) -> None:
+        self.cleared = True
+
+
 def _window(qtbot: QtBot, *aspects: _CountingAspect) -> DashboardWindow:
     window = DashboardWindow(initial_run_directory=None, aspects=aspects)
     window._initial_action_pending = False  # pyright: ignore[reportPrivateUsage]
@@ -196,11 +209,129 @@ def test_cache_clears_only_on_matching_successful_run_replacement(
     assert window.cache.get(cached_key) is not None
 
     window.state = begin_run_load(window.state, run_b.directory)
-    window.accept_load(LoadRunSuccess(token=window.state.generation, directory=run_b.directory, run=run_b))
+    replacement_token = window.state.generation
+    window.accept_load(LoadRunSuccess(token=replacement_token, directory=run_b.directory, run=run_b))
+
+    assert window.state.run is not None
+    assert window.state.run.directory == run_a.directory
+    assert window.state.pending_run is not None
+    assert window.state.pending_run.directory == run_b.directory
+    assert window.cache.get(cached_key) is not None
+
+    window.accept_calculation(
+        CalculateAspectSuccess(token=replacement_token, aspect_id="throughput", data=_plot("run-b"))
+    )
 
     assert window.state.run is not None
     assert window.state.run.directory == run_b.directory
-    assert len(window.cache) == 0
+    assert window.state.pending_run is None
+    assert len(window.cache) == 1
+    assert window.cache.get(cached_key) is None
+
+
+def test_direct_slot_replacement_failure_keeps_the_accepted_run_and_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    aspect = _CountingAspect("throughput")
+    thread_pool = _RecordingThreadPool()
+    window = DashboardWindow(
+        initial_run_directory=None,
+        aspects=(aspect,),
+        thread_pool=cast(QThreadPool, thread_pool),
+    )
+    window._initial_action_pending = False  # pyright: ignore[reportPrivateUsage]
+    qtbot.addWidget(window)
+    window.show()
+    run_a = _run(tmp_path / "run-a", suffix="a")
+    run_b = _run(tmp_path / "run-b", suffix="b")
+
+    window.state = begin_run_load(window.state, run_a.directory)
+    window.accept_load(LoadRunSuccess(token=window.state.generation, directory=run_a.directory, run=run_a))
+    first_token = window.state.generation
+    assert len(thread_pool.started) == 1
+    window.accept_calculation(
+        CalculateAspectSuccess(token=first_token, aspect_id="throughput", data=_plot("run-a"))
+    )
+    assert window.state.run is not None
+    assert window.state.run.directory == run_a.directory
+    cached_key = window.cache.keys()[0]
+
+    window.state = begin_run_load(window.state, run_b.directory)
+    replacement_token = window.state.generation
+    window.accept_load(LoadRunSuccess(token=replacement_token, directory=run_b.directory, run=run_b))
+
+    assert window.state.run is not None
+    assert window.state.run.directory == run_a.directory
+    assert window.state.pending_run is not None
+    assert window.cache.get(cached_key) is not None
+
+    def ignore_dialog(parent: object, title: str, text: str) -> int:
+        del parent, title, text
+        return int(QMessageBox.StandardButton.Ok)
+
+    monkeypatch.setattr(QMessageBox, "critical", ignore_dialog)
+    window.accept_calculation(
+        CalculateAspectFailure(token=replacement_token, aspect_id="throughput", error=RuntimeError("replacement failed"))
+    )
+
+    assert window.state.run is not None
+    assert window.state.run.directory == run_a.directory
+    assert window.state.pending_run is None
+    assert window.cache.get(cached_key) is not None
+
+
+def test_stale_replacement_plot_cannot_commit_after_a_newer_run_request(
+    qtbot: QtBot,
+    tmp_path: Path,
+) -> None:
+    aspect = _CountingAspect("throughput")
+    thread_pool = _RecordingThreadPool()
+    window = DashboardWindow(
+        initial_run_directory=None,
+        aspects=(aspect,),
+        thread_pool=cast(QThreadPool, thread_pool),
+    )
+    window._initial_action_pending = False  # pyright: ignore[reportPrivateUsage]
+    qtbot.addWidget(window)
+    window.show()
+    run_a = _run(tmp_path / "run-a", suffix="a")
+    run_b = _run(tmp_path / "run-b", suffix="b")
+    run_c = _run(tmp_path / "run-c", suffix="c")
+
+    window.state = begin_run_load(window.state, run_a.directory)
+    window.accept_load(LoadRunSuccess(token=window.state.generation, directory=run_a.directory, run=run_a))
+    accepted_token = window.state.generation
+    window.accept_calculation(
+        CalculateAspectSuccess(token=accepted_token, aspect_id="throughput", data=_plot("run-a"))
+    )
+
+    window.state = begin_run_load(window.state, run_b.directory)
+    b_token = window.state.generation
+    window.accept_load(LoadRunSuccess(token=b_token, directory=run_b.directory, run=run_b))
+    assert window.state.pending_run is not None
+
+    QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
+    assert window.state.run is not None
+    assert window.state.run.directory == run_a.directory
+
+    window.state = begin_run_load(window.state, run_c.directory)
+    c_token = window.state.generation
+    window.accept_load(LoadRunSuccess(token=c_token, directory=run_c.directory, run=run_c))
+
+    window.accept_calculation(CalculateAspectSuccess(token=b_token, aspect_id="throughput", data=_plot("run-b")))
+
+    assert window.state.run is not None
+    assert window.state.run.directory == run_a.directory
+    assert window.state.pending_run is not None
+    assert window.state.pending_run.directory == run_c.directory
+
+    window.accept_calculation(CalculateAspectSuccess(token=c_token, aspect_id="throughput", data=_plot("run-c")))
+
+    assert window.state.run is not None
+    assert window.state.run.directory == run_c.directory
+    assert window.state.pending_run is None
 
 
 def test_shutdown_invalidates_late_results_before_they_touch_the_canvas(qtbot: QtBot, tmp_path: Path) -> None:
