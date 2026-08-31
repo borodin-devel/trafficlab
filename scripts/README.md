@@ -26,11 +26,39 @@ uv run --locked python scripts/NAME.py --help
 | `benchmark_scapy_production.py` | Records or checks non-gating production Scapy encode/read benchmark evidence. |
 | `measure_scientific_stack_reduction.py` | Recomputes or checks source-reduction inventories from Git revisions. |
 | `check_scientific_stack_example.py` | Strictly verifies a retained real run, or records a new explicitly supplied run directory. |
+| `prepare_traffic_dumps.py` | Creates ordered, TrafficLab-validated PCAPNG copies of external PCAP/PCAPNG dumps without modifying their sources. |
 
 Most generators write their owned checked paths when called without `--check`.
 Use `--check` in normal verification so a stale artifact fails without mutating
 the checkout. The exact release list is authoritative in
 [`architecture/DEVELOPMENT.md`](../architecture/DEVELOPMENT.md#release-gate).
+
+## External traffic-dump preparation
+
+Prepare every PCAP and PCAPNG below `dumps/` recursively:
+
+```bash
+uv run --locked python scripts/prepare_traffic_dumps.py
+```
+
+Paths may also name individual captures or other directories, and `--prefix`
+changes the default `trafficlab-ready-` output prefix:
+
+```bash
+uv run --locked python scripts/prepare_traffic_dumps.py \
+  dumps/legacy.pcap dumps/another-directory \
+  --prefix trafficlab-ready-
+```
+
+The script requires Wireshark's `editcap` and `reordercap` programs. It writes a
+new sibling `<prefix><source-stem>.pcapng`, never changes the source, never
+overwrites an existing destination, and excludes already-prefixed captures from
+recursive discovery. Each candidate is converted to PCAPNG, timestamp-ordered,
+and accepted only after TrafficLab's production parser confirms one Ethernet
+interface, Enhanced Packet Blocks, at least two packets, and a positive
+observation window. A prepared capture still needs an authoritative target MAC,
+canonical `capture.json`, and external-capture lineage before it can serve as a
+conformant experiment reference.
 
 ## Bounded command wrapper
 
