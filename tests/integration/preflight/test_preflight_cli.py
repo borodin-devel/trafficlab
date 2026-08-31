@@ -16,7 +16,7 @@ import trafficlab.capture.docker as docker_package
 import trafficlab.cli as cli
 import trafficlab.preflight.stage as preflight_module
 from trafficlab.cli import main
-from trafficlab.common.config_io import load_experiment
+from trafficlab.common.config_io import load_configuration_pair, load_experiment
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.preflight.types import PreparedExperiment
 
@@ -401,3 +401,94 @@ def test_checked_in_example_is_complete_and_uses_repository_relative_paths() -> 
     assert config.models.markov_renewal.operator_values == (0.9, 0.2, 0.1)
     assert config.models.mmpp.operator_values == (0.9, 0.25, 0.1)
     assert (repository / "examples" / "data" / "request.txt").read_text(encoding="utf-8") == ("trafficlab example\n")
+
+
+def test_checked_in_external_reference_default_is_release_sized_and_config_only_runnable(tmp_path: Path) -> None:
+    """A small or capture-capable default could truncate large imported dumps or misrepresent their provenance."""
+    repository = Path(__file__).parents[3]
+    checked = repository / "examples" / "configs" / "default.toml"
+    checked_pair = load_configuration_pair(checked)
+    run_directory = tmp_path / "runs" / "external-default"
+    local = tmp_path / "configs" / "default.toml"
+    local.parent.mkdir()
+    content = checked.read_text(encoding="utf-8").replace(
+        'directory = "../../runs/default"',
+        f'directory = "{run_directory}"',
+        1,
+    )
+    local.write_text(content, encoding="utf-8")
+
+    prepared = preflight_module.run_preflight(local, config_only=True)
+    config = prepared.config
+
+    assert checked_pair.portable.run.directory == Path("../../runs/default")
+    assert checked_pair.realized.run.directory == repository / "runs" / "default"
+    assert prepared.run_directory == run_directory
+    assert config.run.minimum_free_bytes == 10 * 1024**3
+    assert (config.run.master_seed, config.run.final_seed) == (20260831, 20260832)
+    assert config.target.image == "invalid@@external-reference"
+    assert config.target.argv == ("external-reference-not-executed",)
+    assert config.target.mounts == ()
+    assert config.capture.image == "invalid@@external-reference"
+    assert (
+        config.capture.readiness_timeout_seconds,
+        config.capture.workload_timeout_seconds,
+        config.capture.flush_timeout_seconds,
+        config.capture.total_timeout_seconds,
+    ) == (10.0, 3600.0, 30.0, 3700.0)
+    assert config.generation.trial.model_dump() == {
+        "max_packets": 1_000_000,
+        "max_output_bytes": 2_000_000_000,
+        "max_wall_seconds": 60.0,
+    }
+    assert config.generation.final.model_dump() == {
+        "max_packets": 2_000_000,
+        "max_output_bytes": 4_000_000_000,
+        "max_wall_seconds": 300.0,
+    }
+    assert config.genetic.population_size == 30
+    assert config.genetic.generation_count == 100
+    assert config.genetic.tournament_size == 5
+    assert config.genetic.elite_count == 2
+    assert config.genetic.trial_seeds == (17, 29, 43, 71, 101)
+    assert config.genetic.duplicate_mutation_attempts == 10
+    assert config.genetic.early_stopping_generations == 20
+    assert config.genetic.early_stopping_tolerance == 0.0001
+    assert config.genetic.resume is True
+    assert config.models.enabled == ("poisson_empirical", "markov_renewal", "mmpp")
+    assert config.models.poisson_empirical is not None
+    assert config.models.markov_renewal is not None
+    assert config.models.mmpp is not None
+    assert config.models.poisson_empirical.model_dump() == {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "c_lambda": {"lower": 0.25, "upper": 4.0},
+    }
+    assert config.models.markov_renewal.model_dump() == {
+        "crossover_probability": 0.9,
+        "mutation_probability": 0.2,
+        "mutation_scale": 0.1,
+        "q1": {"lower": 0.1, "upper": 0.4},
+        "q2": {"lower": 0.6, "upper": 0.9},
+        "alpha": {"lower": 0.0, "upper": 2.0},
+        "r": {"lower": 1, "upper": 8},
+        "c_t": {"lower": 0.25, "upper": 4.0},
+    }
+    assert config.models.mmpp.model_dump() == {
+        "crossover_probability": 0.9,
+        "mutation_probability": 0.25,
+        "mutation_scale": 0.1,
+        "q01": {"lower": 0.01, "upper": 10.0},
+        "q10": {"lower": 0.01, "upper": 10.0},
+        "lambda0": {"lower": 0.01, "upper": 100.0},
+        "lambda1": {"lower": 0.1, "upper": 1000.0},
+    }
+    assert config.similarity.multiscale_widths_seconds == (0.25, 1.0)
+    assert config.similarity.max_direction_bin_cells == 100_000
+    assert config.similarity.method_weights.model_dump() == {
+        "frame_size_ks": 0.25,
+        "iat_ks": 0.25,
+        "autocorrelation": 0.25,
+        "multiscale_rate": 0.25,
+    }

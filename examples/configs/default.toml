@@ -1,0 +1,145 @@
+# Release-sized template for fitting prepared external references from dumps/.
+#
+# Copy this file for every experiment and change [run].directory to a fresh,
+# unique path.  Initialize it with `trafficlab preflight ... --config-only`,
+# then copy the prepared pair into that run directory as `reference.pcapng`
+# and `capture.json`.  Use the standalone `fit`, `generate`, and `compare`
+# commands.  Do not use `capture` or `run`: the target and capture values below
+# are deliberately non-runnable provenance placeholders.
+
+[run]
+directory = "../../runs/default"
+# Covers the largest checked local dump, a generated trace up to the final
+# guard, checkpoints, histories, temporary siblings, and ordinary filesystem
+# overhead.  Increase this for larger future inputs.
+minimum_free_bytes = 10_737_418_240
+master_seed = 20260831
+# Final generation must use a seed distinct from every selection trial seed.
+final_seed = 20260832
+
+[target]
+# These values honestly record that no workload was executed for an imported
+# reference.  Full Docker preflight, capture, and `trafficlab run` are expected
+# to fail until replaced by a real pinned target and direct argv.
+image = "invalid@@external-reference"
+argv = ["external-reference-not-executed"]
+working_directory = "/"
+
+[target.environment]
+
+[capture]
+image = "invalid@@external-reference"
+network_probe_url = "https://example.invalid/"
+readiness_timeout_seconds = 10.0
+workload_timeout_seconds = 3600.0
+flush_timeout_seconds = 30.0
+total_timeout_seconds = 3700.0
+
+[generation.trial]
+# Trial simulations still cover the reference's complete W.  These guards
+# accommodate every capture currently prepared under dumps/, including the
+# 183,633-packet, approximately 342 MB full-workflow trace.  Guard exhaustion
+# remains an invalid candidate rather than a partial scientific result.
+max_packets = 1_000_000
+max_output_bytes = 2_000_000_000
+max_wall_seconds = 60.0
+
+[generation.final]
+max_packets = 2_000_000
+max_output_bytes = 4_000_000_000
+max_wall_seconds = 300.0
+
+[genetic]
+# Thirty individuals give each of the three families ten initial candidates.
+# One hundred generations and five common simulation seeds form a deep search:
+# up to 3,030 candidates and 15,150 full-window simulations.  This may run for
+# hours or days on large captures; resume preserves every whole-generation
+# checkpoint.  Early stopping requires 20 consecutive generations without an
+# absolute best-fitness improvement greater than 0.0001.
+population_size = 30
+generation_count = 100
+tournament_size = 5
+elite_count = 2
+trial_seeds = [17, 29, 43, 71, 101]
+duplicate_mutation_attempts = 10
+early_stopping_generations = 20
+early_stopping_tolerance = 0.0001
+resume = true
+
+[models]
+enabled = ["poisson_empirical", "markov_renewal", "mmpp"]
+
+[models.poisson_empirical]
+crossover_probability = 0.9
+mutation_probability = 1.0
+mutation_scale = 0.1
+
+[models.poisson_empirical.c_lambda]
+lower = 0.25
+upper = 4.0
+
+[models.markov_renewal]
+crossover_probability = 0.9
+mutation_probability = 0.2
+mutation_scale = 0.1
+
+[models.markov_renewal.q1]
+lower = 0.1
+upper = 0.4
+
+[models.markov_renewal.q2]
+lower = 0.6
+upper = 0.9
+
+[models.markov_renewal.alpha]
+lower = 0.0
+upper = 2.0
+
+[models.markov_renewal.r]
+lower = 1
+upper = 8
+
+[models.markov_renewal.c_t]
+lower = 0.25
+upper = 4.0
+
+[models.mmpp]
+crossover_probability = 0.9
+mutation_probability = 0.25
+mutation_scale = 0.1
+
+[models.mmpp.q01]
+lower = 0.01
+upper = 10.0
+
+[models.mmpp.q10]
+lower = 0.01
+upper = 10.0
+
+[models.mmpp.lambda0]
+lower = 0.01
+upper = 100.0
+
+[models.mmpp.lambda1]
+lower = 0.1
+upper = 1000.0
+
+[similarity]
+# These validated scales remain below the configured direction-cell cap for
+# the longest current dump.  Every method runs even when its weight is zero.
+iat_diagnostic_quantile = 0.95
+acf_lags = [1]
+acf_lag_weights = [1.0]
+acf_iat_weight = 0.5
+acf_size_weight = 0.5
+multiscale_widths_seconds = [0.25, 1.0]
+multiscale_scale_weights = [0.5, 0.5]
+multiscale_packet_weight = 0.5
+multiscale_byte_weight = 0.5
+max_direction_bin_cells = 100_000
+
+[similarity.method_weights]
+frame_size_ks = 0.25
+iat_ks = 0.25
+autocorrelation = 0.25
+multiscale_rate = 0.25
