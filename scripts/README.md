@@ -60,6 +60,26 @@ observation window. A prepared capture still needs an authoritative target MAC,
 canonical `capture.json`, and external-capture lineage before it can serve as a
 conformant experiment reference.
 
+To publish a complete organized pair per source, pass `--organized-root`. The
+script stages `<organized-root>/<source-stem>/` beside the destination root and
+atomically publishes it only after the processed PCAPNG and canonical
+`capture.json` validate together:
+
+```bash
+uv run --locked python scripts/prepare_traffic_dumps.py \
+  dumps \
+  --organized-root prepared-dumps
+```
+
+Each published directory contains exactly
+`trafficlab-ready-<source-stem>.pcapng` and `capture.json`. The metadata uses
+`interface="eth0"` plus a deterministic MAC inferred only from Ethernet source
+and destination headers. That metadata is a structural compatibility proxy for
+TrafficLab's parser boundary, not authoritative original-interface provenance or
+scientific proof that the inferred inbound and outbound labels match the source
+environment. Independently confirm the published direction labels before using
+them as scientific evidence.
+
 ## Bounded command wrapper
 
 `run_bounded.sh` runs a command inside a unique user-systemd scope and applies
