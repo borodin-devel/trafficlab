@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from trafficlab_dashboard.aspects.base import Aspect, CalculationSettings, PlotData
+from trafficlab_dashboard.run_data import DashboardRun
+
+
+def _not_implemented(identifier: str) -> PlotData:
+    raise NotImplementedError(f"aspect {identifier} is not implemented yet")
+
+
+@dataclass(frozen=True, slots=True)
+class _RegisteredAspect:
+    identifier: str
+    label: str
+    category: str
+    trace_controls: bool = True
+
+    def calculate(self, run: DashboardRun, settings: CalculationSettings) -> PlotData:
+        del run, settings
+        return _not_implemented(self.identifier)
+
+
+ASPECTS: tuple[Aspect, ...] = (
+    _RegisteredAspect("throughput", "Throughput", "Time domain"),
+    _RegisteredAspect("packet_rate", "Packet rate", "Time domain"),
+    _RegisteredAspect("cumulative_bytes", "Cumulative bytes", "Time domain"),
+    _RegisteredAspect("cumulative_packets", "Cumulative packets", "Time domain"),
+    _RegisteredAspect("frame_size_timeline", "Frame size versus time", "Time domain"),
+    _RegisteredAspect("iat_timeline", "IAT versus time", "Time domain"),
+    _RegisteredAspect("frame_size_ecdf", "Frame-size ECDF", "Distributions"),
+    _RegisteredAspect("iat_ecdf", "IAT ECDF", "Distributions"),
+    _RegisteredAspect("frame_size_histogram", "Frame-size histogram", "Distributions"),
+    _RegisteredAspect("iat_histogram", "IAT histogram", "Distributions"),
+    _RegisteredAspect("throughput_ecdf", "Throughput ECDF", "Distributions"),
+    _RegisteredAspect("directional_throughput", "Uplink/downlink throughput", "Direction"),
+    _RegisteredAspect("directional_packet_rate", "Uplink/downlink packet rate", "Direction"),
+    _RegisteredAspect("direction_balance", "Direction balance", "Direction"),
+    _RegisteredAspect("frame_size_acf", "Frame-size autocorrelation", "Dependence"),
+    _RegisteredAspect("iat_acf", "IAT autocorrelation", "Dependence"),
+    _RegisteredAspect("frame_size_iat_hexbin", "Frame size versus IAT", "Dependence"),
+)
+
+_ASPECTS_BY_ID = {aspect.identifier: aspect for aspect in ASPECTS}
+
+
+def aspect_by_id(identifier: str) -> Aspect:
+    try:
+        return _ASPECTS_BY_ID[identifier]
+    except KeyError as error:
+        raise KeyError(identifier) from error
