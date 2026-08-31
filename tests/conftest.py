@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol, cast
@@ -32,6 +33,13 @@ settings.register_profile(
     max_examples=100,
 )
 settings.load_profile("trafficlab_locked")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def release_completed_test_module_cycles() -> Iterator[None]:
+    """Release cyclic GUI/scientific fixtures before later bounded-scope modules."""
+    yield
+    gc.collect()
 
 
 class _ItemFixtureRequest(Protocol):
