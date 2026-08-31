@@ -9,6 +9,14 @@ import pytest
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 from trafficlab_dashboard.aspects.base import Aspect, CalculationSettings, LinePlotData, LineSeries
 from trafficlab_dashboard.aspects.registry import ASPECTS, aspect_by_id
+from trafficlab_dashboard.aspects.time_domain import (
+    CumulativeBytesAspect,
+    CumulativePacketsAspect,
+    FrameSizeTimelineAspect,
+    IatTimelineAspect,
+    PacketRateAspect,
+    ThroughputAspect,
+)
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
 
 EXPECTED_INITIAL_ASPECT_IDS = (
@@ -100,6 +108,17 @@ def test_aspect_protocol_is_runtime_checkable() -> None:
 
 def test_registry_order_matches_the_initial_dashboard_plan() -> None:
     assert tuple(aspect.identifier for aspect in ASPECTS) == EXPECTED_INITIAL_ASPECT_IDS
+
+
+def test_registry_uses_concrete_time_domain_aspects_in_the_planned_order() -> None:
+    assert tuple(type(aspect) for aspect in ASPECTS[:6]) == (
+        ThroughputAspect,
+        PacketRateAspect,
+        CumulativeBytesAspect,
+        CumulativePacketsAspect,
+        FrameSizeTimelineAspect,
+        IatTimelineAspect,
+    )
 
 
 def test_registry_aspects_conform_to_the_protocol() -> None:

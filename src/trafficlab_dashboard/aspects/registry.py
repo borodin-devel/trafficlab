@@ -3,6 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from trafficlab_dashboard.aspects.base import Aspect, CalculationSettings, PlotData
+from trafficlab_dashboard.aspects.time_domain import (
+    CumulativeBytesAspect,
+    CumulativePacketsAspect,
+    FrameSizeTimelineAspect,
+    IatTimelineAspect,
+    PacketRateAspect,
+    ThroughputAspect,
+)
 from trafficlab_dashboard.run_data import DashboardRun
 
 
@@ -23,12 +31,12 @@ class _RegisteredAspect:
 
 
 ASPECTS: tuple[Aspect, ...] = (
-    _RegisteredAspect("throughput", "Throughput", "Time domain"),
-    _RegisteredAspect("packet_rate", "Packet rate", "Time domain"),
-    _RegisteredAspect("cumulative_bytes", "Cumulative bytes", "Time domain"),
-    _RegisteredAspect("cumulative_packets", "Cumulative packets", "Time domain"),
-    _RegisteredAspect("frame_size_timeline", "Frame size versus time", "Time domain"),
-    _RegisteredAspect("iat_timeline", "IAT versus time", "Time domain"),
+    ThroughputAspect(),
+    PacketRateAspect(),
+    CumulativeBytesAspect(),
+    CumulativePacketsAspect(),
+    FrameSizeTimelineAspect(),
+    IatTimelineAspect(),
     _RegisteredAspect("frame_size_ecdf", "Frame-size ECDF", "Distributions"),
     _RegisteredAspect("iat_ecdf", "IAT ECDF", "Distributions"),
     _RegisteredAspect("frame_size_histogram", "Frame-size histogram", "Distributions"),
