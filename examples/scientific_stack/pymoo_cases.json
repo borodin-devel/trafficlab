@@ -53948,7 +53948,7 @@
       },
       {
         "path": "checkpoint/__init__.py",
-        "sloc": 53
+        "sloc": 57
       },
       {
         "path": "checkpoint/codec.py",
@@ -53960,7 +53960,7 @@
       },
       {
         "path": "checkpoint/history.py",
-        "sloc": 138
+        "sloc": 157
       },
       {
         "path": "checkpoint/schema.py",
@@ -53995,7 +53995,7 @@
         "sloc": 222
       }
     ],
-    "current_sloc": 3056,
+    "current_sloc": 3079,
     "estimated_reduction_percent": null,
     "gate_passed": false,
     "method": "nonblank non-comment physical Python lines",
