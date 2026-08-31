@@ -415,7 +415,10 @@ def test_visualization_contract_describes_stale_result_invalidation_and_atomic_r
     content = (REPOSITORY / "architecture" / "VISUALIZATION.md").read_text(encoding="utf-8")
 
     assert "Stale worker results are discarded immediately." in content
-    assert "A replacement run keeps the previously accepted cache entries until its first matching plot calculation succeeds." in content
+    assert (
+        "A replacement run keeps the previously accepted cache entries until its first matching plot calculation succeeds."
+        in content
+    )
     assert "That successful first-plot commit invalidates the previous cache atomically." in content
 
 
