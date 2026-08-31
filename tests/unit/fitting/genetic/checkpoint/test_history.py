@@ -168,6 +168,31 @@ def test_public_history_loader_returns_exact_immutable_rows(tmp_path: Path) -> N
         loaded[0].generation = 1  # type: ignore[misc]
 
 
+@pytest.mark.parametrize("mutation", ("header_only", "reordered", "duplicate", "generation_gap", "bad_counts"))
+def test_public_history_loader_rejects_noncanonical_generation_blocks(tmp_path: Path, mutation: str) -> None:
+    lines = render_history_csv(VALID_STATE).decode("utf-8").splitlines()
+    if mutation == "header_only":
+        changed = lines[:1]
+    elif mutation == "reordered":
+        changed = (lines[0], lines[2], lines[1], lines[3])
+    elif mutation == "duplicate":
+        changed = (lines[0], lines[1], lines[1], lines[3])
+    elif mutation == "generation_gap":
+        changed = (lines[0], lines[1].replace("0,family", "1,family", 1), lines[2], lines[3])
+    else:
+        changed = (lines[0], lines[1], lines[2], lines[3].replace("0,overall,,3,2,", "0,overall,,4,2,", 1))
+    history_path = tmp_path / "ga_history.csv"
+    history_path.write_text("\n".join(changed) + "\n", encoding="utf-8")
+
+    with pytest.raises(TrafficlabError, match="complete|ascending|candidate_count|population_size"):
+        load_history_csv(
+            history_path,
+            frozenset(("mmpp", "poisson_empirical")),
+            population_size=3,
+            generation_count=0,
+        )
+
+
 @pytest.mark.parametrize(
     ("content", "expected"),
     [

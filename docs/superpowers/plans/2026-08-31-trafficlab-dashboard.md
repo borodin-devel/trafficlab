@@ -362,7 +362,7 @@ class Aspect(Protocol):
 
 Every NumPy member is copied to an owned C-contiguous array and marked non-writable in `__post_init__`. Store labels/units/sample counts/bin width/lag range in plot-data metadata so renderers never infer scientific facts.
 
-- [x] **[STEP-16-72f68126] Implement shared numerics and cache minimally**
+- [ ] **[STEP-16-72f68126] Implement shared numerics and cache minimally**
 
 `choose_time_bin_width` enumerates positive `1, 2, 5 × 10ⁿ` widths and chooses the smallest width whose bin count is at most the maximum while preferring counts at least the minimum. `shared_time_edges` includes `0` and `W` and never places an edge above `W` except the histogram's right boundary required to include `W`.
 
@@ -380,7 +380,7 @@ class AspectCache:
     def clear(self) -> None: ...
 ```
 
-- [x] **[STEP-17-05f1b1b0] Verify numerical GREEN and property invariants**
+- [ ] **[STEP-17-05f1b1b0] Verify numerical GREEN and property invariants**
 
 Run Task 3 tests. Add Hypothesis coverage for finite ordered traces, constant samples, ties, zero IATs, very small samples, and random display limits. Assert reduction preserves order/endpoints/extrema, ECDF monotonicity, shared edges, immutability, and maximum display count.
 
@@ -642,7 +642,7 @@ uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_run_level.py 
 
 Expected: run-level aspects and complete registry missing.
 
-- [x] **[STEP-39-d07ffe35] Implement canonical similarity and GA-history projections**
+- [ ] **[STEP-39-d07ffe35] Implement canonical similarity and GA-history projections**
 
 Read all similarity component scores, aggregate, configured method order, and multiscale per-scale packet/byte discrepancies from the validated `ComparisonResult`. Never call `compare_traces` in dashboard code. Group GA `HistoryRow` records into ordered Reference-independent line series for each family and overall; x is generation and y is best fitness.
 
@@ -679,7 +679,7 @@ EXPECTED_ASPECT_IDS = (
 
 `aspect_by_id` raises `KeyError(identifier)` for unknown identifiers; UI catches this only as an internal defect.
 
-- [x] **[STEP-41-91e5e0c0] Verify Task 7 GREEN and optional availability**
+- [ ] **[STEP-41-91e5e0c0] Verify Task 7 GREEN and optional availability**
 
 ```bash
 uv run --all-extras pytest -q tests/trafficlab_dashboard/unit/test_run_level.py tests/trafficlab_dashboard/unit/test_aspect_registry.py tests/trafficlab_dashboard/unit/test_run_loader.py
@@ -749,7 +749,7 @@ Expected: plotting modules missing.
 
 Set `matplotlib.rcParams["svg.fonttype"] = "none"` in the dashboard plotting initialization so exported SVG titles and legend labels remain accessible text for both users and integration tests.
 
-- [x] **[STEP-46-0f817563] Implement pure pan/zoom and connect mouse events**
+- [ ] **[STEP-46-0f817563] Implement pure pan/zoom and connect mouse events**
 
 `zoom_limits` uses cursor-relative affine scaling and rejects nonfinite cursor/limits. Wheel factor is `0.8` for zoom-in and `1.25` for zoom-out. `Shift` selects x only, `Control` selects y only, otherwise both. Left press stores data coordinates and limits; motion applies `pan_limits`; release clears drag state. Double-click calls reset. Ignore events outside axes or while axes lack finite limits.
 
@@ -830,7 +830,7 @@ class DashboardState:
 
 Workers emit typed success/failure objects containing their request token. Worker functions do no Qt or Matplotlib mutation. Window slots compare token with current generation before accepting. Opening a run, selecting an aspect, and invalidating current work increment generation.
 
-- [x] **[STEP-52-11f7803b] Build the approved single-window controls and behavior**
+- [ ] **[STEP-52-11f7803b] Build the approved single-window controls and behavior**
 
 Create the horizontal control row in exact order: Open Run, Aspect combo, Reference toggle, Generated toggle, Reset, Export. Canvas fills remaining central space; status bar shows run name, packet counts, `W`, and progress. Both trace toggles default on. Trace aspects reject the last-off action. Pair aspects disable both. Aspect change resets viewport; visibility redraw preserves viewport and uses cache. Failed load/calculation leaves previous plot. Optional unavailable aspects remain listed but disabled with tooltip/status reason.
 
@@ -895,7 +895,7 @@ Extend layout tests to include `src/trafficlab_dashboard`, dashboard tests, modu
 
 Run the new tests and record missing docs/behavior. Write `architecture/VISUALIZATION.md` from the approved spec as stable behavior only—no task checklist or completion ledger. Update architecture index, development all-extras commands, headless Qt evidence, root install/launch/control docs, and supported optional companion boundaries.
 
-- [x] **[STEP-58-f1226925] Verify checked run, large trace, export, and user command**
+- [ ] **[STEP-58-f1226925] Verify checked run, large trace, export, and user command**
 
 ```bash
 uv sync --locked --all-groups --all-extras
@@ -905,7 +905,7 @@ uv run --all-extras trafficlab-dashboard --help
 
 Use a checked canonical run fixture, not ignored local `runs/`. Record load duration and cached redraw duration without creating a universal performance benchmark gate; assert event-loop responsiveness, full-sample totals, and display bounds.
 
-- [x] **[STEP-59-862559b3] Run complete release gates and independent final review**
+- [ ] **[STEP-59-862559b3] Run complete release gates and independent final review**
 
 Run, serializing heavy gates:
 

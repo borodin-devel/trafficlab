@@ -13,7 +13,7 @@ from trafficlab_dashboard.aspects.base import (
     LinePlotData,
     LineSeries,
 )
-from trafficlab_dashboard.aspects.numerics import choose_time_bin_width, shared_time_edges
+from trafficlab_dashboard.aspects.numerics import choose_time_bin_width, minmax_envelope, shared_time_edges
 from trafficlab_dashboard.run_data import DashboardRun
 
 
@@ -68,32 +68,6 @@ def _directional_packet_rate(
     return np.asarray(counts / np.diff(edges), dtype=np.float64)
 
 
-def _shared_reduction_indices(series_values: tuple[NDArray[np.float64], ...], maximum_points: int) -> NDArray[np.int64]:
-    length = len(series_values[0])
-    if length <= maximum_points:
-        return np.arange(length, dtype=np.int64)
-    if maximum_points == 2:
-        return np.array([0, length - 1], dtype=np.int64)
-
-    bucket_count = max(1, (maximum_points - 2) // 2)
-    boundaries = np.linspace(0, length, num=bucket_count + 1, dtype=np.int64)
-    selected: set[int] = {0, length - 1}
-    for start, stop in zip(boundaries[:-1], boundaries[1:], strict=True):
-        if stop <= start:
-            continue
-        for values in series_values:
-            bucket_values = values[start:stop]
-            selected.add(int(np.argmin(bucket_values)) + start)
-            selected.add(int(np.argmax(bucket_values)) + start)
-    ordered = np.array(sorted(selected), dtype=np.int64)
-    if len(ordered) <= maximum_points:
-        return ordered
-    sample_indices = np.unique(np.linspace(0, len(ordered) - 1, num=maximum_points, dtype=np.int64))
-    sample_indices[0] = 0
-    sample_indices[-1] = len(ordered) - 1
-    return ordered[sample_indices]
-
-
 def _directional_line_series(
     *,
     x: NDArray[np.float64],
@@ -104,48 +78,33 @@ def _directional_line_series(
     run: DashboardRun,
     maximum_points: int,
 ) -> tuple[LineSeries, ...]:
-    indices = _shared_reduction_indices(
-        (reference_uplink, reference_downlink, generated_uplink, generated_downlink),
-        maximum_points,
-    )
-    reduced_x = x[indices]
     reference_uplink_count, _ = _subset_counts(run.reference, Direction.OUTBOUND)
     reference_downlink_count, _ = _subset_counts(run.reference, Direction.INBOUND)
     generated_uplink_count, _ = _subset_counts(run.generated, Direction.OUTBOUND)
     generated_downlink_count, _ = _subset_counts(run.generated, Direction.INBOUND)
+
+    def reduced(
+        label: str,
+        values: NDArray[np.float64],
+        sample_count: int,
+        dataset: str,
+        line_style: str,
+    ) -> LineSeries:
+        envelope = minmax_envelope(x, values, maximum_points=maximum_points)
+        return LineSeries(
+            label=label,
+            x=envelope.x,
+            y=envelope.y,
+            sample_count=sample_count,
+            dataset=dataset,  # type: ignore[arg-type]
+            line_style=line_style,
+        )
+
     return (
-        LineSeries(
-            label="Reference uplink",
-            x=reduced_x,
-            y=reference_uplink[indices],
-            sample_count=reference_uplink_count,
-            dataset="reference",
-            line_style="solid",
-        ),
-        LineSeries(
-            label="Reference downlink",
-            x=reduced_x,
-            y=reference_downlink[indices],
-            sample_count=reference_downlink_count,
-            dataset="reference",
-            line_style="dashed",
-        ),
-        LineSeries(
-            label="Generated uplink",
-            x=reduced_x,
-            y=generated_uplink[indices],
-            sample_count=generated_uplink_count,
-            dataset="generated",
-            line_style="solid",
-        ),
-        LineSeries(
-            label="Generated downlink",
-            x=reduced_x,
-            y=generated_downlink[indices],
-            sample_count=generated_downlink_count,
-            dataset="generated",
-            line_style="dashed",
-        ),
+        reduced("Reference uplink", reference_uplink, reference_uplink_count, "reference", "solid"),
+        reduced("Reference downlink", reference_downlink, reference_downlink_count, "reference", "dashed"),
+        reduced("Generated uplink", generated_uplink, generated_uplink_count, "generated", "solid"),
+        reduced("Generated downlink", generated_downlink, generated_downlink_count, "generated", "dashed"),
     )
 
 

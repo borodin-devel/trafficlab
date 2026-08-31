@@ -8,6 +8,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from tests.trafficlab_dashboard.support.dashboard_fixtures import copy_checked_dashboard_run
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 from trafficlab_dashboard.aspects.base import (
     AxisScale,
@@ -23,6 +24,7 @@ from trafficlab_dashboard.aspects.base import (
 )
 from trafficlab_dashboard.cache import AspectCache
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
+from trafficlab_dashboard.run_loader import load_dashboard_run
 
 
 def _trace(*timestamps: float) -> TrafficTrace:
@@ -334,3 +336,33 @@ def test_cache_misses_when_aspect_or_settings_change() -> None:
 
     assert cache.get(different_aspect) is None
     assert cache.get(different_settings) is None
+
+
+def test_replacement_run_experiment_bytes_separate_cache_identity(tmp_path: Path) -> None:
+    first_directory = copy_checked_dashboard_run(tmp_path / "first")
+    second_directory = copy_checked_dashboard_run(tmp_path / "second")
+    experiment_path = second_directory / "experiment.toml"
+    experiment_path.write_text(
+        experiment_path.read_text(encoding="utf-8").replace(
+            "early_stopping_tolerance = 0.0",
+            "early_stopping_tolerance = 0.01",
+        ),
+        encoding="utf-8",
+    )
+    first = load_dashboard_run(first_directory)
+    second = load_dashboard_run(second_directory)
+
+    assert first.history is not None
+    assert second.history is not None
+    assert first.identities.experiment_sha256 != second.identities.experiment_sha256
+    assert first.identities.reference_sha256 == second.identities.reference_sha256
+    assert first.identities.generated_sha256 == second.identities.generated_sha256
+    assert first.identities.capture_sha256 == second.identities.capture_sha256
+    assert first.identities.similarity_sha256 == second.identities.similarity_sha256
+    assert first.identities.best_model_sha256 == second.identities.best_model_sha256
+    assert first.identities.history_sha256 == second.identities.history_sha256
+    assert AspectCache.key(first, "ga_fitness_history", CalculationSettings.default()) != AspectCache.key(
+        second,
+        "ga_fitness_history",
+        CalculationSettings.default(),
+    )

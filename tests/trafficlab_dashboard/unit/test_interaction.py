@@ -17,6 +17,26 @@ def test_zoom_limits_y_only_when_control_requests_it() -> None:
     assert limits == AxisView(x=(0.0, 10.0), y=(-5.0, 120.0))
 
 
+def test_log_zoom_preserves_cursor_fraction_and_positive_bounds() -> None:
+    limits = zoom_limits(
+        xlim=(0.1, 100.0),
+        ylim=(0.0, 10.0),
+        cursor=(1.0, 5.0),
+        factor=0.5,
+        axes="x",
+        x_scale="log",
+        y_scale="linear",
+    )
+
+    assert limits is not None
+    assert limits.x == pytest.approx((10.0**-0.5, 10.0))
+    assert limits.y == (0.0, 10.0)
+    before_fraction = (0.0 - (-1.0)) / (2.0 - (-1.0))
+    after_fraction = (0.0 - -0.5) / (1.0 - -0.5)
+    assert after_fraction == pytest.approx(before_fraction)
+    assert limits.x[0] > 0.0
+
+
 @pytest.mark.parametrize(
     ("cursor", "xlim", "ylim", "factor"),
     [
@@ -45,6 +65,46 @@ def test_pan_limits_translate_from_anchor_delta() -> None:
     )
 
     assert limits == AxisView(x=(-2.5, 7.5), y=(3.0, 13.0))
+
+
+def test_log_pan_translates_in_axis_space_and_never_proposes_nonpositive_bounds() -> None:
+    limits = pan_limits(
+        xlim=(0.1, 100.0),
+        ylim=(5.0, 15.0),
+        anchor=(1.0, 8.0),
+        current=(10.0, 10.0),
+        x_scale="log",
+        y_scale="linear",
+    )
+
+    assert limits is not None
+    assert limits.x == pytest.approx((0.01, 10.0))
+    assert limits.y == (3.0, 13.0)
+    assert limits.x[0] > 0.0
+
+
+def test_log_transform_rejects_nonpositive_bounds_or_points() -> None:
+    assert (
+        zoom_limits(
+            xlim=(0.0, 10.0),
+            ylim=(0.0, 1.0),
+            cursor=(1.0, 0.5),
+            factor=0.8,
+            axes="x",
+            x_scale="log",
+        )
+        is None
+    )
+    assert (
+        pan_limits(
+            xlim=(0.1, 10.0),
+            ylim=(0.0, 1.0),
+            anchor=(0.0, 0.5),
+            current=(1.0, 0.5),
+            x_scale="log",
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(

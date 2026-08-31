@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from statistics import median
 from time import perf_counter
 
 import numpy as np
@@ -20,7 +21,7 @@ from trafficlab_dashboard.window import DashboardWindow
 _PACKET_COUNT = 200_000
 _CHECKED_RUN_LOAD_SECONDS_LIMIT = 5.0
 _WINDOW_RESPONSIVENESS_SECONDS_LIMIT = 15.0
-_CACHED_REDRAW_SECONDS_LIMIT = 2.0
+_CACHED_REDRAW_SECONDS_LIMIT = 0.1
 
 
 def _dense_times(*, count: int, offset: float) -> np.ndarray:
@@ -121,15 +122,20 @@ def test_large_trace_window_stays_responsive_with_prebuilt_run_and_visibility_re
     assert len(current_plot.series[1].x) <= 20_000
     assert aspect.calls == 1
 
-    redraw_started = perf_counter()
+    retained_artist_ids = [id(line) for line in window.canvas.axes.lines]
     QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(
-        lambda: (
-            window.state.visibility == TraceVisibility(reference=False, generated=True)
-            and len(window.canvas.axes.lines) == 1
-        )
-    )
-    redraw_elapsed = perf_counter() - redraw_started
+    QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
+    measurements: list[float] = []
+    for _ in range(5):
+        redraw_started = perf_counter()
+        for _ in range(5):
+            QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
+        measurements.append(perf_counter() - redraw_started)
 
-    assert redraw_elapsed < _CACHED_REDRAW_SECONDS_LIMIT
+    assert median(measurements) < _CACHED_REDRAW_SECONDS_LIMIT
+    assert [id(line) for line in window.canvas.axes.lines] == retained_artist_ids
+    assert window.state.visibility in {
+        TraceVisibility(reference=False, generated=True),
+        TraceVisibility(reference=True, generated=True),
+    }
     assert aspect.calls == 1

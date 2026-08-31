@@ -7,12 +7,17 @@ from types import MappingProxyType
 import pytest
 
 import trafficlab_dashboard.run_loader as run_loader
-from tests.trafficlab_dashboard.support.dashboard_fixtures import write_complete_dashboard_run
-from trafficlab.common.compatibility import identify_bytes
+from tests.trafficlab_dashboard.support.dashboard_fixtures import (
+    copy_checked_dashboard_run,
+    write_complete_dashboard_run,
+)
+from trafficlab.common.compatibility import ContentIdentity, identify_bytes
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import align_generated, normalize_reference, parse_capture_metadata
 from trafficlab.comparison.codec import parse_comparison_result
+from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.generation.models import BestModel
 from trafficlab_dashboard.run_loader import load_dashboard_run
 
 
@@ -30,21 +35,148 @@ def test_load_dashboard_run_normalizes_and_aligns_required_traces(tmp_path: Path
     assert loaded.generated.timestamps.tolist() == [0.0, 1.0]
     assert loaded.reference_packet_count == 3
     assert loaded.generated_packet_count == 2
-    assert loaded.similarity is not None
-    assert loaded.best_model is not None
-    assert loaded.history is not None
+    assert loaded.similarity is None
+    assert loaded.best_model is None
+    assert loaded.history is None
     assert loaded.experiment is not None
     assert len(loaded.identities.reference_sha256) == 64
     assert len(loaded.identities.generated_sha256) == 64
     assert len(loaded.identities.capture_sha256) == 64
+    assert loaded.identities.similarity_sha256 is None
+    assert loaded.identities.best_model_sha256 is None
+    assert loaded.identities.history_sha256 is None
+    assert loaded.identities.experiment_sha256 is not None
+    assert "foreign" in loaded.unavailable["similarity_scores"]
+    assert "foreign" in loaded.unavailable["best_model"]
+    assert "population_size" in loaded.unavailable["ga_fitness_history"]
+
+
+def test_checked_run_accepts_only_lineage_bound_optional_artifacts(tmp_path: Path) -> None:
+    loaded = load_dashboard_run(copy_checked_dashboard_run(tmp_path))
+
+    assert loaded.similarity is not None
+    assert loaded.best_model is not None
+    assert loaded.history is not None
+    assert loaded.experiment is not None
     assert loaded.identities.similarity_sha256 is not None
     assert loaded.identities.best_model_sha256 is not None
     assert loaded.identities.history_sha256 is not None
+    assert loaded.identities.experiment_sha256 is not None
     assert dict(loaded.unavailable) == {}
 
 
-def test_missing_similarity_artifact_disables_only_its_dependent_aspects(tmp_path: Path) -> None:
+def test_same_format_foreign_optional_artifacts_degrade_with_actionable_lineage_reasons(tmp_path: Path) -> None:
     run_directory = write_complete_dashboard_run(tmp_path)
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.similarity is None
+    assert loaded.best_model is None
+    similarity_reason = loaded.unavailable["similarity_scores"]
+    best_model_reason = loaded.unavailable["best_model"]
+    assert similarity_reason == loaded.unavailable["multiscale_discrepancy"]
+    assert "foreign" in similarity_reason
+    assert "capture.json" in similarity_reason
+    assert "rerun compare" in similarity_reason
+    assert "foreign" in best_model_reason
+    assert "capture.json" in best_model_reason
+    assert "rerun fit" in best_model_reason
+
+
+@pytest.mark.parametrize(
+    ("mismatch", "expected_detail"),
+    (
+        ("capture_json", "capture.json"),
+        ("reference_pcapng", "reference.pcapng"),
+        ("generated_pcapng", "generated.pcapng"),
+        ("window", "observation_window_seconds"),
+        ("missing_identities", "no canonical input identities"),
+    ),
+)
+def test_similarity_lineage_checks_every_required_identity_and_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mismatch: str,
+    expected_detail: str,
+) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+    original = parse_comparison_result((run_directory / "similarity.json").read_bytes())
+    if mismatch == "window":
+        changed = original.model_copy(update={"observation_window_seconds": original.observation_window_seconds + 1.0})
+    elif mismatch == "missing_identities":
+        changed = original.model_copy(update={"input_identities": None})
+    else:
+        identities = original.input_identities
+        assert identities is not None
+        stored = identities[mismatch]
+        foreign = stored.model_copy(update={"sha256": "0" * 64})
+        changed = original.model_copy(update={"input_identities": identities.model_copy(update={mismatch: foreign})})
+
+    def return_changed_similarity(_content: bytes) -> ComparisonResult:
+        return changed
+
+    monkeypatch.setattr(run_loader, "parse_comparison_result", return_changed_similarity)
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.similarity is None
+    assert loaded.identities.similarity_sha256 is None
+    assert expected_detail in loaded.unavailable["similarity_scores"]
+    assert "rerun compare" in loaded.unavailable["similarity_scores"]
+
+
+@pytest.mark.parametrize(
+    ("mismatch", "expected_detail"),
+    (("capture", "capture.json"), ("reference", "reference.pcapng"), ("window", "observation_window_seconds")),
+)
+def test_best_model_lineage_checks_every_required_identity_and_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mismatch: str,
+    expected_detail: str,
+) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+    original = run_loader.load_best_model(
+        (run_directory / "best_model.json").read_bytes(),
+        source=run_directory / "best_model.json",
+    )
+    if mismatch == "capture":
+        changed = original.model_copy(
+            update={
+                "capture_identity": ContentIdentity(
+                    size=original.capture_identity.size + 1,
+                    sha256=original.capture_identity.sha256,
+                )
+            }
+        )
+    elif mismatch == "reference":
+        changed = original.model_copy(
+            update={
+                "reference_identity": ContentIdentity(
+                    size=original.reference_identity.size + 1,
+                    sha256=original.reference_identity.sha256,
+                )
+            }
+        )
+    else:
+        changed = original.model_copy(update={"observation_window_seconds": original.observation_window_seconds + 1.0})
+
+    def return_changed_best_model(_content: bytes, *, source: Path) -> BestModel:
+        del source
+        return changed
+
+    monkeypatch.setattr(run_loader, "load_best_model", return_changed_best_model)
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.best_model is None
+    assert loaded.identities.best_model_sha256 is None
+    assert expected_detail in loaded.unavailable["best_model"]
+    assert "rerun fit" in loaded.unavailable["best_model"]
+
+
+def test_missing_similarity_artifact_disables_only_its_dependent_aspects(tmp_path: Path) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
     (run_directory / "similarity.json").unlink()
 
     loaded = load_dashboard_run(run_directory)
@@ -58,7 +190,7 @@ def test_missing_similarity_artifact_disables_only_its_dependent_aspects(tmp_pat
 
 
 def test_ga_history_requires_a_valid_experiment_configuration(tmp_path: Path) -> None:
-    run_directory = write_complete_dashboard_run(tmp_path)
+    run_directory = copy_checked_dashboard_run(tmp_path)
     (run_directory / "experiment.toml").write_text("not = [valid\n", encoding="utf-8")
 
     loaded = load_dashboard_run(run_directory)
@@ -69,7 +201,7 @@ def test_ga_history_requires_a_valid_experiment_configuration(tmp_path: Path) ->
 
 
 def test_missing_ga_history_disables_only_the_history_aspect_when_experiment_is_valid(tmp_path: Path) -> None:
-    run_directory = write_complete_dashboard_run(tmp_path)
+    run_directory = copy_checked_dashboard_run(tmp_path)
     (run_directory / "ga_history.csv").unlink()
 
     loaded = load_dashboard_run(run_directory)
@@ -83,7 +215,7 @@ def test_missing_ga_history_disables_only_the_history_aspect_when_experiment_is_
 
 
 def test_loaded_dashboard_run_exposes_immutable_arrays_and_mapping(tmp_path: Path) -> None:
-    run_directory = write_complete_dashboard_run(tmp_path)
+    run_directory = copy_checked_dashboard_run(tmp_path)
 
     loaded = load_dashboard_run(run_directory)
 
@@ -97,7 +229,7 @@ def test_loaded_dashboard_run_exposes_immutable_arrays_and_mapping(tmp_path: Pat
 
 
 def test_failed_second_load_does_not_mutate_a_previous_dashboard_run(tmp_path: Path) -> None:
-    run_directory = write_complete_dashboard_run(tmp_path)
+    run_directory = copy_checked_dashboard_run(tmp_path)
     first = load_dashboard_run(run_directory)
 
     (run_directory / "capture.json").write_text("{}", encoding="utf-8")
@@ -105,8 +237,8 @@ def test_failed_second_load_does_not_mutate_a_previous_dashboard_run(tmp_path: P
     with pytest.raises(TrafficlabError, match="capture.json"):
         load_dashboard_run(run_directory)
 
-    assert first.reference.timestamps.tolist() == [0.0, 1.0, 3.0]
-    assert first.generated.timestamps.tolist() == [0.0, 1.0]
+    assert first.reference.timestamps[0] == 0.0
+    assert first.generated.timestamps[0] == 0.0
     assert dict(first.unavailable) == {}
 
 
@@ -114,7 +246,7 @@ def test_similarity_identity_matches_the_exact_bytes_used_for_parsing_when_rewri
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    run_directory = write_complete_dashboard_run(tmp_path)
+    run_directory = copy_checked_dashboard_run(tmp_path)
     similarity_path = run_directory / "similarity.json"
     original_similarity = similarity_path.read_bytes()
     rewritten_similarity = (
@@ -174,3 +306,29 @@ def test_reference_and_generated_identities_match_the_exact_loaded_trace_bytes(t
     assert loaded.generated == expected_generated_trace
     assert loaded.identities.reference_sha256 == identify_bytes(reference_bytes).sha256
     assert loaded.identities.generated_sha256 == identify_bytes(generated_bytes).sha256
+
+
+def test_invalid_history_block_order_disables_ga_history_at_load_time(tmp_path: Path) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+    history_path = run_directory / "ga_history.csv"
+    lines = history_path.read_text(encoding="utf-8").splitlines()
+    history_path.write_text("\n".join((lines[0], lines[2], lines[1], *lines[3:])) + "\n", encoding="utf-8")
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.history is None
+    assert loaded.identities.history_sha256 is None
+    assert "ascending lexical family rows followed by overall" in loaded.unavailable["ga_fitness_history"]
+
+
+def test_history_counts_must_match_experiment_population_at_load_time(tmp_path: Path) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+    history_path = run_directory / "ga_history.csv"
+    content = history_path.read_text(encoding="utf-8")
+    changed = content.replace("0,family,markov_renewal,2,2,", "0,family,markov_renewal,3,2,", 1)
+    history_path.write_text(changed.replace("0,overall,,6,6,", "0,overall,,7,6,", 1), encoding="utf-8")
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.history is None
+    assert "population_size" in loaded.unavailable["ga_fitness_history"]

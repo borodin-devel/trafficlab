@@ -5,6 +5,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
+import numpy as np
 import pytest
 
 import trafficlab.comparison.metrics as comparison_metrics
@@ -305,6 +306,15 @@ def test_ga_fitness_history_uses_canonical_lexical_family_order_not_encounter_or
     assert best_birth_indices["markov_renewal"] == (4, 1)
 
 
+def test_ga_fitness_history_projection_orders_each_series_by_generation() -> None:
+    data = GaFitnessHistoryAspect().calculate(
+        _run(history=tuple(reversed(_history_rows())), experiment=_experiment()),
+        CalculationSettings.default(),
+    )
+
+    assert [series.x.tolist() for series in data.series] == [[0.0, 1.0]] * 4
+
+
 def test_ga_fitness_history_requires_loader_reported_experiment_availability() -> None:
     with pytest.raises(ValueError, match="experiment.toml is missing"):
         GaFitnessHistoryAspect().calculate(
@@ -342,3 +352,97 @@ def test_run_level_aspects_use_only_stored_artifacts_and_not_compare_traces(
     assert similarity_data.values.tolist()
     assert multiscale_data.series[0].y.tolist()
     assert history_data.series[-1].label == "Overall"
+
+
+def test_multiscale_discrepancy_reduces_each_rendered_series_above_general_cap() -> None:
+    count = 20_001
+    similarity = _checked_similarity()
+    original = cast(MultiscaleDiagnostic, similarity.methods.multiscale_rate.diagnostics)
+    widths = tuple(np.linspace(0.00001, original.observation_window_seconds, num=count, dtype=np.float64))
+    packet_values = np.linspace(0.1, 0.9, num=count, dtype=np.float64)
+    byte_values = np.linspace(0.9, 0.1, num=count, dtype=np.float64)
+    scales = tuple(
+        original.scales[0].model_copy(
+            update={
+                "width_seconds": width,
+                "direction_bin_cell_count": 2,
+                "feature_discrepancies": original.feature_weights.model_copy(
+                    update={"packet": float(packet), "byte": float(byte)}
+                ),
+                "discrepancy": float((packet + byte) / 2.0),
+            }
+        )
+        for width, packet, byte in zip(widths, packet_values, byte_values, strict=True)
+    )
+    diagnostics = original.model_copy(
+        update={
+            "widths": widths,
+            "scale_weights": tuple(1.0 / count for _ in range(count)),
+            "direction_bin_cell_counts": tuple(2 for _ in range(count)),
+            "total_direction_bin_cells": 2 * count,
+            "scales": scales,
+            "scale_discrepancies": tuple(0.5 for _ in range(count)),
+        }
+    )
+    method = similarity.methods.multiscale_rate.model_copy(update={"diagnostics": diagnostics})
+    run = _run(
+        similarity=similarity.model_copy(
+            update={"methods": similarity.methods.model_copy(update={"multiscale_rate": method})}
+        )
+    )
+
+    data = MultiscaleDiscrepancyAspect().calculate(run, CalculationSettings.default())
+
+    assert [len(series.x) for series in data.series] == [20_000, 20_000]
+    assert [series.sample_count for series in data.series] == [count, count]
+    assert data.series[0].x[[0, -1]].tolist() == pytest.approx([widths[0], widths[-1]])
+    assert float(np.min(data.series[0].y)) == pytest.approx(0.1)
+    assert float(np.max(data.series[0].y)) == pytest.approx(0.9)
+    assert len(cast(tuple[float, ...], data.metadata["scale_weights"])) == count
+    assert len(cast(tuple[int, ...], data.metadata["direction_bin_cell_counts"])) == count
+
+
+def test_ga_history_reduces_each_rendered_series_above_general_cap_and_keeps_full_metadata() -> None:
+    count = 20_001
+    experiment = _experiment()
+    experiment = experiment.model_copy(update={"models": experiment.models.model_copy(update={"enabled": ("mmpp",)})})
+    rows: list[HistoryRow] = []
+    for generation in range(count):
+        fitness = float(generation) / float(count - 1)
+        identifier = CandidateId(birth_generation=generation, birth_index=0)
+        rows.extend(
+            (
+                HistoryRow(
+                    generation=generation,
+                    scope="family",
+                    family="mmpp",
+                    candidate_count=1,
+                    valid_count=1,
+                    best_fitness=fitness,
+                    mean_fitness=fitness,
+                    best_identifier=identifier,
+                ),
+                HistoryRow(
+                    generation=generation,
+                    scope="overall",
+                    family=None,
+                    candidate_count=1,
+                    valid_count=1,
+                    best_fitness=fitness,
+                    mean_fitness=fitness,
+                    best_identifier=identifier,
+                ),
+            )
+        )
+
+    data = GaFitnessHistoryAspect().calculate(
+        _run(history=tuple(rows), experiment=experiment),
+        CalculationSettings.default(),
+    )
+
+    assert [len(series.x) for series in data.series] == [20_000, 20_000]
+    assert [series.sample_count for series in data.series] == [count, count]
+    assert data.series[0].x[[0, -1]].tolist() == [0.0, 20_000.0]
+    assert data.series[0].y[[0, -1]].tolist() == [0.0, 1.0]
+    assert len(cast(Mapping[str, tuple[int, ...]], data.metadata["candidate_counts"])["mmpp"]) == count
+    assert len(cast(Mapping[str, tuple[int, ...]], data.metadata["valid_counts"])["overall"]) == count

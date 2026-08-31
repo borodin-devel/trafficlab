@@ -10,7 +10,7 @@ from PIL import Image
 from pytestqt.qtbot import QtBot
 
 from trafficlab.common.errors import TrafficlabError
-from trafficlab_dashboard.aspects.base import LinePlotData, LineSeries, TraceVisibility
+from trafficlab_dashboard.aspects.base import BarPlotData, BarSeries, LinePlotData, LineSeries, TraceVisibility
 from trafficlab_dashboard.plotting.canvas import DashboardCanvas
 from trafficlab_dashboard.plotting.export import export_figure
 
@@ -55,6 +55,32 @@ def _line_data() -> LinePlotData:
     )
 
 
+def _direction_bar_data() -> BarPlotData:
+    return BarPlotData(
+        identifier="direction_balance",
+        label="Direction Balance",
+        title="Direction Balance",
+        categories=("Uplink packets", "Downlink packets"),
+        series=(
+            BarSeries(
+                label="Reference",
+                values=np.array([0.75, 0.25], dtype=np.float64),
+                sample_count=4,
+                dataset="reference",
+            ),
+            BarSeries(
+                label="Generated",
+                values=np.array([0.5, 0.5], dtype=np.float64),
+                sample_count=4,
+                dataset="generated",
+            ),
+        ),
+        y_label="Share",
+        unit="proportion",
+        y_limits=(0.0, 1.0),
+    )
+
+
 def test_export_svg_contains_current_title_and_visible_series(tmp_path: Path, canvas: DashboardCanvas) -> None:
     canvas.render(_line_data(), TraceVisibility(reference=True, generated=False))
     canvas.axes.set_xlim(0.5, 1.5)
@@ -87,6 +113,17 @@ def test_export_png_preserves_current_viewport_and_writes_a_real_image(tmp_path:
         assert image.height > 0
     assert canvas.axes.get_xlim() == pytest.approx((0.25, 1.25))
     assert canvas.axes.get_ylim() == pytest.approx((1.0, 2.0))
+
+
+def test_export_direction_balance_contains_only_visible_dataset(tmp_path: Path, canvas: DashboardCanvas) -> None:
+    canvas.render(_direction_bar_data(), TraceVisibility(reference=True, generated=False))
+    destination = tmp_path / "direction.svg"
+
+    export_figure(canvas.figure, destination, format="svg")
+
+    text = destination.read_text(encoding="utf-8")
+    assert "Reference" in text
+    assert "Generated" not in text
 
 
 def test_export_refuses_to_overwrite_an_existing_destination(tmp_path: Path, canvas: DashboardCanvas) -> None:

@@ -19,7 +19,7 @@ from tests.trafficlab_dashboard.support.dashboard_fixtures import (
 )
 from trafficlab.common.errors import TrafficlabError
 from trafficlab_dashboard import window as window_module
-from trafficlab_dashboard.aspects.base import CalculationSettings, LinePlotData, LineSeries
+from trafficlab_dashboard.aspects.base import CalculationSettings, LinePlotData, LineSeries, TraceVisibility
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
 from trafficlab_dashboard.run_loader import load_dashboard_run
 from trafficlab_dashboard.window import DashboardWindow
@@ -163,6 +163,16 @@ def test_pair_aspect_disables_trace_buttons_without_forgetting_stored_visibility
     assert window.generated_button.isEnabled() is True
     assert window.reference_button.isChecked() is False
     assert window.generated_button.isChecked() is True
+
+
+def test_direction_balance_honors_window_trace_visibility(qtbot: QtBot, tmp_path: Path) -> None:
+    window = _loaded_window(qtbot, copy_checked_dashboard_run(tmp_path))
+
+    _select_aspect(qtbot, window, "direction_balance")
+    QTest.mouseClick(window.generated_button, Qt.MouseButton.LeftButton)
+
+    assert window.state.visibility == TraceVisibility(reference=True, generated=False)
+    assert len([patch for patch in window.canvas.axes.patches if patch.get_visible()]) == 4
 
 
 def test_unavailable_registry_entries_stay_visible_but_disabled_with_exact_reason(

@@ -52,7 +52,64 @@ def _parse_repr_float(value: str, *, name: str) -> float:
     return result
 
 
-def _parse_history_csv(content: bytes, family_names: frozenset[FamilyName]) -> tuple[HistoryRow, ...]:
+def _validate_history_projection(
+    rows: tuple[HistoryRow, ...],
+    family_names: frozenset[FamilyName],
+    *,
+    population_size: int | None,
+    generation_count: int | None,
+) -> None:
+    if population_size is not None and (type(population_size) is not int or population_size <= 0):
+        raise ValueError("population_size must be a positive integer")
+    if generation_count is not None and (type(generation_count) is not int or generation_count < 0):
+        raise ValueError("generation_count must be a nonnegative integer")
+    families = tuple(sorted(family_names))
+    block_size = len(families) + 1
+    if not rows or len(rows) % block_size != 0:
+        raise ValueError("history must contain one complete block for every retained generation")
+    retained_generation_count = len(rows) // block_size
+    if generation_count is not None and retained_generation_count > generation_count + 1:
+        raise ValueError("history contains a generation beyond experiment genetic.generation_count")
+    for generation in range(retained_generation_count):
+        block = rows[generation * block_size : (generation + 1) * block_size]
+        expected_shape = tuple((generation, "family", family) for family in families) + ((generation, "overall", None),)
+        if tuple((row.generation, row.scope, row.family) for row in block) != expected_shape:
+            raise ValueError("history rows must be ascending lexical family rows followed by overall")
+        family_rows = block[:-1]
+        overall = block[-1]
+        if any(row.candidate_count <= 0 for row in block):
+            raise ValueError("history candidate_count must be positive")
+        if sum(row.candidate_count for row in family_rows) != overall.candidate_count:
+            raise ValueError("history overall candidate_count does not equal family counts")
+        if sum(row.valid_count for row in family_rows) != overall.valid_count:
+            raise ValueError("history overall valid_count does not equal family counts")
+        if population_size is not None and overall.candidate_count != population_size:
+            raise ValueError("history overall candidate_count does not equal population_size")
+        for row in block:
+            if row.best_identifier.birth_generation > generation:
+                raise ValueError("history best identifier birth generation exceeds row generation")
+            if row.valid_count == 0 and (row.best_fitness != 0.0 or row.mean_fitness != 0.0):
+                raise ValueError("history row with zero valid_count must have zero best_fitness and mean_fitness")
+        expected_mean = math.fsum(row.mean_fitness * row.candidate_count for row in family_rows) / float(
+            overall.candidate_count
+        )
+        if overall.mean_fitness != expected_mean:
+            raise ValueError("history overall mean does not equal the recomputed family mean")
+        best_fitness = max(row.best_fitness for row in family_rows)
+        matching_best_rows = tuple(row for row in family_rows if row.best_fitness == best_fitness)
+        if overall.best_fitness != best_fitness or not any(
+            row.best_identifier == overall.best_identifier for row in matching_best_rows
+        ):
+            raise ValueError("history overall best does not equal a best family row")
+
+
+def _parse_history_csv(
+    content: bytes,
+    family_names: frozenset[FamilyName],
+    *,
+    population_size: int | None = None,
+    generation_count: int | None = None,
+) -> tuple[HistoryRow, ...]:
     try:
         text = content.decode("utf-8")
         rows = list(csv.reader(StringIO(text, newline="")))
@@ -92,15 +149,39 @@ def _parse_history_csv(content: bytes, family_names: frozenset[FamilyName]) -> t
                 ),
             )
         )
-    return tuple(parsed)
+    result = tuple(parsed)
+    _validate_history_projection(
+        result,
+        family_names,
+        population_size=population_size,
+        generation_count=generation_count,
+    )
+    return result
 
 
-def parse_history_csv(content: bytes, family_names: frozenset[FamilyName]) -> tuple[HistoryRow, ...]:
+def parse_history_csv(
+    content: bytes,
+    family_names: frozenset[FamilyName],
+    *,
+    population_size: int | None = None,
+    generation_count: int | None = None,
+) -> tuple[HistoryRow, ...]:
     """Parse one exact derived history CSV byte buffer."""
-    return _parse_history_csv(content, family_names)
+    return _parse_history_csv(
+        content,
+        family_names,
+        population_size=population_size,
+        generation_count=generation_count,
+    )
 
 
-def load_history_csv(path: Path, family_names: frozenset[FamilyName]) -> tuple[HistoryRow, ...]:
+def load_history_csv(
+    path: Path,
+    family_names: frozenset[FamilyName],
+    *,
+    population_size: int | None = None,
+    generation_count: int | None = None,
+) -> tuple[HistoryRow, ...]:
     """Load and strictly validate one derived history CSV artifact."""
     try:
         content = path.read_bytes()
@@ -110,7 +191,12 @@ def load_history_csv(path: Path, family_names: frozenset[FamilyName]) -> tuple[H
             corrective_action="verify ga_history.csv exists and is readable",
         ) from error
     try:
-        return parse_history_csv(content, family_names)
+        return parse_history_csv(
+            content,
+            family_names,
+            population_size=population_size,
+            generation_count=generation_count,
+        )
     except ValueError as error:
         raise TrafficlabError(
             f"invalid history artifact {path}: {error}",

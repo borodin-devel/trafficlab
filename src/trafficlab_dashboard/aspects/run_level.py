@@ -10,6 +10,7 @@ from trafficlab.comparison.diagnostics import MultiscaleDiagnostic
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.types import HistoryRow
 from trafficlab_dashboard.aspects.base import BarPlotData, BarSeries, CalculationSettings, LinePlotData, LineSeries
+from trafficlab_dashboard.aspects.numerics import minmax_envelope
 from trafficlab_dashboard.run_data import DashboardRun
 
 _SIMILARITY_METHOD_ORDER = ("frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate")
@@ -37,6 +38,17 @@ def _line_limits(series: tuple[LineSeries, ...]) -> tuple[tuple[float, float], t
     y_min = min(float(np.min(array)) for array in y_arrays) if y_arrays else 0.0
     y_max = max(float(np.max(array)) for array in y_arrays) if y_arrays else 1.0
     return (x_min, x_max), (y_min, max(1.0, y_max))
+
+
+def _reduced_line_series(
+    *,
+    label: str,
+    x: np.ndarray,
+    y: np.ndarray,
+    maximum_points: int,
+) -> LineSeries:
+    reduced = minmax_envelope(x, y, maximum_points=maximum_points)
+    return LineSeries(label=label, x=reduced.x, y=reduced.y, sample_count=len(x))
 
 
 def _require_similarity(run: DashboardRun, *, aspect_id: str) -> ComparisonResult:
@@ -73,7 +85,7 @@ def _history_key(row: HistoryRow) -> str:
 
 
 def _history_series(rows: tuple[HistoryRow, ...], key: str) -> tuple[HistoryRow, ...]:
-    return tuple(row for row in rows if _history_key(row) == key)
+    return tuple(sorted((row for row in rows if _history_key(row) == key), key=lambda row: row.generation))
 
 
 def _history_order(rows: tuple[HistoryRow, ...], experiment: ExperimentConfig) -> tuple[str, ...]:
@@ -146,7 +158,6 @@ class MultiscaleDiscrepancyAspect:
     trace_controls: bool = False
 
     def calculate(self, run: DashboardRun, settings: CalculationSettings) -> LinePlotData:
-        del settings
         diagnostics = _multiscale_diagnostics(run, aspect_id=self.identifier)
         widths = np.asarray(diagnostics.widths, dtype=np.float64)
         if tuple(scale.width_seconds for scale in diagnostics.scales) != diagnostics.widths:
@@ -158,17 +169,17 @@ class MultiscaleDiscrepancyAspect:
             raise ValueError("stored multiscale cell counts are inconsistent")
         if tuple(scale.discrepancy for scale in diagnostics.scales) != diagnostics.scale_discrepancies:
             raise ValueError("stored multiscale discrepancies are inconsistent")
-        packet = LineSeries(
+        packet = _reduced_line_series(
             label="Packet discrepancy",
             x=widths,
             y=np.asarray([scale.feature_discrepancies.packet for scale in diagnostics.scales], dtype=np.float64),
-            sample_count=len(diagnostics.scales),
+            maximum_points=settings.maximum_display_points,
         )
-        byte = LineSeries(
+        byte = _reduced_line_series(
             label="Byte discrepancy",
             x=widths,
             y=np.asarray([scale.feature_discrepancies.byte for scale in diagnostics.scales], dtype=np.float64),
-            sample_count=len(diagnostics.scales),
+            maximum_points=settings.maximum_display_points,
         )
         x_limits, y_limits = _line_limits((packet, byte))
         return LinePlotData(
@@ -211,7 +222,6 @@ class GaFitnessHistoryAspect:
     trace_controls: bool = False
 
     def calculate(self, run: DashboardRun, settings: CalculationSettings) -> LinePlotData:
-        del settings
         experiment = _require_experiment(run, aspect_id=self.identifier)
         rows = _require_history(run, aspect_id=self.identifier)
         order = _history_order(rows, experiment)
@@ -225,11 +235,11 @@ class GaFitnessHistoryAspect:
             if not grouped:
                 raise ValueError(f"ga_history.csv is unavailable: history rows do not contain the {key} series")
             series.append(
-                LineSeries(
+                _reduced_line_series(
                     label=_GA_LABELS[key],
                     x=np.asarray([row.generation for row in grouped], dtype=np.float64),
                     y=np.asarray([row.best_fitness for row in grouped], dtype=np.float64),
-                    sample_count=len(grouped),
+                    maximum_points=settings.maximum_display_points,
                 )
             )
             candidate_counts[key] = tuple(row.candidate_count for row in grouped)

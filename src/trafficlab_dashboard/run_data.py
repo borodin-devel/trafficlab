@@ -35,6 +35,7 @@ class ArtifactIdentities:
     similarity_sha256: str | None
     best_model_sha256: str | None
     history_sha256: str | None
+    experiment_sha256: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reference_sha256", _require_sha256(self.reference_sha256, name="reference_sha256"))
@@ -43,6 +44,11 @@ class ArtifactIdentities:
         object.__setattr__(self, "similarity_sha256", _require_sha256(self.similarity_sha256, name="similarity_sha256"))
         object.__setattr__(self, "best_model_sha256", _require_sha256(self.best_model_sha256, name="best_model_sha256"))
         object.__setattr__(self, "history_sha256", _require_sha256(self.history_sha256, name="history_sha256"))
+        object.__setattr__(
+            self,
+            "experiment_sha256",
+            _require_sha256(self.experiment_sha256, name="experiment_sha256"),
+        )
 
 
 @dataclass(frozen=True, slots=True)

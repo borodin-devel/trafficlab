@@ -219,3 +219,29 @@ def test_direction_registry_replaces_placeholders_with_concrete_aspects() -> Non
         DirectionalPacketRateAspect,
         DirectionBalanceAspect,
     )
+
+
+def test_directional_reduction_retains_each_series_endpoints_and_global_extrema() -> None:
+    point_count = 100
+    patterns = [np.arange(base, base + point_count, dtype=np.uint32) for base in (1_000, 2_000, 3_000, 4_000)]
+    extrema = ((17, 10, 83, 5_000), (23, 20, 73, 6_000), (31, 30, 67, 7_000), (41, 40, 59, 8_000))
+    for values, (low_index, low, high_index, high) in zip(patterns, extrema, strict=True):
+        values[low_index] = low
+        values[high_index] = high
+
+    def trace(first: np.ndarray, second: np.ndarray) -> TrafficTrace:
+        timestamps = np.repeat(np.arange(point_count, dtype=np.float64) + 0.1, 2)
+        directions = np.tile(np.array([0, 1], dtype=np.uint8), point_count)
+        lengths = np.column_stack((first, second)).reshape(-1).astype(np.uint32)
+        return TrafficTrace(timestamps=timestamps, directions=directions, frame_lengths=lengths)
+
+    data = DirectionalThroughputAspect().calculate(
+        _run(trace(patterns[0], patterns[1]), trace(patterns[2], patterns[3]), window=100.0),
+        _settings(bins=100, maximum_display_points=10),
+    )
+
+    for series, values in zip(data.series, patterns, strict=True):
+        assert len(series.x) <= 10
+        assert series.x[[0, -1]].tolist() == [0.0, 99.0]
+        assert float(np.min(series.y)) == pytest.approx(float(np.min(values)) * 8.0 / 1_000_000.0)
+        assert float(np.max(series.y)) == pytest.approx(float(np.max(values)) * 8.0 / 1_000_000.0)

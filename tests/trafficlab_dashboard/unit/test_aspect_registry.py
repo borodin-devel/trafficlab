@@ -171,6 +171,7 @@ def test_registry_remains_complete_and_trace_aspects_stay_usable_when_run_level_
 ) -> None:
     run_directory = write_complete_dashboard_run(tmp_path)
     (run_directory / "similarity.json").unlink()
+    (run_directory / "best_model.json").unlink()
     (run_directory / "ga_history.csv").unlink()
     loaded = load_dashboard_run(run_directory)
 
