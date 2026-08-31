@@ -17,6 +17,13 @@ uv python install 3.12.3
 uv sync --locked --all-groups
 ```
 
+Dashboard development and release verification install the optional desktop
+runtime in the same locked environment:
+
+```bash
+uv sync --locked --all-groups --all-extras
+```
+
 Run project commands from a checkout where `uv run --locked python --version`
 reports `Python 3.12.3`; another supported 3.12 patch can install the package,
 but cannot strictly resume or regenerate the checked CPython 3.12.3 genetic
@@ -112,22 +119,25 @@ at a real ownership boundary and move shared test setup to a focused typed
 support owner rather than distributing lines evenly, copying setup, or adding a
 compatibility shim.
 
-Every production module under `src/trafficlab/` is at most 600 physical lines,
-every Python tooling module under `scripts/` is at most 800 physical lines, and
-every test, test-support, or scientific-probe module under `tests/` is at most
-1,000 physical lines. The repository layout tests count all `*.py` files in
-these trees with `splitlines()` and permit no path exclusions or exemptions.
+Every production module under `src/trafficlab/` or
+`src/trafficlab_dashboard/` is at most 600 physical lines, every Python
+tooling module under `scripts/` is at most 800 physical lines, and every test,
+test-support, or scientific-probe module under `tests/` is at most 1,000
+physical lines. The repository layout tests count all `*.py` files in these
+trees with `splitlines()` and permit no path exclusions or exemptions.
 
 ## Formatting, linting, and types
 
 Ruff owns formatting and linting. Its maximum line length is 120 characters.
-Pyright checks future `src/trafficlab` and `tests` code in strict mode.
+Pyright checks `src/trafficlab`, `src/trafficlab_dashboard`, and `tests` code
+in strict mode. Dashboard-owning commands run with the optional desktop extra
+installed, and Qt integration selections set `QT_QPA_PLATFORM=offscreen`.
 
 ```bash
-uv run --locked ruff format .
-uv run --locked ruff format --check .
-uv run --locked ruff check .
-uv run --locked pyright
+uv run --all-extras ruff format .
+uv run --all-extras ruff format --check .
+uv run --all-extras ruff check .
+uv run --all-extras pyright
 ```
 
 Pyright is the only Node.js-based development exception. Its private Node.js
@@ -180,7 +190,7 @@ Run the unit-only feedback loop with exactly four workers:
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -q -n 4 --dist worksteal \
+  QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q -n 4 --dist worksteal \
   -m "not integration and not docker and not internet"
 ```
 
@@ -192,7 +202,7 @@ Run every offline test in parallel and retain its duration table:
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 10m --kill-after 10s -- \
-  uv run --locked pytest -q -n 4 --dist worksteal \
+  QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q -n 4 --dist worksteal \
   -m "not docker and not internet" --durations=50
 ```
 
@@ -204,9 +214,9 @@ Run every offline test once with four workers and branch coverage:
 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -q -n 4 --dist worksteal \
+  QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -q -n 4 --dist worksteal \
   -m "not docker and not internet" \
-  --cov=trafficlab --cov-branch --cov-report=term-missing \
+  --cov=trafficlab --cov=trafficlab_dashboard --cov-branch --cov-report=term-missing \
   --cov-fail-under=90 --durations=50
 ```
 
@@ -228,19 +238,19 @@ external release evidence.
 scripts/run_bounded.sh \
   --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 20m --kill-after 10s -- \
-  uv run --locked pytest -vv -n 0 -m "docker or internet" \
+  uv run --all-extras pytest -vv -n 0 -m "docker or internet" \
   --internet-url URL
 ```
 
 ### Release gate
 
-Run `uv sync --locked --all-groups`, Ruff format checking and linting, strict
-Pyright, then the Ordinary and Coverage gates. Run every deterministic fixture
-generator with `--check`, validate the retained scientific-stack schemas,
-benchmark, reduction inventory, and probe decisions, run the bounded offline
-validation-study audit, and run the External gate on a capable host. Each
-component retains the execution mode and resource bounds above; do not combine
-competing heavy gates in one local scope.
+Run `uv sync --locked --all-groups --all-extras`, Ruff format checking and
+linting, strict Pyright, then the Ordinary and Coverage gates. Run every
+deterministic fixture generator with `--check`, validate the retained
+scientific-stack schemas, benchmark, reduction inventory, and probe decisions,
+run the bounded offline validation-study audit, and run the External gate on a
+capable host. Each component retains the execution mode and resource bounds
+above; do not combine competing heavy gates in one local scope.
 
 The accepted-study audit is intentionally not run from an arbitrary later
 checkout. Read `source_commit` from the accepted bundle's `environment.json`,
@@ -251,20 +261,20 @@ run the audit below. A later checkout containing non-evidence changes must fail
 source binding; that failure is not evidence corruption and must not be bypassed.
 
 ```bash
-uv run --locked python scripts/generate_similarity_fixtures.py --check
-uv run --locked python scripts/generate_model_fixtures.py --check
-uv run --locked python scripts/generate_fit_fixtures.py --check
-uv run --locked python scripts/generate_validation_study_fixture.py --check
-uv run --locked python scripts/generate_artifact_schemas.py --check
-uv run --locked python scripts/measure_scientific_stack_reduction.py --check
-uv run --locked python scripts/benchmark_scientific_stack.py --check
-uv run --locked python scripts/benchmark_scapy_production.py --check
-uv run --locked python scripts/check_scientific_stack_example.py --check
-uv run --locked python scripts/run_scientific_stack_probes.py --probe all --check
+uv run --all-extras python scripts/generate_similarity_fixtures.py --check
+uv run --all-extras python scripts/generate_model_fixtures.py --check
+uv run --all-extras python scripts/generate_fit_fixtures.py --check
+uv run --all-extras python scripts/generate_validation_study_fixture.py --check
+uv run --all-extras python scripts/generate_artifact_schemas.py --check
+uv run --all-extras python scripts/measure_scientific_stack_reduction.py --check
+uv run --all-extras python scripts/benchmark_scientific_stack.py --check
+uv run --all-extras python scripts/benchmark_scapy_production.py --check
+uv run --all-extras python scripts/check_scientific_stack_example.py --check
+uv run --all-extras python scripts/run_scientific_stack_probes.py --probe all --check
 scripts/run_bounded.sh \
   --memory-high 6G --memory-max 8G --swap-max 1G \
   --wall-time 20m --kill-after 10s -- \
-  uv run --locked --offline python scripts/audit_validation_study.py \
+  uv run --all-extras --offline python scripts/audit_validation_study.py \
   examples/validation_study/evidence/<study-id>/ --repository .
 ```
 

@@ -78,11 +78,7 @@ def _history_series(rows: tuple[HistoryRow, ...], key: str) -> tuple[HistoryRow,
 
 def _history_order(rows: tuple[HistoryRow, ...], experiment: ExperimentConfig) -> tuple[str, ...]:
     expected_families = tuple(sorted(experiment.models.enabled))
-    observed_families = frozenset(
-        cast(FamilyName, row.family)
-        for row in rows
-        if row.scope == "family"
-    )
+    observed_families = frozenset(cast(FamilyName, row.family) for row in rows if row.scope == "family")
     expected_family_set = frozenset(expected_families)
     if observed_families != expected_family_set:
         missing = tuple(name for name in expected_families if name not in observed_families)
@@ -92,7 +88,9 @@ def _history_order(rows: tuple[HistoryRow, ...], experiment: ExperimentConfig) -
             parts.append(f"missing families: {', '.join(missing)}")
         if unexpected:
             parts.append(f"unexpected families: {', '.join(unexpected)}")
-        raise ValueError(f"ga_history.csv is unavailable: history rows do not match experiment families ({'; '.join(parts)})")
+        raise ValueError(
+            f"ga_history.csv is unavailable: history rows do not match experiment families ({'; '.join(parts)})"
+        )
     if not any(row.scope == "overall" for row in rows):
         raise ValueError("ga_history.csv is unavailable: history rows do not contain an overall series")
     return expected_families + ("overall",)
@@ -153,7 +151,10 @@ class MultiscaleDiscrepancyAspect:
         widths = np.asarray(diagnostics.widths, dtype=np.float64)
         if tuple(scale.width_seconds for scale in diagnostics.scales) != diagnostics.widths:
             raise ValueError("stored multiscale widths are inconsistent")
-        if tuple(scale.direction_bin_cell_count for scale in diagnostics.scales) != diagnostics.direction_bin_cell_counts:
+        if (
+            tuple(scale.direction_bin_cell_count for scale in diagnostics.scales)
+            != diagnostics.direction_bin_cell_counts
+        ):
             raise ValueError("stored multiscale cell counts are inconsistent")
         if tuple(scale.discrepancy for scale in diagnostics.scales) != diagnostics.scale_discrepancies:
             raise ValueError("stored multiscale discrepancies are inconsistent")

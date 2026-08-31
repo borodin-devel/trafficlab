@@ -54,6 +54,17 @@ VALIDATION_STUDY_WRAPPERS = {
 }
 
 TOOLING_MODULE_LINE_LIMIT = 800
+PRODUCTION_MODULE_LINE_LIMIT = 600
+TEST_MODULE_LINE_LIMIT = 1_000
+TOP_LEVEL_ARCHITECTURE_DOCUMENTS = {
+    "CAPTURE.md",
+    "DEVELOPMENT.md",
+    "README.md",
+    "RESEARCH_FITNESS_CRITERIA.md",
+    "SYSTEM.md",
+    "TESTING.md",
+    "VISUALIZATION.md",
+}
 
 FAILURE_MATRIX_SUPPORT = {"__init__.py", "cases.py", "doubles.py", "oracle.py", "runners.py"}
 
@@ -366,6 +377,38 @@ def test_python_tooling_stays_within_the_cohesion_backstop() -> None:
     }
 
     assert offenders == {}
+
+
+def test_dashboard_production_modules_stay_within_the_cohesion_backstop() -> None:
+    dashboard = REPOSITORY / "src" / "trafficlab_dashboard"
+    offenders = {
+        path.relative_to(REPOSITORY).as_posix(): len(path.read_text(encoding="utf-8").splitlines())
+        for path in dashboard.rglob("*.py")
+        if len(path.read_text(encoding="utf-8").splitlines()) > PRODUCTION_MODULE_LINE_LIMIT
+    }
+
+    assert offenders == {}
+
+
+def test_dashboard_test_modules_stay_within_the_cohesion_backstop() -> None:
+    dashboard_tests = REPOSITORY / "tests" / "trafficlab_dashboard"
+    offenders = {
+        path.relative_to(REPOSITORY).as_posix(): len(path.read_text(encoding="utf-8").splitlines())
+        for path in dashboard_tests.rglob("*.py")
+        if len(path.read_text(encoding="utf-8").splitlines()) > TEST_MODULE_LINE_LIMIT
+    }
+
+    assert offenders == {}
+
+
+def test_architecture_inventory_includes_the_visualization_contract() -> None:
+    architecture = REPOSITORY / "architecture"
+
+    assert {path.name for path in architecture.glob("*.md")} == TOP_LEVEL_ARCHITECTURE_DOCUMENTS
+    assert "- [Visualization](VISUALIZATION.md)" in (architecture / "README.md").read_text(encoding="utf-8")
+    assert "- [Visualization companion](architecture/VISUALIZATION.md)" in (REPOSITORY / "README.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_failure_matrix_support_has_only_focused_typed_owners() -> None:

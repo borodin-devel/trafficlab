@@ -182,9 +182,7 @@ def test_public_history_loader_returns_exact_immutable_rows(tmp_path: Path) -> N
         ),
     ],
 )
-def test_public_history_loader_rejects_invalid_artifacts(
-    tmp_path: Path, content: bytes, expected: str
-) -> None:
+def test_public_history_loader_rejects_invalid_artifacts(tmp_path: Path, content: bytes, expected: str) -> None:
     history_path = tmp_path / "ga_history.csv"
     history_path.write_bytes(content)
 

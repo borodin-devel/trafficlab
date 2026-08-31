@@ -5,7 +5,9 @@
 Trafficlab is a one-person research prototype for capturing the network traffic
 of containerized programs, fitting competing classical stochastic models with a
 genetic algorithm, generating synthetic PCAPNG traces, and measuring how closely
-they resemble a reference capture.
+they resemble a reference capture. An optional desktop visualization companion
+opens one canonical run directory read-only without changing the one-process
+pipeline.
 
 The design favors fast scientific iteration. It keeps reproducibility,
 validation, bounded execution, cleanup, and checkpointing, while avoiding
@@ -48,6 +50,8 @@ repeating a real capture.
 - [Development](DEVELOPMENT.md) defines the fixed Python toolchain, quality
   commands, and Git workspace policy.
 - [Capture](CAPTURE.md) defines the Docker topology and reliable lifecycle.
+- [Visualization](VISUALIZATION.md) defines the optional desktop companion,
+  aspect catalog, interaction, and display-reduction contract.
 - [Testing](TESTING.md) defines unit and integration evidence.
 - [Research fitness criteria](RESEARCH_FITNESS_CRITERIA.md) defines a five-level
   rubric for scientific correctness, configurability, robustness, and
@@ -63,13 +67,15 @@ repeating a real capture.
 
 The MVP includes Docker capture, PCAPNG input and output, Poisson empirical,
 Markov Renewal, two-state MMPP, a basic generational genetic algorithm,
-frame-size KS, IAT KS, autocorrelation, and multiscale-rate comparison.
+frame-size KS, IAT KS, autocorrelation, multiscale-rate comparison, and one
+optional read-only desktop visualization companion for checked run artifacts.
 
 It excludes traffic replay, payload or application-protocol modelling,
 distributed execution, multi-user operation, neural and diffusion models,
 optimal transport, wavelets, long-term public compatibility guarantees, and
-security hardening. Docker's own access requirements remain an installation
-concern rather than a Trafficlab subsystem.
+security hardening. The desktop companion does not become a pipeline stage,
+service, container subsystem, or alternate parser. Docker's own access
+requirements remain an installation concern rather than a Trafficlab subsystem.
 
 ## Changing the architecture
 

@@ -98,7 +98,9 @@ def _assert_visible_terms(texts: tuple[str, ...]) -> None:
     assert "inbound" not in visible
 
 
-def _assert_direction_line_metadata(data: LinePlotData, *, identifier: str, label: str, unit: str, y_label: str) -> None:
+def _assert_direction_line_metadata(
+    data: LinePlotData, *, identifier: str, label: str, unit: str, y_label: str
+) -> None:
     assert data.identifier == identifier
     assert data.label == label
     assert data.unit == unit

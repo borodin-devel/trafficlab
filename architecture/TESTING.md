@@ -88,6 +88,14 @@ log/inventory oracles in `tests/support/failure_matrix/cases.py`, `doubles.py`,
 remain under `tests/unit/pipeline/failure_matrix/`. These support modules are
 test-only owners, not compatibility layers or generic utility collections.
 
+Dashboard tests live under `tests/trafficlab_dashboard/unit/`,
+`tests/trafficlab_dashboard/integration/`, and
+`tests/trafficlab_dashboard/support/`. Unit owners cover loader, aspect,
+cache, state, and plotting interaction contracts; integration owners cover the
+window shell, checked-run loading, background-worker arbitration, export, and
+large-trace responsiveness. Shared dashboard fixture builders stay in
+`tests/trafficlab_dashboard/support/`.
+
 When tests move between owners, compare the sorted normalized node suffix after
 the first `::`, including every parameter ID and every non-`parametrize` marker.
 The normalized inventory must be identical; moving a test must not drop an
@@ -358,6 +366,23 @@ These tests join real modules without Docker:
     schema. Reject every case before publication and name the first mismatching
     field. Also reject an old otherwise well-formed schema before fit resume,
     generation, or any stage reuse.
+14. Run the dashboard against the checked example run copied from
+    `examples/scientific_stack/example_run_artifacts/`. Require the window shell
+    to load one valid run, keep every first-release aspect selectable, and leave
+    all optional-artifact-backed aspects enabled for that retained checked
+    evidence.
+15. Use a deterministic 200,000-packet in-memory run through the dashboard
+    window's loader/calculation seam. Require full sample totals in the aspect
+    result, at most 20,000 rendered points per reduced line series, visibility
+    redraws served from cache without recalculation, and continued GUI event
+    processing during background load and aspect calculation.
+
+Dashboard integration runs use headless Qt with `QT_QPA_PLATFORM=offscreen`.
+Their assertions target titles, labels, enabled/disabled controls, structured
+availability reasons, and parseable PNG/SVG output rather than pixel-perfect
+screenshots. The root `trafficlab` CLI and package import path remain valid with
+the dashboard extra installed and must not require importing the dashboard
+package unless the dashboard executable or tests select it.
 14. Exercise the complete [stage-compatibility matrix](SYSTEM.md#stage-compatibility).
     Capture reuse requires exact realized snapshot bytes, capture identity, and
     both capture files. Fit, generate, compare, and offline reconstruction
@@ -769,6 +794,13 @@ of the default or deterministic integration gate because public connectivity and
 external services are outside Trafficlab's control.
 
 ## Retained scientific-stack evidence
+
+The checked real-program run under
+`examples/scientific_stack/example_run_artifacts/` is the canonical retained
+dashboard example as well as a root scientific-stack artifact bundle. Dashboard
+tests copy it into `tmp_path` and reuse the production loader boundary instead
+of introducing a dashboard-specific evidence format or relying on ignored local
+`runs/`.
 
 The public scientific artifact schemas are generated from every root in
 `PUBLIC_ARTIFACT_MODELS`. The checked flat directory contains exactly one

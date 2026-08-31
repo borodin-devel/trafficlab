@@ -234,7 +234,9 @@ def test_multiscale_discrepancy_uses_stored_scale_diagnostics_and_preserves_meta
         [scale.feature_discrepancies.byte for scale in diagnostics.scales]
     )
     assert cast(tuple[float, ...], data.metadata["scale_weights"]) == pytest.approx(diagnostics.scale_weights)
-    assert cast(tuple[float, ...], data.metadata["scale_discrepancies"]) == pytest.approx(diagnostics.scale_discrepancies)
+    assert cast(tuple[float, ...], data.metadata["scale_discrepancies"]) == pytest.approx(
+        diagnostics.scale_discrepancies
+    )
     assert cast(tuple[int, ...], data.metadata["direction_bin_cell_counts"]) == diagnostics.direction_bin_cell_counts
     assert cast(int, data.metadata["total_direction_bin_cells"]) == diagnostics.total_direction_bin_cells
     assert cast(Mapping[str, float], data.metadata["feature_weights"]) == {

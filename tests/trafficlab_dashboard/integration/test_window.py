@@ -122,10 +122,7 @@ class _ReplacementAspect:
 def test_window_control_row_keeps_the_specified_order(qtbot: QtBot, tmp_path: Path) -> None:
     window = _loaded_window(qtbot, copy_checked_dashboard_run(tmp_path))
 
-    names = [
-        _widget_at(window, index).objectName()
-        for index in range(window.controls_layout.count())
-    ]
+    names = [_widget_at(window, index).objectName() for index in range(window.controls_layout.count())]
 
     assert names == [
         "open_run_button",

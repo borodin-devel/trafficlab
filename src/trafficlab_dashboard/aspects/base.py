@@ -246,7 +246,9 @@ class LinePlotData:
         elif self.reference_available is not None or self.generated_available is not None:
             raise ValueError("availability metadata requires requested_lags")
         if self.unavailable_reason is not None:
-            object.__setattr__(self, "unavailable_reason", _require_string(self.unavailable_reason, name="unavailable_reason"))
+            object.__setattr__(
+                self, "unavailable_reason", _require_string(self.unavailable_reason, name="unavailable_reason")
+            )
         if self.bin_edges is not None:
             edges = _owned_float64_array(self.bin_edges)
             if len(edges) < 2 or np.any(np.diff(edges) < 0.0):

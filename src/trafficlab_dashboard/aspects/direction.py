@@ -19,10 +19,7 @@ from trafficlab_dashboard.run_data import DashboardRun
 
 def _line_title(label: str, unit: str, reference_count: int, generated_count: int, *, bin_width: float) -> str:
     return (
-        f"{label} ({unit})"
-        f" · Reference n={reference_count}"
-        f" · Generated n={generated_count}"
-        f" · Bin width {bin_width:g} s"
+        f"{label} ({unit}) · Reference n={reference_count} · Generated n={generated_count} · Bin width {bin_width:g} s"
     )
 
 
@@ -55,13 +52,17 @@ def _subset_counts(trace: TrafficTrace, direction: Direction) -> tuple[int, int]
     return int(np.count_nonzero(mask)), int(np.sum(trace.frame_lengths[mask], dtype=np.uint64))
 
 
-def _directional_throughput(trace: TrafficTrace, edges: NDArray[np.float64], direction: Direction) -> NDArray[np.float64]:
+def _directional_throughput(
+    trace: TrafficTrace, edges: NDArray[np.float64], direction: Direction
+) -> NDArray[np.float64]:
     mask = trace.direction_mask(direction)
     bytes_per_bin, _ = np.histogram(trace.timestamps[mask], bins=edges, weights=trace.frame_lengths[mask])
     return np.asarray(bytes_per_bin * 8.0 / np.diff(edges) / 1_000_000.0, dtype=np.float64)
 
 
-def _directional_packet_rate(trace: TrafficTrace, edges: NDArray[np.float64], direction: Direction) -> NDArray[np.float64]:
+def _directional_packet_rate(
+    trace: TrafficTrace, edges: NDArray[np.float64], direction: Direction
+) -> NDArray[np.float64]:
     mask = trace.direction_mask(direction)
     counts, _ = np.histogram(trace.timestamps[mask], bins=edges)
     return np.asarray(counts / np.diff(edges), dtype=np.float64)

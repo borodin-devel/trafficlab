@@ -311,7 +311,9 @@ class DashboardWindow(QMainWindow):
 
     def _update_controls(self) -> None:
         active_aspect = self._active_aspect()
-        trace_controls_enabled = self.state.run is not None and self._current_plot is not None and active_aspect.trace_controls
+        trace_controls_enabled = (
+            self.state.run is not None and self._current_plot is not None and active_aspect.trace_controls
+        )
         self._syncing_controls = True
         try:
             self.reference_button.setChecked(self.state.visibility.reference)

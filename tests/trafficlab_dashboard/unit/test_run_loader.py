@@ -151,7 +151,9 @@ def test_reference_and_generated_identities_match_the_exact_loaded_trace_bytes(t
         generated_times=(20.0, 21.0, 24.0),
     )
 
-    metadata = parse_capture_metadata((run_directory / "capture.json").read_bytes(), source=run_directory / "capture.json")
+    metadata = parse_capture_metadata(
+        (run_directory / "capture.json").read_bytes(), source=run_directory / "capture.json"
+    )
     reference_bytes = (run_directory / "reference.pcapng").read_bytes()
     generated_bytes = (run_directory / "generated.pcapng").read_bytes()
     expected_reference, _ = normalize_reference(

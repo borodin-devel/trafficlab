@@ -136,7 +136,9 @@ def test_stale_worker_result_cannot_replace_newer_aspect(qtbot: QtBot, tmp_path:
     stale_token = window.state.generation
     window.state = begin_aspect_request(window.state, "other")
 
-    window.accept_calculation(CalculateAspectSuccess(token=stale_token, aspect_id="throughput", data=_plot("throughput")))
+    window.accept_calculation(
+        CalculateAspectSuccess(token=stale_token, aspect_id="throughput", data=_plot("throughput"))
+    )
 
     assert window.state.selected_aspect == "throughput"
     assert window.state.requested_aspect == "other"
@@ -205,7 +207,9 @@ def test_cache_clears_only_on_matching_successful_run_replacement(
 
     monkeypatch.setattr(QMessageBox, "critical", ignore_dialog)
     window.state = begin_run_load(window.state, tmp_path / "broken")
-    window.accept_load(LoadRunFailure(token=window.state.generation, directory=tmp_path / "broken", error=RuntimeError("broken")))
+    window.accept_load(
+        LoadRunFailure(token=window.state.generation, directory=tmp_path / "broken", error=RuntimeError("broken"))
+    )
     assert window.cache.get(cached_key) is not None
 
     window.state = begin_run_load(window.state, run_b.directory)
@@ -251,9 +255,7 @@ def test_direct_slot_replacement_failure_keeps_the_accepted_run_and_cache(
     window.accept_load(LoadRunSuccess(token=window.state.generation, directory=run_a.directory, run=run_a))
     first_token = window.state.generation
     assert len(thread_pool.started) == 1
-    window.accept_calculation(
-        CalculateAspectSuccess(token=first_token, aspect_id="throughput", data=_plot("run-a"))
-    )
+    window.accept_calculation(CalculateAspectSuccess(token=first_token, aspect_id="throughput", data=_plot("run-a")))
     assert window.state.run is not None
     assert window.state.run.directory == run_a.directory
     cached_key = window.cache.keys()[0]
@@ -273,7 +275,9 @@ def test_direct_slot_replacement_failure_keeps_the_accepted_run_and_cache(
 
     monkeypatch.setattr(QMessageBox, "critical", ignore_dialog)
     window.accept_calculation(
-        CalculateAspectFailure(token=replacement_token, aspect_id="throughput", error=RuntimeError("replacement failed"))
+        CalculateAspectFailure(
+            token=replacement_token, aspect_id="throughput", error=RuntimeError("replacement failed")
+        )
     )
 
     assert window.state.run is not None
@@ -303,9 +307,7 @@ def test_stale_replacement_plot_cannot_commit_after_a_newer_run_request(
     window.state = begin_run_load(window.state, run_a.directory)
     window.accept_load(LoadRunSuccess(token=window.state.generation, directory=run_a.directory, run=run_a))
     accepted_token = window.state.generation
-    window.accept_calculation(
-        CalculateAspectSuccess(token=accepted_token, aspect_id="throughput", data=_plot("run-a"))
-    )
+    window.accept_calculation(CalculateAspectSuccess(token=accepted_token, aspect_id="throughput", data=_plot("run-a")))
 
     window.state = begin_run_load(window.state, run_b.directory)
     b_token = window.state.generation

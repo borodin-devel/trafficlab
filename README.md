@@ -119,6 +119,14 @@ The Python command must report `Python 3.12.3` when regenerating deterministic
 fixtures or resuming the checked genetic checkpoint. `uv sync --locked` uses
 the committed [uv.lock](uv.lock) without silently upgrading dependencies.
 
+Install the optional desktop visualization companion in the same locked
+environment when you want the dashboard or its tests:
+
+```bash
+uv sync --locked --all-groups --all-extras
+uv run --all-extras trafficlab-dashboard --help
+```
+
 Build the production capture image used by the example configuration:
 
 ```bash
@@ -203,6 +211,49 @@ Expected research failures return concise structured errors. Inspect `run.log`
 and the preserved completed artifacts before correcting the experiment or
 retrying. User interruption returns status `130` after bounded target stop,
 capture flush where possible, and cleanup.
+
+## Dashboard companion
+
+The optional `trafficlab-dashboard` desktop companion opens one canonical run
+directory read-only and renders interactive plots from existing checked or
+freshly generated artifacts. It does not run capture, fit, generate, compare,
+or modify any file in the selected run directory.
+
+Launch it against the checked retained example run:
+
+```bash
+uv run --all-extras trafficlab-dashboard \
+  examples/scientific_stack/example_run_artifacts
+```
+
+Launching without a positional directory opens the native chooser instead:
+
+```bash
+uv run --all-extras trafficlab-dashboard
+```
+
+The selected run must contain `reference.pcapng`, `generated.pcapng`, and
+`capture.json`. Optional artifacts degrade by disabling only dependent views:
+`similarity.json` enables similarity and multiscale aspects, `ga_history.csv`
+enables GA history, and `best_model.json` plus `experiment.toml` supply
+retained metadata shown by those views.
+
+The window shows one aspect at a time with independent Reference and Generated
+visibility toggles, Reset, and PNG/SVG export. Trace views keep at least one
+dataset visible; pair-level or run-level views disable the trace toggles while
+preserving stored visibility for later trace views.
+
+Mouse controls are fixed:
+
+- left-button drag pans both axes;
+- mouse wheel zooms around the cursor;
+- `Shift + wheel` zooms only the x axis;
+- `Ctrl + wheel` zooms only the y axis;
+- double-click and Reset restore the complete calculated view.
+
+Export preserves the current aspect, visible datasets, viewport, labels,
+annotations, and legend. Export writes only to the path you choose and never to
+the run directory unless you explicitly select it.
 
 ## Workflow stages
 
@@ -363,6 +414,17 @@ pinpointed TDD case use the serial
 copyable Fast, Ordinary, Coverage, External, and Release commands are in the
 [canonical testing gates](architecture/DEVELOPMENT.md#canonical-testing-gates).
 
+Dashboard-focused selections run with the optional extra installed and headless
+Qt enabled, for example:
+
+```bash
+scripts/run_bounded.sh \
+  --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 5m --kill-after 10s -- \
+  QT_QPA_PLATFORM=offscreen uv run --all-extras pytest -vv -x -n 0 \
+  tests/trafficlab_dashboard/integration/test_checked_run.py
+```
+
 The marker policy, named behavioral evidence, branch-coverage rules, Docker
 tracking, and Internet contract are in the
 [Testing Strategy](architecture/TESTING.md).
@@ -418,6 +480,7 @@ For the authoritative scope boundary, see
 - [Architecture overview](architecture/README.md)
 - [System design and CLI stages](architecture/SYSTEM.md)
 - [Docker capture environment](architecture/CAPTURE.md)
+- [Visualization companion](architecture/VISUALIZATION.md)
 - [Development workflow](architecture/DEVELOPMENT.md)
 - [Testing strategy](architecture/TESTING.md)
 - [Research prototype fitness criteria](architecture/RESEARCH_FITNESS_CRITERIA.md)

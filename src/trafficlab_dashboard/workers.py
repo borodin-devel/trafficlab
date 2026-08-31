@@ -97,6 +97,4 @@ class CalculateAspectWorker(QRunnable):
                 CalculateAspectFailure(token=self.token, aspect_id=self.aspect.identifier, error=error)
             )
             return
-        self.signals.result.emit(
-            CalculateAspectSuccess(token=self.token, aspect_id=self.aspect.identifier, data=data)
-        )
+        self.signals.result.emit(CalculateAspectSuccess(token=self.token, aspect_id=self.aspect.identifier, data=data))

@@ -373,6 +373,7 @@ Cache key:
 ```python
 type CacheKey = tuple[ArtifactIdentities, str, CalculationSettings]
 
+
 class AspectCache:
     def get(self, key: CacheKey) -> PlotData | None: ...
     def put(self, key: CacheKey, value: PlotData) -> None: ...
@@ -653,12 +654,26 @@ Declare all 20 first-release identifiers verbatim:
 
 ```python
 EXPECTED_ASPECT_IDS = (
-    "throughput", "packet_rate", "cumulative_bytes", "cumulative_packets",
-    "frame_size_timeline", "iat_timeline", "frame_size_ecdf", "iat_ecdf",
-    "frame_size_histogram", "iat_histogram", "throughput_ecdf",
-    "directional_throughput", "directional_packet_rate", "direction_balance",
-    "frame_size_acf", "iat_acf", "frame_size_iat_hexbin",
-    "similarity_scores", "multiscale_discrepancy", "ga_fitness_history",
+    "throughput",
+    "packet_rate",
+    "cumulative_bytes",
+    "cumulative_packets",
+    "frame_size_timeline",
+    "iat_timeline",
+    "frame_size_ecdf",
+    "iat_ecdf",
+    "frame_size_histogram",
+    "iat_histogram",
+    "throughput_ecdf",
+    "directional_throughput",
+    "directional_packet_rate",
+    "direction_balance",
+    "frame_size_acf",
+    "iat_acf",
+    "frame_size_iat_hexbin",
+    "similarity_scores",
+    "multiscale_discrepancy",
+    "ga_fitness_history",
 )
 ```
 
