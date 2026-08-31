@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from tests.fixtures.paths import REPOSITORY_ROOT
 from tests.support.config import valid_config_data
@@ -30,8 +31,9 @@ def _events_from_times(times: Sequence[float]) -> tuple[TraceEvent, ...]:
 
 def _config_for_run_directory(run_directory: Path) -> ExperimentConfig:
     data = valid_config_data(run_directory.parent)
+    run_section = dict(cast(dict[str, object], data["run"]))
     data["run"] = {
-        **data["run"],
+        **run_section,
         "directory": str(run_directory),
     }
     return ExperimentConfig.model_validate(data)

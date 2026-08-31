@@ -14,6 +14,16 @@ from trafficlab_dashboard.aspects.base import (
     PlotData,
     TraceVisibility,
 )
+from trafficlab_dashboard.aspects.dependence import (
+    FrameSizeAutocorrelationAspect,
+    FrameSizeIatHexbinAspect,
+    IatAutocorrelationAspect,
+)
+from trafficlab_dashboard.aspects.direction import (
+    DirectionalPacketRateAspect,
+    DirectionalThroughputAspect,
+    DirectionBalanceAspect,
+)
 from trafficlab_dashboard.aspects.distributions import (
     FrameSizeEcdfAspect,
     FrameSizeHistogramAspect,
@@ -47,12 +57,18 @@ __all__ = [
     "CalculationSettings",
     "CumulativeBytesAspect",
     "CumulativePacketsAspect",
+    "DirectionBalanceAspect",
+    "DirectionalPacketRateAspect",
+    "DirectionalThroughputAspect",
     "HexbinPlotData",
+    "FrameSizeAutocorrelationAspect",
     "FrameSizeEcdfAspect",
     "FrameSizeHistogramAspect",
+    "FrameSizeIatHexbinAspect",
     "FrameSizeTimelineAspect",
     "HistogramPlotData",
     "HistogramSeries",
+    "IatAutocorrelationAspect",
     "IatEcdfAspect",
     "IatHistogramAspect",
     "IatTimelineAspect",

@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from trafficlab_dashboard.aspects.base import Aspect, CalculationSettings, PlotData
+from trafficlab_dashboard.aspects.base import Aspect
+from trafficlab_dashboard.aspects.dependence import (
+    FrameSizeAutocorrelationAspect,
+    FrameSizeIatHexbinAspect,
+    IatAutocorrelationAspect,
+)
+from trafficlab_dashboard.aspects.direction import (
+    DirectionalPacketRateAspect,
+    DirectionalThroughputAspect,
+    DirectionBalanceAspect,
+)
 from trafficlab_dashboard.aspects.distributions import (
     FrameSizeEcdfAspect,
     FrameSizeHistogramAspect,
@@ -18,24 +26,6 @@ from trafficlab_dashboard.aspects.time_domain import (
     PacketRateAspect,
     ThroughputAspect,
 )
-from trafficlab_dashboard.run_data import DashboardRun
-
-
-def _not_implemented(identifier: str) -> PlotData:
-    raise NotImplementedError(f"aspect {identifier} is not implemented yet")
-
-
-@dataclass(frozen=True, slots=True)
-class _RegisteredAspect:
-    identifier: str
-    label: str
-    category: str
-    trace_controls: bool = True
-
-    def calculate(self, run: DashboardRun, settings: CalculationSettings) -> PlotData:
-        del run, settings
-        return _not_implemented(self.identifier)
-
 
 ASPECTS: tuple[Aspect, ...] = (
     ThroughputAspect(),
@@ -49,12 +39,12 @@ ASPECTS: tuple[Aspect, ...] = (
     FrameSizeHistogramAspect(),
     IatHistogramAspect(),
     ThroughputEcdfAspect(),
-    _RegisteredAspect("directional_throughput", "Uplink/downlink throughput", "Direction"),
-    _RegisteredAspect("directional_packet_rate", "Uplink/downlink packet rate", "Direction"),
-    _RegisteredAspect("direction_balance", "Direction balance", "Direction"),
-    _RegisteredAspect("frame_size_acf", "Frame-size autocorrelation", "Dependence"),
-    _RegisteredAspect("iat_acf", "IAT autocorrelation", "Dependence"),
-    _RegisteredAspect("frame_size_iat_hexbin", "Frame size versus IAT", "Dependence"),
+    DirectionalThroughputAspect(),
+    DirectionalPacketRateAspect(),
+    DirectionBalanceAspect(),
+    FrameSizeAutocorrelationAspect(),
+    IatAutocorrelationAspect(),
+    FrameSizeIatHexbinAspect(),
 )
 
 _ASPECTS_BY_ID = {aspect.identifier: aspect for aspect in ASPECTS}

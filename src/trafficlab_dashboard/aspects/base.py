@@ -56,6 +56,35 @@ def _require_axis_scale(value: AxisScale, *, name: str) -> AxisScale:
     return value
 
 
+def _require_requested_lags(
+    value: tuple[int, ...] | None,
+    *,
+    name: str,
+) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+    if type(value) is not tuple or not value:
+        raise ValueError(f"{name} must be a non-empty tuple")
+    if any(type(lag) is not int or lag <= 0 for lag in value):
+        raise ValueError(f"{name} must contain positive integers")
+    if any(left >= right for left, right in zip(value, value[1:], strict=False)):
+        raise ValueError(f"{name} must be strictly increasing")
+    return value
+
+
+def _require_availability(
+    value: tuple[bool, ...] | None,
+    *,
+    name: str,
+    expected_length: int,
+) -> tuple[bool, ...] | None:
+    if value is None:
+        return None
+    if type(value) is not tuple or len(value) != expected_length or any(type(flag) is not bool for flag in value):
+        raise ValueError(f"{name} must be a tuple of {expected_length} bools")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class TraceVisibility:
     reference: bool
@@ -132,6 +161,10 @@ class LinePlotData:
     y_scale: AxisScale = "linear"
     bin_width: float | None = None
     lag_range: tuple[int, int] | None = None
+    requested_lags: tuple[int, ...] | None = None
+    reference_available: tuple[bool, ...] | None = None
+    generated_available: tuple[bool, ...] | None = None
+    unavailable_reason: str | None = None
     bin_edges: NDArray[np.float64] | None = None
     reference_sample_count: int = 0
     generated_sample_count: int = 0
@@ -156,6 +189,35 @@ class LinePlotData:
                 or self.lag_range[0] > self.lag_range[1]
             ):
                 raise ValueError("lag_range must be an ordered positive integer pair or None")
+        requested_lags = _require_requested_lags(self.requested_lags, name="requested_lags")
+        object.__setattr__(self, "requested_lags", requested_lags)
+        if requested_lags is not None:
+            if self.lag_range is None:
+                object.__setattr__(self, "lag_range", (requested_lags[0], requested_lags[-1]))
+            elif self.lag_range != (requested_lags[0], requested_lags[-1]):
+                raise ValueError("lag_range must match the requested lag endpoints")
+            object.__setattr__(
+                self,
+                "reference_available",
+                _require_availability(
+                    self.reference_available,
+                    name="reference_available",
+                    expected_length=len(requested_lags),
+                ),
+            )
+            object.__setattr__(
+                self,
+                "generated_available",
+                _require_availability(
+                    self.generated_available,
+                    name="generated_available",
+                    expected_length=len(requested_lags),
+                ),
+            )
+        elif self.reference_available is not None or self.generated_available is not None:
+            raise ValueError("availability metadata requires requested_lags")
+        if self.unavailable_reason is not None:
+            object.__setattr__(self, "unavailable_reason", _require_string(self.unavailable_reason, name="unavailable_reason"))
         if self.bin_edges is not None:
             edges = _owned_float64_array(self.bin_edges)
             if len(edges) < 2 or np.any(np.diff(edges) < 0.0):
