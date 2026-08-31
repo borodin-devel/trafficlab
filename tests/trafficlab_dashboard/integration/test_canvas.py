@@ -213,14 +213,43 @@ def test_canvas_renders_line_data_with_dataset_colors_direction_styles_and_acf_a
     assert any("Lag exceeds sample count" in text for text in annotations)
 
 
-def test_canvas_visibility_rerender_preserves_viewport_but_new_aspect_and_reset_restore_complete_bounds(
+def test_canvas_ordinary_render_of_same_identifier_resets_to_new_complete_bounds(canvas: DashboardCanvas) -> None:
+    canvas.render(_line_data(), TraceVisibility(reference=True, generated=True))
+    canvas.axes.set_xlim(0.4, 1.2)
+    canvas.axes.set_ylim(0.75, 2.25)
+
+    canvas.render(
+        LinePlotData(
+            identifier="throughput",
+            label="Throughput",
+            title="Throughput · Mbps · ref 8/gen 8 · 1.0 s bins",
+            x_label="Time (s)",
+            y_label="Rate (Mbps)",
+            unit="Mbps",
+            series=_line_data().series,
+            x_limits=(10.0, 20.0),
+            y_limits=(100.0, 200.0),
+            x_scale="linear",
+            y_scale="linear",
+            bin_width=1.0,
+            reference_sample_count=8,
+            generated_sample_count=8,
+        ),
+        TraceVisibility(reference=True, generated=True),
+    )
+
+    assert canvas.axes.get_xlim() == pytest.approx((10.0, 20.0))
+    assert canvas.axes.get_ylim() == pytest.approx((100.0, 200.0))
+
+
+def test_canvas_visibility_rerender_preserves_viewport_only_when_caller_requests_it(
     canvas: DashboardCanvas,
 ) -> None:
     canvas.render(_line_data(), TraceVisibility(reference=True, generated=True))
     canvas.axes.set_xlim(0.4, 1.2)
     canvas.axes.set_ylim(0.75, 2.25)
 
-    canvas.render(_line_data(), TraceVisibility(reference=True, generated=False))
+    canvas.render(_line_data(), TraceVisibility(reference=True, generated=False), preserve_viewport=True)
 
     assert canvas.axes.get_xlim() == pytest.approx((0.4, 1.2))
     assert canvas.axes.get_ylim() == pytest.approx((0.75, 2.25))

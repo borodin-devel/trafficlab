@@ -54,8 +54,14 @@ class DashboardCanvas(QWidget):
     def current_aspect(self) -> str | None:
         return self._current_aspect
 
-    def render(self, data: PlotData, visibility: TraceVisibility) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
-        preserve_view = self._current_view() if data.identifier == self._current_aspect else None
+    def render(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        data: PlotData,
+        visibility: TraceVisibility,
+        *,
+        preserve_viewport: bool = False,
+    ) -> None:
+        preserve_view = self._current_view() if preserve_viewport else None
         self.axes.clear()
         self.axes.set_title(data.title)
         self.axes.grid(True, alpha=0.25)
