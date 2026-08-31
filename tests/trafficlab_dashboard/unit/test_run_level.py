@@ -134,6 +134,7 @@ def _run(
     similarity: ComparisonResult | None = None,
     history: tuple[HistoryRow, ...] | None = None,
     experiment: ExperimentConfig | None = None,
+    unavailable: Mapping[str, str] | None = None,
 ) -> DashboardRun:
     return DashboardRun(
         directory=Path.cwd() / "run",
@@ -161,7 +162,7 @@ def _run(
         best_model=None,
         history=history,
         experiment=experiment,
-        unavailable=MappingProxyType({}),
+        unavailable=MappingProxyType(dict(unavailable or {})),
     )
 
 
@@ -250,8 +251,17 @@ def test_multiscale_discrepancy_uses_stored_scale_diagnostics_and_preserves_meta
         assert not series.y.flags.writeable
 
 
-def test_ga_fitness_history_uses_canonical_lexical_family_order_not_enabled_order() -> None:
-    history = _history_rows()
+def test_ga_fitness_history_uses_canonical_lexical_family_order_not_encounter_or_enabled_order() -> None:
+    history = (
+        _history_rows()[2],
+        _history_rows()[0],
+        _history_rows()[1],
+        _history_rows()[3],
+        _history_rows()[6],
+        _history_rows()[4],
+        _history_rows()[5],
+        _history_rows()[7],
+    )
 
     data = GaFitnessHistoryAspect().calculate(
         _run(history=history, experiment=_experiment()),
@@ -291,6 +301,18 @@ def test_ga_fitness_history_uses_canonical_lexical_family_order_not_enabled_orde
     assert valid_counts["poisson_empirical"] == (4, 2)
     assert best_birth_generations["overall"] == (0, 1)
     assert best_birth_indices["markov_renewal"] == (4, 1)
+
+
+def test_ga_fitness_history_requires_loader_reported_experiment_availability() -> None:
+    with pytest.raises(ValueError, match="experiment.toml is missing"):
+        GaFitnessHistoryAspect().calculate(
+            _run(
+                history=_history_rows(),
+                experiment=None,
+                unavailable={"ga_fitness_history": "experiment.toml is missing"},
+            ),
+            CalculationSettings.default(),
+        )
 
 
 def test_run_level_aspects_use_only_stored_artifacts_and_not_compare_traces(

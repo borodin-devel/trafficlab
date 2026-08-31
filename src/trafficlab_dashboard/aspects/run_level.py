@@ -5,7 +5,7 @@ from typing import cast
 
 import numpy as np
 
-from trafficlab.common.config import FamilyName
+from trafficlab.common.config import ExperimentConfig, FamilyName
 from trafficlab.comparison.diagnostics import MultiscaleDiagnostic
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.types import HistoryRow
@@ -53,6 +53,13 @@ def _require_history(run: DashboardRun, *, aspect_id: str) -> tuple[HistoryRow, 
     return run.history
 
 
+def _require_experiment(run: DashboardRun, *, aspect_id: str) -> ExperimentConfig:
+    if run.experiment is None:
+        reason = run.unavailable.get(aspect_id, "ga_history.csv requires a valid experiment.toml")
+        raise ValueError(reason)
+    return run.experiment
+
+
 def _multiscale_diagnostics(run: DashboardRun, *, aspect_id: str) -> MultiscaleDiagnostic:
     similarity = _require_similarity(run, aspect_id=aspect_id)
     return cast(MultiscaleDiagnostic, similarity.methods["multiscale_rate"].diagnostics)
@@ -65,17 +72,30 @@ def _history_key(row: HistoryRow) -> str:
     return family
 
 
-def _history_order(rows: tuple[HistoryRow, ...]) -> tuple[str, ...]:
-    ordered: list[str] = []
-    for row in rows:
-        key = _history_key(row)
-        if key not in ordered:
-            ordered.append(key)
-    return tuple(ordered)
-
-
 def _history_series(rows: tuple[HistoryRow, ...], key: str) -> tuple[HistoryRow, ...]:
     return tuple(row for row in rows if _history_key(row) == key)
+
+
+def _history_order(rows: tuple[HistoryRow, ...], experiment: ExperimentConfig) -> tuple[str, ...]:
+    expected_families = tuple(sorted(experiment.models.enabled))
+    observed_families = frozenset(
+        cast(FamilyName, row.family)
+        for row in rows
+        if row.scope == "family"
+    )
+    expected_family_set = frozenset(expected_families)
+    if observed_families != expected_family_set:
+        missing = tuple(name for name in expected_families if name not in observed_families)
+        unexpected = tuple(name for name in sorted(observed_families - expected_family_set))
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing families: {', '.join(missing)}")
+        if unexpected:
+            parts.append(f"unexpected families: {', '.join(unexpected)}")
+        raise ValueError(f"ga_history.csv is unavailable: history rows do not match experiment families ({'; '.join(parts)})")
+    if not any(row.scope == "overall" for row in rows):
+        raise ValueError("ga_history.csv is unavailable: history rows do not contain an overall series")
+    return expected_families + ("overall",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,8 +211,9 @@ class GaFitnessHistoryAspect:
 
     def calculate(self, run: DashboardRun, settings: CalculationSettings) -> LinePlotData:
         del settings
+        experiment = _require_experiment(run, aspect_id=self.identifier)
         rows = _require_history(run, aspect_id=self.identifier)
-        order = _history_order(rows)
+        order = _history_order(rows, experiment)
         series: list[LineSeries] = []
         candidate_counts: dict[str, tuple[int, ...]] = {}
         valid_counts: dict[str, tuple[int, ...]] = {}
@@ -200,6 +221,8 @@ class GaFitnessHistoryAspect:
         best_birth_indices: dict[str, tuple[int, ...]] = {}
         for key in order:
             grouped = _history_series(rows, key)
+            if not grouped:
+                raise ValueError(f"ga_history.csv is unavailable: history rows do not contain the {key} series")
             series.append(
                 LineSeries(
                     label=_GA_LABELS[key],
