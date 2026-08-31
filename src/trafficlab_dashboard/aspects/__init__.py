@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from trafficlab_dashboard.aspects.base import (
     Aspect,
+    AxisScale,
     BarPlotData,
     BarSeries,
     CalculationSettings,
@@ -25,6 +26,7 @@ from trafficlab_dashboard.aspects.registry import ASPECTS, aspect_by_id
 __all__ = [
     "ASPECTS",
     "Aspect",
+    "AxisScale",
     "BarPlotData",
     "BarSeries",
     "CalculationSettings",

@@ -3,12 +3,24 @@ from __future__ import annotations
 from dataclasses import fields
 from pathlib import Path
 from types import MappingProxyType
+from typing import Any, cast
 
 import numpy as np
 import pytest
 
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
-from trafficlab_dashboard.aspects.base import CalculationSettings, LinePlotData, LineSeries, TraceVisibility
+from trafficlab_dashboard.aspects.base import (
+    AxisScale,
+    BarPlotData,
+    BarSeries,
+    CalculationSettings,
+    HexbinPlotData,
+    HistogramPlotData,
+    HistogramSeries,
+    LinePlotData,
+    LineSeries,
+    TraceVisibility,
+)
 from trafficlab_dashboard.cache import AspectCache
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
 
@@ -81,6 +93,77 @@ def _plot_data() -> LinePlotData:
     )
 
 
+def _histogram_plot_data(
+    *,
+    identifier: str = "distribution",
+    label: str = "Distribution",
+    title: str = "Distribution",
+    x_label: str = "Value",
+    y_label: str = "Density",
+    unit: str = "s",
+    x_scale: AxisScale = "linear",
+    y_scale: AxisScale = "linear",
+) -> HistogramPlotData:
+    return HistogramPlotData(
+        identifier=identifier,
+        label=label,
+        title=title,
+        x_label=x_label,
+        y_label=y_label,
+        unit=unit,
+        series=(
+            HistogramSeries(
+                label="Reference",
+                edges=np.array([0.5, 1.0, 2.0], dtype=np.float64),
+                values=np.array([0.25, 0.75], dtype=np.float64),
+                sample_count=3,
+                dataset="reference",
+                positive_sample_count=3,
+            ),
+        ),
+        x_limits=(0.5, 2.0),
+        y_limits=(0.0, 1.0),
+        x_scale=x_scale,
+        y_scale=y_scale,
+    )
+
+
+def _bar_plot_data(*, x_scale: AxisScale = "linear", y_scale: AxisScale = "linear") -> BarPlotData:
+    return BarPlotData(
+        identifier="scores",
+        label="Scores",
+        title="Scores",
+        categories=("A", "B"),
+        series=(BarSeries(label="Pair", values=np.array([0.2, 0.8], dtype=np.float64), sample_count=2),),
+        y_label="Score",
+        unit="ratio",
+        y_limits=(0.0, 1.0),
+        x_scale=x_scale,
+        y_scale=y_scale,
+    )
+
+
+def _hexbin_plot_data(*, x_scale: AxisScale = "linear", y_scale: AxisScale = "linear") -> HexbinPlotData:
+    return HexbinPlotData(
+        identifier="relation",
+        label="Relation",
+        title="Relation",
+        x_label="X",
+        y_label="Y",
+        unit="arb.",
+        reference_x=np.array([1.0, 2.0], dtype=np.float64),
+        reference_y=np.array([2.0, 3.0], dtype=np.float64),
+        generated_x=np.array([1.5], dtype=np.float64),
+        generated_y=np.array([2.5], dtype=np.float64),
+        x_limits=(1.0, 2.0),
+        y_limits=(2.0, 3.0),
+        reference_sample_count=2,
+        generated_sample_count=1,
+        x_scale=x_scale,
+        y_scale=y_scale,
+    )
+
+
 def test_plot_records_own_nonwritable_arrays_and_disable_auto_equality() -> None:
     x = np.array([0.0, 1.0], dtype=np.float64)
     y = np.array([1.0, 2.0], dtype=np.float64)
@@ -116,6 +199,78 @@ def test_plot_records_own_nonwritable_arrays_and_disable_auto_equality() -> None
 
     with pytest.raises(ValueError):
         series.x.setflags(write=True)
+
+
+def test_plot_data_axis_scale_defaults_are_linear_across_record_families() -> None:
+    line = _plot_data()
+    histogram = _histogram_plot_data()
+    bar = _bar_plot_data()
+    hexbin = _hexbin_plot_data()
+
+    assert line.x_scale == "linear"
+    assert line.y_scale == "linear"
+    assert histogram.x_scale == "linear"
+    assert histogram.y_scale == "linear"
+    assert bar.x_scale == "linear"
+    assert bar.y_scale == "linear"
+    assert hexbin.x_scale == "linear"
+    assert hexbin.y_scale == "linear"
+
+
+def test_plot_data_rejects_unknown_axis_scale_values() -> None:
+    with pytest.raises(ValueError, match="axis scale"):
+        HistogramPlotData(
+            identifier="distribution",
+            label="Distribution",
+            title="Distribution",
+            x_label="Value",
+            y_label="Density",
+            unit="s",
+            series=(
+                HistogramSeries(
+                    label="Reference",
+                    edges=np.array([0.5, 1.0, 2.0], dtype=np.float64),
+                    values=np.array([0.25, 0.75], dtype=np.float64),
+                    sample_count=3,
+                    dataset="reference",
+                ),
+            ),
+            x_limits=(0.5, 2.0),
+            y_limits=(0.0, 1.0),
+            x_scale=cast(Any, "symlog"),
+        )
+
+    with pytest.raises(ValueError, match="axis scale"):
+        _plot_data().__class__(
+            identifier="throughput",
+            label="Throughput",
+            title="Throughput",
+            x_label="Time (s)",
+            y_label="Rate",
+            unit="Mbps",
+            series=_plot_data().series,
+            x_limits=(0.0, 3.0),
+            y_limits=(0.2, 0.5),
+            y_scale=cast(Any, "symlog"),
+            reference_sample_count=3,
+            generated_sample_count=2,
+        )
+
+
+def test_positive_iat_histogram_can_request_a_log_x_scale_without_aspect_id_inference() -> None:
+    data = _histogram_plot_data(
+        identifier="custom-positive-iats",
+        label="Positive IATs",
+        title="Positive IATs",
+        x_label="IAT (s)",
+        x_scale="log",
+    )
+
+    assert data.identifier == "custom-positive-iats"
+    assert data.x_scale == "log"
+    assert data.y_scale == "linear"
+    assert data.series[0].edges.tolist() == [0.5, 1.0, 2.0]
+    assert not data.series[0].edges.flags.writeable
 
 
 def test_visibility_change_does_not_change_cache_key() -> None:

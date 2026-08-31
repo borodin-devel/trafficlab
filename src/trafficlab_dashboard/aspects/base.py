@@ -11,6 +11,7 @@ from trafficlab_dashboard.run_data import DashboardRun
 
 type SeriesDataset = Literal["reference", "generated"] | None
 type RenderMode = Literal["scatter", "hexbin"]
+type AxisScale = Literal["linear", "log"]
 
 
 def _owned_float64_array(values: object) -> NDArray[np.float64]:
@@ -46,6 +47,12 @@ def _require_count(value: int, *, name: str) -> int:
         raise TypeError(f"{name} must be an integer")
     if value < 0:
         raise ValueError(f"{name} must be nonnegative")
+    return value
+
+
+def _require_axis_scale(value: AxisScale, *, name: str) -> AxisScale:
+    if value not in {"linear", "log"}:
+        raise ValueError(f"{name} must be a supported axis scale")
     return value
 
 
@@ -121,6 +128,8 @@ class LinePlotData:
     series: tuple[LineSeries, ...]
     x_limits: tuple[float, float]
     y_limits: tuple[float, float]
+    x_scale: AxisScale = "linear"
+    y_scale: AxisScale = "linear"
     bin_width: float | None = None
     lag_range: tuple[int, int] | None = None
     bin_edges: NDArray[np.float64] | None = None
@@ -134,6 +143,8 @@ class LinePlotData:
             raise TypeError("series must be a tuple of LineSeries values")
         object.__setattr__(self, "x_limits", _require_bounds(self.x_limits, name="x_limits"))
         object.__setattr__(self, "y_limits", _require_bounds(self.y_limits, name="y_limits"))
+        object.__setattr__(self, "x_scale", _require_axis_scale(self.x_scale, name="x_scale"))
+        object.__setattr__(self, "y_scale", _require_axis_scale(self.y_scale, name="y_scale"))
         if self.bin_width is not None:
             if type(self.bin_width) is not float or not math.isfinite(self.bin_width) or self.bin_width <= 0.0:
                 raise ValueError("bin_width must be a finite positive float or None")
@@ -204,6 +215,8 @@ class HistogramPlotData:
     series: tuple[HistogramSeries, ...]
     x_limits: tuple[float, float]
     y_limits: tuple[float, float]
+    x_scale: AxisScale = "linear"
+    y_scale: AxisScale = "linear"
     reference_sample_count: int = 0
     generated_sample_count: int = 0
 
@@ -214,6 +227,8 @@ class HistogramPlotData:
             raise TypeError("series must be a tuple of HistogramSeries values")
         object.__setattr__(self, "x_limits", _require_bounds(self.x_limits, name="x_limits"))
         object.__setattr__(self, "y_limits", _require_bounds(self.y_limits, name="y_limits"))
+        object.__setattr__(self, "x_scale", _require_axis_scale(self.x_scale, name="x_scale"))
+        object.__setattr__(self, "y_scale", _require_axis_scale(self.y_scale, name="y_scale"))
         object.__setattr__(
             self, "reference_sample_count", _require_count(self.reference_sample_count, name="reference_sample_count")
         )
@@ -247,6 +262,8 @@ class BarPlotData:
     y_label: str
     unit: str
     y_limits: tuple[float, float]
+    x_scale: AxisScale = "linear"
+    y_scale: AxisScale = "linear"
 
     def __post_init__(self) -> None:
         for name in ("identifier", "label", "title", "y_label", "unit"):
@@ -259,6 +276,8 @@ class BarPlotData:
             raise TypeError("series must be a tuple of BarSeries values")
         if any(len(series.values) != len(self.categories) for series in self.series):
             raise ValueError("each bar series must align with every category")
+        object.__setattr__(self, "x_scale", _require_axis_scale(self.x_scale, name="x_scale"))
+        object.__setattr__(self, "y_scale", _require_axis_scale(self.y_scale, name="y_scale"))
         object.__setattr__(self, "y_limits", _require_bounds(self.y_limits, name="y_limits"))
 
     @property
@@ -284,6 +303,8 @@ class HexbinPlotData:
     y_limits: tuple[float, float]
     reference_sample_count: int
     generated_sample_count: int
+    x_scale: AxisScale = "linear"
+    y_scale: AxisScale = "linear"
     render_mode: RenderMode = "scatter"
 
     def __post_init__(self) -> None:
@@ -301,6 +322,8 @@ class HexbinPlotData:
         object.__setattr__(self, "generated_y", generated_y)
         object.__setattr__(self, "x_limits", _require_bounds(self.x_limits, name="x_limits"))
         object.__setattr__(self, "y_limits", _require_bounds(self.y_limits, name="y_limits"))
+        object.__setattr__(self, "x_scale", _require_axis_scale(self.x_scale, name="x_scale"))
+        object.__setattr__(self, "y_scale", _require_axis_scale(self.y_scale, name="y_scale"))
         object.__setattr__(
             self, "reference_sample_count", _require_count(self.reference_sample_count, name="reference_sample_count")
         )
