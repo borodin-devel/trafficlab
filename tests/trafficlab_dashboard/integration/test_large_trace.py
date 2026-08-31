@@ -18,7 +18,8 @@ from trafficlab_dashboard.run_loader import load_dashboard_run
 from trafficlab_dashboard.window import DashboardWindow
 
 _PACKET_COUNT = 200_000
-_LOAD_SECONDS_LIMIT = 15.0
+_CHECKED_RUN_LOAD_SECONDS_LIMIT = 5.0
+_WINDOW_RESPONSIVENESS_SECONDS_LIMIT = 15.0
 _CACHED_REDRAW_SECONDS_LIMIT = 2.0
 
 
@@ -71,7 +72,19 @@ def test_large_trace_calculates_full_totals_but_bounds_display(tmp_path: Path) -
     assert len(data.series[1].x) <= 20_000
 
 
-def test_large_trace_window_stays_responsive_and_visibility_redraw_uses_cache(
+def test_checked_run_loader_stays_within_load_budget(tmp_path: Path) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+
+    start = perf_counter()
+    run = load_dashboard_run(run_directory)
+    elapsed = perf_counter() - start
+
+    assert elapsed < _CHECKED_RUN_LOAD_SECONDS_LIMIT
+    assert run.reference_packet_count > 1
+    assert run.generated_packet_count > 0
+
+
+def test_large_trace_window_stays_responsive_with_prebuilt_run_and_visibility_redraw_uses_cache(
     qtbot: QtBot,
     tmp_path: Path,
 ) -> None:
@@ -96,10 +109,10 @@ def test_large_trace_window_stays_responsive_and_visibility_redraw_uses_cache(
         timeout=20_000,
     )
     heartbeat.stop()
-    load_elapsed = perf_counter() - start
+    responsiveness_elapsed = perf_counter() - start
     current_plot = window._current_plot  # pyright: ignore[reportPrivateUsage]
 
-    assert load_elapsed < _LOAD_SECONDS_LIMIT
+    assert responsiveness_elapsed < _WINDOW_RESPONSIVENESS_SECONDS_LIMIT
     assert ticks[0] > 0
     assert isinstance(current_plot, LinePlotData)
     assert current_plot.reference_sample_count == _PACKET_COUNT

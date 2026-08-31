@@ -411,6 +411,14 @@ def test_architecture_inventory_includes_the_visualization_contract() -> None:
     )
 
 
+def test_visualization_contract_describes_stale_result_invalidation_and_atomic_replacement_cache_commit() -> None:
+    content = (REPOSITORY / "architecture" / "VISUALIZATION.md").read_text(encoding="utf-8")
+
+    assert "Stale worker results are discarded immediately." in content
+    assert "A replacement run keeps the previously accepted cache entries until its first matching plot calculation succeeds." in content
+    assert "That successful first-plot commit invalidates the previous cache atomically." in content
+
+
 def test_failure_matrix_support_has_only_focused_typed_owners() -> None:
     root = REPOSITORY / "tests" / "support" / "failure_matrix"
 

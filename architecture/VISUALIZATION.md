@@ -112,9 +112,9 @@ and run-level aspects disable the trace toggles while preserving stored
 visibility for later trace aspects.
 
 Artifact loading and aspect calculation run off the GUI thread with monotonic
-generation tokens. Stale worker results are discarded. A failed aspect
-calculation leaves the previous plot visible. A failed run load leaves the
-previous valid run selected. The previous plot remains interactive while
+generation tokens. Stale worker results are discarded immediately. A failed
+aspect calculation leaves the previous plot visible. A failed run load leaves
+the previous valid run selected. The previous plot remains interactive while
 background work is in progress.
 
 Matplotlib owns the plot surface without its default navigation toolbar. The
@@ -157,8 +157,9 @@ target sub-100 ms behavior on the supported development environment. Opening
 large current captures may take several seconds, but the GUI event loop must
 remain responsive throughout background loading and calculation.
 
-Opening a different run invalidates every cache entry and any stale worker
-result.
+A replacement run keeps the previously accepted cache entries until its first matching plot calculation succeeds.
+That successful first-plot commit invalidates the previous cache atomically. Stale worker results are discarded
+immediately and never mutate the accepted run or cached plot state.
 
 ## Export and errors
 
