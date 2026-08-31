@@ -239,7 +239,7 @@ def test_history_projection_rejects_every_infeasible_cross_row_boundary(mutation
     else:
         content = content.replace(
             f"0,overall,,3,2,{POISSON_TRIAL.aggregate_score!r},".encode(),
-            b"0,overall,,3,2,0.0,",
+            b"0,overall,,3,2,0.75,",
             1,
         )
 
@@ -250,6 +250,72 @@ def test_history_projection_rejects_every_infeasible_cross_row_boundary(mutation
             population_size=population_size,
             generation_count=generation_count,
         )
+
+
+def _single_family_history_content(
+    *,
+    candidate_count: int,
+    valid_count: int,
+    best_fitness: float,
+    mean_fitness: float,
+) -> bytes:
+    return (
+        "generation,scope,family,candidate_count,valid_count,best_fitness,mean_fitness,"
+        "best_birth_generation,best_birth_index\n"
+        f"0,family,mmpp,{candidate_count},{valid_count},{best_fitness!r},{mean_fitness!r},0,0\n"
+        f"0,overall,,{candidate_count},{valid_count},{best_fitness!r},{mean_fitness!r},0,0\n"
+    ).encode()
+
+
+def test_history_projection_rejects_mean_impossible_for_valid_candidate_count() -> None:
+    content = _single_family_history_content(
+        candidate_count=10,
+        valid_count=1,
+        best_fitness=0.5,
+        mean_fitness=0.2,
+    )
+
+    with pytest.raises(ValueError, match="history mean_fitness is not feasible for valid_count"):
+        checkpoint_history.parse_history_csv(
+            content,
+            frozenset(("mmpp",)),
+            population_size=10,
+            generation_count=0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("candidate_count", "valid_count", "best_fitness", "mean_fitness"),
+    (
+        (8, 1, 0.5, 0.0625),
+        (10, 0, 0.0, 0.0),
+        (10, 10, 0.5, 0.5),
+    ),
+)
+def test_history_projection_accepts_exact_mean_boundary_and_zero_or_full_validity(
+    candidate_count: int,
+    valid_count: int,
+    best_fitness: float,
+    mean_fitness: float,
+) -> None:
+    content = _single_family_history_content(
+        candidate_count=candidate_count,
+        valid_count=valid_count,
+        best_fitness=best_fitness,
+        mean_fitness=mean_fitness,
+    )
+
+    rows = checkpoint_history.parse_history_csv(
+        content,
+        frozenset(("mmpp",)),
+        population_size=candidate_count,
+        generation_count=0,
+    )
+
+    assert [(row.valid_count, row.best_fitness, row.mean_fitness) for row in rows] == [
+        (valid_count, best_fitness, mean_fitness),
+        (valid_count, best_fitness, mean_fitness),
+    ]
 
 
 @pytest.mark.parametrize(

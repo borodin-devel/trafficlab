@@ -7,13 +7,14 @@ from time import perf_counter
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from pytestqt.qtbot import QtBot
 
 from tests.trafficlab_dashboard.support.dashboard_fixtures import copy_checked_dashboard_run
 from trafficlab.common.trace import TrafficTrace
 from trafficlab_dashboard.aspects.base import CalculationSettings, LinePlotData, TraceVisibility
 from trafficlab_dashboard.aspects.time_domain import FrameSizeTimelineAspect
+from trafficlab_dashboard.plotting.export import export_figure
 from trafficlab_dashboard.run_data import DashboardRun
 from trafficlab_dashboard.run_loader import load_dashboard_run
 from trafficlab_dashboard.window import DashboardWindow
@@ -123,19 +124,47 @@ def test_large_trace_window_stays_responsive_with_prebuilt_run_and_visibility_re
     assert aspect.calls == 1
 
     retained_artist_ids = [id(line) for line in window.canvas.axes.lines]
-    QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
-    QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
+    completed_signal = getattr(window.canvas, "visibility_painted", None)
+    completed_spy = QSignalSpy(completed_signal) if completed_signal is not None else None
+    draw_events = [0]
+    if completed_spy is None:
+        window.canvas.figure_canvas.mpl_connect(
+            "draw_event",
+            lambda _event: draw_events.__setitem__(0, draw_events[0] + 1),
+        )
+
+    def completed_count() -> int:
+        return completed_spy.count() if completed_spy is not None else draw_events[0]
+
+    def click_reference_and_wait() -> float:
+        before = completed_count()
+        redraw_started = perf_counter()
+        QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
+        qtbot.waitUntil(lambda: completed_count() > before, timeout=1_000)
+        return perf_counter() - redraw_started
+
+    click_reference_and_wait()
+    assert window.state.visibility == TraceVisibility(reference=False, generated=True)
     measurements: list[float] = []
     for _ in range(5):
-        redraw_started = perf_counter()
-        for _ in range(5):
-            QTest.mouseClick(window.reference_button, Qt.MouseButton.LeftButton)
-        measurements.append(perf_counter() - redraw_started)
+        measurements.append(click_reference_and_wait())
+        visible_labels = [line.get_label() for line in window.canvas.axes.lines if line.get_visible()]
+        legend = window.canvas.axes.get_legend()
+        assert legend is not None
+        visible_legend_labels = [text.get_text() for text in legend.get_texts() if text.get_visible()]
+        expected = ["Generated"] if not window.state.visibility.reference else ["Reference", "Generated"]
+        assert visible_labels == expected
+        assert visible_legend_labels == expected
 
-    assert median(measurements) < _CACHED_REDRAW_SECONDS_LIMIT
+    print("completed_cached_visibility_seconds=" + ",".join(f"{value:.6f}" for value in measurements))
+    assert median(measurements) < _CACHED_REDRAW_SECONDS_LIMIT, measurements
     assert [id(line) for line in window.canvas.axes.lines] == retained_artist_ids
-    assert window.state.visibility in {
-        TraceVisibility(reference=False, generated=True),
-        TraceVisibility(reference=True, generated=True),
-    }
+    assert window.state.visibility == TraceVisibility(reference=True, generated=True)
     assert aspect.calls == 1
+    click_reference_and_wait()
+    assert window.state.visibility == TraceVisibility(reference=False, generated=True)
+    destination = tmp_path / "completed-visibility.svg"
+    export_figure(window.canvas.figure, destination, format="svg")
+    exported = destination.read_text(encoding="utf-8")
+    assert ">Generated</text>" in exported
+    assert ">Reference</text>" not in exported

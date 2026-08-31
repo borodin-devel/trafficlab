@@ -30,8 +30,17 @@ def export_figure(figure: Figure, destination: Path, format: ExportFormat) -> No
             delete=False,
         ) as stream:
             temporary_path = Path(stream.name)
-            figure.canvas.draw()
-            figure.savefig(stream, format=format)
+            animated = tuple(artist for artist in figure.findobj() if artist.get_animated())
+            for artist in animated:
+                artist.set_animated(False)
+            try:
+                figure.canvas.draw()
+                figure.savefig(stream, format=format)
+            finally:
+                for artist in animated:
+                    artist.set_animated(True)
+                if animated:
+                    figure.canvas.draw()
             stream.flush()
             os.fsync(stream.fileno())
         assert temporary_path is not None

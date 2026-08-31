@@ -90,6 +90,13 @@ def _validate_history_projection(
                 raise ValueError("history best identifier birth generation exceeds row generation")
             if row.valid_count == 0 and (row.best_fitness != 0.0 or row.mean_fitness != 0.0):
                 raise ValueError("history row with zero valid_count must have zero best_fitness and mean_fitness")
+            mean_numerator, mean_denominator = row.mean_fitness.as_integer_ratio()
+            best_numerator, best_denominator = row.best_fitness.as_integer_ratio()
+            if (
+                mean_numerator * row.candidate_count * best_denominator
+                > best_numerator * row.valid_count * mean_denominator
+            ):
+                raise ValueError("history mean_fitness is not feasible for valid_count")
         expected_mean = math.fsum(row.mean_fitness * row.candidate_count for row in family_rows) / float(
             overall.candidate_count
         )

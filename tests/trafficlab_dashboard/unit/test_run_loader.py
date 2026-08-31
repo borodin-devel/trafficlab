@@ -370,6 +370,45 @@ def test_history_counts_must_match_experiment_population_at_load_time(tmp_path: 
     assert "population_size" in loaded.unavailable["ga_fitness_history"]
 
 
+def test_impossible_history_mean_disables_ga_history_at_load_time(tmp_path: Path) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+    experiment_path = run_directory / "experiment.toml"
+    experiment_path.write_text(
+        experiment_path.read_text(encoding="utf-8").replace("population_size = 6", "population_size = 14", 1),
+        encoding="utf-8",
+    )
+    history_path = run_directory / "ga_history.csv"
+    content = history_path.read_text(encoding="utf-8")
+    replacements = (
+        (
+            "0,family,mmpp,2,2,0.38220514559434204,0.3806551103645426,0,5",
+            "0,family,mmpp,10,1,0.5,0.2,0,5",
+        ),
+        (
+            "0,overall,,6,6,0.659167765840083,0.5184235596660616,0,0",
+            "0,overall,,14,5,0.659167765840083,0.31065936694766316,0,0",
+        ),
+        (
+            "1,family,markov_renewal,3,3,0.6591772042229938,0.659170804104095,1,2",
+            "1,family,markov_renewal,11,11,0.6591772042229938,0.659170804104095,1,2",
+        ),
+        (
+            "1,overall,,6,6,0.6591772042229938,0.5648176596044424,1,2",
+            "1,overall,,14,14,0.6591772042229938,0.6187337421756725,1,2",
+        ),
+    )
+    for original, replacement in replacements:
+        assert original in content
+        content = content.replace(original, replacement, 1)
+    history_path.write_text(content, encoding="utf-8")
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.history is None
+    assert loaded.identities.history_sha256 is None
+    assert "history mean_fitness is not feasible for valid_count" in loaded.unavailable["ga_fitness_history"]
+
+
 def test_unreadable_history_disables_ga_view_without_rejecting_run(tmp_path: Path) -> None:
     run_directory = copy_checked_dashboard_run(tmp_path)
     history_path = run_directory / "ga_history.csv"

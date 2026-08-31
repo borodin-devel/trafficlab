@@ -5,14 +5,15 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 
 import numpy as np
 from matplotlib.artist import Artist
-from matplotlib.backend_bases import MouseButton, MouseEvent
+from matplotlib.backend_bases import DrawEvent, MouseButton, MouseEvent
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from trafficlab_dashboard.aspects.base import (
@@ -36,6 +37,10 @@ _RUN_LEVEL_COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c
 _RUN_LEVEL_STYLES = ("solid", "dashed", "dashdot", "dotted")
 
 
+class _BufferRegion(Protocol):
+    pass
+
+
 @dataclass(slots=True)
 class _DragState:
     anchor: tuple[float, float]
@@ -45,6 +50,8 @@ class _DragState:
 
 
 class DashboardCanvas(QWidget):
+    visibility_painted = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.figure = Figure(figsize=(8.0, 5.0), tight_layout=True)
@@ -59,6 +66,11 @@ class DashboardCanvas(QWidget):
         self._rendered_data: PlotData | None = None
         self._visibility_artists: list[tuple[SeriesDataset, Artist]] = []
         self._legend_datasets: list[SeriesDataset] = []
+        self._animated_legend: Artist | None = None
+        self._blit_background: _BufferRegion | None = None
+        self._blit_view: AxisView | None = None
+        self._visibility_regions: dict[TraceVisibility, _BufferRegion] = {}
+        self._current_visibility = TraceVisibility(reference=True, generated=True)
         self._connect_events()
 
     @property
@@ -74,12 +86,17 @@ class DashboardCanvas(QWidget):
     ) -> None:
         if preserve_viewport and data is self._rendered_data:
             self._update_visibility(visibility)
-            self.figure_canvas.draw_idle()
+            self._paint_cached_visibility()
             return
         preserve_view = self._current_view() if preserve_viewport else None
         self.axes.clear()
         self._visibility_artists.clear()
         self._legend_datasets.clear()
+        self._animated_legend = None
+        self._blit_background = None
+        self._blit_view = None
+        self._visibility_regions.clear()
+        self._current_visibility = visibility
         self.axes.set_title(data.title)
         self.axes.grid(True, alpha=0.25)
         artists = self._render_data(data, visibility)
@@ -90,8 +107,12 @@ class DashboardCanvas(QWidget):
         target_view = self._complete_view if preserve_view is None else preserve_view
         self._set_view(target_view)
         if artists:
-            self.axes.legend()
+            legend = self.axes.legend()
+            legend.set_animated(True)
+            self._animated_legend = legend
             self._update_legend_visibility(visibility)
+        for _dataset, artist in self._visibility_artists:
+            artist.set_animated(True)
         self._rendered_data = data
         self.figure_canvas.draw()
 
@@ -106,6 +127,59 @@ class DashboardCanvas(QWidget):
         self.figure_canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.figure_canvas.mpl_connect("button_release_event", self._on_release)
         self.figure_canvas.mpl_connect("scroll_event", self._on_scroll)
+        self.figure_canvas.mpl_connect("draw_event", self._on_draw)
+
+    def _on_draw(self, event: DrawEvent) -> None:
+        if event.canvas is not self.figure_canvas:
+            return
+        self._blit_background = self.figure_canvas.copy_from_bbox(self.axes.bbox)
+        self._blit_view = self._current_view()
+        self._build_visibility_regions()
+
+    def _draw_animated_artists(self) -> None:
+        if self._blit_background is None:
+            return
+        self.figure_canvas.restore_region(self._blit_background)
+        for _dataset, artist in self._visibility_artists:
+            if artist.get_visible():
+                self.axes.draw_artist(artist)
+        if self._animated_legend is not None and self._animated_legend.get_visible():
+            self.axes.draw_artist(self._animated_legend)
+
+    def _build_visibility_regions(self) -> None:
+        if self._blit_background is None:
+            return
+        requested = self._current_visibility
+        self._visibility_regions.clear()
+        states = (
+            TraceVisibility(reference=False, generated=False),
+            TraceVisibility(reference=False, generated=True),
+            TraceVisibility(reference=True, generated=False),
+            TraceVisibility(reference=True, generated=True),
+        )
+        ordered = tuple(visibility for visibility in states if visibility != requested) + (requested,)
+        for visibility in ordered:
+            self._set_artist_visibility(visibility)
+            self._draw_animated_artists()
+            self._visibility_regions[visibility] = self.figure_canvas.copy_from_bbox(self.axes.bbox)
+        self._set_artist_visibility(requested)
+
+    def _paint_visibility_region(self, visibility: TraceVisibility) -> None:
+        region = self._visibility_regions.get(visibility)
+        if region is None:
+            self._draw_animated_artists()
+        else:
+            self.figure_canvas.restore_region(region)
+        self.figure_canvas.blit(self.axes.bbox)
+
+    def _paint_cached_visibility(self) -> None:
+        current_view = self._current_view()
+        if self._blit_background is None or current_view is None or current_view != self._blit_view:
+            self.figure_canvas.draw()
+            self.figure_canvas.repaint()
+        else:
+            self._paint_visibility_region(self._current_visibility)
+        self.visibility_painted.emit()
 
     def _current_view(self) -> AxisView | None:
         xlim = self.axes.get_xlim()
@@ -269,6 +343,10 @@ class DashboardCanvas(QWidget):
             y -= 0.06
 
     def _update_visibility(self, visibility: TraceVisibility) -> None:
+        self._current_visibility = visibility
+        self._set_artist_visibility(visibility)
+
+    def _set_artist_visibility(self, visibility: TraceVisibility) -> None:
         for dataset, artist in self._visibility_artists:
             artist.set_visible(self._dataset_visible(dataset, visibility))
         self._update_legend_visibility(visibility)
