@@ -1,17 +1,17 @@
 {
-  "aggregate_score": 0.7296153891109144,
+  "aggregate_score": 0.6897609347451398,
   "input_identities": {
     "capture_json": {
-      "sha256": "375ab1337e039d983af32e658c42ef4154cf6707d3f872e8e8d672ef9a833abe",
+      "sha256": "de71fa23406e9372e88b049ab7ca963085a06d2656f6d9a325d824a040c2d276",
       "size": 63
     },
     "generated_pcapng": {
-      "sha256": "da9510104c22fb3589420c5d5f1554a75a81e401af0748089bd9f6837de8543f",
-      "size": 71844
+      "sha256": "4f901130ec1af4956a1c54e26a25d33f326e0266120ed2f97f790dfd6ae4b71c",
+      "size": 80840
     },
     "reference_pcapng": {
-      "sha256": "52317ce380301ce35dd7d4f4cc1bbfed1b8960ec6c8a8a347cc040cef2149b5c",
-      "size": 80804
+      "sha256": "0c47c6892dc52c2479ddaeec0e64f6f8df4e0cd778d18a5a7873a710a9afcf53",
+      "size": 81008
     },
     "similarity_settings": {
       "sha256": "587f68c2f548b9f3ca87286bd06e1c3b131f05f6d9361cf80ebc37c0b907fd01",
@@ -21,24 +21,24 @@
   "methods": {
     "autocorrelation": {
       "diagnostics": {
-        "discrepancy": 0.06298131490059197,
+        "discrepancy": 0.12762826907836178,
         "feature_weights": {
           "iat": 0.5,
           "size": 0.5
         },
         "iat": {
           "absolute_differences": [
-            0.18561679393639602
+            0.4908121916476894
           ],
-          "discrepancy": 0.09280839696819801,
+          "discrepancy": 0.2454060958238447,
           "generated_acf": [
-            0.25360033780666685
+            -0.011391242242388877
           ],
-          "generated_sample_count": 67,
+          "generated_sample_count": 82,
           "reference_acf": [
-            0.06798354387027082
+            0.47942094940530056
           ],
-          "reference_sample_count": 73
+          "reference_sample_count": 78
         },
         "lag_weights": [
           1.0
@@ -46,75 +46,75 @@
         "lags": [
           1
         ],
-        "observation_window_seconds": 0.9207994937896729,
+        "observation_window_seconds": 1.9488873481750488,
         "size": {
           "absolute_differences": [
-            0.06630846566597187
+            0.019700884665757756
           ],
-          "discrepancy": 0.033154232832985936,
+          "discrepancy": 0.009850442332878878,
           "generated_acf": [
-            -0.24474755233837242
+            -0.3679634542595353
           ],
-          "generated_sample_count": 68,
+          "generated_sample_count": 83,
           "reference_acf": [
-            -0.17843908667240055
+            -0.38766433892529306
           ],
-          "reference_sample_count": 74
+          "reference_sample_count": 79
         }
       },
-      "score": 0.937018685099408,
+      "score": 0.8723717309216382,
       "weight": 0.25
     },
     "frame_size_ks": {
       "diagnostics": {
-        "distance": 0.035373608903020715,
-        "generated_count": 68,
-        "generated_maximum_length": 2946,
+        "distance": 0.034009455543693834,
+        "generated_count": 83,
+        "generated_maximum_length": 2822,
         "generated_minimum_length": 42,
-        "observation_window_seconds": 0.9207994937896729,
-        "reference_count": 74,
-        "reference_maximum_length": 2946,
+        "observation_window_seconds": 1.9488873481750488,
+        "reference_count": 79,
+        "reference_maximum_length": 2822,
         "reference_minimum_length": 42
       },
-      "score": 0.9646263910969792,
+      "score": 0.9659905444563062,
       "weight": 0.25
     },
     "iat_ks": {
       "diagnostics": {
         "diagnostic_quantile": 0.75,
-        "distance": 0.17746882028215089,
-        "generated_iat_count": 67,
-        "generated_median_iat_seconds": 2.6000000000081513e-05,
-        "generated_quantile_iat_seconds": 0.0025570000000000002,
-        "generated_zero_iat_count": 3,
-        "observation_window_seconds": 0.9207994937896729,
-        "reference_iat_count": 73,
-        "reference_median_iat_seconds": 4.00543212890625e-05,
-        "reference_quantile_iat_seconds": 0.0028977394104003906,
+        "distance": 0.08599124452782997,
+        "generated_iat_count": 82,
+        "generated_median_iat_seconds": 5.500000000008276e-05,
+        "generated_quantile_iat_seconds": 0.0032130000000001324,
+        "generated_zero_iat_count": 0,
+        "observation_window_seconds": 1.9488873481750488,
+        "reference_iat_count": 78,
+        "reference_median_iat_seconds": 0.0001392364501953125,
+        "reference_quantile_iat_seconds": 0.003704071044921875,
         "reference_zero_iat_count": 0
       },
-      "score": 0.8225311797178492,
+      "score": 0.9140087554721701,
       "weight": 0.25
     },
     "multiscale_rate": {
       "diagnostics": {
         "direction_bin_cell_counts": [
-          1842,
-          186
+          3898,
+          390
         ],
-        "discrepancy": 0.8057146994705788,
+        "discrepancy": 0.9933272918695553,
         "feature_discrepancies": {
-          "byte": 0.8015702440115802,
-          "packet": 0.8098591549295775
+          "byte": 0.9990002627514563,
+          "packet": 0.9876543209876543
         },
         "feature_weights": {
           "byte": 0.5,
           "packet": 0.5
         },
-        "observation_window_seconds": 0.9207994937896729,
+        "observation_window_seconds": 1.9488873481750488,
         "scale_discrepancies": [
-          0.9332618124727428,
-          0.6781675864684149
+          0.9934041947348279,
+          0.9932503890042828
         ],
         "scale_weights": [
           0.5,
@@ -122,75 +122,75 @@
         ],
         "scales": [
           {
-            "bins_per_direction": 921,
-            "direction_bin_cell_count": 1842,
-            "discrepancy": 0.9332618124727428,
+            "bins_per_direction": 1949,
+            "direction_bin_cell_count": 3898,
+            "discrepancy": 0.9934041947348279,
             "feature_discrepancies": {
-              "byte": 0.9369461601567532,
-              "packet": 0.9295774647887324
+              "byte": 0.9991540684820015,
+              "packet": 0.9876543209876543
             },
             "generated_totals": {
               "byte": {
-                "inbound": 65887,
-                "outbound": 3600
+                "inbound": 74001,
+                "outbound": 3985
               },
               "packet": {
-                "inbound": 34,
-                "outbound": 34
+                "inbound": 46,
+                "outbound": 37
               }
             },
             "reference_totals": {
               "byte": {
-                "inbound": 74639,
-                "outbound": 3367
+                "inbound": 74685,
+                "outbound": 3370
               },
               "packet": {
-                "inbound": 38,
-                "outbound": 36
+                "inbound": 39,
+                "outbound": 40
               }
             },
             "width_seconds": 0.001
           },
           {
-            "bins_per_direction": 93,
-            "direction_bin_cell_count": 186,
-            "discrepancy": 0.6781675864684149,
+            "bins_per_direction": 195,
+            "direction_bin_cell_count": 390,
+            "discrepancy": 0.9932503890042828,
             "feature_discrepancies": {
-              "byte": 0.6661943278664072,
-              "packet": 0.6901408450704225
+              "byte": 0.9988464570209111,
+              "packet": 0.9876543209876543
             },
             "generated_totals": {
               "byte": {
-                "inbound": 65887,
-                "outbound": 3600
+                "inbound": 74001,
+                "outbound": 3985
               },
               "packet": {
-                "inbound": 34,
-                "outbound": 34
+                "inbound": 46,
+                "outbound": 37
               }
             },
             "reference_totals": {
               "byte": {
-                "inbound": 74639,
-                "outbound": 3367
+                "inbound": 74685,
+                "outbound": 3370
               },
               "packet": {
-                "inbound": 38,
-                "outbound": 36
+                "inbound": 39,
+                "outbound": 40
               }
             },
             "width_seconds": 0.01
           }
         ],
-        "total_direction_bin_cells": 2028,
+        "total_direction_bin_cells": 4288,
         "widths": [
           0.001,
           0.01
         ]
       },
-      "score": 0.19428530052942117,
+      "score": 0.006672708130444738,
       "weight": 0.25
     }
   },
-  "observation_window_seconds": 0.9207994937896729
+  "observation_window_seconds": 1.9488873481750488
 }

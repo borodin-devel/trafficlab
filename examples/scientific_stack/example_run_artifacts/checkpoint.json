@@ -1,19 +1,19 @@
 {
   "best": {
-    "fitness": 0.6824799460045088,
+    "fitness": 0.6591772042229938,
     "identifier": [
-      0,
-      1
+      1,
+      2
     ]
   },
   "capture_identity": {
-    "sha256": "375ab1337e039d983af32e658c42ef4154cf6707d3f872e8e8d672ef9a833abe",
+    "sha256": "de71fa23406e9372e88b049ab7ca963085a06d2656f6d9a325d824a040c2d276",
     "size": 63
   },
-  "consecutive_stagnation": 1,
+  "consecutive_stagnation": 0,
   "experiment_identity": {
-    "sha256": "fbac93fd5218397b65b18825d5b091509f0eaa434bcfeda095a1902f53fe6c3b",
-    "size": 2911
+    "sha256": "5059f29f839739e939b3a6f6e3c3a60f6cce1f05ea6cbfd5ed44b2ebf6d812cb",
+    "size": 2899
   },
   "families": [
     {
@@ -143,20 +143,20 @@
   },
   "history": [
     {
-      "best_fitness": 0.6824799460045088,
+      "best_fitness": 0.659167765840083,
       "best_identifier": [
         0,
-        1
+        0
       ],
       "candidate_count": 2,
       "family": "markov_renewal",
       "generation": 0,
-      "mean_fitness": 0.6777517481211898,
+      "mean_fitness": 0.6573338346494741,
       "scope": "family",
       "valid_count": 2
     },
     {
-      "best_fitness": 0.45387362136551523,
+      "best_fitness": 0.38220514559434204,
       "best_identifier": [
         0,
         5
@@ -164,51 +164,51 @@
       "candidate_count": 2,
       "family": "mmpp",
       "generation": 0,
-      "mean_fitness": 0.4519584148005406,
+      "mean_fitness": 0.3806551103645426,
       "scope": "family",
       "valid_count": 2
     },
     {
-      "best_fitness": 0.5901073609315415,
+      "best_fitness": 0.5197889690690449,
       "best_identifier": [
         0,
-        3
+        2
       ],
       "candidate_count": 2,
       "family": "poisson_empirical",
       "generation": 0,
-      "mean_fitness": 0.5812436304218321,
+      "mean_fitness": 0.517281733984168,
       "scope": "family",
       "valid_count": 2
     },
     {
-      "best_fitness": 0.6824799460045088,
+      "best_fitness": 0.659167765840083,
       "best_identifier": [
         0,
-        1
+        0
       ],
       "candidate_count": 6,
       "family": null,
       "generation": 0,
-      "mean_fitness": 0.5703179311145209,
+      "mean_fitness": 0.5184235596660616,
       "scope": "overall",
       "valid_count": 6
     },
     {
-      "best_fitness": 0.6824799460045088,
+      "best_fitness": 0.6591772042229938,
       "best_identifier": [
-        0,
-        1
+        1,
+        2
       ],
       "candidate_count": 3,
       "family": "markov_renewal",
       "generation": 1,
-      "mean_fitness": 0.6761756821600834,
+      "mean_fitness": 0.659170804104095,
       "scope": "family",
       "valid_count": 3
     },
     {
-      "best_fitness": 0.45387362136551523,
+      "best_fitness": 0.38220514559434204,
       "best_identifier": [
         0,
         5
@@ -216,80 +216,80 @@
       "candidate_count": 1,
       "family": "mmpp",
       "generation": 1,
-      "mean_fitness": 0.45387362136551523,
+      "mean_fitness": 0.38220514559434204,
       "scope": "family",
       "valid_count": 1
     },
     {
-      "best_fitness": 0.591022521139303,
+      "best_fitness": 0.5197889690690449,
       "best_identifier": [
-        1,
-        0
+        0,
+        2
       ],
       "candidate_count": 2,
       "family": "poisson_empirical",
       "generation": 1,
-      "mean_fitness": 0.5905649410354222,
+      "mean_fitness": 0.5145941998600136,
       "scope": "family",
       "valid_count": 2
     },
     {
-      "best_fitness": 0.6824799460045088,
+      "best_fitness": 0.6591772042229938,
       "best_identifier": [
-        0,
-        1
+        1,
+        2
       ],
       "candidate_count": 6,
       "family": null,
       "generation": 1,
-      "mean_fitness": 0.6105884249861017,
+      "mean_fitness": 0.5648176596044424,
       "scope": "overall",
       "valid_count": 6
     }
   ],
-  "observation_window_seconds": 0.9207994937896729,
+  "observation_window_seconds": 1.9488873481750488,
   "population": [
     {
       "duplicate_diagnostics": [],
       "family": "markov_renewal",
-      "fitness": 0.6824799460045088,
+      "fitness": 0.659167765840083,
       "genes": [
-        0.3897454648360612,
-        0.7926380613941226,
-        1.4653444938760862,
-        4,
-        0.9163465260773139
+        0.3456948925495636,
+        0.679251771983478,
+        0.7410006046519431,
+        3,
+        1.1019350591949293
       ],
       "identifier": [
         0,
-        1
+        0
       ],
       "invalid": null,
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.6824799460045088,
+          "aggregate_score": 0.659167765840083,
           "methods": [
             {
               "diagnostics": {
-                "discrepancy": 0.08206649378003907,
+                "discrepancy": 0.14069321720119204,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
                 "iat": {
                   "absolute_differences": [
-                    0.12846446448160648
+                    0.536164703842027
                   ],
-                  "discrepancy": 0.06423223224080324,
+                  "discrepancy": 0.2680823519210135,
                   "generated_acf": [
-                    -0.06048092061133567
+                    -0.056743754436726405
                   ],
-                  "generated_sample_count": 94,
+                  "generated_sample_count": 42,
                   "reference_acf": [
-                    0.06798354387027082
+                    0.47942094940530056
                   ],
-                  "reference_sample_count": 73
+                  "reference_sample_count": 78
                 },
                 "lag_weights": [
                   1.0
@@ -297,75 +297,75 @@
                 "lags": [
                   1
                 ],
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "size": {
                   "absolute_differences": [
-                    0.19980151063854978
+                    0.02660816496274121
                   ],
-                  "discrepancy": 0.09990075531927489,
+                  "discrepancy": 0.013304082481370605,
                   "generated_acf": [
-                    0.02136242396614922
+                    -0.36105617396255185
                   ],
-                  "generated_sample_count": 95,
+                  "generated_sample_count": 43,
                   "reference_acf": [
-                    -0.17843908667240055
+                    -0.38766433892529306
                   ],
-                  "reference_sample_count": 74
+                  "reference_sample_count": 79
                 }
               },
               "name": "autocorrelation",
-              "score": 0.917933506219961
+              "score": 0.8593067827988079
             },
             {
               "diagnostics": {
-                "distance": 0.10896159317211945,
-                "generated_count": 95,
-                "generated_maximum_length": 2946,
+                "distance": 0.09243450103032091,
+                "generated_count": 43,
+                "generated_maximum_length": 2822,
                 "generated_minimum_length": 42,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_count": 74,
-                "reference_maximum_length": 2946,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_count": 79,
+                "reference_maximum_length": 2822,
                 "reference_minimum_length": 42
               },
               "name": "frame_size_ks",
-              "score": 0.8910384068278805
+              "score": 0.9075654989696791
             },
             {
               "diagnostics": {
                 "diagnostic_quantile": 0.75,
-                "distance": 0.1636549111046342,
-                "generated_iat_count": 94,
-                "generated_median_iat_seconds": 2.9712468992831864e-05,
-                "generated_quantile_iat_seconds": 0.0028274909831267825,
+                "distance": 0.13919413919413914,
+                "generated_iat_count": 42,
+                "generated_median_iat_seconds": 0.00016709105912396383,
+                "generated_quantile_iat_seconds": 0.004652014754572997,
                 "generated_zero_iat_count": 0,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_iat_count": 73,
-                "reference_median_iat_seconds": 4.00543212890625e-05,
-                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_iat_count": 78,
+                "reference_median_iat_seconds": 0.0001392364501953125,
+                "reference_quantile_iat_seconds": 0.003704071044921875,
                 "reference_zero_iat_count": 0
               },
               "name": "iat_ks",
-              "score": 0.8363450888953659
+              "score": 0.8608058608058609
             },
             {
               "diagnostics": {
                 "direction_bin_cell_counts": [
-                  1842,
-                  186
+                  3898,
+                  390
                 ],
-                "discrepancy": 0.915397217925172,
+                "discrepancy": 0.9910070792140162,
                 "feature_discrepancies": {
-                  "byte": 0.9550547908799298,
-                  "packet": 0.8757396449704142
+                  "byte": 0.9984076010509833,
+                  "packet": 0.9836065573770492
                 },
                 "feature_weights": {
                   "byte": 0.5,
                   "packet": 0.5
                 },
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "scale_discrepancies": [
-                  0.9619382795147677,
-                  0.8688561563355761
+                  0.9910070792140162,
+                  0.9910070792140162
                 ],
                 "scale_weights": [
                   0.5,
@@ -373,80 +373,80 @@
                 ],
                 "scales": [
                   {
-                    "bins_per_direction": 921,
-                    "direction_bin_cell_count": 1842,
-                    "discrepancy": 0.9619382795147677,
+                    "bins_per_direction": 1949,
+                    "direction_bin_cell_count": 3898,
+                    "discrepancy": 0.9910070792140162,
                     "feature_discrepancies": {
-                      "byte": 0.9948824761892989,
-                      "packet": 0.9289940828402367
+                      "byte": 0.9984076010509833,
+                      "packet": 0.9836065573770492
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 78326,
-                        "outbound": 5465
+                        "inbound": 32629,
+                        "outbound": 2353
                       },
                       "packet": {
-                        "inbound": 50,
-                        "outbound": 45
+                        "inbound": 22,
+                        "outbound": 21
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.001
                   },
                   {
-                    "bins_per_direction": 93,
-                    "direction_bin_cell_count": 186,
-                    "discrepancy": 0.8688561563355761,
+                    "bins_per_direction": 195,
+                    "direction_bin_cell_count": 390,
+                    "discrepancy": 0.9910070792140162,
                     "feature_discrepancies": {
-                      "byte": 0.9152271055705606,
-                      "packet": 0.8224852071005917
+                      "byte": 0.9984076010509833,
+                      "packet": 0.9836065573770492
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 78326,
-                        "outbound": 5465
+                        "inbound": 32629,
+                        "outbound": 2353
                       },
                       "packet": {
-                        "inbound": 50,
-                        "outbound": 45
+                        "inbound": 22,
+                        "outbound": 21
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.01
                   }
                 ],
-                "total_direction_bin_cells": 2028,
+                "total_direction_bin_cells": 4288,
                 "widths": [
                   0.001,
                   0.01
                 ]
               },
               "name": "multiscale_rate",
-              "score": 0.08460278207482796
+              "score": 0.008992920785983793
             }
           ],
           "model_diagnostics": {
             "timing_tier_global_count": 0,
-            "timing_tier_source_count": 37,
-            "timing_tier_transition_count": 58,
+            "timing_tier_source_count": 13,
+            "timing_tier_transition_count": 30,
             "uniform_unobserved_row_count": 0
           },
           "seed": 17
@@ -456,40 +456,40 @@
     {
       "duplicate_diagnostics": [],
       "family": "poisson_empirical",
-      "fitness": 0.5901073609315415,
+      "fitness": 0.5197889690690449,
       "genes": [
-        0.8046167701820202
+        0.8836037152682525
       ],
       "identifier": [
         0,
-        3
+        2
       ],
       "invalid": null,
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.5901073609315415,
+          "aggregate_score": 0.5197889690690449,
           "methods": [
             {
               "diagnostics": {
-                "discrepancy": 0.033413130722623106,
+                "discrepancy": 0.19681046913597974,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
                 "iat": {
                   "absolute_differences": [
-                    0.028980843724841665
+                    0.4346627940244806
                   ],
-                  "discrepancy": 0.014490421862420833,
+                  "discrepancy": 0.2173313970122403,
                   "generated_acf": [
-                    0.039002700145429156
+                    0.04475815538081994
                   ],
-                  "generated_sample_count": 60,
+                  "generated_sample_count": 71,
                   "reference_acf": [
-                    0.06798354387027082
+                    0.47942094940530056
                   ],
-                  "reference_sample_count": 73
+                  "reference_sample_count": 78
                 },
                 "lag_weights": [
                   1.0
@@ -497,75 +497,75 @@
                 "lags": [
                   1
                 ],
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "size": {
                   "absolute_differences": [
-                    0.10467167916565076
+                    0.35257908251943837
                   ],
-                  "discrepancy": 0.05233583958282538,
+                  "discrepancy": 0.17628954125971918,
                   "generated_acf": [
-                    -0.07376740750674979
+                    -0.03508525640585472
                   ],
-                  "generated_sample_count": 61,
+                  "generated_sample_count": 72,
                   "reference_acf": [
-                    -0.17843908667240055
+                    -0.38766433892529306
                   ],
-                  "reference_sample_count": 74
+                  "reference_sample_count": 79
                 }
               },
               "name": "autocorrelation",
-              "score": 0.9665868692773769
+              "score": 0.8031895308640202
             },
             {
               "diagnostics": {
-                "distance": 0.08639787328311921,
-                "generated_count": 61,
-                "generated_maximum_length": 2946,
+                "distance": 0.07577355836849514,
+                "generated_count": 72,
+                "generated_maximum_length": 2822,
                 "generated_minimum_length": 42,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_count": 74,
-                "reference_maximum_length": 2946,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_count": 79,
+                "reference_maximum_length": 2822,
                 "reference_minimum_length": 42
               },
               "name": "frame_size_ks",
-              "score": 0.9136021267168808
+              "score": 0.9242264416315049
             },
             {
               "diagnostics": {
                 "diagnostic_quantile": 0.75,
-                "distance": 0.6493150684931506,
-                "generated_iat_count": 60,
-                "generated_median_iat_seconds": 0.008945290129177885,
-                "generated_quantile_iat_seconds": 0.017798847630115855,
+                "distance": 0.7156013001083423,
+                "generated_iat_count": 71,
+                "generated_median_iat_seconds": 0.01610778731830581,
+                "generated_quantile_iat_seconds": 0.035357539933519755,
                 "generated_zero_iat_count": 0,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_iat_count": 73,
-                "reference_median_iat_seconds": 4.00543212890625e-05,
-                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_iat_count": 78,
+                "reference_median_iat_seconds": 0.0001392364501953125,
+                "reference_quantile_iat_seconds": 0.003704071044921875,
                 "reference_zero_iat_count": 0
               },
               "name": "iat_ks",
-              "score": 0.35068493150684943
+              "score": 0.28439869989165767
             },
             {
               "diagnostics": {
                 "direction_bin_cell_counts": [
-                  1842,
-                  186
+                  3898,
+                  390
                 ],
-                "discrepancy": 0.870444483774941,
+                "discrepancy": 0.9326587961110031,
                 "feature_discrepancies": {
-                  "byte": 0.866814893475808,
-                  "packet": 0.8740740740740741
+                  "byte": 0.9315427577849202,
+                  "packet": 0.9337748344370861
                 },
                 "feature_weights": {
                   "byte": 0.5,
                   "packet": 0.5
                 },
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "scale_discrepancies": [
-                  0.9764636475594197,
-                  0.7644253199904624
+                  0.9675758742060325,
+                  0.8977417180159737
                 ],
                 "scale_weights": [
                   0.5,
@@ -573,74 +573,74 @@
                 ],
                 "scales": [
                   {
-                    "bins_per_direction": 921,
-                    "direction_bin_cell_count": 1842,
-                    "discrepancy": 0.9764636475594197,
+                    "bins_per_direction": 1949,
+                    "direction_bin_cell_count": 3898,
+                    "discrepancy": 0.9675758742060325,
                     "feature_discrepancies": {
-                      "byte": 0.997371739563284,
-                      "packet": 0.9555555555555556
+                      "byte": 0.9616418146372306,
+                      "packet": 0.9735099337748344
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 69910,
-                        "outbound": 2754
+                        "inbound": 70397,
+                        "outbound": 3380
                       },
                       "packet": {
-                        "inbound": 35,
-                        "outbound": 26
+                        "inbound": 37,
+                        "outbound": 35
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.001
                   },
                   {
-                    "bins_per_direction": 93,
-                    "direction_bin_cell_count": 186,
-                    "discrepancy": 0.7644253199904624,
+                    "bins_per_direction": 195,
+                    "direction_bin_cell_count": 390,
+                    "discrepancy": 0.8977417180159737,
                     "feature_discrepancies": {
-                      "byte": 0.7362580473883321,
-                      "packet": 0.7925925925925926
+                      "byte": 0.9014437009326097,
+                      "packet": 0.8940397350993378
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 69910,
-                        "outbound": 2754
+                        "inbound": 70397,
+                        "outbound": 3380
                       },
                       "packet": {
-                        "inbound": 35,
-                        "outbound": 26
+                        "inbound": 37,
+                        "outbound": 35
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.01
                   }
                 ],
-                "total_direction_bin_cells": 2028,
+                "total_direction_bin_cells": 4288,
                 "widths": [
                   0.001,
                   0.01
                 ]
               },
               "name": "multiscale_rate",
-              "score": 0.129555516225059
+              "score": 0.06734120388899689
             }
           ],
           "model_diagnostics": {},
@@ -651,7 +651,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "mmpp",
-      "fitness": 0.45387362136551523,
+      "fitness": 0.38220514559434204,
       "genes": [
         0.5710158207161586,
         0.674355449492361,
@@ -666,28 +666,28 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.45387362136551523,
+          "aggregate_score": 0.38220514559434204,
           "methods": [
             {
               "diagnostics": {
-                "discrepancy": 0.1820372928916354,
+                "discrepancy": 0.3415561896758619,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
                 "iat": {
                   "absolute_differences": [
-                    0.40040148910580303
+                    0.6019595856104634
                   ],
-                  "discrepancy": 0.20020074455290152,
+                  "discrepancy": 0.3009797928052317,
                   "generated_acf": [
-                    -0.3324179452355322
+                    -0.12253863620516287
                   ],
-                  "generated_sample_count": 8,
+                  "generated_sample_count": 11,
                   "reference_acf": [
-                    0.06798354387027082
+                    0.47942094940530056
                   ],
-                  "reference_sample_count": 73
+                  "reference_sample_count": 78
                 },
                 "lag_weights": [
                   1.0
@@ -695,75 +695,75 @@
                 "lags": [
                   1
                 ],
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "size": {
                   "absolute_differences": [
-                    0.3277476824607385
+                    0.7642651730929841
                   ],
-                  "discrepancy": 0.16387384123036924,
+                  "discrepancy": 0.38213258654649207,
                   "generated_acf": [
-                    0.1493085957883379
+                    0.376600834167691
                   ],
-                  "generated_sample_count": 9,
+                  "generated_sample_count": 12,
                   "reference_acf": [
-                    -0.17843908667240055
+                    -0.38766433892529306
                   ],
-                  "reference_sample_count": 74
+                  "reference_sample_count": 79
                 }
               },
               "name": "autocorrelation",
-              "score": 0.8179627071083646
+              "score": 0.6584438103241381
             },
             {
               "diagnostics": {
-                "distance": 0.15315315315315303,
-                "generated_count": 9,
-                "generated_maximum_length": 2946,
+                "distance": 0.26371308016877626,
+                "generated_count": 12,
+                "generated_maximum_length": 2822,
                 "generated_minimum_length": 66,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_count": 74,
-                "reference_maximum_length": 2946,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_count": 79,
+                "reference_maximum_length": 2822,
                 "reference_minimum_length": 42
               },
               "name": "frame_size_ks",
-              "score": 0.846846846846847
+              "score": 0.7362869198312237
             },
             {
               "diagnostics": {
                 "diagnostic_quantile": 0.75,
-                "distance": 0.8493150684931506,
-                "generated_iat_count": 8,
-                "generated_median_iat_seconds": 0.054647899398838025,
-                "generated_quantile_iat_seconds": 0.05894823401155501,
+                "distance": 0.8717948717948718,
+                "generated_iat_count": 11,
+                "generated_median_iat_seconds": 0.05752746236283312,
+                "generated_quantile_iat_seconds": 0.11217278060513933,
                 "generated_zero_iat_count": 0,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_iat_count": 73,
-                "reference_median_iat_seconds": 4.00543212890625e-05,
-                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_iat_count": 78,
+                "reference_median_iat_seconds": 0.0001392364501953125,
+                "reference_quantile_iat_seconds": 0.003704071044921875,
                 "reference_zero_iat_count": 0
               },
               "name": "iat_ks",
-              "score": 0.15068493150684936
+              "score": 0.1282051282051282
             },
             {
               "diagnostics": {
                 "direction_bin_cell_counts": [
-                  1842,
-                  186
+                  3898,
+                  390
                 ],
-                "discrepancy": 1.0,
+                "discrepancy": 0.994115275983122,
                 "feature_discrepancies": {
-                  "byte": 1.0,
-                  "packet": 1.0
+                  "byte": 0.9992195629552549,
+                  "packet": 0.989010989010989
                 },
                 "feature_weights": {
                   "byte": 0.5,
                   "packet": 0.5
                 },
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "scale_discrepancies": [
                   1.0,
-                  1.0
+                  0.988230551966244
                 ],
                 "scale_weights": [
                   0.5,
@@ -771,8 +771,8 @@
                 ],
                 "scales": [
                   {
-                    "bins_per_direction": 921,
-                    "direction_bin_cell_count": 1842,
+                    "bins_per_direction": 1949,
+                    "direction_bin_cell_count": 3898,
                     "discrepancy": 1.0,
                     "feature_discrepancies": {
                       "byte": 1.0,
@@ -780,65 +780,65 @@
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 7488,
-                        "outbound": 330
+                        "inbound": 5985,
+                        "outbound": 528
                       },
                       "packet": {
                         "inbound": 4,
-                        "outbound": 5
+                        "outbound": 8
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.001
                   },
                   {
-                    "bins_per_direction": 93,
-                    "direction_bin_cell_count": 186,
-                    "discrepancy": 1.0,
+                    "bins_per_direction": 195,
+                    "direction_bin_cell_count": 390,
+                    "discrepancy": 0.988230551966244,
                     "feature_discrepancies": {
-                      "byte": 1.0,
-                      "packet": 1.0
+                      "byte": 0.9984391259105099,
+                      "packet": 0.978021978021978
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 7488,
-                        "outbound": 330
+                        "inbound": 5985,
+                        "outbound": 528
                       },
                       "packet": {
                         "inbound": 4,
-                        "outbound": 5
+                        "outbound": 8
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.01
                   }
                 ],
-                "total_direction_bin_cells": 2028,
+                "total_direction_bin_cells": 4288,
                 "widths": [
                   0.001,
                   0.01
                 ]
               },
               "name": "multiscale_rate",
-              "score": 0.0
+              "score": 0.005884724016878007
             }
           ],
           "model_diagnostics": {},
@@ -849,7 +849,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "poisson_empirical",
-      "fitness": 0.591022521139303,
+      "fitness": 0.5093994306509825,
       "genes": [
         0.8489622352692362
       ],
@@ -861,28 +861,28 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.591022521139303,
+          "aggregate_score": 0.5093994306509825,
           "methods": [
             {
               "diagnostics": {
-                "discrepancy": 0.03145693039870904,
+                "discrepancy": 0.19311723572985662,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
                 "iat": {
                   "absolute_differences": [
-                    0.022938173280301337
+                    0.4319991085788213
                   ],
-                  "discrepancy": 0.011469086640150668,
+                  "discrepancy": 0.21599955428941064,
                   "generated_acf": [
-                    0.045045370589969484
+                    0.04742184082647925
                   ],
-                  "generated_sample_count": 62,
+                  "generated_sample_count": 67,
                   "reference_acf": [
-                    0.06798354387027082
+                    0.47942094940530056
                   ],
-                  "reference_sample_count": 73
+                  "reference_sample_count": 78
                 },
                 "lag_weights": [
                   1.0
@@ -890,75 +890,75 @@
                 "lags": [
                   1
                 ],
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "size": {
                   "absolute_differences": [
-                    0.10288954831453483
+                    0.34046983434060524
                   ],
-                  "discrepancy": 0.05144477415726741,
+                  "discrepancy": 0.17023491717030262,
                   "generated_acf": [
-                    -0.07554953835786572
+                    -0.04719450458468782
                   ],
-                  "generated_sample_count": 63,
+                  "generated_sample_count": 68,
                   "reference_acf": [
-                    -0.17843908667240055
+                    -0.38766433892529306
                   ],
-                  "reference_sample_count": 74
+                  "reference_sample_count": 79
                 }
               },
               "name": "autocorrelation",
-              "score": 0.968543069601291
+              "score": 0.8068827642701434
             },
             {
               "diagnostics": {
-                "distance": 0.08665808665808672,
-                "generated_count": 63,
-                "generated_maximum_length": 2946,
+                "distance": 0.07985852568875657,
+                "generated_count": 68,
+                "generated_maximum_length": 2822,
                 "generated_minimum_length": 42,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_count": 74,
-                "reference_maximum_length": 2946,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_count": 79,
+                "reference_maximum_length": 2822,
                 "reference_minimum_length": 42
               },
               "name": "frame_size_ks",
-              "score": 0.9133419133419133
+              "score": 0.9201414743112435
             },
             {
               "diagnostics": {
                 "diagnostic_quantile": 0.75,
-                "distance": 0.6259390190013256,
-                "generated_iat_count": 62,
-                "generated_median_iat_seconds": 0.008478033713475636,
-                "generated_quantile_iat_seconds": 0.016869126444198024,
+                "distance": 0.7204362801377726,
+                "generated_iat_count": 67,
+                "generated_median_iat_seconds": 0.016765057534852634,
+                "generated_quantile_iat_seconds": 0.03680028669131041,
                 "generated_zero_iat_count": 0,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_iat_count": 73,
-                "reference_median_iat_seconds": 4.00543212890625e-05,
-                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_iat_count": 78,
+                "reference_median_iat_seconds": 0.0001392364501953125,
+                "reference_quantile_iat_seconds": 0.003704071044921875,
                 "reference_zero_iat_count": 0
               },
               "name": "iat_ks",
-              "score": 0.37406098099867435
+              "score": 0.2795637198622274
             },
             {
               "diagnostics": {
                 "direction_bin_cell_counts": [
-                  1842,
-                  186
+                  3898,
+                  390
                 ],
-                "discrepancy": 0.8918558793846667,
+                "discrepancy": 0.9689902358396844,
                 "feature_discrepancies": {
-                  "byte": 0.8713029996452457,
-                  "packet": 0.9124087591240876
+                  "byte": 0.978796798209981,
+                  "packet": 0.9591836734693877
                 },
                 "feature_weights": {
                   "byte": 0.5,
                   "packet": 0.5
                 },
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "scale_discrepancies": [
-                  0.9654563810854064,
-                  0.8182553776839268
+                  0.9925979421775503,
+                  0.9453825295018184
                 ],
                 "scale_weights": [
                   0.5,
@@ -966,74 +966,74 @@
                 ],
                 "scales": [
                   {
-                    "bins_per_direction": 921,
-                    "direction_bin_cell_count": 1842,
-                    "discrepancy": 0.9654563810854064,
+                    "bins_per_direction": 1949,
+                    "direction_bin_cell_count": 3898,
+                    "discrepancy": 0.9925979421775503,
                     "feature_discrepancies": {
-                      "byte": 0.9601098424627836,
-                      "packet": 0.9708029197080292
+                      "byte": 0.9988013265319713,
+                      "packet": 0.9863945578231292
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 71416,
-                        "outbound": 2796
+                        "inbound": 68953,
+                        "outbound": 3158
                       },
                       "packet": {
                         "inbound": 36,
-                        "outbound": 27
+                        "outbound": 32
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.001
                   },
                   {
-                    "bins_per_direction": 93,
-                    "direction_bin_cell_count": 186,
-                    "discrepancy": 0.8182553776839268,
+                    "bins_per_direction": 195,
+                    "direction_bin_cell_count": 390,
+                    "discrepancy": 0.9453825295018184,
                     "feature_discrepancies": {
-                      "byte": 0.7824961568277077,
-                      "packet": 0.8540145985401459
+                      "byte": 0.9587922698879906,
+                      "packet": 0.9319727891156463
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 71416,
-                        "outbound": 2796
+                        "inbound": 68953,
+                        "outbound": 3158
                       },
                       "packet": {
                         "inbound": 36,
-                        "outbound": 27
+                        "outbound": 32
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.01
                   }
                 ],
-                "total_direction_bin_cells": 2028,
+                "total_direction_bin_cells": 4288,
                 "widths": [
                   0.001,
                   0.01
                 ]
               },
               "name": "multiscale_rate",
-              "score": 0.1081441206153333
+              "score": 0.031009764160315645
             }
           ],
           "model_diagnostics": {},
@@ -1044,12 +1044,12 @@
     {
       "duplicate_diagnostics": [],
       "family": "markov_renewal",
-      "fitness": 0.6730235502378707,
+      "fitness": 0.6591674422492084,
       "genes": [
         0.3456948925495636,
         0.679251771983478,
         0.7410006046519431,
-        3,
+        4,
         1.1019350591949293
       ],
       "identifier": [
@@ -1060,28 +1060,28 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.6730235502378707,
+          "aggregate_score": 0.6591674422492084,
           "methods": [
             {
               "diagnostics": {
-                "discrepancy": 0.019910173030053376,
+                "discrepancy": 0.14069451156469004,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
                 "iat": {
                   "absolute_differences": [
-                    0.04063888931314817
+                    0.536169881296019
                   ],
-                  "discrepancy": 0.020319444656574086,
+                  "discrepancy": 0.2680849406480095,
                   "generated_acf": [
-                    0.10862243318341899
+                    -0.056748931890718335
                   ],
-                  "generated_sample_count": 37,
+                  "generated_sample_count": 42,
                   "reference_acf": [
-                    0.06798354387027082
+                    0.47942094940530056
                   ],
-                  "reference_sample_count": 73
+                  "reference_sample_count": 78
                 },
                 "lag_weights": [
                   1.0
@@ -1089,75 +1089,75 @@
                 "lags": [
                   1
                 ],
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "size": {
                   "absolute_differences": [
-                    0.03900180280706533
+                    0.02660816496274121
                   ],
-                  "discrepancy": 0.019500901403532667,
+                  "discrepancy": 0.013304082481370605,
                   "generated_acf": [
-                    -0.13943728386533522
+                    -0.36105617396255185
                   ],
-                  "generated_sample_count": 38,
+                  "generated_sample_count": 43,
                   "reference_acf": [
-                    -0.17843908667240055
+                    -0.38766433892529306
                   ],
-                  "reference_sample_count": 74
+                  "reference_sample_count": 79
                 }
               },
               "name": "autocorrelation",
-              "score": 0.9800898269699466
+              "score": 0.85930548843531
             },
             {
               "diagnostics": {
-                "distance": 0.12588904694167846,
-                "generated_count": 38,
-                "generated_maximum_length": 2946,
+                "distance": 0.09243450103032091,
+                "generated_count": 43,
+                "generated_maximum_length": 2822,
                 "generated_minimum_length": 42,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_count": 74,
-                "reference_maximum_length": 2946,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_count": 79,
+                "reference_maximum_length": 2822,
                 "reference_minimum_length": 42
               },
               "name": "frame_size_ks",
-              "score": 0.8741109530583215
+              "score": 0.9075654989696791
             },
             {
               "diagnostics": {
                 "diagnostic_quantile": 0.75,
-                "distance": 0.18141429100333206,
-                "generated_iat_count": 37,
-                "generated_median_iat_seconds": 0.00010456327284802391,
-                "generated_quantile_iat_seconds": 0.006590376129127717,
+                "distance": 0.13919413919413914,
+                "generated_iat_count": 42,
+                "generated_median_iat_seconds": 0.00016709105912399158,
+                "generated_quantile_iat_seconds": 0.004652014754572997,
                 "generated_zero_iat_count": 0,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_iat_count": 73,
-                "reference_median_iat_seconds": 4.00543212890625e-05,
-                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_iat_count": 78,
+                "reference_median_iat_seconds": 0.0001392364501953125,
+                "reference_quantile_iat_seconds": 0.003704071044921875,
                 "reference_zero_iat_count": 0
               },
               "name": "iat_ks",
-              "score": 0.8185857089966679
+              "score": 0.8608058608058609
             },
             {
               "diagnostics": {
                 "direction_bin_cell_counts": [
-                  1842,
-                  186
+                  3898,
+                  390
                 ],
-                "discrepancy": 0.980692288073453,
+                "discrepancy": 0.9910070792140162,
                 "feature_discrepancies": {
-                  "byte": 0.9970988618611918,
-                  "packet": 0.9642857142857142
+                  "byte": 0.9984076010509833,
+                  "packet": 0.9836065573770492
                 },
                 "feature_weights": {
                   "byte": 0.5,
                   "packet": 0.5
                 },
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "scale_discrepancies": [
-                  0.9902345618006185,
-                  0.9711500143462874
+                  0.9910070792140162,
+                  0.9910070792140162
                 ],
                 "scale_weights": [
                   0.5,
@@ -1165,80 +1165,80 @@
                 ],
                 "scales": [
                   {
-                    "bins_per_direction": 921,
-                    "direction_bin_cell_count": 1842,
-                    "discrepancy": 0.9902345618006185,
+                    "bins_per_direction": 1949,
+                    "direction_bin_cell_count": 3898,
+                    "discrepancy": 0.9910070792140162,
                     "feature_discrepancies": {
-                      "byte": 0.9983262664583799,
-                      "packet": 0.9821428571428571
+                      "byte": 0.9984076010509833,
+                      "packet": 0.9836065573770492
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 26011,
-                        "outbound": 3527
+                        "inbound": 32629,
+                        "outbound": 2353
                       },
                       "packet": {
-                        "inbound": 18,
-                        "outbound": 20
+                        "inbound": 22,
+                        "outbound": 21
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.001
                   },
                   {
-                    "bins_per_direction": 93,
-                    "direction_bin_cell_count": 186,
-                    "discrepancy": 0.9711500143462874,
+                    "bins_per_direction": 195,
+                    "direction_bin_cell_count": 390,
+                    "discrepancy": 0.9910070792140162,
                     "feature_discrepancies": {
-                      "byte": 0.9958714572640036,
-                      "packet": 0.9464285714285714
+                      "byte": 0.9984076010509833,
+                      "packet": 0.9836065573770492
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 26011,
-                        "outbound": 3527
+                        "inbound": 32629,
+                        "outbound": 2353
                       },
                       "packet": {
-                        "inbound": 18,
-                        "outbound": 20
+                        "inbound": 22,
+                        "outbound": 21
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.01
                   }
                 ],
-                "total_direction_bin_cells": 2028,
+                "total_direction_bin_cells": 4288,
                 "widths": [
                   0.001,
                   0.01
                 ]
               },
               "name": "multiscale_rate",
-              "score": 0.01930771192654701
+              "score": 0.008992920785983793
             }
           ],
           "model_diagnostics": {
             "timing_tier_global_count": 0,
-            "timing_tier_source_count": 14,
-            "timing_tier_transition_count": 24,
+            "timing_tier_source_count": 18,
+            "timing_tier_transition_count": 25,
             "uniform_unobserved_row_count": 0
           },
           "seed": 17
@@ -1248,12 +1248,12 @@
     {
       "duplicate_diagnostics": [],
       "family": "markov_renewal",
-      "fitness": 0.6730235502378707,
+      "fitness": 0.6591772042229938,
       "genes": [
         0.3456948925495636,
-        0.7005578144528445,
+        0.679251771983478,
         0.7410006046519431,
-        3,
+        2,
         1.1019350591949293
       ],
       "identifier": [
@@ -1264,28 +1264,28 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.6730235502378707,
+          "aggregate_score": 0.6591772042229938,
           "methods": [
             {
               "diagnostics": {
-                "discrepancy": 0.019910173030053376,
+                "discrepancy": 0.14065546366954845,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
                 "iat": {
                   "absolute_differences": [
-                    0.04063888931314817
+                    0.5360136897154526
                   ],
-                  "discrepancy": 0.020319444656574086,
+                  "discrepancy": 0.2680068448577263,
                   "generated_acf": [
-                    0.10862243318341899
+                    -0.056592740310152
                   ],
-                  "generated_sample_count": 37,
+                  "generated_sample_count": 42,
                   "reference_acf": [
-                    0.06798354387027082
+                    0.47942094940530056
                   ],
-                  "reference_sample_count": 73
+                  "reference_sample_count": 78
                 },
                 "lag_weights": [
                   1.0
@@ -1293,75 +1293,75 @@
                 "lags": [
                   1
                 ],
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "size": {
                   "absolute_differences": [
-                    0.03900180280706533
+                    0.02660816496274121
                   ],
-                  "discrepancy": 0.019500901403532667,
+                  "discrepancy": 0.013304082481370605,
                   "generated_acf": [
-                    -0.13943728386533522
+                    -0.36105617396255185
                   ],
-                  "generated_sample_count": 38,
+                  "generated_sample_count": 43,
                   "reference_acf": [
-                    -0.17843908667240055
+                    -0.38766433892529306
                   ],
-                  "reference_sample_count": 74
+                  "reference_sample_count": 79
                 }
               },
               "name": "autocorrelation",
-              "score": 0.9800898269699466
+              "score": 0.8593445363304515
             },
             {
               "diagnostics": {
-                "distance": 0.12588904694167846,
-                "generated_count": 38,
-                "generated_maximum_length": 2946,
+                "distance": 0.09243450103032091,
+                "generated_count": 43,
+                "generated_maximum_length": 2822,
                 "generated_minimum_length": 42,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_count": 74,
-                "reference_maximum_length": 2946,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_count": 79,
+                "reference_maximum_length": 2822,
                 "reference_minimum_length": 42
               },
               "name": "frame_size_ks",
-              "score": 0.8741109530583215
+              "score": 0.9075654989696791
             },
             {
               "diagnostics": {
                 "diagnostic_quantile": 0.75,
-                "distance": 0.18141429100333206,
-                "generated_iat_count": 37,
-                "generated_median_iat_seconds": 0.00010456327284802391,
-                "generated_quantile_iat_seconds": 0.006590376129127717,
+                "distance": 0.13919413919413914,
+                "generated_iat_count": 42,
+                "generated_median_iat_seconds": 0.00010981770866951013,
+                "generated_quantile_iat_seconds": 0.004474677545597078,
                 "generated_zero_iat_count": 0,
-                "observation_window_seconds": 0.9207994937896729,
-                "reference_iat_count": 73,
-                "reference_median_iat_seconds": 4.00543212890625e-05,
-                "reference_quantile_iat_seconds": 0.0028977394104003906,
+                "observation_window_seconds": 1.9488873481750488,
+                "reference_iat_count": 78,
+                "reference_median_iat_seconds": 0.0001392364501953125,
+                "reference_quantile_iat_seconds": 0.003704071044921875,
                 "reference_zero_iat_count": 0
               },
               "name": "iat_ks",
-              "score": 0.8185857089966679
+              "score": 0.8608058608058609
             },
             {
               "diagnostics": {
                 "direction_bin_cell_counts": [
-                  1842,
-                  186
+                  3898,
+                  390
                 ],
-                "discrepancy": 0.980692288073453,
+                "discrepancy": 0.9910070792140162,
                 "feature_discrepancies": {
-                  "byte": 0.9970988618611918,
-                  "packet": 0.9642857142857142
+                  "byte": 0.9984076010509833,
+                  "packet": 0.9836065573770492
                 },
                 "feature_weights": {
                   "byte": 0.5,
                   "packet": 0.5
                 },
-                "observation_window_seconds": 0.9207994937896729,
+                "observation_window_seconds": 1.9488873481750488,
                 "scale_discrepancies": [
-                  0.9902345618006185,
-                  0.9711500143462874
+                  0.9910070792140162,
+                  0.9910070792140162
                 ],
                 "scale_weights": [
                   0.5,
@@ -1369,80 +1369,80 @@
                 ],
                 "scales": [
                   {
-                    "bins_per_direction": 921,
-                    "direction_bin_cell_count": 1842,
-                    "discrepancy": 0.9902345618006185,
+                    "bins_per_direction": 1949,
+                    "direction_bin_cell_count": 3898,
+                    "discrepancy": 0.9910070792140162,
                     "feature_discrepancies": {
-                      "byte": 0.9983262664583799,
-                      "packet": 0.9821428571428571
+                      "byte": 0.9984076010509833,
+                      "packet": 0.9836065573770492
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 26011,
-                        "outbound": 3527
+                        "inbound": 32629,
+                        "outbound": 2353
                       },
                       "packet": {
-                        "inbound": 18,
-                        "outbound": 20
+                        "inbound": 22,
+                        "outbound": 21
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.001
                   },
                   {
-                    "bins_per_direction": 93,
-                    "direction_bin_cell_count": 186,
-                    "discrepancy": 0.9711500143462874,
+                    "bins_per_direction": 195,
+                    "direction_bin_cell_count": 390,
+                    "discrepancy": 0.9910070792140162,
                     "feature_discrepancies": {
-                      "byte": 0.9958714572640036,
-                      "packet": 0.9464285714285714
+                      "byte": 0.9984076010509833,
+                      "packet": 0.9836065573770492
                     },
                     "generated_totals": {
                       "byte": {
-                        "inbound": 26011,
-                        "outbound": 3527
+                        "inbound": 32629,
+                        "outbound": 2353
                       },
                       "packet": {
-                        "inbound": 18,
-                        "outbound": 20
+                        "inbound": 22,
+                        "outbound": 21
                       }
                     },
                     "reference_totals": {
                       "byte": {
-                        "inbound": 74639,
-                        "outbound": 3367
+                        "inbound": 74685,
+                        "outbound": 3370
                       },
                       "packet": {
-                        "inbound": 38,
-                        "outbound": 36
+                        "inbound": 39,
+                        "outbound": 40
                       }
                     },
                     "width_seconds": 0.01
                   }
                 ],
-                "total_direction_bin_cells": 2028,
+                "total_direction_bin_cells": 4288,
                 "widths": [
                   0.001,
                   0.01
                 ]
               },
               "name": "multiscale_rate",
-              "score": 0.01930771192654701
+              "score": 0.008992920785983793
             }
           ],
           "model_diagnostics": {
             "timing_tier_global_count": 0,
-            "timing_tier_source_count": 14,
-            "timing_tier_transition_count": 24,
+            "timing_tier_source_count": 6,
+            "timing_tier_transition_count": 37,
             "uniform_unobserved_row_count": 0
           },
           "seed": 17
@@ -1451,8 +1451,8 @@
     }
   ],
   "reference_identity": {
-    "sha256": "52317ce380301ce35dd7d4f4cc1bbfed1b8960ec6c8a8a347cc040cef2149b5c",
-    "size": 80804
+    "sha256": "0c47c6892dc52c2479ddaeec0e64f6f8df4e0cd778d18a5a7873a710a9afcf53",
+    "size": 81008
   },
   "rng": {
     "engine": "numpy.random.Generator/PCG64",
@@ -1462,9 +1462,9 @@
       "has_uint32": 0,
       "state": {
         "inc": 313386238064130078450704156869577063669,
-        "state": 219168010659535874775946885370467915786
+        "state": 194984522655890160510185813054222664772
       },
-      "uinteger": 3605937703
+      "uinteger": 2917612861
     }
   },
   "scientific_artifact_schema": 4,

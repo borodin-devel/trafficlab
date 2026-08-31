@@ -1,47 +1,47 @@
 {
   "artifacts": {
     "best_model.json": {
-      "sha256": "91d501b1a9061792025d13e2e06180f96df30f9f0253a442783359571fb9265d",
-      "size": 11712
+      "sha256": "4223a8cfa9fc8ba2d2690c1e53f01e59d3396531b4fe45f1a1b7e3ebba7344b9",
+      "size": 13054
     },
     "capture.json": {
-      "sha256": "375ab1337e039d983af32e658c42ef4154cf6707d3f872e8e8d672ef9a833abe",
+      "sha256": "de71fa23406e9372e88b049ab7ca963085a06d2656f6d9a325d824a040c2d276",
       "size": 63
     },
     "checkpoint.json": {
-      "sha256": "b959a8c0c3c7064a9b33fabb45e3415d6d37d05f7f8f490c3ed0678a381babd5",
-      "size": 46695
+      "sha256": "61b938482b23a087f36a1a4cebcc6d62a1817c848ac94dc59cbc22768cb0d0b7",
+      "size": 46810
     },
     "experiment.toml": {
-      "sha256": "fbac93fd5218397b65b18825d5b091509f0eaa434bcfeda095a1902f53fe6c3b",
-      "size": 2911
+      "sha256": "5059f29f839739e939b3a6f6e3c3a60f6cce1f05ea6cbfd5ed44b2ebf6d812cb",
+      "size": 2899
     },
     "ga_history.csv": {
-      "sha256": "2e6bde96e369ea0129f75aacb6919ea89b51fcaf62905c1d8903071bef8c8fcc",
-      "size": 639
+      "sha256": "04ff2f91a890f1aa45f4351f53ab6f525078dfb807c269e5a60ae67ece82d354",
+      "size": 636
     },
     "generated.pcapng": {
-      "sha256": "da9510104c22fb3589420c5d5f1554a75a81e401af0748089bd9f6837de8543f",
-      "size": 71844
+      "sha256": "4f901130ec1af4956a1c54e26a25d33f326e0266120ed2f97f790dfd6ae4b71c",
+      "size": 80840
     },
     "reference.pcapng": {
-      "sha256": "52317ce380301ce35dd7d4f4cc1bbfed1b8960ec6c8a8a347cc040cef2149b5c",
-      "size": 80804
+      "sha256": "0c47c6892dc52c2479ddaeec0e64f6f8df4e0cd778d18a5a7873a710a9afcf53",
+      "size": 81008
     },
     "run.log": {
-      "sha256": "4d6f875b0625ccd3ceab0eb757e4b86e85a267ad4130d3d4e832cd1e36465daf",
-      "size": 4831
+      "sha256": "db3e37ea014e315382c5bcac7e4448eb8fe2c8bb0f604db2c06b8ca0d0a3ec1e",
+      "size": 4735
     },
     "similarity.json": {
-      "sha256": "464cc1650ac931cac5c77647eba2404e3cc56f04926f5efc874e1209b5e40d57",
-      "size": 5461
+      "sha256": "4bce87c7230d114f59683e241a40aeb28b5235301fcdc58802a031d2c036abae",
+      "size": 5464
     }
   },
   "artifacts_directory": "examples/scientific_stack/example_run_artifacts",
   "cleanup": {
     "containers": [],
     "networks": [],
-    "project_name": "trafficlab-capture-2723a3f51c4440b992076516bf82c61d",
+    "project_name": "trafficlab-capture-ab9f0d81bae0497d9a2488f0cfd440a2",
     "verified": true,
     "volumes": []
   },
@@ -79,8 +79,8 @@
       "examples/scientific_stack/experiment.toml"
     ],
     "exit_status": 0,
-    "observed_completed_utc": "2026-08-23T13:06:32.883845276Z",
-    "recorded_utc": "2026-08-23T13:07:59.997256Z",
+    "observed_completed_utc": "2026-08-31T20:25:25.146087891Z",
+    "recorded_utc": "2026-08-31T20:25:43.625453Z",
     "resource_bounds": {
       "kill_after": "10s",
       "memory_high": "2G",
@@ -126,34 +126,34 @@
     "target_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
   },
   "result": {
-    "aggregate_score": 0.7296153891109144,
+    "aggregate_score": 0.6897609347451398,
     "enabled_families": [
       "poisson_empirical",
       "markov_renewal",
       "mmpp"
     ],
-    "generated_packet_count": 68,
+    "generated_packet_count": 83,
     "method_scores": {
-      "autocorrelation": 0.937018685099408,
-      "frame_size_ks": 0.9646263910969792,
-      "iat_ks": 0.8225311797178492,
-      "multiscale_rate": 0.19428530052942117
+      "autocorrelation": 0.8723717309216382,
+      "frame_size_ks": 0.9659905444563062,
+      "iat_ks": 0.9140087554721701,
+      "multiscale_rate": 0.006672708130444738
     },
-    "observation_window_seconds": 0.9207994937896729,
-    "reference_packet_count": 74,
-    "selection_fitness": 0.6824799460045088,
+    "observation_window_seconds": 1.9488873481750488,
+    "reference_packet_count": 79,
+    "selection_fitness": 0.6591772042229938,
     "winner_family": "markov_renewal"
   },
   "schema_version": 1,
   "source": {
-    "commit": "da262f484aa1cc22c42290e98b7ea1559e27d73c",
+    "commit": "292202368fa2ee7b4f2cccc5a68971feff243a3b",
     "config_identity": {
       "sha256": "ec5d58400c9549d97f55c634298dbfb4771455b5de174bae4172e8afe8642033",
       "size": 2804
     },
     "source_clean": true,
     "state_note": "checkout was clean at the recorded source commit before the run; retained evidence was added afterward",
-    "tree": "e204fcb32ecd74e706bb647103913e0d66127ecd",
+    "tree": "dc202ed8e85f9cbc94dfaab10e21d44467ef016a",
     "uv_lock_identity": {
       "sha256": "b66ad35ff61e66b02cfd380eb0396916a7271b07421183b9253f489a2e1498f9",
       "size": 112618
