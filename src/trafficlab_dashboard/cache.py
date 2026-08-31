@@ -10,6 +10,9 @@ class AspectCache:
     def __init__(self) -> None:
         self._entries: dict[CacheKey, PlotData] = {}
 
+    def __len__(self) -> int:
+        return len(self._entries)
+
     @staticmethod
     def key(run: DashboardRun, aspect_id: str, settings: CalculationSettings) -> CacheKey:
         if type(aspect_id) is not str or not aspect_id:
@@ -20,6 +23,9 @@ class AspectCache:
 
     def get(self, key: CacheKey) -> PlotData | None:
         return self._entries.get(key)
+
+    def keys(self) -> tuple[CacheKey, ...]:
+        return tuple(self._entries)
 
     def put(self, key: CacheKey, value: PlotData) -> None:
         self._entries[key] = value

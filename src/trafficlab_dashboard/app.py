@@ -5,7 +5,9 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
+from PySide6.QtWidgets import QApplication
+
+from trafficlab_dashboard.window import DashboardWindow
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -14,13 +16,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def create_window(initial_path: Path | None = None) -> QMainWindow:
-    window = QMainWindow()
-    window.setWindowTitle("TrafficLab Dashboard")
-    window.resize(1200, 760)
-    window.setCentralWidget(QWidget())
-    window.setProperty("initial_run_directory", initial_path)
-    return window
+def create_window(initial_path: Path | None = None) -> DashboardWindow:
+    return DashboardWindow(initial_run_directory=initial_path)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
