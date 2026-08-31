@@ -29,6 +29,8 @@ def _ordered_coordinates(values: Sequence[float]) -> np.ndarray:
 
 _finite_nonnegative = st.floats(min_value=0.0, max_value=10_000.0, allow_nan=False, allow_infinity=False)
 
+_exact_time_width = st.sampled_from((0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0))
+
 
 @st.composite
 def _ordered_xy(draw: st.DrawFn) -> tuple[np.ndarray, np.ndarray]:
@@ -59,6 +61,22 @@ def test_shared_time_edges_preserve_a_closed_window_and_snap_boundary_drift() ->
 
     assert drifted_edges.tolist() == pytest.approx([0.0, 0.1, 0.2, drifted_window])
     assert uneven_edges.tolist() == pytest.approx([0.0, 1.0, 2.0, 2.3])
+
+
+def test_shared_time_edges_replaces_a_snapped_terminal_edge_for_exact_float_boundaries() -> None:
+    window = 0.3
+    width = 0.1
+
+    edges = shared_time_edges(window, width)
+    histogram, returned_edges = np.histogram(np.array([0.0, 0.1, window], dtype=np.float64), bins=edges)
+
+    assert edges.tolist() == pytest.approx([0.0, 0.1, 0.2, window])
+    assert np.all(np.diff(edges) > 0.0)
+    assert np.all(edges >= 0.0)
+    assert np.all(edges <= window)
+    assert edges[-1] == window
+    assert np.array_equal(returned_edges, edges)
+    assert histogram.tolist() == [1, 1, 1]
 
 
 def test_shared_histogram_edges_use_both_loaded_samples() -> None:
@@ -112,6 +130,24 @@ def test_ecdf_reduction_stays_monotone_and_retains_endpoints(sample: list[float]
     assert points.y[-1] == 1.0
     assert np.all(np.diff(points.x) >= 0.0)
     assert np.all(np.diff(points.y) >= 0.0)
+
+
+@given(width=_exact_time_width, bins=st.integers(min_value=1, max_value=100))
+def test_shared_time_edges_exact_multiple_windows_stay_monotone_bounded_and_histogram_safe(
+    width: float, bins: int
+) -> None:
+    window = float(width * bins)
+    sample = np.array([0.0, window / 2.0, window], dtype=np.float64)
+
+    edges = shared_time_edges(window, width)
+    counts, returned_edges = np.histogram(sample, bins=edges)
+
+    assert np.all(np.diff(edges) > 0.0)
+    assert np.all(edges >= 0.0)
+    assert np.all(edges <= window)
+    assert edges[-1] == window
+    assert np.array_equal(returned_edges, edges)
+    assert int(np.sum(counts)) == len(sample)
 
 
 @given(data=_ordered_xy(), maximum_points=st.integers(min_value=4, max_value=24))

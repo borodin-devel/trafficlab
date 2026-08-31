@@ -67,7 +67,7 @@ def shared_time_edges(window: float, width: float) -> NDArray[np.float64]:
     edges = [float(index) * validated_width for index in range(whole_bins + 1)]
     if not edges:
         edges = [0.0]
-    if has_partial_bin or edges[-1] != validated_window:
+    if has_partial_bin:
         edges.append(validated_window)
     else:
         edges[-1] = validated_window
