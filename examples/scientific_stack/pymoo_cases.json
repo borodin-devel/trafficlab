@@ -53960,7 +53960,7 @@
       },
       {
         "path": "checkpoint/history.py",
-        "sloc": 241
+        "sloc": 248
       },
       {
         "path": "checkpoint/schema.py",
@@ -53995,7 +53995,7 @@
         "sloc": 222
       }
     ],
-    "current_sloc": 3163,
+    "current_sloc": 3170,
     "estimated_reduction_percent": null,
     "gate_passed": false,
     "method": "nonblank non-comment physical Python lines",
