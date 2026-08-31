@@ -8,6 +8,13 @@ import pytest
 
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 from trafficlab_dashboard.aspects.base import Aspect, CalculationSettings, LinePlotData, LineSeries
+from trafficlab_dashboard.aspects.distributions import (
+    FrameSizeEcdfAspect,
+    FrameSizeHistogramAspect,
+    IatEcdfAspect,
+    IatHistogramAspect,
+    ThroughputEcdfAspect,
+)
 from trafficlab_dashboard.aspects.registry import ASPECTS, aspect_by_id
 from trafficlab_dashboard.aspects.time_domain import (
     CumulativeBytesAspect,
@@ -118,6 +125,16 @@ def test_registry_uses_concrete_time_domain_aspects_in_the_planned_order() -> No
         CumulativePacketsAspect,
         FrameSizeTimelineAspect,
         IatTimelineAspect,
+    )
+
+
+def test_registry_replaces_distribution_placeholders_with_concrete_aspects() -> None:
+    assert tuple(type(aspect) for aspect in ASPECTS[6:11]) == (
+        FrameSizeEcdfAspect,
+        IatEcdfAspect,
+        FrameSizeHistogramAspect,
+        IatHistogramAspect,
+        ThroughputEcdfAspect,
     )
 
 

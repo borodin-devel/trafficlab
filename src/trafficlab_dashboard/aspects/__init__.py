@@ -14,6 +14,13 @@ from trafficlab_dashboard.aspects.base import (
     PlotData,
     TraceVisibility,
 )
+from trafficlab_dashboard.aspects.distributions import (
+    FrameSizeEcdfAspect,
+    FrameSizeHistogramAspect,
+    IatEcdfAspect,
+    IatHistogramAspect,
+    ThroughputEcdfAspect,
+)
 from trafficlab_dashboard.aspects.numerics import (
     choose_time_bin_width,
     ecdf_points,
@@ -41,9 +48,13 @@ __all__ = [
     "CumulativeBytesAspect",
     "CumulativePacketsAspect",
     "HexbinPlotData",
+    "FrameSizeEcdfAspect",
+    "FrameSizeHistogramAspect",
     "FrameSizeTimelineAspect",
     "HistogramPlotData",
     "HistogramSeries",
+    "IatEcdfAspect",
+    "IatHistogramAspect",
     "IatTimelineAspect",
     "LinePlotData",
     "LineSeries",
@@ -51,6 +62,7 @@ __all__ = [
     "PlotData",
     "TraceVisibility",
     "ThroughputAspect",
+    "ThroughputEcdfAspect",
     "aspect_by_id",
     "choose_time_bin_width",
     "ecdf_points",
