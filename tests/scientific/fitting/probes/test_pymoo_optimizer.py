@@ -423,7 +423,7 @@ def test_loc_gate_is_indeterminate_without_designing_the_rejected_adapter() -> N
         "strategy.py",
         "types.py",
     ]
-    assert loc["current_sloc"] == 3_079
+    assert loc["current_sloc"] == 3_163
     assert "line-level" in loc["reason"]
     assert "rejected adapter" in loc["reason"]
     assert "maximum" not in loc
