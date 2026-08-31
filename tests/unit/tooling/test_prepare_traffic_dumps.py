@@ -2,7 +2,6 @@
 
 import json
 import os
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts import prepare_traffic_dumps as prepare
-from tests.support.scapy_fixtures import encode_events
+from tests.support.scapy_fixtures import EncodedEthernetFrame, encode_ethernet_frames, encode_events
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import PcapngPacket
@@ -23,25 +22,8 @@ _TARGET = bytes.fromhex("0242ac110002")
 _PEER = bytes.fromhex("020000000001")
 
 
-def _block(block_type: int, body: bytes) -> bytes:
-    padded = body + b"\x00" * (-len(body) % 4)
-    total_length = 12 + len(padded)
-    return struct.pack("<II", block_type, total_length) + padded + struct.pack("<I", total_length)
-
-
-def _packet(frame: bytes, timestamp: int) -> bytes:
-    body = struct.pack("<IIIII", 0, 0, timestamp, len(frame), len(frame))
-    return _block(6, body + frame)
-
-
 def _ethernet(source: bytes, destination: bytes, ethertype: int = 0x88B5) -> bytes:
-    return destination + source + struct.pack("!H", ethertype) + b"payload"
-
-
-def _capture(*frames: bytes) -> bytes:
-    section = _block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))
-    interface = _block(1, struct.pack("<HHI", 1, 0, 65535))
-    return section + interface + b"".join(_packet(frame, index) for index, frame in enumerate(frames))
+    return destination + source + ethertype.to_bytes(2, byteorder="big") + b"payload"
 
 
 def test_output_path_adds_prefix_and_normalizes_capture_extension(tmp_path: Path) -> None:
@@ -263,12 +245,14 @@ def test_convert_capture_does_not_publish_when_validation_fails(tmp_path: Path) 
 def test_infer_target_mac_prefers_more_transmissions_after_total_appearance_tie(tmp_path: Path) -> None:
     capture = tmp_path / "capture.pcapng"
     capture.write_bytes(
-        _capture(
-            _ethernet(_TARGET, _PEER),
-            _ethernet(_TARGET, _PEER),
-            _ethernet(_PEER, _TARGET),
-            _ethernet(_OTHER, _PEER),
-            _ethernet(_TARGET, _OTHER),
+        encode_ethernet_frames(
+            (
+                EncodedEthernetFrame(0.0, _ethernet(_TARGET, _PEER)),
+                EncodedEthernetFrame(1.0, _ethernet(_TARGET, _PEER)),
+                EncodedEthernetFrame(2.0, _ethernet(_PEER, _TARGET)),
+                EncodedEthernetFrame(3.0, _ethernet(_OTHER, _PEER)),
+                EncodedEthernetFrame(4.0, _ethernet(_TARGET, _OTHER)),
+            )
         )
     )
 
@@ -291,14 +275,16 @@ def test_infer_target_mac_prefers_total_appearances_before_transmissions(tmp_pat
     peer_e = bytes.fromhex("020000000014")
     capture = tmp_path / "capture.pcapng"
     capture.write_bytes(
-        _capture(
-            _ethernet(target, louder_peer),
-            _ethernet(target, peer_a),
-            _ethernet(peer_b, target),
-            _ethernet(peer_c, target),
-            _ethernet(louder_peer, target),
-            _ethernet(louder_peer, peer_d),
-            _ethernet(louder_peer, peer_e),
+        encode_ethernet_frames(
+            (
+                EncodedEthernetFrame(0.0, _ethernet(target, louder_peer)),
+                EncodedEthernetFrame(1.0, _ethernet(target, peer_a)),
+                EncodedEthernetFrame(2.0, _ethernet(peer_b, target)),
+                EncodedEthernetFrame(3.0, _ethernet(peer_c, target)),
+                EncodedEthernetFrame(4.0, _ethernet(louder_peer, target)),
+                EncodedEthernetFrame(5.0, _ethernet(louder_peer, peer_d)),
+                EncodedEthernetFrame(6.0, _ethernet(louder_peer, peer_e)),
+            )
         )
     )
 
@@ -319,11 +305,13 @@ def test_infer_target_mac_breaks_equal_transmissions_and_totals_by_ascending_mac
     ignored_source = bytes.fromhex("010000000001")
     capture = tmp_path / "capture.pcapng"
     capture.write_bytes(
-        _capture(
-            _ethernet(lower, lower_peer),
-            _ethernet(ignored_source, lower),
-            _ethernet(higher, higher_peer),
-            _ethernet(ignored_source, higher),
+        encode_ethernet_frames(
+            (
+                EncodedEthernetFrame(0.0, _ethernet(lower, lower_peer)),
+                EncodedEthernetFrame(1.0, _ethernet(ignored_source, lower)),
+                EncodedEthernetFrame(2.0, _ethernet(higher, higher_peer)),
+                EncodedEthernetFrame(3.0, _ethernet(ignored_source, higher)),
+            )
         )
     )
 
@@ -341,9 +329,11 @@ def test_infer_target_mac_rejects_captures_without_an_eligible_bidirectional_uni
 ) -> None:
     capture = tmp_path / "capture.pcapng"
     capture.write_bytes(
-        _capture(
-            _ethernet(_TARGET, b"\xff" * 6),
-            _ethernet(_TARGET, _PEER),
+        encode_ethernet_frames(
+            (
+                EncodedEthernetFrame(0.0, _ethernet(_TARGET, b"\xff" * 6)),
+                EncodedEthernetFrame(1.0, _ethernet(_TARGET, _PEER)),
+            )
         )
     )
 
@@ -385,10 +375,12 @@ def test_render_inferred_capture_metadata_is_canonical_json() -> None:
 def test_convert_capture_to_organized_directory_publishes_a_validated_pair_and_cleans_staging(tmp_path: Path) -> None:
     source = tmp_path / "capture.pcapng"
     source.write_bytes(
-        _capture(
-            _ethernet(_TARGET, _PEER),
-            _ethernet(_TARGET, _PEER),
-            _ethernet(_PEER, _TARGET),
+        encode_ethernet_frames(
+            (
+                EncodedEthernetFrame(0.0, _ethernet(_TARGET, _PEER)),
+                EncodedEthernetFrame(1.0, _ethernet(_TARGET, _PEER)),
+                EncodedEthernetFrame(2.0, _ethernet(_PEER, _TARGET)),
+            )
         )
     )
     conversion = prepare.OrganizedConversion(
@@ -446,6 +438,114 @@ def test_convert_capture_to_organized_directory_does_not_publish_when_pair_valid
     assert source.read_bytes() == b"original"
     assert not conversion.directory.exists()
     assert not (tmp_path / "prepared").exists()
+
+
+def test_plan_organized_conversions_rejects_a_broken_symlink_destination(tmp_path: Path) -> None:
+    source = tmp_path / "capture.pcapng"
+    source.write_bytes(b"capture")
+    destination = tmp_path / "prepared" / "capture"
+    destination.parent.mkdir(parents=True)
+    destination.symlink_to(tmp_path / "missing-target")
+
+    with pytest.raises(ValueError, match="output already exists"):
+        prepare.plan_organized_conversions((source,), organized_root=tmp_path / "prepared", prefix="trafficlab-ready-")
+
+
+def test_convert_capture_to_organized_directory_preserves_a_raced_destination_and_cleans_stage(tmp_path: Path) -> None:
+    source = tmp_path / "capture.pcapng"
+    source.write_bytes(
+        encode_ethernet_frames(
+            (
+                EncodedEthernetFrame(0.0, _ethernet(_TARGET, _PEER)),
+                EncodedEthernetFrame(1.0, _ethernet(_PEER, _TARGET)),
+            )
+        )
+    )
+    conversion = prepare.OrganizedConversion(
+        source=source,
+        directory=tmp_path / "prepared" / "capture",
+        capture_path=tmp_path / "prepared" / "capture" / "trafficlab-ready-capture.pcapng",
+        metadata_path=tmp_path / "prepared" / "capture" / "capture.json",
+    )
+
+    def run(command: tuple[str, ...]) -> None:
+        Path(command[-1]).write_bytes(source.read_bytes())
+
+    def publish(stage_directory: Path, destination: Path) -> None:
+        destination.mkdir(parents=True)
+        prepare.publish_directory_no_replace(stage_directory, destination)
+
+    with pytest.raises(ValueError, match="output already exists"):
+        prepare.convert_capture_to_organized_directory(
+            conversion,
+            tools=prepare.ToolPaths("/tools/editcap", "/tools/reordercap"),
+            run=run,
+            publish=publish,
+        )
+
+    assert conversion.directory.is_dir()
+    assert list(conversion.directory.iterdir()) == []
+    assert not any(path.name.startswith(".trafficlab-dump-") for path in (tmp_path / "prepared").parent.iterdir())
+
+
+def test_convert_capture_to_organized_directory_reports_cleanup_failures_without_hiding_the_primary_error(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "capture.pcapng"
+    source.write_bytes(b"original")
+    conversion = prepare.OrganizedConversion(
+        source=source,
+        directory=tmp_path / "prepared" / "capture",
+        capture_path=tmp_path / "prepared" / "capture" / "trafficlab-ready-capture.pcapng",
+        metadata_path=tmp_path / "prepared" / "capture" / "capture.json",
+    )
+
+    def run(command: tuple[str, ...]) -> None:
+        Path(command[-1]).write_bytes(b"not-a-valid-pcapng")
+
+    def fail_cleanup(path: Path | None) -> None:
+        raise OSError(f"cleanup failed for {path}")
+
+    with pytest.raises(TrafficlabError, match="cleanup incomplete") as caught:
+        prepare.convert_capture_to_organized_directory(
+            conversion,
+            tools=prepare.ToolPaths("/tools/editcap", "/tools/reordercap"),
+            run=run,
+            cleanup=fail_cleanup,
+        )
+
+    assert "invalid PCAPNG: Scapy could not decode the capture" in str(caught.value)
+    assert not conversion.directory.exists()
+
+
+def test_publish_directory_no_replace_rejects_a_preexisting_empty_directory(tmp_path: Path) -> None:
+    stage_directory = tmp_path / "stage"
+    stage_directory.mkdir()
+    (stage_directory / "capture.json").write_text("{}", encoding="utf-8")
+    destination = tmp_path / "prepared" / "capture"
+    destination.mkdir(parents=True)
+
+    with pytest.raises(FileExistsError):
+        prepare.publish_directory_no_replace(stage_directory, destination)
+
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert stage_directory.is_dir()
+
+
+def test_publish_directory_no_replace_rejects_a_broken_symlink(tmp_path: Path) -> None:
+    stage_directory = tmp_path / "stage"
+    stage_directory.mkdir()
+    destination = tmp_path / "prepared" / "capture"
+    destination.parent.mkdir(parents=True)
+    destination.symlink_to(tmp_path / "missing-target")
+
+    with pytest.raises(FileExistsError):
+        prepare.publish_directory_no_replace(stage_directory, destination)
+
+    assert destination.is_symlink()
+    assert not destination.exists()
+    assert stage_directory.is_dir()
 
 
 def test_validate_capture_uses_the_production_parser_and_positive_reference_window(tmp_path: Path) -> None:

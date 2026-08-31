@@ -78,7 +78,9 @@ and destination headers. That metadata is a structural compatibility proxy for
 TrafficLab's parser boundary, not authoritative original-interface provenance or
 scientific proof that the inferred inbound and outbound labels match the source
 environment. Independently confirm the published direction labels before using
-them as scientific evidence.
+them as scientific evidence. Publication remains per-source atomic, but a late
+batch failure can still leave earlier complete pairs already published; reruns
+intentionally refuse any existing organized outputs instead of overwriting them.
 
 ## Bounded command wrapper
 

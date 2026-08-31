@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from trafficlab.common.scapy_io import encode_pcapng
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, deterministic_peer_mac
+
+
+@dataclass(frozen=True, slots=True)
+class EncodedEthernetFrame:
+    """One exact Ethernet frame plus its packet timestamp for PCAPNG tests."""
+
+    timestamp: float
+    ethernet_frame: bytes
 
 
 def encode_events(events: Iterable[TraceEvent], metadata: CaptureMetadata) -> bytes:
@@ -20,6 +29,29 @@ def _block(block_type: int, body: bytes) -> bytes:
     padded = body + b"\x00" * (-len(body) % 4)
     total = 12 + len(padded)
     return struct.pack("<II", block_type, total) + padded + struct.pack("<I", total)
+
+
+def encode_ethernet_frames(frames: Iterable[EncodedEthernetFrame]) -> bytes:
+    """Build a minimal valid Ethernet PCAPNG from exact frames and timestamps."""
+    materialized = tuple(frames)
+    section = _block(0x0A0D0D0A, struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1))
+    interface = _block(1, struct.pack("<HHI", 1, 0, 65535))
+    packets = bytearray()
+    for frame in materialized:
+        timestamp = round(frame.timestamp)
+        body = (
+            struct.pack(
+                "<IIIII",
+                0,
+                timestamp >> 32,
+                timestamp & 0xFFFFFFFF,
+                len(frame.ethernet_frame),
+                len(frame.ethernet_frame),
+            )
+            + frame.ethernet_frame
+        )
+        packets.extend(_block(6, body))
+    return section + interface + bytes(packets)
 
 
 def encode_precise_events(

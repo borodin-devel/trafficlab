@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import os
 import shutil
 import subprocess
@@ -13,6 +15,7 @@ from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, cast
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -78,6 +81,17 @@ class ToolPaths:
 type CommandRunner = Callable[[tuple[str, ...]], None]
 type CaptureValidator = Callable[[Path], object]
 type ExecutableFinder = Callable[[str], str | None]
+type DirectoryPublisher = Callable[[Path, Path], None]
+type DirectoryCleanup = Callable[[Path | None], None]
+
+_AT_FDCWD = -100
+_RENAME_NOREPLACE = 1
+
+
+class RenameAt2Callable(Protocol):
+    """Typed `renameat2` boundary for no-replace directory publication."""
+
+    def __call__(self, olddirfd: int, oldpath: bytes, newdirfd: int, newpath: bytes, flags: int, /) -> int: ...
 
 
 def output_path(source: Path, *, prefix: str) -> Path:
@@ -92,6 +106,10 @@ def organized_output_path(source: Path, *, organized_root: Path, prefix: str) ->
 
 def _organized_directory(source: Path, *, organized_root: Path) -> Path:
     return organized_root / source.stem
+
+
+def _path_entry_exists(path: Path) -> bool:
+    return os.path.lexists(path)
 
 
 def validate_prefix(prefix: str) -> None:
@@ -195,7 +213,7 @@ def plan_organized_conversions(
             raise ValueError(f"duplicate source stem for organized output: {prior} and {source}")
         stems[source.stem] = source
         directory = _organized_directory(source, organized_root=organized_root)
-        if directory.exists():
+        if _path_entry_exists(directory):
             raise ValueError(f"output already exists: {directory}")
         plan.append(
             OrganizedConversion(
@@ -217,7 +235,7 @@ def preflight_organized_conversions(
     """Validate organized-mode inputs before any conversion or publication."""
     if prefix != _DEFAULT_PREFIX:
         raise ValueError(f"organized output requires the default prefix {_DEFAULT_PREFIX!r}")
-    if organized_root.exists() and not organized_root.is_dir():
+    if _path_entry_exists(organized_root) and not organized_root.is_dir():
         raise ValueError(f"organized output root must be a directory path: {organized_root}")
     missing = tuple(path for path in paths if not path.exists())
     if missing:
@@ -290,6 +308,42 @@ def render_inferred_capture_metadata(target_mac: str) -> bytes:
     return render_capture_metadata(CaptureMetadata(interface="eth0", target_mac=target_mac))
 
 
+def _renameat2_boundary() -> RenameAt2Callable:
+    libc = ctypes.CDLL(None, use_errno=True)
+    if not hasattr(libc, "renameat2"):
+        raise OSError(errno.ENOSYS, "atomic no-replace directory publication is unavailable: renameat2 missing")
+    rename = cast(RenameAt2Callable, libc.renameat2)
+    libc.renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    libc.renameat2.restype = ctypes.c_int
+    return rename
+
+
+def publish_directory_no_replace(stage_directory: Path, destination: Path) -> None:
+    """Atomically publish one directory only when the destination path entry is absent."""
+    if _path_entry_exists(destination):
+        raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(destination))
+    renameat2 = _renameat2_boundary()
+    result = renameat2(
+        _AT_FDCWD,
+        os.fsencode(stage_directory),
+        _AT_FDCWD,
+        os.fsencode(destination),
+        _RENAME_NOREPLACE,
+    )
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number == errno.EEXIST:
+        raise FileExistsError(error_number, os.strerror(error_number), str(destination))
+    if error_number in {errno.ENOSYS, errno.EINVAL, errno.EPERM, errno.ENOTSUP}:
+        raise OSError(
+            error_number,
+            f"atomic no-replace directory publication is unavailable: {os.strerror(error_number)}",
+            str(destination),
+        )
+    raise OSError(error_number, os.strerror(error_number), str(destination))
+
+
 def convert_capture(
     conversion: Conversion,
     *,
@@ -314,7 +368,27 @@ def convert_capture(
 def _cleanup_staged_directory(path: Path | None) -> None:
     if path is None:
         return
-    shutil.rmtree(path, ignore_errors=True)
+    if not _path_entry_exists(path):
+        return
+    shutil.rmtree(path)
+
+
+def _cleanup_failure_error(primary: Exception | None, cleanup_error: OSError, *, path: Path) -> Exception:
+    detail = f"could not remove staged directory {path}: {cleanup_error}"
+    if primary is None:
+        return OSError(cleanup_error.errno, detail, str(path))
+    message = f"{primary}; cleanup incomplete: {detail}"
+    if isinstance(primary, TrafficlabError):
+        return TrafficlabError(
+            message,
+            corrective_action=primary.corrective_action,
+            failure_outcomes=primary.failure_outcomes,
+        )
+    if isinstance(primary, ValueError):
+        return ValueError(message)
+    if isinstance(primary, RuntimeError):
+        return RuntimeError(message)
+    return OSError(cleanup_error.errno, message, str(path))
 
 
 def convert_capture_to_organized_directory(
@@ -322,6 +396,8 @@ def convert_capture_to_organized_directory(
     *,
     tools: ToolPaths,
     run: CommandRunner,
+    publish: DirectoryPublisher = publish_directory_no_replace,
+    cleanup: DirectoryCleanup = _cleanup_staged_directory,
 ) -> CaptureInspection:
     """Convert, infer metadata, validate the pair, and atomically publish one directory."""
     stage_parent = conversion.directory.parent.parent
@@ -330,6 +406,7 @@ def convert_capture_to_organized_directory(
         tempfile.mkdtemp(dir=stage_parent, prefix=f".trafficlab-dump-{conversion.source.stem}-")
     )
     published = False
+    primary_error: Exception | None = None
     try:
         converted = stage_directory / "converted.pcapng"
         ordered = stage_directory / conversion.capture_path.name
@@ -342,14 +419,21 @@ def convert_capture_to_organized_directory(
         inspection = validate_capture_pair(metadata_path, ordered, deadline=None)
         conversion.directory.parent.mkdir(parents=True, exist_ok=True)
         try:
-            os.rename(stage_directory, conversion.directory)
+            publish(stage_directory, conversion.directory)
         except FileExistsError as error:
             raise ValueError(f"output already exists: {conversion.directory}") from error
         published = True
         return inspection
+    except Exception as error:
+        primary_error = error
+        raise
     finally:
         if not published:
-            _cleanup_staged_directory(stage_directory)
+            try:
+                cleanup(stage_directory)
+            except OSError as cleanup_error:
+                combined = _cleanup_failure_error(primary_error, cleanup_error, path=stage_directory)
+                raise combined from (primary_error if primary_error is not None else cleanup_error)
 
 
 def _parse_arguments(argv: Sequence[str] | None) -> tuple[tuple[Path, ...], str, Path | None]:
