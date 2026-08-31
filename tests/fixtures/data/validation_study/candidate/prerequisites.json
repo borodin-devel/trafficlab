@@ -160,13 +160,13 @@
     "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
     "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
     "capture_tool_version": "4.0.17",
-    "source_commit": "946bc29571a2ff3b2c8ca8a0fea585e3186be7bf",
-    "source_tree": "2e3c954fdeddbe8e7cee1813973ca497d4f33d2d",
+    "source_commit": "23d43c8506cfd522523859f2f7c01fb9d85e41b4",
+    "source_tree": "edc614141930d7a4228bff5203baf36370830db0",
     "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
     "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
     "uv_lock_identity": {
-      "sha256": "b11e9c4f8ec7e0110b0c9823aadcb17b309bddd4a48fbc5ad41c7794d9219357",
-      "size": 104376
+      "sha256": "b66ad35ff61e66b02cfd380eb0396916a7271b07421183b9253f489a2e1498f9",
+      "size": 112618
     }
   },
   "schema_version": 4,
