@@ -146,17 +146,17 @@
   },
   "schema_version": 1,
   "source": {
-    "commit": "4b2d2997265f862d73c22896a82aa63cac0f32dc",
+    "commit": "da262f484aa1cc22c42290e98b7ea1559e27d73c",
     "config_identity": {
       "sha256": "ec5d58400c9549d97f55c634298dbfb4771455b5de174bae4172e8afe8642033",
       "size": 2804
     },
     "source_clean": true,
     "state_note": "checkout was clean at the recorded source commit before the run; retained evidence was added afterward",
-    "tree": "19ed7494d3a707caa03661d678028483190d25cb",
+    "tree": "e204fcb32ecd74e706bb647103913e0d66127ecd",
     "uv_lock_identity": {
-      "sha256": "b11e9c4f8ec7e0110b0c9823aadcb17b309bddd4a48fbc5ad41c7794d9219357",
-      "size": 104376
+      "sha256": "b66ad35ff61e66b02cfd380eb0396916a7271b07421183b9253f489a2e1498f9",
+      "size": 112618
     }
   }
 }
