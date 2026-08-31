@@ -235,8 +235,9 @@ uv run --all-extras trafficlab-dashboard
 The selected run must contain `reference.pcapng`, `generated.pcapng`, and
 `capture.json`. Optional artifacts degrade by disabling only dependent views:
 `similarity.json` enables similarity and multiscale aspects, `ga_history.csv`
-enables GA history, and `best_model.json` plus `experiment.toml` supply
-retained metadata shown by those views.
+enables GA history only when a valid matching `experiment.toml` is also
+present, and `best_model.json` is validated as retained fitted-model metadata
+without a dedicated first-release view.
 
 The window shows one aspect at a time with independent Reference and Generated
 visibility toggles, Reset, and PNG/SVG export. Trace views keep at least one

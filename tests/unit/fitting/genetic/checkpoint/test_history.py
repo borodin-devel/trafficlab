@@ -98,6 +98,7 @@ def test_history_repair_read_or_publication_failure_never_changes_valid_checkpoi
         render_history_csv(VALID_STATE).replace(b",overall,,", b",overall,mmpp,", 1),
         render_history_csv(VALID_STATE).replace(b",family,mmpp,", b",family,markov_renewal,", 1),
         render_history_csv(VALID_STATE).replace(b"0,family", b"00,family", 1),
+        render_history_csv(VALID_STATE).replace(b"0,family", b"x,family", 1),
         render_history_csv(VALID_STATE).replace(b",0.4,0.4,", b",nan,0.4,", 1),
     ],
 )
@@ -168,6 +169,11 @@ def test_public_history_loader_returns_exact_immutable_rows(tmp_path: Path) -> N
         loaded[0].generation = 1  # type: ignore[misc]
 
 
+def test_public_history_loader_reports_read_failure(tmp_path: Path) -> None:
+    with pytest.raises(TrafficlabError, match="could not read history artifact"):
+        load_history_csv(tmp_path / "missing.csv", frozenset(("mmpp", "poisson_empirical")))
+
+
 @pytest.mark.parametrize("mutation", ("header_only", "reordered", "duplicate", "generation_gap", "bad_counts"))
 def test_public_history_loader_rejects_noncanonical_generation_blocks(tmp_path: Path, mutation: str) -> None:
     lines = render_history_csv(VALID_STATE).decode("utf-8").splitlines()
@@ -194,6 +200,59 @@ def test_public_history_loader_rejects_noncanonical_generation_blocks(tmp_path: 
 
 
 @pytest.mark.parametrize(
+    ("mutation", "expected"),
+    (
+        ("invalid_population", "population_size must be a positive integer"),
+        ("invalid_generation_count", "generation_count must be a nonnegative integer"),
+        ("generation_beyond_config", "beyond experiment genetic.generation_count"),
+        ("zero_candidate_count", "candidate_count must be positive"),
+        ("invalid_valid_sum", "valid_count does not equal family counts"),
+        ("future_birth", "birth generation exceeds row generation"),
+        ("zero_valid_nonzero_fitness", "zero valid_count"),
+        ("invalid_overall_mean", "overall mean"),
+        ("invalid_overall_best", "overall best"),
+    ),
+)
+def test_history_projection_rejects_every_infeasible_cross_row_boundary(mutation: str, expected: str) -> None:
+    content = render_history_csv(VALID_STATE)
+    population_size = 3
+    generation_count = 0
+    if mutation == "invalid_population":
+        population_size = 0
+    elif mutation == "invalid_generation_count":
+        generation_count = -1
+    elif mutation == "generation_beyond_config":
+        lines = content.decode("utf-8").splitlines()
+        second_block = tuple(line.replace("0,", "1,", 1) for line in lines[1:])
+        content = ("\n".join((*lines, *second_block)) + "\n").encode("utf-8")
+    elif mutation == "zero_candidate_count":
+        content = content.replace(b"0,family,mmpp,1,1,", b"0,family,mmpp,0,0,", 1)
+    elif mutation == "invalid_valid_sum":
+        content = content.replace(b"0,overall,,3,2,", b"0,overall,,3,1,", 1)
+    elif mutation == "future_birth":
+        content = content.replace(b"0,family,mmpp,1,1,0.4,0.4,0,0", b"0,family,mmpp,1,1,0.4,0.4,1,0", 1)
+    elif mutation == "zero_valid_nonzero_fitness":
+        content = content.replace(b"0,family,mmpp,1,1,", b"0,family,mmpp,1,0,", 1)
+        content = content.replace(b"0,overall,,3,2,", b"0,overall,,3,1,", 1)
+    elif mutation == "invalid_overall_mean":
+        content = content.replace(f",{OVERALL_ROW.mean_fitness!r},0,2\n".encode(), b",0.0,0,2\n", 1)
+    else:
+        content = content.replace(
+            f"0,overall,,3,2,{POISSON_TRIAL.aggregate_score!r},".encode(),
+            b"0,overall,,3,2,0.0,",
+            1,
+        )
+
+    with pytest.raises(ValueError, match=expected):
+        checkpoint_history.parse_history_csv(
+            content,
+            frozenset(("mmpp", "poisson_empirical")),
+            population_size=population_size,
+            generation_count=generation_count,
+        )
+
+
+@pytest.mark.parametrize(
     ("content", "expected"),
     [
         (b"wrong\n", "history CSV has the wrong header"),
@@ -204,6 +263,10 @@ def test_public_history_loader_rejects_noncanonical_generation_blocks(tmp_path: 
         (
             render_history_csv(VALID_STATE).replace(b",0.4,0.4,", b",0.400,0.4,", 1),
             "history CSV best_fitness must be a finite Python float repr in [0, 1]",
+        ),
+        (
+            render_history_csv(VALID_STATE).replace(b",0.4,0.4,", b",abc,0.4,", 1),
+            "history CSV best_fitness must be a finite Python float repr",
         ),
     ],
 )

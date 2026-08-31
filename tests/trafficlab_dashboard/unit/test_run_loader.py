@@ -189,6 +189,42 @@ def test_missing_similarity_artifact_disables_only_its_dependent_aspects(tmp_pat
     assert "ga_fitness_history" not in loaded.unavailable
 
 
+@pytest.mark.parametrize("artifact_as_directory", (False, True))
+def test_invalid_or_unreadable_similarity_degrades_only_similarity_views(
+    tmp_path: Path,
+    artifact_as_directory: bool,
+) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+    path = run_directory / "similarity.json"
+    if artifact_as_directory:
+        path.unlink()
+        path.mkdir()
+    else:
+        path.write_bytes(b"{}\n")
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.similarity is None
+    assert "similarity.json is unavailable" in loaded.unavailable["similarity_scores"]
+    assert loaded.best_model is not None
+
+
+def test_missing_or_invalid_best_model_degrades_without_affecting_views(tmp_path: Path) -> None:
+    missing_directory = copy_checked_dashboard_run(tmp_path / "missing")
+    (missing_directory / "best_model.json").unlink()
+    invalid_directory = copy_checked_dashboard_run(tmp_path / "invalid")
+    (invalid_directory / "best_model.json").write_bytes(b"{}\n")
+
+    missing = load_dashboard_run(missing_directory)
+    invalid = load_dashboard_run(invalid_directory)
+
+    assert missing.best_model is None
+    assert "best_model" not in missing.unavailable
+    assert invalid.best_model is None
+    assert "best_model.json is unavailable" in invalid.unavailable["best_model"]
+    assert invalid.similarity is not None
+
+
 def test_ga_history_requires_a_valid_experiment_configuration(tmp_path: Path) -> None:
     run_directory = copy_checked_dashboard_run(tmp_path)
     (run_directory / "experiment.toml").write_text("not = [valid\n", encoding="utf-8")
@@ -332,3 +368,15 @@ def test_history_counts_must_match_experiment_population_at_load_time(tmp_path: 
 
     assert loaded.history is None
     assert "population_size" in loaded.unavailable["ga_fitness_history"]
+
+
+def test_unreadable_history_disables_ga_view_without_rejecting_run(tmp_path: Path) -> None:
+    run_directory = copy_checked_dashboard_run(tmp_path)
+    history_path = run_directory / "ga_history.csv"
+    history_path.unlink()
+    history_path.mkdir()
+
+    loaded = load_dashboard_run(run_directory)
+
+    assert loaded.history is None
+    assert "could not read ga_history.csv" in loaded.unavailable["ga_fitness_history"]

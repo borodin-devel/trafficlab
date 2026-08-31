@@ -243,6 +243,13 @@ def test_canvas_renders_line_data_with_dataset_colors_direction_styles_and_acf_a
     assert canvas.axes.get_ylabel() == "Rate (Mbps)"
     assert canvas.axes.get_xlim() == pytest.approx((0.0, 2.0))
     assert canvas.axes.get_ylim() == pytest.approx((0.0, 4.0))
+
+    canvas.axes.set_xlim(0.5, 1.0)
+    canvas.axes.set_ylim(1.0, 2.0)
+    canvas.reset_view()
+
+    assert canvas.axes.get_xlim() == pytest.approx((0.0, 2.0))
+    assert canvas.axes.get_ylim() == pytest.approx((0.0, 4.0))
     assert labels == [
         "Reference uplink",
         "Reference downlink",
@@ -318,12 +325,23 @@ def test_canvas_cached_visibility_update_retains_artists_and_changes_only_visibi
     assert [id(line) for line in canvas.axes.lines] == retained_ids
     assert [line.get_visible() for line in canvas.axes.lines] == [True, True, False, False]
 
-    canvas.axes.set_xlim(0.5, 1.0)
-    canvas.axes.set_ylim(1.0, 2.0)
-    canvas.reset_view()
 
-    assert canvas.axes.get_xlim() == pytest.approx((0.0, 2.0))
-    assert canvas.axes.get_ylim() == pytest.approx((0.0, 4.0))
+def test_canvas_renders_an_empty_line_record_without_a_legend(canvas: DashboardCanvas) -> None:
+    empty = LinePlotData(
+        identifier="empty",
+        label="Empty",
+        title="Empty",
+        x_label="X",
+        y_label="Y",
+        unit="unitless",
+        series=(),
+        x_limits=(0.0, 1.0),
+        y_limits=(0.0, 1.0),
+    )
+
+    canvas.render(empty, TraceVisibility(reference=True, generated=True))
+
+    assert canvas.axes.get_legend() is None
 
 
 def test_canvas_renders_histogram_zero_iat_annotation_and_log_scale(canvas: DashboardCanvas) -> None:

@@ -17,6 +17,17 @@ def test_zoom_limits_y_only_when_control_requests_it() -> None:
     assert limits == AxisView(x=(0.0, 10.0), y=(-5.0, 120.0))
 
 
+def test_zoom_rejects_unknown_axis_selection() -> None:
+    with pytest.raises(ValueError, match="axes must"):
+        zoom_limits(
+            xlim=(0.0, 10.0),
+            ylim=(0.0, 10.0),
+            cursor=(1.0, 1.0),
+            factor=0.8,
+            axes="unknown",  # type: ignore[arg-type]
+        )
+
+
 def test_log_zoom_preserves_cursor_fraction_and_positive_bounds() -> None:
     limits = zoom_limits(
         xlim=(0.1, 100.0),
@@ -102,6 +113,53 @@ def test_log_transform_rejects_nonpositive_bounds_or_points() -> None:
             anchor=(0.0, 0.5),
             current=(1.0, 0.5),
             x_scale="log",
+        )
+        is None
+    )
+
+
+def test_axis_transform_rejects_unknown_scales_and_overflowing_inverse() -> None:
+    with pytest.raises(ValueError, match="axis scale"):
+        zoom_limits(
+            xlim=(1.0, 10.0),
+            ylim=(0.0, 1.0),
+            cursor=(2.0, 0.5),
+            factor=0.8,
+            axes="x",
+            x_scale="unsupported",  # type: ignore[arg-type]
+        )
+    assert (
+        zoom_limits(
+            xlim=(1.0, 10.0),
+            ylim=(0.0, 1.0),
+            cursor=(1.0, 0.5),
+            factor=1e308,
+            axes="x",
+            x_scale="log",
+        )
+        is None
+    )
+    assert (
+        pan_limits(
+            xlim=(1.0, 1e308),
+            ylim=(0.0, 1.0),
+            anchor=(1e308, 0.5),
+            current=(1.0, 0.5),
+            x_scale="log",
+        )
+        is None
+    )
+
+
+def test_zoom_rejects_invalid_log_y_axis_after_valid_x_update() -> None:
+    assert (
+        zoom_limits(
+            xlim=(1.0, 10.0),
+            ylim=(0.0, 1.0),
+            cursor=(2.0, 0.5),
+            factor=0.8,
+            axes="both",
+            y_scale="log",
         )
         is None
     )

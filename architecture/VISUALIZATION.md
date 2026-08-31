@@ -44,6 +44,11 @@ configuration, fitted-model, and comparison parsers. Required-artifact failure
 rejects the new run. Optional-artifact failure disables only dependent aspects
 and records one actionable reason per unavailable aspect.
 
+Validated similarity and fitted-model artifacts are accepted only when their
+stored content identities, byte sizes, and observation window match the exact
+loaded capture metadata and trace bytes on which they depend. A schema-valid
+artifact from another run degrades as an unavailable optional artifact.
+
 ## Loaded run contract
 
 The loaded value is an immutable `DashboardRun` containing:
