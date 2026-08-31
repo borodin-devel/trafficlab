@@ -51,25 +51,21 @@ def realize_configuration(portable: ExperimentConfig, config_directory: Path) ->
         ) from error
 
 
-def load_configuration_pair(path: Path) -> ConfigurationPair:
-    """Load a portable experiment and realize its host paths relative to its TOML file."""
+def parse_configuration_pair(content: bytes, *, source: Path) -> ConfigurationPair:
+    """Parse a portable experiment and realize its host paths relative to its source file."""
     try:
-        with path.open("rb") as stream:
-            data = tomllib.load(stream)
+        text = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise TrafficlabError(
-            f"experiment configuration {path} is not valid UTF-8: {error}",
+            f"experiment configuration {source} is not valid UTF-8: {error}",
             corrective_action="save the experiment file as valid UTF-8 and retry",
         ) from error
+    try:
+        data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise TrafficlabError(
-            f"invalid TOML in experiment configuration {path}: {error}",
+            f"invalid TOML in experiment configuration {source}: {error}",
             corrective_action="correct the TOML syntax and retry",
-        ) from error
-    except OSError as error:
-        raise TrafficlabError(
-            f"could not read experiment configuration {path}: {error}",
-            corrective_action="verify the experiment file exists and is readable",
         ) from error
 
     try:
@@ -82,25 +78,49 @@ def load_configuration_pair(path: Path) -> ConfigurationPair:
                 corrective_action="correct the named field or path",
             ) from error
         raise TrafficlabError(
-            f"invalid experiment configuration {path}: {_format_validation_errors(error)}",
+            f"invalid experiment configuration {source}: {_format_validation_errors(error)}",
             corrective_action="correct the reported configuration values and retry",
         ) from error
 
     try:
         return ConfigurationPair(
             portable=portable,
-            realized=realize_configuration(portable, path.parent.resolve()),
+            realized=realize_configuration(portable, source.parent.resolve()),
         )
     except (OSError, RuntimeError) as error:
         raise TrafficlabError(
-            f"could not resolve experiment paths from {path}: {error}",
+            f"could not resolve experiment paths from {source}: {error}",
             corrective_action="verify the configured host paths can be resolved and retry",
         ) from error
 
 
+def load_configuration_pair(path: Path) -> ConfigurationPair:
+    """Load a portable experiment and realize its host paths relative to its TOML file."""
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not read experiment configuration {path}: {error}",
+            corrective_action="verify the experiment file exists and is readable",
+        ) from error
+    return parse_configuration_pair(content, source=path)
+
+
+def parse_experiment(content: bytes, *, source: Path) -> ExperimentConfig:
+    """Parse one experiment configuration into its realized form."""
+    return parse_configuration_pair(content, source=source).realized
+
+
 def load_experiment(path: Path) -> ExperimentConfig:
     """Load one experiment in the realized form for compatibility."""
-    return load_configuration_pair(path).realized
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not read experiment configuration {path}: {error}",
+            corrective_action="verify the experiment file exists and is readable",
+        ) from error
+    return parse_experiment(content, source=path)
 
 
 def render_effective_config(config: ExperimentConfig) -> bytes:

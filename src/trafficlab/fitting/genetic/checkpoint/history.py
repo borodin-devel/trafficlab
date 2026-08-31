@@ -95,6 +95,11 @@ def _parse_history_csv(content: bytes, family_names: frozenset[FamilyName]) -> t
     return tuple(parsed)
 
 
+def parse_history_csv(content: bytes, family_names: frozenset[FamilyName]) -> tuple[HistoryRow, ...]:
+    """Parse one exact derived history CSV byte buffer."""
+    return _parse_history_csv(content, family_names)
+
+
 def load_history_csv(path: Path, family_names: frozenset[FamilyName]) -> tuple[HistoryRow, ...]:
     """Load and strictly validate one derived history CSV artifact."""
     try:
@@ -105,7 +110,7 @@ def load_history_csv(path: Path, family_names: frozenset[FamilyName]) -> tuple[H
             corrective_action="verify ga_history.csv exists and is readable",
         ) from error
     try:
-        return _parse_history_csv(content, family_names)
+        return parse_history_csv(content, family_names)
     except ValueError as error:
         raise TrafficlabError(
             f"invalid history artifact {path}: {error}",

@@ -1,43 +1,29 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from types import MappingProxyType
 
+from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig
-from trafficlab.common.config_io import load_experiment
+from trafficlab.common.config_io import parse_experiment
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.common.scapy_io import read_pcapng
+from trafficlab.common.scapy_io import read_pcapng_bytes
 from trafficlab.common.trace import (
     CaptureMetadata,
     TrafficTrace,
     align_generated,
-    load_capture_metadata,
     normalize_reference,
+    parse_capture_metadata,
 )
-from trafficlab.comparison.codec import load_comparison_result
+from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.schema import ComparisonResult
-from trafficlab.fitting.genetic.checkpoint import load_history_csv
+from trafficlab.fitting.genetic.checkpoint import parse_history_csv
 from trafficlab.fitting.genetic.types import HistoryRow
 from trafficlab.generation.models import BestModel, load_best_model
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
 
 _SIMILARITY_DEPENDENTS = ("similarity_scores", "multiscale_discrepancy")
 _GA_HISTORY_DEPENDENTS = ("ga_fitness_history",)
-
-
-def _hash_artifact(path: Path, *, artifact_name: str) -> str:
-    digest = hashlib.sha256()
-    try:
-        with path.open("rb") as stream:
-            while chunk := stream.read(64 * 1024):
-                digest.update(chunk)
-    except OSError as error:
-        raise TrafficlabError(
-            f"could not hash {artifact_name} artifact {path}: {error}",
-            corrective_action=f"verify {artifact_name} exists and is readable",
-        ) from error
-    return digest.hexdigest()
 
 
 def _read_artifact_bytes(path: Path, *, artifact_name: str) -> bytes:
@@ -48,6 +34,11 @@ def _read_artifact_bytes(path: Path, *, artifact_name: str) -> bytes:
             f"could not read {artifact_name} artifact {path}: {error}",
             corrective_action=f"verify {artifact_name} exists and is readable",
         ) from error
+
+
+def _read_artifact_with_sha256(path: Path, *, artifact_name: str) -> tuple[bytes, str]:
+    content = _read_artifact_bytes(path, artifact_name=artifact_name)
+    return content, identify_bytes(content).sha256
 
 
 def _wrap_required_artifact_error(
@@ -66,30 +57,33 @@ def _wrap_required_artifact_error(
 def _load_required_metadata(directory: Path) -> tuple[CaptureMetadata, str]:
     path = directory / "capture.json"
     try:
-        metadata = load_capture_metadata(path)
+        content, sha256 = _read_artifact_with_sha256(path, artifact_name="capture.json")
+        metadata = parse_capture_metadata(content, source=path)
     except TrafficlabError as error:
         raise _wrap_required_artifact_error(artifact_name="capture.json", source=error) from error
-    return metadata, _hash_artifact(path, artifact_name="capture.json")
+    return metadata, sha256
 
 
 def _load_required_reference(directory: Path, metadata: CaptureMetadata) -> tuple[TrafficTrace, float, str]:
     path = directory / "reference.pcapng"
     try:
-        trace = read_pcapng(path, metadata)
+        content, sha256 = _read_artifact_with_sha256(path, artifact_name="reference.pcapng")
+        trace = read_pcapng_bytes(content, metadata, source=path)
         normalized, window = normalize_reference(trace)
     except TrafficlabError as error:
         raise _wrap_required_artifact_error(artifact_name="reference.pcapng", source=error) from error
-    return normalized, window, _hash_artifact(path, artifact_name="reference.pcapng")
+    return normalized, window, sha256
 
 
 def _load_required_generated(directory: Path, metadata: CaptureMetadata, window: float) -> tuple[TrafficTrace, str]:
     path = directory / "generated.pcapng"
     try:
-        trace = read_pcapng(path, metadata)
+        content, sha256 = _read_artifact_with_sha256(path, artifact_name="generated.pcapng")
+        trace = read_pcapng_bytes(content, metadata, source=path)
         aligned = align_generated(trace, window)
     except TrafficlabError as error:
         raise _wrap_required_artifact_error(artifact_name="generated.pcapng", source=error) from error
-    return aligned, _hash_artifact(path, artifact_name="generated.pcapng")
+    return aligned, sha256
 
 
 def _disable(unavailable: dict[str, str], aspect_ids: tuple[str, ...], reason: str) -> None:
@@ -106,9 +100,17 @@ def _load_optional_similarity(
         _disable(unavailable, _SIMILARITY_DEPENDENTS, "similarity.json is missing")
         return None, None
     try:
-        return load_comparison_result(path), _hash_artifact(path, artifact_name="similarity.json")
+        content, sha256 = _read_artifact_with_sha256(path, artifact_name="similarity.json")
+        return parse_comparison_result(content), sha256
     except TrafficlabError as error:
         _disable(unavailable, _SIMILARITY_DEPENDENTS, f"similarity.json is unavailable: {error}")
+        return None, None
+    except ValueError as error:
+        _disable(
+            unavailable,
+            _SIMILARITY_DEPENDENTS,
+            f"similarity.json is unavailable: invalid similarity artifact {path}: {error}",
+        )
         return None, None
 
 
@@ -117,8 +119,8 @@ def _load_optional_best_model(directory: Path) -> tuple[BestModel | None, str | 
     if not path.exists():
         return None, None
     try:
-        content = _read_artifact_bytes(path, artifact_name="best_model.json")
-        return load_best_model(content, source=path), hashlib.sha256(content).hexdigest()
+        content, sha256 = _read_artifact_with_sha256(path, artifact_name="best_model.json")
+        return load_best_model(content, source=path), sha256
     except TrafficlabError:
         return None, None
 
@@ -128,7 +130,8 @@ def _load_optional_experiment(directory: Path) -> tuple[ExperimentConfig | None,
     if not path.exists():
         return None, None, "experiment.toml is missing"
     try:
-        return load_experiment(path), _hash_artifact(path, artifact_name="experiment.toml"), None
+        content, sha256 = _read_artifact_with_sha256(path, artifact_name="experiment.toml")
+        return parse_experiment(content, source=path), sha256, None
     except TrafficlabError as error:
         return None, None, f"experiment.toml is unavailable: {error}"
 
@@ -151,10 +154,18 @@ def _load_optional_history(
         _disable(unavailable, _GA_HISTORY_DEPENDENTS, "ga_history.csv is missing")
         return None, None
     try:
-        rows = load_history_csv(path, frozenset(experiment.models.enabled))
-        return rows, _hash_artifact(path, artifact_name="ga_history.csv")
+        content, sha256 = _read_artifact_with_sha256(path, artifact_name="ga_history.csv")
+        rows = parse_history_csv(content, frozenset(experiment.models.enabled))
+        return rows, sha256
     except TrafficlabError as error:
         _disable(unavailable, _GA_HISTORY_DEPENDENTS, f"ga_history.csv is unavailable: {error}")
+        return None, None
+    except ValueError as error:
+        _disable(
+            unavailable,
+            _GA_HISTORY_DEPENDENTS,
+            f"ga_history.csv is unavailable: invalid history artifact {path}: {error}",
+        )
         return None, None
 
 
