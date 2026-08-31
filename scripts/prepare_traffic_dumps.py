@@ -278,8 +278,8 @@ def infer_target_mac(path: Path) -> InferredTargetMac:
     return min(
         candidates,
         key=lambda candidate: (
-            -candidate.transmitted_packet_count,
             -candidate.total_appearances,
+            -candidate.transmitted_packet_count,
             candidate.target_mac,
         ),
     )

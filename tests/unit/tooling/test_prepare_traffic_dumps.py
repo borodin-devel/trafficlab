@@ -260,7 +260,7 @@ def test_convert_capture_does_not_publish_when_validation_fails(tmp_path: Path) 
     assert [path.name for path in tmp_path.iterdir()] == ["capture.pcapng"]
 
 
-def test_infer_target_mac_prefers_transmissions_then_total_appearances_then_mac_text(tmp_path: Path) -> None:
+def test_infer_target_mac_prefers_more_transmissions_after_total_appearance_tie(tmp_path: Path) -> None:
     capture = tmp_path / "capture.pcapng"
     capture.write_bytes(
         _capture(
@@ -268,7 +268,6 @@ def test_infer_target_mac_prefers_transmissions_then_total_appearances_then_mac_
             _ethernet(_TARGET, _PEER),
             _ethernet(_PEER, _TARGET),
             _ethernet(_OTHER, _PEER),
-            _ethernet(_PEER, _OTHER),
             _ethernet(_TARGET, _OTHER),
         )
     )
@@ -280,6 +279,36 @@ def test_infer_target_mac_prefers_transmissions_then_total_appearances_then_mac_
     assert inferred.source_count == 3
     assert inferred.destination_count == 1
     assert inferred.total_appearances == 4
+
+
+def test_infer_target_mac_prefers_total_appearances_before_transmissions(tmp_path: Path) -> None:
+    target = bytes.fromhex("00163e0ca5da")
+    louder_peer = bytes.fromhex("eeffffffffff")
+    peer_a = bytes.fromhex("020000000010")
+    peer_b = bytes.fromhex("020000000011")
+    peer_c = bytes.fromhex("020000000012")
+    peer_d = bytes.fromhex("020000000013")
+    peer_e = bytes.fromhex("020000000014")
+    capture = tmp_path / "capture.pcapng"
+    capture.write_bytes(
+        _capture(
+            _ethernet(target, louder_peer),
+            _ethernet(target, peer_a),
+            _ethernet(peer_b, target),
+            _ethernet(peer_c, target),
+            _ethernet(louder_peer, target),
+            _ethernet(louder_peer, peer_d),
+            _ethernet(louder_peer, peer_e),
+        )
+    )
+
+    inferred = prepare.infer_target_mac(capture)
+
+    assert inferred.target_mac == "00:16:3e:0c:a5:da"
+    assert inferred.transmitted_packet_count == 2
+    assert inferred.source_count == 2
+    assert inferred.destination_count == 3
+    assert inferred.total_appearances == 5
 
 
 def test_infer_target_mac_breaks_equal_transmissions_and_totals_by_ascending_mac_text(tmp_path: Path) -> None:
