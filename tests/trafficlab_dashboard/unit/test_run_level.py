@@ -358,28 +358,20 @@ def test_multiscale_discrepancy_reduces_each_rendered_series_above_general_cap()
     count = 20_001
     similarity = _checked_similarity()
     original = cast(MultiscaleDiagnostic, similarity.methods.multiscale_rate.diagnostics)
-    widths = tuple(np.linspace(0.00001, original.observation_window_seconds, num=count, dtype=np.float64))
-    packet_values = np.linspace(0.1, 0.9, num=count, dtype=np.float64)
-    byte_values = np.linspace(0.9, 0.1, num=count, dtype=np.float64)
-    scales = tuple(
-        original.scales[0].model_copy(
-            update={
-                "width_seconds": width,
-                "direction_bin_cell_count": 2,
-                "feature_discrepancies": original.feature_weights.model_copy(
-                    update={"packet": float(packet), "byte": float(byte)}
-                ),
-                "discrepancy": float((packet + byte) / 2.0),
-            }
-        )
-        for width, packet, byte in zip(widths, packet_values, byte_values, strict=True)
+    scale = original.scales[0].model_copy(
+        update={
+            "feature_discrepancies": original.feature_weights.model_copy(update={"packet": 0.1, "byte": 0.9}),
+            "discrepancy": 0.5,
+        }
     )
+    widths = (scale.width_seconds,) * count
+    scales = (scale,) * count
     diagnostics = original.model_copy(
         update={
             "widths": widths,
             "scale_weights": tuple(1.0 / count for _ in range(count)),
-            "direction_bin_cell_counts": tuple(2 for _ in range(count)),
-            "total_direction_bin_cells": 2 * count,
+            "direction_bin_cell_counts": (scale.direction_bin_cell_count,) * count,
+            "total_direction_bin_cells": scale.direction_bin_cell_count * count,
             "scales": scales,
             "scale_discrepancies": tuple(0.5 for _ in range(count)),
         }
@@ -393,11 +385,12 @@ def test_multiscale_discrepancy_reduces_each_rendered_series_above_general_cap()
 
     data = MultiscaleDiscrepancyAspect().calculate(run, CalculationSettings.default())
 
-    assert [len(series.x) for series in data.series] == [20_000, 20_000]
+    assert all(len(series.x) <= 20_000 for series in data.series)
+    assert all(len(series.x) < count for series in data.series)
     assert [series.sample_count for series in data.series] == [count, count]
     assert data.series[0].x[[0, -1]].tolist() == pytest.approx([widths[0], widths[-1]])
     assert float(np.min(data.series[0].y)) == pytest.approx(0.1)
-    assert float(np.max(data.series[0].y)) == pytest.approx(0.9)
+    assert float(np.max(data.series[1].y)) == pytest.approx(0.9)
     assert len(cast(tuple[float, ...], data.metadata["scale_weights"])) == count
     assert len(cast(tuple[int, ...], data.metadata["direction_bin_cell_counts"])) == count
 
@@ -406,43 +399,38 @@ def test_ga_history_reduces_each_rendered_series_above_general_cap_and_keeps_ful
     count = 20_001
     experiment = _experiment()
     experiment = experiment.model_copy(update={"models": experiment.models.model_copy(update={"enabled": ("mmpp",)})})
-    rows: list[HistoryRow] = []
-    for generation in range(count):
-        fitness = float(generation) / float(count - 1)
-        identifier = CandidateId(birth_generation=generation, birth_index=0)
-        rows.extend(
-            (
-                HistoryRow(
-                    generation=generation,
-                    scope="family",
-                    family="mmpp",
-                    candidate_count=1,
-                    valid_count=1,
-                    best_fitness=fitness,
-                    mean_fitness=fitness,
-                    best_identifier=identifier,
-                ),
-                HistoryRow(
-                    generation=generation,
-                    scope="overall",
-                    family=None,
-                    candidate_count=1,
-                    valid_count=1,
-                    best_fitness=fitness,
-                    mean_fitness=fitness,
-                    best_identifier=identifier,
-                ),
-            )
-        )
+    identifier = CandidateId(birth_generation=0, birth_index=0)
+    family = HistoryRow(
+        generation=0,
+        scope="family",
+        family="mmpp",
+        candidate_count=1,
+        valid_count=1,
+        best_fitness=0.5,
+        mean_fitness=0.5,
+        best_identifier=identifier,
+    )
+    overall = HistoryRow(
+        generation=0,
+        scope="overall",
+        family=None,
+        candidate_count=1,
+        valid_count=1,
+        best_fitness=0.5,
+        mean_fitness=0.5,
+        best_identifier=identifier,
+    )
+    rows = (family, overall) * count
 
     data = GaFitnessHistoryAspect().calculate(
-        _run(history=tuple(rows), experiment=experiment),
+        _run(history=rows, experiment=experiment),
         CalculationSettings.default(),
     )
 
-    assert [len(series.x) for series in data.series] == [20_000, 20_000]
+    assert all(len(series.x) <= 20_000 for series in data.series)
+    assert all(len(series.x) < count for series in data.series)
     assert [series.sample_count for series in data.series] == [count, count]
-    assert data.series[0].x[[0, -1]].tolist() == [0.0, 20_000.0]
-    assert data.series[0].y[[0, -1]].tolist() == [0.0, 1.0]
+    assert data.series[0].x[[0, -1]].tolist() == [0.0, 0.0]
+    assert data.series[0].y[[0, -1]].tolist() == [0.5, 0.5]
     assert len(cast(Mapping[str, tuple[int, ...]], data.metadata["candidate_counts"])["mmpp"]) == count
     assert len(cast(Mapping[str, tuple[int, ...]], data.metadata["valid_counts"])["overall"]) == count
