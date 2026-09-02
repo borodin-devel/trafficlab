@@ -58,8 +58,8 @@ repeating a real capture.
 - [Research fitness criteria](RESEARCH_FITNESS_CRITERIA.md) defines a five-level
   rubric for scientific correctness, configurability, robustness, and
   reproducibility without grading the current implementation.
-- [Traffic model candidates](CANDIDATES.md) catalogs literature-backed research
-  alternatives and their priorities without declaring them implemented.
+- [Research candidates](CANDIDATES.md) catalogs literature-backed traffic-model
+  and similarity-method alternatives without declaring them implemented.
 - [Genetic models](genetic_models/README.md) describes model-family competition
   and the enabled evolutionary strategy.
 - [Traffic models](traffic_models/README.md) owns the common model interface and
@@ -89,6 +89,7 @@ and registry entry; remove the document when the algorithm is removed. Do not
 create amendments, versioned design documents, SAD/SRS document sets, or empty
 algorithm placeholders. Keep implementation plans, task checklists, completion
 evidence, and progress state outside `architecture/`. `CANDIDATES.md` may
-catalog and prioritize literature-backed alternatives, but it remains
+catalog and prioritize literature-backed model and similarity alternatives,
+but it remains
 non-normative and must not contain implementation plans, task state, or dated
 experiment results.

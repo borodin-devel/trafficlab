@@ -406,7 +406,7 @@ def test_architecture_inventory_includes_top_level_contracts() -> None:
     architecture = REPOSITORY / "architecture"
 
     assert {path.name for path in architecture.glob("*.md")} == TOP_LEVEL_ARCHITECTURE_DOCUMENTS
-    assert "- [Traffic model candidates](CANDIDATES.md)" in (architecture / "README.md").read_text(encoding="utf-8")
+    assert "- [Research candidates](CANDIDATES.md)" in (architecture / "README.md").read_text(encoding="utf-8")
     assert "- [Visualization](VISUALIZATION.md)" in (architecture / "README.md").read_text(encoding="utf-8")
     assert "- [Visualization companion](architecture/VISUALIZATION.md)" in (REPOSITORY / "README.md").read_text(
         encoding="utf-8"
