@@ -27,6 +27,7 @@ from trafficlab.fitting.genetic.types import (
     HistoryRow,
     TerminalReason,
     TrialResult,
+    validate_model_diagnostics_for_family,
 )
 from trafficlab.generation.models.common import Genes
 
@@ -269,6 +270,20 @@ class _CandidateRecord(_StrictCheckpointModel):
     fitness: UnitFloat
     trials: Annotated[tuple[TrialResult, ...], BeforeValidator(_tuple_input)]
     duplicate_diagnostics: Annotated[tuple[DuplicateDiagnostic, ...], BeforeValidator(_tuple_input)]
+
+    @model_validator(mode="after")
+    def diagnostics_match_packet_hmm_gene(self) -> Self:
+        packet_hmm_state_count: int | None = None
+        if self.family == "packet_hmm" and self.trials:
+            genes = cast(Genes | None, getattr(self, "genes", None))
+            if genes is None or len(genes) != 1 or type(genes[0]) is not int or not 2 <= genes[0] <= 4:
+                raise ValueError("packet_hmm model diagnostics require one state_count gene in 2..4")
+            packet_hmm_state_count = genes[0]
+        for trial in self.trials:
+            validate_model_diagnostics_for_family(
+                self.family, trial.model_diagnostics, packet_hmm_state_count=packet_hmm_state_count
+            )
+        return self
 
 
 class PendingCandidateRecord(_CandidateRecord):

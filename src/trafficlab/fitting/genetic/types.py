@@ -111,8 +111,17 @@ def _validate_model_diagnostic_shape(diagnostics: ModelDiagnostics) -> None:
         raise ValueError("model diagnostics must be empty or use one complete registered counter namespace")
 
 
-def validate_model_diagnostics_for_family(family: FamilyName, diagnostics: ModelDiagnostics) -> None:
+def validate_model_diagnostics_for_family(
+    family: FamilyName, diagnostics: ModelDiagnostics, *, packet_hmm_state_count: int | None = None
+) -> None:
     """Require the one diagnostics namespace owned by a candidate family."""
+    if family == "packet_hmm" and packet_hmm_state_count is not None:
+        if not _is_packet_hmm_diagnostic_shape(diagnostics):
+            raise ValueError(f"model diagnostics for family {family} do not match its canonical counter namespace")
+        actual_state_count = sum(1 for name in diagnostics if name.startswith("hidden_state_"))
+        if actual_state_count != packet_hmm_state_count:
+            raise ValueError("model diagnostics for packet_hmm must match the state_count gene")
+        return
     valid = (
         frozenset(diagnostics) == _MARKOV_MODEL_DIAGNOSTIC_NAMES
         if family in {"markov_renewal", "markov_packet_train"}
@@ -278,8 +287,20 @@ class Candidate(_StrictGeneticModel):
     @model_validator(mode="after")
     def validate_candidate(self) -> Self:
         validate_candidate_id(self.identifier)
+        packet_hmm_state_count: int | None = None
+        if self.family == "packet_hmm" and self.trials:
+            if (
+                self.genes is None
+                or len(self.genes) != 1
+                or type(self.genes[0]) is not int
+                or not 2 <= self.genes[0] <= 4
+            ):
+                raise ValueError("packet_hmm model diagnostics require one state_count gene in 2..4")
+            packet_hmm_state_count = self.genes[0]
         for trial in self.trials:
-            validate_model_diagnostics_for_family(self.family, trial.model_diagnostics)
+            validate_model_diagnostics_for_family(
+                self.family, trial.model_diagnostics, packet_hmm_state_count=packet_hmm_state_count
+            )
         return self
 
 

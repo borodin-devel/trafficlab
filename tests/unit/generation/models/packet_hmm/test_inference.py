@@ -8,7 +8,9 @@ import math
 import numpy as np
 import pytest
 
+import trafficlab.generation.models.packet_hmm.inference as inference_module
 from trafficlab.generation.models.packet_hmm.inference import (
+    ForwardBackwardResult,
     canonicalize_states,
     fit_baum_welch,
     fixed_initial_parameters,
@@ -114,6 +116,55 @@ def test_iteration_cap_persists_explicit_nonconvergence() -> None:
 
     assert result.diagnostics.iterations == 1
     assert result.diagnostics.converged is False
+
+
+def test_backtracking_uses_exact_halves_of_the_original_m_step_proposal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Blending an already blended candidate would skip the required quarter-step acceptance point."""
+    gamma = np.asarray(((0.8, 0.2), (0.2, 0.8)), dtype=np.float64)
+    xi = np.asarray((((0.1, 0.7), (0.1, 0.1)),), dtype=np.float64)
+    seen_emission_00: list[float] = []
+    proposed_emission_00 = 0.801 / 1.002
+    accepted_emission_00 = 0.75 + 0.125 * (proposed_emission_00 - 0.75)
+
+    def controlled_forward(
+        observations: object,
+        initial_probabilities: object,
+        transition_rows: object,
+        emission_rows: object,
+    ) -> ForwardBackwardResult:
+        del observations, initial_probabilities, transition_rows
+        emission_00 = float(tuple(tuple(row) for row in emission_rows)[0][0])  # type: ignore[arg-type]
+        seen_emission_00.append(emission_00)
+        fraction = (emission_00 - 0.75) / (proposed_emission_00 - 0.75)
+        log_likelihood = 0.0 if len(seen_emission_00) == 1 or math.isclose(fraction, 0.125, abs_tol=1e-14) else -1.0
+        return ForwardBackwardResult(
+            log_likelihood=log_likelihood,
+            alpha=gamma.copy(),
+            beta=np.ones_like(gamma),
+            gamma=gamma.copy(),
+            xi=xi.copy(),
+            scales=np.ones(2, dtype=np.float64),
+        )
+
+    monkeypatch.setattr(inference_module, "forward_backward", controlled_forward)
+
+    result = fit_baum_welch(
+        (0, 1),
+        state_count=2,
+        symbol_count=2,
+        symbol_iat_means=(1.0, 2.0),
+        maximum_iterations=1,
+        tolerance=0.0,
+        smoothing=0.001,
+    )
+
+    assert result.parameters.emission_rows[0][0] == pytest.approx(accepted_emission_00, abs=1e-15)
+    assert seen_emission_00[:5] == pytest.approx(
+        (0.75, proposed_emission_00, 0.7747005988023952, 0.7623502994011976, accepted_emission_00)
+    )
+    assert result.diagnostics == inference_module.BaumWelchDiagnostics(True, 1, (0.0, 0.0))
 
 
 def test_canonicalization_is_invariant_to_input_label_permutation() -> None:

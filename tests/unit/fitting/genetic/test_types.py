@@ -187,6 +187,32 @@ def test_packet_hmm_diagnostics_require_contiguous_state_and_category_counters()
             TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=malformed)
 
 
+def test_packet_hmm_candidate_diagnostics_hidden_state_count_matches_gene() -> None:
+    """A four-state chromosome cannot checkpoint evidence containing only two hidden-state counters."""
+    trial = TrialResult(
+        seed=3,
+        aggregate_score=0.5,
+        methods=_methods(),
+        model_diagnostics={
+            "hidden_state_0_count": 3,
+            "hidden_state_1_count": 2,
+            "category_0_count": 5,
+        },
+    )
+
+    with pytest.raises(ValueError, match="model diagnostics.*packet_hmm.*state_count"):
+        Candidate(
+            identifier=CandidateId(birth_generation=0, birth_index=10),
+            family="packet_hmm",
+            genes=(4,),
+            status="valid",
+            fitness=0.5,
+            trials=(trial,),
+            invalid=None,
+            duplicate_diagnostics=(),
+        )
+
+
 def test_candidate_requires_model_diagnostics_owned_by_its_family() -> None:
     """A complete Markov namespace remains invalid evidence for another family."""
     trial = TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=_MARKOV_MODEL_DIAGNOSTICS)

@@ -313,6 +313,7 @@ def fit_baum_welch(
         emission_denominators = current.gamma.sum(axis=0) + smoothing * symbol_count
         emissions = (emission_counts + smoothing) / emission_denominators[:, np.newaxis]
         candidate = _as_parameters(initial, transitions, emissions)
+        proposal = candidate
         candidate_result = forward_backward(
             symbols, candidate.initial_probabilities, candidate.transition_rows, candidate.emission_rows
         )
@@ -323,7 +324,7 @@ def fit_baum_welch(
                 candidate = parameters
                 candidate_result = current
                 break
-            candidate = _blend_parameters(parameters, candidate, fraction)
+            candidate = _blend_parameters(parameters, proposal, fraction)
             candidate_result = forward_backward(
                 symbols, candidate.initial_probabilities, candidate.transition_rows, candidate.emission_rows
             )

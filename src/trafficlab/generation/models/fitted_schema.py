@@ -272,18 +272,22 @@ type PacketHmmReservoirs = Annotated[tuple[PacketHmmSamples, ...], BeforeValidat
 
 
 class PacketHmmPayload(_StrictWireModel):
-    additive_smoothing: ExactFloat
-    convergence_tolerance: ExactFloat
+    additive_smoothing: Annotated[ExactFloat, Field(json_schema_extra={"const": 0.001})]
+    convergence_tolerance: Annotated[ExactFloat, Field(json_schema_extra={"const": 1e-8})]
     diagnostics: PacketHmmDiagnosticsPayload
     emission_rows: FloatMatrix
-    iat_quantiles: Annotated[tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input)]
+    iat_quantiles: Annotated[
+        tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input), Field(json_schema_extra={"const": [1 / 3, 2 / 3]})
+    ]
     iat_thresholds: FloatVector
     initial_marks: MarkPayloads
     initial_probabilities: FloatVector
     initialization: Literal["fixed_cyclic_v1"]
-    maximum_iterations: PositiveInt
+    maximum_iterations: Literal[100]
     reservoirs: PacketHmmReservoirs
-    size_quantiles: Annotated[tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input)]
+    size_quantiles: Annotated[
+        tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input), Field(json_schema_extra={"const": [1 / 3, 2 / 3]})
+    ]
     size_thresholds: Annotated[tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input)]
     state_count: Annotated[StrictInt, Field(ge=2, le=4)]
     transition_rows: FloatMatrix
@@ -291,13 +295,11 @@ class PacketHmmPayload(_StrictWireModel):
 
     @model_validator(mode="after")
     def fixed_estimator_and_table_shapes_are_complete(self) -> Self:
+        terciles = (1.0 / 3.0, 2.0 / 3.0)
         if self.additive_smoothing != 0.001:
             raise ValueError("additive_smoothing must equal the fixed value 0.001")
         if self.convergence_tolerance != 1e-8:
             raise ValueError("convergence_tolerance must equal the fixed value 1e-8")
-        if self.maximum_iterations != 100:
-            raise ValueError("maximum_iterations must equal the fixed value 100")
-        terciles = (1.0 / 3.0, 2.0 / 3.0)
         if self.iat_quantiles != terciles or self.size_quantiles != terciles:
             raise ValueError("IAT and size quantiles must equal the fixed Type-7 terciles")
         if len(self.iat_thresholds) not in {0, 2}:
@@ -319,8 +321,20 @@ class PacketHmmPayload(_StrictWireModel):
             raise ValueError("transition_rows must be K x K")
         if len(self.emission_rows) != self.state_count or any(len(row) != symbol_count for row in self.emission_rows):
             raise ValueError("emission_rows must be K x M")
-        if not self.diagnostics.converged and self.diagnostics.iterations != self.maximum_iterations:
-            raise ValueError("nonconverged diagnostics must reach maximum_iterations")
+        if self.diagnostics.converged:
+            if self.diagnostics.iterations < 1:
+                raise ValueError("converged diagnostics require at least one update")
+            else:
+                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
+                if not 0.0 <= final_improvement <= self.convergence_tolerance:
+                    raise ValueError("converged diagnostics require final improvement within tolerance")
+        else:
+            if self.diagnostics.iterations != self.maximum_iterations:
+                raise ValueError("nonconverged diagnostics must reach maximum_iterations")
+            else:
+                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
+                if final_improvement <= self.convergence_tolerance:
+                    raise ValueError("nonconverged diagnostics require final improvement above tolerance")
         return self
 
 

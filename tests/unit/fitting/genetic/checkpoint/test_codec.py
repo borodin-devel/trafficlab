@@ -5,6 +5,7 @@ import math
 from typing import Any, cast
 
 import pytest
+from pydantic import ValidationError
 
 from tests.support.checkpoint import (
     COMPATIBILITY,
@@ -79,6 +80,24 @@ def test_checkpoint_round_trip_retains_exact_model_diagnostic_counts() -> None:
     assert dict(loaded.population[0].trials[0].model_diagnostics) == MARKOV_MODEL_DIAGNOSTICS
     with pytest.raises(TypeError):
         loaded.population[0].trials[0].model_diagnostics["timing_tier_global_count"] = 4  # type: ignore[index]
+
+
+def test_checkpoint_schema_rejects_packet_hmm_diagnostics_with_wrong_gene_state_count() -> None:
+    """Checkpoint decoding must bind hidden-state counters to the packet-HMM chromosome."""
+    document = decoded_checkpoint()
+    population = cast(list[object], document["population"])
+    candidate = cast(dict[str, object], population[0])
+    candidate["family"] = "packet_hmm"
+    candidate["genes"] = [4]
+    trials = cast(list[object], candidate["trials"])
+    cast(dict[str, object], trials[0])["model_diagnostics"] = {
+        "hidden_state_0_count": 3,
+        "hidden_state_1_count": 2,
+        "category_0_count": 5,
+    }
+
+    with pytest.raises(ValidationError, match="model diagnostics.*packet_hmm.*state_count"):
+        CheckpointArtifact.model_validate(document)
 
 
 def test_checkpoint_rejects_postfit_diagnostics_inside_a_genetic_trial() -> None:

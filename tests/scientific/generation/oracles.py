@@ -59,16 +59,6 @@ def enumerate_hmm_paths(
     return HmmPathOracle(likelihood=likelihood, state_posteriors=posteriors)
 
 
-def stationary_distribution_two_state(
-    transitions: tuple[tuple[float, float], tuple[float, float]],
-) -> tuple[float, float]:
-    """Solve pi=pi*A directly from cross-transition probabilities."""
-    cross_total = transitions[0][1] + transitions[1][0]
-    if not math.isfinite(cross_total) or cross_total <= 0.0:
-        raise ValueError("two-state transition kernel must have positive finite cross mass")
-    return (transitions[1][0] / cross_total, transitions[0][1] / cross_total)
-
-
 @dataclass(frozen=True, slots=True)
 class PacketTrainOracle:
     """Independent fitted quantities for one hand-sized packet-train trace."""

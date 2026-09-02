@@ -75,15 +75,19 @@ gives `xi`. Zero or nonfinite scaling mass is an error.
 
 ## Bounded Baum--Welch and labels
 
-Baum--Welch runs at most 100 updates and declares convergence when accepted log
-likelihood improvement is in `[0, 1e-8]`. Initial, transition, and emission
+Baum--Welch runs at most 100 updates and declares convergence only after at
+least one accepted update whose log-likelihood improvement is in `[0, 1e-8]`.
+Initial, transition, and emission
 expected counts receive fixed additive smoothing `0.001` before normalization.
 Because a smoothed MAP-style update can reduce the unsmoothed data likelihood,
 Trafficlab deterministically halves the step between the current and proposed
 tables until likelihood is nondecreasing within absolute tolerance `1e-10`.
 The complete finite likelihood history, update count, and convergence Boolean
-are persisted. Reaching the iteration cap is a valid explicitly nonconverged
-fit, not a false convergence claim or an unbounded retry.
+are persisted. Conversely, a capped fit is nonconverged only when its final
+accepted improvement is strictly greater than `1e-8`; a capped zero or
+tolerance-sized improvement is converged. Reaching the iteration cap is thus a
+valid explicitly nonconverged fit only under that inverse condition, never a
+false convergence claim or an unbounded retry.
 
 Latent labels are canonicalized after fitting. A state's first key is its
 emission-weighted mean raw IAT, where each category contributes its reservoir

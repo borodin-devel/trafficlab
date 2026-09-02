@@ -240,31 +240,52 @@ class PacketHmmModel:
         )
         if self.diagnostics.iterations > self.maximum_iterations:
             raise ValueError("diagnostic iterations exceed maximum_iterations")
-        if not self.diagnostics.converged and self.diagnostics.iterations != self.maximum_iterations:
-            raise ValueError("nonconverged diagnostics must reach maximum_iterations")
+        if self.diagnostics.converged:
+            if self.diagnostics.iterations < 1:
+                raise ValueError("converged diagnostics require at least one update")
+            else:
+                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
+                if not 0.0 <= final_improvement <= self.convergence_tolerance:
+                    raise ValueError("converged diagnostics require final improvement within tolerance")
+        else:
+            if self.diagnostics.iterations != self.maximum_iterations:
+                raise ValueError("nonconverged diagnostics must reach maximum_iterations")
+            else:
+                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
+                if final_improvement <= self.convergence_tolerance:
+                    raise ValueError("nonconverged diagnostics require final improvement above tolerance")
         if type(self.initial_marks) is not MarkDistribution or self.initial_marks.total_count != 1:
             raise ValueError("initial_marks must contain exactly the observed t0 mark")
-        MarkDistribution(self.initial_marks.entries)
+        initial_marks = MarkDistribution(
+            tuple(MarkCount(entry.direction, entry.frame_length, entry.count) for entry in self.initial_marks.entries)
+        )
+        object.__setattr__(self, "initial_marks", initial_marks)
         if type(self.vocabulary) is not tuple or not self.vocabulary:
             raise ValueError("vocabulary must be a nonempty tuple")
         if any(type(category) is not PacketCategory for category in self.vocabulary):
             raise TypeError("vocabulary entries must be PacketCategory values")
-        if len(set(self.vocabulary)) != len(self.vocabulary):
+        vocabulary = tuple(
+            PacketCategory(category.iat_bin, category.direction, category.size_bin) for category in self.vocabulary
+        )
+        object.__setattr__(self, "vocabulary", vocabulary)
+        if len(set(vocabulary)) != len(vocabulary):
             raise ValueError("vocabulary entries must be unique")
-        symbol_count = len(self.vocabulary)
+        symbol_count = len(vocabulary)
         if type(self.reservoirs) is not tuple or len(self.reservoirs) != symbol_count:
             raise ValueError("reservoirs must contain one sample tuple per vocabulary category")
+        reservoirs: list[tuple[PacketSample, ...]] = []
         all_samples: list[PacketSample] = []
-        for _category, reservoir in zip(self.vocabulary, self.reservoirs, strict=True):
+        for _category, reservoir in zip(vocabulary, self.reservoirs, strict=True):
             if (
                 type(reservoir) is not tuple
                 or not reservoir
                 or any(type(sample) is not PacketSample for sample in reservoir)
             ):
                 raise ValueError("each category reservoir must be a nonempty tuple of PacketSample values")
-            for sample in reservoir:
-                PacketSample(sample.iat, sample.frame_length)
-                all_samples.append(sample)
+            checked_reservoir = tuple(PacketSample(sample.iat, sample.frame_length) for sample in reservoir)
+            reservoirs.append(checked_reservoir)
+            all_samples.extend(checked_reservoir)
+        object.__setattr__(self, "reservoirs", tuple(reservoirs))
         positive_iats = tuple(sample.iat for sample in all_samples if sample.iat > 0.0)
         checked_iat_thresholds = _validate_thresholds(
             self.iat_thresholds,
@@ -283,7 +304,7 @@ class PacketHmmModel:
                 allow_empty=False,
             ),
         )
-        for category, reservoir in zip(self.vocabulary, self.reservoirs, strict=True):
+        for category, reservoir in zip(vocabulary, reservoirs, strict=True):
             for sample in reservoir:
                 if iat_bin(sample.iat, checked_iat_thresholds) != category.iat_bin:
                     raise ValueError("reservoir sample does not belong to its IAT bin")

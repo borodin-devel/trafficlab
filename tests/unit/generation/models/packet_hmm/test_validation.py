@@ -65,3 +65,31 @@ def test_model_rejects_shape_probability_category_and_estimator_corruption(
     """A fitted model is self-validating even when constructed outside the JSON codec."""
     with pytest.raises((TypeError, ValueError), match=message):
         replace(two_state_model(), **changes)  # type: ignore[arg-type]
+
+
+def test_model_binds_convergence_claim_to_final_likelihood_improvement() -> None:
+    """A zero-update convergence claim, large terminal gain, or stalled capped fit misstates EM termination."""
+    invalid = (
+        BaumWelchDiagnostics(converged=True, iterations=0, log_likelihoods=(-2.0,)),
+        BaumWelchDiagnostics(converged=True, iterations=1, log_likelihoods=(-2.0, -1.5)),
+        BaumWelchDiagnostics(
+            converged=False,
+            iterations=100,
+            log_likelihoods=(-2.0, *(-1.0 for _ in range(100))),
+        ),
+        BaumWelchDiagnostics(
+            converged=False,
+            iterations=100,
+            log_likelihoods=(-2.0, *(-1.0 for _ in range(99)), -0.999999999),
+        ),
+    )
+    for diagnostics in invalid:
+        with pytest.raises(ValueError, match="converg|improvement"):
+            replace(two_state_model(), diagnostics=diagnostics)
+
+    nonconverged = BaumWelchDiagnostics(
+        converged=False,
+        iterations=100,
+        log_likelihoods=tuple(float(index) for index in range(101)),
+    )
+    assert replace(two_state_model(), diagnostics=nonconverged).diagnostics == nonconverged

@@ -28,7 +28,6 @@ from tests.scientific.generation.oracles import (
     nhpp_bin_mean,
     nhpp_integrated_intensity,
     packet_train_oracle,
-    stationary_distribution_two_state,
 )
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.common.compatibility import identify_bytes
@@ -185,7 +184,7 @@ def _guard_packet_hmm_model() -> PacketHmmModel:
     return PacketHmmModel(
         additive_smoothing=0.001,
         convergence_tolerance=1e-8,
-        diagnostics=BaumWelchDiagnostics(True, 1, (-2.0, -1.5)),
+        diagnostics=BaumWelchDiagnostics(True, 1, (-2.0, -2.0)),
         emission_rows=((0.8, 0.2), (0.1, 0.9)),
         iat_quantiles=(1.0 / 3.0, 2.0 / 3.0),
         iat_thresholds=(5.0 / 3.0, 7.0 / 3.0),
@@ -890,7 +889,7 @@ def _frequency_packet_hmm_model() -> PacketHmmModel:
     return PacketHmmModel(
         additive_smoothing=0.001,
         convergence_tolerance=1e-8,
-        diagnostics=BaumWelchDiagnostics(True, 1, (-2.0, -1.5)),
+        diagnostics=BaumWelchDiagnostics(True, 1, (-2.0, -2.0)),
         emission_rows=((0.2, 0.8), (0.85, 0.15)),
         iat_quantiles=(1.0 / 3.0, 2.0 / 3.0),
         iat_thresholds=(1.0, 1.0),
@@ -913,7 +912,7 @@ def _frequency_packet_hmm_model() -> PacketHmmModel:
 def test_packet_hmm_long_run_state_and_emission_frequencies_match_stationary_oracles() -> None:
     """The transition then emission sampler must reproduce independent stationary and mixture frequencies."""
     model = _frequency_packet_hmm_model()
-    stationary = stationary_distribution_two_state(((0.7, 0.3), (0.2, 0.8)))
+    stationary = markov_stationary_distribution(((0.7, 0.3), (0.2, 0.8)))
     expected_categories = (
         stationary[0] * 0.2 + stationary[1] * 0.85,
         stationary[0] * 0.8 + stationary[1] * 0.15,

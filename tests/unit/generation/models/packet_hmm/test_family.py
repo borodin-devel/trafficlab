@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import copy
+from typing import Any, cast
 
 import pytest
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import ValidationError
 
 from tests.unit.generation.models.packet_hmm._support import two_state_model
@@ -126,6 +129,49 @@ def test_wire_payload_rejects_changed_fixed_constants_before_family_load() -> No
 
     with pytest.raises(ValidationError, match="additive_smoothing"):
         PacketHmmPayload.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("additive_smoothing", 0.25),
+        ("convergence_tolerance", 0.5),
+        ("maximum_iterations", 1),
+        ("iat_quantiles", [0.1, 0.9]),
+        ("size_quantiles", [0.1, 0.9]),
+    ),
+)
+def test_draft_2020_schema_rejects_every_changed_fixed_hmm_estimator(field: str, value: object) -> None:
+    """Independent schema validation must expose constants instead of relying on runtime validators."""
+    payload = FAMILY.dump_fitted(two_state_model())
+    schema = PacketHmmPayload.model_json_schema(mode="validation")
+    validator = cast(Any, Draft202012Validator(schema))
+    validator.validate(payload)
+    payload[field] = value
+
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(payload)
+
+
+@pytest.mark.parametrize(
+    "diagnostics",
+    (
+        {"converged": True, "iterations": 0, "log_likelihoods": [-4.0]},
+        {"converged": True, "iterations": 1, "log_likelihoods": [-4.0, -3.0]},
+        {"converged": False, "iterations": 100, "log_likelihoods": [-4.0] + [-3.0] * 100},
+    ),
+)
+def test_payload_and_loader_reject_false_convergence_or_nonconvergence_claims(
+    diagnostics: dict[str, object],
+) -> None:
+    """Wire validation and family loading must derive termination truth from the final improvement."""
+    payload = FAMILY.dump_fitted(two_state_model())
+    payload["diagnostics"] = diagnostics
+
+    with pytest.raises(ValidationError, match="converg|improvement"):
+        PacketHmmPayload.model_validate(payload)
+    with pytest.raises(TrafficlabError, match="converg|improvement"):
+        FAMILY.load_fitted(payload, genes=(2,), bounds=BOUNDS)
 
 
 @pytest.mark.parametrize("genes", [(), (2, 3), (True,), (2.0,), (float("nan"),)])

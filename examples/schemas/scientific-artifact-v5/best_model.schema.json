@@ -508,10 +508,12 @@
       "additionalProperties": false,
       "properties": {
         "additive_smoothing": {
-          "$ref": "#/$defs/ExactFloat"
+          "$ref": "#/$defs/ExactFloat",
+          "const": 0.001
         },
         "convergence_tolerance": {
-          "$ref": "#/$defs/ExactFloat"
+          "$ref": "#/$defs/ExactFloat",
+          "const": 1e-08
         },
         "diagnostics": {
           "$ref": "#/$defs/PacketHmmDiagnosticsPayload"
@@ -520,6 +522,10 @@
           "$ref": "#/$defs/FloatMatrix"
         },
         "iat_quantiles": {
+          "const": [
+            0.3333333333333333,
+            0.6666666666666666
+          ],
           "maxItems": 2,
           "minItems": 2,
           "prefixItems": [
@@ -548,12 +554,18 @@
           "type": "string"
         },
         "maximum_iterations": {
-          "$ref": "#/$defs/PositiveInt"
+          "const": 100,
+          "title": "Maximum Iterations",
+          "type": "integer"
         },
         "reservoirs": {
           "$ref": "#/$defs/PacketHmmReservoirs"
         },
         "size_quantiles": {
+          "const": [
+            0.3333333333333333,
+            0.6666666666666666
+          ],
           "maxItems": 2,
           "minItems": 2,
           "prefixItems": [
