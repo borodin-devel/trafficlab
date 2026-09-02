@@ -224,7 +224,8 @@
           "$ref": "#/$defs/FloatCube"
         },
         "gap_quantile": {
-          "$ref": "#/$defs/ExactFloat"
+          "$ref": "#/$defs/ExactFloat",
+          "const": 0.9
         },
         "gap_threshold": {
           "$ref": "#/$defs/NonnegativeFloat"
@@ -253,7 +254,8 @@
           "$ref": "#/$defs/MarkovTimingPayload"
         },
         "transition_pseudocount": {
-          "$ref": "#/$defs/PositiveFloat"
+          "$ref": "#/$defs/PositiveFloat",
+          "const": 1.0
         },
         "transition_rows": {
           "$ref": "#/$defs/FloatMatrix"

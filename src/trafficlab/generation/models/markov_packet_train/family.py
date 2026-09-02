@@ -30,6 +30,7 @@ from trafficlab.generation.models.common import (
 from trafficlab.generation.models.markov_packet_train.generation import generate_with_rng, validate_model
 from trafficlab.generation.models.markov_packet_train.model import (
     GAP_QUANTILE,
+    GAP_THRESHOLD_TOLERANCE,
     INSIDE_TRAIN_ENDPOINT,
     TRANSITION_PSEUDOCOUNT,
     MarkovPacketTrainModel,
@@ -363,7 +364,12 @@ class MarkovPacketTrainFamily:
                 tuple(gap for state in states for gap in (*state.within_gaps.interior, *state.within_gaps.last))
                 + model.global_inter_train_gaps
             )
-            if not all_iats or model.gap_threshold != type7_quantile(all_iats, GAP_QUANTILE):
+            if not all_iats or not math.isclose(
+                model.gap_threshold,
+                type7_quantile(all_iats, GAP_QUANTILE),
+                rel_tol=0.0,
+                abs_tol=GAP_THRESHOLD_TOLERANCE,
+            ):
                 raise ValueError("gap_threshold must equal the Type-7 q90 of all fitted reference gaps")
             if payload["timing_diagnostics"] != _timing_document(model.timing_diagnostics):
                 raise ValueError("timing_diagnostics must exactly match fitted gap fallback evidence")

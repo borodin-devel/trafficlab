@@ -5,11 +5,13 @@ from __future__ import annotations
 import copy
 
 import pytest
+from pydantic import ValidationError
 
 from tests.unit.generation.models.markov_packet_train._support import two_state_model
 from trafficlab.common.config import IntegerBounds, MarkovPacketTrainConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.generation.models.fitted_schema import MarkovPacketTrainPayload
 from trafficlab.generation.models.markov_packet_train.family import MarkovPacketTrainFamily
 
 FAMILY = MarkovPacketTrainFamily()
@@ -83,6 +85,25 @@ def test_family_fit_translates_a_reference_without_a_boundary_gap() -> None:
 
     with pytest.raises(TrafficlabError, match="segmentation"):
         FAMILY.fit(reference, (3,), W=1.0, bounds=BOUNDS)
+
+
+def test_dump_revalidates_a_finite_non_q90_direct_model() -> None:
+    """Dump must not serialize a direct model whose finite threshold no longer matches its reservoirs."""
+    model = copy.copy(two_state_model())
+    object.__setattr__(model, "gap_threshold", 4.3)
+
+    with pytest.raises(TrafficlabError, match="Type-7 q90"):
+        FAMILY.dump_fitted(model)
+
+
+@pytest.mark.parametrize(("field", "value"), (("gap_quantile", 0.8), ("transition_pseudocount", 2.0)))
+def test_wire_payload_rejects_changed_fixed_packet_train_constants(field: str, value: float) -> None:
+    """Pydantic publication must bind fixed segmentation and smoothing semantics without family loading."""
+    payload = FAMILY.dump_fitted(two_state_model())
+    payload[field] = value
+
+    with pytest.raises(ValidationError, match=field):
+        MarkovPacketTrainPayload.model_validate(payload)
 
 
 @pytest.mark.parametrize(

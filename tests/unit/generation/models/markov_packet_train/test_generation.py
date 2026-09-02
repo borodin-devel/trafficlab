@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from tests.unit.generation.models.markov_packet_train._support import ScriptedTrainRng, two_state_model
@@ -109,3 +111,18 @@ def test_generation_rejects_rng_endpoint_violations(
     rng = ScriptedTrainRng(randoms=randoms, choices=choices)
     with pytest.raises(TrafficlabError, match=message):
         generate_with_rng(two_state_model(), rng, W=8.0, limits=LIMITS, clock=lambda: 0.0)
+
+
+def test_generation_revalidates_a_finite_non_q90_direct_model() -> None:
+    """Generation cannot consume a directly corrupted threshold that would redefine every gap pool."""
+    model = copy.copy(two_state_model())
+    object.__setattr__(model, "gap_threshold", 4.3)
+
+    with pytest.raises(TrafficlabError, match="Type-7 q90"):
+        generate_with_rng(
+            model,
+            ScriptedTrainRng(randoms=(), choices=()),
+            W=8.0,
+            limits=LIMITS,
+            clock=lambda: 0.0,
+        )

@@ -116,18 +116,25 @@ whole-train, or packet-sequence template field.
 
 ## Validation, scope, and cost
 
-Loading binds `length_cap` to the outer chromosome, recomputes the Type-7 q90
-from the complete fitted within/inter gap multiset, rebuilds train and packet
-count identities, reconstructs additive transition rows, and checks every
-redundant diagnostic. Unknown fields, wrong scalar types, malformed matrices,
-nonfinite values, duplicate marks, and altered endpoint or estimator constants
-are errors.
+Direct construction, generation, dumping, and loading all recompute the Type-7
+q90 from the complete fitted within/inter gap multiset and require the stored
+threshold to agree within absolute tolerance `1e-12` and zero relative
+tolerance. Loading also binds `length_cap` to the outer chromosome, rebuilds
+train and packet count identities, reconstructs additive transition rows, and
+checks every redundant diagnostic. Unknown fields, wrong scalar types,
+malformed matrices, nonfinite values, duplicate marks, and altered endpoint or
+estimator constants are errors. The public wire schema binds
+`gap_quantile = 0.9` and `transition_pseudocount = 1.0` as JSON Schema
+constants, so independent validation rejects a changed policy before family
+loading.
 
 For `n` packets, `R` trains, and `K` active capped states, fitting costs
-`O(n + K^2)` time and `O(n + K^2)` fitted space. Generating `m` packets costs
-`O(mK)` with cumulative transition sampling and `O(m)` output space. The model
-represents burst/train dependence; it does not model payloads, protocols, or a
-causal network mechanism.
+`O(n + K^2)` time and `O(n + K^2)` fitted space. Let `U` be the largest number
+of distinct joint marks in a selected position pool. Generating `m` packets and
+`T` train transitions costs `O(mU + TK)`, bounded by `O(m(K + U))`, because
+transition and compressed cumulative-mark sampling scan their stored rows.
+Output space is `O(m)`. The model represents burst/train dependence; it does
+not model payloads, protocols, or a causal network mechanism.
 
 ## Deterministic examples and direct evidence
 

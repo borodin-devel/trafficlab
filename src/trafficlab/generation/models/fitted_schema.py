@@ -210,7 +210,7 @@ type PacketTrainStatePayloads = Annotated[tuple[PacketTrainStatePayload, ...], B
 
 class MarkovPacketTrainPayload(_StrictWireModel):
     conditional_inter_train_gaps: FloatCube
-    gap_quantile: ExactFloat
+    gap_quantile: Annotated[ExactFloat, Field(json_schema_extra={"const": 0.9})]
     gap_threshold: NonnegativeFloat
     global_inter_train_gaps: FloatVector
     initial_probabilities: FloatVector
@@ -218,11 +218,15 @@ class MarkovPacketTrainPayload(_StrictWireModel):
     length_cap: Annotated[StrictInt, Field(ge=3, le=8)]
     states: PacketTrainStatePayloads
     timing_diagnostics: MarkovTimingPayload
-    transition_pseudocount: PositiveFloat
+    transition_pseudocount: Annotated[PositiveFloat, Field(json_schema_extra={"const": 1.0})]
     transition_rows: FloatMatrix
 
     @model_validator(mode="after")
     def state_aligned_vectors_and_matrices_have_matching_dimensions(self) -> Self:
+        if self.gap_quantile != 0.9:
+            raise ValueError("gap_quantile must equal the fixed Type-7 level 0.9")
+        if self.transition_pseudocount != 1.0:
+            raise ValueError("transition_pseudocount must equal the fixed additive value 1.0")
         state_count = len(self.states)
         if not state_count or len({state.length_state for state in self.states}) != state_count:
             raise ValueError("states must be nonempty with unique length_state values")

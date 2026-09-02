@@ -16,6 +16,7 @@ from trafficlab.generation.models.markov_renewal.parameters import ROW_TOLERANCE
 GAP_QUANTILE = 0.9
 INSIDE_TRAIN_ENDPOINT: Literal["less_than_or_equal"] = "less_than_or_equal"
 TRANSITION_PSEUDOCOUNT = 1.0
+GAP_THRESHOLD_TOLERANCE = ROW_TOLERANCE
 type GapTimingTier = Literal["transition", "source", "global"]
 
 
@@ -242,6 +243,18 @@ class MarkovPacketTrainModel:
             raise ValueError("global inter-train gaps must contain every conditional gap")
         if any(gap <= self.gap_threshold for gap in self.global_inter_train_gaps):
             raise ValueError("global inter-train gaps must be strictly above the threshold")
+        all_reference_gaps = (
+            tuple(gap for state in self.states for gap in (*state.within_gaps.interior, *state.within_gaps.last))
+            + self.global_inter_train_gaps
+        )
+        expected_threshold = type7_quantile(all_reference_gaps, GAP_QUANTILE)
+        if not math.isclose(
+            self.gap_threshold,
+            expected_threshold,
+            rel_tol=0.0,
+            abs_tol=GAP_THRESHOLD_TOLERANCE,
+        ):
+            raise ValueError("gap_threshold must equal the stored reference gaps' Type-7 q90")
         for state, row in zip(self.states, self.conditional_inter_train_gaps, strict=True):
             if Counter(gap for sample in row for gap in sample) != Counter(state.source_inter_train_gaps):
                 raise ValueError("source inter-train gaps must contain every gap leaving its state")

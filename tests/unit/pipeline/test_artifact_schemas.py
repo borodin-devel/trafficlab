@@ -6,7 +6,7 @@ import copy
 import json
 from pathlib import Path
 from types import MappingProxyType
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -18,7 +18,7 @@ from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSI
 from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.diagnostics import MethodDiagnostic
 from trafficlab.comparison.schema import ComparisonResult, MethodComparison
-from trafficlab.generation.models.fitted_schema import AcdPayload, FamilyPayload
+from trafficlab.generation.models.fitted_schema import AcdPayload, FamilyPayload, MarkovPacketTrainPayload
 from trafficlab.study_evidence.report import StudyBootstrapInterval
 
 _ROOT = Path(__file__).parents[3]
@@ -156,13 +156,64 @@ def test_family_and_method_payloads_publish_union_schemas() -> None:
     family_schema = TypeAdapter(FamilyPayload).json_schema()
     method_schema = TypeAdapter(MethodDiagnostic).json_schema()
 
-    assert len(family_schema["oneOf"]) == 5
-    assert family_schema["oneOf"][-1] == {"$ref": "#/$defs/AcdPayload"}
+    assert family_schema["oneOf"] == [
+        {"$ref": "#/$defs/PoissonPayload"},
+        {"$ref": "#/$defs/MarkovRenewalPayload"},
+        {"$ref": "#/$defs/MmppPayload"},
+        {"$ref": "#/$defs/NhppPayload"},
+        {"$ref": "#/$defs/AcdPayload"},
+        {"$ref": "#/$defs/MarkovPacketTrainPayload"},
+    ]
     acd_schema = family_schema["$defs"][AcdPayload.__name__]
     assert acd_schema["title"] == "AcdPayload"
     assert acd_schema["additionalProperties"] is False
     assert acd_schema["required"] == ["omega", "alpha", "beta", "marks"]
+    packet_train_schema = family_schema["$defs"][MarkovPacketTrainPayload.__name__]
+    assert packet_train_schema["title"] == "MarkovPacketTrainPayload"
+    assert packet_train_schema["additionalProperties"] is False
+    assert packet_train_schema["properties"]["gap_quantile"]["const"] == 0.9
+    assert packet_train_schema["properties"]["transition_pseudocount"]["const"] == 1.0
     assert len(method_schema["oneOf"]) == 8
+
+
+def test_public_family_schema_rejects_changed_packet_train_fixed_constants() -> None:
+    """Independent readers must reject another threshold or smoothing policy before runtime loading."""
+    schema = TypeAdapter(FamilyPayload).json_schema()
+    validator = Draft202012Validator(schema)
+    payload: dict[str, object] = {
+        "conditional_inter_train_gaps": [[[5.0]]],
+        "gap_quantile": 0.9,
+        "gap_threshold": 4.2,
+        "global_inter_train_gaps": [5.0],
+        "initial_probabilities": [1.0],
+        "inside_train_endpoint": "less_than_or_equal",
+        "length_cap": 3,
+        "states": [
+            {
+                "actual_lengths": [2, 2],
+                "length_state": 2,
+                "marks": {
+                    "first": [{"direction": "outbound", "frame_length": 60, "count": 2}],
+                    "interior": [],
+                    "last": [{"direction": "inbound", "frame_length": 70, "count": 2}],
+                },
+                "source_inter_train_gaps": [5.0],
+                "within_gaps": {"interior": [], "last": [1.0, 1.0]},
+            }
+        ],
+        "timing_diagnostics": {
+            "reference_usage_counts": {"global": 0, "source": 0, "transition": 1},
+            "transition_tiers": [["transition"]],
+            "unobserved_rows": [],
+        },
+        "transition_pseudocount": 1.0,
+        "transition_rows": [[1.0]],
+    }
+    assert validator.is_valid(cast(Any, payload))  # pyright: ignore[reportUnknownMemberType]
+    for field, value in (("gap_quantile", 0.8), ("transition_pseudocount", 2.0)):
+        changed = copy.deepcopy(payload)
+        changed[field] = value
+        assert not validator.is_valid(cast(Any, changed))  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_failure_root_rejects_boolean_status_and_is_frozen() -> None:

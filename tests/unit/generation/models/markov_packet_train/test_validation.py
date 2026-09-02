@@ -202,6 +202,20 @@ def test_model_rejects_corrupted_shapes_probabilities_counts_and_gap_membership(
             replace(model, **changes)  # type: ignore[arg-type]
 
 
+def test_direct_model_construction_rejects_a_finite_non_q90_threshold() -> None:
+    """A finite threshold still changes segmentation semantics unless it equals the stored gap multiset's q90."""
+    with pytest.raises(ValueError, match="Type-7 q90"):
+        replace(two_state_model(), gap_threshold=4.3)
+
+
+def test_direct_model_accepts_only_the_documented_absolute_q90_tolerance() -> None:
+    """Serialization roundoff within 1e-12 is accepted without allowing a relative threshold drift."""
+    model = two_state_model()
+    assert replace(model, gap_threshold=model.gap_threshold + 5e-13).gap_threshold == pytest.approx(4.4)
+    with pytest.raises(ValueError, match="Type-7 q90"):
+        replace(model, gap_threshold=model.gap_threshold + 2e-12)
+
+
 @pytest.mark.parametrize(
     ("conditional", "source", "global_gaps"),
     (
