@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Final, Protocol, cast
 
 import numpy as np
 from matplotlib.artist import Artist
@@ -33,6 +33,7 @@ _REFERENCE_COLOR = "#1f77b4"
 _GENERATED_COLOR = "#ff7f0e"
 _DENSE_ALPHA = 0.45
 _SCATTER_ALPHA = 0.55
+_MAXIMUM_METADATA_ANNOTATION_ITEMS: Final[int] = 4
 _RUN_LEVEL_COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b")
 _RUN_LEVEL_STYLES = ("solid", "dashed", "dashdot", "dotted")
 
@@ -411,7 +412,10 @@ class DashboardCanvas(QWidget):
 
     def _format_metadata_value(self, value: MetadataValue) -> str:
         if isinstance(value, tuple):
-            return ", ".join(self._format_metadata_value(item) for item in value)
+            displayed = value[:_MAXIMUM_METADATA_ANNOTATION_ITEMS]
+            text = ", ".join(self._format_metadata_value(item) for item in displayed)
+            omitted = len(value) - len(displayed)
+            return f"{text}, … ({omitted} omitted)" if omitted else text
         if isinstance(value, Mapping):
             return ", ".join(f"{key}={self._format_metadata_value(item)}" for key, item in value.items())
         return str(value)

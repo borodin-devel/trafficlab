@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator
 from typing import Literal, cast
 
@@ -186,6 +187,37 @@ def _run_level_line_data() -> LinePlotData:
     )
 
 
+def _postfit_line_data(*, identifier: Literal["transition_fidelity", "c2st"]) -> LinePlotData:
+    count = 256 if identifier == "transition_fidelity" else 14
+    x = np.arange(count, dtype=np.float64)
+    if identifier == "transition_fidelity":
+        metadata = {
+            "state_labels": tuple(f"uplink/{index}/{index}" for index in range(count)),
+            "transition_row_jsd": tuple(float(index) / count for index in range(count)),
+            "occupancy_reference_counts": tuple(range(count)),
+            "occupancy_generated_counts": tuple(reversed(range(count))),
+        }
+    else:
+        metadata = {
+            "coefficient_feature_names": tuple(f"feature_{index}" for index in range(count)),
+            "coefficient_magnitudes": tuple(float(index) / count for index in range(count)),
+        }
+    return LinePlotData(
+        identifier=identifier,
+        label=identifier,
+        title=identifier,
+        x_label="Index",
+        y_label="Value",
+        unit="unitless",
+        series=(
+            LineSeries(label="Stored values", x=x, y=x / max(count, 1), sample_count=count),
+        ),
+        x_limits=(0.0, float(count - 1)),
+        y_limits=(0.0, 1.0),
+        metadata=metadata,
+    )
+
+
 def _hexbin_data(*, render_mode: Literal["scatter", "hexbin"] = "scatter") -> HexbinPlotData:
     return HexbinPlotData(
         identifier="frame_size_iat_hexbin",
@@ -262,6 +294,33 @@ def test_canvas_renders_line_data_with_dataset_colors_direction_styles_and_acf_a
     assert any("Reference unavailable lags: 2" in text for text in annotations)
     assert any("Generated unavailable lags: 3" in text for text in annotations)
     assert any("Lag exceeds sample count" in text for text in annotations)
+
+
+@pytest.mark.parametrize("identifier", ("transition_fidelity", "c2st"))
+def test_canvas_bounds_postfit_metadata_annotations_without_layout_warnings(
+    canvas: DashboardCanvas,
+    identifier: Literal["transition_fidelity", "c2st"],
+) -> None:
+    data = _postfit_line_data(identifier=identifier)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        canvas.render(data, TraceVisibility(reference=False, generated=False))
+
+    annotations = [text.get_text() for text in canvas.axes.texts if isinstance(text, Annotation)]
+    assert all(len(text) <= 120 for text in annotations)
+    if identifier == "transition_fidelity":
+        state_labels = cast(tuple[str, ...], data.metadata["state_labels"])
+        row_jsd = cast(tuple[float, ...], data.metadata["transition_row_jsd"])
+        assert state_labels[-1] == "uplink/255/255"
+        assert row_jsd[-1] == pytest.approx(255.0 / 256.0)
+        assert any("252 omitted" in text for text in annotations)
+    else:
+        names = cast(tuple[str, ...], data.metadata["coefficient_feature_names"])
+        magnitudes = cast(tuple[float, ...], data.metadata["coefficient_magnitudes"])
+        assert names[-1] == "feature_13"
+        assert magnitudes[-1] == pytest.approx(13.0 / 14.0)
+        assert any("10 omitted" in text for text in annotations)
 
 
 def test_canvas_ordinary_render_of_same_identifier_resets_to_new_complete_bounds(canvas: DashboardCanvas) -> None:

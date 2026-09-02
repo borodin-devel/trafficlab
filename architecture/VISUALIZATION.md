@@ -168,6 +168,9 @@ Scientific calculations always use complete loaded samples. Display reduction is
 rendering-only:
 
 - general line displays cap each rendered series at 20,000 points;
+- on-canvas metadata annotations show at most four tuple values and an explicit
+  omitted count; complete immutable metadata remains available to plot-data
+  consumers and export;
 - dense time-series views use min/max envelope reduction;
 - ECDF reduction preserves endpoints and monotonicity;
 - dense paired samples render as hexbin rather than raw scatter;
