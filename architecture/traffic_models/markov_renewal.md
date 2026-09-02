@@ -165,7 +165,7 @@ the next-timestamp comparison establishes full-window completion, return
 incomplete generation. The RNG is local to one generation call. A row must sum
 to one within numerical tolerance after construction and loading.
 
-Schema 4 uses a local PCG64 generator and preserves the schema-3 scalar order: `random()` for
+Schema 5 preserves the schema-4 local PCG64 generator and schema-3 scalar order: `random()` for
 the initial weighted state, `choice(frame_count)` for its frame, then on each
 iteration `random()` for the destination row and `choice(holding_count)` for the
 selected timing tier. Only an in-window next timestamp consumes the final

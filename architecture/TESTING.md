@@ -946,8 +946,13 @@ The offline audit independently reconstructs normalized references and each
 compatibility row; validates checkpoint, history, family priority, winner,
 model, and fresh simulation seed consistency; regenerates every deterministic
 generated trace from the retained model, seed, window, and limits; and
-recomputes all four retained schema-4 component scores, weighted aggregates, natural-
-variation values, training summaries, held-out summaries, and report arithmetic.
+recomputes all eight schema-5 weighted fitness component scores in canonical
+order (`autocorrelation`, `frame_size_ks`, `iat_ks`, `multiscale_rate`,
+`cramer_von_mises`, `anderson_darling`, `jensen_shannon`, and
+`approximate_mmd`) and their weighted aggregates. Final-only post-fit diagnostics
+are recomputed separately for final comparison; they have no fitness weights and
+never enter genetic trials or the weighted aggregate. The audit then recomputes
+natural-variation values, training summaries, held-out summaries, and report arithmetic.
 It validates every capture, configuration, model, generated trace, comparison,
 summary, report, and manifest lineage relationship instead of trusting a
 precomputed report value.

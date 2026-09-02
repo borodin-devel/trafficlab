@@ -12,7 +12,7 @@ serialize(fitted model) -> JSON-compatible value
 `fit` is deterministic for a reference and chromosome. `generate` owns an
 explicit `numpy.random.Generator(numpy.random.PCG64(seed))`; model code never
 uses NumPy's module-global RNG or `default_rng`. Scalar draw order, primitive,
-shape, and endpoint semantics are part of scientific artifact schema 4. Every generator starts at zero
+shape, and endpoint semantics are part of scientific artifact schema 5. Every generator starts at zero
 and simulates the complete closed interval `[0, W]`. It emits events at or before
 `W` and finishes normally only after the next simulated event would be after
 `W`. Packet-count, output-size, and wall-time limits are reliability guards.
@@ -35,14 +35,14 @@ reopening the reference capture. Numbers must be finite. Loading repeats
 structural and bound validation.
 
 Fitted models and checkpoints carry global scientific artifact schema version
-4. That version identifies their scientific semantics, not only
-their JSON shape. The version with corrected MMPP arrival-epoch initialization
-must reject artifacts carrying the older MMPP semantics as incompatible before
-generation, resume, or stage reuse. It does not migrate them or add per-family
-schema or plug-in mechanisms; models must be refitted under the current global
-version. Schema-3 models and checkpoints use the pre-Scapy publication
-semantics, while schema-2 artifacts also use the former MT19937 draw protocol.
-Both require explicit refitting and are never replayed as schema-4 artifacts.
+5. That version identifies their scientific semantics, not only their JSON
+shape. Schema 5 preserves the corrected MMPP arrival-epoch initialization from
+schema 4 while binding the expanded fitness, trial, checkpoint, and comparison
+shapes. Every schema-4 or older artifact is incompatible before generation,
+resume, or stage reuse. Trafficlab does not migrate it or add per-family schema
+or plug-in mechanisms; models must be refitted under the current global version.
+Schema-3 models and checkpoints also use the pre-Scapy publication semantics,
+while schema-2 artifacts use the former MT19937 draw protocol.
 
 ## Direct scientific evidence
 

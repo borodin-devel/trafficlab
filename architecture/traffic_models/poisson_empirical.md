@@ -68,7 +68,7 @@ returns them; timestamps remain nondecreasing. A result too small for a
 mandatory similarity method is a valid generation but an invalid fitness
 candidate.
 
-For schema 4 the local PCG64 generator makes these scalar draws in exact order:
+Schema 5 preserves the schema-4 local PCG64 scalar draw order:
 `choice(total_mark_count)` for the time-zero empirical mark; then
 `exponential(scale=1.0/lambda_g)`; and, only when the resulting timestamp is in
 `[0, W]`, `choice(total_mark_count)` for that arrival's mark. `choice` samples a

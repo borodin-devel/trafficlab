@@ -11,6 +11,7 @@ from typing import Protocol, cast
 
 import pytest
 
+from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES
 
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -434,6 +435,34 @@ def test_similarity_method_inventory_uses_the_runtime_fitness_order() -> None:
     }
 
     assert documented_links == tuple(method_links[name] for name in FITNESS_METHOD_NAMES)
+
+
+def test_current_architecture_schema_and_offline_audit_follow_runtime_contract() -> None:
+    """Current-tense architecture must not retain the superseded fitness schema."""
+    architecture = REPOSITORY / "architecture"
+    stale_fragments = (
+        "scientific artifact schema 4",
+        "scientific artifact schema version\n4",
+        "Schema 4 uses",
+        "For schema 4",
+        "four retained schema-4 component scores",
+    )
+    stale_claims = {
+        path.relative_to(architecture).as_posix(): tuple(fragment for fragment in stale_fragments if fragment in content)
+        for path in architecture.rglob("*.md")
+        for content in (path.read_text(encoding="utf-8"),)
+        if any(fragment in content for fragment in stale_fragments)
+    }
+    testing = (architecture / "TESTING.md").read_text(encoding="utf-8")
+    audit = testing.split("### Bounded offline audit\n", 1)[1].split("\n## ", 1)[0]
+    normalized_audit = " ".join(audit.split())
+    documented_methods = tuple(token for token in audit.split("`")[1::2] if token in FITNESS_METHOD_NAMES)
+
+    assert SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 5
+    assert stale_claims == {}
+    assert documented_methods == FITNESS_METHOD_NAMES
+    assert "Final-only post-fit diagnostics are recomputed separately" in normalized_audit
+    assert "never enter genetic trials or the weighted aggregate" in normalized_audit
 
 
 def test_visualization_contract_describes_stale_result_invalidation_and_atomic_replacement_cache_commit() -> None:
