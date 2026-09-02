@@ -7,14 +7,7 @@ from typing import cast
 
 from pydantic import ValidationError
 
-from trafficlab.common.config import (
-    FamilyName,
-    FloatBounds,
-    IntegerBounds,
-    MarkovRenewalConfig,
-    MmppConfig,
-    PoissonConfig,
-)
+from trafficlab.common.config import FamilyName, FloatBounds, IntegerBounds
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.generation.models.common import FamilyBounds, ModelFamily
 from trafficlab.generation.models.markov_renewal import MarkovRenewalFamily
@@ -55,8 +48,26 @@ def invalid_best_model(detail: str, *, corrective_action: str) -> TrafficlabErro
     return TrafficlabError(detail, corrective_action=corrective_action)
 
 
-def _is_integer_coordinate(family: ModelFamily, name: str) -> bool:
-    return family is MARKOV_RENEWAL_FAMILY and name == "r"
+def _bound_type(family: ModelFamily, name: str) -> type[FloatBounds] | type[IntegerBounds]:
+    """Return the exact bound value type declared by one registered family coordinate."""
+    if len(family.gene_names) != len(family.gene_coordinate_kinds):
+        raise invalid_best_model(
+            f"invalid {family.name} coordinate metadata",
+            corrective_action="provide one coordinate kind for every canonical gene name",
+        )
+    try:
+        kind = dict(zip(family.gene_names, family.gene_coordinate_kinds, strict=True))[name]
+    except KeyError as error:
+        raise invalid_best_model(
+            f"invalid {family.name} coordinate metadata",
+            corrective_action="provide one coordinate kind for every canonical gene name",
+        ) from error
+    if kind not in {"linear", "log", "integer"}:
+        raise invalid_best_model(
+            f"invalid {family.name} coordinate metadata",
+            corrective_action="use linear, log, or integer coordinate kinds",
+        )
+    return IntegerBounds if kind == "integer" else FloatBounds
 
 
 def bounds_from_config(family: ModelFamily, bounds: FamilyBounds) -> dict[str, FloatBounds | IntegerBounds]:
@@ -68,8 +79,8 @@ def bounds_from_config(family: ModelFamily, bounds: FamilyBounds) -> dict[str, F
     result: dict[str, FloatBounds | IntegerBounds] = {}
     for name in family.gene_names:
         value = getattr(bounds, name, None)
-        expected_type = IntegerBounds if _is_integer_coordinate(family, name) else FloatBounds
-        if type(value) is not expected_type:
+        expected_type = _bound_type(family, name)
+        if not isinstance(value, (FloatBounds, IntegerBounds)) or type(value) is not expected_type:
             raise invalid_best_model(
                 f"invalid {family.name} gene bounds",
                 corrective_action="provide every canonical named bound with its exact numeric type",
@@ -101,7 +112,7 @@ def build_bounds(family: ModelFamily, value: object) -> tuple[FamilyBounds, dict
             )
         fields = cast(dict[str, object], item)
         bound_type: type[FloatBounds] | type[IntegerBounds]
-        bound_type = IntegerBounds if _is_integer_coordinate(family, name) else FloatBounds
+        bound_type = _bound_type(family, name)
         scalar_type = int if bound_type is IntegerBounds else float
         if type(fields["lower"]) is not scalar_type or type(fields["upper"]) is not scalar_type:
             raise invalid_best_model(
@@ -117,23 +128,7 @@ def build_bounds(family: ModelFamily, value: object) -> tuple[FamilyBounds, dict
             ) from error
 
     try:
-        if family is POISSON_FAMILY:
-            config: FamilyBounds = PoissonConfig(c_lambda=cast(FloatBounds, parsed["c_lambda"]))
-        elif family is MARKOV_RENEWAL_FAMILY:
-            config = MarkovRenewalConfig(
-                q1=cast(FloatBounds, parsed["q1"]),
-                q2=cast(FloatBounds, parsed["q2"]),
-                alpha=cast(FloatBounds, parsed["alpha"]),
-                r=cast(IntegerBounds, parsed["r"]),
-                c_t=cast(FloatBounds, parsed["c_t"]),
-            )
-        else:
-            config = MmppConfig(
-                q01=cast(FloatBounds, parsed["q01"]),
-                q10=cast(FloatBounds, parsed["q10"]),
-                lambda0=cast(FloatBounds, parsed["lambda0"]),
-                lambda1=cast(FloatBounds, parsed["lambda1"]),
-            )
+        config = family.bounds_type.model_validate(parsed)
     except ValidationError as error:
         raise invalid_best_model(
             f"invalid {family.name} gene bounds: {error}",
@@ -148,31 +143,13 @@ def config_from_bound_mapping(family: ModelFamily, bounds: dict[str, FloatBounds
             f"invalid {family.name} gene bounds",
             corrective_action="provide one exact bound for every canonical gene",
         )
-    if any(
-        type(bounds[name]) is not (IntegerBounds if _is_integer_coordinate(family, name) else FloatBounds)
-        for name in family.gene_names
-    ):
+    if any(type(bounds[name]) is not _bound_type(family, name) for name in family.gene_names):
         raise invalid_best_model(
             f"invalid {family.name} gene bounds",
             corrective_action="provide exact FloatBounds values and an exact IntegerBounds Markov r value",
         )
     try:
-        if family is POISSON_FAMILY:
-            return PoissonConfig(c_lambda=cast(FloatBounds, bounds["c_lambda"]))
-        if family is MARKOV_RENEWAL_FAMILY:
-            return MarkovRenewalConfig(
-                q1=cast(FloatBounds, bounds["q1"]),
-                q2=cast(FloatBounds, bounds["q2"]),
-                alpha=cast(FloatBounds, bounds["alpha"]),
-                r=cast(IntegerBounds, bounds["r"]),
-                c_t=cast(FloatBounds, bounds["c_t"]),
-            )
-        return MmppConfig(
-            q01=cast(FloatBounds, bounds["q01"]),
-            q10=cast(FloatBounds, bounds["q10"]),
-            lambda0=cast(FloatBounds, bounds["lambda0"]),
-            lambda1=cast(FloatBounds, bounds["lambda1"]),
-        )
+        return family.bounds_type.model_validate(bounds)
     except ValidationError as error:
         raise invalid_best_model(
             f"invalid {family.name} gene bounds: {error}",

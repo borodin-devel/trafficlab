@@ -11,7 +11,14 @@ from typing import Literal, Protocol, cast
 
 import numpy as np
 
-from trafficlab.common.config import FamilyName, GenerationLimits, MarkovRenewalConfig, MmppConfig, PoissonConfig
+from trafficlab.common.config import (
+    FamilyName,
+    GeneCoordinateKind,
+    GenerationLimits,
+    MarkovRenewalConfig,
+    MmppConfig,
+    PoissonConfig,
+)
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 
@@ -72,6 +79,11 @@ class ModelFamily(Protocol):
     @property
     def gene_names(self) -> tuple[str, ...]:
         """Return canonical chromosome coordinate names in order."""
+        ...
+
+    @property
+    def gene_coordinate_kinds(self) -> tuple[GeneCoordinateKind, ...]:
+        """Return one coordinate transform kind per canonical chromosome name."""
         ...
 
     @property

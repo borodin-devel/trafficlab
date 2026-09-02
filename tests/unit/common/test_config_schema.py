@@ -6,7 +6,14 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config import (
+    AcdConfig,
+    ExperimentConfig,
+    IntegerBounds,
+    MarkovPacketTrainConfig,
+    NhppConfig,
+    PacketHmmConfig,
+)
 
 
 def test_complete_mapping_creates_immutable_experiment_config(valid_config_data: dict[str, object]) -> None:
@@ -21,6 +28,15 @@ def test_models_are_frozen(valid_config_data: dict[str, object]) -> None:
 
     with pytest.raises(ValidationError, match="frozen_instance"):
         config.run.master_seed = 9
+
+
+def test_required_structural_bound_types_are_strict() -> None:
+    """Future family structural genes accept only exact IntegerBounds values."""
+    assert PacketHmmConfig(state_count=IntegerBounds(lower=2, upper=4)).state_count.upper == 4
+    assert MarkovPacketTrainConfig(length_cap=IntegerBounds(lower=3, upper=8)).length_cap.lower == 3
+    assert NhppConfig(bin_count=IntegerBounds(lower=2, upper=16)).bin_count.upper == 16
+    with pytest.raises(ValidationError):
+        AcdConfig(order={"lower": 0, "upper": 3})
 
 
 def test_unknown_root_key_is_rejected(valid_config_data: dict[str, object]) -> None:

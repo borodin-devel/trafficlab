@@ -21,6 +21,7 @@ from pydantic import (
 )
 
 FamilyName = Literal["poisson_empirical", "markov_renewal", "mmpp"]
+type GeneCoordinateKind = Literal["linear", "log", "integer"]
 
 NonEmptyString = Annotated[StrictStr, Field(min_length=1)]
 NonNegativeInteger = Annotated[StrictInt, Field(ge=0)]
@@ -244,6 +245,70 @@ class MmppConfig(FamilyOperators):
     def logarithmic_bounds_have_positive_lower_bounds(cls, value: FloatBounds) -> FloatBounds:
         if value.lower <= 0.0:
             raise ValueError("MMPP logarithmic lower bounds must be positive")
+        return value
+
+
+class PacketHmmConfig(FamilyOperators):
+    """Strict future packet-HMM structural settings, kept outside the live registry."""
+
+    crossover_probability: Probability = 0.9
+    mutation_probability: Probability = 1.0
+    mutation_scale: NormalizedMutationScale = 0.1
+    state_count: IntegerBounds
+
+    @field_validator("state_count")
+    @classmethod
+    def state_count_is_within_supported_range(cls, value: IntegerBounds) -> IntegerBounds:
+        if value.lower < 2 or value.upper > 4:
+            raise ValueError("packet HMM state_count bounds must be within 2..4")
+        return value
+
+
+class MarkovPacketTrainConfig(FamilyOperators):
+    """Strict future packet-train structural settings, kept outside the live registry."""
+
+    crossover_probability: Probability = 0.9
+    mutation_probability: Probability = 1.0
+    mutation_scale: NormalizedMutationScale = 0.1
+    length_cap: IntegerBounds
+
+    @field_validator("length_cap")
+    @classmethod
+    def length_cap_is_within_supported_range(cls, value: IntegerBounds) -> IntegerBounds:
+        if value.lower < 3 or value.upper > 8:
+            raise ValueError("Markov packet-train length_cap bounds must be within 3..8")
+        return value
+
+
+class AcdConfig(FamilyOperators):
+    """Strict future ACD structural settings, kept outside the live registry."""
+
+    crossover_probability: Probability = 0.9
+    mutation_probability: Probability = 1.0
+    mutation_scale: NormalizedMutationScale = 0.1
+    order: IntegerBounds
+
+    @field_validator("order")
+    @classmethod
+    def order_is_within_supported_range(cls, value: IntegerBounds) -> IntegerBounds:
+        if value.lower < 1 or value.upper > 3:
+            raise ValueError("ACD order bounds must be within 1..3")
+        return value
+
+
+class NhppConfig(FamilyOperators):
+    """Strict future NHPP structural settings, kept outside the live registry."""
+
+    crossover_probability: Probability = 0.9
+    mutation_probability: Probability = 1.0
+    mutation_scale: NormalizedMutationScale = 0.1
+    bin_count: IntegerBounds
+
+    @field_validator("bin_count")
+    @classmethod
+    def bin_count_is_within_supported_range(cls, value: IntegerBounds) -> IntegerBounds:
+        if value.lower < 2 or value.upper > 16:
+            raise ValueError("NHPP bin_count bounds must be within 2..16")
         return value
 
 

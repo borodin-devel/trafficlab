@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from trafficlab.common.config import ExperimentConfig
+from trafficlab.common.config import AcdConfig, ExperimentConfig, MarkovPacketTrainConfig, NhppConfig, PacketHmmConfig
 
 
 def _set_value(data: dict[str, object], path: tuple[str, ...], value: object) -> None:
@@ -66,6 +66,27 @@ def test_network_probe_url_requires_dns_instead_of_an_ip_literal(valid_config_da
 
     with pytest.raises(ValidationError, match="DNS hostname"):
         ExperimentConfig.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    ("config_type", "field", "bounds"),
+    [
+        (AcdConfig, "order", (0, 3)),
+        (AcdConfig, "order", (1, 4)),
+        (PacketHmmConfig, "state_count", (1, 4)),
+        (PacketHmmConfig, "state_count", (2, 5)),
+        (MarkovPacketTrainConfig, "length_cap", (2, 8)),
+        (MarkovPacketTrainConfig, "length_cap", (3, 9)),
+        (NhppConfig, "bin_count", (1, 16)),
+        (NhppConfig, "bin_count", (2, 17)),
+    ],
+)
+def test_required_family_structural_bounds_are_enforced(
+    config_type: type[object], field: str, bounds: tuple[int, int]
+) -> None:
+    """An out-of-range future family structure must fail before model registration."""
+    with pytest.raises(ValidationError):
+        config_type(**{field: {"lower": bounds[0], "upper": bounds[1]}})  # type: ignore[operator]
 
 
 @pytest.mark.parametrize(
@@ -291,6 +312,17 @@ def test_unknown_family_name_is_rejected_at_its_precise_location(valid_config_da
             "ctx": {"expected": "'poisson_empirical', 'markov_renewal' or 'mmpp'"},
         }
     ]
+
+
+@pytest.mark.parametrize("family", ["packet_hmm", "markov_packet_train", "acd", "nhpp"])
+def test_unregistered_required_family_name_is_rejected(valid_config_data: dict[str, object], family: str) -> None:
+    """A config value type alone must not activate an incomplete model implementation."""
+    data = copy.deepcopy(valid_config_data)
+    models = cast(dict[str, object], data["models"])
+    models["enabled"] = [family]
+
+    with pytest.raises(ValidationError, match="Input should be"):
+        ExperimentConfig.model_validate(data)
 
 
 @pytest.mark.parametrize("invalid_case", ["duplicate", "empty", "missing_table", "disabled_table"])

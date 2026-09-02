@@ -4,22 +4,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, cast
+from typing import Protocol, cast
 
 import numpy as np
 
-from trafficlab.common.config import FamilyName, FloatBounds, IntegerBounds
+from trafficlab.common.config import FamilyName, FloatBounds, GeneCoordinateKind, IntegerBounds
 from trafficlab.common.errors import EvidenceState, FailureAuthority, TrafficlabError
 from trafficlab.common.trace import TrafficTrace
 from trafficlab.fitting.genetic.types import CandidateFailure, CandidateFailureKind
 from trafficlab.generation.models.common import FamilyBounds, Gene, Genes, ModelFamily
-from trafficlab.generation.models.registry import (
-    MARKOV_RENEWAL_FAMILY,
-    REGISTRY,
-    get_family,
-)
-
-type CoordinateKind = Literal["linear", "log", "integer"]
+from trafficlab.generation.models.registry import REGISTRY, get_family
 
 
 class GeneticRng(Protocol):
@@ -47,7 +41,7 @@ class GeneCoordinate:
     """One canonical gene name, transformed coordinate kind, and named bounds."""
 
     name: str
-    kind: CoordinateKind
+    kind: GeneCoordinateKind
     bounds: FloatBounds | IntegerBounds
 
 
@@ -147,16 +141,11 @@ def family_coordinates(name: FamilyName, bounds: FamilyBounds) -> tuple[GeneCoor
     family = get_family(name)
     if type(bounds) is not family.bounds_type:
         raise _invalid(f"invalid {family.name} gene bounds")
+    if len(family.gene_names) != len(family.gene_coordinate_kinds):
+        raise _invalid(f"invalid {family.name} coordinate metadata")
     coordinates: list[GeneCoordinate] = []
-    for gene_name in family.gene_names:
+    for gene_name, kind in zip(family.gene_names, family.gene_coordinate_kinds, strict=True):
         bound = getattr(bounds, gene_name)
-        kind: CoordinateKind
-        if family is MARKOV_RENEWAL_FAMILY and gene_name == "r":
-            kind = "integer"
-        elif family is MARKOV_RENEWAL_FAMILY and gene_name in {"q1", "q2", "alpha"}:
-            kind = "linear"
-        else:
-            kind = "log"
         coordinates.append(GeneCoordinate(gene_name, kind, bound))
     return tuple(coordinates)
 

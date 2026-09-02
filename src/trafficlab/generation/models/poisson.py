@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Protocol, cast
 
-from trafficlab.common.config import FamilyName, FloatBounds, GenerationLimits, PoissonConfig
+from trafficlab.common.config import FamilyName, FloatBounds, GeneCoordinateKind, GenerationLimits, PoissonConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TrafficTrace
 from trafficlab.generation.models.common import (
@@ -211,6 +211,7 @@ class PoissonFamily:
 
     name: FamilyName = "poisson_empirical"
     gene_names: tuple[str, ...] = ("c_lambda",)
+    gene_coordinate_kinds: tuple[GeneCoordinateKind, ...] = ("log",)
     bounds_type = PoissonConfig
     estimator_choices: Mapping[str, str | int | float] = {
         "first_event": "zero",

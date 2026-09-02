@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from time import monotonic
 from typing import cast
 
-from trafficlab.common.config import FamilyName, GenerationLimits, MarkovRenewalConfig
+from trafficlab.common.config import FamilyName, GeneCoordinateKind, GenerationLimits, MarkovRenewalConfig
 from trafficlab.common.trace import Direction, TrafficTrace
 from trafficlab.generation.models.common import (
     FamilyBounds,
@@ -122,6 +122,7 @@ class MarkovRenewalFamily:
 
     name: FamilyName = "markov_renewal"
     gene_names: tuple[str, ...] = ("q1", "q2", "alpha", "r", "c_t")
+    gene_coordinate_kinds: tuple[GeneCoordinateKind, ...] = ("linear", "linear", "linear", "integer", "log")
     bounds_type = MarkovRenewalConfig
     estimator_choices: Mapping[str, str | int | float] = {
         "first_event": "zero",

@@ -56,6 +56,13 @@ order. All selection indexes refer to this order.
 
 ## Gene coordinates and initialization
 
+Every registered `ModelFamily` declares one coordinate kind in canonical gene
+order alongside its `gene_names`. The supported kinds are `linear`, `log`, and
+`integer`; generic coordinate construction zips those declarations with the
+family's exact configured bounds. The current normative registry remains the
+three complete families (`poisson_empirical`, `markov_renewal`, and `mmpp`),
+and the scientific artifact schema remains 4.
+
 Every continuous gene has finite bounds `L < U`. A logarithmic gene also
 requires `L > 0`. An integer gene has integer bounds `L < U`. Continuous linear
 genes use

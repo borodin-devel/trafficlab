@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Protocol, cast
 
-from trafficlab.common.config import FamilyName, FloatBounds, GenerationLimits, MmppConfig
+from trafficlab.common.config import FamilyName, FloatBounds, GeneCoordinateKind, GenerationLimits, MmppConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TrafficTrace
 from trafficlab.generation.models.common import (
@@ -382,6 +382,7 @@ class MmppFamily:
 
     name: FamilyName = "mmpp"
     gene_names: tuple[str, ...] = ("q01", "q10", "lambda0", "lambda1")
+    gene_coordinate_kinds: tuple[GeneCoordinateKind, ...] = ("log", "log", "log", "log")
     bounds_type = MmppConfig
     estimator_choices: Mapping[str, str | int | float] = {
         "rates": "direct_genes",

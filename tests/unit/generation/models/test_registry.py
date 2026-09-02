@@ -86,6 +86,19 @@ def test_registry_is_closed_and_stably_ordered() -> None:
         get_family("plugin.family")
 
 
+def test_existing_families_declare_coordinate_kinds() -> None:
+    """Coordinate transforms belong to family contracts, not registry identity checks."""
+    assert POISSON_FAMILY.gene_coordinate_kinds == ("log",)
+    assert MARKOV_RENEWAL_FAMILY.gene_coordinate_kinds == (
+        "linear",
+        "linear",
+        "linear",
+        "integer",
+        "log",
+    )
+    assert MMPP_FAMILY.gene_coordinate_kinds == ("log", "log", "log", "log")
+
+
 @pytest.fixture
 def valid_best_model() -> BestModel:
     return make_best_model(
