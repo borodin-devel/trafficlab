@@ -12,6 +12,7 @@ from trafficlab.common.config import (
     IntegerBounds,
     MarkovRenewalConfig,
     MmppConfig,
+    PacketHmmConfig,
     PoissonConfig,
 )
 from trafficlab.common.scapy_io import encode_pcapng, read_pcapng
@@ -27,6 +28,7 @@ from trafficlab.generation.models.registry import (
     ACD_FAMILY,
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
+    PACKET_HMM_FAMILY,
     POISSON_FAMILY,
 )
 
@@ -65,6 +67,11 @@ CASES: tuple[tuple[ModelFamily, Genes, FamilyBounds], ...] = (
         ACD_FAMILY,
         (1,),
         AcdConfig(order=IntegerBounds(lower=1, upper=3)),
+    ),
+    (
+        PACKET_HMM_FAMILY,
+        (2,),
+        PacketHmmConfig(state_count=IntegerBounds(lower=2, upper=4)),
     ),
 )
 

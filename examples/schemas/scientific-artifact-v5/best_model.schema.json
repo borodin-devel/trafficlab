@@ -73,6 +73,9 @@
         },
         {
           "$ref": "#/$defs/MarkovPacketTrainPayload"
+        },
+        {
+          "$ref": "#/$defs/PacketHmmPayload"
         }
       ]
     },
@@ -446,6 +449,204 @@
       "minimum": 0,
       "type": "integer"
     },
+    "PacketHmmCategories": {
+      "items": {
+        "$ref": "#/$defs/PacketHmmCategoryPayload"
+      },
+      "type": "array"
+    },
+    "PacketHmmCategoryPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/DirectionName"
+        },
+        "iat_bin": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Iat Bin",
+          "type": "integer"
+        },
+        "size_bin": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Size Bin",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "iat_bin",
+        "direction",
+        "size_bin"
+      ],
+      "title": "PacketHmmCategoryPayload",
+      "type": "object"
+    },
+    "PacketHmmDiagnosticsPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "converged": {
+          "title": "Converged",
+          "type": "boolean"
+        },
+        "iterations": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "log_likelihoods": {
+          "$ref": "#/$defs/FloatVector"
+        }
+      },
+      "required": [
+        "converged",
+        "iterations",
+        "log_likelihoods"
+      ],
+      "title": "PacketHmmDiagnosticsPayload",
+      "type": "object"
+    },
+    "PacketHmmPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "additive_smoothing": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "convergence_tolerance": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/PacketHmmDiagnosticsPayload"
+        },
+        "emission_rows": {
+          "$ref": "#/$defs/FloatMatrix"
+        },
+        "iat_quantiles": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/ExactFloat"
+            },
+            {
+              "$ref": "#/$defs/ExactFloat"
+            }
+          ],
+          "title": "Iat Quantiles",
+          "type": "array"
+        },
+        "iat_thresholds": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "initial_marks": {
+          "$ref": "#/$defs/MarkPayloads"
+        },
+        "initial_probabilities": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "initialization": {
+          "const": "fixed_cyclic_v1",
+          "title": "Initialization",
+          "type": "string"
+        },
+        "maximum_iterations": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "reservoirs": {
+          "$ref": "#/$defs/PacketHmmReservoirs"
+        },
+        "size_quantiles": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/ExactFloat"
+            },
+            {
+              "$ref": "#/$defs/ExactFloat"
+            }
+          ],
+          "title": "Size Quantiles",
+          "type": "array"
+        },
+        "size_thresholds": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/ExactFloat"
+            },
+            {
+              "$ref": "#/$defs/ExactFloat"
+            }
+          ],
+          "title": "Size Thresholds",
+          "type": "array"
+        },
+        "state_count": {
+          "maximum": 4,
+          "minimum": 2,
+          "title": "State Count",
+          "type": "integer"
+        },
+        "transition_rows": {
+          "$ref": "#/$defs/FloatMatrix"
+        },
+        "vocabulary": {
+          "$ref": "#/$defs/PacketHmmCategories"
+        }
+      },
+      "required": [
+        "additive_smoothing",
+        "convergence_tolerance",
+        "diagnostics",
+        "emission_rows",
+        "iat_quantiles",
+        "iat_thresholds",
+        "initial_marks",
+        "initial_probabilities",
+        "initialization",
+        "maximum_iterations",
+        "reservoirs",
+        "size_quantiles",
+        "size_thresholds",
+        "state_count",
+        "transition_rows",
+        "vocabulary"
+      ],
+      "title": "PacketHmmPayload",
+      "type": "object"
+    },
+    "PacketHmmReservoirs": {
+      "items": {
+        "$ref": "#/$defs/PacketHmmSamples"
+      },
+      "type": "array"
+    },
+    "PacketHmmSamplePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "frame_length": {
+          "maximum": 4294967295,
+          "minimum": 14,
+          "title": "Frame Length",
+          "type": "integer"
+        },
+        "iat": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        }
+      },
+      "required": [
+        "iat",
+        "frame_length"
+      ],
+      "title": "PacketHmmSamplePayload",
+      "type": "object"
+    },
+    "PacketHmmSamples": {
+      "items": {
+        "$ref": "#/$defs/PacketHmmSamplePayload"
+      },
+      "type": "array"
+    },
     "PacketTrainPositionMarksPayload": {
       "additionalProperties": false,
       "properties": {
@@ -625,7 +826,8 @@
         "mmpp",
         "nhpp",
         "acd",
-        "markov_packet_train"
+        "markov_packet_train",
+        "packet_hmm"
       ],
       "title": "Family",
       "type": "string"

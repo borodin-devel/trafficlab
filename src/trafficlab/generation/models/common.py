@@ -20,6 +20,7 @@ from trafficlab.common.config import (
     MarkovRenewalConfig,
     MmppConfig,
     NhppConfig,
+    PacketHmmConfig,
     PoissonConfig,
 )
 from trafficlab.common.errors import TrafficlabError
@@ -28,7 +29,15 @@ from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 type Gene = float | int
 type Genes = tuple[Gene, ...]
 type IncompleteReason = Literal["max_packets", "max_output_bytes", "max_wall_seconds"]
-type FamilyBounds = PoissonConfig | MarkovRenewalConfig | MmppConfig | NhppConfig | AcdConfig | MarkovPacketTrainConfig
+type FamilyBounds = (
+    PoissonConfig
+    | MarkovRenewalConfig
+    | MmppConfig
+    | NhppConfig
+    | AcdConfig
+    | MarkovPacketTrainConfig
+    | PacketHmmConfig
+)
 type ModelDiagnostics = Mapping[str, int]
 type ReferenceTrace = TrafficTrace
 
@@ -99,6 +108,7 @@ class ModelFamily(Protocol):
         | type[NhppConfig]
         | type[AcdConfig]
         | type[MarkovPacketTrainConfig]
+        | type[PacketHmmConfig]
     ):
         """Return the exact configured bounds type accepted by this family."""
         ...

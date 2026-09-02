@@ -135,6 +135,11 @@ Unit tests are deterministic and do not start Docker. They cover:
   actual lengths, disjoint first/interior/last marks, within-gap pools, all
   three boundary-gap fallbacks, scalar draw order, per-packet guards, strict
   codecs, and absence of whole-train templates;
+- categorical packet-HMM explicit zero-IAT and Type-7 tercile categories,
+  observed-only vocabulary, scaled forward/backward likelihood and posteriors,
+  fixed initialization, bounded smoothed Baum--Welch, canonical labels,
+  individual raw reservoirs, exact scalar draw order, convergence records,
+  strict codecs, endpoint completion, and guard behavior;
 - population quotas, tournament ties, family compatibility, uniform crossover,
   transformed Gaussian mutation, normalized reflection, forced mutation, exact
   duplicates, duplicate-attempt bounds, fixed RNG order, and termination;
@@ -348,6 +353,17 @@ and an incomplete result when each reliability guard fires first.
       within/inter gap membership, position-mark frequencies, every timing
       fallback, endpoint, RNG-order, strict-codec, and per-packet guard
       contract</td>
+    </tr>
+    <tr>
+      <td>Categorical packet HMM</td>
+      <td>A two-state three-observation exhaustive path oracle; stationary
+      kernel <code>((0.7,0.3),(0.2,0.8))</code>; seed <code>104729</code> and
+      40,000 emitted observations</td>
+      <td>Scaled likelihood and posteriors match enumeration within
+      <code>1e-13</code>; hidden-state and marginal category frequencies are
+      within <code>0.015</code> of the independent stationary mixture; fixed
+      initialization, smoothing, convergence/cap, canonical labels,
+      zero-IAT, endpoint, RNG-order, strict-payload, and guard contracts</td>
     </tr>
     <tr>
       <td>Genetic neutrality and fairness</td>

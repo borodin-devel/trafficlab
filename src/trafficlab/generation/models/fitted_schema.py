@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Discriminator,
     Field,
+    StrictBool,
     StrictInt,
     Tag,
     model_validator,
@@ -238,6 +239,91 @@ class MarkovPacketTrainPayload(_StrictWireModel):
         return self
 
 
+class PacketHmmCategoryPayload(_StrictWireModel):
+    iat_bin: Annotated[StrictInt, Field(ge=0, le=3)]
+    direction: DirectionName
+    size_bin: Annotated[StrictInt, Field(ge=0, le=2)]
+
+
+class PacketHmmSamplePayload(_StrictWireModel):
+    iat: NonnegativeFloat
+    frame_length: Annotated[StrictInt, Field(ge=14, le=2**32 - 1)]
+
+
+class PacketHmmDiagnosticsPayload(_StrictWireModel):
+    converged: StrictBool
+    iterations: NonnegativeInt
+    log_likelihoods: FloatVector
+
+    @model_validator(mode="after")
+    def history_matches_iterations_and_is_nondecreasing(self) -> Self:
+        if len(self.log_likelihoods) != self.iterations + 1:
+            raise ValueError("log_likelihoods must contain iterations plus one values")
+        if any(
+            right + 1e-10 < left for left, right in zip(self.log_likelihoods, self.log_likelihoods[1:], strict=False)
+        ):
+            raise ValueError("log_likelihoods must be nondecreasing within tolerance")
+        return self
+
+
+type PacketHmmCategories = Annotated[tuple[PacketHmmCategoryPayload, ...], BeforeValidator(tuple_input)]
+type PacketHmmSamples = Annotated[tuple[PacketHmmSamplePayload, ...], BeforeValidator(tuple_input)]
+type PacketHmmReservoirs = Annotated[tuple[PacketHmmSamples, ...], BeforeValidator(tuple_input)]
+
+
+class PacketHmmPayload(_StrictWireModel):
+    additive_smoothing: ExactFloat
+    convergence_tolerance: ExactFloat
+    diagnostics: PacketHmmDiagnosticsPayload
+    emission_rows: FloatMatrix
+    iat_quantiles: Annotated[tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input)]
+    iat_thresholds: FloatVector
+    initial_marks: MarkPayloads
+    initial_probabilities: FloatVector
+    initialization: Literal["fixed_cyclic_v1"]
+    maximum_iterations: PositiveInt
+    reservoirs: PacketHmmReservoirs
+    size_quantiles: Annotated[tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input)]
+    size_thresholds: Annotated[tuple[ExactFloat, ExactFloat], BeforeValidator(tuple_input)]
+    state_count: Annotated[StrictInt, Field(ge=2, le=4)]
+    transition_rows: FloatMatrix
+    vocabulary: PacketHmmCategories
+
+    @model_validator(mode="after")
+    def fixed_estimator_and_table_shapes_are_complete(self) -> Self:
+        if self.additive_smoothing != 0.001:
+            raise ValueError("additive_smoothing must equal the fixed value 0.001")
+        if self.convergence_tolerance != 1e-8:
+            raise ValueError("convergence_tolerance must equal the fixed value 1e-8")
+        if self.maximum_iterations != 100:
+            raise ValueError("maximum_iterations must equal the fixed value 100")
+        terciles = (1.0 / 3.0, 2.0 / 3.0)
+        if self.iat_quantiles != terciles or self.size_quantiles != terciles:
+            raise ValueError("IAT and size quantiles must equal the fixed Type-7 terciles")
+        if len(self.iat_thresholds) not in {0, 2}:
+            raise ValueError("iat_thresholds must be empty or contain two values")
+        if self.size_thresholds[0] > self.size_thresholds[1]:
+            raise ValueError("size_thresholds must be nondecreasing")
+        if not self.vocabulary or len(set(self.vocabulary)) != len(self.vocabulary):
+            raise ValueError("vocabulary must be nonempty and unique")
+        symbol_count = len(self.vocabulary)
+        if len(self.reservoirs) != symbol_count or any(not reservoir for reservoir in self.reservoirs):
+            raise ValueError("reservoirs must contain one nonempty pool per vocabulary entry")
+        if len(self.initial_marks) != 1 or self.initial_marks[0].count != 1:
+            raise ValueError("initial_marks must contain exactly the observed t0 mark")
+        if len(self.initial_probabilities) != self.state_count:
+            raise ValueError("initial_probabilities must contain K values")
+        if len(self.transition_rows) != self.state_count or any(
+            len(row) != self.state_count for row in self.transition_rows
+        ):
+            raise ValueError("transition_rows must be K x K")
+        if len(self.emission_rows) != self.state_count or any(len(row) != symbol_count for row in self.emission_rows):
+            raise ValueError("emission_rows must be K x M")
+        if not self.diagnostics.converged and self.diagnostics.iterations != self.maximum_iterations:
+            raise ValueError("nonconverged diagnostics must reach maximum_iterations")
+        return self
+
+
 def _family_payload_discriminator(value: object) -> str | None:
     if isinstance(value, PoissonPayload):
         return "poisson_empirical"
@@ -251,9 +337,13 @@ def _family_payload_discriminator(value: object) -> str | None:
         return "acd"
     if isinstance(value, MarkovPacketTrainPayload):
         return "markov_packet_train"
+    if isinstance(value, PacketHmmPayload):
+        return "packet_hmm"
     if isinstance(value, Mapping):
         if "base_rate" in value:
             return "poisson_empirical"
+        if "emission_rows" in value:
+            return "packet_hmm"
         if "gap_threshold" in value:
             return "markov_packet_train"
         if "transition_rows" in value:
@@ -273,7 +363,8 @@ type FamilyPayload = Annotated[
     | Annotated[MmppPayload, Tag("mmpp")]
     | Annotated[NhppPayload, Tag("nhpp")]
     | Annotated[AcdPayload, Tag("acd")]
-    | Annotated[MarkovPacketTrainPayload, Tag("markov_packet_train")],
+    | Annotated[MarkovPacketTrainPayload, Tag("markov_packet_train")]
+    | Annotated[PacketHmmPayload, Tag("packet_hmm")],
     Discriminator(_family_payload_discriminator),
 ]
 
@@ -292,4 +383,6 @@ def validate_family_payload(value: object) -> FamilyPayload:
         return AcdPayload.model_validate(value)
     if discriminator == "markov_packet_train":
         return MarkovPacketTrainPayload.model_validate(value)
+    if discriminator == "packet_hmm":
+        return PacketHmmPayload.model_validate(value)
     raise ValueError("fitted payload does not identify one registered family")

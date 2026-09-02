@@ -24,6 +24,7 @@ from trafficlab.generation.models.fitted_model import (
 )
 from trafficlab.generation.models.markov_packet_train import MarkovPacketTrainFamily, MarkovPacketTrainModel
 from trafficlab.generation.models.nhpp import NhppFamily, NhppModel
+from trafficlab.generation.models.packet_hmm import PacketHmmFamily, PacketHmmModel
 from trafficlab.generation.models.registry import (
     REGISTRY,
     get_family,
@@ -47,6 +48,8 @@ __all__ = [
     "ModelFamily",
     "NhppFamily",
     "NhppModel",
+    "PacketHmmFamily",
+    "PacketHmmModel",
     "REGISTRY",
     "get_family",
     "load_best_model",

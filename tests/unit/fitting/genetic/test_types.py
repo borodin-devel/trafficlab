@@ -157,6 +157,36 @@ def test_trial_result_freezes_model_diagnostic_counts() -> None:
             TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=diagnostics)  # type: ignore[arg-type]
 
 
+def test_packet_hmm_diagnostics_require_contiguous_state_and_category_counters() -> None:
+    """Missing or invented HMM indexes would make checkpointed generation evidence ambiguous."""
+    diagnostics = {
+        "hidden_state_0_count": 3,
+        "hidden_state_1_count": 2,
+        "category_0_count": 1,
+        "category_1_count": 4,
+    }
+    trial = TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=diagnostics)
+    candidate = Candidate(
+        identifier=CandidateId(birth_generation=0, birth_index=9),
+        family="packet_hmm",
+        genes=(2,),
+        status="valid",
+        fitness=0.5,
+        trials=(trial,),
+        invalid=None,
+        duplicate_diagnostics=(),
+    )
+
+    assert dict(candidate.trials[0].model_diagnostics) == diagnostics
+    for malformed in (
+        {"hidden_state_1_count": 1, "category_0_count": 1},
+        {"hidden_state_0_count": 1},
+        {"hidden_state_0_count": 1, "category_0_count": 1, "invented_0_count": 1},
+    ):
+        with pytest.raises(ValueError, match="diagnostic"):
+            TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=malformed)
+
+
 def test_candidate_requires_model_diagnostics_owned_by_its_family() -> None:
     """A complete Markov namespace remains invalid evidence for another family."""
     trial = TrialResult(seed=3, aggregate_score=0.5, methods=_methods(), model_diagnostics=_MARKOV_MODEL_DIAGNOSTICS)

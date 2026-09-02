@@ -31,6 +31,16 @@ def markov_packet_train_config_data() -> dict[str, object]:
     }
 
 
+def packet_hmm_config_data() -> dict[str, object]:
+    """Return explicit settings for the opt-in categorical packet HMM."""
+    return {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "state_count": {"lower": 2, "upper": 4},
+    }
+
+
 def valid_config_data(root: Path) -> dict[str, object]:
     """Return a fresh valid experiment mapping rooted below ``root``."""
 

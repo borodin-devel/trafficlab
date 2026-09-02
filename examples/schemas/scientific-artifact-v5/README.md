@@ -5,7 +5,7 @@ Every root rejects unknown fields. Runtime validation additionally enforces
 canonical bytes, cross-artifact identities, lineage, arithmetic consistency,
 and scientific invariants.
 
-Schema 5 publishes the current three fitted-model families, eight-method
+Schema 5 publishes the current seven fitted-model families, eight-method
 fitness/checkpoint records, and the strict comparison result. Its fitness
 registry is `autocorrelation`, `frame_size_ks`, `iat_ks`, `multiscale_rate`,
 `cramer_von_mises`, `anderson_darling`, `jensen_shannon`, and

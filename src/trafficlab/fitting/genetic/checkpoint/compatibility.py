@@ -32,7 +32,9 @@ from trafficlab.generation.models.registry import (
 )
 
 RNG_ENGINE: Literal["numpy.random.Generator/PCG64"] = "numpy.random.Generator/PCG64"
-_FAMILY_NAMES = frozenset(("acd", "markov_packet_train", "markov_renewal", "mmpp", "nhpp", "poisson_empirical"))
+_FAMILY_NAMES = frozenset(
+    ("acd", "markov_packet_train", "markov_renewal", "mmpp", "nhpp", "packet_hmm", "poisson_empirical")
+)
 _COORDINATE_KINDS = frozenset(("linear", "log", "integer"))
 GENETIC_KEYS = (
     "master_seed",

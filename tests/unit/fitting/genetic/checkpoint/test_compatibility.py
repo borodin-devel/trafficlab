@@ -62,7 +62,7 @@ def test_rng_codec_requires_the_exact_named_generator_and_bit_generator() -> Non
         encode_rng_state(np.random.Generator(np.random.Philox(0)))
 
 
-@pytest.mark.parametrize("family_name", ("nhpp", "acd", "markov_packet_train"))
+@pytest.mark.parametrize("family_name", ("nhpp", "acd", "markov_packet_train", "packet_hmm"))
 def test_checkpoint_parser_accepts_each_new_registered_family_name(family_name: str) -> None:
     """A fresh or resumed GA state needs the current registered-name boundary."""
     assert parse_family_name(family_name, name="family name") == family_name

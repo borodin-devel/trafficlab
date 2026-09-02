@@ -28,7 +28,7 @@ def test_every_public_root_has_one_canonical_draft_2020_12_schema() -> None:
 
 
 def test_schema_five_directory_contains_current_fitness_and_model_roots() -> None:
-    """Schema publication must expose every registered model and exclude future-only names."""
+    """Schema publication must expose every registered model and its strict fitted payload."""
     assert schemas.OUTPUT_DIRECTORY.name == "scientific-artifact-v5"
     documents = {name: json.loads(content) for name, content in schemas.build_schema_documents().items()}
     checkpoint = json.dumps(documents["checkpoint.schema.json"], sort_keys=True)
@@ -54,9 +54,10 @@ def test_schema_five_directory_contains_current_fitness_and_model_roots() -> Non
     assert '"markov_packet_train"' in best_model
     assert '"markov_packet_train"' in checkpoint
     assert '"MarkovPacketTrainPayload"' in best_model
-    assert len(documents["best_model.schema.json"]["$defs"]["FamilyPayload"]["oneOf"]) == 6
-    for future_family in ("packet_hmm",):
-        assert f'"{future_family}"' not in best_model
+    assert '"packet_hmm"' in best_model
+    assert '"packet_hmm"' in checkpoint
+    assert '"PacketHmmPayload"' in best_model
+    assert len(documents["best_model.schema.json"]["$defs"]["FamilyPayload"]["oneOf"]) == 7
 
 
 def test_schema_directory_check_rejects_changed_missing_and_foreign_files(tmp_path: Path) -> None:

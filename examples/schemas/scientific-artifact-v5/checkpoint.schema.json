@@ -301,7 +301,8 @@
             "mmpp",
             "nhpp",
             "acd",
-            "markov_packet_train"
+            "markov_packet_train",
+            "packet_hmm"
           ],
           "title": "Name",
           "type": "string"
@@ -567,7 +568,8 @@
                 "mmpp",
                 "nhpp",
                 "acd",
-                "markov_packet_train"
+                "markov_packet_train",
+                "packet_hmm"
               ],
               "type": "string"
             },
@@ -704,7 +706,8 @@
             "mmpp",
             "nhpp",
             "acd",
-            "markov_packet_train"
+            "markov_packet_train",
+            "packet_hmm"
           ],
           "title": "Family",
           "type": "string"
@@ -1080,7 +1083,8 @@
             "mmpp",
             "nhpp",
             "acd",
-            "markov_packet_train"
+            "markov_packet_train",
+            "packet_hmm"
           ],
           "title": "Family",
           "type": "string"
@@ -1563,7 +1567,8 @@
             "mmpp",
             "nhpp",
             "acd",
-            "markov_packet_train"
+            "markov_packet_train",
+            "packet_hmm"
           ],
           "title": "Family",
           "type": "string"

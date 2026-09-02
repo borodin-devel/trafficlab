@@ -21,12 +21,14 @@ from tests.scientific.generation.oracles import (
     acd_unit_innovations,
     empirical_cdf,
     empirical_mean,
+    enumerate_hmm_paths,
     lag_one_covariance,
     markov_stationary_distribution,
     mmpp_moments,
     nhpp_bin_mean,
     nhpp_integrated_intensity,
     packet_train_oracle,
+    stationary_distribution_two_state,
 )
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.common.compatibility import identify_bytes
@@ -39,6 +41,7 @@ from trafficlab.common.config import (
     MarkovRenewalConfig,
     MmppConfig,
     NhppConfig,
+    PacketHmmConfig,
     PoissonConfig,
 )
 from trafficlab.common.scapy_io import read_pcapng_bytes
@@ -68,6 +71,14 @@ from trafficlab.generation.models.markov_renewal import (
 )
 from trafficlab.generation.models.mmpp import MmppFamily, MmppModel
 from trafficlab.generation.models.nhpp import NhppFamily, NhppModel
+from trafficlab.generation.models.packet_hmm import (
+    BaumWelchDiagnostics,
+    PacketCategory,
+    PacketHmmFamily,
+    PacketHmmModel,
+    PacketSample,
+    forward_backward,
+)
 from trafficlab.generation.models.poisson import PoissonFamily, PoissonModel
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -78,6 +89,7 @@ _MARKOV_SEEDS = (5101, 5209, 5303, 5413)
 _MMPP_SEEDS = (7103, 7207, 7309, 7411)
 _NHPP_SEEDS = (8101, 8209, 8303, 8411)
 _ACD_SEEDS = (9103, 9209, 9301, 9403)
+_PACKET_HMM_SEED = 104729
 
 _POISSON_WINDOW = 4096.0
 _POISSON_SAMPLE_SIZE = 12_000
@@ -89,6 +101,7 @@ _NHPP_WINDOW = 1200.0
 _NHPP_BIN_WIDTH = 400.0
 _ACD_WINDOW = 12_000.0
 _ACD_SAMPLE_SIZE = 8_000
+_PACKET_HMM_SAMPLE_SIZE = 40_000
 
 # These constants are fixed by architecture/TESTING.md, not selected from test output.
 _POISSON_MEAN_RELATIVE_TOLERANCE = 0.05
@@ -105,6 +118,7 @@ _MARK_TOLERANCE = 0.03
 _NHPP_COUNT_RELATIVE_TOLERANCE = 0.1
 _ACD_MEAN_RELATIVE_TOLERANCE = 0.06
 _ACD_INNOVATION_MEAN_TOLERANCE = 0.05
+_PACKET_HMM_FREQUENCY_TOLERANCE = 0.015
 
 _LIMITS = GenerationLimits(
     max_packets=100_000,
@@ -165,6 +179,33 @@ def _packet_train_model() -> MarkovPacketTrainModel:
 
 
 _PACKET_TRAIN_MODEL = _packet_train_model()
+
+
+def _guard_packet_hmm_model() -> PacketHmmModel:
+    return PacketHmmModel(
+        additive_smoothing=0.001,
+        convergence_tolerance=1e-8,
+        diagnostics=BaumWelchDiagnostics(True, 1, (-2.0, -1.5)),
+        emission_rows=((0.8, 0.2), (0.1, 0.9)),
+        iat_quantiles=(1.0 / 3.0, 2.0 / 3.0),
+        iat_thresholds=(5.0 / 3.0, 7.0 / 3.0),
+        initial_marks=MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),)),
+        initial_probabilities=(0.75, 0.25),
+        initialization="fixed_cyclic_v1",
+        maximum_iterations=100,
+        reservoirs=((PacketSample(1.0, 70),), (PacketSample(3.0, 130),)),
+        size_quantiles=(1.0 / 3.0, 2.0 / 3.0),
+        size_thresholds=(90.0, 110.0),
+        state_count=2,
+        transition_rows=((0.75, 0.25), (0.25, 0.75)),
+        vocabulary=(
+            PacketCategory(1, Direction.INBOUND, 0),
+            PacketCategory(3, Direction.OUTBOUND, 2),
+        ),
+    )
+
+
+_PACKET_HMM_MODEL = _guard_packet_hmm_model()
 
 
 def test_packet_train_three_train_fit_matches_independent_hand_oracle() -> None:
@@ -787,13 +828,14 @@ def _family_models() -> tuple[tuple[ModelFamily, FittedModel], ...]:
         (MmppFamily(), _MMPP_MODEL),
         (AcdFamily(), _ACD_MODEL),
         (MarkovPacketTrainFamily(), _PACKET_TRAIN_MODEL),
+        (PacketHmmFamily(), _PACKET_HMM_MODEL),
     )
 
 
 @pytest.mark.parametrize(
     ("family", "model"),
     _family_models(),
-    ids=("poisson_empirical", "markov_renewal", "mmpp", "acd", "markov_packet_train"),
+    ids=("poisson_empirical", "markov_renewal", "mmpp", "acd", "markov_packet_train", "packet_hmm"),
 )
 def test_each_family_reports_all_resource_guards_as_incomplete(
     family: ModelFamily,
@@ -823,6 +865,98 @@ def test_each_family_reports_all_resource_guards_as_incomplete(
         assert result.reason == reason
 
 
+def test_packet_hmm_forward_backward_matches_independent_hidden_path_oracle() -> None:
+    """Scaled recursions must agree with exhaustive hidden-path likelihood and posterior sums."""
+    observations = (0, 1, 0)
+    initial = (0.4, 0.6)
+    transitions = ((0.7, 0.3), (0.2, 0.8))
+    emissions = ((0.2, 0.8), (0.85, 0.15))
+    oracle = enumerate_hmm_paths(observations, initial, transitions, emissions)
+
+    fitted = forward_backward(observations, initial, transitions, emissions)
+
+    _assert_close(
+        "packet-hmm-tiny-likelihood",
+        seed=0,
+        sample_size=len(observations),
+        expected=oracle.likelihood,
+        observed=math.exp(fitted.log_likelihood),
+        tolerance=1e-14,
+    )
+    assert fitted.gamma == pytest.approx(np.asarray(oracle.state_posteriors), abs=1e-13)
+
+
+def _frequency_packet_hmm_model() -> PacketHmmModel:
+    return PacketHmmModel(
+        additive_smoothing=0.001,
+        convergence_tolerance=1e-8,
+        diagnostics=BaumWelchDiagnostics(True, 1, (-2.0, -1.5)),
+        emission_rows=((0.2, 0.8), (0.85, 0.15)),
+        iat_quantiles=(1.0 / 3.0, 2.0 / 3.0),
+        iat_thresholds=(1.0, 1.0),
+        initial_marks=MarkDistribution((MarkCount(Direction.OUTBOUND, 80, 1),)),
+        initial_probabilities=(0.4, 0.6),
+        initialization="fixed_cyclic_v1",
+        maximum_iterations=100,
+        reservoirs=((PacketSample(1.0, 60),), (PacketSample(1.0, 120),)),
+        size_quantiles=(1.0 / 3.0, 2.0 / 3.0),
+        size_thresholds=(80.0, 100.0),
+        state_count=2,
+        transition_rows=((0.7, 0.3), (0.2, 0.8)),
+        vocabulary=(
+            PacketCategory(1, Direction.OUTBOUND, 0),
+            PacketCategory(1, Direction.INBOUND, 2),
+        ),
+    )
+
+
+def test_packet_hmm_long_run_state_and_emission_frequencies_match_stationary_oracles() -> None:
+    """The transition then emission sampler must reproduce independent stationary and mixture frequencies."""
+    model = _frequency_packet_hmm_model()
+    stationary = stationary_distribution_two_state(((0.7, 0.3), (0.2, 0.8)))
+    expected_categories = (
+        stationary[0] * 0.2 + stationary[1] * 0.85,
+        stationary[0] * 0.8 + stationary[1] * 0.15,
+    )
+    limits = GenerationLimits(
+        max_packets=_PACKET_HMM_SAMPLE_SIZE + 2,
+        max_output_bytes=10_000_000,
+        max_wall_seconds=30.0,
+    )
+
+    result = PacketHmmFamily().generate(
+        model,
+        _PACKET_HMM_SEED,
+        float(_PACKET_HMM_SAMPLE_SIZE),
+        limits,
+        clock=lambda: 0.0,
+    )
+    events = _assert_complete_trace(result, window=float(_PACKET_HMM_SAMPLE_SIZE))
+    diagnostics = dict(result.model_diagnostics)
+
+    assert len(events) == _PACKET_HMM_SAMPLE_SIZE + 1
+    for state, expected in enumerate(stationary):
+        observed = diagnostics[f"hidden_state_{state}_count"] / _PACKET_HMM_SAMPLE_SIZE
+        _assert_close(
+            f"packet-hmm-state-{state}",
+            seed=_PACKET_HMM_SEED,
+            sample_size=_PACKET_HMM_SAMPLE_SIZE,
+            expected=expected,
+            observed=observed,
+            tolerance=_PACKET_HMM_FREQUENCY_TOLERANCE,
+        )
+    for category, expected in enumerate(expected_categories):
+        observed = diagnostics[f"category_{category}_count"] / _PACKET_HMM_SAMPLE_SIZE
+        _assert_close(
+            f"packet-hmm-category-{category}",
+            seed=_PACKET_HMM_SEED,
+            sample_size=_PACKET_HMM_SAMPLE_SIZE,
+            expected=expected,
+            observed=observed,
+            tolerance=_PACKET_HMM_FREQUENCY_TOLERANCE,
+        )
+
+
 def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
     if family_name == "poisson_empirical":
         return (
@@ -846,6 +980,8 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
         return ((1,), AcdConfig(order=IntegerBounds(lower=1, upper=3)))
     if family_name == "markov_packet_train":
         return ((3,), MarkovPacketTrainConfig(length_cap=IntegerBounds(lower=3, upper=8)))
+    if family_name == "packet_hmm":
+        return ((2,), PacketHmmConfig(state_count=IntegerBounds(lower=2, upper=4)))
     return (
         (1.0, 3.0, 1.0, 9.0),
         MmppConfig(
@@ -859,7 +995,7 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
 
 @pytest.mark.parametrize(
     "family_name",
-    ("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train"),
+    ("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train", "packet_hmm"),
 )
 def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name: str) -> None:
     """Every production family must reload and reproduce canonical bytes at its stored window."""

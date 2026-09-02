@@ -131,6 +131,14 @@ for every enabled family as well as the overall winner.
       <td>Results depend on the fixed reference q90 segmentation</td>
       <td>Linear fit plus active-state matrix</td>
     </tr>
+    <tr>
+      <td><a href="packet_hmm.md">Categorical packet HMM</a></td>
+      <td>Latent regimes emitting joint IAT, direction, and size categories</td>
+      <td>Integer state count in 2..4</td>
+      <td>Couples timing and marks under a compact latent dependence model</td>
+      <td>Local optima and categorical resolution depend on fixed reference bins</td>
+      <td>Bounded <code>O(NK^2)</code> work per EM iteration</td>
+    </tr>
   </tbody>
 </table>
 

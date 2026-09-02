@@ -5,7 +5,12 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from tests.support.config import acd_config_data, markov_packet_train_config_data, nhpp_config_data
+from tests.support.config import (
+    acd_config_data,
+    markov_packet_train_config_data,
+    nhpp_config_data,
+    packet_hmm_config_data,
+)
 from trafficlab.common.config import AcdConfig, ExperimentConfig, MarkovPacketTrainConfig, NhppConfig, PacketHmmConfig
 
 
@@ -136,6 +141,22 @@ def test_markov_packet_train_can_be_explicitly_enabled_without_changing_default_
     assert config.models.markov_packet_train is not None
     assert config.models.markov_packet_train.length_cap.lower == 3
     assert config.models.markov_packet_train.length_cap.upper == 8
+
+
+def test_packet_hmm_can_be_explicitly_enabled_without_changing_default_model_selection(
+    valid_config_data: dict[str, object],
+) -> None:
+    """The seventh family is opt-in and participates in exact enabled/table agreement."""
+    data = copy.deepcopy(valid_config_data)
+    models = cast(dict[str, object], data["models"])
+    models["enabled"] = ["poisson_empirical", "markov_renewal", "mmpp", "packet_hmm"]
+    models["packet_hmm"] = packet_hmm_config_data()
+
+    config = ExperimentConfig.model_validate(data)
+
+    assert config.models.packet_hmm is not None
+    assert config.models.packet_hmm.state_count.lower == 2
+    assert config.models.packet_hmm.state_count.upper == 4
 
 
 @pytest.mark.parametrize(
@@ -356,24 +377,13 @@ def test_unknown_family_name_is_rejected_at_its_precise_location(valid_config_da
         {
             "type": "literal_error",
             "loc": ("models", "enabled", 0),
-            "msg": "Input should be 'poisson_empirical', 'markov_renewal', 'mmpp', 'nhpp', 'acd' or 'markov_packet_train'",
+            "msg": "Input should be 'poisson_empirical', 'markov_renewal', 'mmpp', 'nhpp', 'acd', 'markov_packet_train' or 'packet_hmm'",
             "input": "not_a_model",
             "ctx": {
-                "expected": "'poisson_empirical', 'markov_renewal', 'mmpp', 'nhpp', 'acd' or 'markov_packet_train'"
+                "expected": "'poisson_empirical', 'markov_renewal', 'mmpp', 'nhpp', 'acd', 'markov_packet_train' or 'packet_hmm'"
             },
         }
     ]
-
-
-@pytest.mark.parametrize("family", ["packet_hmm"])
-def test_unregistered_required_family_name_is_rejected(valid_config_data: dict[str, object], family: str) -> None:
-    """A config value type alone must not activate an incomplete model implementation."""
-    data = copy.deepcopy(valid_config_data)
-    models = cast(dict[str, object], data["models"])
-    models["enabled"] = [family]
-
-    with pytest.raises(ValidationError, match="Input should be"):
-        ExperimentConfig.model_validate(data)
 
 
 @pytest.mark.parametrize("invalid_case", ["duplicate", "empty", "missing_table", "disabled_table"])

@@ -8,6 +8,7 @@ moments follow the two-state MAP representation documented in
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections import Counter
 from dataclasses import dataclass
@@ -18,6 +19,54 @@ type Matrix2 = tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]]
 type Vector2 = tuple[Fraction, Fraction]
 type PacketMark = tuple[str, int]
 type PacketPosition = Literal["first", "interior", "last"]
+
+
+@dataclass(frozen=True, slots=True)
+class HmmPathOracle:
+    """Exact tiny categorical-HMM likelihood and posterior probabilities."""
+
+    likelihood: float
+    state_posteriors: tuple[tuple[float, ...], ...]
+
+
+def enumerate_hmm_paths(
+    observations: tuple[int, ...],
+    initial: tuple[float, ...],
+    transitions: tuple[tuple[float, ...], ...],
+    emissions: tuple[tuple[float, ...], ...],
+) -> HmmPathOracle:
+    """Enumerate all K**N hidden paths without production recursions."""
+    state_count = len(initial)
+    if not observations or state_count == 0:
+        raise ValueError("HMM oracle requires observations and states")
+    weighted_paths: list[tuple[tuple[int, ...], float]] = []
+    for path in itertools.product(range(state_count), repeat=len(observations)):
+        probability = initial[path[0]] * emissions[path[0]][observations[0]]
+        for time in range(1, len(observations)):
+            probability *= transitions[path[time - 1]][path[time]]
+            probability *= emissions[path[time]][observations[time]]
+        weighted_paths.append((path, probability))
+    likelihood = math.fsum(probability for _path, probability in weighted_paths)
+    if not math.isfinite(likelihood) or likelihood <= 0.0:
+        raise ValueError("HMM oracle requires positive finite path mass")
+    posteriors = tuple(
+        tuple(
+            math.fsum(probability for path, probability in weighted_paths if path[time] == state) / likelihood
+            for state in range(state_count)
+        )
+        for time in range(len(observations))
+    )
+    return HmmPathOracle(likelihood=likelihood, state_posteriors=posteriors)
+
+
+def stationary_distribution_two_state(
+    transitions: tuple[tuple[float, float], tuple[float, float]],
+) -> tuple[float, float]:
+    """Solve pi=pi*A directly from cross-transition probabilities."""
+    cross_total = transitions[0][1] + transitions[1][0]
+    if not math.isfinite(cross_total) or cross_total <= 0.0:
+        raise ValueError("two-state transition kernel must have positive finite cross mass")
+    return (transitions[1][0] / cross_total, transitions[0][1] / cross_total)
 
 
 @dataclass(frozen=True, slots=True)

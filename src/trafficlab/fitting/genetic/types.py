@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping
 from functools import total_ordering
 from typing import Annotated, Literal, Self, cast
@@ -46,7 +47,9 @@ _EVIDENCE_STATES = frozenset(("not_published", "diagnostic_only", "preserved", "
 _FAILURE_AUTHORITIES = frozenset(("primary", "secondary"))
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _CANDIDATE_STATUSES = frozenset(("pending", "valid", "invalid"))
-_FAMILY_NAMES = frozenset(("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train"))
+_FAMILY_NAMES = frozenset(
+    ("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train", "packet_hmm")
+)
 _MARKOV_MODEL_DIAGNOSTIC_NAMES = frozenset(MARKOV_MODEL_DIAGNOSTIC_KEYS)
 
 
@@ -81,18 +84,43 @@ def _empty_model_diagnostics() -> dict[str, int]:
     return {}
 
 
+def _is_packet_hmm_diagnostic_shape(diagnostics: ModelDiagnostics) -> bool:
+    names = frozenset(diagnostics)
+    state_indexes = {
+        int(match.group(1)) for name in names if (match := re.fullmatch(r"hidden_state_(\d+)_count", name))
+    }
+    category_indexes = {int(match.group(1)) for name in names if (match := re.fullmatch(r"category_(\d+)_count", name))}
+    expected_names = {
+        *(f"hidden_state_{index}_count" for index in state_indexes),
+        *(f"category_{index}_count" for index in category_indexes),
+    }
+    return (
+        names == frozenset(expected_names)
+        and 2 <= len(state_indexes) <= 4
+        and state_indexes == set(range(len(state_indexes)))
+        and 1 <= len(category_indexes) <= 24
+        and category_indexes == set(range(len(category_indexes)))
+        and sum(diagnostics[f"hidden_state_{index}_count"] for index in state_indexes)
+        == sum(diagnostics[f"category_{index}_count"] for index in category_indexes)
+    )
+
+
 def _validate_model_diagnostic_shape(diagnostics: ModelDiagnostics) -> None:
     names = frozenset(diagnostics)
-    if names and names != _MARKOV_MODEL_DIAGNOSTIC_NAMES:
-        raise ValueError("model diagnostics must be empty or contain exactly the four canonical Markov counters")
+    if names and names != _MARKOV_MODEL_DIAGNOSTIC_NAMES and not _is_packet_hmm_diagnostic_shape(diagnostics):
+        raise ValueError("model diagnostics must be empty or use one complete registered counter namespace")
 
 
 def validate_model_diagnostics_for_family(family: FamilyName, diagnostics: ModelDiagnostics) -> None:
     """Require the one diagnostics namespace owned by a candidate family."""
-    expected: frozenset[str] = (
-        _MARKOV_MODEL_DIAGNOSTIC_NAMES if family in {"markov_renewal", "markov_packet_train"} else frozenset()
+    valid = (
+        frozenset(diagnostics) == _MARKOV_MODEL_DIAGNOSTIC_NAMES
+        if family in {"markov_renewal", "markov_packet_train"}
+        else _is_packet_hmm_diagnostic_shape(diagnostics)
+        if family == "packet_hmm"
+        else not diagnostics
     )
-    if frozenset(diagnostics) != expected:
+    if not valid:
         raise ValueError(f"model diagnostics for family {family} do not match its canonical counter namespace")
 
 

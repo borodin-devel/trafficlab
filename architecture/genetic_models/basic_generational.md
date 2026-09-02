@@ -59,12 +59,12 @@ order. All selection indexes refer to this order.
 Every registered `ModelFamily` declares one coordinate kind in canonical gene
 order alongside its `gene_names`. The supported kinds are `linear`, `log`, and
 `integer`; generic coordinate construction zips those declarations with the
-family's exact configured bounds. The current normative registry contains six
+family's exact configured bounds. The current normative registry contains seven
 complete families (`poisson_empirical`, `markov_renewal`, `mmpp`, `nhpp`,
-`acd`, and `markov_packet_train`), and the scientific artifact schema is 5.
+`acd`, `markov_packet_train`, and `packet_hmm`), and the scientific artifact schema is 5.
 Release-default examples retain the original three families; newer families
-such as NHPP, ACD, and Markov packet trains are enabled only by explicit family
-tables. A schema-4 checkpoint is rejected
+such as NHPP, ACD, Markov packet trains, and packet HMMs are enabled only by
+explicit family tables. A schema-4 checkpoint is rejected
 before resume with an instruction to refit under the current schema in a new
 run directory. A schema-4 best model is likewise rejected before generation or
 stage reuse with an instruction to refit under the current schema; neither

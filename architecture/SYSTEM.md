@@ -259,15 +259,16 @@ Each enabled family has `crossover_probability`, `mutation_probability`, and
 | `nhpp` | 1 | 0.9 | 1.0 | 0.1 |
 | `acd` | 1 | 0.9 | 1.0 | 0.1 |
 | `markov_packet_train` | 1 | 0.9 | 1.0 | 0.1 |
+| `packet_hmm` | 1 | 0.9 | 1.0 | 0.1 |
 
 An experiment may override each value independently.
 Both probabilities must be finite and in `[0, 1]`. The normalized mutation scale
 must be finite and in `(0, 1]`. There is no global operator setting, and an
 individual gene cannot override its family's values.
 The registered family names are `poisson_empirical`, `markov_renewal`, `mmpp`,
-`nhpp`, `acd`, and `markov_packet_train`. Release-default examples retain the
-original three families; newer families such as NHPP, ACD, and Markov packet
-trains require explicit enabled tables.
+`nhpp`, `acd`, `markov_packet_train`, and `packet_hmm`. Release-default examples
+retain the original three families; newer families such as NHPP, ACD, Markov
+packet trains, and packet HMMs require explicit enabled tables.
 Unknown operator keys, unknown family names, and operator settings for a disabled
 family are configuration errors.
 

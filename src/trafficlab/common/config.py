@@ -27,6 +27,7 @@ FamilyName = Literal[
     "nhpp",
     "acd",
     "markov_packet_train",
+    "packet_hmm",
 ]
 type GeneCoordinateKind = Literal["linear", "log", "integer"]
 
@@ -257,7 +258,7 @@ class MmppConfig(FamilyOperators):
 
 
 class PacketHmmConfig(FamilyOperators):
-    """Strict future packet-HMM structural settings, kept outside the live registry."""
+    """Strict latent-state bounds for the categorical packet-HMM family."""
 
     crossover_probability: Probability = 0.9
     mutation_probability: Probability = 1.0
@@ -328,6 +329,7 @@ class ModelsConfig(StrictModel):
     nhpp: NhppConfig | None = None
     acd: AcdConfig | None = None
     markov_packet_train: MarkovPacketTrainConfig | None = None
+    packet_hmm: PacketHmmConfig | None = None
 
     @model_validator(mode="after")
     def enabled_families_match_configured_tables(self) -> Self:
@@ -340,6 +342,7 @@ class ModelsConfig(StrictModel):
                 ("nhpp", self.nhpp),
                 ("acd", self.acd),
                 ("markov_packet_train", self.markov_packet_train),
+                ("packet_hmm", self.packet_hmm),
             )
             if table is not None
         }
