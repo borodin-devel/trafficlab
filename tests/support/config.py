@@ -89,6 +89,32 @@ def valid_config_data(root: Path) -> dict[str, object]:
             "mmd_feature_count": 16,
             "mmd_seed": 2026,
             "mmd_scale_floor": 0.001,
+            "postfit": {
+                "dispersion": {
+                    "widths_seconds": [0.25, 1.0],
+                    "scale_weights": [0.5, 0.5],
+                    "fano_weight": 0.5,
+                    "allan_weight": 0.5,
+                },
+                "transition": {
+                    "size_bin_count": 2,
+                    "iat_bin_count": 2,
+                    "pseudocount": 0.5,
+                    "occupancy_weight": 0.34,
+                    "transition_rows_weight": 0.33,
+                    "runs_weight": 0.33,
+                },
+                "c2st": {
+                    "feature_version": "window-v1",
+                    "window_width_seconds": 0.25,
+                    "fold_count": 3,
+                    "guard_window_count": 1,
+                    "maximum_window_count": 4096,
+                    "l2_regularization": 1.0,
+                    "maximum_iterations": 200,
+                    "tolerance": 1e-9,
+                },
+            },
             "method_weights": {
                 "frame_size_ks": 0.125,
                 "iat_ks": 0.125,

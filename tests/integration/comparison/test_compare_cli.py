@@ -241,7 +241,13 @@ def test_checked_in_similarity_artifact_keeps_the_fixed_eight_method_json_shape(
     """A weight choice must not remove a required method or its retained diagnostics from published JSON."""
     document = load_comparison_result(_EXAMPLE_DATA / "similarity.json").as_dict()
 
-    assert tuple(document) == ("aggregate_score", "input_identities", "methods", "observation_window_seconds")
+    assert tuple(document) == (
+        "aggregate_score",
+        "input_identities",
+        "methods",
+        "observation_window_seconds",
+        "postfit_diagnostics",
+    )
     methods = cast(dict[str, dict[str, object]], document["methods"])
     assert tuple(methods) == (
         "autocorrelation",
@@ -254,6 +260,9 @@ def test_checked_in_similarity_artifact_keeps_the_fixed_eight_method_json_shape(
         "approximate_mmd",
     )
     assert all(tuple(method) == ("diagnostics", "score", "weight") for method in methods.values())
+    postfit = cast(dict[str, dict[str, object]], document["postfit_diagnostics"])
+    assert tuple(postfit) == ("classical_c2st", "fano_allan", "transition_matrix")
+    assert all(tuple(diagnostic) == ("diagnostics", "score") for diagnostic in postfit.values())
 
 
 def test_reversing_only_directions_has_maximum_multiscale_discrepancy() -> None:

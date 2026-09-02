@@ -547,6 +547,49 @@ def test_each_method_weight_is_bounded_before_normalized_sum_validation(
     )
 
 
+def test_postfit_settings_are_required_without_compatibility_defaults(valid_config_data: dict[str, object]) -> None:
+    """A schema-5 config missing final-diagnostic semantics must not silently acquire them."""
+    data = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], data["similarity"]).pop("postfit")
+
+    with pytest.raises(ValidationError) as error:
+        ExperimentConfig.model_validate(data)
+
+    assert error.value.errors(include_url=False)[0]["loc"] == ("similarity", "postfit")
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("dispersion", "widths_seconds"), [1.0, 1.0]),
+        (("dispersion", "scale_weights"), [1.0]),
+        (("dispersion", "fano_weight"), 0.75),
+        (("transition", "size_bin_count"), 0),
+        (("transition", "pseudocount"), 0.0),
+        (("transition", "occupancy_weight"), 0.5),
+        (("c2st", "feature_version"), "future-v2"),
+        (("c2st", "window_width_seconds"), 0.0),
+        (("c2st", "fold_count"), 1),
+        (("c2st", "guard_window_count"), -1),
+        (("c2st", "maximum_window_count"), 0),
+        (("c2st", "l2_regularization"), 0.0),
+        (("c2st", "maximum_iterations"), 0),
+        (("c2st", "tolerance"), 0.0),
+    ],
+)
+def test_postfit_settings_reject_ambiguous_or_unbounded_values(
+    valid_config_data: dict[str, object], path: tuple[str, str], value: object
+) -> None:
+    """Every representation, fold, solver, smoothing, weight, and allocation choice is explicit and bounded."""
+    data = copy.deepcopy(valid_config_data)
+    similarity = cast(dict[str, object], data["similarity"])
+    postfit = cast(dict[str, object], similarity["postfit"])
+    cast(dict[str, object], postfit[path[0]])[path[1]] = value
+
+    with pytest.raises(ValidationError):
+        ExperimentConfig.model_validate(data)
+
+
 @pytest.mark.parametrize(
     "path",
     [

@@ -124,6 +124,10 @@
       "title": "ApproximateMmdDiagnostic",
       "type": "object"
     },
+    "AtLeastTwoInt": {
+      "minimum": 2,
+      "type": "integer"
+    },
     "AutocorrelationDiagnostic": {
       "additionalProperties": false,
       "properties": {
@@ -159,6 +163,198 @@
         "discrepancy"
       ],
       "title": "AutocorrelationDiagnostic",
+      "type": "object"
+    },
+    "C2stComparison": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "$ref": "#/$defs/C2stDiagnostic"
+        },
+        "score": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "diagnostics",
+        "score"
+      ],
+      "title": "C2stComparison",
+      "type": "object"
+    },
+    "C2stDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "auc": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "balanced_accuracy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "coefficients": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "feature_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Feature Names",
+          "type": "array"
+        },
+        "feature_version": {
+          "const": "window-v1",
+          "title": "Feature Version",
+          "type": "string"
+        },
+        "fold_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "folds": {
+          "items": {
+            "$ref": "#/$defs/C2stFoldDiagnostic"
+          },
+          "title": "Folds",
+          "type": "array"
+        },
+        "guard_window_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "intercept": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "l2_regularization": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "maximum_iterations": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "maximum_window_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "out_of_fold_generated_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "out_of_fold_reference_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "solver": {
+          "const": "scipy.optimize.minimize/L-BFGS-B",
+          "title": "Solver",
+          "type": "string"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "window_count_per_trace": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "window_width_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "feature_version",
+        "feature_names",
+        "window_width_seconds",
+        "window_count_per_trace",
+        "fold_count",
+        "guard_window_count",
+        "maximum_window_count",
+        "l2_regularization",
+        "maximum_iterations",
+        "tolerance",
+        "solver",
+        "intercept",
+        "coefficients",
+        "folds",
+        "out_of_fold_reference_count",
+        "out_of_fold_generated_count",
+        "balanced_accuracy",
+        "auc"
+      ],
+      "title": "C2stDiagnostic",
+      "type": "object"
+    },
+    "C2stFoldDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "auc": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "balanced_accuracy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "coefficients": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "converged": {
+          "title": "Converged",
+          "type": "boolean"
+        },
+        "evaluation_generated_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "evaluation_reference_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "evaluation_window_indexes": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "final_loss": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "fold_index": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "guard_window_indexes": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "intercept": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "iterations": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "reference_training_mean": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "reference_training_scale": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "training_generated_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "training_reference_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "training_window_indexes": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        }
+      },
+      "required": [
+        "fold_index",
+        "training_window_indexes",
+        "guard_window_indexes",
+        "evaluation_window_indexes",
+        "training_reference_count",
+        "training_generated_count",
+        "evaluation_reference_count",
+        "evaluation_generated_count",
+        "reference_training_mean",
+        "reference_training_scale",
+        "intercept",
+        "coefficients",
+        "iterations",
+        "final_loss",
+        "converged",
+        "auc",
+        "balanced_accuracy"
+      ],
+      "title": "C2stFoldDiagnostic",
       "type": "object"
     },
     "ComparisonInputIdentities": {
@@ -204,6 +400,12 @@
       ],
       "title": "ContentIdentityPayload",
       "type": "object"
+    },
+    "CountRows": {
+      "items": {
+        "$ref": "#/$defs/NonnegativeIntTuple"
+      },
+      "type": "array"
     },
     "CramerVonMisesDiagnostic": {
       "additionalProperties": false,
@@ -303,6 +505,65 @@
       "title": "DirectionValues",
       "type": "object"
     },
+    "DispersionChannelCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "inbound": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "outbound": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "total": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        }
+      },
+      "required": [
+        "total",
+        "outbound",
+        "inbound"
+      ],
+      "title": "DispersionChannelCounts",
+      "type": "object"
+    },
+    "DispersionChannelValues": {
+      "additionalProperties": false,
+      "properties": {
+        "inbound": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "outbound": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "total": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        }
+      },
+      "required": [
+        "total",
+        "outbound",
+        "inbound"
+      ],
+      "title": "DispersionChannelValues",
+      "type": "object"
+    },
+    "DispersionComponentValues": {
+      "additionalProperties": false,
+      "properties": {
+        "allan": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "fano": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "fano",
+        "allan"
+      ],
+      "title": "DispersionComponentValues",
+      "type": "object"
+    },
     "EcdfDirectionStrata": {
       "additionalProperties": false,
       "properties": {
@@ -376,6 +637,121 @@
     },
     "ExactFloat": {
       "type": "number"
+    },
+    "FanoAllanComparison": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "$ref": "#/$defs/FanoAllanDiagnostic"
+        },
+        "score": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "diagnostics",
+        "score"
+      ],
+      "title": "FanoAllanComparison",
+      "type": "object"
+    },
+    "FanoAllanDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "component_differences": {
+          "$ref": "#/$defs/DispersionComponentValues"
+        },
+        "component_weights": {
+          "$ref": "#/$defs/DispersionComponentValues"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "scale_differences": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "scale_weights": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "scales": {
+          "items": {
+            "$ref": "#/$defs/FanoAllanScaleDiagnostic"
+          },
+          "title": "Scales",
+          "type": "array"
+        },
+        "total_direction_window_cells": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "widths": {
+          "$ref": "#/$defs/FloatTuple"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "widths",
+        "scale_weights",
+        "component_weights",
+        "total_direction_window_cells",
+        "scales",
+        "component_differences",
+        "scale_differences",
+        "discrepancy"
+      ],
+      "title": "FanoAllanDiagnostic",
+      "type": "object"
+    },
+    "FanoAllanScaleDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "component_differences": {
+          "$ref": "#/$defs/DispersionComponentValues"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "generated_allan": {
+          "$ref": "#/$defs/DispersionChannelValues"
+        },
+        "generated_counts": {
+          "$ref": "#/$defs/DispersionChannelCounts"
+        },
+        "generated_fano": {
+          "$ref": "#/$defs/DispersionChannelValues"
+        },
+        "reference_allan": {
+          "$ref": "#/$defs/DispersionChannelValues"
+        },
+        "reference_counts": {
+          "$ref": "#/$defs/DispersionChannelCounts"
+        },
+        "reference_fano": {
+          "$ref": "#/$defs/DispersionChannelValues"
+        },
+        "width_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "window_count": {
+          "$ref": "#/$defs/AtLeastTwoInt"
+        }
+      },
+      "required": [
+        "width_seconds",
+        "window_count",
+        "reference_counts",
+        "generated_counts",
+        "reference_fano",
+        "generated_fano",
+        "reference_allan",
+        "generated_allan",
+        "component_differences",
+        "discrepancy"
+      ],
+      "title": "FanoAllanScaleDiagnostic",
+      "type": "object"
     },
     "FeatureDirectionAvailability": {
       "additionalProperties": false,
@@ -796,6 +1172,12 @@
       "minimum": 0,
       "type": "integer"
     },
+    "NonnegativeIntTuple": {
+      "items": {
+        "$ref": "#/$defs/NonnegativeInt"
+      },
+      "type": "array"
+    },
     "PositiveFloat": {
       "$ref": "#/$defs/ExactFloat",
       "gt": 0.0
@@ -803,6 +1185,27 @@
     "PositiveInt": {
       "exclusiveMinimum": 0,
       "type": "integer"
+    },
+    "PostfitDiagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "classical_c2st": {
+          "$ref": "#/$defs/C2stComparison"
+        },
+        "fano_allan": {
+          "$ref": "#/$defs/FanoAllanComparison"
+        },
+        "transition_matrix": {
+          "$ref": "#/$defs/TransitionMatrixComparison"
+        }
+      },
+      "required": [
+        "classical_c2st",
+        "fano_allan",
+        "transition_matrix"
+      ],
+      "title": "PostfitDiagnostics",
+      "type": "object"
     },
     "PublishedAndersonDarlingMethod": {
       "additionalProperties": false,
@@ -1013,6 +1416,295 @@
       "title": "PublishedMultiscaleMethod",
       "type": "object"
     },
+    "RunCategory": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        {
+          "const": "overflow",
+          "type": "string"
+        }
+      ]
+    },
+    "RunVocabulary": {
+      "items": {
+        "$ref": "#/$defs/RunCategory"
+      },
+      "type": "array"
+    },
+    "TransitionCategory": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        {
+          "enum": [
+            "initial",
+            "below",
+            "above"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "TransitionComponentValues": {
+      "additionalProperties": false,
+      "properties": {
+        "occupancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "runs": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "transition_rows": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "occupancy",
+        "transition_rows",
+        "runs"
+      ],
+      "title": "TransitionComponentValues",
+      "type": "object"
+    },
+    "TransitionMatrixComparison": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "$ref": "#/$defs/TransitionMatrixDiagnostic"
+        },
+        "score": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "diagnostics",
+        "score"
+      ],
+      "title": "TransitionMatrixComparison",
+      "type": "object"
+    },
+    "TransitionMatrixDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "active_state_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "component_jsd": {
+          "$ref": "#/$defs/TransitionComponentValues"
+        },
+        "component_weights": {
+          "$ref": "#/$defs/TransitionComponentValues"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "generated_states": {
+          "$ref": "#/$defs/TransitionStates"
+        },
+        "iat_bin_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "log_iat_thresholds": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "log_size_thresholds": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "occupancy": {
+          "$ref": "#/$defs/TransitionOccupancyDiagnostic"
+        },
+        "pseudocount": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "reference_states": {
+          "$ref": "#/$defs/TransitionStates"
+        },
+        "runs": {
+          "$ref": "#/$defs/TransitionRunsDiagnostic"
+        },
+        "size_bin_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "transition_cell_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "transitions": {
+          "$ref": "#/$defs/TransitionRowsDiagnostic"
+        },
+        "vocabulary": {
+          "$ref": "#/$defs/TransitionStates"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "size_bin_count",
+        "iat_bin_count",
+        "log_size_thresholds",
+        "log_iat_thresholds",
+        "pseudocount",
+        "component_weights",
+        "active_state_count",
+        "transition_cell_count",
+        "vocabulary",
+        "reference_states",
+        "generated_states",
+        "occupancy",
+        "transitions",
+        "runs",
+        "component_jsd",
+        "discrepancy"
+      ],
+      "title": "TransitionMatrixDiagnostic",
+      "type": "object"
+    },
+    "TransitionOccupancyDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "generated_counts": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "generated_probabilities": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "jsd": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "reference_counts": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "reference_probabilities": {
+          "$ref": "#/$defs/FloatTuple"
+        }
+      },
+      "required": [
+        "reference_counts",
+        "generated_counts",
+        "reference_probabilities",
+        "generated_probabilities",
+        "jsd"
+      ],
+      "title": "TransitionOccupancyDiagnostic",
+      "type": "object"
+    },
+    "TransitionRowDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "generated_probabilities": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "jsd": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "reference_probabilities": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "source": {
+          "$ref": "#/$defs/TransitionState"
+        }
+      },
+      "required": [
+        "source",
+        "reference_probabilities",
+        "generated_probabilities",
+        "jsd"
+      ],
+      "title": "TransitionRowDiagnostic",
+      "type": "object"
+    },
+    "TransitionRowsDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "generated_counts": {
+          "$ref": "#/$defs/CountRows"
+        },
+        "jsd": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "reference_counts": {
+          "$ref": "#/$defs/CountRows"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/TransitionRowDiagnostic"
+          },
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reference_counts",
+        "generated_counts",
+        "rows",
+        "jsd"
+      ],
+      "title": "TransitionRowsDiagnostic",
+      "type": "object"
+    },
+    "TransitionRunsDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "generated_counts": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "generated_probabilities": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "jsd": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "reference_counts": {
+          "$ref": "#/$defs/NonnegativeIntTuple"
+        },
+        "reference_probabilities": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "vocabulary": {
+          "$ref": "#/$defs/RunVocabulary"
+        }
+      },
+      "required": [
+        "vocabulary",
+        "reference_counts",
+        "generated_counts",
+        "reference_probabilities",
+        "generated_probabilities",
+        "jsd"
+      ],
+      "title": "TransitionRunsDiagnostic",
+      "type": "object"
+    },
+    "TransitionState": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "enum": [
+            "outbound",
+            "inbound"
+          ],
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/TransitionCategory"
+        },
+        {
+          "$ref": "#/$defs/TransitionCategory"
+        }
+      ],
+      "type": "array"
+    },
+    "TransitionStates": {
+      "items": {
+        "$ref": "#/$defs/TransitionState"
+      },
+      "type": "array"
+    },
     "UnitFloat": {
       "$ref": "#/$defs/ExactFloat",
       "ge": 0.0,
@@ -1034,13 +1726,17 @@
     },
     "observation_window_seconds": {
       "$ref": "#/$defs/PositiveFloat"
+    },
+    "postfit_diagnostics": {
+      "$ref": "#/$defs/PostfitDiagnostics"
     }
   },
   "required": [
     "aggregate_score",
     "input_identities",
     "methods",
-    "observation_window_seconds"
+    "observation_window_seconds",
+    "postfit_diagnostics"
   ],
   "title": "PublishedComparisonResult",
   "type": "object"

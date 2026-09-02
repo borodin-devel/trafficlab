@@ -1,6 +1,8 @@
 """Independent behavioral tests for streaming approximate joint MMD."""
 
 import math
+from collections.abc import Mapping
+from typing import cast
 
 import numpy as np
 import pytest
@@ -82,7 +84,7 @@ def test_mmd_uses_reference_only_continuous_mean_and_scale() -> None:
 
     result = approximate_mmd_similarity(reference, generated, 3.0, 3, 9, 0.25)
 
-    continuous = result.diagnostics["continuous"]
+    continuous = cast(Mapping[str, object], result.diagnostics["continuous"])
     assert continuous["reference_mean"] == pytest.approx(
         ((math.log1p(1.0) + math.log1p(2.0)) / 2.0, math.log(10.0))
     )  # type: ignore[index]

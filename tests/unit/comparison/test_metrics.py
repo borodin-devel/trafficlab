@@ -11,8 +11,8 @@ from tests.support.comparison import trace as _trace
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import TraceEvent, TrafficTrace
-from trafficlab.comparison.metrics import compare_traces
-from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.metrics import compare_traces, evaluate_fitness, evaluate_postfit
+from trafficlab.comparison.schema import ComparisonResult, PostfitDiagnostics
 from trafficlab.comparison.similarity.common import SimilarityResult
 
 FITNESS_METHOD_NAMES = (
@@ -25,6 +25,54 @@ FITNESS_METHOD_NAMES = (
     "jensen_shannon",
     "approximate_mmd",
 )
+
+
+def test_evaluate_postfit_calls_exactly_three_diagnostics_with_typed_settings(
+    valid_config_data: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Final-only evaluation must neither omit a diagnostic nor smuggle one into the fitness registry."""
+    settings = _settings(valid_config_data)
+    trace = TrafficTrace.from_events(_trace())
+    baseline = evaluate_postfit(trace, trace, 3.0, settings)
+    calls: list[tuple[str, tuple[object, ...]]] = []
+
+    def component(name: str) -> Callable[..., SimilarityResult]:
+        def evaluate(*args: object) -> SimilarityResult:
+            calls.append((name, args))
+            retained = baseline[name]
+            return SimilarityResult(retained.score, cast(dict[str, object], retained.as_dict()["diagnostics"]))
+
+        return evaluate
+
+    monkeypatch.setattr(comparison, "fano_allan_diagnostic", component("fano_allan"))
+    monkeypatch.setattr(comparison, "transition_matrix_diagnostic", component("transition_matrix"))
+    monkeypatch.setattr(comparison, "classical_c2st_diagnostic", component("classical_c2st"))
+
+    result = evaluate_postfit(trace, trace, 3.0, settings)
+
+    assert isinstance(result, PostfitDiagnostics)
+    assert result == baseline
+    assert [name for name, _arguments in calls] == ["fano_allan", "transition_matrix", "classical_c2st"]
+    assert calls[0][1] == (trace, trace, 3.0, (0.25, 1.0), (0.5, 0.5), 0.5, 0.5)
+    assert calls[1][1] == (trace, trace, 3.0, 2, 2, 0.5, (0.34, 0.33, 0.33))
+    assert calls[2][1] == (trace, trace, 3.0, settings.postfit.c2st)
+
+
+def test_evaluate_fitness_never_calls_any_postfit_diagnostic(
+    valid_config_data: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The GA entry point must remain physically isolated from every final-only diagnostic."""
+
+    def prohibited(*_args: object, **_kwargs: object) -> SimilarityResult:
+        raise AssertionError("fitness called a post-fit diagnostic")
+
+    monkeypatch.setattr(comparison, "fano_allan_diagnostic", prohibited)
+    monkeypatch.setattr(comparison, "transition_matrix_diagnostic", prohibited)
+    monkeypatch.setattr(comparison, "classical_c2st_diagnostic", prohibited)
+
+    result = evaluate_fitness(_trace(), _trace(), 3.0, _settings(valid_config_data))
+
+    assert result.postfit_diagnostics is None
 
 
 def test_compare_traces_accepts_equivalent_event_and_traffic_trace_inputs(valid_config_data: dict[str, object]) -> None:
@@ -196,7 +244,10 @@ def test_compare_traces_eagerly_retains_all_eight_methods_for_every_weight_case(
     """Aggregation weights must never choose which mandatory comparisons execute or appear in the artifact."""
     data = copy.deepcopy(valid_config_data)
     cast(dict[str, object], data["similarity"])["method_weights"] = method_weights
-    baseline = compare_traces(_trace(), _trace(), 3.0, _settings(data))
+    settings = _settings(data)
+    trace = TrafficTrace.from_events(_trace())
+    baseline = compare_traces(trace, trace, 3.0, settings)
+    postfit = evaluate_postfit(trace, trace, 3.0, settings)
     scores = {name: method.score for name, method in baseline.methods.items()}
     calls: list[str] = []
 
@@ -217,7 +268,7 @@ def test_compare_traces_eagerly_retains_all_eight_methods_for_every_weight_case(
     monkeypatch.setattr(comparison, "jensen_shannon_similarity", component("jensen_shannon"))
     monkeypatch.setattr(comparison, "approximate_mmd_similarity", component("approximate_mmd"))
 
-    result = compare_traces(_trace(), _trace(), 3.0, _settings(data))
+    result = compare_traces(trace, trace, 3.0, settings)
 
     assert calls == [
         "frame_size_ks",
@@ -238,7 +289,7 @@ def test_compare_traces_eagerly_retains_all_eight_methods_for_every_weight_case(
     if 1.0 in method_weights.values():
         selected_method = next(name for name, weight in method_weights.items() if weight == 1.0)
         assert result.aggregate_score == scores[selected_method]
-    artifact = result.with_input_identities(
+    artifact = result.with_postfit_diagnostics(postfit).with_input_identities(
         {
             "capture_json": ContentIdentity(size=1, sha256="a" * 64),
             "generated_pcapng": ContentIdentity(size=2, sha256="b" * 64),
@@ -246,7 +297,13 @@ def test_compare_traces_eagerly_retains_all_eight_methods_for_every_weight_case(
             "similarity_settings": ContentIdentity(size=4, sha256="d" * 64),
         }
     ).as_dict()
-    assert tuple(artifact) == ("aggregate_score", "input_identities", "methods", "observation_window_seconds")
+    assert tuple(artifact) == (
+        "aggregate_score",
+        "input_identities",
+        "methods",
+        "observation_window_seconds",
+        "postfit_diagnostics",
+    )
     methods_document = cast(dict[str, dict[str, object]], artifact["methods"])
     assert all(tuple(method) == ("diagnostics", "score", "weight") for method in methods_document.values())
 
@@ -272,7 +329,7 @@ def test_compare_traces_propagates_each_zero_weight_component_failure(
 ) -> None:
     """A failed zero-weight component is evidence failure, not a score that can be ignored."""
     data = copy.deepcopy(valid_config_data)
-    weights = dict.fromkeys(FITNESS_METHOD_NAMES, 0.0)
+    weights: dict[str, float] = dict.fromkeys(FITNESS_METHOD_NAMES, 0.0)
     weights[next(name for name in weights if name != zero_weight_method)] = 1.0
     cast(dict[str, object], data["similarity"])["method_weights"] = weights
     failure = TrafficlabError(f"{zero_weight_method} failed", corrective_action="repair the component")

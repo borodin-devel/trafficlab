@@ -61,6 +61,7 @@ def test_result_parser_rejects_reordered_otherwise_valid_wire_fields() -> None:
     document = valid_result_document()
     reordered = {
         "observation_window_seconds": document["observation_window_seconds"],
+        "postfit_diagnostics": document["postfit_diagnostics"],
         "methods": document["methods"],
         "input_identities": document["input_identities"],
         "aggregate_score": document["aggregate_score"],

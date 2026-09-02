@@ -162,8 +162,10 @@ boundary, then compare them over the same W with all eight mandatory similarity
 methods. Every mandatory similarity method runs, validates its inputs, and
 retains diagnostics. A zero weight changes only aggregate contribution; it never
 disables execution, validation, diagnostic retention, or failure behavior. Write
-the fixed eight-method result shape: `observation_window_seconds`, all component
-scores, diagnostics, weights, and the weighted aggregate to `similarity.json`,
+the fixed eight-method result shape plus the three final-only records:
+`observation_window_seconds`, all fitness component scores, diagnostics,
+weights, the weighted aggregate, and exact `postfit_diagnostics` keys
+`fano_allan`, `transition_matrix`, and `classical_c2st` to `similarity.json`,
 then print a short summary.
 
 Schema 5 fixes the fitness order as `autocorrelation`, `frame_size_ks`,
@@ -171,7 +173,9 @@ Schema 5 fixes the fitness order as `autocorrelation`, `frame_size_ks`,
 `jensen_shannon`, and `approximate_mmd`. Genetic trials and checkpoints contain
 exactly these methods. Final-only diagnostics belong to the final comparison
 boundary, carry no genetic weights, and are not emulated by setting a fitness
-method's weight to zero.
+method's weight to zero. `evaluate_fitness` remains the sole genetic entry;
+`evaluate_postfit` is called only after final trace reconstruction. Schema-5
+trial and checkpoint records reject post-fit fields.
 
 ### `run`
 

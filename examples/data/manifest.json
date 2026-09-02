@@ -33,14 +33,14 @@
     {
       "mode": 420,
       "path": "fit/checkpoint.json",
-      "sha256": "a77642dce280e26a050a6bb871e8f06ae0a258c53d02a30f0c73203b4365f3d4",
-      "size": 98980
+      "sha256": "be61445cba8c157cc2a43149fd225ced962673ce55db0cf5f1f6cf6bfd7478f2",
+      "size": 99737
     },
     {
       "mode": 420,
       "path": "fit/experiment.toml",
-      "sha256": "88d17508c1c1b5ded466a243b033e0ecfbb6e0b369f7785e70b26a3ca2ef204c",
-      "size": 2473
+      "sha256": "f517f3ef36f0f2d8e971cd24aa0e874ee399849c42dc911e713f99f0e789dc11",
+      "size": 2998
     },
     {
       "mode": 420,
@@ -93,8 +93,8 @@
     {
       "mode": 420,
       "path": "similarity.json",
-      "sha256": "99a2894231acf648e8ffef99b0b4fc4e68daf99120370f901954f64f0d024c37",
-      "size": 11555
+      "sha256": "67154cc6bddc92e1ce7a3513e8f49bda70dbb3ee74c4d56a114e56d6301520d1",
+      "size": 188412
     }
   ],
   "schema_version": 1

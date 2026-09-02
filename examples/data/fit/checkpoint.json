@@ -12,8 +12,8 @@
   },
   "consecutive_stagnation": 0,
   "experiment_identity": {
-    "sha256": "88d17508c1c1b5ded466a243b033e0ecfbb6e0b369f7785e70b26a3ca2ef204c",
-    "size": 2473
+    "sha256": "f517f3ef36f0f2d8e971cd24aa0e874ee399849c42dc911e713f99f0e789dc11",
+    "size": 2998
   },
   "families": [
     {
@@ -2948,7 +2948,39 @@
     "multiscale_widths_seconds": [
       1.0,
       2.5
-    ]
+    ],
+    "postfit": {
+      "c2st": {
+        "feature_version": "window-v1",
+        "fold_count": 5,
+        "guard_window_count": 1,
+        "l2_regularization": 1.0,
+        "maximum_iterations": 200,
+        "maximum_window_count": 4096,
+        "tolerance": 1e-09,
+        "window_width_seconds": 0.5
+      },
+      "dispersion": {
+        "allan_weight": 0.5,
+        "fano_weight": 0.5,
+        "scale_weights": [
+          0.5,
+          0.5
+        ],
+        "widths_seconds": [
+          1.0,
+          2.5
+        ]
+      },
+      "transition": {
+        "iat_bin_count": 2,
+        "occupancy_weight": 0.34,
+        "pseudocount": 0.5,
+        "runs_weight": 0.33,
+        "size_bin_count": 2,
+        "transition_rows_weight": 0.33
+      }
+    }
   },
   "terminal_reason": "hard_limit",
   "trial_limits": {

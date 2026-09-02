@@ -365,6 +365,57 @@ class MethodWeights(StrictModel):
         return self
 
 
+class C2stSettings(StrictModel):
+    feature_version: Literal["window-v1"]
+    window_width_seconds: PositiveFloat
+    fold_count: AtLeastTwoInteger
+    guard_window_count: NonNegativeInteger
+    maximum_window_count: BoundedSimilarityAllocation
+    l2_regularization: PositiveFloat
+    maximum_iterations: PositiveInteger
+    tolerance: PositiveFloat
+
+
+class DispersionSettings(StrictModel):
+    widths_seconds: tuple[PositiveFloat, ...] = Field(min_length=1)
+    scale_weights: tuple[Probability, ...] = Field(min_length=1)
+    fano_weight: Probability
+    allan_weight: Probability
+
+    @model_validator(mode="after")
+    def vectors_are_compatible(self) -> Self:
+        if any(left >= right for left, right in zip(self.widths_seconds, self.widths_seconds[1:], strict=False)):
+            raise ValueError("post-fit dispersion widths must be unique and strictly increasing")
+        if len(self.widths_seconds) != len(self.scale_weights):
+            raise ValueError("post-fit dispersion widths and scale weights must have equal length")
+        _weights_sum_to_one(self.scale_weights, "post-fit dispersion scale weights")
+        _weights_sum_to_one((self.fano_weight, self.allan_weight), "post-fit dispersion component weights")
+        return self
+
+
+class TransitionSettings(StrictModel):
+    size_bin_count: BoundedSimilarityAllocation
+    iat_bin_count: BoundedSimilarityAllocation
+    pseudocount: PositiveFloat
+    occupancy_weight: Probability
+    transition_rows_weight: Probability
+    runs_weight: Probability
+
+    @model_validator(mode="after")
+    def component_weights_are_normalized(self) -> Self:
+        _weights_sum_to_one(
+            (self.occupancy_weight, self.transition_rows_weight, self.runs_weight),
+            "post-fit transition component weights",
+        )
+        return self
+
+
+class PostfitSettings(StrictModel):
+    dispersion: DispersionSettings
+    transition: TransitionSettings
+    c2st: C2stSettings
+
+
 class SimilarityConfig(StrictModel):
     iat_diagnostic_quantile: StrictFloat
     acf_lags: tuple[StrictInt, ...] = Field(min_length=1)
@@ -387,6 +438,7 @@ class SimilarityConfig(StrictModel):
     mmd_seed: NonNegativeInteger
     mmd_scale_floor: PositiveFloat
     method_weights: MethodWeights
+    postfit: PostfitSettings
 
     @field_validator("iat_diagnostic_quantile")
     @classmethod

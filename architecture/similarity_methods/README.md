@@ -75,11 +75,14 @@ which still executes and validates as described above.
 
 ## Final-only post-fit diagnostics
 
-[Fano/Allan dispersion][fano-allan] and [transition-matrix fidelity][transition]
-are deterministic final-comparison diagnostics. They consume only final
-normalized traces, have no fitness weights, and are never called by genetic
-candidate or trial evaluation. Their exact minimum-window/state and allocation
-caps are method preconditions, not reasons to fabricate a neutral score.
+[Fano/Allan dispersion][fano-allan], [transition-matrix fidelity][transition],
+and [classical C2ST][c2st] are the exact deterministic final-comparison
+diagnostics. They consume only final normalized traces, have no fitness weights,
+and are never called by genetic candidate or trial evaluation. Their exact
+minimum-window/state/fold and allocation caps are method preconditions, not
+reasons to fabricate a neutral score. `evaluate_postfit` executes all three;
+the final artifact publishes their typed score/diagnostic records under the
+exact keys `fano_allan`, `transition_matrix`, and `classical_c2st`.
 
 Every similarity method needs a distinct behavior to measure, a bounded
 interpretable definition, hand-checked tests, and an implementation before
@@ -95,3 +98,4 @@ receiving an architecture file.
 [rate]: multiscale_rate.md
 [fano-allan]: fano_allan.md
 [transition]: transition_matrix.md
+[c2st]: classical_c2st.md

@@ -81,6 +81,18 @@ def test_checkpoint_round_trip_retains_exact_model_diagnostic_counts() -> None:
         loaded.population[0].trials[0].model_diagnostics["timing_tier_global_count"] = 4  # type: ignore[index]
 
 
+def test_checkpoint_rejects_postfit_diagnostics_inside_a_genetic_trial() -> None:
+    """Final-only diagnostics must not acquire a second persisted path through trial/checkpoint payloads."""
+    document = decoded_checkpoint()
+    population = cast(list[object], document["population"])
+    candidate = cast(dict[str, object], population[0])
+    trials = cast(list[object], candidate["trials"])
+    cast(dict[str, object], trials[0])["postfit_diagnostics"] = {}
+
+    with pytest.raises(TrafficlabError, match="postfit_diagnostics"):
+        parse_checkpoint(encoded_checkpoint(document), COMPATIBILITY)
+
+
 @pytest.mark.parametrize(
     "diagnostics",
     [

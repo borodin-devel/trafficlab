@@ -165,6 +165,14 @@ example. Important fixed expectations include:
   `1/sqrt(K)` feature norm, separate categorical direction blocks, streaming
   mean, and embedding distance at most `2`; repeatability, seed variation, and
   reference-only continuous centering/scaling are direct behavioral cases.
+- Classical C2ST: hand-counted `window-v1` features include both directions,
+  bytes, Type-7 size and positive-IAT summaries, zero-IAT and activity counts,
+  and exact interior/`W` endpoints. Independent fold indexes prove contiguous
+  evaluation blocks, excluded guards, complete out-of-fold coverage, balanced
+  labels, and no adjacent training leakage. A scalar loss/gradient oracle and a
+  pairwise tie-aware AUC oracle remain independent of SciPy and the production
+  rank implementation. Identical windows give AUC `0.5` and similarity `1`;
+  separable windows give AUC `1` and similarity `0`.
 - IAT: timestamps `[0, 1, 3]` produce `[1, 2]`; timestamp ties remain zero.
 - ACF: a constant sequence has positive-lag ACF `0`; `[1, 2, 1]` has lag-one
   ACF `-2/3` under the documented estimator.
@@ -321,6 +329,14 @@ and an incomplete result when each reliability guard fires first.
     </tr>
   </tbody>
 </table>
+
+Final-comparison boundary tests monkeypatch all three post-fit functions to
+raise during candidate evaluation and require ordinary eight-method GA trials
+to remain valid. Separate stage tests require exactly one `evaluate_postfit`
+call after authoritative final-trace reconstruction. Artifact mutation tests
+reject missing or extra post-fit keys, mismatched `W`, inconsistent C2ST
+score/AUC arithmetic, false convergence, invalid coefficient shapes, and a
+`postfit_diagnostics` field injected into a trial/checkpoint payload.
 
 Markov Renewal occupancy is calculated independently from the two-state balance
 equations, and conditional means come directly from the declared finite tables.

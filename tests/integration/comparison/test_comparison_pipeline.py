@@ -90,6 +90,19 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     assert result.methods.keys() == FITNESS_METHOD_NAMES
     assert {name: method.score for name, method in result.methods.items()} == pytest.approx(_EXPECTED_METHOD_SCORES)
     assert all(method.diagnostics["observation_window_seconds"] == 10.0 for method in result.methods.values())
+    assert result.postfit_diagnostics is not None
+    assert {name: diagnostic.score for name, diagnostic in result.postfit_diagnostics.items()} == pytest.approx(
+        {
+            "fano_allan": 0.9470877091748224,
+            "transition_matrix": 0.9934841730113152,
+            "classical_c2st": 0.9875,
+        }
+    )
+    assert result.postfit_diagnostics.classical_c2st.diagnostics.auc == 0.49375
+    assert all(
+        diagnostic.diagnostics.observation_window_seconds == 10.0
+        for _name, diagnostic in result.postfit_diagnostics.items()
+    )
     assert result.input_sha256 == {
         "capture_json": hashlib.sha256(capture_bytes).hexdigest(),
         "generated_pcapng": hashlib.sha256((run_directory / "generated.pcapng").read_bytes()).hexdigest(),
@@ -103,6 +116,9 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     assert json.loads((run_directory / "similarity.json").read_text(encoding="utf-8"))["methods"] == {
         name: method.as_dict() for name, method in result.methods.items()
     }
+    assert json.loads((run_directory / "similarity.json").read_text(encoding="utf-8"))[
+        "postfit_diagnostics"
+    ] == result.as_dict()["postfit_diagnostics"]
     assert json.loads((run_directory / "run.log").read_text(encoding="utf-8").splitlines()[-1]) == {
         "aggregate_score": _EXPECTED_AGGREGATE_SCORE,
         "event": "comparison_succeeded",

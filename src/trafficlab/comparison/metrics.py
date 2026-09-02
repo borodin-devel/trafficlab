@@ -12,7 +12,10 @@ from trafficlab.common.trace import (
     TrafficTrace,
 )
 from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES, WEIGHT_TOLERANCE
-from trafficlab.comparison.schema import ComparisonResult, MethodComparison
+from trafficlab.comparison.postfit.c2st import classical_c2st_diagnostic
+from trafficlab.comparison.postfit.dispersion import fano_allan_diagnostic
+from trafficlab.comparison.postfit.transitions import transition_matrix_diagnostic
+from trafficlab.comparison.schema import ComparisonResult, MethodComparison, PostfitDiagnostics
 from trafficlab.comparison.similarity.autocorrelation import (
     AutocorrelationSamplesInsufficientError,
     autocorrelation_similarity,
@@ -131,6 +134,50 @@ def evaluate_fitness(
         raise TrafficlabError(
             f"invalid comparison result: {error}",
             corrective_action="report the comparison result assembly defect",
+        ) from error
+
+
+def evaluate_postfit(
+    reference: TrafficTrace,
+    generated: TrafficTrace,
+    W: float,
+    settings: SimilarityConfig,
+) -> PostfitDiagnostics:
+    """Evaluate exactly the three configured diagnostics available only after final generation."""
+    dispersion = settings.postfit.dispersion
+    transition = settings.postfit.transition
+    component_results = {
+        "fano_allan": fano_allan_diagnostic(
+            reference,
+            generated,
+            W,
+            dispersion.widths_seconds,
+            dispersion.scale_weights,
+            dispersion.fano_weight,
+            dispersion.allan_weight,
+        ),
+        "transition_matrix": transition_matrix_diagnostic(
+            reference,
+            generated,
+            W,
+            transition.size_bin_count,
+            transition.iat_bin_count,
+            transition.pseudocount,
+            (transition.occupancy_weight, transition.transition_rows_weight, transition.runs_weight),
+        ),
+        "classical_c2st": classical_c2st_diagnostic(reference, generated, W, settings.postfit.c2st),
+    }
+    try:
+        return PostfitDiagnostics.model_validate(
+            {
+                name: {"score": result.score, "diagnostics": result.as_dict()["diagnostics"]}
+                for name, result in component_results.items()
+            }
+        )
+    except ValueError as error:
+        raise TrafficlabError(
+            f"invalid post-fit comparison result: {error}",
+            corrective_action="report the post-fit comparison result assembly defect",
         ) from error
 
 

@@ -23,7 +23,7 @@ from trafficlab.comparison.codec import (
     read_comparison_input,
     similarity_settings_identity,
 )
-from trafficlab.comparison.metrics import evaluate_fitness
+from trafficlab.comparison.metrics import evaluate_fitness, evaluate_postfit
 from trafficlab.comparison.publication import PublicationError, publish_comparison_result
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.generation.models.fitted_model import load_best_model
@@ -214,7 +214,9 @@ def compare_experiment(experiment_path: Path) -> ComparisonResult:
         try:
             reference, window = normalize_reference(reference_trace)
             generated = align_generated(generated_trace, window)
-            result = evaluate_fitness(reference, generated, window, snapshot_config.similarity).with_input_identities(
+            fitness = evaluate_fitness(reference, generated, window, snapshot_config.similarity)
+            postfit = evaluate_postfit(reference, generated, window, snapshot_config.similarity)
+            result = fitness.with_postfit_diagnostics(postfit).with_input_identities(
                 {
                     "capture_json": identify_bytes(metadata_content),
                     "generated_pcapng": identify_bytes(generated_content),

@@ -15,9 +15,9 @@ from tests.support.comparison import trace as _trace
 from tests.support.comparison import valid_result, valid_result_document
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.common.trace import Direction, TraceEvent
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.comparison.codec import render_comparison_result
-from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.metrics import compare_traces, evaluate_postfit
 from trafficlab.comparison.schema import ComparisonResult
 
 
@@ -136,8 +136,13 @@ def test_publication_preserves_a_valid_existing_result_with_a_different_score(
         TraceEvent(1.0, Direction.INBOUND, 180),
         TraceEvent(3.0, Direction.OUTBOUND, 100),
     )
-    different = compare_traces(_trace(), changed_trace, 3.0, _settings(valid_config_data)).with_input_identities(
-        expected.input_identities.as_content_identities()
+    settings = _settings(valid_config_data)
+    reference_trace = TrafficTrace.from_events(_trace())
+    changed_traffic_trace = TrafficTrace.from_events(changed_trace)
+    different = (
+        compare_traces(reference_trace, changed_traffic_trace, 3.0, settings)
+        .with_postfit_diagnostics(evaluate_postfit(reference_trace, changed_traffic_trace, 3.0, settings))
+        .with_input_identities(expected.input_identities.as_content_identities())
     )
     different_content = render_comparison_result(different)
     assert different.aggregate_score != expected.aggregate_score

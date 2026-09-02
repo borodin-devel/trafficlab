@@ -253,6 +253,30 @@ def test_compare_successfully_logs_a_reconstructed_model_bound_result(
     assert records[-1]["reused"] is False
 
 
+def test_compare_joins_postfit_only_after_final_trace_reconstruction(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The final stage must call the separate post-fit boundary once and publish its typed result."""
+    experiment_path, run_directory = _prepare_comparison_run(valid_config_data, tmp_path)
+    real_evaluate = comparison_metrics.evaluate_postfit
+    calls: list[tuple[TrafficTrace, TrafficTrace, float, SimilarityConfig]] = []
+
+    def evaluate_postfit(
+        reference: TrafficTrace, generated: TrafficTrace, W: float, settings: SimilarityConfig
+    ) -> comparison_schema.PostfitDiagnostics:
+        calls.append((reference, generated, W, settings))
+        return real_evaluate(reference, generated, W, settings)
+
+    monkeypatch.setattr(comparison_stage, "evaluate_postfit", evaluate_postfit)
+
+    result = comparison_stage.compare_experiment(experiment_path)
+
+    assert len(calls) == 1
+    assert calls[0][2] == result.observation_window_seconds
+    assert result.postfit_diagnostics is not None
+    assert comparison_codec.load_comparison_result(run_directory / "similarity.json") == result
+
+
 def test_compare_preserves_a_published_result_when_success_logging_fails(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

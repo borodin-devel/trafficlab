@@ -17,6 +17,64 @@
       "title": "BestCandidateRecord",
       "type": "object"
     },
+    "C2stSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "feature_version": {
+          "const": "window-v1",
+          "title": "Feature Version",
+          "type": "string"
+        },
+        "fold_count": {
+          "minimum": 2,
+          "title": "Fold Count",
+          "type": "integer"
+        },
+        "guard_window_count": {
+          "minimum": 0,
+          "title": "Guard Window Count",
+          "type": "integer"
+        },
+        "l2_regularization": {
+          "exclusiveMinimum": 0,
+          "title": "L2 Regularization",
+          "type": "number"
+        },
+        "maximum_iterations": {
+          "exclusiveMinimum": 0,
+          "title": "Maximum Iterations",
+          "type": "integer"
+        },
+        "maximum_window_count": {
+          "exclusiveMinimum": 0,
+          "maximum": 65536,
+          "title": "Maximum Window Count",
+          "type": "integer"
+        },
+        "tolerance": {
+          "exclusiveMinimum": 0,
+          "title": "Tolerance",
+          "type": "number"
+        },
+        "window_width_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Window Width Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "feature_version",
+        "window_width_seconds",
+        "fold_count",
+        "guard_window_count",
+        "maximum_window_count",
+        "l2_regularization",
+        "maximum_iterations",
+        "tolerance"
+      ],
+      "title": "C2stSettings",
+      "type": "object"
+    },
     "CandidateFailureRecord": {
       "discriminator": {
         "mapping": {
@@ -123,6 +181,50 @@
           "$ref": "#/$defs/IntegerCoordinateRecord"
         }
       ]
+    },
+    "DispersionSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "allan_weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Allan Weight",
+          "type": "number"
+        },
+        "fano_weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Fano Weight",
+          "type": "number"
+        },
+        "scale_weights": {
+          "items": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Scale Weights",
+          "type": "array"
+        },
+        "widths_seconds": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Widths Seconds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "widths_seconds",
+        "scale_weights",
+        "fano_weight",
+        "allan_weight"
+      ],
+      "title": "DispersionSettings",
+      "type": "object"
     },
     "DuplicateDiagnostic": {
       "additionalProperties": false,
@@ -1025,6 +1127,27 @@
       "exclusiveMinimum": 0,
       "type": "integer"
     },
+    "PostfitSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "c2st": {
+          "$ref": "#/$defs/C2stSettings"
+        },
+        "dispersion": {
+          "$ref": "#/$defs/DispersionSettings"
+        },
+        "transition": {
+          "$ref": "#/$defs/TransitionSettings"
+        }
+      },
+      "required": [
+        "dispersion",
+        "transition",
+        "c2st"
+      ],
+      "title": "PostfitSettings",
+      "type": "object"
+    },
     "RepairFailure": {
       "additionalProperties": false,
       "properties": {
@@ -1217,6 +1340,9 @@
           "minItems": 1,
           "title": "Multiscale Widths Seconds",
           "type": "array"
+        },
+        "postfit": {
+          "$ref": "#/$defs/PostfitSettings"
         }
       },
       "required": [
@@ -1240,7 +1366,8 @@
         "mmd_feature_count",
         "mmd_seed",
         "mmd_scale_floor",
-        "method_weights"
+        "method_weights",
+        "postfit"
       ],
       "title": "SimilarityConfig",
       "type": "object"
@@ -1302,6 +1429,56 @@
         "early_stop"
       ],
       "type": "string"
+    },
+    "TransitionSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "iat_bin_count": {
+          "exclusiveMinimum": 0,
+          "maximum": 65536,
+          "title": "Iat Bin Count",
+          "type": "integer"
+        },
+        "occupancy_weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Occupancy Weight",
+          "type": "number"
+        },
+        "pseudocount": {
+          "exclusiveMinimum": 0,
+          "title": "Pseudocount",
+          "type": "number"
+        },
+        "runs_weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Runs Weight",
+          "type": "number"
+        },
+        "size_bin_count": {
+          "exclusiveMinimum": 0,
+          "maximum": 65536,
+          "title": "Size Bin Count",
+          "type": "integer"
+        },
+        "transition_rows_weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Transition Rows Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "size_bin_count",
+        "iat_bin_count",
+        "pseudocount",
+        "occupancy_weight",
+        "transition_rows_weight",
+        "runs_weight"
+      ],
+      "title": "TransitionSettings",
+      "type": "object"
     },
     "TrialResult": {
       "additionalProperties": false,

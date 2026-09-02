@@ -10,11 +10,15 @@ from pydantic import BaseModel
 
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import (
+    C2stSettings,
+    DispersionSettings,
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
     MethodWeights,
+    PostfitSettings,
     SimilarityConfig,
+    TransitionSettings,
 )
 from trafficlab.fitting.genetic.checkpoint import (
     CheckpointCompatibility,
@@ -74,6 +78,32 @@ SIMILARITY = SimilarityConfig(
         anderson_darling=0.1,
         jensen_shannon=0.15,
         approximate_mmd=0.2,
+    ),
+    postfit=PostfitSettings(
+        dispersion=DispersionSettings(
+            widths_seconds=(0.5, 1.0),
+            scale_weights=(0.5, 0.5),
+            fano_weight=0.5,
+            allan_weight=0.5,
+        ),
+        transition=TransitionSettings(
+            size_bin_count=2,
+            iat_bin_count=2,
+            pseudocount=0.5,
+            occupancy_weight=0.34,
+            transition_rows_weight=0.33,
+            runs_weight=0.33,
+        ),
+        c2st=C2stSettings(
+            feature_version="window-v1",
+            window_width_seconds=0.25,
+            fold_count=2,
+            guard_window_count=1,
+            maximum_window_count=64,
+            l2_regularization=1.0,
+            maximum_iterations=100,
+            tolerance=1e-9,
+        ),
     ),
 )
 

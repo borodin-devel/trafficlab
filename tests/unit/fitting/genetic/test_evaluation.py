@@ -13,12 +13,16 @@ from pydantic import BaseModel
 
 import trafficlab.comparison.metrics as comparison
 from trafficlab.common.config import (
+    C2stSettings,
+    DispersionSettings,
     FamilyName,
     FloatBounds,
     GenerationLimits,
     MethodWeights,
     PoissonConfig,
+    PostfitSettings,
     SimilarityConfig,
+    TransitionSettings,
 )
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
@@ -90,6 +94,32 @@ SIMILARITY = SimilarityConfig(
         anderson_darling=0.125,
         jensen_shannon=0.125,
         approximate_mmd=0.125,
+    ),
+    postfit=PostfitSettings(
+        dispersion=DispersionSettings(
+            widths_seconds=(0.5, 1.0),
+            scale_weights=(0.5, 0.5),
+            fano_weight=0.5,
+            allan_weight=0.5,
+        ),
+        transition=TransitionSettings(
+            size_bin_count=2,
+            iat_bin_count=2,
+            pseudocount=0.5,
+            occupancy_weight=0.34,
+            transition_rows_weight=0.33,
+            runs_weight=0.33,
+        ),
+        c2st=C2stSettings(
+            feature_version="window-v1",
+            window_width_seconds=0.25,
+            fold_count=2,
+            guard_window_count=1,
+            maximum_window_count=64,
+            l2_regularization=1.0,
+            maximum_iterations=100,
+            tolerance=1e-9,
+        ),
     ),
 )
 PENDING_POISSON = Candidate(
@@ -236,6 +266,25 @@ def test_evaluation_fits_once_and_gives_each_trial_the_same_window_and_limits(
     assert evaluated.fitness == math.fsum((expected, expected)) / 2.0
     with pytest.raises(TypeError):
         cast(dict[str, object], evaluated.trials[0].methods[0].diagnostics)["changed"] = True
+
+
+def test_genetic_candidate_evaluation_never_calls_postfit(
+    family: RecordingFamily, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Selection trials must stay isolated even when every post-fit entry raises immediately."""
+
+    def prohibited(*_args: object, **_kwargs: object) -> Any:
+        raise AssertionError("genetic evaluation called final-only post-fit")
+
+    monkeypatch.setattr(comparison, "evaluate_postfit", prohibited)
+    monkeypatch.setattr(comparison, "fano_allan_diagnostic", prohibited)
+    monkeypatch.setattr(comparison, "transition_matrix_diagnostic", prohibited)
+    monkeypatch.setattr(comparison, "classical_c2st_diagnostic", prohibited)
+
+    evaluated = evaluate_candidate(PENDING_POISSON, validate_evaluation_context(_context(family)))
+
+    assert evaluated.status == "valid"
+    assert len(evaluated.trials) == 2
 
 
 def test_candidate_evaluation_never_materializes_reference_or_generated_events(
