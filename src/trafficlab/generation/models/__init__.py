@@ -22,6 +22,7 @@ from trafficlab.generation.models.fitted_model import (
     render_best_model,
     runtime_fitted_model,
 )
+from trafficlab.generation.models.markov_packet_train import MarkovPacketTrainFamily, MarkovPacketTrainModel
 from trafficlab.generation.models.nhpp import NhppFamily, NhppModel
 from trafficlab.generation.models.registry import (
     REGISTRY,
@@ -41,6 +42,8 @@ __all__ = [
     "IncompleteReason",
     "MarkCount",
     "MarkDistribution",
+    "MarkovPacketTrainFamily",
+    "MarkovPacketTrainModel",
     "ModelFamily",
     "NhppFamily",
     "NhppModel",

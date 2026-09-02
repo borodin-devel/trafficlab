@@ -171,6 +171,69 @@ class MarkovRenewalPayload(_StrictWireModel):
     transition_rows: FloatMatrix
 
 
+class PacketTrainPositionMarksPayload(_StrictWireModel):
+    first: MarkPayloads
+    interior: MarkPayloads
+    last: MarkPayloads
+
+    @model_validator(mode="after")
+    def mark_pools_are_unique_and_first_is_nonempty(self) -> Self:
+        if not self.first:
+            raise ValueError("first mark pool must not be empty")
+        for marks in (self.first, self.interior, self.last):
+            if len({(mark.direction, mark.frame_length) for mark in marks}) != len(marks):
+                raise ValueError("marks must be unique within each position pool")
+        return self
+
+
+class PacketTrainWithinGapsPayload(_StrictWireModel):
+    interior: FloatVector
+    last: FloatVector
+
+
+class PacketTrainStatePayload(_StrictWireModel):
+    actual_lengths: IntVector
+    length_state: Annotated[StrictInt, Field(ge=1, le=8)]
+    marks: PacketTrainPositionMarksPayload
+    source_inter_train_gaps: FloatVector
+    within_gaps: PacketTrainWithinGapsPayload
+
+    @model_validator(mode="after")
+    def actual_lengths_are_positive(self) -> Self:
+        if not self.actual_lengths or any(length <= 0 for length in self.actual_lengths):
+            raise ValueError("actual_lengths must be nonempty and positive")
+        return self
+
+
+type PacketTrainStatePayloads = Annotated[tuple[PacketTrainStatePayload, ...], BeforeValidator(tuple_input)]
+
+
+class MarkovPacketTrainPayload(_StrictWireModel):
+    conditional_inter_train_gaps: FloatCube
+    gap_quantile: ExactFloat
+    gap_threshold: NonnegativeFloat
+    global_inter_train_gaps: FloatVector
+    initial_probabilities: FloatVector
+    inside_train_endpoint: Literal["less_than_or_equal"]
+    length_cap: Annotated[StrictInt, Field(ge=3, le=8)]
+    states: PacketTrainStatePayloads
+    timing_diagnostics: MarkovTimingPayload
+    transition_pseudocount: PositiveFloat
+    transition_rows: FloatMatrix
+
+    @model_validator(mode="after")
+    def state_aligned_vectors_and_matrices_have_matching_dimensions(self) -> Self:
+        state_count = len(self.states)
+        if not state_count or len({state.length_state for state in self.states}) != state_count:
+            raise ValueError("states must be nonempty with unique length_state values")
+        if len(self.initial_probabilities) != state_count:
+            raise ValueError("initial_probabilities must contain K values")
+        matrices = (self.transition_rows, self.conditional_inter_train_gaps)
+        if any(len(matrix) != state_count or any(len(row) != state_count for row in matrix) for matrix in matrices):
+            raise ValueError("transition and inter-train tables must be K x K")
+        return self
+
+
 def _family_payload_discriminator(value: object) -> str | None:
     if isinstance(value, PoissonPayload):
         return "poisson_empirical"
@@ -182,9 +245,13 @@ def _family_payload_discriminator(value: object) -> str | None:
         return "nhpp"
     if isinstance(value, AcdPayload):
         return "acd"
+    if isinstance(value, MarkovPacketTrainPayload):
+        return "markov_packet_train"
     if isinstance(value, Mapping):
         if "base_rate" in value:
             return "poisson_empirical"
+        if "gap_threshold" in value:
+            return "markov_packet_train"
         if "transition_rows" in value:
             return "markov_renewal"
         if "q01" in value:
@@ -201,7 +268,8 @@ type FamilyPayload = Annotated[
     | Annotated[MarkovRenewalPayload, Tag("markov_renewal")]
     | Annotated[MmppPayload, Tag("mmpp")]
     | Annotated[NhppPayload, Tag("nhpp")]
-    | Annotated[AcdPayload, Tag("acd")],
+    | Annotated[AcdPayload, Tag("acd")]
+    | Annotated[MarkovPacketTrainPayload, Tag("markov_packet_train")],
     Discriminator(_family_payload_discriminator),
 ]
 
@@ -218,4 +286,6 @@ def validate_family_payload(value: object) -> FamilyPayload:
         return NhppPayload.model_validate(value)
     if discriminator == "acd":
         return AcdPayload.model_validate(value)
+    if discriminator == "markov_packet_train":
+        return MarkovPacketTrainPayload.model_validate(value)
     raise ValueError("fitted payload does not identify one registered family")

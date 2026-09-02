@@ -131,6 +131,10 @@ Unit tests are deterministic and do not start Docker. They cover:
 - Markov final-only active states, nonempty unsmoothed rows, uniform empty rows,
   global-IAT fallback after an empty row, transition-row serialization/loading,
   invalid missing/nonfinite/negative global IAT data, and valid zero IATs;
+- Markov packet-train q90 segmentation including equality, capped states,
+  actual lengths, disjoint first/interior/last marks, within-gap pools, all
+  three boundary-gap fallbacks, scalar draw order, per-packet guards, strict
+  codecs, and absence of whole-train templates;
 - population quotas, tournament ties, family compatibility, uniform crossover,
   transformed Gaussian mutation, normalized reflection, forced mutation, exact
   duplicates, duplicate-attempt bounds, fixed RNG order, and termination;
@@ -207,6 +211,10 @@ example. Important fixed expectations include:
   Central differences independently cover analytic gradients at orders one,
   two, and three, while scripted order-two and order-three generators detect
   either reversed duration history or reversed conditional-mean history.
+- Markov packet train: ten gaps of one and two of ten give Type-7 q90 `9.1`;
+  train lengths `(3,4,6)` with cap four give active states `(3,4)`, occupancy
+  `(1/3,2/3)`, actual reservoirs `(3)` and `(4,6)`, and transition rows
+  `(1/3,2/3)` after additive-one smoothing.
 - Genetic coordinates: linear, logarithmic, and integer encode/decode cover both
   bounds and integer half-rounding; initialization uses a stub RNG.
 - Genetic reflection: `-0.2 -> 0.2`, `1.2 -> 0.8`, and `2.2 -> 0.2`.
@@ -329,6 +337,17 @@ and an incomplete result when each reliability guard fires first.
       one; joint-mark frequencies within <code>0.03</code>; hand recursion,
       zero-IAT, optimizer-failure, strict-payload, completion, endpoint,
       RNG-order, and guard contracts</td>
+    </tr>
+    <tr>
+      <td>Markov packet train</td>
+      <td>One 13-packet hand trace with train lengths <code>(3,4,6)</code>, cap
+      four, ten within gaps of one, two boundary gaps of ten, and distinct
+      first/interior/last marks</td>
+      <td>Independent Type-7 q90 <code>9.1</code>; exact three-train bounds,
+      state occupancy, additive transition rows, actual-length reservoirs,
+      within/inter gap membership, position-mark frequencies, every timing
+      fallback, endpoint, RNG-order, strict-codec, and per-packet guard
+      contract</td>
     </tr>
     <tr>
       <td>Genetic neutrality and fairness</td>

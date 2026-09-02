@@ -77,22 +77,6 @@ Primary evidence: Dainotti et al.,
 [“Internet traffic modeling by means of Hidden Markov Models”](https://doi.org/10.1016/j.comnet.2008.05.004),
 *Computer Networks*, 2008.
 
-### Markov packet-train model
-
-Segment traffic into short-gap packet trains separated by longer gaps, then
-model train length, within-train IAT, frame marks, direction sequence, and
-successive train transitions. This is a direct, near-linear packet-event model
-and the lowest-cost candidate aimed specifically at multiscale burst structure.
-
-The train-gap threshold must be frozen from a declared reference-only rule and
-reported in the fitted artifact. Results are threshold-dependent, and the
-original evidence predates modern Internet workloads, so validation on every
-capture class is essential.
-
-Primary evidence: Jain and Routhier,
-[“Packet Trains—Measurements and a New Model for Computer Network Traffic”](https://doi.org/10.1109/JSAC.1986.1146410),
-*IEEE Journal on Selected Areas in Communications*, 1986.
-
 ### Autoregressive Conditional Duration
 
 An ACD model makes the conditional expected IAT depend recursively on previous

@@ -123,6 +123,14 @@ for every enabled family as well as the overall winner.
       <td>Stationary timing with marks independent of duration state</td>
       <td>Bounded iterative linear-recursion fit</td>
     </tr>
+    <tr>
+      <td><a href="markov_packet_train.md">Markov packet train</a></td>
+      <td>Capped train-length transitions with position-conditioned packets and gaps</td>
+      <td>Integer length cap in 3..8</td>
+      <td>Captures burst structure without replaying whole trains</td>
+      <td>Results depend on the fixed reference q90 segmentation</td>
+      <td>Linear fit plus active-state matrix</td>
+    </tr>
   </tbody>
 </table>
 

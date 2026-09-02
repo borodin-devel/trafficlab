@@ -300,7 +300,8 @@
             "markov_renewal",
             "mmpp",
             "nhpp",
-            "acd"
+            "acd",
+            "markov_packet_train"
           ],
           "title": "Name",
           "type": "string"
@@ -565,7 +566,8 @@
                 "markov_renewal",
                 "mmpp",
                 "nhpp",
-                "acd"
+                "acd",
+                "markov_packet_train"
               ],
               "type": "string"
             },
@@ -701,7 +703,8 @@
             "markov_renewal",
             "mmpp",
             "nhpp",
-            "acd"
+            "acd",
+            "markov_packet_train"
           ],
           "title": "Family",
           "type": "string"
@@ -1076,7 +1079,8 @@
             "markov_renewal",
             "mmpp",
             "nhpp",
-            "acd"
+            "acd",
+            "markov_packet_train"
           ],
           "title": "Family",
           "type": "string"
@@ -1558,7 +1562,8 @@
             "markov_renewal",
             "mmpp",
             "nhpp",
-            "acd"
+            "acd",
+            "markov_packet_train"
           ],
           "title": "Family",
           "type": "string"

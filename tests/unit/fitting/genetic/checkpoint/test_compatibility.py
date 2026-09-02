@@ -62,7 +62,7 @@ def test_rng_codec_requires_the_exact_named_generator_and_bit_generator() -> Non
         encode_rng_state(np.random.Generator(np.random.Philox(0)))
 
 
-@pytest.mark.parametrize("family_name", ("nhpp", "acd"))
+@pytest.mark.parametrize("family_name", ("nhpp", "acd", "markov_packet_train"))
 def test_checkpoint_parser_accepts_each_new_registered_family_name(family_name: str) -> None:
     """A fresh or resumed GA state needs the current registered-name boundary."""
     assert parse_family_name(family_name, name="family name") == family_name
@@ -94,6 +94,25 @@ def test_fresh_and_resumed_checkpoint_compatibility_accept_acd_metadata() -> Non
         mutation_scale=0.1,
     )
     fresh = replace(COMPATIBILITY, families=(acd,), family_priority=("acd",))
+
+    validate_compatibility(fresh, fresh)
+
+
+def test_fresh_and_resumed_checkpoint_compatibility_accept_packet_train_metadata() -> None:
+    """The capped-length coordinate must survive strict checkpoint validation."""
+    packet_train = FamilyCheckpointSpec(
+        name="markov_packet_train",
+        gene_order=("length_cap",),
+        coordinates=(GeneCoordinate("length_cap", "integer", IntegerBounds(lower=3, upper=8)),),
+        crossover_probability=0.9,
+        mutation_probability=1.0,
+        mutation_scale=0.1,
+    )
+    fresh = replace(
+        COMPATIBILITY,
+        families=(packet_train,),
+        family_priority=("markov_packet_train",),
+    )
 
     validate_compatibility(fresh, fresh)
 

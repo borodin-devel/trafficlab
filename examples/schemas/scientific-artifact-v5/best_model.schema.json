@@ -70,6 +70,9 @@
         },
         {
           "$ref": "#/$defs/AcdPayload"
+        },
+        {
+          "$ref": "#/$defs/MarkovPacketTrainPayload"
         }
       ]
     },
@@ -213,6 +216,64 @@
         "$ref": "#/$defs/MarkPayload"
       },
       "type": "array"
+    },
+    "MarkovPacketTrainPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "conditional_inter_train_gaps": {
+          "$ref": "#/$defs/FloatCube"
+        },
+        "gap_quantile": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "gap_threshold": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "global_inter_train_gaps": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "initial_probabilities": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "inside_train_endpoint": {
+          "const": "less_than_or_equal",
+          "title": "Inside Train Endpoint",
+          "type": "string"
+        },
+        "length_cap": {
+          "maximum": 8,
+          "minimum": 3,
+          "title": "Length Cap",
+          "type": "integer"
+        },
+        "states": {
+          "$ref": "#/$defs/PacketTrainStatePayloads"
+        },
+        "timing_diagnostics": {
+          "$ref": "#/$defs/MarkovTimingPayload"
+        },
+        "transition_pseudocount": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "transition_rows": {
+          "$ref": "#/$defs/FloatMatrix"
+        }
+      },
+      "required": [
+        "conditional_inter_train_gaps",
+        "gap_quantile",
+        "gap_threshold",
+        "global_inter_train_gaps",
+        "initial_probabilities",
+        "inside_train_endpoint",
+        "length_cap",
+        "states",
+        "timing_diagnostics",
+        "transition_pseudocount",
+        "transition_rows"
+      ],
+      "title": "MarkovPacketTrainPayload",
+      "type": "object"
     },
     "MarkovRenewalPayload": {
       "additionalProperties": false,
@@ -383,6 +444,82 @@
       "minimum": 0,
       "type": "integer"
     },
+    "PacketTrainPositionMarksPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "first": {
+          "$ref": "#/$defs/MarkPayloads"
+        },
+        "interior": {
+          "$ref": "#/$defs/MarkPayloads"
+        },
+        "last": {
+          "$ref": "#/$defs/MarkPayloads"
+        }
+      },
+      "required": [
+        "first",
+        "interior",
+        "last"
+      ],
+      "title": "PacketTrainPositionMarksPayload",
+      "type": "object"
+    },
+    "PacketTrainStatePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_lengths": {
+          "$ref": "#/$defs/IntVector"
+        },
+        "length_state": {
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Length State",
+          "type": "integer"
+        },
+        "marks": {
+          "$ref": "#/$defs/PacketTrainPositionMarksPayload"
+        },
+        "source_inter_train_gaps": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "within_gaps": {
+          "$ref": "#/$defs/PacketTrainWithinGapsPayload"
+        }
+      },
+      "required": [
+        "actual_lengths",
+        "length_state",
+        "marks",
+        "source_inter_train_gaps",
+        "within_gaps"
+      ],
+      "title": "PacketTrainStatePayload",
+      "type": "object"
+    },
+    "PacketTrainStatePayloads": {
+      "items": {
+        "$ref": "#/$defs/PacketTrainStatePayload"
+      },
+      "type": "array"
+    },
+    "PacketTrainWithinGapsPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "interior": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "last": {
+          "$ref": "#/$defs/FloatVector"
+        }
+      },
+      "required": [
+        "interior",
+        "last"
+      ],
+      "title": "PacketTrainWithinGapsPayload",
+      "type": "object"
+    },
     "PoissonPayload": {
       "additionalProperties": false,
       "properties": {
@@ -485,7 +622,8 @@
         "markov_renewal",
         "mmpp",
         "nhpp",
-        "acd"
+        "acd",
+        "markov_packet_train"
       ],
       "title": "Family",
       "type": "string"

@@ -21,6 +21,16 @@ def nhpp_config_data() -> dict[str, object]:
     }
 
 
+def markov_packet_train_config_data() -> dict[str, object]:
+    """Return explicit settings for one opt-in Markov packet-train family."""
+    return {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "length_cap": {"lower": 3, "upper": 8},
+    }
+
+
 def valid_config_data(root: Path) -> dict[str, object]:
     """Return a fresh valid experiment mapping rooted below ``root``."""
 

@@ -51,8 +51,11 @@ def test_schema_five_directory_contains_current_fitness_and_model_roots() -> Non
     assert '"acd"' in best_model
     assert '"acd"' in checkpoint
     assert '"AcdPayload"' in best_model
-    assert len(documents["best_model.schema.json"]["$defs"]["FamilyPayload"]["oneOf"]) == 5
-    for future_family in ("packet_hmm", "markov_packet_train"):
+    assert '"markov_packet_train"' in best_model
+    assert '"markov_packet_train"' in checkpoint
+    assert '"MarkovPacketTrainPayload"' in best_model
+    assert len(documents["best_model.schema.json"]["$defs"]["FamilyPayload"]["oneOf"]) == 6
+    for future_family in ("packet_hmm",):
         assert f'"{future_family}"' not in best_model
 
 

@@ -46,7 +46,7 @@ _EVIDENCE_STATES = frozenset(("not_published", "diagnostic_only", "preserved", "
 _FAILURE_AUTHORITIES = frozenset(("primary", "secondary"))
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _CANDIDATE_STATUSES = frozenset(("pending", "valid", "invalid"))
-_FAMILY_NAMES = frozenset(("poisson_empirical", "markov_renewal", "mmpp"))
+_FAMILY_NAMES = frozenset(("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train"))
 _MARKOV_MODEL_DIAGNOSTIC_NAMES = frozenset(MARKOV_MODEL_DIAGNOSTIC_KEYS)
 
 
@@ -89,7 +89,9 @@ def _validate_model_diagnostic_shape(diagnostics: ModelDiagnostics) -> None:
 
 def validate_model_diagnostics_for_family(family: FamilyName, diagnostics: ModelDiagnostics) -> None:
     """Require the one diagnostics namespace owned by a candidate family."""
-    expected: frozenset[str] = _MARKOV_MODEL_DIAGNOSTIC_NAMES if family == "markov_renewal" else frozenset()
+    expected: frozenset[str] = (
+        _MARKOV_MODEL_DIAGNOSTIC_NAMES if family in {"markov_renewal", "markov_packet_train"} else frozenset()
+    )
     if frozenset(diagnostics) != expected:
         raise ValueError(f"model diagnostics for family {family} do not match its canonical counter namespace")
 

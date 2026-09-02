@@ -18,6 +18,7 @@ from trafficlab.common.config import (
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
+    MarkovPacketTrainConfig,
     MarkovRenewalConfig,
     MmppConfig,
     NhppConfig,
@@ -35,6 +36,7 @@ from trafficlab.generation.models.fitted_model import (
 )
 from trafficlab.generation.models.registry import (
     ACD_FAMILY,
+    MARKOV_PACKET_TRAIN_FAMILY,
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
     NHPP_FAMILY,
@@ -69,6 +71,7 @@ MMPP_BOUNDS = MmppConfig(
 )
 NHPP_BOUNDS = NhppConfig(bin_count=IntegerBounds(lower=2, upper=4))
 ACD_BOUNDS = AcdConfig(order=IntegerBounds(lower=1, upper=3))
+PACKET_TRAIN_BOUNDS = MarkovPacketTrainConfig(length_cap=IntegerBounds(lower=3, upper=8))
 SEED_POLICY = {
     "empirical": "choice_scalar_index",
     "exponential": "exponential_scale_inverse_rate",
@@ -84,10 +87,18 @@ FINAL_LIMITS = GenerationLimits(max_packets=10_000, max_output_bytes=10_000_000,
 def test_registry_is_closed_and_stably_ordered() -> None:
     """Dynamic or replaceable registry entries would make fitted artifacts non-reproducible."""
     assert type(REGISTRY) is MappingProxyType
-    assert tuple(REGISTRY) == ("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd")
+    assert tuple(REGISTRY) == (
+        "poisson_empirical",
+        "markov_renewal",
+        "mmpp",
+        "nhpp",
+        "acd",
+        "markov_packet_train",
+    )
     assert REGISTRY["poisson_empirical"] is POISSON_FAMILY
     assert REGISTRY["nhpp"] is NHPP_FAMILY
     assert REGISTRY["acd"] is ACD_FAMILY
+    assert REGISTRY["markov_packet_train"] is MARKOV_PACKET_TRAIN_FAMILY
     with pytest.raises(TypeError):
         REGISTRY["plugin.family"] = POISSON_FAMILY  # type: ignore[index]
     with pytest.raises(TrafficlabError, match="unknown model family"):
@@ -107,6 +118,7 @@ def test_existing_families_declare_coordinate_kinds() -> None:
     assert MMPP_FAMILY.gene_coordinate_kinds == ("log", "log", "log", "log")
     assert NHPP_FAMILY.gene_coordinate_kinds == ("integer",)
     assert ACD_FAMILY.gene_coordinate_kinds == ("integer",)
+    assert MARKOV_PACKET_TRAIN_FAMILY.gene_coordinate_kinds == ("integer",)
 
 
 @pytest.fixture
@@ -207,8 +219,9 @@ def test_best_model_loader_rejects_compact_equivalent_json(valid_best_model: Bes
         (MMPP_FAMILY, (1.0, 2.0, 3.0, 8.0), MMPP_BOUNDS),
         (NHPP_FAMILY, (2,), NHPP_BOUNDS),
         (ACD_FAMILY, (1,), ACD_BOUNDS),
+        (MARKOV_PACKET_TRAIN_FAMILY, (3,), PACKET_TRAIN_BOUNDS),
     ],
-    ids=("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd"),
+    ids=("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train"),
 )
 def test_best_model_round_trips_every_real_fitted_family(
     family: object, genes: tuple[float, ...], bounds: object

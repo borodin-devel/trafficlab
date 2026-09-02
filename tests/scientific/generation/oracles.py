@@ -9,11 +9,113 @@ moments follow the two-state MAP representation documented in
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
+from typing import Literal
 
 type Matrix2 = tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]]
 type Vector2 = tuple[Fraction, Fraction]
+type PacketMark = tuple[str, int]
+type PacketPosition = Literal["first", "interior", "last"]
+
+
+@dataclass(frozen=True, slots=True)
+class PacketTrainOracle:
+    """Independent fitted quantities for one hand-sized packet-train trace."""
+
+    actual_lengths: tuple[tuple[int, tuple[int, ...]], ...]
+    conditional_inter_gaps: tuple[tuple[tuple[float, ...], ...], ...]
+    gap_threshold: float
+    initial_probabilities: tuple[float, ...]
+    inter_gaps: tuple[float, ...]
+    position_mark_counts: tuple[tuple[int, PacketPosition, tuple[tuple[PacketMark, int], ...]], ...]
+    state_order: tuple[int, ...]
+    train_bounds: tuple[tuple[int, int], ...]
+    transition_rows: tuple[tuple[float, ...], ...]
+    within_gaps: tuple[tuple[int, PacketPosition, tuple[float, ...]], ...]
+
+
+def _type7(values: tuple[float, ...], quantile: float) -> float:
+    ordered = tuple(sorted(values))
+    coordinate = (len(ordered) - 1) * quantile
+    lower = math.floor(coordinate)
+    upper = math.ceil(coordinate)
+    fraction = coordinate - lower
+    return ordered[lower] + fraction * (ordered[upper] - ordered[lower])
+
+
+def packet_train_oracle(
+    timestamps: tuple[float, ...],
+    marks: tuple[PacketMark, ...],
+    *,
+    length_cap: int,
+) -> PacketTrainOracle:
+    """Calculate segmentation and fitted tables without production model helpers."""
+    if len(timestamps) != len(marks) or len(timestamps) < 2 or not 3 <= length_cap <= 8:
+        raise ValueError("packet-train oracle requires aligned events and a cap in 3..8")
+    gaps = tuple(right - left for left, right in zip(timestamps, timestamps[1:], strict=False))
+    threshold = _type7(gaps, 0.9)
+    starts = [0]
+    for destination, gap in enumerate(gaps, start=1):
+        if gap > threshold:
+            starts.append(destination)
+    stops = (*starts[1:], len(timestamps))
+    bounds = tuple(zip(starts, stops, strict=True))
+    lengths = tuple(stop - start for start, stop in bounds)
+    state_values = tuple(min(length, length_cap) for length in lengths)
+    state_order = tuple(dict.fromkeys(state_values))
+    index_by_state = {state: index for index, state in enumerate(state_order)}
+    state_indices = tuple(index_by_state[state] for state in state_values)
+    state_count = len(state_order)
+
+    occupancy = tuple(state_indices.count(index) / len(state_indices) for index in range(state_count))
+    counts = [[0 for _ in range(state_count)] for _ in range(state_count)]
+    conditional: list[list[list[float]]] = [[[] for _ in range(state_count)] for _ in range(state_count)]
+    inter_gaps: list[float] = []
+    for train_index, (source, destination) in enumerate(zip(state_indices, state_indices[1:], strict=False)):
+        gap = timestamps[bounds[train_index + 1][0]] - timestamps[bounds[train_index][1] - 1]
+        counts[source][destination] += 1
+        conditional[source][destination].append(gap)
+        inter_gaps.append(gap)
+    rows = tuple(tuple((count + 1.0) / (sum(row) + state_count) for count in row) for row in counts)
+
+    actual: dict[int, list[int]] = {state: [] for state in state_order}
+    within: dict[tuple[int, PacketPosition], list[float]] = {
+        (state, position): [] for state in state_order for position in ("first", "interior", "last")
+    }
+    position_marks: dict[tuple[int, PacketPosition], Counter[PacketMark]] = {
+        (state, position): Counter() for state in state_order for position in ("first", "interior", "last")
+    }
+    for (start, stop), state in zip(bounds, state_values, strict=True):
+        length = stop - start
+        actual[state].append(length)
+        for offset, event_index in enumerate(range(start, stop)):
+            position: PacketPosition
+            if offset == 0:
+                position = "first"
+            elif offset == length - 1:
+                position = "last"
+            else:
+                position = "interior"
+            position_marks[state, position][marks[event_index]] += 1
+            if offset > 0:
+                within[state, position].append(timestamps[event_index] - timestamps[event_index - 1])
+
+    return PacketTrainOracle(
+        actual_lengths=tuple((state, tuple(actual[state])) for state in state_order),
+        conditional_inter_gaps=tuple(tuple(tuple(cell) for cell in row) for row in conditional),
+        gap_threshold=threshold,
+        initial_probabilities=occupancy,
+        inter_gaps=tuple(inter_gaps),
+        position_mark_counts=tuple(
+            (state, position, tuple(counter.items())) for (state, position), counter in position_marks.items()
+        ),
+        state_order=state_order,
+        train_bounds=bounds,
+        transition_rows=rows,
+        within_gaps=tuple((state, position, tuple(sample)) for (state, position), sample in within.items()),
+    )
 
 
 def empirical_mean(values: tuple[float, ...] | list[float]) -> float:

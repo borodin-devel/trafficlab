@@ -11,6 +11,7 @@ from trafficlab.common.config import FamilyName, FloatBounds, IntegerBounds
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.generation.models.acd import AcdFamily
 from trafficlab.generation.models.common import FamilyBounds, ModelFamily
+from trafficlab.generation.models.markov_packet_train import MarkovPacketTrainFamily
 from trafficlab.generation.models.markov_renewal import MarkovRenewalFamily
 from trafficlab.generation.models.mmpp import MmppFamily
 from trafficlab.generation.models.nhpp import NhppFamily
@@ -21,6 +22,7 @@ MARKOV_RENEWAL_FAMILY = MarkovRenewalFamily()
 MMPP_FAMILY = MmppFamily()
 NHPP_FAMILY = NhppFamily()
 ACD_FAMILY = AcdFamily()
+MARKOV_PACKET_TRAIN_FAMILY = MarkovPacketTrainFamily()
 
 REGISTRY: MappingProxyType[str, ModelFamily] = MappingProxyType(
     {
@@ -29,6 +31,7 @@ REGISTRY: MappingProxyType[str, ModelFamily] = MappingProxyType(
         "mmpp": MMPP_FAMILY,
         "nhpp": NHPP_FAMILY,
         "acd": ACD_FAMILY,
+        "markov_packet_train": MARKOV_PACKET_TRAIN_FAMILY,
     }
 )
 
@@ -40,7 +43,7 @@ def get_family(name: str) -> ModelFamily:
     except KeyError as error:
         raise TrafficlabError(
             f"unknown model family {name!r}",
-            corrective_action="select poisson_empirical, markov_renewal, mmpp, nhpp, or acd",
+            corrective_action=("select poisson_empirical, markov_renewal, mmpp, nhpp, acd, or markov_packet_train"),
         ) from error
 
 

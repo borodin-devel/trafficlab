@@ -26,6 +26,7 @@ from tests.scientific.generation.oracles import (
     mmpp_moments,
     nhpp_bin_mean,
     nhpp_integrated_intensity,
+    packet_train_oracle,
 )
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.common.compatibility import identify_bytes
@@ -34,6 +35,7 @@ from trafficlab.common.config import (
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
+    MarkovPacketTrainConfig,
     MarkovRenewalConfig,
     MmppConfig,
     NhppConfig,
@@ -56,6 +58,8 @@ from trafficlab.generation.models import (
 )
 from trafficlab.generation.models.acd import AcdFamily, AcdModel
 from trafficlab.generation.models.common import GenerationResult, MarkCount, MarkDistribution
+from trafficlab.generation.models.markov_packet_train import MarkovPacketTrainFamily, MarkovPacketTrainModel
+from trafficlab.generation.models.markov_packet_train.model import fit_trace as fit_packet_train
 from trafficlab.generation.models.markov_renewal import (
     MarkovRenewalFamily,
     MarkovRenewalModel,
@@ -139,18 +143,104 @@ def _markov_model() -> MarkovRenewalModel:
 
 _MARKOV_MODEL = _markov_model()
 _MMPP_MODEL = MmppModel(q01=1.0, q10=3.0, lambda0=1.0, lambda1=9.0, marks=_MARKS)
-_NHPP_LOW_MARKS = MarkDistribution(
-    (MarkCount(Direction.OUTBOUND, 60, 1), MarkCount(Direction.INBOUND, 120, 3))
-)
-_NHPP_HIGH_MARKS = MarkDistribution(
-    (MarkCount(Direction.OUTBOUND, 60, 3), MarkCount(Direction.INBOUND, 120, 1))
-)
+_NHPP_LOW_MARKS = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1), MarkCount(Direction.INBOUND, 120, 3)))
+_NHPP_HIGH_MARKS = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 3), MarkCount(Direction.INBOUND, 120, 1)))
 _NHPP_MODEL = NhppModel(
     rates=(2.0, 0.0, 4.0),
     bin_marks=(_NHPP_LOW_MARKS, None, _NHPP_HIGH_MARKS),
     global_marks=_MARKS,
 )
 _ACD_MODEL = AcdModel(omega=0.4, alpha=(0.2,), beta=(0.4,), marks=_MARKS)
+
+
+def _packet_train_model() -> MarkovPacketTrainModel:
+    timestamps = (0.0, 1.0, 2.0, 12.0, 13.0, 14.0, 15.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0)
+    trace = TrafficTrace.from_events(
+        tuple(
+            TraceEvent(timestamp, Direction.OUTBOUND if index % 2 == 0 else Direction.INBOUND, 60 + index)
+            for index, timestamp in enumerate(timestamps)
+        )
+    )
+    return fit_packet_train(trace, length_cap=4)
+
+
+_PACKET_TRAIN_MODEL = _packet_train_model()
+
+
+def test_packet_train_three_train_fit_matches_independent_hand_oracle() -> None:
+    """Segmentation, state tables, gaps, and position marks must share no production expectation helper."""
+    timestamps = (0.0, 1.0, 2.0, 12.0, 13.0, 14.0, 15.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0)
+    raw_marks = (
+        ("outbound", 60),
+        ("inbound", 70),
+        ("outbound", 80),
+        ("inbound", 90),
+        ("outbound", 100),
+        ("outbound", 100),
+        ("inbound", 110),
+        ("outbound", 60),
+        ("outbound", 100),
+        ("inbound", 70),
+        ("outbound", 100),
+        ("outbound", 100),
+        ("inbound", 120),
+    )
+    oracle = packet_train_oracle(timestamps, raw_marks, length_cap=4)
+    trace = TrafficTrace.from_events(
+        tuple(
+            TraceEvent(timestamp, Direction(direction), frame_length)
+            for timestamp, (direction, frame_length) in zip(timestamps, raw_marks, strict=True)
+        )
+    )
+    fitted = fit_packet_train(trace, length_cap=4)
+
+    assert oracle.gap_threshold == pytest.approx(9.1)
+    assert oracle.train_bounds == ((0, 3), (3, 7), (7, 13))
+    assert oracle.state_order == (3, 4)
+    assert oracle.initial_probabilities == pytest.approx((1.0 / 3.0, 2.0 / 3.0))
+    for row in oracle.transition_rows:
+        assert row == pytest.approx((1.0 / 3.0, 2.0 / 3.0))
+    assert oracle.actual_lengths == ((3, (3,)), (4, (4, 6)))
+    assert oracle.inter_gaps == (10.0, 10.0)
+
+    assert fitted.gap_threshold == oracle.gap_threshold
+    assert tuple(state.length_state for state in fitted.states) == oracle.state_order
+    assert fitted.initial_probabilities == pytest.approx(oracle.initial_probabilities)
+    for actual, expected in zip(fitted.transition_rows, oracle.transition_rows, strict=True):
+        assert actual == pytest.approx(expected)
+    assert tuple((state.length_state, state.actual_lengths) for state in fitted.states) == oracle.actual_lengths
+    assert fitted.conditional_inter_train_gaps == oracle.conditional_inter_gaps
+    assert fitted.global_inter_train_gaps == oracle.inter_gaps
+
+    fitted_within = tuple(
+        item
+        for state in fitted.states
+        for item in (
+            (state.length_state, "first", ()),
+            (state.length_state, "interior", state.within_gaps.interior),
+            (state.length_state, "last", state.within_gaps.last),
+        )
+    )
+    assert fitted_within == oracle.within_gaps
+    fitted_marks = tuple(
+        (
+            state.length_state,
+            position,
+            tuple((entry.direction.value, entry.frame_length, entry.count) for entry in entries),
+        )
+        for state in fitted.states
+        for position, distribution in (
+            ("first", state.marks.first),
+            ("interior", state.marks.interior),
+            ("last", state.marks.last),
+        )
+        for entries in ((distribution.entries if distribution is not None else ()),)
+    )
+    oracle_marks = tuple(
+        (state, position, tuple((direction, frame_length, count) for (direction, frame_length), count in entries))
+        for state, position, entries in oracle.position_mark_counts
+    )
+    assert fitted_marks == oracle_marks
 
 
 def _assert_close(
@@ -191,7 +281,10 @@ def test_nhpp_matches_independent_per_bin_poisson_intensity_and_mark_oracles(see
     )
     generated = events[1:]
     counts = tuple(
-        sum(left <= event.timestamp < right or (right == _NHPP_WINDOW and event.timestamp == right) for event in generated)
+        sum(
+            left <= event.timestamp < right or (right == _NHPP_WINDOW and event.timestamp == right)
+            for event in generated
+        )
         for left, right in ((0.0, 400.0), (400.0, 800.0), (800.0, _NHPP_WINDOW))
     )
     expected_counts = tuple(nhpp_bin_mean(rate, _NHPP_BIN_WIDTH) for rate in _NHPP_MODEL.rates)
@@ -693,13 +786,14 @@ def _family_models() -> tuple[tuple[ModelFamily, FittedModel], ...]:
         (MarkovRenewalFamily(), _MARKOV_MODEL),
         (MmppFamily(), _MMPP_MODEL),
         (AcdFamily(), _ACD_MODEL),
+        (MarkovPacketTrainFamily(), _PACKET_TRAIN_MODEL),
     )
 
 
 @pytest.mark.parametrize(
     ("family", "model"),
     _family_models(),
-    ids=("poisson_empirical", "markov_renewal", "mmpp", "acd"),
+    ids=("poisson_empirical", "markov_renewal", "mmpp", "acd", "markov_packet_train"),
 )
 def test_each_family_reports_all_resource_guards_as_incomplete(
     family: ModelFamily,
@@ -750,6 +844,8 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
         return ((2,), NhppConfig(bin_count=IntegerBounds(lower=2, upper=4)))
     if family_name == "acd":
         return ((1,), AcdConfig(order=IntegerBounds(lower=1, upper=3)))
+    if family_name == "markov_packet_train":
+        return ((3,), MarkovPacketTrainConfig(length_cap=IntegerBounds(lower=3, upper=8)))
     return (
         (1.0, 3.0, 1.0, 9.0),
         MmppConfig(
@@ -761,7 +857,10 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
     )
 
 
-@pytest.mark.parametrize("family_name", ("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd"))
+@pytest.mark.parametrize(
+    "family_name",
+    ("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train"),
+)
 def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name: str) -> None:
     """Every production family must reload and reproduce canonical bytes at its stored window."""
     reference_path = _EXAMPLE_DATA / "reference.pcapng"

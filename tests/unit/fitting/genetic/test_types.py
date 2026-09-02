@@ -132,9 +132,7 @@ def test_trial_result_requires_each_method_once_in_published_order() -> None:
         TrialResult(
             seed=3,
             aggregate_score=0.5,
-            methods=cast(
-                tuple[MethodTrialResult, ...], methods[::-1]
-            ),
+            methods=cast(tuple[MethodTrialResult, ...], methods[::-1]),
         )
 
 
@@ -174,6 +172,17 @@ def test_candidate_requires_model_diagnostics_owned_by_its_family() -> None:
     )
 
     assert dict(markov.trials[0].model_diagnostics) == _MARKOV_MODEL_DIAGNOSTICS
+    packet_train = Candidate(
+        identifier=CandidateId(birth_generation=0, birth_index=2),
+        family="markov_packet_train",
+        genes=(3,),
+        status="valid",
+        fitness=0.5,
+        trials=(trial,),
+        invalid=None,
+        duplicate_diagnostics=(),
+    )
+    assert dict(packet_train.trials[0].model_diagnostics) == _MARKOV_MODEL_DIAGNOSTICS
     for family in ("poisson_empirical", "mmpp"):
         with pytest.raises(ValueError, match=f"model diagnostics.*{family}"):
             Candidate(
