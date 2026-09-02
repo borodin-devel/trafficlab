@@ -146,7 +146,7 @@ def config_from_bound_mapping(family: ModelFamily, bounds: dict[str, FloatBounds
     if any(type(bounds[name]) is not _bound_type(family, name) for name in family.gene_names):
         raise invalid_best_model(
             f"invalid {family.name} gene bounds",
-            corrective_action="provide exact FloatBounds values and an exact IntegerBounds Markov r value",
+            corrective_action="provide exact FloatBounds or IntegerBounds values for every declared coordinate",
         )
     try:
         return family.bounds_type.model_validate(bounds)

@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+import numpy as np
 import pytest
 
 from trafficlab.common.config import FloatBounds, IntegerBounds, MarkovRenewalConfig, MmppConfig, PoissonConfig
@@ -25,6 +26,8 @@ from trafficlab.fitting.genetic.coordinates import (
 )
 from trafficlab.generation.models.registry import (
     MARKOV_RENEWAL_FAMILY,
+    MMPP_FAMILY,
+    POISSON_FAMILY,
 )
 
 
@@ -79,6 +82,56 @@ def test_coordinate_metadata_is_exact_for_all_registered_families() -> None:
         "log",
     )
     assert tuple(item.kind for item in family_coordinates("mmpp", MMPP_BOUNDS)) == ("log", "log", "log", "log")
+
+
+@pytest.mark.parametrize(
+    ("family", "bounds", "coordinate_kinds", "message"),
+    [
+        (POISSON_FAMILY, POISSON_BOUNDS, ("integer",), "integer bounds"),
+        (MARKOV_RENEWAL_FAMILY, MARKOV_BOUNDS, ("linear",) * 5, "float bounds"),
+        (MMPP_FAMILY, MMPP_BOUNDS, ("invalid",) * 4, "coordinate kind"),
+    ],
+)
+def test_family_coordinates_reject_malformed_declared_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    family: object,
+    bounds: object,
+    coordinate_kinds: tuple[str, ...],
+    message: str,
+) -> None:
+    """A declared kind incompatible with its exact named bound must not reach genetic operators."""
+    monkeypatch.setattr(family, "gene_coordinate_kinds", coordinate_kinds)
+
+    with pytest.raises(TrafficlabError, match=message):
+        family_coordinates(family.name, bounds)  # type: ignore[union-attr, arg-type]
+
+
+def test_seeded_initialization_preserves_all_existing_family_chromosomes() -> None:
+    """Changing coordinate construction must not change fixed-seed initialization for any live family."""
+    assert initialize_candidate(
+        POISSON_FAMILY,
+        POISSON_BOUNDS,
+        REFERENCE,
+        np.random.Generator(np.random.PCG64(12345)),
+    ) == (0.6852356162497762,)
+    assert initialize_candidate(
+        MARKOV_RENEWAL_FAMILY,
+        MARKOV_BOUNDS,
+        REFERENCE,
+        np.random.Generator(np.random.PCG64(12345)),
+    ) == (
+        0.16820080674015092,
+        0.6950275019129258,
+        1.5947309146654682,
+        4,
+        0.8598870668443174,
+    )
+    assert initialize_candidate(
+        MMPP_FAMILY,
+        MMPP_BOUNDS,
+        REFERENCE,
+        np.random.Generator(np.random.PCG64(12345)),
+    ) == (0.21667203923013384, 0.29369089057289527, 0.6271413800330943, 3.7165397763234025)
 
 
 def test_reflect_and_integer_decode_use_locked_endpoint_rules() -> None:

@@ -146,7 +146,7 @@ def family_coordinates(name: FamilyName, bounds: FamilyBounds) -> tuple[GeneCoor
     coordinates: list[GeneCoordinate] = []
     for gene_name, kind in zip(family.gene_names, family.gene_coordinate_kinds, strict=True):
         bound = getattr(bounds, gene_name)
-        coordinates.append(GeneCoordinate(gene_name, kind, bound))
+        coordinates.append(_validate_coordinate(GeneCoordinate(gene_name, kind, bound)))
     return tuple(coordinates)
 
 

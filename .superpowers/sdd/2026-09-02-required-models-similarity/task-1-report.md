@@ -68,3 +68,68 @@ Renewal, and MMPP; `FamilyName` remains the same three literals; no similarity
 weights or artifact-schema values changed; coordinate order and RNG primitives
 are unchanged; the generic metadata length and kind checks reject malformed
 family declarations; and `git diff --check` passed. No concerns remain.
+
+## [FIX-1-a7d8ed3b] Review round 1: coordinate-contract validation and seeded regressions
+
+Changes:
+
+- `family_coordinates()` now validates every constructed `GeneCoordinate` with
+  the existing coordinate validator, rejecting an invalid kind and either
+  integer/float bound mismatch before genetic initialization or mutation can
+  consume it.
+- Added malformed declared-metadata tests for an integer kind paired with
+  `FloatBounds`, a continuous kind paired with `IntegerBounds`, and an unknown
+  kind.
+- Added same-protocol `PCG64(12345)` initialization snapshots for complete
+  Poisson, Markov Renewal, and MMPP chromosomes.
+- Reworded the registry's invalid-bound corrective action to describe every
+  declared coordinate rather than Markov Renewal `r`.
+
+Covering test file: `tests/unit/fitting/genetic/test_coordinates.py`.
+
+RED evidence:
+
+```text
+uv run --locked pytest -q tests/unit/fitting/genetic/test_coordinates.py::test_family_coordinates_reject_malformed_declared_metadata tests/unit/fitting/genetic/test_coordinates.py::test_seeded_initialization_preserves_all_existing_family_chromosomes
+FFF.
+3 failed, 1 passed
+Failed: DID NOT RAISE TrafficlabError for each malformed metadata case.
+```
+
+GREEN and verification evidence:
+
+```text
+uv run --locked pytest -q tests/unit/fitting/genetic/test_coordinates.py
+27 passed
+
+uv run --locked ruff check src/trafficlab/fitting/genetic/coordinates.py src/trafficlab/generation/models/registry.py tests/unit/fitting/genetic/test_coordinates.py
+All checks passed!
+
+uv run --locked pyright src/trafficlab/fitting/genetic/coordinates.py src/trafficlab/generation/models/registry.py
+0 errors, 0 warnings, 0 informations
+
+uv run --locked pytest -q tests/unit/common/test_config_schema.py tests/unit/common/test_config_validation.py tests/unit/generation/models/test_registry.py tests/unit/fitting/genetic/test_coordinates.py
+290 passed
+
+uv run --locked ruff check src/trafficlab/common/config.py src/trafficlab/generation/models src/trafficlab/fitting/genetic/coordinates.py
+All checks passed!
+
+uv run --locked pyright src/trafficlab/common/config.py src/trafficlab/generation/models/common.py src/trafficlab/generation/models/registry.py src/trafficlab/fitting/genetic/coordinates.py
+0 errors, 0 warnings, 0 informations
+
+uv run --locked pytest -q tests/unit/common tests/unit/generation/models/test_registry.py tests/unit/fitting/genetic
+959 passed
+
+uv run --locked pytest -q tests/integration/generation/test_model_pipeline.py -k 'poisson or markov or mmpp'
+1 deselected (exit 5: the sole test uses a generic name)
+
+uv run --locked pytest -q tests/integration/generation/test_model_pipeline.py
+1 passed
+```
+
+Self-review: the new validation reuses the one existing kind/bounds contract,
+so it cannot introduce a second acceptance policy. The seeded assertions cover
+every live family under the same fixed seed. `git diff --check` passed. The
+only non-code concern is the task plan's filtered integration command: its
+expression selects no current test and therefore exits 5; the unfiltered
+in-process pipeline passes.
