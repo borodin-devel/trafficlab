@@ -63,7 +63,7 @@ Existing cross-cutting owners:
 
 ---
 
-### [TASK-1-75662814] Generalize coordinate metadata and define family config value types
+### Task 1 [TASK-1-75662814]: Generalize coordinate metadata and define family config value types
 
 **Files:**
 - Modify: `src/trafficlab/common/config.py`
@@ -213,7 +213,7 @@ git add src/trafficlab/common/config.py src/trafficlab/generation/models src/tra
 git commit -m "refactor(genetic): declare coordinate kinds"
 ```
 
-### [TASK-2-ec6f79ae] Add bounded CvM and Anderson–Darling fitness methods
+### Task 2 [TASK-2-ec6f79ae]: Add bounded CvM and Anderson–Darling fitness methods
 
 **Files:**
 - Create: `src/trafficlab/comparison/similarity/ecdf.py`
@@ -280,7 +280,7 @@ git add src/trafficlab/comparison/similarity tests/unit/comparison/similarity/te
 git commit -m "feat(similarity): add bounded ECDF distances"
 ```
 
-### [TASK-3-9b684938] Add Jensen–Shannon and approximate joint MMD
+### Task 3 [TASK-3-9b684938]: Add Jensen–Shannon and approximate joint MMD
 
 **Files:**
 - Create: `src/trafficlab/comparison/similarity/jensen_shannon.py`
@@ -352,7 +352,7 @@ git add src/trafficlab/comparison/similarity tests/unit/comparison/similarity \
 git commit -m "feat(similarity): add JS and approximate MMD"
 ```
 
-### [TASK-4-050cdc9b] Expand genetic fitness and comparison artifacts to eight methods
+### Task 4 [TASK-4-050cdc9b]: Expand genetic fitness and comparison artifacts to eight methods
 
 **Files:**
 - Modify: `src/trafficlab/common/scientific_schema.py`
@@ -466,7 +466,7 @@ git add src/trafficlab/common src/trafficlab/comparison src/trafficlab/fitting/g
 git commit -m "feat(schema): publish eight-method schema 5"
 ```
 
-### [TASK-5-720bec0d] Add Fano/Allan and transition post-fit diagnostics
+### Task 5 [TASK-5-720bec0d]: Add Fano/Allan and transition post-fit diagnostics
 
 **Files:**
 - Create: `src/trafficlab/comparison/postfit/__init__.py`
@@ -529,7 +529,7 @@ git add src/trafficlab/comparison/postfit tests/unit/comparison/postfit \
 git commit -m "feat(diagnostics): add traffic structure checks"
 ```
 
-### [TASK-6-eb02bdb7] Add deterministic C2ST and final-only artifact publication
+### Task 6 [TASK-6-eb02bdb7]: Add deterministic C2ST and final-only artifact publication
 
 **Files:**
 - Create: `src/trafficlab/comparison/postfit/c2st.py`
@@ -601,7 +601,7 @@ git add src/trafficlab/comparison tests/unit/comparison tests/integration/compar
 git commit -m "feat(diagnostics): add final-only C2ST"
 ```
 
-### [TASK-7-9c058d21] Render eight fitness methods and three post-fit diagnostics
+### Task 7 [TASK-7-9c058d21]: Render eight fitness methods and three post-fit diagnostics
 
 **Files:**
 - Modify: `src/trafficlab_dashboard/run_loader.py`
@@ -663,7 +663,7 @@ git add src/trafficlab_dashboard tests/trafficlab_dashboard architecture/VISUALI
 git commit -m "feat(dashboard): show required diagnostics"
 ```
 
-### [TASK-8-0cba90b0] Implement the piecewise-constant NHPP family
+### Task 8 [TASK-8-0cba90b0]: Implement the piecewise-constant NHPP family
 
 **Files:**
 - Modify: `src/trafficlab/common/config.py`
@@ -732,7 +732,7 @@ git add src/trafficlab/common/config.py src/trafficlab/generation/models tests/s
 git commit -m "feat(models): add piecewise NHPP"
 ```
 
-### [TASK-9-7bbda026] Implement exponential ACD
+### Task 9 [TASK-9-7bbda026]: Implement exponential ACD
 
 **Files:**
 - Modify: `src/trafficlab/common/config.py`
@@ -804,7 +804,7 @@ git add src/trafficlab/common/config.py src/trafficlab/generation/models tests/s
 git commit -m "feat(models): add exponential ACD"
 ```
 
-### [TASK-10-ee746d74] Implement the Markov packet-train family
+### Task 10 [TASK-10-ee746d74]: Implement the Markov packet-train family
 
 **Files:**
 - Modify: `src/trafficlab/common/config.py`
@@ -876,7 +876,7 @@ git add src/trafficlab/common/config.py src/trafficlab/generation/models tests/s
 git commit -m "feat(models): add Markov packet trains"
 ```
 
-### [TASK-11-99735de2] Implement the categorical packet HMM
+### Task 11 [TASK-11-99735de2]: Implement the categorical packet HMM
 
 **Files:**
 - Modify: `src/trafficlab/common/config.py`
@@ -950,7 +950,7 @@ git add src/trafficlab/common/config.py src/trafficlab/generation/models tests/s
 git commit -m "feat(models): add categorical packet HMM"
 ```
 
-### [TASK-12-007a0c58] Publish schema-5 defaults, fixtures, schemas, and candidate-doc cleanup
+### Task 12 [TASK-12-007a0c58]: Publish schema-5 defaults, fixtures, schemas, and candidate-doc cleanup
 
 **Files:**
 - Modify: `examples/configs/default.toml`
@@ -1031,7 +1031,7 @@ git add examples scripts tests/fixtures tests/support tests/unit/tooling tests/u
 git commit -m "feat(release): enable required algorithms"
 ```
 
-### [TASK-13-777d3cce] Add reproducible small, medium, and big development profiles
+### Task 13 [TASK-13-777d3cce]: Add reproducible small, medium, and big development profiles
 
 **Files:**
 - Create: `scripts/derive_required_candidates_reference.py`
@@ -1087,7 +1087,7 @@ git add scripts/derive_required_candidates_reference.py scripts/README.md \
 git commit -m "feat(experiments): add tiered development runs"
 ```
 
-### [TASK-14-e919a96d] Run the integrated Medium gate and limited development experiments
+### Task 14 [TASK-14-e919a96d]: Run the integrated Medium gate and limited development experiments
 
 **Files:**
 - Create or update ignored results: `runs/required-candidates-small/`, `runs/required-candidates-medium/`
@@ -1133,7 +1133,7 @@ git commit -m "test(integration): validate required algorithms"
 git push origin feature/required-models-similarity-v5
 ```
 
-### [TASK-15-9e1e99fb] Run the Big completion gate and full-capture experiment
+### Task 15 [TASK-15-9e1e99fb]: Run the Big completion gate and full-capture experiment
 
 **Files:**
 - Create or update ignored results: `runs/required-candidates-big/`
