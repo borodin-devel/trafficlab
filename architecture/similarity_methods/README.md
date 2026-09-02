@@ -63,14 +63,16 @@ to declared aggregation policy from a change in measured trace behavior.
 | [Autocorrelation][acf] | IAT/size dependence | Lags, weights | More than max lag | Linear/lag | Selected lags |
 | [Multiscale rate][rate] | Directional volume by scale | Widths, weights, cap | Nonempty | Linear | Time alignment |
 
-Only the four aggregate methods above belong in the current registry. The two
-pure pooled-ECDF methods below share the same canonical trace boundary and have
-their own complete definitions, but do not alter the current aggregate contract.
+Only the four aggregate methods above belong in the current registry. The four
+pure methods below share the same canonical trace boundary and have their own
+complete definitions, but do not alter the current aggregate contract.
 
 | Method | Behavior | Settings | Minimum | Cost | Limitation |
 |---|---|---|---|---|---|
 | [Cramér--von Mises][cvm] | Pooled ECDF difference for IAT and size | IAT/size weights | Two packets/trace | Sorting | No tail emphasis |
 | [Anderson--Darling][ad] | Endpoint-normalized tail ECDF difference | IAT/size weights | Two packets/trace | Sorting | Sparse tails dominate |
+| [Jensen--Shannon][js] | Exact marks and shared-bin direction/IAT PMFs | Bin count, IAT/mark weights | Two packets/trace | Counting + support sort | Ignores category geometry |
+| [Approximate joint MMD][mmd] | Random-Fourier timing/size/direction embedding | Feature count, seed, scale floor | Two packets/trace | Linear in packets × features | Kernel approximation sensitivity |
 
 Every similarity method needs a distinct behavior to measure, a bounded
 interpretable definition, hand-checked tests, and an implementation before
@@ -79,6 +81,8 @@ receiving an architecture file.
 [acf]: autocorrelation.md
 [ad]: anderson_darling.md
 [cvm]: cramer_von_mises.md
+[js]: jensen_shannon.md
+[mmd]: approximate_mmd.md
 [frame-size]: frame_size_ks.md
 [iat]: iat_ks.md
 [rate]: multiscale_rate.md

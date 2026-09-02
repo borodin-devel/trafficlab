@@ -124,7 +124,7 @@ Unit tests are deterministic and do not start Docker. They cover:
   observation window derivation, timestamp normalization, endpoint inclusion,
   generated-trace shifting/cropping, and invalid reference windows;
 - hand-calculated similarity formulas and diagnostics, including one shared `W`
-  in all four method diagnostics;
+  in every active and pure-method diagnostic;
 - every traffic-model estimator, repair rule, invariant, and fixed-seed
   generator, including full-window natural completion and incomplete-generation
   guards;
@@ -157,6 +157,14 @@ example. Important fixed expectations include:
 - AD: the endpoint is excluded before tail-weight normalization; `[1]` versus
   `[2]` has discrepancy `1`, and an equal lower-tail ECDF difference outweighs
   the corresponding central difference.
+- Jensen--Shannon: equal PMFs have divergence `0`; disjoint PMFs have base-2
+  divergence `1`; Fraction-derived entropy examples cover zero masses without
+  pseudocounts, exact direction/frame-length marks, and generated IAT values at
+  reference-window bin edges.
+- Approximate MMD: a frozen tiny cosine/sine map independently proves the
+  `1/sqrt(K)` feature norm, separate categorical direction blocks, streaming
+  mean, and embedding distance at most `2`; repeatability, seed variation, and
+  reference-only continuous centering/scaling are direct behavioral cases.
 - IAT: timestamps `[0, 1, 3]` produce `[1, 2]`; timestamp ties remain zero.
 - ACF: a constant sequence has positive-lag ACF `0`; `[1, 2, 1]` has lag-one
   ACF `-2/3` under the documented estimator.
