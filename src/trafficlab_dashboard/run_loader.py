@@ -22,7 +22,13 @@ from trafficlab.fitting.genetic.types import HistoryRow
 from trafficlab.generation.models import BestModel, load_best_model
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
 
-_SIMILARITY_DEPENDENTS = ("similarity_scores", "multiscale_discrepancy")
+_SIMILARITY_DEPENDENTS = (
+    "similarity_scores",
+    "multiscale_discrepancy",
+    "fano_allan",
+    "transition_fidelity",
+    "c2st",
+)
 _GA_HISTORY_DEPENDENTS = ("ga_fitness_history",)
 
 

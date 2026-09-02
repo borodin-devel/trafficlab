@@ -32,6 +32,9 @@ EXPECTED_ASPECT_IDS: Final[tuple[str, ...]] = (
     "frame_size_iat_hexbin",
     "similarity_scores",
     "multiscale_discrepancy",
+    "fano_allan",
+    "transition_fidelity",
+    "c2st",
     "ga_fitness_history",
 )
 

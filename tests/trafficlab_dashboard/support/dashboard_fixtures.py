@@ -12,9 +12,7 @@ from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, render_capture_metadata
 
-_CHECKED_RUN = REPOSITORY_ROOT / "examples" / "scientific_stack" / "example_run_artifacts"
-_OPTIONAL_ARTIFACTS = ("best_model.json", "ga_history.csv", "similarity.json")
-
+_CHECKED_DATA = REPOSITORY_ROOT / "examples" / "data"
 TEST_METADATA = CaptureMetadata(interface="eth0", target_mac="02:00:00:00:00:10")
 
 
@@ -50,8 +48,12 @@ def write_complete_dashboard_run(
     (run_directory / "capture.json").write_bytes(render_capture_metadata(TEST_METADATA))
     (run_directory / "reference.pcapng").write_bytes(encode_pcapng(_events_from_times(reference_times), TEST_METADATA))
     (run_directory / "generated.pcapng").write_bytes(encode_pcapng(_events_from_times(generated_times), TEST_METADATA))
-    for artifact_name in _OPTIONAL_ARTIFACTS:
-        (run_directory / artifact_name).write_bytes((_CHECKED_RUN / artifact_name).read_bytes())
+    for artifact_name, source_name in (
+        ("best_model.json", "best_model.json"),
+        ("ga_history.csv", "fit/ga_history.csv"),
+        ("similarity.json", "similarity.json"),
+    ):
+        (run_directory / artifact_name).write_bytes((_CHECKED_DATA / source_name).read_bytes())
     experiment = _config_for_run_directory(run_directory)
     (run_directory / "experiment.toml").write_bytes(render_effective_config(experiment))
     return run_directory
@@ -59,5 +61,15 @@ def write_complete_dashboard_run(
 
 def copy_checked_dashboard_run(root: Path) -> Path:
     run_directory = root / "run"
-    shutil.copytree(_CHECKED_RUN, run_directory)
+    run_directory.mkdir(parents=True)
+    for source_name, destination_name in (
+        ("capture.json", "capture.json"),
+        ("reference.pcapng", "reference.pcapng"),
+        ("generated.pcapng", "generated.pcapng"),
+        ("best_model.json", "best_model.json"),
+        ("similarity.json", "similarity.json"),
+        ("fit/experiment.toml", "experiment.toml"),
+        ("fit/ga_history.csv", "ga_history.csv"),
+    ):
+        shutil.copy2(_CHECKED_DATA / source_name, run_directory / destination_name)
     return run_directory

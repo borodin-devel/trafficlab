@@ -6,20 +6,30 @@ from typing import cast
 import numpy as np
 
 from trafficlab.common.config import ExperimentConfig, FamilyName
-from trafficlab.comparison.diagnostics import MultiscaleDiagnostic
-from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES, MultiscaleDiagnostic
+from trafficlab.comparison.schema import (
+    C2stDiagnostic,
+    ComparisonResult,
+    FanoAllanDiagnostic,
+    TransitionMatrixDiagnostic,
+)
 from trafficlab.fitting.genetic.types import HistoryRow
 from trafficlab_dashboard.aspects.base import BarPlotData, BarSeries, CalculationSettings, LinePlotData, LineSeries
 from trafficlab_dashboard.aspects.numerics import minmax_envelope
 from trafficlab_dashboard.run_data import DashboardRun
 
-_SIMILARITY_METHOD_ORDER = ("frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate")
+_SIMILARITY_METHOD_ORDER = FITNESS_METHOD_NAMES
 _SIMILARITY_LABELS = {
+    "autocorrelation": "Autocorrelation",
     "frame_size_ks": "Frame-size KS",
     "iat_ks": "IAT KS",
-    "autocorrelation": "Autocorrelation",
-    "multiscale_rate": "Multiscale",
+    "multiscale_rate": "Multiscale rate",
+    "cramer_von_mises": "Cramér–von Mises",
+    "anderson_darling": "Anderson–Darling",
+    "jensen_shannon": "Jensen–Shannon",
+    "approximate_mmd": "Approximate MMD",
 }
+_DISPLAY_DIRECTION_NAMES = {"total": "total", "outbound": "uplink", "inbound": "downlink"}
 _GA_LABELS: dict[str, str] = {
     "markov_renewal": "Markov Renewal",
     "mmpp": "MMPP",
@@ -75,6 +85,30 @@ def _require_experiment(run: DashboardRun, *, aspect_id: str) -> ExperimentConfi
 def _multiscale_diagnostics(run: DashboardRun, *, aspect_id: str) -> MultiscaleDiagnostic:
     similarity = _require_similarity(run, aspect_id=aspect_id)
     return cast(MultiscaleDiagnostic, similarity.methods["multiscale_rate"].diagnostics)
+
+
+def _require_fano_allan(run: DashboardRun, *, aspect_id: str) -> FanoAllanDiagnostic:
+    diagnostics = run.fano_allan_diagnostic
+    if diagnostics is None:
+        reason = run.unavailable.get(aspect_id, "similarity.json does not contain schema-5 Fano/Allan diagnostics")
+        raise ValueError(reason)
+    return diagnostics
+
+
+def _require_transition_fidelity(run: DashboardRun, *, aspect_id: str) -> TransitionMatrixDiagnostic:
+    diagnostics = run.transition_fidelity_diagnostic
+    if diagnostics is None:
+        reason = run.unavailable.get(aspect_id, "similarity.json does not contain schema-5 transition diagnostics")
+        raise ValueError(reason)
+    return diagnostics
+
+
+def _require_c2st(run: DashboardRun, *, aspect_id: str) -> C2stDiagnostic:
+    diagnostics = run.c2st_diagnostic
+    if diagnostics is None:
+        reason = run.unavailable.get(aspect_id, "similarity.json does not contain schema-5 C2ST diagnostics")
+        raise ValueError(reason)
+    return diagnostics
 
 
 def _history_key(row: HistoryRow) -> str:
@@ -214,6 +248,200 @@ class MultiscaleDiscrepancyAspect:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class FanoAllanAspect:
+    identifier: str = "fano_allan"
+    label: str = "Fano/Allan dispersion"
+    category: str = "Comparison"
+    trace_controls: bool = False
+
+    def calculate(self, run: DashboardRun, settings: CalculationSettings) -> LinePlotData:
+        diagnostics = _require_fano_allan(run, aspect_id=self.identifier)
+        widths = np.asarray(diagnostics.widths, dtype=np.float64)
+        series: list[LineSeries] = []
+        for factor in ("fano", "allan"):
+            series.extend(
+                (
+                    _reduced_line_series(
+                        label=f"Reference total {factor.title()}",
+                        x=widths,
+                        y=np.asarray(
+                            [(scale.reference_fano if factor == "fano" else scale.reference_allan).total for scale in diagnostics.scales],
+                            dtype=np.float64,
+                        ),
+                        maximum_points=settings.maximum_display_points,
+                    ),
+                    _reduced_line_series(
+                        label=f"Generated total {factor.title()}",
+                        x=widths,
+                        y=np.asarray(
+                            [(scale.generated_fano if factor == "fano" else scale.generated_allan).total for scale in diagnostics.scales],
+                            dtype=np.float64,
+                        ),
+                        maximum_points=settings.maximum_display_points,
+                    ),
+                )
+            )
+        resolved_series = tuple(series)
+        x_limits, y_limits = _line_limits(resolved_series)
+        return LinePlotData(
+            identifier=self.identifier,
+            label=self.label,
+            title=f"{self.label} (factor) · W={diagnostics.observation_window_seconds:g} s",
+            x_label="Scale width (s)",
+            y_label="Factor",
+            unit="factor",
+            series=resolved_series,
+            x_limits=x_limits,
+            y_limits=(0.0, max(1.0, y_limits[1])),
+            metadata={
+                "direction_channels": ("total", "outbound", "inbound"),
+                "rendered_direction_channels": ("total",),
+                "display_directions": ("total", "uplink", "downlink"),
+                "scale_weights": diagnostics.scale_weights,
+                "component_weights": {
+                    "fano": diagnostics.component_weights.fano,
+                    "allan": diagnostics.component_weights.allan,
+                },
+                "component_differences": {
+                    "fano": diagnostics.component_differences.fano,
+                    "allan": diagnostics.component_differences.allan,
+                },
+                "scale_differences": diagnostics.scale_differences,
+                "observation_window_seconds": diagnostics.observation_window_seconds,
+            },
+            reference_sample_count=0,
+            generated_sample_count=0,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TransitionFidelityAspect:
+    identifier: str = "transition_fidelity"
+    label: str = "Transition fidelity"
+    category: str = "Comparison"
+    trace_controls: bool = False
+
+    def calculate(self, run: DashboardRun, settings: CalculationSettings) -> LinePlotData:
+        diagnostics = _require_transition_fidelity(run, aspect_id=self.identifier)
+        state_indexes = np.arange(len(diagnostics.vocabulary), dtype=np.float64)
+        component_indexes = np.arange(3, dtype=np.float64)
+        series = (
+            _reduced_line_series(
+                label="Ref. occupancy",
+                x=state_indexes,
+                y=np.asarray(diagnostics.occupancy.reference_probabilities, dtype=np.float64),
+                maximum_points=settings.maximum_display_points,
+            ),
+            _reduced_line_series(
+                label="Gen. occupancy",
+                x=state_indexes,
+                y=np.asarray(diagnostics.occupancy.generated_probabilities, dtype=np.float64),
+                maximum_points=settings.maximum_display_points,
+            ),
+            _reduced_line_series(
+                label="Row JSD",
+                x=state_indexes,
+                y=np.asarray([row.jsd for row in diagnostics.transitions.rows], dtype=np.float64),
+                maximum_points=settings.maximum_display_points,
+            ),
+            _reduced_line_series(
+                label="Component JSD",
+                x=component_indexes,
+                y=np.asarray(
+                    (
+                        diagnostics.component_jsd.occupancy,
+                        diagnostics.component_jsd.transition_rows,
+                        diagnostics.component_jsd.runs,
+                    ),
+                    dtype=np.float64,
+                ),
+                maximum_points=settings.maximum_display_points,
+            ),
+        )
+        x_limits, y_limits = _line_limits(series)
+        state_labels = tuple(
+            f"{_DISPLAY_DIRECTION_NAMES[direction]}/{size_category}/{iat_category}"
+            for direction, size_category, iat_category in diagnostics.vocabulary
+        )
+        return LinePlotData(
+            identifier=self.identifier,
+            label=self.label,
+            title=f"{self.label} · W={diagnostics.observation_window_seconds:g} s",
+            x_label="State index",
+            y_label="Value",
+            unit="unitless",
+            series=series,
+            x_limits=x_limits,
+            y_limits=(0.0, max(1.0, y_limits[1])),
+            metadata={
+                "state_labels": state_labels,
+                "artifact_directions": ("outbound", "inbound"),
+                "display_directions": ("uplink", "downlink"),
+                "occupancy_reference_counts": diagnostics.occupancy.reference_counts,
+                "occupancy_generated_counts": diagnostics.occupancy.generated_counts,
+                "transition_row_jsd": tuple(row.jsd for row in diagnostics.transitions.rows),
+                "component_identifiers": ("occupancy", "transition_rows", "runs"),
+                "component_weights": {
+                    "occupancy": diagnostics.component_weights.occupancy,
+                    "transition_rows": diagnostics.component_weights.transition_rows,
+                    "runs": diagnostics.component_weights.runs,
+                },
+                "observation_window_seconds": diagnostics.observation_window_seconds,
+            },
+            reference_sample_count=0,
+            generated_sample_count=0,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class C2stAspect:
+    identifier: str = "c2st"
+    label: str = "Classical C2ST"
+    category: str = "Comparison"
+    trace_controls: bool = False
+
+    def calculate(self, run: DashboardRun, settings: CalculationSettings) -> LinePlotData:
+        diagnostics = _require_c2st(run, aspect_id=self.identifier)
+        metric_indexes = np.arange(2, dtype=np.float64)
+        coefficient_indexes = np.arange(len(diagnostics.coefficients), dtype=np.float64)
+        series = (
+            _reduced_line_series(
+                label="AUC / balanced accuracy",
+                x=metric_indexes,
+                y=np.asarray((diagnostics.auc, diagnostics.balanced_accuracy), dtype=np.float64),
+                maximum_points=settings.maximum_display_points,
+            ),
+            _reduced_line_series(
+                label="Coefficient magnitude",
+                x=coefficient_indexes,
+                y=np.asarray(tuple(abs(value) for value in diagnostics.coefficients), dtype=np.float64),
+                maximum_points=settings.maximum_display_points,
+            ),
+        )
+        x_limits, y_limits = _line_limits(series)
+        return LinePlotData(
+            identifier=self.identifier,
+            label=self.label,
+            title=f"{self.label} (stored classifier evidence) · W={diagnostics.observation_window_seconds:g} s",
+            x_label="Metric or feature index",
+            y_label="Score / coefficient magnitude",
+            unit="unitless",
+            series=series,
+            x_limits=x_limits,
+            y_limits=(0.0, max(1.0, y_limits[1])),
+            metadata={
+                "metric_labels": ("AUC", "Balanced accuracy"),
+                "coefficient_feature_names": diagnostics.feature_names,
+                "coefficient_magnitudes": tuple(abs(value) for value in diagnostics.coefficients),
+                "intercept": diagnostics.intercept,
+                "fold_count": diagnostics.fold_count,
+                "window_count_per_trace": diagnostics.window_count_per_trace,
+                "observation_window_seconds": diagnostics.observation_window_seconds,
+            },
+            reference_sample_count=0,
+            generated_sample_count=0,
+        )
 @dataclass(frozen=True, slots=True)
 class GaFitnessHistoryAspect:
     identifier: str = "ga_fitness_history"

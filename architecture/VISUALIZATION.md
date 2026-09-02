@@ -59,6 +59,9 @@ The loaded value is an immutable `DashboardRun` containing:
 - aligned, cropped generated `TrafficTrace`;
 - one positive shared observation window `W`;
 - optional validated similarity, fitted-model, history, and experiment records;
+- typed read-only accessors for the stored Fano/Allan, transition-fidelity, and
+  classical-C2ST diagnostic records when a schema-5 similarity artifact is
+  valid;
 - aspect-unavailability reasons for optional-artifact degradation.
 
 Numerical trace columns remain owned immutable NumPy arrays. Calculation
@@ -99,13 +102,25 @@ Dependence:
 
 Run-level:
 
-- Similarity component scores plus weighted aggregate
+- Similarity component scores for all eight configured fitness methods plus
+  their weighted aggregate, ordered by the canonical artifact method order
 - Multiscale packet/byte discrepancy by configured scale
+- Fano/Allan reference and generated total-factor curves at every retained
+  scale, retaining the artifact direction channels as immutable plot metadata
+- Transition-fidelity reference/generated occupancy, per-source-row JSD, and
+  retained occupancy/row/run component discrepancies
+- Classical C2ST stored AUC, balanced accuracy, and fitted coefficient
+  magnitudes
 - GA best-fitness history by generation, family, and overall
 
 Persisted artifact values keep the canonical `outbound` and `inbound`
 directions. The dashboard translates them only for display as `uplink` and
 `downlink`.
+
+All five similarity-dependent aspects require a valid canonical schema-5
+`similarity.json`. A schema-4 artifact, a malformed artifact, or a foreign
+artifact disables those aspects together with one actionable loader reason;
+trace and unrelated optional-artifact aspects remain usable.
 
 ## Interaction contract
 
@@ -142,6 +157,12 @@ timestamps reuse TrafficLab's existing shift-and-crop behavior. Throughput,
 packet-rate, histogram, ECDF, autocorrelation, multiscale, similarity, and GA
 history plots reuse the same scientific calculations and retained diagnostics
 owned by the root package and its checked artifacts.
+
+The three post-fit views are a stricter stored-data-only boundary: they project
+the typed schema-5 diagnostic records and must never import or call a
+comparison calculator, reconstruct a transition state, or fit a classifier.
+They preserve artifact `outbound`/`inbound` values while translating only
+rendered labels to `uplink`/`downlink`.
 
 Scientific calculations always use complete loaded samples. Display reduction is
 rendering-only:

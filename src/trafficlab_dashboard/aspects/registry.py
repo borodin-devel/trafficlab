@@ -19,9 +19,12 @@ from trafficlab_dashboard.aspects.distributions import (
     ThroughputEcdfAspect,
 )
 from trafficlab_dashboard.aspects.run_level import (
+    C2stAspect,
+    FanoAllanAspect,
     GaFitnessHistoryAspect,
     MultiscaleDiscrepancyAspect,
     SimilarityScoresAspect,
+    TransitionFidelityAspect,
 )
 from trafficlab_dashboard.aspects.time_domain import (
     CumulativeBytesAspect,
@@ -52,6 +55,9 @@ ASPECTS: tuple[Aspect, ...] = (
     FrameSizeIatHexbinAspect(),
     SimilarityScoresAspect(),
     MultiscaleDiscrepancyAspect(),
+    FanoAllanAspect(),
+    TransitionFidelityAspect(),
+    C2stAspect(),
     GaFitnessHistoryAspect(),
 )
 

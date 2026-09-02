@@ -9,23 +9,29 @@ import numpy as np
 import pytest
 
 import trafficlab.comparison.metrics as comparison_metrics
+import trafficlab.comparison.postfit.c2st as c2st
+import trafficlab.comparison.postfit.dispersion as dispersion
+import trafficlab.comparison.postfit.transitions as transitions
 from tests.fixtures.paths import REPOSITORY_ROOT
 from tests.support.config import valid_config_data
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace
 from trafficlab.comparison.codec import parse_comparison_result
-from trafficlab.comparison.diagnostics import MultiscaleDiagnostic
+from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES, MultiscaleDiagnostic
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.types import CandidateId, HistoryRow
 from trafficlab_dashboard.aspects.base import BarPlotData, CalculationSettings, LinePlotData
 from trafficlab_dashboard.aspects.run_level import (
+    C2stAspect,
+    FanoAllanAspect,
     GaFitnessHistoryAspect,
     MultiscaleDiscrepancyAspect,
     SimilarityScoresAspect,
+    TransitionFidelityAspect,
 )
 from trafficlab_dashboard.run_data import ArtifactIdentities, DashboardRun
 
-_CHECKED_RUN = REPOSITORY_ROOT / "examples" / "scientific_stack" / "example_run_artifacts"
+_CHECKED_SIMILARITY = REPOSITORY_ROOT / "examples" / "data" / "similarity.json"
 
 
 def _trace(*events: tuple[float, Direction, int]) -> TrafficTrace:
@@ -38,7 +44,7 @@ def _trace(*events: tuple[float, Direction, int]) -> TrafficTrace:
 
 
 def _checked_similarity() -> ComparisonResult:
-    return parse_comparison_result((_CHECKED_RUN / "similarity.json").read_bytes())
+    return parse_comparison_result(_CHECKED_SIMILARITY.read_bytes())
 
 
 def _experiment() -> ExperimentConfig:
@@ -176,32 +182,25 @@ def test_similarity_scores_use_stored_values_without_recomputation() -> None:
     )
 
     assert isinstance(data, BarPlotData)
-    assert data.categories == ("Frame-size KS", "IAT KS", "Autocorrelation", "Multiscale", "Aggregate")
+    assert data.categories == (
+        "Autocorrelation",
+        "Frame-size KS",
+        "IAT KS",
+        "Multiscale rate",
+        "Cramér–von Mises",
+        "Anderson–Darling",
+        "Jensen–Shannon",
+        "Approximate MMD",
+        "Aggregate",
+    )
     assert data.values.tolist() == pytest.approx(
-        [
-            similarity.methods["frame_size_ks"].score,
-            similarity.methods["iat_ks"].score,
-            similarity.methods["autocorrelation"].score,
-            similarity.methods["multiscale_rate"].score,
-            similarity.aggregate_score,
-        ]
+        [*(similarity.methods[name].score for name in FITNESS_METHOD_NAMES), similarity.aggregate_score]
     )
     assert data.y_label == "Score"
     assert data.y_limits == (0.0, 1.0)
-    assert data.metadata["method_identifiers"] == (
-        "frame_size_ks",
-        "iat_ks",
-        "autocorrelation",
-        "multiscale_rate",
-        "aggregate",
-    )
+    assert data.metadata["method_identifiers"] == FITNESS_METHOD_NAMES + ("aggregate",)
     assert data.metadata["component_weights"] == pytest.approx(
-        (
-            similarity.methods["frame_size_ks"].weight,
-            similarity.methods["iat_ks"].weight,
-            similarity.methods["autocorrelation"].weight,
-            similarity.methods["multiscale_rate"].weight,
-        )
+        tuple(similarity.methods[name].weight for name in FITNESS_METHOD_NAMES)
     )
     assert data.metadata["observation_window_seconds"] == similarity.observation_window_seconds
     assert type(data.metadata) is MappingProxyType
@@ -252,6 +251,86 @@ def test_multiscale_discrepancy_uses_stored_scale_diagnostics_and_preserves_meta
     for series in data.series:
         assert not series.x.flags.writeable
         assert not series.y.flags.writeable
+
+
+def test_fano_allan_aspect_projects_exact_stored_reference_and_generated_curves() -> None:
+    similarity = _checked_similarity()
+    diagnostics = similarity.postfit_diagnostics
+    assert diagnostics is not None
+    stored = diagnostics.fano_allan.diagnostics
+
+    data = FanoAllanAspect().calculate(_run(similarity=similarity), CalculationSettings.default())
+
+    assert isinstance(data, LinePlotData)
+    assert tuple(series.label for series in data.series) == (
+        "Reference total Fano",
+        "Generated total Fano",
+        "Reference total Allan",
+        "Generated total Allan",
+    )
+    assert [series.x.tolist() for series in data.series] == [pytest.approx(stored.widths)] * 4
+    expected_curves = tuple(
+        tuple(getattr(scale.reference_fano if factor == "fano" else scale.reference_allan, direction) for scale in stored.scales)
+        if dataset == "Reference"
+        else tuple(getattr(scale.generated_fano if factor == "fano" else scale.generated_allan, direction) for scale in stored.scales)
+        for factor in ("fano", "allan")
+        for direction in ("total",)
+        for dataset in ("Reference", "Generated")
+    )
+    assert [series.y.tolist() for series in data.series] == [pytest.approx(values) for values in expected_curves]
+    assert cast(tuple[str, ...], data.metadata["direction_channels"]) == ("total", "outbound", "inbound")
+    assert data.metadata["component_weights"] == {
+        "fano": stored.component_weights.fano,
+        "allan": stored.component_weights.allan,
+    }
+
+
+def test_transition_fidelity_aspect_projects_stored_occupancy_and_row_discrepancies() -> None:
+    similarity = _checked_similarity()
+    diagnostics = similarity.postfit_diagnostics
+    assert diagnostics is not None
+    stored = diagnostics.transition_matrix.diagnostics
+
+    data = TransitionFidelityAspect().calculate(_run(similarity=similarity), CalculationSettings.default())
+
+    assert isinstance(data, LinePlotData)
+    assert tuple(series.label for series in data.series) == (
+        "Ref. occupancy",
+        "Gen. occupancy",
+        "Row JSD",
+        "Component JSD",
+    )
+    assert data.series[0].y.tolist() == pytest.approx(stored.occupancy.reference_probabilities)
+    assert data.series[1].y.tolist() == pytest.approx(stored.occupancy.generated_probabilities)
+    assert data.series[2].y.tolist() == pytest.approx(tuple(row.jsd for row in stored.transitions.rows))
+    assert data.series[3].y.tolist() == pytest.approx(
+        (stored.component_jsd.occupancy, stored.component_jsd.transition_rows, stored.component_jsd.runs)
+    )
+    assert data.metadata["occupancy_reference_counts"] == stored.occupancy.reference_counts
+    assert data.metadata["occupancy_generated_counts"] == stored.occupancy.generated_counts
+    assert data.metadata["transition_row_jsd"] == tuple(row.jsd for row in stored.transitions.rows)
+    assert data.metadata["component_weights"] == {
+        "occupancy": stored.component_weights.occupancy,
+        "transition_rows": stored.component_weights.transition_rows,
+        "runs": stored.component_weights.runs,
+    }
+
+
+def test_c2st_aspect_projects_stored_auc_accuracy_and_coefficient_magnitudes() -> None:
+    similarity = _checked_similarity()
+    diagnostics = similarity.postfit_diagnostics
+    assert diagnostics is not None
+    stored = diagnostics.classical_c2st.diagnostics
+
+    data = C2stAspect().calculate(_run(similarity=similarity), CalculationSettings.default())
+
+    assert isinstance(data, LinePlotData)
+    assert tuple(series.label for series in data.series) == ("AUC / balanced accuracy", "Coefficient magnitude")
+    assert data.series[0].y.tolist() == pytest.approx((stored.auc, stored.balanced_accuracy))
+    assert data.series[1].y.tolist() == pytest.approx(tuple(abs(value) for value in stored.coefficients))
+    assert data.metadata["coefficient_feature_names"] == stored.feature_names
+    assert data.metadata["coefficient_magnitudes"] == pytest.approx(tuple(abs(value) for value in stored.coefficients))
+    assert data.metadata["intercept"] == stored.intercept
 
 
 def test_ga_fitness_history_uses_canonical_lexical_family_order_not_encounter_or_enabled_order() -> None:
@@ -339,6 +418,13 @@ def test_run_level_aspects_use_only_stored_artifacts_and_not_compare_traces(
 
     monkeypatch.setattr(comparison_metrics, "compare_traces", fail_compare_traces)
 
+    def fail_postfit_calculator(*args: object, **kwargs: object) -> object:
+        raise AssertionError("run-level dashboard aspects must not call post-fit calculators")
+
+    monkeypatch.setattr(dispersion, "fano_allan_diagnostic", fail_postfit_calculator)
+    monkeypatch.setattr(transitions, "transition_matrix_diagnostic", fail_postfit_calculator)
+    monkeypatch.setattr(c2st, "classical_c2st_diagnostic", fail_postfit_calculator)
+
     similarity_data = SimilarityScoresAspect().calculate(
         _run(similarity=similarity, experiment=None),
         CalculationSettings.default(),
@@ -347,11 +433,17 @@ def test_run_level_aspects_use_only_stored_artifacts_and_not_compare_traces(
         _run(similarity=similarity, experiment=None),
         CalculationSettings.default(),
     )
+    fano_allan_data = FanoAllanAspect().calculate(_run(similarity=similarity), CalculationSettings.default())
+    transition_data = TransitionFidelityAspect().calculate(_run(similarity=similarity), CalculationSettings.default())
+    c2st_data = C2stAspect().calculate(_run(similarity=similarity), CalculationSettings.default())
     history_data = GaFitnessHistoryAspect().calculate(run, CalculationSettings.default())
 
     assert similarity_data.values.tolist()
     assert multiscale_data.series[0].y.tolist()
     assert history_data.series[-1].label == "Overall"
+    assert fano_allan_data.series[0].y.tolist()
+    assert transition_data.series[0].y.tolist()
+    assert c2st_data.series[0].y.tolist()
 
 
 def test_multiscale_discrepancy_reduces_each_rendered_series_above_general_cap() -> None:

@@ -8,7 +8,12 @@ from typing import Final
 
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.trace import CaptureMetadata, TrafficTrace
-from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.schema import (
+    C2stDiagnostic,
+    ComparisonResult,
+    FanoAllanDiagnostic,
+    TransitionMatrixDiagnostic,
+)
 from trafficlab.fitting.genetic.types import HistoryRow
 from trafficlab.generation.models import BestModel
 
@@ -100,3 +105,24 @@ class DashboardRun:
     @property
     def generated_packet_count(self) -> int:
         return len(self.generated)
+
+    @property
+    def fano_allan_diagnostic(self) -> FanoAllanDiagnostic | None:
+        """Return the validated stored Fano/Allan diagnostic, never recomputed."""
+        if self.similarity is None or self.similarity.postfit_diagnostics is None:
+            return None
+        return self.similarity.postfit_diagnostics.fano_allan.diagnostics
+
+    @property
+    def transition_fidelity_diagnostic(self) -> TransitionMatrixDiagnostic | None:
+        """Return the validated stored transition-fidelity diagnostic, never recomputed."""
+        if self.similarity is None or self.similarity.postfit_diagnostics is None:
+            return None
+        return self.similarity.postfit_diagnostics.transition_matrix.diagnostics
+
+    @property
+    def c2st_diagnostic(self) -> C2stDiagnostic | None:
+        """Return the validated stored C2ST diagnostic, never refit."""
+        if self.similarity is None or self.similarity.postfit_diagnostics is None:
+            return None
+        return self.similarity.postfit_diagnostics.classical_c2st.diagnostics

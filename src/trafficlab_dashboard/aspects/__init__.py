@@ -40,9 +40,12 @@ from trafficlab_dashboard.aspects.numerics import (
 )
 from trafficlab_dashboard.aspects.registry import ASPECTS, aspect_by_id
 from trafficlab_dashboard.aspects.run_level import (
+    C2stAspect,
+    FanoAllanAspect,
     GaFitnessHistoryAspect,
     MultiscaleDiscrepancyAspect,
     SimilarityScoresAspect,
+    TransitionFidelityAspect,
 )
 from trafficlab_dashboard.aspects.time_domain import (
     CumulativeBytesAspect,
@@ -60,6 +63,7 @@ __all__ = [
     "BarPlotData",
     "BarSeries",
     "CalculationSettings",
+    "C2stAspect",
     "CumulativeBytesAspect",
     "CumulativePacketsAspect",
     "DirectionBalanceAspect",
@@ -71,6 +75,7 @@ __all__ = [
     "FrameSizeHistogramAspect",
     "FrameSizeIatHexbinAspect",
     "FrameSizeTimelineAspect",
+    "FanoAllanAspect",
     "GaFitnessHistoryAspect",
     "HistogramPlotData",
     "HistogramSeries",
@@ -86,6 +91,7 @@ __all__ = [
     "TraceVisibility",
     "ThroughputAspect",
     "ThroughputEcdfAspect",
+    "TransitionFidelityAspect",
     "MultiscaleDiscrepancyAspect",
     "aspect_by_id",
     "choose_time_bin_width",

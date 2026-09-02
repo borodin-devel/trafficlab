@@ -18,9 +18,12 @@ from trafficlab_dashboard.aspects.distributions import (
 )
 from trafficlab_dashboard.aspects.registry import ASPECTS, aspect_by_id
 from trafficlab_dashboard.aspects.run_level import (
+    C2stAspect,
+    FanoAllanAspect,
     GaFitnessHistoryAspect,
     MultiscaleDiscrepancyAspect,
     SimilarityScoresAspect,
+    TransitionFidelityAspect,
 )
 from trafficlab_dashboard.aspects.time_domain import (
     CumulativeBytesAspect,
@@ -53,6 +56,9 @@ EXPECTED_ASPECT_IDS = (
     "frame_size_iat_hexbin",
     "similarity_scores",
     "multiscale_discrepancy",
+    "fano_allan",
+    "transition_fidelity",
+    "c2st",
     "ga_fitness_history",
 )
 
@@ -151,17 +157,23 @@ def test_registry_replaces_distribution_placeholders_with_concrete_aspects() -> 
 def test_registry_aspects_conform_to_the_protocol() -> None:
     assert ASPECTS
     assert all(isinstance(aspect, Aspect) for aspect in ASPECTS)
-    assert all(aspect.trace_controls for aspect in ASPECTS[:-3])
-    assert all(not aspect.trace_controls for aspect in ASPECTS[-3:])
+    assert all(aspect.trace_controls for aspect in ASPECTS[:-6])
+    assert all(not aspect.trace_controls for aspect in ASPECTS[-6:])
 
 
 def test_registry_replaces_run_level_placeholders_with_concrete_aspects() -> None:
     assert type(aspect_by_id("similarity_scores")) is SimilarityScoresAspect
     assert type(aspect_by_id("multiscale_discrepancy")) is MultiscaleDiscrepancyAspect
+    assert type(aspect_by_id("fano_allan")) is FanoAllanAspect
+    assert type(aspect_by_id("transition_fidelity")) is TransitionFidelityAspect
+    assert type(aspect_by_id("c2st")) is C2stAspect
     assert type(aspect_by_id("ga_fitness_history")) is GaFitnessHistoryAspect
-    assert tuple(type(aspect) for aspect in ASPECTS[17:20]) == (
+    assert tuple(type(aspect) for aspect in ASPECTS[17:23]) == (
         SimilarityScoresAspect,
         MultiscaleDiscrepancyAspect,
+        FanoAllanAspect,
+        TransitionFidelityAspect,
+        C2stAspect,
         GaFitnessHistoryAspect,
     )
 
@@ -180,6 +192,9 @@ def test_registry_remains_complete_and_trace_aspects_stay_usable_when_run_level_
         {
             "similarity_scores": "similarity.json is missing",
             "multiscale_discrepancy": "similarity.json is missing",
+            "fano_allan": "similarity.json is missing",
+            "transition_fidelity": "similarity.json is missing",
+            "c2st": "similarity.json is missing",
             "ga_fitness_history": "ga_history.csv is missing",
         }
     )
