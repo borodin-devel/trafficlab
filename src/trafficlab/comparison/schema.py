@@ -43,9 +43,15 @@ from trafficlab.comparison.diagnostics import (
     require_close,
 )
 from trafficlab.comparison.similarity.common import JsonValue, SimilarityResult
+from trafficlab.comparison.similarity.multiscale import snap_near_integer
 
 INPUT_NAMES = ("capture_json", "generated_pcapng", "reference_pcapng", "similarity_settings")
 POSTFIT_NAMES = ("fano_allan", "transition_matrix", "classical_c2st")
+_MAXIMUM_C2ST_WINDOWS = 65_536
+_MAXIMUM_FOLD_INDEX_CELLS = 65_536
+_MAXIMUM_FANO_DIRECTION_WINDOW_CELLS = 65_536
+_MAXIMUM_TRANSITION_STATES = 256
+_MAXIMUM_TRANSITION_CELLS = 65_536
 
 
 def _tuple_input(value: object) -> object:
@@ -56,6 +62,20 @@ def _tuple_input(value: object) -> object:
 
 type NonnegativeIntTuple = Annotated[tuple[NonnegativeInt, ...], BeforeValidator(_tuple_input)]
 type AtLeastTwoInt = Annotated[StrictInt, Field(ge=2)]
+type BoundedC2stWindowCount = Annotated[StrictInt, Field(gt=0, le=_MAXIMUM_C2ST_WINDOWS)]
+type BoundedFanoDirectionCells = Annotated[
+    StrictInt,
+    Field(gt=0, le=_MAXIMUM_FANO_DIRECTION_WINDOW_CELLS),
+]
+type BoundedTransitionStateCount = Annotated[StrictInt, Field(gt=0, le=_MAXIMUM_TRANSITION_STATES)]
+type BoundedTransitionCellCount = Annotated[StrictInt, Field(gt=0, le=_MAXIMUM_TRANSITION_CELLS)]
+
+
+def _snapped_window_count(W: float, width: float, *, name: str) -> int:
+    quotient = W / width
+    if not math.isfinite(quotient):
+        raise ValueError(f"{name}: W divided by width must be finite")
+    return math.ceil(snap_near_integer(quotient))
 
 
 class MethodComparison(StrictArtifactModel):
@@ -289,7 +309,7 @@ class FanoAllanDiagnostic(StrictArtifactModel):
     widths: FloatTuple
     scale_weights: FloatTuple
     component_weights: DispersionComponentValues
-    total_direction_window_cells: PositiveInt
+    total_direction_window_cells: BoundedFanoDirectionCells
     scales: Annotated[tuple[FanoAllanScaleDiagnostic, ...], BeforeValidator(_tuple_input)]
     component_differences: DispersionComponentValues
     scale_differences: FloatTuple
@@ -299,17 +319,28 @@ class FanoAllanDiagnostic(StrictArtifactModel):
     def validate_arithmetic(self) -> Self:
         if (
             not self.widths
-            or any(width <= 0.0 for width in self.widths)
+            or any(width <= 0.0 or width > self.observation_window_seconds for width in self.widths)
             or any(left >= right for left, right in zip(self.widths, self.widths[1:], strict=False))
             or not (len(self.widths) == len(self.scale_weights) == len(self.scales) == len(self.scale_differences))
         ):
-            raise ValueError("Fano/Allan widths, weights, scales, and differences must have one ordered shape")
+            raise ValueError("Fano/Allan widths must be ordered within W and match weights, scales, and differences")
         _require_normalized_postfit(self.scale_weights, name="Fano/Allan scale weights")
         _require_normalized_postfit(
             (self.component_weights.fano, self.component_weights.allan),
             name="Fano/Allan component weights",
         )
-        if self.total_direction_window_cells != 2 * sum(scale.window_count for scale in self.scales):
+        expected_window_counts = tuple(
+            _snapped_window_count(self.observation_window_seconds, width, name="Fano/Allan")
+            for width in self.widths
+        )
+        if any(count < 2 for count in expected_window_counts):
+            raise ValueError("Fano/Allan each width must yield at least two windows")
+        if tuple(scale.window_count for scale in self.scales) != expected_window_counts:
+            raise ValueError("Fano/Allan window counts must equal ceil(snap(W / width))")
+        expected_direction_cells = 2 * sum(expected_window_counts)
+        if expected_direction_cells > _MAXIMUM_FANO_DIRECTION_WINDOW_CELLS:
+            raise ValueError("Fano/Allan direction-window cells exceed the fixed cap")
+        if self.total_direction_window_cells != expected_direction_cells:
             raise ValueError("Fano/Allan direction-window cells are inconsistent")
         for index, scale in enumerate(self.scales):
             if scale.width_seconds != self.widths[index] or scale.discrepancy != self.scale_differences[index]:
@@ -350,6 +381,20 @@ type TransitionStates = Annotated[tuple[TransitionState, ...], BeforeValidator(_
 type CountRows = Annotated[tuple[NonnegativeIntTuple, ...], BeforeValidator(_tuple_input)]
 
 
+def _canonical_transition_vocabulary(size_bin_count: int, iat_bin_count: int) -> tuple[TransitionState, ...]:
+    size_categories: tuple[TransitionCategory, ...] = ("below", *range(size_bin_count), "above")
+    iat_categories: tuple[TransitionCategory, ...] = ("initial", "below", *range(iat_bin_count), "above")
+    return cast(
+        tuple[TransitionState, ...],
+        tuple(
+            (direction, size_category, iat_category)
+            for direction in ("outbound", "inbound")
+            for size_category in size_categories
+            for iat_category in iat_categories
+        ),
+    )
+
+
 class TransitionComponentValues(StrictArtifactModel):
     occupancy: UnitFloat
     transition_rows: UnitFloat
@@ -358,7 +403,12 @@ class TransitionComponentValues(StrictArtifactModel):
 
 def _smoothed_probabilities(counts: tuple[int, ...], pseudocount: float) -> tuple[float, ...]:
     denominator = sum(counts) + pseudocount * len(counts)
-    return tuple((count + pseudocount) / denominator for count in counts)
+    if not math.isfinite(denominator) or denominator <= 0.0:
+        raise ValueError("transition pseudocount cannot be evaluated safely")
+    probabilities = tuple((count + pseudocount) / denominator for count in counts)
+    if any(not math.isfinite(probability) or probability <= 0.0 for probability in probabilities):
+        raise ValueError("transition pseudocount cannot be evaluated safely")
+    return probabilities
 
 
 def _smoothed_jsd(reference: tuple[int, ...], generated: tuple[int, ...], pseudocount: float) -> float:
@@ -434,8 +484,8 @@ class TransitionMatrixDiagnostic(StrictArtifactModel):
     log_iat_thresholds: FloatTuple
     pseudocount: PositiveFloat
     component_weights: TransitionComponentValues
-    active_state_count: PositiveInt
-    transition_cell_count: PositiveInt
+    active_state_count: BoundedTransitionStateCount
+    transition_cell_count: BoundedTransitionCellCount
     vocabulary: TransitionStates
     reference_states: TransitionStates
     generated_states: TransitionStates
@@ -451,13 +501,54 @@ class TransitionMatrixDiagnostic(StrictArtifactModel):
             raise ValueError("transition size thresholds must match size_bin_count")
         if len(self.log_iat_thresholds) != self.iat_bin_count + 1:
             raise ValueError("transition IAT thresholds must match iat_bin_count")
-        if self.active_state_count != len(self.vocabulary) or len(set(self.vocabulary)) != len(self.vocabulary):
-            raise ValueError("transition active_state_count must match a unique vocabulary")
-        if self.transition_cell_count != self.active_state_count * self.active_state_count:
-            raise ValueError("transition cell count must equal the vocabulary square")
+        if (
+            any(value < 0.0 for value in (*self.log_size_thresholds, *self.log_iat_thresholds))
+            or any(left > right for left, right in zip(self.log_size_thresholds, self.log_size_thresholds[1:], strict=False))
+            or any(left > right for left, right in zip(self.log_iat_thresholds, self.log_iat_thresholds[1:], strict=False))
+        ):
+            raise ValueError("transition thresholds must be finite nonnegative and nondecreasing")
+        expected_state_count = 2 * (self.size_bin_count + 2) * (self.iat_bin_count + 3)
+        expected_cell_count = expected_state_count * expected_state_count
+        if expected_state_count > _MAXIMUM_TRANSITION_STATES or expected_cell_count > _MAXIMUM_TRANSITION_CELLS:
+            raise ValueError("transition configured vocabulary exceeds the state or cell cap")
+        expected_vocabulary = _canonical_transition_vocabulary(self.size_bin_count, self.iat_bin_count)
+        if self.vocabulary != expected_vocabulary:
+            raise ValueError("transition vocabulary must equal the exact ordered Cartesian definition")
+        if self.active_state_count != expected_state_count:
+            raise ValueError("transition active_state_count must match the canonical vocabulary")
+        if self.transition_cell_count != expected_cell_count:
+            raise ValueError("transition cell count must equal the canonical vocabulary square")
+        if len(self.reference_states) < 2 or len(self.generated_states) < 2:
+            raise ValueError("transition diagnostics require at least two states per trace")
         vocabulary = set(self.vocabulary)
         if any(state not in vocabulary for state in (*self.reference_states, *self.generated_states)):
             raise ValueError("transition state sequence contains a state outside the vocabulary")
+        if not (
+            len(self.occupancy.reference_counts)
+            == len(self.occupancy.generated_counts)
+            == len(self.occupancy.reference_probabilities)
+            == len(self.occupancy.generated_probabilities)
+            == expected_state_count
+        ):
+            raise ValueError("transition occupancy vectors must match the canonical vocabulary")
+        if not (
+            len(self.transitions.reference_counts)
+            == len(self.transitions.generated_counts)
+            == len(self.transitions.rows)
+            == expected_state_count
+        ) or any(
+            len(reference_row) != expected_state_count
+            or len(generated_row) != expected_state_count
+            or len(row.reference_probabilities) != expected_state_count
+            or len(row.generated_probabilities) != expected_state_count
+            for reference_row, generated_row, row in zip(
+                self.transitions.reference_counts,
+                self.transitions.generated_counts,
+                self.transitions.rows,
+                strict=True,
+            )
+        ):
+            raise ValueError("transition count and probability rows must match the canonical vocabulary square")
         indexes = {state: index for index, state in enumerate(self.vocabulary)}
         expected_reference_occupancy = [0] * self.active_state_count
         expected_generated_occupancy = [0] * self.active_state_count
@@ -488,8 +579,6 @@ class TransitionMatrixDiagnostic(StrictArtifactModel):
             self.pseudocount,
             name="transition occupancy",
         )
-        if len(self.transitions.rows) != self.active_state_count:
-            raise ValueError("transition rows must match the vocabulary")
         row_jsds: list[float] = []
         for index, row in enumerate(self.transitions.rows):
             reference_counts = self.transitions.reference_counts[index]
@@ -636,10 +725,10 @@ class C2stDiagnostic(StrictArtifactModel):
     feature_version: Literal["window-v1"]
     feature_names: Annotated[tuple[StrictStr, ...], BeforeValidator(_tuple_input)]
     window_width_seconds: PositiveFloat
-    window_count_per_trace: PositiveInt
-    fold_count: PositiveInt
+    window_count_per_trace: BoundedC2stWindowCount
+    fold_count: AtLeastTwoInt
     guard_window_count: NonnegativeInt
-    maximum_window_count: PositiveInt
+    maximum_window_count: BoundedC2stWindowCount
     l2_regularization: PositiveFloat
     maximum_iterations: PositiveInt
     tolerance: PositiveFloat
@@ -656,35 +745,43 @@ class C2stDiagnostic(StrictArtifactModel):
     def validate_solver_evidence(self) -> Self:
         if self.feature_names != _C2ST_FEATURE_NAMES:
             raise ValueError("C2ST feature_names must equal the frozen window-v1 feature order")
+        expected_window_count = _snapped_window_count(
+            self.observation_window_seconds,
+            self.window_width_seconds,
+            name="C2ST",
+        )
+        if self.window_count_per_trace != expected_window_count:
+            raise ValueError("C2ST window_count_per_trace must equal ceil(snap(W / width))")
         if self.window_count_per_trace > self.maximum_window_count:
             raise ValueError("C2ST window count exceeds the retained cap")
+        if self.fold_count > self.window_count_per_trace:
+            raise ValueError("C2ST fold_count must not exceed the window count")
+        if self.fold_count * self.window_count_per_trace > _MAXIMUM_FOLD_INDEX_CELLS:
+            raise ValueError("C2ST total fold evidence exceeds the fixed cap")
         if len(self.folds) != self.fold_count:
             raise ValueError("C2ST folds must match fold_count")
         if self.out_of_fold_reference_count != self.window_count_per_trace or self.out_of_fold_generated_count != self.window_count_per_trace:
             raise ValueError("C2ST out-of-fold counts must equal the per-trace window count")
         if len(self.coefficients) != len(self.feature_names):
             raise ValueError("C2ST coefficients must match feature_names")
-        evaluation_indexes = tuple(index for fold in self.folds for index in fold.evaluation_window_indexes)
-        if tuple(sorted(evaluation_indexes)) != tuple(range(self.window_count_per_trace)):
-            raise ValueError("C2ST evaluation folds must partition every window exactly once")
-        all_indexes = set(range(self.window_count_per_trace))
+        base, remainder = divmod(self.window_count_per_trace, self.fold_count)
+        start = 0
         for expected_fold_index, fold in enumerate(self.folds):
-            evaluation = fold.evaluation_window_indexes
             if fold.fold_index != expected_fold_index:
                 raise ValueError("C2ST fold_index values must be canonical and ordered")
-            if not evaluation or evaluation != tuple(range(evaluation[0], evaluation[-1] + 1)):
-                raise ValueError("C2ST evaluation indexes must be nonempty contiguous blocks")
-            expected_guard = {
-                index
-                for index in range(
-                    max(0, evaluation[0] - self.guard_window_count),
-                    min(self.window_count_per_trace, evaluation[-1] + self.guard_window_count + 1),
-                )
-                if index not in evaluation
-            }
-            expected_training = all_indexes.difference(evaluation).difference(expected_guard)
-            if set(fold.guard_window_indexes) != expected_guard or set(fold.training_window_indexes) != expected_training:
-                raise ValueError("C2ST training, guard, and evaluation indexes must form the canonical partition")
+            stop = start + base + int(expected_fold_index < remainder)
+            guard_start = max(0, start - self.guard_window_count)
+            guard_stop = min(self.window_count_per_trace, stop + self.guard_window_count)
+            expected_evaluation = tuple(range(start, stop))
+            expected_guard = (*range(guard_start, start), *range(stop, guard_stop))
+            expected_training = (*range(guard_start), *range(guard_stop, self.window_count_per_trace))
+            if (
+                fold.evaluation_window_indexes != expected_evaluation
+                or fold.guard_window_indexes != expected_guard
+                or fold.training_window_indexes != expected_training
+            ):
+                raise ValueError("C2ST fold indexes must equal the exact ordered divmod partition")
+            start = stop
             if fold.iterations > self.maximum_iterations:
                 raise ValueError("C2ST fold iterations exceed maximum_iterations")
             if not (

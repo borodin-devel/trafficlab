@@ -558,6 +558,20 @@ def test_postfit_settings_are_required_without_compatibility_defaults(valid_conf
     assert error.value.errors(include_url=False)[0]["loc"] == ("similarity", "postfit")
 
 
+def test_c2st_maximum_window_count_accepts_65536_and_rejects_65537(
+    valid_config_data: dict[str, object],
+) -> None:
+    """The serialized allocation boundary must match the documented fixed cap exactly."""
+    accepted = copy.deepcopy(valid_config_data)
+    _set_value(accepted, ("similarity", "postfit", "c2st", "maximum_window_count"), 65_536)
+    assert ExperimentConfig.model_validate(accepted).similarity.postfit.c2st.maximum_window_count == 65_536
+
+    rejected = copy.deepcopy(valid_config_data)
+    _set_value(rejected, ("similarity", "postfit", "c2st", "maximum_window_count"), 65_537)
+    with pytest.raises(ValidationError):
+        ExperimentConfig.model_validate(rejected)
+
+
 @pytest.mark.parametrize(
     ("path", "value"),
     [

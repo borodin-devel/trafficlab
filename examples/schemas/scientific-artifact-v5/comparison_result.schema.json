@@ -165,6 +165,26 @@
       "title": "AutocorrelationDiagnostic",
       "type": "object"
     },
+    "BoundedC2stWindowCount": {
+      "exclusiveMinimum": 0,
+      "maximum": 65536,
+      "type": "integer"
+    },
+    "BoundedFanoDirectionCells": {
+      "exclusiveMinimum": 0,
+      "maximum": 65536,
+      "type": "integer"
+    },
+    "BoundedTransitionCellCount": {
+      "exclusiveMinimum": 0,
+      "maximum": 65536,
+      "type": "integer"
+    },
+    "BoundedTransitionStateCount": {
+      "exclusiveMinimum": 0,
+      "maximum": 256,
+      "type": "integer"
+    },
     "C2stComparison": {
       "additionalProperties": false,
       "properties": {
@@ -207,7 +227,7 @@
           "type": "string"
         },
         "fold_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/AtLeastTwoInt"
         },
         "folds": {
           "items": {
@@ -229,7 +249,7 @@
           "$ref": "#/$defs/PositiveInt"
         },
         "maximum_window_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/BoundedC2stWindowCount"
         },
         "observation_window_seconds": {
           "$ref": "#/$defs/PositiveFloat"
@@ -249,7 +269,7 @@
           "$ref": "#/$defs/PositiveFloat"
         },
         "window_count_per_trace": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/BoundedC2stWindowCount"
         },
         "window_width_seconds": {
           "$ref": "#/$defs/PositiveFloat"
@@ -684,7 +704,7 @@
           "type": "array"
         },
         "total_direction_window_cells": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/BoundedFanoDirectionCells"
         },
         "widths": {
           "$ref": "#/$defs/FloatTuple"
@@ -1490,7 +1510,7 @@
       "additionalProperties": false,
       "properties": {
         "active_state_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/BoundedTransitionStateCount"
         },
         "component_jsd": {
           "$ref": "#/$defs/TransitionComponentValues"
@@ -1532,7 +1552,7 @@
           "$ref": "#/$defs/PositiveInt"
         },
         "transition_cell_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/BoundedTransitionCellCount"
         },
         "transitions": {
           "$ref": "#/$defs/TransitionRowsDiagnostic"

@@ -17,17 +17,20 @@ and tolerance.
 
 ## Frozen `window-v1` representation
 
-For configured width (h>0), create
+For configured width \(h>0\), create
 
 \[
 B=\left\lceil\operatorname{snap}(W/h)\right\rceil
 \]
 
-nonoverlapping blocks. `snap` applies the shared four-ULP integer rule to the
-window-count quotient. Blocks are left-closed and right-open except that the
-last block includes `W`; an exact interior boundary starts the later block.
-Before feature allocation, require (B\le B_{max}\), where the configured
-positive `maximum_window_count` is itself bounded by 65,536.
+nonoverlapping blocks. `snap` applies the shared four-ULP integer rule both to
+the window-count quotient and to every event quotient `t / h` before taking its
+floor. Blocks are left-closed and right-open except that the last block includes
+`W`; decimal boundaries such as `0.3 / 0.1` therefore start the later block.
+Before feature allocation, require \(B\le B_{max}\), where the configured
+positive `maximum_window_count` is itself bounded by 65,536. Sorted block
+indexes are grouped once and processed as contiguous slices, so extraction is
+linear in packets plus windows rather than rescanning every packet per window.
 
 Each block has these 14 coordinates in this immutable order:
 
@@ -55,7 +58,14 @@ evaluation window exactly once, and every fold must retain at least one
 training window. Reference and generated samples use the same indexes, so both
 training and evaluation labels are exactly balanced.
 
-For each fold and coordinate (k), compute the population mean and standard
+The exact `divmod(B, fold_count)` layout, the earliest-fold remainder policy,
+and every ordered evaluation/guard/training index vector are reconstructed at
+artifact loading. Since each fold retains one complete partition of the `B`
+indexes, require `B * fold_count <= 65,536` before any fold index tuple is
+created. This fixed evidence cap prevents a maximum-window/maximum-fold
+configuration from materializing quadratic diagnostic state.
+
+For each fold and coordinate \(k\), compute the population mean and standard
 deviation from reference training blocks only. A zero reference deviation is
 replaced by one. Apply this one frozen transform unchanged to reference and
 generated training and evaluation blocks. Generated values therefore cannot
@@ -64,8 +74,8 @@ reference mean and scale together with every index partition.
 
 ## Deterministic logistic fit
 
-Reference labels are zero and generated labels are one. With intercept (b),
-coefficient vector \(\beta\), standardized row (x_i), and configured
+Reference labels are zero and generated labels are one. With intercept \(b\),
+coefficient vector \(\beta\), standardized row \(x_i\), and configured
 \(\lambda>0\), minimize
 
 \[
@@ -97,7 +107,7 @@ The similarity score is
 s=1-2\lvert\operatorname{AUC}-0.5\rvert.
 \]
 
-Only binary64 roundoff within (10^{-15}) of an endpoint is clamped. AUC
+Only binary64 roundoff within \(10^{-15}\) of an endpoint is clamped. AUC
 `0.5` maps to similarity one and perfect separability in either orientation
 maps to zero. Diagnostics retain pooled AUC and balanced accuracy, exact sample
 counts, settings, feature order, fold evidence, solver identity, and

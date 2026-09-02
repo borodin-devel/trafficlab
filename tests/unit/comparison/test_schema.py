@@ -4,13 +4,16 @@ from typing import cast
 
 import pytest
 
+import trafficlab.comparison.schema as comparison_schema
 from tests.support.comparison import settings as _settings
 from tests.support.comparison import trace as _trace
 from tests.support.comparison import valid_result_document
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.trace import TrafficTrace
 from trafficlab.comparison.metrics import compare_traces, evaluate_postfit
-from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.schema import ComparisonResult, FanoAllanDiagnostic
+
+_smoothed_probabilities = comparison_schema._smoothed_probabilities  # pyright: ignore[reportPrivateUsage]
 
 
 def _final_result(valid_config_data: dict[str, object]) -> ComparisonResult:
@@ -28,6 +31,56 @@ def _final_result(valid_config_data: dict[str, object]) -> ComparisonResult:
             }
         )
     )
+
+
+def _replace_transition_with_one_state(diagnostics: dict[str, object]) -> None:
+    """Build a hand-derived, arithmetically consistent one-event transition payload."""
+    vocabulary = cast(list[object], diagnostics["vocabulary"])
+    state = cast(list[object], cast(list[object], diagnostics["reference_states"])[0])
+    state_index = vocabulary.index(state)
+    state_count = len(vocabulary)
+    pseudocount = cast(float, diagnostics["pseudocount"])
+    occupancy_counts = [0] * state_count
+    occupancy_counts[state_index] = 1
+    occupancy_denominator = 1.0 + pseudocount * state_count
+    occupancy_probabilities = [
+        (count + pseudocount) / occupancy_denominator for count in occupancy_counts
+    ]
+    empty_counts = [0] * state_count
+    uniform = [1.0 / state_count] * state_count
+    diagnostics["reference_states"] = [state]
+    diagnostics["generated_states"] = [state]
+    diagnostics["occupancy"] = {
+        "reference_counts": occupancy_counts,
+        "generated_counts": occupancy_counts,
+        "reference_probabilities": occupancy_probabilities,
+        "generated_probabilities": occupancy_probabilities,
+        "jsd": 0.0,
+    }
+    diagnostics["transitions"] = {
+        "reference_counts": [empty_counts[:] for _ in vocabulary],
+        "generated_counts": [empty_counts[:] for _ in vocabulary],
+        "rows": [
+            {
+                "source": source,
+                "reference_probabilities": uniform,
+                "generated_probabilities": uniform,
+                "jsd": 0.0,
+            }
+            for source in vocabulary
+        ],
+        "jsd": 0.0,
+    }
+    diagnostics["runs"] = {
+        "vocabulary": [1, "overflow"],
+        "reference_counts": [1, 0],
+        "generated_counts": [1, 0],
+        "reference_probabilities": [0.75, 0.25],
+        "generated_probabilities": [0.75, 0.25],
+        "jsd": 0.0,
+    }
+    diagnostics["component_jsd"] = {"occupancy": 0.0, "transition_rows": 0.0, "runs": 0.0}
+    diagnostics["discrepancy"] = 0.0
 
 
 def test_final_result_publishes_exact_typed_postfit_keys_and_shared_window(
@@ -110,6 +163,17 @@ def test_fitness_result_cannot_publish_without_final_postfit_diagnostics(
         "evaluation-order",
         "iteration-cap",
         "scale-shape",
+        "c2st-window-width-count",
+        "c2st-maximum-cap",
+        "training-order",
+        "guard-order",
+        "noncanonical-fold-sizes",
+        "fano-width-above-window",
+        "fano-window-count",
+        "transition-vocabulary",
+        "transition-threshold-order",
+        "transition-one-event",
+        "transition-bin-cap",
     ],
 )
 def test_final_result_rejects_corrupt_postfit_arithmetic_or_shape(
@@ -180,6 +244,12 @@ def test_final_result_rejects_corrupt_postfit_arithmetic_or_shape(
             fano_diagnostics["total_direction_window_cells"] = cast(
                 int, fano_diagnostics["total_direction_window_cells"]
             ) - 2 * (old_count - 1)
+        elif corruption == "fano-width-above-window":
+            cast(list[float], fano_diagnostics["widths"])[-1] = 4.0
+            scales[-1]["width_seconds"] = 4.0
+        elif corruption == "fano-window-count":
+            cast(list[float], fano_diagnostics["widths"])[-1] = 1.5
+            scales[-1]["width_seconds"] = 1.5
         else:
             fano_diagnostics["scale_weights"] = [1.0, 1.0]
     elif corruption.startswith("transition-"):
@@ -208,6 +278,29 @@ def test_final_result_rejects_corrupt_postfit_arithmetic_or_shape(
         elif corruption == "transition-run-vocabulary":
             runs = cast(dict[str, object], transition_diagnostics["runs"])
             cast(list[object], runs["vocabulary"])[0] = 2
+        elif corruption == "transition-vocabulary":
+            occupancy = cast(dict[str, object], transition_diagnostics["occupancy"])
+            reference_counts = cast(list[int], occupancy["reference_counts"])
+            generated_counts = cast(list[int], occupancy["generated_counts"])
+            reference_rows = cast(list[list[int]], transitions["reference_counts"])
+            generated_rows = cast(list[list[int]], transitions["generated_counts"])
+            unused = next(
+                index
+                for index in range(len(reference_counts))
+                if reference_counts[index] == generated_counts[index] == 0
+                and not any(row[index] for row in (*reference_rows, *generated_rows))
+                and not any((*reference_rows[index], *generated_rows[index]))
+            )
+            vocabulary = cast(list[list[object]], transition_diagnostics["vocabulary"])
+            vocabulary[unused] = ["outbound", 99, "initial"]
+            cast(list[dict[str, object]], transitions["rows"])[unused]["source"] = vocabulary[unused]
+        elif corruption == "transition-threshold-order":
+            cast(list[float], transition_diagnostics["log_size_thresholds"]).reverse()
+        elif corruption == "transition-one-event":
+            _replace_transition_with_one_state(transition_diagnostics)
+        elif corruption == "transition-bin-cap":
+            transition_diagnostics["size_bin_count"] = 38
+            transition_diagnostics["log_size_thresholds"] = [float(index) for index in range(39)]
         elif corruption == "transition-component-jsd":
             cast(dict[str, object], transition_diagnostics["component_jsd"])["occupancy"] = 0.25
         else:
@@ -239,11 +332,74 @@ def test_final_result_rejects_corrupt_postfit_arithmetic_or_shape(
             cast(list[int], folds[0]["evaluation_window_indexes"]).reverse()
         elif corruption == "iteration-cap":
             folds[0]["iterations"] = cast(int, diagnostics["maximum_iterations"]) + 1
+        elif corruption == "c2st-window-width-count":
+            diagnostics["window_width_seconds"] = 0.3
+        elif corruption == "c2st-maximum-cap":
+            diagnostics["maximum_window_count"] = 65_537
+        elif corruption == "training-order":
+            cast(list[int], folds[0]["training_window_indexes"]).reverse()
+        elif corruption == "guard-order":
+            cast(list[int], folds[1]["guard_window_indexes"]).reverse()
+        elif corruption == "noncanonical-fold-sizes":
+            partitions = (
+                ((0, 1, 2), (3,), tuple(range(4, 12))),
+                ((3, 4, 5, 6, 7), (2, 8), (0, 1, 9, 10, 11)),
+                ((8, 9, 10, 11), (7,), tuple(range(7))),
+            )
+            for fold, (evaluation, guard, training) in zip(folds, partitions, strict=True):
+                fold["evaluation_window_indexes"] = list(evaluation)
+                fold["guard_window_indexes"] = list(guard)
+                fold["training_window_indexes"] = list(training)
+                fold["evaluation_reference_count"] = len(evaluation)
+                fold["evaluation_generated_count"] = len(evaluation)
+                fold["training_reference_count"] = len(training)
+                fold["training_generated_count"] = len(training)
         else:
             cast(list[float], folds[0]["reference_training_scale"]).pop()
 
     with pytest.raises(ValueError):
         ComparisonResult.from_dict(document)
+
+
+def test_fano_allan_schema_rejects_direction_cells_above_fixed_cap() -> None:
+    """Self-consistent vectors must not bypass the documented 65,536 direction-cell cap."""
+    window_count = 32_769
+    zeros = [0] * window_count
+    counts = {"total": zeros, "outbound": zeros, "inbound": zeros}
+    curves = {"total": 0.0, "outbound": 0.0, "inbound": 0.0}
+    scale = {
+        "width_seconds": 1.0,
+        "window_count": window_count,
+        "reference_counts": counts,
+        "generated_counts": counts,
+        "reference_fano": curves,
+        "generated_fano": curves,
+        "reference_allan": curves,
+        "generated_allan": curves,
+        "component_differences": {"fano": 0.0, "allan": 0.0},
+        "discrepancy": 0.0,
+    }
+
+    with pytest.raises(ValueError, match="65536|direction-window.*cap"):
+        FanoAllanDiagnostic.model_validate(
+            {
+                "observation_window_seconds": 32_769.0,
+                "widths": [1.0],
+                "scale_weights": [1.0],
+                "component_weights": {"fano": 0.5, "allan": 0.5},
+                "total_direction_window_cells": 65_538,
+                "scales": [scale],
+                "component_differences": {"fano": 0.0, "allan": 0.0},
+                "scale_differences": [0.0],
+                "discrepancy": 0.0,
+            }
+        )
+
+
+def test_smoothed_probabilities_reject_overflow_before_division() -> None:
+    """A finite huge pseudocount must fail before producing zero or nonfinite probabilities."""
+    with pytest.raises(ValueError, match="pseudocount.*safely"):
+        _smoothed_probabilities((0, 0), 1e308)
 
 
 def test_similarity_artifact_retains_exact_nested_input_content_identities() -> None:

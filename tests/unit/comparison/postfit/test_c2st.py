@@ -84,6 +84,15 @@ def test_window_features_match_hand_counts_quantiles_iats_and_closed_endpoint() 
     ]
 
 
+def test_decimal_boundary_uses_shared_four_ulp_snap_before_window_assignment() -> None:
+    """Raw floor of 0.3/0.1 must not move an exact decimal boundary into block two."""
+    trace = _trace(((0.3, Direction.OUTBOUND, 10),))
+
+    features = _extract_window_features(trace, W=0.4, width=0.1, maximum_window_count=4)
+
+    assert features[:, 0].tolist() == [0.0, 0.0, 0.0, 1.0]
+
+
 def test_guarded_folds_are_contiguous_complete_and_have_no_adjacent_leakage() -> None:
     """Moving a guard index into train/evaluation or leaving an adjacent train index must fail."""
     folds = _guarded_folds(window_count=12, fold_count=3, guard_window_count=1)
@@ -105,6 +114,19 @@ def test_guarded_folds_are_contiguous_complete_and_have_no_adjacent_leakage() ->
             for training in fold.training_indexes
             for evaluation in fold.evaluation_indexes
         )
+
+
+def test_guarded_folds_reject_total_retained_index_evidence_above_cap_before_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A modest fold count must not materialize more than 65,536 retained index cells."""
+
+    def prohibited_range(*_args: object) -> range:
+        raise AssertionError("fold index allocation started before the evidence cap")
+
+    monkeypatch.setattr(c2st, "range", prohibited_range, raising=False)
+    with pytest.raises(TrafficlabError, match="fold evidence.*cap"):
+        _guarded_folds(window_count=32_769, fold_count=2, guard_window_count=0)
 
 
 def test_standardization_uses_reference_training_rows_only_and_zero_scale_fallback() -> None:

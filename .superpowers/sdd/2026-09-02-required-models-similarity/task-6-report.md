@@ -139,3 +139,85 @@ self-review finding remains.
 No open concern. The dense transition probabilities make the checked-in
 `similarity.json` intentionally large, but the declared 256-state/65,536-cell
 caps bound it and the current two-by-two bin configuration uses 40 states.
+
+## Fix round 1 [STEP-8-125c044c]
+
+RED was captured before production edits. The focused C2ST command
+
+```text
+uv run --locked pytest -q tests/unit/comparison/postfit/test_c2st.py \
+  -k 'decimal_boundary or retained_index_evidence'
+```
+
+failed `2` tests: `0.3 / 0.1` was assigned to block two instead of block
+three, and a `32,769 * 2` retained-fold index layout crossed 65,536 without an
+error. The schema mutation/cap/smoothing command failed `13` tests: C2ST did
+not reconstruct `W / width`, the configured cap, ordered arrays, or exact
+`divmod` fold sizes; Fano/Allan did not reconstruct width/window/cap values;
+transition artifacts did not freeze threshold order, Cartesian vocabulary,
+two-event minima, or bin-derived caps; and huge finite smoothing could produce
+zero probabilities instead of failing before division.
+
+GREEN applies the shared four-ULP snap to both window and event quotients.
+Feature extraction now groups sorted block indexes once and consumes contiguous
+slices rather than constructing one packet mask per block. Guarded folds check
+`window_count * fold_count <= 65,536` before any `range` call, then construct
+ordered partitions directly from two outside ranges rather than a full set
+difference. The regression monkeypatches the module's `range` name to prove the
+cap fires before index materialization.
+
+The publication schema now reconstructs snapped C2ST/Fano window counts, exact
+ordered fold arrays and remainder sizes, the 65,536 C2ST window/fold-evidence
+caps, Fano widths within `W` and direction-cell cap, and the exact transition
+Cartesian vocabulary. Transition validation also requires nondecreasing
+nonnegative thresholds, two states per trace, bin-derived 256-state/65,536-cell
+caps, complete row shapes before arithmetic, and state-derived counts/runs.
+Smoothing rejects nonfinite denominators or nonpositive/nonfinite probabilities
+with `ValueError` before division-dependent comparisons or logarithms.
+
+The original resource-evidence statement in `[STEP-5-a4388d1c]` was premature:
+the configuration type already bounded the field, but there was no direct
+accepted/rejected edge test and no separate retained-fold evidence cap. The
+correct evidence is now an explicit configuration test accepting `65,536` and
+rejecting `65,537`, plus a pre-allocation runtime/schema cap of 65,536 total
+retained fold-index cells.
+
+Focused final verification:
+
+```text
+uv run --locked pytest -q \
+  tests/unit/comparison/postfit/test_c2st.py \
+  tests/unit/comparison/test_schema.py \
+  tests/unit/comparison/test_codec.py \
+  tests/unit/comparison/test_publication.py \
+  tests/unit/comparison/test_stage.py \
+  tests/integration/comparison/test_comparison_pipeline.py
+220 passed
+
+uv run --locked pytest -q tests/unit/common/test_config_validation.py \
+  -k 'postfit or maximum_window_count'
+16 passed
+
+uv run --locked ruff check <changed source and focused tests>
+All checks passed!
+
+uv run --locked pyright <changed source and focused tests>
+0 errors, 0 warnings, 0 informations
+
+uv run --locked pytest -q --cov=trafficlab.comparison --cov-branch \
+  --cov-fail-under=0 --cov-report=term-missing <focused comparison tests>
+220 passed; c2st.py 91%, schema.py 90% branch-aware coverage
+
+uv run --locked python scripts/generate_artifact_schemas.py --check
+verified 13 public roots
+
+uv run --locked python scripts/generate_similarity_fixtures.py --check
+checked-in bytes match deterministic production output
+
+git diff --check
+no output
+```
+
+No open concern remains from fix round 1. The focused coverage selection is
+intentionally smaller than the whole comparison-package coverage gate; the two
+changed modules independently remain at or above 90% branch-aware coverage.

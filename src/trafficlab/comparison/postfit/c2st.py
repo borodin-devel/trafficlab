@@ -15,6 +15,7 @@ from trafficlab.common.config import C2stSettings
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import TrafficTrace, validate_traffic_trace
 from trafficlab.comparison.similarity.common import JsonDiagnostics, SimilarityResult, validate_observation_window
+from trafficlab.comparison.similarity.multiscale import snap_near_integer
 
 FEATURE_NAMES = (
     "outbound_packet_count",
@@ -34,6 +35,7 @@ FEATURE_NAMES = (
 )
 _QUANTILES = (0.25, 0.5, 0.75)
 _ROUNDING_TOLERANCE = 1e-15
+_MAXIMUM_FOLD_INDEX_CELLS = 65_536
 
 
 class _OptimizeResult(Protocol):
@@ -94,10 +96,7 @@ def _window_count(W: float, width: float, maximum_window_count: int) -> int:
             "invalid C2ST window width: W divided by the width must be finite",
             corrective_action="configure a wider C2ST window",
         )
-    nearest = round(quotient)
-    if abs(quotient - nearest) <= 4.0 * math.ulp(quotient):
-        quotient = float(nearest)
-    count = math.ceil(quotient)
+    count = math.ceil(snap_near_integer(quotient))
     if count > maximum_window_count:
         raise TrafficlabError(
             "invalid C2ST window count: window count exceeds the configured cap",
@@ -139,14 +138,21 @@ def _extract_window_features(
     window = validate_observation_window(W)
     checked = validate_traffic_trace(trace, minimum_events=1, trace_name="C2ST", window=window)
     count = _window_count(window, width, maximum_window_count)
-    indexes = np.floor(checked.timestamps / width).astype(np.int64)
+    indexes = np.fromiter(
+        (math.floor(snap_near_integer(float(timestamp / width))) for timestamp in checked.timestamps),
+        dtype=np.int64,
+        count=len(checked),
+    )
     indexes[indexes >= count] = count - 1
+    block_sizes = np.bincount(indexes, minlength=count)
+    block_stops = np.cumsum(block_sizes, dtype=np.int64)
     rows: list[tuple[float, ...]] = []
+    start = 0
     for index in range(count):
-        mask = indexes == index
-        timestamps = checked.timestamps[mask]
-        directions = checked.directions[mask]
-        frame_lengths = checked.frame_lengths[mask]
+        stop = int(block_stops[index])
+        timestamps = checked.timestamps[start:stop]
+        directions = checked.directions[start:stop]
+        frame_lengths = checked.frame_lengths[start:stop]
         outbound = directions == 0
         inbound = directions == 1
         size_mean, size_q25, size_q50, size_q75 = _summary(frame_lengths)
@@ -172,6 +178,7 @@ def _extract_window_features(
                 float(len(timestamps) - zero_iat_count),
             )
         )
+        start = stop
     features = np.asarray(rows, dtype=np.float64)
     if features.shape != (count, len(FEATURE_NAMES)) or not np.all(np.isfinite(features)):
         raise TrafficlabError(
@@ -196,18 +203,23 @@ def _guarded_folds(window_count: int, fold_count: int, guard_window_count: int) 
             "invalid C2ST guarded folds: settings cannot form the requested folds",
             corrective_action="configure at least two folds with enough windows and nonnegative guards",
         )
+    total_index_cells = window_count * fold_count
+    if total_index_cells > _MAXIMUM_FOLD_INDEX_CELLS:
+        raise TrafficlabError(
+            "invalid C2ST guarded folds: total fold evidence exceeds the fixed cap",
+            corrective_action="configure fewer folds or wider windows within the 65536 fold-index cell cap",
+        )
     base, remainder = divmod(window_count, fold_count)
     folds: list[GuardedFold] = []
     start = 0
-    all_indexes = set(range(window_count))
     for fold_index in range(fold_count):
         size = base + int(fold_index < remainder)
         stop = start + size
         evaluation = tuple(range(start, stop))
         guard_start = max(0, start - guard_window_count)
         guard_stop = min(window_count, stop + guard_window_count)
-        guard = tuple(index for index in range(guard_start, guard_stop) if index < start or index >= stop)
-        training = tuple(sorted(all_indexes.difference(evaluation).difference(guard)))
+        guard = (*range(guard_start, start), *range(stop, guard_stop))
+        training = (*range(guard_start), *range(guard_stop, window_count))
         if not evaluation or not training:
             raise TrafficlabError(
                 "invalid C2ST guarded folds: every fold requires evaluation and guarded training windows",
