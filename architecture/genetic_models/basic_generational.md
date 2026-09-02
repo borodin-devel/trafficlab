@@ -61,7 +61,11 @@ order alongside its `gene_names`. The supported kinds are `linear`, `log`, and
 `integer`; generic coordinate construction zips those declarations with the
 family's exact configured bounds. The current normative registry remains the
 three complete families (`poisson_empirical`, `markov_renewal`, and `mmpp`),
-and the scientific artifact schema remains 4.
+and the scientific artifact schema is 5. A schema-4 checkpoint is rejected
+before resume with an instruction to refit under the current schema in a new
+run directory. A schema-4 best model is likewise rejected before generation or
+stage reuse with an instruction to refit under the current schema; neither
+artifact has a migration or compatibility adapter.
 
 Every continuous gene has finite bounds `L < U`. A logarithmic gene also
 requires `L > 0`. An integer gene has integer bounds `L < U`. Continuous linear

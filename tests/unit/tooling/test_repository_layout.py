@@ -11,6 +11,8 @@ from typing import Protocol, cast
 
 import pytest
 
+from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES
+
 REPOSITORY = Path(__file__).resolve().parents[3]
 CHECKER_PATH = REPOSITORY / "scripts" / "check_fixture_layout.py"
 
@@ -411,6 +413,27 @@ def test_architecture_inventory_includes_top_level_contracts() -> None:
     assert "- [Visualization companion](architecture/VISUALIZATION.md)" in (REPOSITORY / "README.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_similarity_method_inventory_uses_the_runtime_fitness_order() -> None:
+    """The normative table must not imply a checkpoint order different from runtime."""
+    content = (REPOSITORY / "architecture" / "similarity_methods" / "README.md").read_text(encoding="utf-8")
+    table = content.split("## MVP methods\n", 1)[1].split("\nThese eight methods", 1)[0]
+    documented_links = tuple(
+        line.split("][", 1)[1].split("]", 1)[0] for line in table.splitlines() if line.startswith("| [")
+    )
+    method_links = {
+        "autocorrelation": "acf",
+        "frame_size_ks": "frame-size",
+        "iat_ks": "iat",
+        "multiscale_rate": "rate",
+        "cramer_von_mises": "cvm",
+        "anderson_darling": "ad",
+        "jensen_shannon": "js",
+        "approximate_mmd": "mmd",
+    }
+
+    assert documented_links == tuple(method_links[name] for name in FITNESS_METHOD_NAMES)
 
 
 def test_visualization_contract_describes_stale_result_invalidation_and_atomic_replacement_cache_commit() -> None:
