@@ -242,6 +242,46 @@ def test_acd_independent_oracles_match_hand_recursion_stationary_mean_and_innova
     assert acd_stationary_mean(0.5, (0.2,), (0.3,)) == 1.0
 
 
+@pytest.mark.parametrize(
+    ("durations", "omega", "alpha", "beta", "initial_mean", "expected"),
+    (
+        (
+            (1.0, 3.0, 2.0, 0.0),
+            0.4,
+            (0.2, 0.1),
+            (0.3, 0.1),
+            2.0,
+            (1.8, 1.54, 1.742, 1.7766),
+        ),
+        (
+            (0.5, 2.0, 1.0, 3.0),
+            0.2,
+            (0.1, 0.05, 0.02),
+            (0.3, 0.2, 0.1),
+            1.5,
+            (1.355, 1.2115, 1.23945, 1.159635),
+        ),
+    ),
+    ids=("order-2", "order-3"),
+)
+def test_acd_independent_multilag_oracle_preserves_distinct_lag_order(
+    durations: tuple[float, ...],
+    omega: float,
+    alpha: tuple[float, ...],
+    beta: tuple[float, ...],
+    initial_mean: float,
+    expected: tuple[float, ...],
+) -> None:
+    """Reversing any duration or conditional-mean lag must fail a literal multi-lag hand case."""
+    assert acd_conditional_means(
+        durations,
+        omega=omega,
+        alpha=alpha,
+        beta=beta,
+        initial_mean=initial_mean,
+    ) == pytest.approx(expected, abs=1e-15)
+
+
 @pytest.mark.parametrize("seed", _ACD_SEEDS)
 def test_acd_matches_stationary_mean_unit_innovation_and_joint_mark_oracles(seed: int) -> None:
     """Generated ACD durations and marks must satisfy the fixed independent acceptance matrix."""

@@ -48,7 +48,11 @@ def test_schema_five_directory_contains_current_fitness_and_model_roots() -> Non
     ):
         assert f'"{method}"' in comparison
     assert '"nhpp"' in best_model
-    for future_family in ("packet_hmm", "markov_packet_train", "acd"):
+    assert '"acd"' in best_model
+    assert '"acd"' in checkpoint
+    assert '"AcdPayload"' in best_model
+    assert len(documents["best_model.schema.json"]["$defs"]["FamilyPayload"]["oneOf"]) == 5
+    for future_family in ("packet_hmm", "markov_packet_train"):
         assert f'"{future_family}"' not in best_model
 
 

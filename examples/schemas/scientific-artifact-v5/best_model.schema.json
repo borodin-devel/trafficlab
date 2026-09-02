@@ -1,5 +1,30 @@
 {
   "$defs": {
+    "AcdPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "beta": {
+          "$ref": "#/$defs/FloatVector"
+        },
+        "marks": {
+          "$ref": "#/$defs/MarkPayloads"
+        },
+        "omega": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "omega",
+        "alpha",
+        "beta",
+        "marks"
+      ],
+      "title": "AcdPayload",
+      "type": "object"
+    },
     "ContentIdentity": {
       "description": "The portable size and SHA-256 identity of authoritative bytes.",
       "properties": {
@@ -42,6 +67,9 @@
         },
         {
           "$ref": "#/$defs/NhppPayload"
+        },
+        {
+          "$ref": "#/$defs/AcdPayload"
         }
       ]
     },
@@ -456,7 +484,8 @@
         "poisson_empirical",
         "markov_renewal",
         "mmpp",
-        "nhpp"
+        "nhpp",
+        "acd"
       ],
       "title": "Family",
       "type": "string"

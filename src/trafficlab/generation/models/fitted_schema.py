@@ -126,8 +126,8 @@ class AcdPayload(_StrictWireModel):
     def coefficients_are_stationary_and_marks_are_valid(self) -> Self:
         if len(self.alpha) != len(self.beta) or not 1 <= len(self.alpha) <= 3:
             raise ValueError("alpha and beta must have matching order in 1..3")
-        if any(value < 0.0 for value in (*self.alpha, *self.beta)):
-            raise ValueError("ACD coefficients must be finite nonnegative floats")
+        if any(value < 0.0 or value >= 1.0 for value in (*self.alpha, *self.beta)):
+            raise ValueError("ACD coefficients must be finite floats in [0, 1)")
         if math.fsum((*self.alpha, *self.beta)) >= 1.0:
             raise ValueError("ACD coefficient sum must be below one")
         if not self.marks:

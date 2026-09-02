@@ -169,8 +169,11 @@ def _conditional_means(
     if type(alpha) is not tuple or type(beta) is not tuple or len(alpha) != len(beta) or not 1 <= len(alpha) <= 3:
         raise ValueError("alpha and beta must be matching tuples with order in 1..3")
     coefficients = (*alpha, *beta)
-    if any(type(value) is not float or not math.isfinite(value) or value < 0.0 for value in coefficients):
-        raise ValueError("ACD coefficients must be finite nonnegative floats")
+    if any(
+        type(value) is not float or not math.isfinite(value) or value < 0.0 or value >= 1.0
+        for value in coefficients
+    ):
+        raise ValueError("ACD coefficients must be finite floats in [0, 1)")
     if math.fsum(coefficients) >= 1.0:
         raise ValueError("ACD coefficients must have sum below one")
     mean = _validate_reference_mean(initial_mean)
@@ -353,8 +356,11 @@ class AcdModel:
         if len(self.alpha) != len(self.beta) or not 1 <= len(self.alpha) <= 3:
             raise ValueError("alpha and beta must have matching order in 1..3")
         coefficients = (*self.alpha, *self.beta)
-        if any(type(value) is not float or not math.isfinite(value) or value < 0.0 for value in coefficients):
-            raise ValueError("ACD coefficients must be finite nonnegative floats")
+        if any(
+            type(value) is not float or not math.isfinite(value) or value < 0.0 or value >= 1.0
+            for value in coefficients
+        ):
+            raise ValueError("ACD coefficients must be finite floats in [0, 1)")
         persistence = math.fsum(coefficients)
         if persistence >= 1.0:
             raise ValueError("ACD coefficient sum must be below one")

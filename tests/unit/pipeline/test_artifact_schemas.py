@@ -18,7 +18,7 @@ from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSI
 from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.diagnostics import MethodDiagnostic
 from trafficlab.comparison.schema import ComparisonResult, MethodComparison
-from trafficlab.generation.models.fitted_schema import FamilyPayload
+from trafficlab.generation.models.fitted_schema import AcdPayload, FamilyPayload
 from trafficlab.study_evidence.report import StudyBootstrapInterval
 
 _ROOT = Path(__file__).parents[3]
@@ -156,7 +156,12 @@ def test_family_and_method_payloads_publish_union_schemas() -> None:
     family_schema = TypeAdapter(FamilyPayload).json_schema()
     method_schema = TypeAdapter(MethodDiagnostic).json_schema()
 
-    assert len(family_schema["oneOf"]) == 4
+    assert len(family_schema["oneOf"]) == 5
+    assert family_schema["oneOf"][-1] == {"$ref": "#/$defs/AcdPayload"}
+    acd_schema = family_schema["$defs"][AcdPayload.__name__]
+    assert acd_schema["title"] == "AcdPayload"
+    assert acd_schema["additionalProperties"] is False
+    assert acd_schema["required"] == ["omega", "alpha", "beta", "marks"]
     assert len(method_schema["oneOf"]) == 8
 
 

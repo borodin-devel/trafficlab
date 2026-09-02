@@ -229,6 +229,30 @@ def test_best_model_round_trips_every_real_fitted_family(
     assert loaded == artifact
 
 
+def test_best_model_loader_translates_huge_acd_coefficients_to_stable_domain_error() -> None:
+    """A finite but individually nonstationary coefficient must not escape as an OverflowError."""
+    artifact = make_best_model(
+        ACD_FAMILY,
+        REFERENCE,
+        (1,),
+        reference_identity=REFERENCE_IDENTITY,
+        capture_identity=CAPTURE_IDENTITY,
+        final_seed=FINAL_SEED,
+        final_limits=FINAL_LIMITS,
+        W=WINDOW,
+        bounds=ACD_BOUNDS,
+    )
+    document = _document(artifact)
+    fitted = cast(dict[str, object], document["fitted"])
+    maximum = math.nextafter(math.inf, 0.0)
+    fitted["alpha"] = [maximum]
+    fitted["beta"] = [maximum]
+
+    with pytest.raises(TrafficlabError, match="invalid fitted acd model") as error:
+        load_best_model(_encoded(document), source=Path("best_model.json"))
+    assert "ACD coefficients" in str(error.value)
+
+
 def test_best_model_rejects_duplicate_keys_at_every_object_depth(valid_best_model: BestModel) -> None:
     """Last-value-wins parsing at any nesting level would bypass exact artifact validation."""
     rendered = render_best_model(valid_best_model).decode()

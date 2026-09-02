@@ -115,7 +115,9 @@ Fitting costs `O(np)` per likelihood/gradient evaluation and bounded
 scientific validation independently checks the hand recursion, stationary
 mean, recovered unit-innovation mean, joint-mark frequencies, zero IATs,
 endpoint completion, scalar RNG order, strict loading, nonconvergence, and all
-three reliability guards under fixed seeds and declared tolerances.
+three reliability guards under fixed seeds and declared tolerances. Distinct
+order-two and order-three coefficient vectors directly validate newest-to-oldest
+recursion, analytic-gradient lag indexing, and generated history updates.
 
 ## Reference
 

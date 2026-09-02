@@ -10,6 +10,7 @@ from typing import cast
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 import trafficlab.generation.models.acd as acd
 from trafficlab.common.config import AcdConfig, GenerationLimits, IntegerBounds
@@ -25,6 +26,7 @@ from trafficlab.generation.models.acd import (
     _transform_parameters,
 )
 from trafficlab.generation.models.common import MarkCount, MarkDistribution
+from trafficlab.generation.models.fitted_schema import AcdPayload
 
 FAMILY = AcdFamily()
 BOUNDS = AcdConfig(order=IntegerBounds(lower=1, upper=3))
@@ -180,6 +182,46 @@ def test_conditional_mean_recursion_and_exponential_likelihood_match_hand_values
 
 
 @pytest.mark.parametrize(
+    ("durations", "omega", "alpha", "beta", "initial_mean", "expected"),
+    (
+        (
+            (1.0, 3.0, 2.0, 0.0),
+            0.4,
+            (0.2, 0.1),
+            (0.3, 0.1),
+            2.0,
+            (1.8, 1.54, 1.742, 1.7766),
+        ),
+        (
+            (0.5, 2.0, 1.0, 3.0),
+            0.2,
+            (0.1, 0.05, 0.02),
+            (0.3, 0.2, 0.1),
+            1.5,
+            (1.355, 1.2115, 1.23945, 1.159635),
+        ),
+    ),
+    ids=("order-2", "order-3"),
+)
+def test_multilag_conditional_mean_recursion_matches_literal_history_order(
+    durations: tuple[float, ...],
+    omega: float,
+    alpha: tuple[float, ...],
+    beta: tuple[float, ...],
+    initial_mean: float,
+    expected: tuple[float, ...],
+) -> None:
+    """Distinct alpha and beta lags must retain newest-to-oldest order for p=2 and p=3."""
+    assert _conditional_means(
+        durations,
+        omega=omega,
+        alpha=alpha,
+        beta=beta,
+        initial_mean=initial_mean,
+    ) == pytest.approx(expected, abs=1e-15)
+
+
+@pytest.mark.parametrize(
     ("durations", "omega", "alpha", "beta", "initial_mean", "message"),
     [
         ((), 0.5, (0.2,), (0.3,), 1.0, "durations"),
@@ -235,11 +277,33 @@ def test_exponential_likelihood_rejects_invalid_vectors(
         _exponential_negative_log_likelihood(durations, conditional_means)
 
 
-def test_analytic_likelihood_gradient_matches_an_independent_central_difference() -> None:
-    """A transform-chain or recursive derivative error would steer the deterministic MLE incorrectly."""
-    parameters = np.asarray([0.2, -0.4, 0.7], dtype=np.float64)
-    durations = (0.0, 0.5, 1.0, 0.5)
-    _loss, gradient = _likelihood_and_gradient(parameters, durations, 1, 0.5)
+@pytest.mark.parametrize(
+    ("parameters", "durations", "order", "reference_mean"),
+    (
+        (np.asarray([0.2, -0.4, 0.7], dtype=np.float64), (0.0, 0.5, 1.0, 0.5), 1, 0.5),
+        (
+            np.asarray([0.1, -0.3, 0.2, -0.1, 0.4], dtype=np.float64),
+            (0.0, 0.5, 1.5, 0.25, 2.0),
+            2,
+            0.85,
+        ),
+        (
+            np.asarray([0.05, -0.4, 0.3, -0.2, 0.1, 0.5, -0.1], dtype=np.float64),
+            (0.25, 1.0, 0.0, 2.0, 0.5, 1.5),
+            3,
+            0.875,
+        ),
+    ),
+    ids=("order-1", "order-2", "order-3"),
+)
+def test_analytic_likelihood_gradient_matches_an_independent_central_difference(
+    parameters: np.ndarray[tuple[int], np.dtype[np.float64]],
+    durations: tuple[float, ...],
+    order: int,
+    reference_mean: float,
+) -> None:
+    """Transform-chain and recursive derivatives must preserve every distinct lag index."""
+    _loss, gradient = _likelihood_and_gradient(parameters, durations, order, reference_mean)
     finite_difference: list[float] = []
     for index in range(len(parameters)):
         step = 1e-6
@@ -247,8 +311,8 @@ def test_analytic_likelihood_gradient_matches_an_independent_central_difference(
         below = parameters.copy()
         above[index] += step
         below[index] -= step
-        upper_loss = _likelihood_and_gradient(above, durations, 1, 0.5)[0]
-        lower_loss = _likelihood_and_gradient(below, durations, 1, 0.5)[0]
+        upper_loss = _likelihood_and_gradient(above, durations, order, reference_mean)[0]
+        lower_loss = _likelihood_and_gradient(below, durations, order, reference_mean)[0]
         finite_difference.append((upper_loss - lower_loss) / (2.0 * step))
 
     assert gradient.tolist() == pytest.approx(finite_difference, abs=1e-8)
@@ -358,6 +422,28 @@ def test_model_rejects_nonpositive_nonstationary_or_unusable_parameters(
         AcdModel(*parameters, MARKS)
 
 
+def test_model_rejects_huge_finite_coefficients_as_nonstationary_without_overflow() -> None:
+    """Summing individually nonstationary finite coefficients must not leak arithmetic overflow."""
+    maximum = math.nextafter(math.inf, 0.0)
+
+    with pytest.raises(ValueError, match="coefficient"):
+        AcdModel(0.5, (maximum,), (maximum,), MARKS)
+
+
+def test_wire_payload_rejects_huge_finite_coefficients_as_validation_error() -> None:
+    """The public fitted-payload boundary must translate a nonstationary finite vector consistently."""
+    maximum = math.nextafter(math.inf, 0.0)
+    payload = {
+        "omega": 0.5,
+        "alpha": [maximum],
+        "beta": [maximum],
+        "marks": [{"direction": "outbound", "frame_length": 60, "count": 1}],
+    }
+
+    with pytest.raises(ValidationError, match="coefficient"):
+        AcdPayload.model_validate(payload)
+
+
 def test_generation_uses_stationary_prehistory_unit_innovations_and_mark_after_arrival() -> None:
     """Changing initialization, innovation scale, or draw order changes schema-5 output."""
     rng = ScriptedAcdRng(indices=[0, 1, 2], exponentials=[0.5, 1.0, 1.0])
@@ -370,6 +456,52 @@ def test_generation_uses_stationary_prehistory_unit_innovations_and_mark_after_a
         TraceEvent(1.4, Direction.INBOUND, 100),
     )
     assert rng.calls == [
+        ("choice", 4),
+        ("exponential", 1.0),
+        ("choice", 4),
+        ("exponential", 1.0),
+        ("choice", 4),
+        ("exponential", 1.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("model", "exponentials", "window", "expected_timestamps"),
+    (
+        (
+            AcdModel(omega=0.6, alpha=(0.2, 0.1), beta=(0.3, 0.1), marks=MARKS),
+            (0.5, 2.0, 1.0, 10.0),
+            7.0,
+            (0.0, 1.0, 4.6, 6.76),
+        ),
+        (
+            AcdModel(omega=0.23, alpha=(0.1, 0.05, 0.02), beta=(0.3, 0.2, 0.1), marks=MARKS),
+            (0.5, 2.0, 1.0, 10.0),
+            4.0,
+            (0.0, 0.5, 2.4, 3.45),
+        ),
+    ),
+    ids=("order-2", "order-3"),
+)
+def test_generation_preserves_multilag_duration_and_conditional_mean_history_order(
+    model: AcdModel,
+    exponentials: tuple[float, ...],
+    window: float,
+    expected_timestamps: tuple[float, ...],
+) -> None:
+    """Reversing either p=2 or p=3 history would change the third scripted arrival."""
+    rng = ScriptedAcdRng(indices=[0, 0, 0, 0], exponentials=exponentials)
+
+    result = _generate_with_rng(model, rng, W=window, limits=LIMITS, clock=ScriptedClock([0.0] * 40))
+
+    events = result.require_complete().to_events()
+    assert tuple(event.timestamp for event in events) == pytest.approx(expected_timestamps, abs=1e-15)
+    assert tuple((event.direction, event.frame_length) for event in events) == (
+        (Direction.OUTBOUND, 60),
+    ) * 4
+    assert rng.calls == [
+        ("choice", 4),
+        ("exponential", 1.0),
         ("choice", 4),
         ("exponential", 1.0),
         ("choice", 4),

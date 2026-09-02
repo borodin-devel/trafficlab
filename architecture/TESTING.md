@@ -201,6 +201,12 @@ example. Important fixed expectations include:
   `(1.5,1.15,0.845)`; the middle zero is retained in both likelihood and
   recursion. Zero optimizer coordinates under the scaled-simplex transform
   retain stationary mean `bar_delta` and strict coefficient sum below one.
+  Distinct order-two coefficients `alpha=(0.2,0.1)`, `beta=(0.3,0.1)` and
+  durations `(1,3,2,0)` give means `(1.8,1.54,1.742,1.7766)` from prehistory
+  mean `2`; a separate distinct order-three case freezes all lag positions.
+  Central differences independently cover analytic gradients at orders one,
+  two, and three, while scripted order-two and order-three generators detect
+  either reversed duration history or reversed conditional-mean history.
 - Genetic coordinates: linear, logarithmic, and integer encode/decode cover both
   bounds and integer half-rounding; initialization uses a stub RNG.
 - Genetic reflection: `-0.2 -> 0.2`, `1.2 -> 0.8`, and `2.2 -> 0.2`.

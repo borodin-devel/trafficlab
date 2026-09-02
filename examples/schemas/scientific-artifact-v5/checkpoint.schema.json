@@ -299,7 +299,8 @@
             "poisson_empirical",
             "markov_renewal",
             "mmpp",
-            "nhpp"
+            "nhpp",
+            "acd"
           ],
           "title": "Name",
           "type": "string"
@@ -563,7 +564,8 @@
                 "poisson_empirical",
                 "markov_renewal",
                 "mmpp",
-                "nhpp"
+                "nhpp",
+                "acd"
               ],
               "type": "string"
             },
@@ -698,7 +700,8 @@
             "poisson_empirical",
             "markov_renewal",
             "mmpp",
-            "nhpp"
+            "nhpp",
+            "acd"
           ],
           "title": "Family",
           "type": "string"
@@ -1072,7 +1075,8 @@
             "poisson_empirical",
             "markov_renewal",
             "mmpp",
-            "nhpp"
+            "nhpp",
+            "acd"
           ],
           "title": "Family",
           "type": "string"
@@ -1553,7 +1557,8 @@
             "poisson_empirical",
             "markov_renewal",
             "mmpp",
-            "nhpp"
+            "nhpp",
+            "acd"
           ],
           "title": "Family",
           "type": "string"
