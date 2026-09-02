@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from fractions import Fraction
 from math import log1p, log2
 from typing import cast
@@ -21,10 +21,18 @@ def _trace(events: tuple[tuple[float, Direction, int], ...]) -> TrafficTrace:
     return TrafficTrace.from_events(TraceEvent(timestamp, direction, length) for timestamp, direction, length in events)
 
 
-def _jsd(reference: Counter[object], generated: Counter[object], alpha: int, vocabulary: tuple[object, ...]) -> float:
+def _pmf[Category: Hashable](counts: Counter[Category], alpha: int, vocabulary: tuple[Category, ...]) -> dict[Category, Fraction]:
+    """Build one hand-derived smoothed PMF using exact rational arithmetic."""
+    denominator = sum(counts.values()) + alpha * len(vocabulary)
+    return {key: Fraction(counts[key] + alpha, denominator) for key in vocabulary}
+
+
+def _jsd[Category: Hashable](
+    reference: Counter[Category], generated: Counter[Category], alpha: int, vocabulary: tuple[Category, ...]
+) -> float:
     """A Fraction PMF oracle independent of production state construction and JSD code."""
-    reference_mass = {key: Fraction(reference[key] + alpha, sum(reference.values()) + alpha * len(vocabulary)) for key in vocabulary}
-    generated_mass = {key: Fraction(generated[key] + alpha, sum(generated.values()) + alpha * len(vocabulary)) for key in vocabulary}
+    reference_mass = _pmf(reference, alpha, vocabulary)
+    generated_mass = _pmf(generated, alpha, vocabulary)
     total = 0.0
     for key in vocabulary:
         p = reference_mass[key]
@@ -101,7 +109,7 @@ def test_hand_counted_occupancy_rows_empty_rows_and_run_pmf_use_declared_smoothi
         )
     )
 
-    result = transition_matrix_diagnostic(reference, generated, 3.0, 1, 1, 1.0, (0.0, 0.0, 1.0))
+    result = transition_matrix_diagnostic(reference, generated, 3.0, 1, 1, 1.0, (0.2, 0.3, 0.5))
 
     occupancy = cast(Mapping[str, object], result.diagnostics["occupancy"])
     transitions = cast(Mapping[str, object], result.diagnostics["transitions"])
@@ -124,12 +132,52 @@ def test_hand_counted_occupancy_rows_empty_rows_and_run_pmf_use_declared_smoothi
     assert reference_transitions[state_index[("outbound", 0, 0)]][state_index[("inbound", 0, 0)]] == 1
     assert generated_transitions[state_index[("outbound", 0, 0)]][state_index[("inbound", 0, 0)]] == 1
     empty_row = rows[state_index[("inbound", "below", "below")]]
-    assert empty_row["reference_probabilities"] == pytest.approx((Fraction(1, len(vocabulary)),) * len(vocabulary))
+    reference_occupancy: Counter[State] = Counter(
+        {("outbound", 0, "initial"): 1, ("outbound", 0, 0): 2, ("inbound", 0, 0): 1}
+    )
+    generated_occupancy: Counter[State] = Counter(
+        {("outbound", 0, "initial"): 1, ("outbound", 0, 0): 1, ("inbound", 0, 0): 2}
+    )
+    expected_reference_occupancy = _pmf(reference_occupancy, 1, vocabulary)
+    expected_generated_occupancy = _pmf(generated_occupancy, 1, vocabulary)
+    expected_occupancy_jsd = _jsd(reference_occupancy, generated_occupancy, 1, vocabulary)
+    assert occupancy["reference_probabilities"] == pytest.approx(tuple(expected_reference_occupancy[state] for state in vocabulary))
+    assert occupancy["generated_probabilities"] == pytest.approx(tuple(expected_generated_occupancy[state] for state in vocabulary))
+    assert occupancy["jsd"] == pytest.approx(expected_occupancy_jsd)
+    reference_rows: dict[State, Counter[State]] = {
+        ("outbound", 0, "initial"): Counter({("outbound", 0, 0): 1}),
+        ("outbound", 0, 0): Counter({("outbound", 0, 0): 1, ("inbound", 0, 0): 1}),
+    }
+    generated_rows: dict[State, Counter[State]] = {
+        ("outbound", 0, "initial"): Counter({("inbound", 0, 0): 1}),
+        ("outbound", 0, 0): Counter({("inbound", 0, 0): 1}),
+        ("inbound", 0, 0): Counter({("outbound", 0, 0): 1}),
+    }
+    expected_row_jsds = tuple(
+        _jsd(reference_rows.get(state, Counter[State]()), generated_rows.get(state, Counter[State]()), 1, vocabulary)
+        for state in vocabulary
+    )
+    expected_transition_jsd = sum(expected_row_jsds) / len(expected_row_jsds)
+    assert empty_row["reference_probabilities"] == pytest.approx(tuple(Fraction(1, len(vocabulary)) for _ in vocabulary))
+    assert rows[state_index[("outbound", 0, 0)]]["reference_probabilities"] == pytest.approx(
+        tuple(_pmf(reference_rows[("outbound", 0, 0)], 1, vocabulary)[state] for state in vocabulary)
+    )
+    assert tuple(row["jsd"] for row in rows) == pytest.approx(expected_row_jsds)
+    assert transitions["jsd"] == pytest.approx(expected_transition_jsd)
     assert runs["reference_counts"] == (2, 1, 0)
     assert runs["generated_counts"] == (4, 0, 0)
-    expected_runs = _jsd(Counter({1: 2, 2: 1}), Counter({1: 4}), 1, run_vocabulary)
+    reference_runs: Counter[int | str] = Counter({1: 2, 2: 1})
+    generated_runs: Counter[int | str] = Counter({1: 4})
+    expected_runs = _jsd(reference_runs, generated_runs, 1, run_vocabulary)
     assert runs["jsd"] == pytest.approx(expected_runs)
-    assert result.score == pytest.approx(1.0 - expected_runs)
+    expected_discrepancy = 0.2 * expected_occupancy_jsd + 0.3 * expected_transition_jsd + 0.5 * expected_runs
+    assert result.diagnostics["component_jsd"] == {
+        "occupancy": pytest.approx(expected_occupancy_jsd),
+        "transition_rows": pytest.approx(expected_transition_jsd),
+        "runs": pytest.approx(expected_runs),
+    }
+    assert result.diagnostics["discrepancy"] == pytest.approx(expected_discrepancy)
+    assert result.score == pytest.approx(1.0 - expected_discrepancy)
     assert len(vocabulary) == 24
 
 
@@ -156,6 +204,14 @@ def test_transition_rejects_a_declared_vocabulary_outside_the_fixed_state_cap() 
 
     with pytest.raises(TrafficlabError, match="state or transition-cell count exceeds the cap"):
         transition_matrix_diagnostic(trace, trace, 1.0, 10, 10, 1.0, (1.0, 0.0, 0.0))
+
+
+def test_transition_rejects_a_finite_pseudocount_that_overflows_its_pmf_denominator() -> None:
+    """A finite but extreme pseudocount must report a domain error, never divide by zero."""
+    trace = _trace(((0.0, Direction.OUTBOUND, 10), (1.0, Direction.INBOUND, 20)))
+
+    with pytest.raises(TrafficlabError, match="pseudocount.*evaluated safely"):
+        transition_matrix_diagnostic(trace, trace, 1.0, 1, 1, 1e308, (1.0, 0.0, 0.0))
 
 
 @pytest.mark.parametrize(

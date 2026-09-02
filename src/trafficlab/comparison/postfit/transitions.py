@@ -126,8 +126,19 @@ def _counts(values: Iterable[State], vocabulary: tuple[State, ...]) -> tuple[int
 
 
 def _smoothed_pmf(counts: tuple[int, ...], *, pseudocount: float) -> tuple[float, ...]:
-    denominator = math.fsum(counts) + pseudocount * len(counts)
-    return tuple((count + pseudocount) / denominator for count in counts)
+    denominator = sum(counts) + pseudocount * len(counts)
+    if not math.isfinite(denominator) or denominator <= 0.0:
+        raise TrafficlabError(
+            "invalid transition pseudocount: values cannot be evaluated safely",
+            corrective_action="provide a finite positive pseudocount within the supported arithmetic range",
+        )
+    probabilities = tuple((count + pseudocount) / denominator for count in counts)
+    if any(not math.isfinite(probability) or probability <= 0.0 for probability in probabilities):
+        raise TrafficlabError(
+            "invalid transition pseudocount: values cannot be evaluated safely",
+            corrective_action="provide a finite positive pseudocount within the supported arithmetic range",
+        )
+    return probabilities
 
 
 def _jsd(reference: tuple[int, ...], generated: tuple[int, ...], *, pseudocount: float, name: str) -> float:

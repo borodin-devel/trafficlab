@@ -68,7 +68,13 @@ def _validated_scales(widths: Iterable[object], *, window: float) -> tuple[tuple
                 "invalid Fano/Allan widths: widths must be unique and strictly increasing",
                 corrective_action="provide strictly increasing finite positive float widths with at least two windows",
             )
-        count = math.ceil(snap_near_integer(window / width))
+        quotient = window / width
+        if not math.isfinite(quotient):
+            raise TrafficlabError(
+                "invalid Fano/Allan widths: W divided by a width must be finite",
+                corrective_action="increase the width so its window count is finite and within the configured cap",
+            )
+        count = math.ceil(snap_near_integer(quotient))
         if count < 2:
             raise TrafficlabError(
                 "invalid Fano/Allan widths: every scale requires at least two windows",

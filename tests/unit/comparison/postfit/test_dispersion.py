@@ -132,6 +132,14 @@ def test_dispersion_rejects_excessive_direction_window_cells_before_binning() ->
         fano_allan_diagnostic(trace, trace, 40_000.0, (1.0,), (1.0,), 0.5, 0.5)
 
 
+def test_dispersion_rejects_a_finite_scale_with_a_nonfinite_window_quotient() -> None:
+    """Calling ceil on an overflowing W/width quotient leaks a built-in OverflowError."""
+    trace = _trace(((0.0, Direction.OUTBOUND), (1.0, Direction.OUTBOUND)))
+
+    with pytest.raises(TrafficlabError, match="W divided by a width must be finite"):
+        fano_allan_diagnostic(trace, trace, 1e308, (1e-308,), (1.0,), 0.5, 0.5)
+
+
 @pytest.mark.parametrize("widths", [(), (1.0, 1.0), (float("inf"),)])
 def test_dispersion_rejects_empty_duplicate_or_nonfinite_scales(widths: tuple[float, ...]) -> None:
     """Loose scale validation could create ambiguous curves or nonfinite bins."""
