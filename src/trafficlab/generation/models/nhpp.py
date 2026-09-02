@@ -128,6 +128,34 @@ def _validate_delay(delay: object) -> float:
     return delay
 
 
+def _equal_bin_width(window: float, bin_count: int) -> float:
+    width = window / bin_count
+    if not math.isfinite(width) or width <= 0.0:
+        raise _invalid(
+            "invalid NHPP bin width",
+            corrective_action="provide a window and bin_count with a representable positive equal-bin width",
+        )
+    return width
+
+
+def _bin_index(timestamp: float, *, width: float, bin_count: int) -> int:
+    scaled = timestamp / width
+    nearest = round(scaled)
+    if abs(scaled - nearest) <= 4.0 * math.ulp(scaled):
+        scaled = float(nearest)
+    return min(int(scaled), bin_count - 1)
+
+
+def _rate_from_count(count: int, *, width: float) -> float:
+    rate = count / width
+    if not math.isfinite(rate):
+        raise _invalid(
+            "invalid NHPP rate",
+            corrective_action="provide a representable positive bin width and finite fitted rates",
+        )
+    return float(rate)
+
+
 def _mark_for_bin(model: NhppModel, bin_index: int) -> MarkDistribution:
     return model.bin_marks[bin_index] or model.global_marks
 
@@ -171,7 +199,7 @@ def _generate_with_rng(
     frame_lengths.append(frame_length)
     output_bytes = frame_length
 
-    bin_width = window / len(checked_model.rates)
+    bin_width = _equal_bin_width(window, len(checked_model.rates))
     current_time = 0.0
     for bin_index, rate in enumerate(checked_model.rates):
         bin_end = window if bin_index == len(checked_model.rates) - 1 else (bin_index + 1) * bin_width
@@ -265,11 +293,11 @@ class NhppFamily:
     def fit(self, reference: TrafficTrace, genes: Sequence[Gene], *, W: float, bounds: FamilyBounds) -> NhppModel:
         trace = validate_fit_inputs(reference, W=W)
         bin_count = _repair_genes(genes, bounds)[0]
-        width = W / bin_count
+        width = _equal_bin_width(W, bin_count)
         rate_counts = [0] * bin_count
         mark_events: list[list[tuple[Direction, int]]] = [[] for _ in range(bin_count)]
         for index, event in enumerate(trace.to_events()):
-            bin_index = min(int(event.timestamp / width), bin_count - 1)
+            bin_index = _bin_index(event.timestamp, width=width, bin_count=bin_count)
             mark_events[bin_index].append((event.direction, event.frame_length))
             if index != 0:
                 rate_counts[bin_index] += 1
@@ -282,7 +310,7 @@ class NhppFamily:
             for entries in mark_events
         )
         return NhppModel(
-            rates=tuple(float(count / width) for count in rate_counts),
+            rates=tuple(_rate_from_count(count, width=width) for count in rate_counts),
             bin_marks=bin_marks,
             global_marks=MarkDistribution.from_trace(trace),
         )

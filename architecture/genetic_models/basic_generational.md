@@ -59,9 +59,11 @@ order. All selection indexes refer to this order.
 Every registered `ModelFamily` declares one coordinate kind in canonical gene
 order alongside its `gene_names`. The supported kinds are `linear`, `log`, and
 `integer`; generic coordinate construction zips those declarations with the
-family's exact configured bounds. The current normative registry remains the
-three complete families (`poisson_empirical`, `markov_renewal`, and `mmpp`),
-and the scientific artifact schema is 5. A schema-4 checkpoint is rejected
+family's exact configured bounds. The current normative registry contains four
+complete families (`poisson_empirical`, `markov_renewal`, `mmpp`, and `nhpp`),
+and the scientific artifact schema is 5. Release-default examples retain the
+original three until Task 12, so NHPP is enabled only by an explicit family
+table. A schema-4 checkpoint is rejected
 before resume with an instruction to refit under the current schema in a new
 run directory. A schema-4 best model is likewise rejected before generation or
 stage reuse with an instruction to refit under the current schema; neither
@@ -350,7 +352,7 @@ For chromosome length \(d\), reproduction is \(O(d)\) per child, or
 - A predeclared seed set places every family in every priority position across
   its cases; a fixed master seed reproduces its priority, initial quotas, and
   genes.
-- One champion from Poisson empirical, Markov Renewal, and MMPP survives a
+- One champion from Poisson empirical, Markov Renewal, MMPP, and NHPP survives a
   generation even when none is a global elite.
 - `p_c = 0` clones the fitter same-family parent; `p_c = 1` runs one uniform
   parent choice for every gene.

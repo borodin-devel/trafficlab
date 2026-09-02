@@ -37,6 +37,9 @@ from trafficlab.fitting.genetic.checkpoint import (
     render_checkpoint,
     validate_compatibility,
 )
+from trafficlab.fitting.genetic.checkpoint.compatibility import parse_family_name
+from trafficlab.fitting.genetic.checkpoint.schema import FamilyCheckpointSpec
+from trafficlab.fitting.genetic.coordinates import GeneCoordinate
 from trafficlab.generation.models.common import make_rng
 
 
@@ -57,6 +60,26 @@ def test_rng_codec_requires_the_exact_named_generator_and_bit_generator() -> Non
 
     with pytest.raises(TrafficlabError, match="PCG64"):
         encode_rng_state(np.random.Generator(np.random.Philox(0)))
+
+
+def test_checkpoint_parser_accepts_registered_nhpp_family_name() -> None:
+    """A fresh or resumed NHPP GA state needs the same registered-name boundary as other families."""
+    assert parse_family_name("nhpp", name="family name") == "nhpp"
+
+
+def test_fresh_and_resumed_checkpoint_compatibility_accept_nhpp_metadata() -> None:
+    """An explicit NHPP GA configuration must be valid both before and during resume comparison."""
+    nhpp = FamilyCheckpointSpec(
+        name="nhpp",
+        gene_order=("bin_count",),
+        coordinates=(GeneCoordinate("bin_count", "integer", IntegerBounds(lower=2, upper=4)),),
+        crossover_probability=0.9,
+        mutation_probability=1.0,
+        mutation_scale=0.1,
+    )
+    fresh = replace(COMPATIBILITY, families=(nhpp,), family_priority=("nhpp",))
+
+    validate_compatibility(fresh, fresh)
 
 
 @pytest.mark.parametrize(

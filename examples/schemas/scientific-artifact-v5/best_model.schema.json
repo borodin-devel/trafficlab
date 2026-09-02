@@ -39,6 +39,9 @@
         },
         {
           "$ref": "#/$defs/MmppPayload"
+        },
+        {
+          "$ref": "#/$defs/NhppPayload"
         }
       ]
     },
@@ -170,6 +173,12 @@
       ],
       "title": "MarkPayload",
       "type": "object"
+    },
+    "MarkPayloadLists": {
+      "items": {
+        "$ref": "#/$defs/MarkPayloads"
+      },
+      "type": "array"
     },
     "MarkPayloads": {
       "items": {
@@ -317,6 +326,27 @@
       "title": "MmppPayload",
       "type": "object"
     },
+    "NhppPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "bin_marks": {
+          "$ref": "#/$defs/MarkPayloadLists"
+        },
+        "global_marks": {
+          "$ref": "#/$defs/MarkPayloads"
+        },
+        "rates": {
+          "$ref": "#/$defs/FloatVector"
+        }
+      },
+      "required": [
+        "rates",
+        "bin_marks",
+        "global_marks"
+      ],
+      "title": "NhppPayload",
+      "type": "object"
+    },
     "NonnegativeFloat": {
       "$ref": "#/$defs/ExactFloat",
       "ge": 0.0
@@ -425,7 +455,8 @@
       "enum": [
         "poisson_empirical",
         "markov_renewal",
-        "mmpp"
+        "mmpp",
+        "nhpp"
       ],
       "title": "Family",
       "type": "string"

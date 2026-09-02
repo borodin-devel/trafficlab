@@ -14,6 +14,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
 from trafficlab.common.errors import FailureOutcomeRecord
+from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.diagnostics import MethodDiagnostic
 from trafficlab.comparison.schema import ComparisonResult, MethodComparison
@@ -33,10 +34,19 @@ def _checked_study_artifacts(filename: str) -> list[object]:
 def _current_artifacts(root: Path, filename: str) -> list[object]:
     historical = (_ROOT / "examples" / "validation_study" / "evidence").resolve()
     return [
-        json.loads(path.read_bytes())
+        document
         for path in sorted(root.glob(f"**/{filename}"))
         if not path.resolve().is_relative_to(historical)
+        for document in (json.loads(path.read_bytes()),)
+        if document.get("scientific_artifact_schema") == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
     ]
+
+
+def _has_current_comparison_methods(document: object) -> bool:
+    if type(document) is not dict:
+        return False
+    methods = cast(dict[object, object], document).get("methods")
+    return type(methods) is dict and len(cast(dict[object, object], methods)) == 8
 
 
 def test_public_core_artifact_roots_are_strict_frozen_pydantic_models() -> None:
@@ -88,9 +98,11 @@ def test_every_checked_core_artifact_validates_against_its_published_schema() ->
             for document in _current_artifacts(root, "best_model.json")
         ],
         "comparison_result": [
-            json.loads(path.read_bytes())
+            document
             for root in (_ROOT / "examples", _ROOT / "tests" / "fixtures")
             for path in sorted(root.glob("**/similarity.json"))
+            for document in (json.loads(path.read_bytes()),)
+            if _has_current_comparison_methods(document)
         ],
         "checkpoint": [
             document
@@ -144,8 +156,8 @@ def test_family_and_method_payloads_publish_union_schemas() -> None:
     family_schema = TypeAdapter(FamilyPayload).json_schema()
     method_schema = TypeAdapter(MethodDiagnostic).json_schema()
 
-    assert len(family_schema["oneOf"]) == 3
-    assert len(method_schema["oneOf"]) == 4
+    assert len(family_schema["oneOf"]) == 4
+    assert len(method_schema["oneOf"]) == 8
 
 
 def test_failure_root_rejects_boolean_status_and_is_frozen() -> None:

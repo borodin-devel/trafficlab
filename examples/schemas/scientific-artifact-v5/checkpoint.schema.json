@@ -298,7 +298,8 @@
           "enum": [
             "poisson_empirical",
             "markov_renewal",
-            "mmpp"
+            "mmpp",
+            "nhpp"
           ],
           "title": "Name",
           "type": "string"
@@ -561,7 +562,8 @@
               "enum": [
                 "poisson_empirical",
                 "markov_renewal",
-                "mmpp"
+                "mmpp",
+                "nhpp"
               ],
               "type": "string"
             },
@@ -695,7 +697,8 @@
           "enum": [
             "poisson_empirical",
             "markov_renewal",
-            "mmpp"
+            "mmpp",
+            "nhpp"
           ],
           "title": "Family",
           "type": "string"
@@ -1068,7 +1071,8 @@
           "enum": [
             "poisson_empirical",
             "markov_renewal",
-            "mmpp"
+            "mmpp",
+            "nhpp"
           ],
           "title": "Family",
           "type": "string"
@@ -1548,7 +1552,8 @@
           "enum": [
             "poisson_empirical",
             "markov_renewal",
-            "mmpp"
+            "mmpp",
+            "nhpp"
           ],
           "title": "Family",
           "type": "string"

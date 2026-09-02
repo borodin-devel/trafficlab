@@ -28,7 +28,7 @@ def test_every_public_root_has_one_canonical_draft_2020_12_schema() -> None:
 
 
 def test_schema_five_directory_contains_current_fitness_and_model_roots() -> None:
-    """Schema publication must move current artifacts without adding future model families."""
+    """Schema publication must expose every registered model and exclude future-only names."""
     assert schemas.OUTPUT_DIRECTORY.name == "scientific-artifact-v5"
     documents = {name: json.loads(content) for name, content in schemas.build_schema_documents().items()}
     checkpoint = json.dumps(documents["checkpoint.schema.json"], sort_keys=True)
@@ -47,7 +47,8 @@ def test_schema_five_directory_contains_current_fitness_and_model_roots() -> Non
         "approximate_mmd",
     ):
         assert f'"{method}"' in comparison
-    for future_family in ("packet_hmm", "markov_packet_train", "acd", "nhpp"):
+    assert '"nhpp"' in best_model
+    for future_family in ("packet_hmm", "markov_packet_train", "acd"):
         assert f'"{future_family}"' not in best_model
 
 

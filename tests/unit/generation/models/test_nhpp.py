@@ -78,6 +78,11 @@ def test_repair_rejects_noncanonical_integer_chromosomes(genes: tuple[object, ..
         FAMILY.repair(genes, BOUNDS, REFERENCE)  # type: ignore[arg-type]
 
 
+def test_repair_rejects_non_nhpp_bounds() -> None:
+    with pytest.raises(TrafficlabError, match="NHPP bounds"):
+        FAMILY.repair((2,), object(), REFERENCE)  # type: ignore[arg-type]
+
+
 def test_fit_uses_equal_bins_excludes_conditioned_zero_from_rates_and_keeps_bin_marks() -> None:
     model = FAMILY.fit(REFERENCE, (2,), W=2.0, bounds=BOUNDS)
 
@@ -93,6 +98,56 @@ def test_fit_uses_equal_bins_excludes_conditioned_zero_from_rates_and_keeps_bin_
 def test_fit_assigns_window_endpoint_to_final_bin() -> None:
     model = FAMILY.fit(REFERENCE, (2,), W=2.0, bounds=BOUNDS)
     assert model.rates[1] == 3.0
+
+
+def test_fit_snaps_four_ulp_scaled_boundaries_before_assigning_rates_and_marks() -> None:
+    reference = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 60),
+            TraceEvent(0.1, Direction.OUTBOUND, 61),
+            TraceEvent(0.2, Direction.INBOUND, 62),
+            TraceEvent(0.3, Direction.INBOUND, 63),
+            TraceEvent(0.4, Direction.OUTBOUND, 64),
+        )
+    )
+
+    model = FAMILY.fit(reference, (4,), W=0.4, bounds=BOUNDS)
+
+    assert model.rates == (0.0, 10.0, 10.0, 20.0)
+    assert model.bin_marks[3] == MarkDistribution(
+        (MarkCount(Direction.INBOUND, 63, 1), MarkCount(Direction.OUTBOUND, 64, 1))
+    )
+
+
+def test_fit_keeps_a_value_more_than_four_ulps_below_a_boundary_in_the_prior_bin() -> None:
+    width = 0.1
+    boundary = 0.3
+    below = boundary
+    for _ in range(5):
+        below = math.nextafter(below, 0.0)
+    reference = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 60),
+            TraceEvent(below, Direction.INBOUND, 70),
+            TraceEvent(0.4, Direction.OUTBOUND, 80),
+        )
+    )
+
+    model = FAMILY.fit(reference, (4,), W=0.4, bounds=BOUNDS)
+
+    assert width > 0.0
+    assert model.rates == (0.0, 0.0, 10.0, 10.0)
+    assert model.bin_marks[2] == MarkDistribution((MarkCount(Direction.INBOUND, 70, 1),))
+
+
+@pytest.mark.parametrize("window", [math.ulp(0.0), 1e-308])
+def test_fit_rejects_unrepresentable_bin_width_or_rate(window: float) -> None:
+    reference = TrafficTrace.from_events(
+        (TraceEvent(0.0, Direction.OUTBOUND, 60), TraceEvent(window, Direction.INBOUND, 70))
+    )
+
+    with pytest.raises(TrafficlabError, match="NHPP bin width|NHPP rate"):
+        FAMILY.fit(reference, (2,), W=window, bounds=BOUNDS)
 
 
 def test_generation_crosses_nonzero_and_empty_bins_without_spurious_mark_draws() -> None:
@@ -184,6 +239,41 @@ def test_generation_checks_wall_guard_before_and_after_draws() -> None:
     assert (after.complete, after.reason, after.trace) == (False, "max_wall_seconds", ())
 
 
+def test_generation_checks_wall_guard_after_exponential_and_later_mark_draws() -> None:
+    marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
+    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    after_exponential = _generate_with_rng(
+        model,
+        ScriptedNhppRng(indices=[0], exponentials=[0.5]),
+        W=1.0,
+        limits=LIMITS,
+        clock=ScriptedClock([0.0, 0.0, 0.0, 0.0, 0.0, 10.0]),
+    )
+    after_mark = _generate_with_rng(
+        model,
+        ScriptedNhppRng(indices=[0, 0], exponentials=[0.5]),
+        W=1.0,
+        limits=LIMITS,
+        clock=ScriptedClock([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0]),
+    )
+    assert (after_exponential.complete, after_exponential.reason) == (False, "max_wall_seconds")
+    assert (after_mark.complete, after_mark.reason) == (False, "max_wall_seconds")
+
+
+def test_generation_checks_later_event_byte_budget_before_emitting() -> None:
+    marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
+    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    result = _generate_with_rng(
+        model,
+        ScriptedNhppRng(indices=[0, 0], exponentials=[0.5]),
+        W=1.0,
+        limits=GenerationLimits(max_packets=3, max_output_bytes=119, max_wall_seconds=1.0),
+        clock=ScriptedClock([0.0] * 20),
+    )
+    assert (result.complete, result.reason) == (False, "max_output_bytes")
+    assert result.trace.to_events() == (TraceEvent(0.0, Direction.OUTBOUND, 60),)
+
+
 def test_generation_rejects_invalid_exponential_values() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
     model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
@@ -195,6 +285,34 @@ def test_generation_rejects_invalid_exponential_values() -> None:
             limits=LIMITS,
             clock=ScriptedClock([0.0] * 10),
         )
+
+
+def test_generation_rejects_invalid_empirical_choice_primitive() -> None:
+    marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
+    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    with pytest.raises(TrafficlabError, match="empirical random draw"):
+        _generate_with_rng(
+            model,
+            ScriptedNhppRng(indices=[1], exponentials=[]),
+            W=1.0,
+            limits=LIMITS,
+            clock=ScriptedClock([0.0] * 10),
+        )
+
+
+@pytest.mark.parametrize("seed", [True, -1, 1.0])
+def test_generate_rejects_noncanonical_seed_primitives(seed: object) -> None:
+    model = FAMILY.fit(REFERENCE, (2,), W=2.0, bounds=BOUNDS)
+    with pytest.raises(TrafficlabError, match="seed"):
+        FAMILY.generate(model, seed, 2.0, LIMITS)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("window", [True, 0.0, math.nan, math.inf])
+def test_generate_rejects_invalid_window_primitives(window: object) -> None:
+    marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
+    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    with pytest.raises(TrafficlabError, match="observation window"):
+        _generate_with_rng(model, ScriptedNhppRng(indices=[], exponentials=[]), W=window, limits=LIMITS)  # type: ignore[arg-type]
 
 
 def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> None:
@@ -219,6 +337,8 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
         {**payload, "bin_marks": [[{"direction": "outbound", "frame_length": 60, "count": 1}] * 2, []]},
         {**payload, "global_marks": []},
         {**payload, "extra": 1},
+        {**payload, "rates": [math.nan, 3.0]},
+        {**payload, "rates": [math.inf, 3.0]},
     )
     for malformed in malformed_payloads:
         with pytest.raises(TrafficlabError):

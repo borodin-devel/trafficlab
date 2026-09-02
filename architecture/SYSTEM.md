@@ -256,12 +256,15 @@ Each enabled family has `crossover_probability`, `mutation_probability`, and
 | `poisson_empirical` | 1 | 0.9 | 1.0 | 0.1 |
 | `markov_renewal` | 5 | 0.9 | 0.2 | 0.1 |
 | `mmpp` | 4 | 0.9 | 0.25 | 0.1 |
+| `nhpp` | 1 | 0.9 | 1.0 | 0.1 |
 
 An experiment may override each value independently.
 Both probabilities must be finite and in `[0, 1]`. The normalized mutation scale
 must be finite and in `(0, 1]`. There is no global operator setting, and an
 individual gene cannot override its family's values.
-The only family names are `poisson_empirical`, `markov_renewal`, and `mmpp`.
+The registered family names are `poisson_empirical`, `markov_renewal`, `mmpp`,
+and `nhpp`. Release-default examples remain the original three families until
+Task 12; NHPP requires an explicit enabled table before then.
 Unknown operator keys, unknown family names, and operator settings for a disabled
 family are configuration errors.
 
