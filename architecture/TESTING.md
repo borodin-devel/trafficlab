@@ -151,6 +151,12 @@ example. Important fixed expectations include:
   naturally earlier last event creates multiscale trailing zeros; a safety guard
   reached first is incomplete.
 - KS: `[1, 2]` versus `[1, 3]` has distance `1/2`.
+- CvM: `[1, 2]` versus `[1, 3]` has pooled-mass discrepancy `1/16`; tied
+  `[1, 1, 2]` versus `[1, 2, 2]` has discrepancy `1/18` after one update per
+  support value.
+- AD: the endpoint is excluded before tail-weight normalization; `[1]` versus
+  `[2]` has discrepancy `1`, and an equal lower-tail ECDF difference outweighs
+  the corresponding central difference.
 - IAT: timestamps `[0, 1, 3]` produce `[1, 2]`; timestamp ties remain zero.
 - ACF: a constant sequence has positive-lag ACF `0`; `[1, 2, 1]` has lag-one
   ACF `-2/3` under the documented estimator.

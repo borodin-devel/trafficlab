@@ -20,7 +20,7 @@ underlying distance and the sample/configuration values needed to interpret it.
 Every method returns the shared `W` as `observation_window_seconds` in its
 diagnostics.
 
-Frame-size KS, IAT KS, and ACF remain sample-based: they use only values derived
+Frame-size KS, IAT KS, ACF, Cramér--von Mises, and Anderson--Darling remain sample-based: they use only values derived
 from packets inside `[0, W]` and do not invent samples for boundary silence.
 Multiscale rate represents silence directly with empty time-bin cells.
 
@@ -63,11 +63,22 @@ to declared aggregation policy from a change in measured trace behavior.
 | [Autocorrelation][acf] | IAT/size dependence | Lags, weights | More than max lag | Linear/lag | Selected lags |
 | [Multiscale rate][rate] | Directional volume by scale | Widths, weights, cap | Nonempty | Linear | Time alignment |
 
-Only these implemented methods belong in the registry. New methods need a
-distinct behavior to measure, a bounded interpretable definition, hand-checked
-tests, and an implementation before receiving an architecture file.
+Only the four aggregate methods above belong in the current registry. The two
+pure pooled-ECDF methods below share the same canonical trace boundary and have
+their own complete definitions, but do not alter the current aggregate contract.
+
+| Method | Behavior | Settings | Minimum | Cost | Limitation |
+|---|---|---|---|---|---|
+| [Cramér--von Mises][cvm] | Pooled ECDF difference for IAT and size | IAT/size weights | Two packets/trace | Sorting | No tail emphasis |
+| [Anderson--Darling][ad] | Endpoint-normalized tail ECDF difference | IAT/size weights | Two packets/trace | Sorting | Sparse tails dominate |
+
+Every similarity method needs a distinct behavior to measure, a bounded
+interpretable definition, hand-checked tests, and an implementation before
+receiving an architecture file.
 
 [acf]: autocorrelation.md
+[ad]: anderson_darling.md
+[cvm]: cramer_von_mises.md
 [frame-size]: frame_size_ks.md
 [iat]: iat_ks.md
 [rate]: multiscale_rate.md
