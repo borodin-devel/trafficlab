@@ -158,10 +158,16 @@ def test_hand_counted_occupancy_rows_empty_rows_and_run_pmf_use_declared_smoothi
         for state in vocabulary
     )
     expected_transition_jsd = sum(expected_row_jsds) / len(expected_row_jsds)
+    for source, row in zip(vocabulary, rows, strict=True):
+        expected_reference_row = _pmf(reference_rows.get(source, Counter[State]()), 1, vocabulary)
+        expected_generated_row = _pmf(generated_rows.get(source, Counter[State]()), 1, vocabulary)
+        assert row["reference_probabilities"] == pytest.approx(
+            tuple(expected_reference_row[destination] for destination in vocabulary)
+        )
+        assert row["generated_probabilities"] == pytest.approx(
+            tuple(expected_generated_row[destination] for destination in vocabulary)
+        )
     assert empty_row["reference_probabilities"] == pytest.approx(tuple(Fraction(1, len(vocabulary)) for _ in vocabulary))
-    assert rows[state_index[("outbound", 0, 0)]]["reference_probabilities"] == pytest.approx(
-        tuple(_pmf(reference_rows[("outbound", 0, 0)], 1, vocabulary)[state] for state in vocabulary)
-    )
     assert tuple(row["jsd"] for row in rows) == pytest.approx(expected_row_jsds)
     assert transitions["jsd"] == pytest.approx(expected_transition_jsd)
     assert runs["reference_counts"] == (2, 1, 0)
