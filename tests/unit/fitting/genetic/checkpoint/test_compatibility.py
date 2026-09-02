@@ -62,9 +62,10 @@ def test_rng_codec_requires_the_exact_named_generator_and_bit_generator() -> Non
         encode_rng_state(np.random.Generator(np.random.Philox(0)))
 
 
-def test_checkpoint_parser_accepts_registered_nhpp_family_name() -> None:
-    """A fresh or resumed NHPP GA state needs the same registered-name boundary as other families."""
-    assert parse_family_name("nhpp", name="family name") == "nhpp"
+@pytest.mark.parametrize("family_name", ("nhpp", "acd"))
+def test_checkpoint_parser_accepts_each_new_registered_family_name(family_name: str) -> None:
+    """A fresh or resumed GA state needs the current registered-name boundary."""
+    assert parse_family_name(family_name, name="family name") == family_name
 
 
 def test_fresh_and_resumed_checkpoint_compatibility_accept_nhpp_metadata() -> None:
@@ -78,6 +79,21 @@ def test_fresh_and_resumed_checkpoint_compatibility_accept_nhpp_metadata() -> No
         mutation_scale=0.1,
     )
     fresh = replace(COMPATIBILITY, families=(nhpp,), family_priority=("nhpp",))
+
+    validate_compatibility(fresh, fresh)
+
+
+def test_fresh_and_resumed_checkpoint_compatibility_accept_acd_metadata() -> None:
+    """An explicit ACD GA configuration must be valid both before and during resume comparison."""
+    acd = FamilyCheckpointSpec(
+        name="acd",
+        gene_order=("order",),
+        coordinates=(GeneCoordinate("order", "integer", IntegerBounds(lower=1, upper=3)),),
+        crossover_probability=0.9,
+        mutation_probability=1.0,
+        mutation_scale=0.1,
+    )
+    fresh = replace(COMPATIBILITY, families=(acd,), family_priority=("acd",))
 
     validate_compatibility(fresh, fresh)
 

@@ -1,6 +1,16 @@
 from pathlib import Path
 
 
+def acd_config_data() -> dict[str, object]:
+    """Return the explicit non-default settings for one enabled ACD family."""
+    return {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "order": {"lower": 1, "upper": 3},
+    }
+
+
 def nhpp_config_data() -> dict[str, object]:
     """Return the explicit non-default settings for one enabled NHPP family."""
     return {

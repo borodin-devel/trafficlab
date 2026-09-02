@@ -6,10 +6,11 @@ This document is a non-normative research catalog. It records classical traffic
 model families and similarity methods that may be evaluated against
 Trafficlab's implemented algorithms; it does not define implemented behavior,
 commit future work, or track task status. The authoritative runtime families
-remain Poisson empirical, Markov Renewal, and two-state MMPP as defined in
-[Traffic Models](traffic_models/README.md). The authoritative similarity
-methods remain frame-size KS, IAT KS, autocorrelation, and multiscale rate as
-defined in [Similarity Methods](similarity_methods/README.md).
+are Poisson empirical, Markov Renewal, two-state MMPP, piecewise-constant NHPP,
+and exponential ACD as defined in [Traffic Models](traffic_models/README.md).
+The authoritative similarity methods remain frame-size KS, IAT KS,
+autocorrelation, and multiscale rate as defined in
+[Similarity Methods](similarity_methods/README.md).
 
 The priority labels express research value for the canonical data and artifact
 contract available in this repository. `Required` therefore means

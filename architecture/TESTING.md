@@ -196,6 +196,11 @@ example. Important fixed expectations include:
   and `[1/2, 1/2]`. Positive smoothing gives the same second row through the
   ordinary formula.
 - MMPP: `q01=1`, `q10=3` gives stationary probabilities `3/4` and `1/4`.
+- Exponential ACD: `omega=0.5`, `alpha=(0.2)`, `beta=(0.3)`, prehistory
+  mean `2`, and durations `(1,0,3)` give conditional means
+  `(1.5,1.15,0.845)`; the middle zero is retained in both likelihood and
+  recursion. Zero optimizer coordinates under the scaled-simplex transform
+  retain stationary mean `bar_delta` and strict coefficient sum below one.
 - Genetic coordinates: linear, logarithmic, and integer encode/decode cover both
   bounds and integer half-rounding; initialization uses a stub RNG.
 - Genetic reflection: `-0.2 -> 0.2`, `1.2 -> 0.8`, and `2.2 -> 0.2`.
@@ -247,7 +252,7 @@ regeneration, production similarity functions, and round trips cannot validate
 themselves. A failure starts with `scientific-validation:<case>` and reports the
 seed, sample size, expected value, observed value, and tolerance.
 
-The Poisson and MMPP mark distribution is the two-point joint distribution
+The Poisson, MMPP, and ACD mark distribution is the two-point joint distribution
 `(outbound, 60): 1/4` and `(inbound, 120): 3/4`. A frequency assertion below
 means absolute error at most `0.03` for both joint cells. Completion cases also
 require finite nondecreasing events in `[0, W]`, emission at a scripted event
@@ -307,6 +312,19 @@ and an incomplete result when each reliability guard fires first.
       endpoint, fallback, RNG-order, and guard contracts</td>
     </tr>
     <tr>
+      <td>Exponential ACD</td>
+      <td><code>omega = 0.4</code>, <code>alpha = (0.2)</code>,
+      <code>beta = (0.4)</code>, stationary mean <code>1</code>; seeds
+      <code>9103, 9209, 9301, 9403</code>; four complete
+      <code>W = 12000</code> runs; first 8,000 generated IATs, recovered
+      innovations, and marks from each seed</td>
+      <td>Mean IAT within 6% of the independent stationary mean; independently
+      recursed <code>Delta_i / psi_i</code> mean within <code>0.05</code> of
+      one; joint-mark frequencies within <code>0.03</code>; hand recursion,
+      zero-IAT, optimizer-failure, strict-payload, completion, endpoint,
+      RNG-order, and guard contracts</td>
+    </tr>
+    <tr>
       <td>Genetic neutrality and fairness</td>
       <td>Families sorted as Markov Renewal, MMPP, Poisson empirical; master
       seeds <code>4, 0, 6</code>; population <code>6</code>, two trial seeds
@@ -354,6 +372,9 @@ The MMPP oracle uses the two-state generator and diagonal arrival-rate matrices
 to calculate time occupancy, arrival-epoch initialization, rate, and the
 adjacent-IAT moment; it is not a second simulator. Exact RNG-order, threshold,
 fallback, boundary, and guard tests remain separate from the statistical rows.
+The ACD oracle independently recurses conditional means from the declared
+prehistory, divides generated durations by those means to recover innovations,
+and derives the stationary mean directly from the coefficient sum.
 The matrix is a bounded test suite, not a benchmark or general statistical
 testing framework.
 

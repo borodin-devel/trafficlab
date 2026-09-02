@@ -1,5 +1,6 @@
 """Traffic-model contracts shared by the built-in model families."""
 
+from trafficlab.generation.models.acd import AcdFamily, AcdModel
 from trafficlab.generation.models.common import (
     FamilyBounds,
     FittedModel,
@@ -28,6 +29,8 @@ from trafficlab.generation.models.registry import (
 )
 
 __all__ = [
+    "AcdFamily",
+    "AcdModel",
     "FamilyBounds",
     "BestModel",
     "FittedModel",

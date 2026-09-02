@@ -1,4 +1,4 @@
-"""Bounded direct validation for the three approved traffic-model families."""
+"""Bounded direct validation for the approved traffic-model families."""
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
@@ -16,6 +16,9 @@ import pytest
 
 from tests.fixtures.paths import PIPELINE_FIXTURE_ROOT
 from tests.scientific.generation.oracles import (
+    acd_conditional_means,
+    acd_stationary_mean,
+    acd_unit_innovations,
     empirical_cdf,
     empirical_mean,
     lag_one_covariance,
@@ -27,6 +30,7 @@ from tests.scientific.generation.oracles import (
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import (
+    AcdConfig,
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
@@ -50,6 +54,7 @@ from trafficlab.generation.models import (
     render_best_model,
     runtime_fitted_model,
 )
+from trafficlab.generation.models.acd import AcdFamily, AcdModel
 from trafficlab.generation.models.common import GenerationResult, MarkCount, MarkDistribution
 from trafficlab.generation.models.markov_renewal import (
     MarkovRenewalFamily,
@@ -68,6 +73,7 @@ _POISSON_SEEDS = (1103, 2207, 3301, 4409)
 _MARKOV_SEEDS = (5101, 5209, 5303, 5413)
 _MMPP_SEEDS = (7103, 7207, 7309, 7411)
 _NHPP_SEEDS = (8101, 8209, 8303, 8411)
+_ACD_SEEDS = (9103, 9209, 9301, 9403)
 
 _POISSON_WINDOW = 4096.0
 _POISSON_SAMPLE_SIZE = 12_000
@@ -77,6 +83,8 @@ _MMPP_WINDOW = 4096.0
 _MMPP_SAMPLE_SIZE = 10_000
 _NHPP_WINDOW = 1200.0
 _NHPP_BIN_WIDTH = 400.0
+_ACD_WINDOW = 12_000.0
+_ACD_SAMPLE_SIZE = 8_000
 
 # These constants are fixed by architecture/TESTING.md, not selected from test output.
 _POISSON_MEAN_RELATIVE_TOLERANCE = 0.05
@@ -91,6 +99,8 @@ _MMPP_RATE_RELATIVE_TOLERANCE = 0.06
 _MMPP_COVARIANCE_TOLERANCE = 0.015
 _MARK_TOLERANCE = 0.03
 _NHPP_COUNT_RELATIVE_TOLERANCE = 0.1
+_ACD_MEAN_RELATIVE_TOLERANCE = 0.06
+_ACD_INNOVATION_MEAN_TOLERANCE = 0.05
 
 _LIMITS = GenerationLimits(
     max_packets=100_000,
@@ -140,6 +150,7 @@ _NHPP_MODEL = NhppModel(
     bin_marks=(_NHPP_LOW_MARKS, None, _NHPP_HIGH_MARKS),
     global_marks=_MARKS,
 )
+_ACD_MODEL = AcdModel(omega=0.4, alpha=(0.2,), beta=(0.4,), marks=_MARKS)
 
 
 def _assert_close(
@@ -210,6 +221,75 @@ def test_nhpp_matches_independent_per_bin_poisson_intensity_and_mark_oracles(see
             sample_size=len(selected),
             expected=expected,
             observed=frequencies.get((Direction.OUTBOUND, 60), 0.0),
+            tolerance=_MARK_TOLERANCE,
+        )
+
+
+def test_acd_independent_oracles_match_hand_recursion_stationary_mean_and_innovations() -> None:
+    """The ACD scientific oracle must not duplicate a wrong production recurrence."""
+    conditional_means = acd_conditional_means(
+        (1.0, 0.0, 3.0),
+        omega=0.5,
+        alpha=(0.2,),
+        beta=(0.3,),
+        initial_mean=2.0,
+    )
+
+    assert conditional_means == pytest.approx((1.5, 1.15, 0.845), abs=1e-15)
+    assert acd_unit_innovations((1.0, 0.0, 3.0), conditional_means) == pytest.approx(
+        (2.0 / 3.0, 0.0, 3.0 / 0.845), abs=1e-15
+    )
+    assert acd_stationary_mean(0.5, (0.2,), (0.3,)) == 1.0
+
+
+@pytest.mark.parametrize("seed", _ACD_SEEDS)
+def test_acd_matches_stationary_mean_unit_innovation_and_joint_mark_oracles(seed: int) -> None:
+    """Generated ACD durations and marks must satisfy the fixed independent acceptance matrix."""
+    events = _assert_complete_trace(
+        AcdFamily().generate(_ACD_MODEL, seed, _ACD_WINDOW, _LIMITS, clock=lambda: 0.0),
+        window=_ACD_WINDOW,
+    )
+    assert len(events) >= _ACD_SAMPLE_SIZE + 1
+    durations = tuple(
+        right.timestamp - left.timestamp
+        for left, right in zip(events[:_ACD_SAMPLE_SIZE], events[1 : _ACD_SAMPLE_SIZE + 1], strict=True)
+    )
+    stationary_mean = acd_stationary_mean(_ACD_MODEL.omega, _ACD_MODEL.alpha, _ACD_MODEL.beta)
+    conditional_means = acd_conditional_means(
+        durations,
+        omega=_ACD_MODEL.omega,
+        alpha=_ACD_MODEL.alpha,
+        beta=_ACD_MODEL.beta,
+        initial_mean=stationary_mean,
+    )
+    innovations = acd_unit_innovations(durations, conditional_means)
+    _assert_close(
+        "acd-stationary-mean",
+        seed=seed,
+        sample_size=len(durations),
+        expected=stationary_mean,
+        observed=empirical_mean(durations),
+        tolerance=stationary_mean * _ACD_MEAN_RELATIVE_TOLERANCE,
+    )
+    _assert_close(
+        "acd-unit-innovation-mean",
+        seed=seed,
+        sample_size=len(innovations),
+        expected=1.0,
+        observed=empirical_mean(innovations),
+        tolerance=_ACD_INNOVATION_MEAN_TOLERANCE,
+    )
+    frequencies = _mark_frequencies(events[:_ACD_SAMPLE_SIZE])
+    for mark, expected in (
+        ((Direction.OUTBOUND, 60), 0.25),
+        ((Direction.INBOUND, 120), 0.75),
+    ):
+        _assert_close(
+            f"acd-mark-{mark[0].value}-{mark[1]}",
+            seed=seed,
+            sample_size=_ACD_SAMPLE_SIZE,
+            expected=expected,
+            observed=frequencies.get(mark, 0.0),
             tolerance=_MARK_TOLERANCE,
         )
 
@@ -572,13 +652,14 @@ def _family_models() -> tuple[tuple[ModelFamily, FittedModel], ...]:
         (PoissonFamily(), _POISSON_MODEL),
         (MarkovRenewalFamily(), _MARKOV_MODEL),
         (MmppFamily(), _MMPP_MODEL),
+        (AcdFamily(), _ACD_MODEL),
     )
 
 
 @pytest.mark.parametrize(
     ("family", "model"),
     _family_models(),
-    ids=("poisson_empirical", "markov_renewal", "mmpp"),
+    ids=("poisson_empirical", "markov_renewal", "mmpp", "acd"),
 )
 def test_each_family_reports_all_resource_guards_as_incomplete(
     family: ModelFamily,
@@ -627,6 +708,8 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
         )
     if family_name == "nhpp":
         return ((2,), NhppConfig(bin_count=IntegerBounds(lower=2, upper=4)))
+    if family_name == "acd":
+        return ((1,), AcdConfig(order=IntegerBounds(lower=1, upper=3)))
     return (
         (1.0, 3.0, 1.0, 9.0),
         MmppConfig(
@@ -638,7 +721,7 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
     )
 
 
-@pytest.mark.parametrize("family_name", ("poisson_empirical", "markov_renewal", "mmpp", "nhpp"))
+@pytest.mark.parametrize("family_name", ("poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd"))
 def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name: str) -> None:
     """Every production family must reload and reproduce canonical bytes at its stored window."""
     reference_path = _EXAMPLE_DATA / "reference.pcapng"

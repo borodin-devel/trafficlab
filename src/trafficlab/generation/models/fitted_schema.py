@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Annotated, Literal, Self, cast
 
@@ -115,6 +116,27 @@ class NhppPayload(_StrictWireModel):
         return self
 
 
+class AcdPayload(_StrictWireModel):
+    omega: PositiveFloat
+    alpha: FloatVector
+    beta: FloatVector
+    marks: MarkPayloads
+
+    @model_validator(mode="after")
+    def coefficients_are_stationary_and_marks_are_valid(self) -> Self:
+        if len(self.alpha) != len(self.beta) or not 1 <= len(self.alpha) <= 3:
+            raise ValueError("alpha and beta must have matching order in 1..3")
+        if any(value < 0.0 for value in (*self.alpha, *self.beta)):
+            raise ValueError("ACD coefficients must be finite nonnegative floats")
+        if math.fsum((*self.alpha, *self.beta)) >= 1.0:
+            raise ValueError("ACD coefficient sum must be below one")
+        if not self.marks:
+            raise ValueError("marks must not be empty")
+        if len({(mark.direction, mark.frame_length) for mark in self.marks}) != len(self.marks):
+            raise ValueError("marks must be unique")
+        return self
+
+
 class MarkovStatePayload(_StrictWireModel):
     direction: DirectionName
     frame_lengths: IntVector
@@ -158,6 +180,8 @@ def _family_payload_discriminator(value: object) -> str | None:
         return "mmpp"
     if isinstance(value, NhppPayload):
         return "nhpp"
+    if isinstance(value, AcdPayload):
+        return "acd"
     if isinstance(value, Mapping):
         if "base_rate" in value:
             return "poisson_empirical"
@@ -167,6 +191,8 @@ def _family_payload_discriminator(value: object) -> str | None:
             return "mmpp"
         if "rates" in value:
             return "nhpp"
+        if "omega" in value:
+            return "acd"
     return None
 
 
@@ -174,7 +200,8 @@ type FamilyPayload = Annotated[
     Annotated[PoissonPayload, Tag("poisson_empirical")]
     | Annotated[MarkovRenewalPayload, Tag("markov_renewal")]
     | Annotated[MmppPayload, Tag("mmpp")]
-    | Annotated[NhppPayload, Tag("nhpp")],
+    | Annotated[NhppPayload, Tag("nhpp")]
+    | Annotated[AcdPayload, Tag("acd")],
     Discriminator(_family_payload_discriminator),
 ]
 
@@ -189,4 +216,6 @@ def validate_family_payload(value: object) -> FamilyPayload:
         return MmppPayload.model_validate(value)
     if discriminator == "nhpp":
         return NhppPayload.model_validate(value)
+    if discriminator == "acd":
+        return AcdPayload.model_validate(value)
     raise ValueError("fitted payload does not identify one registered family")

@@ -115,6 +115,14 @@ for every enabled family as well as the overall winner.
       <td>No latent-state or serial dependence</td>
       <td>Linear fit plus bins</td>
     </tr>
+    <tr>
+      <td><a href="acd.md">Exponential ACD</a></td>
+      <td>Serial dependence in conditional interarrival durations</td>
+      <td>Integer order in 1..3</td>
+      <td>Compact likelihood-based duration clustering</td>
+      <td>Stationary timing with marks independent of duration state</td>
+      <td>Bounded iterative linear-recursion fit</td>
+    </tr>
   </tbody>
 </table>
 

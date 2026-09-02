@@ -10,6 +10,7 @@ import pytest
 
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import (
+    AcdConfig,
     FloatBounds,
     GenerationLimits,
     IntegerBounds,
@@ -27,6 +28,7 @@ from trafficlab.generation.models.fitted_model import (
     runtime_fitted_model,
 )
 from trafficlab.generation.models.registry import (
+    ACD_FAMILY,
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
     POISSON_FAMILY,
@@ -82,6 +84,12 @@ FAMILY_CASES = (
             lambda0=FloatBounds(lower=0.01, upper=100.0),
             lambda1=FloatBounds(lower=0.1, upper=1000.0),
         ),
+    ),
+    FamilyCase(
+        "acd",
+        ACD_FAMILY,
+        (1,),
+        AcdConfig(order=IntegerBounds(lower=1, upper=3)),
     ),
 )
 

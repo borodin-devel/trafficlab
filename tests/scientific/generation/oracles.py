@@ -35,6 +35,56 @@ def nhpp_integrated_intensity(rates: tuple[float, ...], width: float) -> float:
     return math.fsum(nhpp_bin_mean(rate, width) for rate in rates)
 
 
+def acd_stationary_mean(omega: float, alpha: tuple[float, ...], beta: tuple[float, ...]) -> float:
+    """Return the analytical stationary mean of one ACD recursion."""
+    persistence = math.fsum((*alpha, *beta))
+    if not math.isfinite(omega) or omega <= 0.0 or not 0.0 <= persistence < 1.0:
+        raise ValueError("ACD oracle requires positive omega and stationary nonnegative coefficients")
+    mean = omega / (1.0 - persistence)
+    if not math.isfinite(mean):
+        raise ValueError("ACD oracle stationary mean must be finite")
+    return mean
+
+
+def acd_conditional_means(
+    durations: tuple[float, ...],
+    *,
+    omega: float,
+    alpha: tuple[float, ...],
+    beta: tuple[float, ...],
+    initial_mean: float,
+) -> tuple[float, ...]:
+    """Evaluate the ACD recursion independently with fixed mean prehistory."""
+    if len(alpha) != len(beta) or not 1 <= len(alpha) <= 3:
+        raise ValueError("ACD oracle requires matching orders in 1..3")
+    if any(not math.isfinite(value) or value < 0.0 for value in durations):
+        raise ValueError("ACD oracle durations must be finite and nonnegative")
+    if not math.isfinite(initial_mean) or initial_mean <= 0.0:
+        raise ValueError("ACD oracle initial mean must be finite and positive")
+    result: list[float] = []
+    order = len(alpha)
+    for index in range(len(durations)):
+        duration_lags = tuple(durations[index - lag] if index >= lag else initial_mean for lag in range(1, order + 1))
+        mean_lags = tuple(result[index - lag] if index >= lag else initial_mean for lag in range(1, order + 1))
+        result.append(
+            omega
+            + math.fsum(weight * value for weight, value in zip(alpha, duration_lags, strict=True))
+            + math.fsum(weight * value for weight, value in zip(beta, mean_lags, strict=True))
+        )
+    return tuple(result)
+
+
+def acd_unit_innovations(durations: tuple[float, ...], conditional_means: tuple[float, ...]) -> tuple[float, ...]:
+    """Recover dimensionless ACD innovations from independently recursed means."""
+    if len(durations) != len(conditional_means) or not durations:
+        raise ValueError("ACD oracle requires equally sized nonempty duration and mean vectors")
+    if any(not math.isfinite(value) or value < 0.0 for value in durations):
+        raise ValueError("ACD oracle durations must be finite and nonnegative")
+    if any(not math.isfinite(value) or value <= 0.0 for value in conditional_means):
+        raise ValueError("ACD oracle conditional means must be finite and positive")
+    return tuple(duration / mean for duration, mean in zip(durations, conditional_means, strict=True))
+
+
 def empirical_cdf(values: tuple[float, ...], threshold: float) -> float:
     """Return the empirical CDF using the closed ``x <= threshold`` event."""
     if not values:

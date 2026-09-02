@@ -20,7 +20,7 @@ from pydantic import (
     model_validator,
 )
 
-FamilyName = Literal["poisson_empirical", "markov_renewal", "mmpp", "nhpp"]
+FamilyName = Literal["poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd"]
 type GeneCoordinateKind = Literal["linear", "log", "integer"]
 
 NonEmptyString = Annotated[StrictStr, Field(min_length=1)]
@@ -282,7 +282,7 @@ class MarkovPacketTrainConfig(FamilyOperators):
 
 
 class AcdConfig(FamilyOperators):
-    """Strict future ACD structural settings, kept outside the live registry."""
+    """Strict exponential ACD structural settings."""
 
     crossover_probability: Probability = 0.9
     mutation_probability: Probability = 1.0
@@ -319,6 +319,7 @@ class ModelsConfig(StrictModel):
     markov_renewal: MarkovRenewalConfig | None = None
     mmpp: MmppConfig | None = None
     nhpp: NhppConfig | None = None
+    acd: AcdConfig | None = None
 
     @model_validator(mode="after")
     def enabled_families_match_configured_tables(self) -> Self:
@@ -329,6 +330,7 @@ class ModelsConfig(StrictModel):
                 ("markov_renewal", self.markov_renewal),
                 ("mmpp", self.mmpp),
                 ("nhpp", self.nhpp),
+                ("acd", self.acd),
             )
             if table is not None
         }
