@@ -57,6 +57,7 @@ TOOLING_MODULE_LINE_LIMIT = 800
 PRODUCTION_MODULE_LINE_LIMIT = 600
 TEST_MODULE_LINE_LIMIT = 1_000
 TOP_LEVEL_ARCHITECTURE_DOCUMENTS = {
+    "CANDIDATES.md",
     "CAPTURE.md",
     "DEVELOPMENT.md",
     "README.md",
@@ -401,10 +402,11 @@ def test_dashboard_test_modules_stay_within_the_cohesion_backstop() -> None:
     assert offenders == {}
 
 
-def test_architecture_inventory_includes_the_visualization_contract() -> None:
+def test_architecture_inventory_includes_top_level_contracts() -> None:
     architecture = REPOSITORY / "architecture"
 
     assert {path.name for path in architecture.glob("*.md")} == TOP_LEVEL_ARCHITECTURE_DOCUMENTS
+    assert "- [Traffic model candidates](CANDIDATES.md)" in (architecture / "README.md").read_text(encoding="utf-8")
     assert "- [Visualization](VISUALIZATION.md)" in (architecture / "README.md").read_text(encoding="utf-8")
     assert "- [Visualization companion](architecture/VISUALIZATION.md)" in (REPOSITORY / "README.md").read_text(
         encoding="utf-8"

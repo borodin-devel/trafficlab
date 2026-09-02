@@ -37,7 +37,9 @@ repeating a real capture.
 - Scientific extension points are small Python interfaces, not applications or
   process boundaries.
 - uv and `pyproject.toml` are the only Python project and tooling interfaces.
-- Only implemented algorithms receive architecture documents.
+- Only implemented algorithms receive normative algorithm documents. The
+  non-normative candidate catalog is the sole exception and does not declare
+  candidate behavior part of the architecture.
 - Mathematical documents cite authoritative sources and label local design
   choices explicitly.
 - Architecture documents describe intended behavior and stable boundaries; they
@@ -56,6 +58,8 @@ repeating a real capture.
 - [Research fitness criteria](RESEARCH_FITNESS_CRITERIA.md) defines a five-level
   rubric for scientific correctness, configurability, robustness, and
   reproducibility without grading the current implementation.
+- [Traffic model candidates](CANDIDATES.md) catalogs literature-backed research
+  alternatives and their priorities without declaring them implemented.
 - [Genetic models](genetic_models/README.md) describes model-family competition
   and the enabled evolutionary strategy.
 - [Traffic models](traffic_models/README.md) owns the common model interface and
@@ -84,4 +88,7 @@ past decisions. Add an algorithm document only with its implementation, tests,
 and registry entry; remove the document when the algorithm is removed. Do not
 create amendments, versioned design documents, SAD/SRS document sets, or empty
 algorithm placeholders. Keep implementation plans, task checklists, completion
-evidence, and progress state outside `architecture/`.
+evidence, and progress state outside `architecture/`. `CANDIDATES.md` may
+catalog and prioritize literature-backed alternatives, but it remains
+non-normative and must not contain implementation plans, task state, or dated
+experiment results.
