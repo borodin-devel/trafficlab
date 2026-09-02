@@ -145,6 +145,44 @@ def test_trace_metrics_combine_only_normalized_feature_discrepancies(similarity:
     assert result.score == pytest.approx(1.0 - expected)
 
 
+@pytest.mark.parametrize(
+    ("similarity", "tail_weighted"),
+    [(cramer_von_mises_similarity, False), (anderson_darling_similarity, True)],
+)
+def test_trace_metrics_publish_the_complete_public_diagnostic_contract(
+    similarity: _SimilarityMethod, tail_weighted: bool
+) -> None:
+    """Removing any public ECDF audit field or changing its arithmetic must fail."""
+    reference = _events((0.0, 0.0, 1.0, 1.0), (100, 100, 200, 200))
+    generated = _events((0.0, 1.0, 1.0, 2.0), (100, 200, 200, 300))
+
+    result = similarity(reference, generated, 2.0, 0.3, 0.7)
+
+    diagnostics = result.diagnostics
+    assert diagnostics["observation_window_seconds"] == 2.0
+    assert diagnostics["feature_weights"] == {"iat": 0.3, "size": 0.7}
+    expected_discrepancies: dict[str, float] = {}
+    for name, left, right, reference_ties, generated_ties in (
+        ("iat", (0.0, 1.0, 0.0), (1.0, 0.0, 1.0), 1, 1),
+        ("size", (100.0, 100.0, 200.0, 200.0), (100.0, 200.0, 200.0, 300.0), 2, 1),
+    ):
+        raw_sum, normalization_weight, discrepancy = _independent_ecdf_oracle(
+            left, right, tail_weighted=tail_weighted
+        )
+        component = cast(Mapping[str, float | int], diagnostics[name])
+        assert component["reference_sample_count"] == len(left)
+        assert component["generated_sample_count"] == len(right)
+        assert component["reference_tie_count"] == reference_ties
+        assert component["generated_tie_count"] == generated_ties
+        assert component["raw_sum"] == pytest.approx(raw_sum)
+        assert component["normalization_weight"] == pytest.approx(normalization_weight)
+        assert component["discrepancy"] == pytest.approx(discrepancy)
+        expected_discrepancies[name] = discrepancy
+    final_discrepancy = 0.3 * expected_discrepancies["iat"] + 0.7 * expected_discrepancies["size"]
+    assert diagnostics["discrepancy"] == pytest.approx(final_discrepancy)
+    assert result.score == pytest.approx(1.0 - final_discrepancy)
+
+
 @pytest.mark.parametrize("similarity", [cramer_von_mises_similarity, anderson_darling_similarity])
 def test_trace_metrics_report_a_missing_direction_stratum_without_inventing_samples(similarity: _SimilarityMethod) -> None:
     """A missing generated direction must remain observable to later aggregation policy."""

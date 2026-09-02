@@ -28,7 +28,7 @@ denominator. Trafficlab records the raw tail-weighted sum and maps it to a
 bounded discrepancy by the accepted-weight total:
 
 \[
-T_{AD}=\sum_{H_j<1}q_j(F_j-G_j)^2,qquad
+T_{AD}=\sum_{H_j<1}q_j(F_j-G_j)^2,\qquad
 Q_{AD}=\sum_{H_j<1}q_j,
 \]
 \[
