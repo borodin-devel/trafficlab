@@ -107,6 +107,14 @@ for every enabled family as well as the overall winner.
       <td>Marks ignore latent regime</td>
       <td>Linear mark fit; event simulation</td>
     </tr>
+    <tr>
+      <td><a href="nhpp.md">Piecewise-constant NHPP</a></td>
+      <td>Equal-bin marginal arrival-rate variation</td>
+      <td>Integer bin count</td>
+      <td>Transparent broad rate changes</td>
+      <td>No latent-state or serial dependence</td>
+      <td>Linear fit plus bins</td>
+    </tr>
   </tbody>
 </table>
 

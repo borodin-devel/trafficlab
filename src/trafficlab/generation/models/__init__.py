@@ -21,6 +21,7 @@ from trafficlab.generation.models.fitted_model import (
     render_best_model,
     runtime_fitted_model,
 )
+from trafficlab.generation.models.nhpp import NhppFamily, NhppModel
 from trafficlab.generation.models.registry import (
     REGISTRY,
     get_family,
@@ -38,6 +39,8 @@ __all__ = [
     "MarkCount",
     "MarkDistribution",
     "ModelFamily",
+    "NhppFamily",
+    "NhppModel",
     "REGISTRY",
     "get_family",
     "load_best_model",

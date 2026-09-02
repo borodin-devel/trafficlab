@@ -61,6 +61,7 @@ class MarkPayload(_StrictWireModel):
 
 
 type MarkPayloads = Annotated[tuple[MarkPayload, ...], BeforeValidator(tuple_input)]
+type MarkPayloadLists = Annotated[tuple[MarkPayloads, ...], BeforeValidator(tuple_input)]
 
 
 class PoissonPayload(_StrictWireModel):
@@ -92,6 +93,25 @@ class MmppPayload(_StrictWireModel):
             raise ValueError("marks must not be empty")
         if len({(mark.direction, mark.frame_length) for mark in self.marks}) != len(self.marks):
             raise ValueError("marks must be unique")
+        return self
+
+
+class NhppPayload(_StrictWireModel):
+    rates: FloatVector
+    bin_marks: MarkPayloadLists
+    global_marks: MarkPayloads
+
+    @model_validator(mode="after")
+    def tables_match_rates_and_global_marks_are_valid(self) -> Self:
+        if not self.rates or len(self.rates) != len(self.bin_marks):
+            raise ValueError("rates and bin_marks must be nonempty and have the same length")
+        if any(rate < 0.0 for rate in self.rates):
+            raise ValueError("rates must be finite nonnegative floats")
+        if not self.global_marks:
+            raise ValueError("global_marks must not be empty")
+        for marks in (self.global_marks, *self.bin_marks):
+            if len({(mark.direction, mark.frame_length) for mark in marks}) != len(marks):
+                raise ValueError("marks must be unique within each mark table")
         return self
 
 
@@ -136,6 +156,8 @@ def _family_payload_discriminator(value: object) -> str | None:
         return "markov_renewal"
     if isinstance(value, MmppPayload):
         return "mmpp"
+    if isinstance(value, NhppPayload):
+        return "nhpp"
     if isinstance(value, Mapping):
         if "base_rate" in value:
             return "poisson_empirical"
@@ -143,13 +165,16 @@ def _family_payload_discriminator(value: object) -> str | None:
             return "markov_renewal"
         if "q01" in value:
             return "mmpp"
+        if "rates" in value:
+            return "nhpp"
     return None
 
 
 type FamilyPayload = Annotated[
     Annotated[PoissonPayload, Tag("poisson_empirical")]
     | Annotated[MarkovRenewalPayload, Tag("markov_renewal")]
-    | Annotated[MmppPayload, Tag("mmpp")],
+    | Annotated[MmppPayload, Tag("mmpp")]
+    | Annotated[NhppPayload, Tag("nhpp")],
     Discriminator(_family_payload_discriminator),
 ]
 
@@ -162,4 +187,6 @@ def validate_family_payload(value: object) -> FamilyPayload:
         return MarkovRenewalPayload.model_validate(value)
     if discriminator == "mmpp":
         return MmppPayload.model_validate(value)
+    if discriminator == "nhpp":
+        return NhppPayload.model_validate(value)
     raise ValueError("fitted payload does not identify one registered family")

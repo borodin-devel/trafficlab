@@ -19,6 +19,7 @@ from trafficlab.common.config import (
     IntegerBounds,
     MarkovRenewalConfig,
     MmppConfig,
+    NhppConfig,
     PoissonConfig,
 )
 from trafficlab.common.errors import TrafficlabError
@@ -34,6 +35,7 @@ from trafficlab.generation.models.fitted_model import (
 from trafficlab.generation.models.registry import (
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
+    NHPP_FAMILY,
     POISSON_FAMILY,
     REGISTRY,
     get_family,
@@ -63,6 +65,7 @@ MMPP_BOUNDS = MmppConfig(
     lambda0=FloatBounds(lower=0.01, upper=100.0),
     lambda1=FloatBounds(lower=0.1, upper=1000.0),
 )
+NHPP_BOUNDS = NhppConfig(bin_count=IntegerBounds(lower=2, upper=4))
 SEED_POLICY = {
     "empirical": "choice_scalar_index",
     "exponential": "exponential_scale_inverse_rate",
@@ -78,8 +81,9 @@ FINAL_LIMITS = GenerationLimits(max_packets=10_000, max_output_bytes=10_000_000,
 def test_registry_is_closed_and_stably_ordered() -> None:
     """Dynamic or replaceable registry entries would make fitted artifacts non-reproducible."""
     assert type(REGISTRY) is MappingProxyType
-    assert tuple(REGISTRY) == ("poisson_empirical", "markov_renewal", "mmpp")
+    assert tuple(REGISTRY) == ("poisson_empirical", "markov_renewal", "mmpp", "nhpp")
     assert REGISTRY["poisson_empirical"] is POISSON_FAMILY
+    assert REGISTRY["nhpp"] is NHPP_FAMILY
     with pytest.raises(TypeError):
         REGISTRY["plugin.family"] = POISSON_FAMILY  # type: ignore[index]
     with pytest.raises(TrafficlabError, match="unknown model family"):
@@ -97,6 +101,7 @@ def test_existing_families_declare_coordinate_kinds() -> None:
         "log",
     )
     assert MMPP_FAMILY.gene_coordinate_kinds == ("log", "log", "log", "log")
+    assert NHPP_FAMILY.gene_coordinate_kinds == ("integer",)
 
 
 @pytest.fixture
@@ -136,7 +141,7 @@ def test_make_best_model_repairs_and_owns_all_outer_metadata() -> None:
         bounds=POISSON_BOUNDS,
     )
     assert artifact.version == 1
-    assert artifact.scientific_artifact_schema == 4
+    assert artifact.scientific_artifact_schema == 5
     assert artifact.family == "poisson_empirical"
     assert artifact.genes == (4.0,)
     assert artifact.reference_identity == REFERENCE_IDENTITY
@@ -195,8 +200,9 @@ def test_best_model_loader_rejects_compact_equivalent_json(valid_best_model: Bes
         (POISSON_FAMILY, (1.0,), POISSON_BOUNDS),
         (MARKOV_RENEWAL_FAMILY, (0.25, 0.75, 0.5, 2.0, 1.0), MARKOV_BOUNDS),
         (MMPP_FAMILY, (1.0, 2.0, 3.0, 8.0), MMPP_BOUNDS),
+        (NHPP_FAMILY, (2,), NHPP_BOUNDS),
     ],
-    ids=("poisson_empirical", "markov_renewal", "mmpp"),
+    ids=("poisson_empirical", "markov_renewal", "mmpp", "nhpp"),
 )
 def test_best_model_round_trips_every_real_fitted_family(
     family: object, genes: tuple[float, ...], bounds: object
@@ -259,7 +265,7 @@ def test_best_model_rejects_noncanonical_version(valid_best_model: BestModel, ve
         (False, None),
         (True, None),
         (True, 1),
-        (True, 5),
+        (True, 6),
         (True, True),
         (True, "2"),
         (True, 2.0),

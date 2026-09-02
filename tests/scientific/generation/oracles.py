@@ -23,6 +23,18 @@ def empirical_mean(values: tuple[float, ...] | list[float]) -> float:
     return math.fsum(values) / len(values)
 
 
+def nhpp_bin_mean(rate: float, width: float) -> float:
+    """Return the analytical count mean for one constant-intensity NHPP bin."""
+    if not math.isfinite(rate) or rate < 0.0 or not math.isfinite(width) or width <= 0.0:
+        raise ValueError("NHPP oracle requires a finite nonnegative rate and positive width")
+    return rate * width
+
+
+def nhpp_integrated_intensity(rates: tuple[float, ...], width: float) -> float:
+    """Return the analytical total mean by integrating equal-bin intensity."""
+    return math.fsum(nhpp_bin_mean(rate, width) for rate in rates)
+
+
 def empirical_cdf(values: tuple[float, ...], threshold: float) -> float:
     """Return the empirical CDF using the closed ``x <= threshold`` event."""
     if not values:

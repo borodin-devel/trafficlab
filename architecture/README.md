@@ -63,14 +63,14 @@ repeating a real capture.
 - [Genetic models](genetic_models/README.md) describes model-family competition
   and the enabled evolutionary strategy.
 - [Traffic models](traffic_models/README.md) owns the common model interface and
-  the three MVP families.
+  the four MVP families.
 - [Similarity methods](similarity_methods/README.md) owns component scoring and
   aggregate fitness.
 
 ## Scope boundaries
 
 The MVP includes Docker capture, PCAPNG input and output, Poisson empirical,
-Markov Renewal, two-state MMPP, a basic generational genetic algorithm,
+Markov Renewal, two-state MMPP, piecewise-constant NHPP, a basic generational genetic algorithm,
 frame-size KS, IAT KS, autocorrelation, multiscale-rate comparison, and one
 optional read-only desktop visualization companion for checked run artifacts.
 

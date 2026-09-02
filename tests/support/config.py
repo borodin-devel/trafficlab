@@ -1,6 +1,16 @@
 from pathlib import Path
 
 
+def nhpp_config_data() -> dict[str, object]:
+    """Return the explicit non-default settings for one enabled NHPP family."""
+    return {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "bin_count": {"lower": 2, "upper": 16},
+    }
+
+
 def valid_config_data(root: Path) -> dict[str, object]:
     """Return a fresh valid experiment mapping rooted below ``root``."""
 

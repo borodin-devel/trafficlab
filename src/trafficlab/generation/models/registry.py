@@ -12,29 +12,32 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.generation.models.common import FamilyBounds, ModelFamily
 from trafficlab.generation.models.markov_renewal import MarkovRenewalFamily
 from trafficlab.generation.models.mmpp import MmppFamily
+from trafficlab.generation.models.nhpp import NhppFamily
 from trafficlab.generation.models.poisson import PoissonFamily
 
 POISSON_FAMILY = PoissonFamily()
 MARKOV_RENEWAL_FAMILY = MarkovRenewalFamily()
 MMPP_FAMILY = MmppFamily()
+NHPP_FAMILY = NhppFamily()
 
 REGISTRY: MappingProxyType[str, ModelFamily] = MappingProxyType(
     {
         "poisson_empirical": POISSON_FAMILY,
         "markov_renewal": MARKOV_RENEWAL_FAMILY,
         "mmpp": MMPP_FAMILY,
+        "nhpp": NHPP_FAMILY,
     }
 )
 
 
 def get_family(name: str) -> ModelFamily:
-    """Return one of the three built-in families and reject extension names."""
+    """Return one of the closed built-in families and reject extension names."""
     try:
         return REGISTRY[name]
     except KeyError as error:
         raise TrafficlabError(
             f"unknown model family {name!r}",
-            corrective_action="select poisson_empirical, markov_renewal, or mmpp",
+            corrective_action="select poisson_empirical, markov_renewal, mmpp, or nhpp",
         ) from error
 
 

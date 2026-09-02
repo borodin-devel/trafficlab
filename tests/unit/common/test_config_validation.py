@@ -5,6 +5,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
+from tests.support.config import nhpp_config_data
 from trafficlab.common.config import AcdConfig, ExperimentConfig, MarkovPacketTrainConfig, NhppConfig, PacketHmmConfig
 
 
@@ -87,6 +88,22 @@ def test_required_family_structural_bounds_are_enforced(
     """An out-of-range future family structure must fail before model registration."""
     with pytest.raises(ValidationError):
         config_type(**{field: {"lower": bounds[0], "upper": bounds[1]}})  # type: ignore[operator]
+
+
+def test_nhpp_can_be_explicitly_enabled_without_changing_default_model_selection(
+    valid_config_data: dict[str, object],
+) -> None:
+    """An NHPP table must participate in the same exact enabled/table agreement as live families."""
+    data = copy.deepcopy(valid_config_data)
+    models = cast(dict[str, object], data["models"])
+    models["enabled"] = ["poisson_empirical", "markov_renewal", "mmpp", "nhpp"]
+    models["nhpp"] = nhpp_config_data()
+
+    config = ExperimentConfig.model_validate(data)
+
+    assert config.models.nhpp is not None
+    assert config.models.nhpp.bin_count.lower == 2
+    assert config.models.nhpp.bin_count.upper == 16
 
 
 @pytest.mark.parametrize(
@@ -307,14 +324,14 @@ def test_unknown_family_name_is_rejected_at_its_precise_location(valid_config_da
         {
             "type": "literal_error",
             "loc": ("models", "enabled", 0),
-            "msg": "Input should be 'poisson_empirical', 'markov_renewal' or 'mmpp'",
+            "msg": "Input should be 'poisson_empirical', 'markov_renewal', 'mmpp' or 'nhpp'",
             "input": "not_a_model",
-            "ctx": {"expected": "'poisson_empirical', 'markov_renewal' or 'mmpp'"},
+            "ctx": {"expected": "'poisson_empirical', 'markov_renewal', 'mmpp' or 'nhpp'"},
         }
     ]
 
 
-@pytest.mark.parametrize("family", ["packet_hmm", "markov_packet_train", "acd", "nhpp"])
+@pytest.mark.parametrize("family", ["packet_hmm", "markov_packet_train", "acd"])
 def test_unregistered_required_family_name_is_rejected(valid_config_data: dict[str, object], family: str) -> None:
     """A config value type alone must not activate an incomplete model implementation."""
     data = copy.deepcopy(valid_config_data)

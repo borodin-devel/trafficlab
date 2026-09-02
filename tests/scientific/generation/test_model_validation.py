@@ -21,6 +21,8 @@ from tests.scientific.generation.oracles import (
     lag_one_covariance,
     markov_stationary_distribution,
     mmpp_moments,
+    nhpp_bin_mean,
+    nhpp_integrated_intensity,
 )
 from tests.support.scapy_fixtures import encode_events as encode_pcapng
 from trafficlab.common.compatibility import identify_bytes
@@ -30,6 +32,7 @@ from trafficlab.common.config import (
     IntegerBounds,
     MarkovRenewalConfig,
     MmppConfig,
+    NhppConfig,
     PoissonConfig,
 )
 from trafficlab.common.scapy_io import read_pcapng_bytes
@@ -55,6 +58,7 @@ from trafficlab.generation.models.markov_renewal import (
     choose_holding_sample,
 )
 from trafficlab.generation.models.mmpp import MmppFamily, MmppModel
+from trafficlab.generation.models.nhpp import NhppFamily, NhppModel
 from trafficlab.generation.models.poisson import PoissonFamily, PoissonModel
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -63,6 +67,7 @@ _EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
 _POISSON_SEEDS = (1103, 2207, 3301, 4409)
 _MARKOV_SEEDS = (5101, 5209, 5303, 5413)
 _MMPP_SEEDS = (7103, 7207, 7309, 7411)
+_NHPP_SEEDS = (8101, 8209, 8303, 8411)
 
 _POISSON_WINDOW = 4096.0
 _POISSON_SAMPLE_SIZE = 12_000
@@ -70,6 +75,8 @@ _MARKOV_WINDOW = 80_000.0
 _MARKOV_TRANSITIONS = 20_000
 _MMPP_WINDOW = 4096.0
 _MMPP_SAMPLE_SIZE = 10_000
+_NHPP_WINDOW = 1200.0
+_NHPP_BIN_WIDTH = 400.0
 
 # These constants are fixed by architecture/TESTING.md, not selected from test output.
 _POISSON_MEAN_RELATIVE_TOLERANCE = 0.05
@@ -83,6 +90,7 @@ _MMPP_TIME_OCCUPANCY_TOLERANCE = 0.03
 _MMPP_RATE_RELATIVE_TOLERANCE = 0.06
 _MMPP_COVARIANCE_TOLERANCE = 0.015
 _MARK_TOLERANCE = 0.03
+_NHPP_COUNT_RELATIVE_TOLERANCE = 0.1
 
 _LIMITS = GenerationLimits(
     max_packets=100_000,
@@ -121,6 +129,17 @@ def _markov_model() -> MarkovRenewalModel:
 
 _MARKOV_MODEL = _markov_model()
 _MMPP_MODEL = MmppModel(q01=1.0, q10=3.0, lambda0=1.0, lambda1=9.0, marks=_MARKS)
+_NHPP_LOW_MARKS = MarkDistribution(
+    (MarkCount(Direction.OUTBOUND, 60, 1), MarkCount(Direction.INBOUND, 120, 3))
+)
+_NHPP_HIGH_MARKS = MarkDistribution(
+    (MarkCount(Direction.OUTBOUND, 60, 3), MarkCount(Direction.INBOUND, 120, 1))
+)
+_NHPP_MODEL = NhppModel(
+    rates=(2.0, 0.0, 4.0),
+    bin_marks=(_NHPP_LOW_MARKS, None, _NHPP_HIGH_MARKS),
+    global_marks=_MARKS,
+)
 
 
 def _assert_close(
@@ -150,6 +169,49 @@ def _assert_complete_trace(result: GenerationResult, *, window: float) -> tuple[
 def _mark_frequencies(events: tuple[TraceEvent, ...]) -> dict[tuple[Direction, int], float]:
     counts = Counter((event.direction, event.frame_length) for event in events)
     return {mark: count / len(events) for mark, count in counts.items()}
+
+
+@pytest.mark.parametrize("seed", _NHPP_SEEDS)
+def test_nhpp_matches_independent_per_bin_poisson_intensity_and_mark_oracles(seed: int) -> None:
+    """Piecewise rates and active-bin marks must match their analytical finite-window laws."""
+    events = _assert_complete_trace(
+        NhppFamily().generate(_NHPP_MODEL, seed, _NHPP_WINDOW, _LIMITS, clock=lambda: 0.0),
+        window=_NHPP_WINDOW,
+    )
+    generated = events[1:]
+    counts = tuple(
+        sum(left <= event.timestamp < right or (right == _NHPP_WINDOW and event.timestamp == right) for event in generated)
+        for left, right in ((0.0, 400.0), (400.0, 800.0), (800.0, _NHPP_WINDOW))
+    )
+    expected_counts = tuple(nhpp_bin_mean(rate, _NHPP_BIN_WIDTH) for rate in _NHPP_MODEL.rates)
+    for bin_index, (expected, observed) in enumerate(zip(expected_counts, counts, strict=True)):
+        _assert_close(
+            f"nhpp-bin-{bin_index}-count",
+            seed=seed,
+            sample_size=counts[bin_index],
+            expected=expected,
+            observed=float(observed),
+            tolerance=max(1.0, expected * _NHPP_COUNT_RELATIVE_TOLERANCE),
+        )
+    _assert_close(
+        "nhpp-integrated-intensity",
+        seed=seed,
+        sample_size=len(generated),
+        expected=nhpp_integrated_intensity(_NHPP_MODEL.rates, _NHPP_BIN_WIDTH),
+        observed=float(len(generated)),
+        tolerance=nhpp_integrated_intensity(_NHPP_MODEL.rates, _NHPP_BIN_WIDTH) * _NHPP_COUNT_RELATIVE_TOLERANCE,
+    )
+    assert counts[1] == 0
+    for selected, expected in ((events[: counts[0] + 1], 0.25), (events[counts[0] + 1 :], 0.75)):
+        frequencies = _mark_frequencies(selected)
+        _assert_close(
+            "nhpp-active-bin-mark",
+            seed=seed,
+            sample_size=len(selected),
+            expected=expected,
+            observed=frequencies.get((Direction.OUTBOUND, 60), 0.0),
+            tolerance=_MARK_TOLERANCE,
+        )
 
 
 @pytest.mark.parametrize("seed", _POISSON_SEEDS)
@@ -563,6 +625,8 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
                 c_t=FloatBounds(lower=0.25, upper=4.0),
             ),
         )
+    if family_name == "nhpp":
+        return ((2,), NhppConfig(bin_count=IntegerBounds(lower=2, upper=4)))
     return (
         (1.0, 3.0, 1.0, 9.0),
         MmppConfig(
@@ -574,7 +638,7 @@ def _artifact_inputs(family_name: str) -> tuple[tuple[Gene, ...], FamilyBounds]:
     )
 
 
-@pytest.mark.parametrize("family_name", ("poisson_empirical", "markov_renewal", "mmpp"))
+@pytest.mark.parametrize("family_name", ("poisson_empirical", "markov_renewal", "mmpp", "nhpp"))
 def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name: str) -> None:
     """Every production family must reload and reproduce canonical bytes at its stored window."""
     reference_path = _EXAMPLE_DATA / "reference.pcapng"
@@ -600,7 +664,7 @@ def test_current_schema_model_and_pcapng_round_trip_for_every_family(family_name
     )
     rendered = render_best_model(best)
     loaded = load_best_model(rendered, source=Path(f"{family_name}-best_model.json"))
-    assert loaded.scientific_artifact_schema == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 4
+    assert loaded.scientific_artifact_schema == SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 5
     assert render_best_model(loaded) == rendered
 
     first = family.generate(

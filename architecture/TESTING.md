@@ -297,6 +297,16 @@ and an incomplete result when each reliability guard fires first.
       <code>4/147</code>; Poisson/MMPP mark frequencies and completion contract</td>
     </tr>
     <tr>
+      <td>Piecewise-constant NHPP</td>
+      <td><code>rates = (2, 0, 4)</code>, equal width <code>400</code>, seeds
+      <code>8101, 8209, 8303, 8411</code>; four complete <code>W = 1200</code>
+      runs</td>
+      <td>Each bin and integrated count within 10% of analytical
+      <code>lambda_b * width</code> and its sum; zero-rate bin has no arrivals;
+      active-bin mark frequencies within <code>0.03</code>; completion,
+      endpoint, fallback, RNG-order, and guard contracts</td>
+    </tr>
+    <tr>
       <td>Genetic neutrality and fairness</td>
       <td>Families sorted as Markov Renewal, MMPP, Poisson empirical; master
       seeds <code>4, 0, 6</code>; population <code>6</code>, two trial seeds
