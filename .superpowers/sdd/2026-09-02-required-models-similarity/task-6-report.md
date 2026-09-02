@@ -221,3 +221,61 @@ no output
 No open concern remains from fix round 1. The focused coverage selection is
 intentionally smaller than the whole comparison-package coverage gate; the two
 changed modules independently remain at or above 90% branch-aware coverage.
+
+## Fix round 2 [STEP-9-655b34da]
+
+Direct RED regressions called the production and artifact smoothing helpers
+with `(10**400, 0)` counts and pseudocount `0.1`. Both leaked
+`OverflowError: int too large to convert to float` at the mixed integer/float
+denominator expression, before either existing finiteness guard could run. The
+huge-pseudocount regression remained in place.
+
+Both boundaries now convert the exact total and each numerator count inside a
+guarded conversion step. Conversion overflow becomes the boundary's stable
+domain exception: `TrafficlabError` with the existing corrective action in
+production, and `ValueError` in artifact reconstruction. Pseudocount mass,
+denominator, every converted numerator, and every resulting probability are
+checked for the required finite positive domain before division-dependent
+comparison or logarithms.
+
+Focused GREEN evidence:
+
+```text
+uv run --locked pytest -q tests/unit/comparison/postfit/test_transitions.py \
+  -k 'huge_integer_count or finite_pseudocount'
+2 passed
+
+uv run --locked pytest -q tests/unit/comparison/test_schema.py \
+  -k 'smoothed_probabilities_reject'
+2 passed
+
+uv run --locked pytest -q \
+  tests/unit/comparison/postfit/test_transitions.py \
+  tests/unit/comparison/test_schema.py \
+  tests/unit/comparison/test_codec.py \
+  tests/unit/comparison/test_publication.py
+176 passed
+
+uv run --locked ruff check <changed source and focused tests>
+All checks passed!
+
+uv run --locked pyright <changed source and focused tests>
+0 errors, 0 warnings, 0 informations
+
+uv run --locked pytest -q --cov=trafficlab.comparison --cov-branch \
+  --cov-fail-under=0 --cov-report=term-missing \
+  <focused C2ST/transition/schema/codec/publication/stage tests>
+231 passed; transitions.py 90%, schema.py 90% branch-aware coverage
+
+uv run --locked python scripts/generate_artifact_schemas.py --check
+verified 13 public roots
+
+uv run --locked python scripts/generate_similarity_fixtures.py --check
+checked-in bytes match deterministic production output
+
+git diff --check
+no output
+```
+
+No generated schema or fixture content changed in fix round 2, and no open
+concern remains.

@@ -10,9 +10,12 @@ from typing import cast
 
 import pytest
 
+import trafficlab.comparison.postfit.transitions as transitions
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.comparison.postfit.transitions import transition_matrix_diagnostic
+
+_smoothed_pmf = transitions._smoothed_pmf  # pyright: ignore[reportPrivateUsage]
 
 type State = tuple[str, int | str, int | str]
 
@@ -218,6 +221,12 @@ def test_transition_rejects_a_finite_pseudocount_that_overflows_its_pmf_denomina
 
     with pytest.raises(TrafficlabError, match="pseudocount.*evaluated safely"):
         transition_matrix_diagnostic(trace, trace, 1.0, 1, 1, 1e308, (1.0, 0.0, 0.0))
+
+
+def test_transition_smoothing_rejects_a_huge_integer_count_before_float_conversion() -> None:
+    """An exact Python count above binary64 range must remain a stable production-domain error."""
+    with pytest.raises(TrafficlabError, match="pseudocount.*evaluated safely"):
+        _smoothed_pmf((10**400, 0), pseudocount=0.1)
 
 
 @pytest.mark.parametrize(

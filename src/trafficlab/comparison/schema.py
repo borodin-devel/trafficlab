@@ -402,10 +402,18 @@ class TransitionComponentValues(StrictArtifactModel):
 
 
 def _smoothed_probabilities(counts: tuple[int, ...], pseudocount: float) -> tuple[float, ...]:
-    denominator = sum(counts) + pseudocount * len(counts)
+    try:
+        total = float(sum(counts))
+        numeric_counts = tuple(float(count) for count in counts)
+    except (OverflowError, ValueError) as error:
+        raise ValueError("transition pseudocount cannot be evaluated safely") from error
+    denominator = total + pseudocount * len(counts)
     if not math.isfinite(denominator) or denominator <= 0.0:
         raise ValueError("transition pseudocount cannot be evaluated safely")
-    probabilities = tuple((count + pseudocount) / denominator for count in counts)
+    numerators = tuple(count + pseudocount for count in numeric_counts)
+    if any(not math.isfinite(numerator) or numerator <= 0.0 for numerator in numerators):
+        raise ValueError("transition pseudocount cannot be evaluated safely")
+    probabilities = tuple(numerator / denominator for numerator in numerators)
     if any(not math.isfinite(probability) or probability <= 0.0 for probability in probabilities):
         raise ValueError("transition pseudocount cannot be evaluated safely")
     return probabilities

@@ -6,7 +6,7 @@ import math
 from bisect import bisect_right
 from collections import Counter
 from collections.abc import Iterable
-from typing import cast
+from typing import NoReturn, cast
 
 import numpy as np
 
@@ -125,19 +125,29 @@ def _counts(values: Iterable[State], vocabulary: tuple[State, ...]) -> tuple[int
     return tuple(count_map[state] for state in vocabulary)
 
 
+def _raise_unsafe_smoothing() -> NoReturn:
+    raise TrafficlabError(
+        "invalid transition pseudocount: values cannot be evaluated safely",
+        corrective_action="provide a finite positive pseudocount within the supported arithmetic range",
+    )
+
+
 def _smoothed_pmf(counts: tuple[int, ...], *, pseudocount: float) -> tuple[float, ...]:
-    denominator = sum(counts) + pseudocount * len(counts)
+    try:
+        total = float(sum(counts))
+        numeric_counts = tuple(float(count) for count in counts)
+    except (OverflowError, ValueError):
+        _raise_unsafe_smoothing()
+    pseudocount_mass = pseudocount * len(counts)
+    denominator = total + pseudocount_mass
     if not math.isfinite(denominator) or denominator <= 0.0:
-        raise TrafficlabError(
-            "invalid transition pseudocount: values cannot be evaluated safely",
-            corrective_action="provide a finite positive pseudocount within the supported arithmetic range",
-        )
-    probabilities = tuple((count + pseudocount) / denominator for count in counts)
+        _raise_unsafe_smoothing()
+    numerators = tuple(count + pseudocount for count in numeric_counts)
+    if any(not math.isfinite(numerator) or numerator <= 0.0 for numerator in numerators):
+        _raise_unsafe_smoothing()
+    probabilities = tuple(numerator / denominator for numerator in numerators)
     if any(not math.isfinite(probability) or probability <= 0.0 for probability in probabilities):
-        raise TrafficlabError(
-            "invalid transition pseudocount: values cannot be evaluated safely",
-            corrective_action="provide a finite positive pseudocount within the supported arithmetic range",
-        )
+        _raise_unsafe_smoothing()
     return probabilities
 
 

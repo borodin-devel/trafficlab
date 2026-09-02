@@ -402,6 +402,12 @@ def test_smoothed_probabilities_reject_overflow_before_division() -> None:
         _smoothed_probabilities((0, 0), 1e308)
 
 
+def test_smoothed_probabilities_reject_huge_integer_counts_before_float_conversion() -> None:
+    """Artifact reconstruction must not leak OverflowError while converting exact counts."""
+    with pytest.raises(ValueError, match="pseudocount.*safely"):
+        _smoothed_probabilities((10**400, 0), 0.1)
+
+
 def test_similarity_artifact_retains_exact_nested_input_content_identities() -> None:
     """Digest-only lineage cannot prove the authoritative bytes used by comparison."""
     document = valid_result_document()
