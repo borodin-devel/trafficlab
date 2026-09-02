@@ -15,18 +15,23 @@ from trafficlab.artifacts.run_directory import create_run_directory
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_experiment, render_effective_config
 from trafficlab.comparison.codec import load_comparison_result
+from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES
 from trafficlab.comparison.stage import compare_experiment
 
 pytestmark = pytest.mark.integration
 
 _REPOSITORY = Path(__file__).parents[3]
 _EXAMPLE_DATA = PIPELINE_FIXTURE_ROOT
-_EXPECTED_AGGREGATE_SCORE = 0.5662202380952381
+_EXPECTED_AGGREGATE_SCORE = 0.654323072082336
 _EXPECTED_METHOD_SCORES = {
     "autocorrelation": 0.756547619047619,
     "frame_size_ks": 0.8,
     "iat_ks": 0.5,
     "multiscale_rate": 0.20833333333333326,
+    "cramer_von_mises": 0.9527083333333334,
+    "anderson_darling": 0.9435717116419671,
+    "jensen_shannon": 0.4367546062174327,
+    "approximate_mmd": 0.6366689730850024,
 }
 
 
@@ -82,7 +87,7 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     assert published == result
     assert result.aggregate_score == _EXPECTED_AGGREGATE_SCORE
     assert result.observation_window_seconds == 10.0
-    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert result.methods.keys() == FITNESS_METHOD_NAMES
     assert {name: method.score for name, method in result.methods.items()} == pytest.approx(_EXPECTED_METHOD_SCORES)
     assert all(method.diagnostics["observation_window_seconds"] == 10.0 for method in result.methods.values())
     assert result.input_sha256 == {

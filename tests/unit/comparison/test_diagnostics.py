@@ -33,6 +33,18 @@ def _change_multiscale_cell_total(document: dict[str, object]) -> None:
     document["total_direction_bin_cells"] = cast(int, document["total_direction_bin_cells"]) + 1
 
 
+def _change_ecdf_discrepancy(document: dict[str, object]) -> None:
+    document["discrepancy"] = 0.123
+
+
+def _change_js_reference_count(document: dict[str, object]) -> None:
+    cast(dict[str, object], document["iat"])["reference_count"] = 999
+
+
+def _change_mmd_embedding_dimension(document: dict[str, object]) -> None:
+    document["embedding_dimension"] = cast(int, document["embedding_dimension"]) + 1
+
+
 @pytest.mark.parametrize(
     ("method_name", "model", "mutation", "error"),
     [
@@ -40,8 +52,21 @@ def _change_multiscale_cell_total(document: dict[str, object]) -> None:
         ("iat_ks", diagnostics.IatDiagnostic, _exceed_iat_sample_count, "zero-IAT counts"),
         ("autocorrelation", diagnostics.AutocorrelationDiagnostic, _change_acf_discrepancy, "discrepancy"),
         ("multiscale_rate", diagnostics.MultiscaleDiagnostic, _change_multiscale_cell_total, "cell"),
+        ("cramer_von_mises", diagnostics.CramerVonMisesDiagnostic, _change_ecdf_discrepancy, "discrepancy"),
+        ("anderson_darling", diagnostics.AndersonDarlingDiagnostic, _change_ecdf_discrepancy, "discrepancy"),
+        ("jensen_shannon", diagnostics.JensenShannonDiagnostic, _change_js_reference_count, "reference count"),
+        ("approximate_mmd", diagnostics.ApproximateMmdDiagnostic, _change_mmd_embedding_dimension, "four times"),
     ],
-    ids=["frame-size-range", "iat-zero-count", "acf-arithmetic", "multiscale-cell-total"],
+    ids=[
+        "frame-size-range",
+        "iat-zero-count",
+        "acf-arithmetic",
+        "multiscale-cell-total",
+        "cvm-arithmetic",
+        "ad-arithmetic",
+        "js-counts",
+        "mmd-dimension",
+    ],
 )
 def test_direct_diagnostic_models_reject_their_owned_invariants(
     method_name: str,

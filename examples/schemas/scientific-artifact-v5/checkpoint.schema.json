@@ -742,7 +742,11 @@
         "autocorrelation",
         "frame_size_ks",
         "iat_ks",
-        "multiscale_rate"
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd"
       ],
       "type": "string"
     },
@@ -775,10 +779,28 @@
     "MethodWeights": {
       "additionalProperties": false,
       "properties": {
+        "anderson_darling": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Anderson Darling",
+          "type": "number"
+        },
+        "approximate_mmd": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Approximate Mmd",
+          "type": "number"
+        },
         "autocorrelation": {
           "maximum": 1.0,
           "minimum": 0.0,
           "title": "Autocorrelation",
+          "type": "number"
+        },
+        "cramer_von_mises": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Cramer Von Mises",
           "type": "number"
         },
         "frame_size_ks": {
@@ -793,6 +815,12 @@
           "title": "Iat Ks",
           "type": "number"
         },
+        "jensen_shannon": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Jensen Shannon",
+          "type": "number"
+        },
         "multiscale_rate": {
           "maximum": 1.0,
           "minimum": 0.0,
@@ -804,7 +832,11 @@
         "frame_size_ks",
         "iat_ks",
         "autocorrelation",
-        "multiscale_rate"
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd"
       ],
       "title": "MethodWeights",
       "type": "object"
@@ -1104,8 +1136,38 @@
           "title": "Acf Size Weight",
           "type": "number"
         },
+        "ad_iat_weight": {
+          "title": "Ad Iat Weight",
+          "type": "number"
+        },
+        "ad_size_weight": {
+          "title": "Ad Size Weight",
+          "type": "number"
+        },
+        "cvm_iat_weight": {
+          "title": "Cvm Iat Weight",
+          "type": "number"
+        },
+        "cvm_size_weight": {
+          "title": "Cvm Size Weight",
+          "type": "number"
+        },
         "iat_diagnostic_quantile": {
           "title": "Iat Diagnostic Quantile",
+          "type": "number"
+        },
+        "js_iat_bin_count": {
+          "exclusiveMinimum": 0,
+          "maximum": 65536,
+          "title": "Js Iat Bin Count",
+          "type": "integer"
+        },
+        "js_iat_weight": {
+          "title": "Js Iat Weight",
+          "type": "number"
+        },
+        "js_mark_weight": {
+          "title": "Js Mark Weight",
           "type": "number"
         },
         "max_direction_bin_cells": {
@@ -1115,6 +1177,22 @@
         },
         "method_weights": {
           "$ref": "#/$defs/MethodWeights"
+        },
+        "mmd_feature_count": {
+          "exclusiveMinimum": 0,
+          "maximum": 65536,
+          "title": "Mmd Feature Count",
+          "type": "integer"
+        },
+        "mmd_scale_floor": {
+          "exclusiveMinimum": 0,
+          "title": "Mmd Scale Floor",
+          "type": "number"
+        },
+        "mmd_seed": {
+          "minimum": 0,
+          "title": "Mmd Seed",
+          "type": "integer"
         },
         "multiscale_byte_weight": {
           "title": "Multiscale Byte Weight",
@@ -1152,6 +1230,16 @@
         "multiscale_packet_weight",
         "multiscale_byte_weight",
         "max_direction_bin_cells",
+        "cvm_iat_weight",
+        "cvm_size_weight",
+        "ad_iat_weight",
+        "ad_size_weight",
+        "js_iat_bin_count",
+        "js_iat_weight",
+        "js_mark_weight",
+        "mmd_feature_count",
+        "mmd_seed",
+        "mmd_scale_floor",
         "method_weights"
       ],
       "title": "SimilarityConfig",
@@ -1217,15 +1305,27 @@
     },
     "TrialResult": {
       "additionalProperties": false,
-      "description": "All four scores from one deterministic generated-trace seed.",
+      "description": "All eight scores from one deterministic generated-trace seed.",
       "properties": {
         "aggregate_score": {
           "$ref": "#/$defs/trafficlab__fitting__genetic__types__UnitFloat"
         },
         "methods": {
-          "maxItems": 4,
-          "minItems": 4,
+          "maxItems": 8,
+          "minItems": 8,
           "prefixItems": [
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            },
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            },
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            },
+            {
+              "$ref": "#/$defs/MethodTrialResult"
+            },
             {
               "$ref": "#/$defs/MethodTrialResult"
             },
@@ -1386,7 +1486,7 @@
       "$ref": "#/$defs/NamedRngState"
     },
     "scientific_artifact_schema": {
-      "const": 4,
+      "const": 5,
       "title": "Scientific Artifact Schema",
       "type": "integer"
     },

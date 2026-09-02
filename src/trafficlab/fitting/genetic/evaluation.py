@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from trafficlab.common.config import FamilyName, GenerationLimits, SimilarityConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import TrafficTrace
-from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.metrics import evaluate_fitness
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.coordinates import CandidateEvaluationError
 from trafficlab.fitting.genetic.types import (
@@ -126,7 +126,7 @@ def validate_evaluation_context(context: EvaluationContext) -> ValidatedEvaluati
     _validate_trial_seeds(context.trial_seeds)
     _validate_pydantic_value(context.trial_limits, GenerationLimits)
     _validate_pydantic_value(context.similarity, SimilarityConfig)
-    compare_traces(context.reference, context.reference, context.window, context.similarity)
+    evaluate_fitness(context.reference, context.reference, context.window, context.similarity)
     return ValidatedEvaluationContext.from_context(context)
 
 
@@ -231,6 +231,11 @@ def validate_candidate_similarity_preconditions(
         failures.append("iat_ks requires at least two generated events")
     if event_count < 1:
         failures.append("multiscale_rate requires at least one generated event")
+    if event_count < 2:
+        failures.append("cramer_von_mises requires at least two generated events")
+        failures.append("anderson_darling requires at least two generated events")
+        failures.append("jensen_shannon requires at least two generated events")
+        failures.append("approximate_mmd requires at least two generated events")
     if failures:
         raise CandidateEvaluationError(
             "similarity_precondition",
@@ -267,7 +272,16 @@ def _trial_from_comparison(
 ) -> TrialResult:
     aggregate_score = _score(result.aggregate_score, name="aggregate score", seed=seed)
     methods = cast(
-        tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
+        tuple[
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+        ],
         tuple(
             MethodTrialResult(
                 name=name,
@@ -290,7 +304,7 @@ def _evaluate_trial(
     generated = generation.trace
     validate_candidate_similarity_preconditions(generated, context.similarity, seed=seed)
     try:
-        comparison = compare_traces(context.reference, generated, context.window, context.similarity)
+        comparison = evaluate_fitness(context.reference, generated, context.window, context.similarity)
     except TrafficlabError as error:
         raise CandidateEvaluationError(
             "similarity_precondition",

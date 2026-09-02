@@ -38,7 +38,7 @@ projection, and `best_model.json` is the independently final-validated winner.
 `capture.json` contains `interface`, the captured interface name, and `target_mac`, the lowercase target MAC used
 for inbound/outbound classification. `best_model.json` uses the shared fitted-model fields documented in
 [`../README.md`](../README.md#best_modeljson-fields) and validated by
-[`../../schemas/scientific-artifact-v4/best_model.schema.json`](../../schemas/scientific-artifact-v4/best_model.schema.json).
+[`../../schemas/scientific-artifact-v5/best_model.schema.json`](../../schemas/scientific-artifact-v5/best_model.schema.json).
 
 ### `checkpoint.json` root fields
 
@@ -64,7 +64,7 @@ for inbound/outbound classification. `best_model.json` uses the shared fitted-mo
 Each `families[]` row contains `name`, `gene_order`, `operators`, and `coordinates`; every coordinate has `name`,
 `kind` (`linear`, `log`, or `integer`), `lower`, and `upper`. Each `population[]` row contains `identifier`
 (`[birth_generation, birth_index]`), `family`, `genes`, `status`, `fitness`, `invalid`, `trials`, and bounded
-`duplicate_diagnostics`. Each trial stores its `seed`, `aggregate_score`, four named method results, and model
+`duplicate_diagnostics`. Each trial stores its `seed`, `aggregate_score`, eight named method results, and model
 diagnostics. Each history row stores `scope`, optional `family`, `generation`, candidate/valid counts, mean and best
 fitness, and the best identifier. The exact union and expected-failure records are defined by
-[`checkpoint.schema.json`](../../schemas/scientific-artifact-v4/checkpoint.schema.json).
+[`checkpoint.schema.json`](../../schemas/scientific-artifact-v5/checkpoint.schema.json).

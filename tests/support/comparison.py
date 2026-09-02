@@ -11,7 +11,7 @@ from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.trace import Direction, TraceEvent
 from trafficlab.comparison.schema import ComparisonResult
 
-EXPECTED_AGGREGATE_SCORE = 0.5662202380952381
+EXPECTED_AGGREGATE_SCORE = 0.654323072082336
 
 
 def settings(data: dict[str, object]) -> SimilarityConfig:

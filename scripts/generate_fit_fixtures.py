@@ -155,12 +155,26 @@ multiscale_scale_weights = [0.5, 0.5]
 multiscale_packet_weight = 0.5
 multiscale_byte_weight = 0.5
 max_direction_bin_cells = 100
+cvm_iat_weight = 0.5
+cvm_size_weight = 0.5
+ad_iat_weight = 0.5
+ad_size_weight = 0.5
+js_iat_bin_count = 8
+js_iat_weight = 0.5
+js_mark_weight = 0.5
+mmd_feature_count = 32
+mmd_seed = 17
+mmd_scale_floor = 0.001
 
 [similarity.method_weights]
-frame_size_ks = 0.25
-iat_ks = 0.25
-autocorrelation = 0.25
-multiscale_rate = 0.25
+frame_size_ks = 0.125
+iat_ks = 0.125
+autocorrelation = 0.125
+multiscale_rate = 0.125
+cramer_von_mises = 0.125
+anderson_darling = 0.125
+jensen_shannon = 0.125
+approximate_mmd = 0.125
 """
 
 _METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
@@ -229,7 +243,7 @@ projection, and `best_model.json` is the independently final-validated winner.
 `capture.json` contains `interface`, the captured interface name, and `target_mac`, the lowercase target MAC used
 for inbound/outbound classification. `best_model.json` uses the shared fitted-model fields documented in
 [`../README.md`](../README.md#best_modeljson-fields) and validated by
-[`../../schemas/scientific-artifact-v4/best_model.schema.json`](../../schemas/scientific-artifact-v4/best_model.schema.json).
+[`../../schemas/scientific-artifact-v5/best_model.schema.json`](../../schemas/scientific-artifact-v5/best_model.schema.json).
 
 ### `checkpoint.json` root fields
 
@@ -255,10 +269,10 @@ for inbound/outbound classification. `best_model.json` uses the shared fitted-mo
 Each `families[]` row contains `name`, `gene_order`, `operators`, and `coordinates`; every coordinate has `name`,
 `kind` (`linear`, `log`, or `integer`), `lower`, and `upper`. Each `population[]` row contains `identifier`
 (`[birth_generation, birth_index]`), `family`, `genes`, `status`, `fitness`, `invalid`, `trials`, and bounded
-`duplicate_diagnostics`. Each trial stores its `seed`, `aggregate_score`, four named method results, and model
+`duplicate_diagnostics`. Each trial stores its `seed`, `aggregate_score`, eight named method results, and model
 diagnostics. Each history row stores `scope`, optional `family`, `generation`, candidate/valid counts, mean and best
 fitness, and the best identifier. The exact union and expected-failure records are defined by
-[`checkpoint.schema.json`](../../schemas/scientific-artifact-v4/checkpoint.schema.json).
+[`checkpoint.schema.json`](../../schemas/scientific-artifact-v5/checkpoint.schema.json).
 """
 
 

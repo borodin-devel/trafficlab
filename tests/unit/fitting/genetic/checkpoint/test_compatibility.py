@@ -64,13 +64,13 @@ def test_rng_codec_requires_the_exact_named_generator_and_bit_generator() -> Non
     (
         (False, None),
         (True, None),
-        (True, 1),
-        (True, 5),
+        (True, 4),
+        (True, 6),
         (True, True),
         (True, "2"),
         (True, 2.0),
     ),
-    ids=("missing", "null", "old", "future", "boolean", "string", "nonintegral"),
+    ids=("missing", "null", "schema-4", "future", "boolean", "string", "nonintegral"),
 )
 def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
     present: bool,
@@ -89,6 +89,16 @@ def test_checkpoint_rejects_noncurrent_scientific_schema_before_rng_decode(
         document.pop("scientific_artifact_schema", None)
     with pytest.raises(TrafficlabError, match="checkpoint schema is incompatible"):
         parse_checkpoint(encoded_checkpoint(document), COMPATIBILITY)
+
+
+def test_schema_four_checkpoint_rejection_requires_a_fresh_refit_directory() -> None:
+    document = decoded_checkpoint()
+    document["scientific_artifact_schema"] = 4
+
+    with pytest.raises(TrafficlabError, match="checkpoint schema is incompatible") as captured:
+        parse_checkpoint(encoded_checkpoint(document), COMPATIBILITY)
+
+    assert captured.value.corrective_action == "refit under the current schema in a new run directory"
 
 
 @pytest.mark.parametrize(
@@ -257,6 +267,31 @@ def test_compatibility_reports_each_scientifically_relevant_difference_specifica
     for changed, match in cases:
         with pytest.raises(TrafficlabError, match=match):
             validate_compatibility(COMPATIBILITY, changed)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "changed_value"),
+    [
+        ("cvm_iat_weight", 0.4),
+        ("cvm_size_weight", 0.6),
+        ("ad_iat_weight", 0.6),
+        ("ad_size_weight", 0.4),
+        ("js_iat_bin_count", 9),
+        ("js_iat_weight", 0.5),
+        ("js_mark_weight", 0.5),
+        ("mmd_feature_count", 13),
+        ("mmd_seed", 43),
+        ("mmd_scale_floor", 0.02),
+    ],
+)
+def test_resume_rejects_every_changed_schema_five_similarity_setting(
+    field_name: str, changed_value: float | int
+) -> None:
+    """Every new setting changes candidate scores and therefore belongs to resume identity."""
+    changed = SIMILARITY.model_copy(update={field_name: changed_value})
+
+    with pytest.raises(TrafficlabError, match="similarity settings"):
+        validate_compatibility(COMPATIBILITY, replace(COMPATIBILITY, similarity=changed))
 
     with pytest.raises(TrafficlabError, match="invalid checkpoint"):
         validate_compatibility(COMPATIBILITY, cast(Any, None))

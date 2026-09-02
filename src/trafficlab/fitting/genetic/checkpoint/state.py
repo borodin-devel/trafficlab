@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import cast
 
 from trafficlab.common.config import FamilyName, SimilarityConfig
+from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES
 from trafficlab.fitting.genetic.checkpoint.compatibility import (
     invalid_checkpoint,
     parse_float,
@@ -44,12 +45,7 @@ def _parse_gene(value: object, coordinate: GeneCoordinate, *, family: FamilyName
 
 def _method_weights(similarity: SimilarityConfig) -> dict[MethodName, float]:
     weights = similarity.method_weights
-    return {
-        "autocorrelation": weights.autocorrelation,
-        "frame_size_ks": weights.frame_size_ks,
-        "iat_ks": weights.iat_ks,
-        "multiscale_rate": weights.multiscale_rate,
-    }
+    return {name: getattr(weights, name) for name in FITNESS_METHOD_NAMES}
 
 
 def _weighted_score(methods: Sequence[MethodTrialResult], similarity: SimilarityConfig) -> float:

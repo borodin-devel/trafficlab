@@ -435,6 +435,15 @@ def test_generation_count_zero_means_only_generation_zero(valid_config_data: dic
         (("similarity", "multiscale_scale_weights"), [-0.1, 1.1]),
         (("similarity", "multiscale_packet_weight"), 0.6),
         (("similarity", "max_direction_bin_cells"), 1),
+        (("similarity", "cvm_iat_weight"), 0.6),
+        (("similarity", "ad_iat_weight"), 0.6),
+        (("similarity", "js_iat_weight"), 0.6),
+        (("similarity", "js_iat_bin_count"), 0),
+        (("similarity", "js_iat_bin_count"), 65_537),
+        (("similarity", "mmd_feature_count"), 0),
+        (("similarity", "mmd_feature_count"), 65_537),
+        (("similarity", "mmd_seed"), -1),
+        (("similarity", "mmd_scale_floor"), 0.0),
         (("similarity", "iat_diagnostic_quantile"), 0.0),
         (("similarity", "iat_diagnostic_quantile"), 1.0),
     ],
@@ -453,9 +462,45 @@ def test_similarity_vectors_and_scalar_bounds_are_enforced(
 @pytest.mark.parametrize(
     ("method_weights", "expected_valid"),
     [
-        ({"frame_size_ks": 0.4, "iat_ks": 0.2, "autocorrelation": 0.2, "multiscale_rate": 0.2}, True),
-        ({"frame_size_ks": 0.3, "iat_ks": 0.2, "autocorrelation": 0.2, "multiscale_rate": 0.2}, False),
-        ({"frame_size_ks": -0.1, "iat_ks": 0.3, "autocorrelation": 0.4, "multiscale_rate": 0.4}, False),
+        (
+            {
+                "frame_size_ks": 0.3,
+                "iat_ks": 0.1,
+                "autocorrelation": 0.1,
+                "multiscale_rate": 0.1,
+                "cramer_von_mises": 0.1,
+                "anderson_darling": 0.1,
+                "jensen_shannon": 0.1,
+                "approximate_mmd": 0.1,
+            },
+            True,
+        ),
+        (
+            {
+                "frame_size_ks": 0.2,
+                "iat_ks": 0.1,
+                "autocorrelation": 0.1,
+                "multiscale_rate": 0.1,
+                "cramer_von_mises": 0.1,
+                "anderson_darling": 0.1,
+                "jensen_shannon": 0.1,
+                "approximate_mmd": 0.1,
+            },
+            False,
+        ),
+        (
+            {
+                "frame_size_ks": -0.1,
+                "iat_ks": 0.1,
+                "autocorrelation": 0.1,
+                "multiscale_rate": 0.1,
+                "cramer_von_mises": 0.1,
+                "anderson_darling": 0.1,
+                "jensen_shannon": 0.1,
+                "approximate_mmd": 0.5,
+            },
+            False,
+        ),
     ],
 )
 def test_method_weights_are_normalized(
@@ -466,7 +511,7 @@ def test_method_weights_are_normalized(
     _set_value(data, ("similarity", "method_weights"), method_weights)
 
     if expected_valid:
-        assert ExperimentConfig.model_validate(data).similarity.method_weights.frame_size_ks == 0.4
+        assert ExperimentConfig.model_validate(data).similarity.method_weights.frame_size_ks == 0.3
     else:
         with pytest.raises(ValidationError):
             ExperimentConfig.model_validate(data)
@@ -480,7 +525,16 @@ def test_each_method_weight_is_bounded_before_normalized_sum_validation(
     _set_value(
         data,
         ("similarity", "method_weights"),
-        {"frame_size_ks": 1.0000000000005, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
+        {
+            "frame_size_ks": 1.0000000000005,
+            "iat_ks": 0.0,
+            "autocorrelation": 0.0,
+            "multiscale_rate": 0.0,
+            "cramer_von_mises": 0.0,
+            "anderson_darling": 0.0,
+            "jensen_shannon": 0.0,
+            "approximate_mmd": 0.0,
+        },
     )
 
     with pytest.raises(ValidationError) as error:
@@ -506,11 +560,25 @@ def test_each_method_weight_is_bounded_before_normalized_sum_validation(
         ("multiscale_packet_weight",),
         ("multiscale_byte_weight",),
         ("max_direction_bin_cells",),
+        ("cvm_iat_weight",),
+        ("cvm_size_weight",),
+        ("ad_iat_weight",),
+        ("ad_size_weight",),
+        ("js_iat_bin_count",),
+        ("js_iat_weight",),
+        ("js_mark_weight",),
+        ("mmd_feature_count",),
+        ("mmd_seed",),
+        ("mmd_scale_floor",),
         ("method_weights",),
         ("method_weights", "frame_size_ks"),
         ("method_weights", "iat_ks"),
         ("method_weights", "autocorrelation"),
         ("method_weights", "multiscale_rate"),
+        ("method_weights", "cramer_von_mises"),
+        ("method_weights", "anderson_darling"),
+        ("method_weights", "jensen_shannon"),
+        ("method_weights", "approximate_mmd"),
     ],
 )
 def test_every_similarity_setting_and_method_weight_is_mandatory(
@@ -535,6 +603,9 @@ def test_every_similarity_setting_and_method_weight_is_mandatory(
         ("acf_component_weights", ("similarity",)),
         ("multiscale_scale_weights", ("similarity",)),
         ("multiscale_component_weights", ("similarity",)),
+        ("cvm_component_weights", ("similarity",)),
+        ("ad_component_weights", ("similarity",)),
+        ("js_component_weights", ("similarity",)),
         ("method_weights", ("similarity", "method_weights")),
     ],
 )
@@ -570,10 +641,23 @@ def _set_normalized_weight_sum(data: dict[str, object], location: str, total: fl
     elif location == "multiscale_component_weights":
         similarity["multiscale_packet_weight"] = total
         similarity["multiscale_byte_weight"] = 0.0
+    elif location == "cvm_component_weights":
+        similarity["cvm_iat_weight"] = total
+        similarity["cvm_size_weight"] = 0.0
+    elif location == "ad_component_weights":
+        similarity["ad_iat_weight"] = total
+        similarity["ad_size_weight"] = 0.0
+    elif location == "js_component_weights":
+        similarity["js_iat_weight"] = total
+        similarity["js_mark_weight"] = 0.0
     else:
         similarity["method_weights"] = {
-            "frame_size_ks": 0.25 + (total - 1.0),
-            "iat_ks": 0.25,
-            "autocorrelation": 0.25,
-            "multiscale_rate": 0.25,
+            "frame_size_ks": 0.125 + (total - 1.0),
+            "iat_ks": 0.125,
+            "autocorrelation": 0.125,
+            "multiscale_rate": 0.125,
+            "cramer_von_mises": 0.125,
+            "anderson_darling": 0.125,
+            "jensen_shannon": 0.125,
+            "approximate_mmd": 0.125,
         }

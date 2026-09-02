@@ -36,7 +36,7 @@ uv run --locked python scripts/check_fixture_layout.py --check
 | `target_mac` | Lowercase target-container MAC used to classify destination frames as inbound and source frames as outbound. |
 
 The public contract is
-[`capture_metadata.schema.json`](../schemas/scientific-artifact-v4/capture_metadata.schema.json).
+[`capture_metadata.schema.json`](../schemas/scientific-artifact-v5/capture_metadata.schema.json).
 
 ## `best_model.json` fields
 
@@ -80,7 +80,7 @@ Family-specific `fitted` fields are:
 | Markov renewal | `timing_diagnostics` | Counts of transition/source/global fallback use and unobserved rows. |
 
 The exact union, bounds, and required fields are in
-[`best_model.schema.json`](../schemas/scientific-artifact-v4/best_model.schema.json).
+[`best_model.schema.json`](../schemas/scientific-artifact-v5/best_model.schema.json).
 
 ## `similarity.json` fields
 
@@ -89,7 +89,7 @@ The exact union, bounds, and required fields are in
 | `aggregate_score` | Weighted mean of all mandatory method scores; higher is more similar. |
 | `observation_window_seconds` | Shared reference-derived window used by every method. |
 | `input_identities` | Exact byte identities for `capture_json`, `reference_pcapng`, `generated_pcapng`, and the canonical `similarity_settings`. |
-| `methods` | Object containing the `frame_size_ks`, `iat_ks`, `autocorrelation`, and `multiscale_rate` results. |
+| `methods` | Object containing the eight schema-5 fitness results in the canonical registry. |
 
 Every `methods.<name>` object contains `score`, configured `weight`, and
 method-specific `diagnostics`:
@@ -100,13 +100,17 @@ method-specific `diagnostics`:
 | IAT KS | `distance`, `diagnostic_quantile`, reference/generated IAT counts, medians, selected quantiles, zero counts, `observation_window_seconds` | Two-sample inter-arrival-time comparison and descriptive values; score is `1 - distance`. |
 | Autocorrelation | `lags`, `lag_weights`, `feature_weights`, `iat`, `size`, `discrepancy`, `observation_window_seconds` | Selected-lag ACF arrays, absolute differences, sample counts, and the weighted size/IAT discrepancy; score is `1 - discrepancy`. |
 | Multiscale rate | `widths`, `scale_weights`, `feature_weights`, `scales`, `scale_discrepancies`, `feature_discrepancies`, cell counts, `discrepancy`, `observation_window_seconds` | Per-width inbound/outbound byte and packet totals plus bounded cell counts and weighted discrepancies; score is `1 - discrepancy`. |
+| Cramér--von Mises | `feature_weights`, `iat`, `size`, `direction_strata`, `discrepancy`, `observation_window_seconds` | Tie-aware pooled-ECDF component evidence and bounded weighted discrepancy. |
+| Anderson--Darling | `feature_weights`, `iat`, `size`, `direction_strata`, `discrepancy`, `observation_window_seconds` | Tail-weighted endpoint-normalized ECDF component evidence and bounded discrepancy. |
+| Jensen--Shannon | `feature_weights`, `iat`, `mark`, `discrepancy`, `observation_window_seconds` | Union-aligned exact mark and direction/IAT-bin count records with component JSD values. |
+| Approximate MMD | `feature_count`, `embedding_dimension`, `seed`, `continuous`, sample counts, `discrepancy`, `observation_window_seconds` | Reference-scaled deterministic random-feature joint discrepancy. |
 
 Within a multiscale row, `bins_per_direction` is the number of bins for one
 direction, `direction_bin_cell_count` includes both directions,
 `reference_totals` and `generated_totals` contain `byte` and `packet` objects
 with `inbound` and `outbound` counts, and `width_seconds` is the bin width.
 The public contract is
-[`comparison_result.schema.json`](../schemas/scientific-artifact-v4/comparison_result.schema.json).
+[`comparison_result.schema.json`](../schemas/scientific-artifact-v5/comparison_result.schema.json).
 
 ## `manifest.json` fields
 

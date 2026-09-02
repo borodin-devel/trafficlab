@@ -328,7 +328,7 @@ These tests join real modules without Docker:
    trace, derive `W`, and confirm normalized timestamps, outbound/inbound
    directions, sizes, and feature samples.
 3. Fit each model family to the same reference, generate with fixed seeds, run
-   all four similarity methods, and require identical `W` in every candidate
+   all eight fitness similarity methods, and require identical `W` in every candidate
    evaluation, final generation, and component diagnostic. The Markov fixture
    includes a final-only active state and `alpha = 0`; fit, serialize, load, and
    generate must complete without an undefined row or invalid-candidate result,
@@ -364,7 +364,7 @@ These tests join real modules without Docker:
     Launch-expiry, clock-error, and signal-error cases must enter a nonblocking
     reap state without passing a nonpositive wait timeout.
 11. Round-trip portable and realized configurations with method weights
-    `(1, 0, 0, 0)` and `(0.1, 0.2, 0.3, 0.4)`. Require all four mandatory method
+    one-hot eight-entry weights and `(1, 2, 3, 4, 5, 6, 7, 8) / 36`. Require all eight mandatory method
     settings and diagnostics in both cases; realization may change only the run
     directory and declared bind-mount host-source paths.
 12. In a relocated fresh clean clone with its own locked dependency environment,
@@ -946,7 +946,7 @@ The offline audit independently reconstructs normalized references and each
 compatibility row; validates checkpoint, history, family priority, winner,
 model, and fresh simulation seed consistency; regenerates every deterministic
 generated trace from the retained model, seed, window, and limits; and
-recomputes all four mandatory component scores, weighted aggregates, natural-
+recomputes all four retained schema-4 component scores, weighted aggregates, natural-
 variation values, training summaries, held-out summaries, and report arithmetic.
 It validates every capture, configuration, model, generated trace, comparison,
 summary, report, and manifest lineage relationship instead of trusting a

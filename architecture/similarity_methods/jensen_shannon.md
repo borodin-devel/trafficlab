@@ -34,8 +34,8 @@ and configured positive integer `B`, its shared edges are
 e_j=\frac{j}{B}\log(1+W),\qquad j=0,\ldots,B.
 \]
 
-An IAT maps through `log1p`. Interior boundary values use the later bin; the
-last edge is included in the last zero-based bin. These edges depend only on
+An IAT maps through `log1p`. Bins are left-closed, so interior boundary values
+use the later bin; the final endpoint is included in the last zero-based bin. These edges depend only on
 the reference-derived `W`, never on generated values. Every compared trace has
 at least two events and remains inside `[0, W]`, so all IAT values fit this
 closed support.

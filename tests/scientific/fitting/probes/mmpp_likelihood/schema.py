@@ -199,7 +199,26 @@ SIMILARITY = SimilarityConfig(
     multiscale_packet_weight=1.0,
     multiscale_byte_weight=0.0,
     max_direction_bin_cells=1000,
-    method_weights=MethodWeights(frame_size_ks=0.0, iat_ks=1.0, autocorrelation=0.0, multiscale_rate=0.0),
+    cvm_iat_weight=0.5,
+    cvm_size_weight=0.5,
+    ad_iat_weight=0.5,
+    ad_size_weight=0.5,
+    js_iat_bin_count=8,
+    js_iat_weight=0.5,
+    js_mark_weight=0.5,
+    mmd_feature_count=32,
+    mmd_seed=17,
+    mmd_scale_floor=0.001,
+    method_weights=MethodWeights(
+        frame_size_ks=0.0,
+        iat_ks=1.0,
+        autocorrelation=0.0,
+        multiscale_rate=0.0,
+        cramer_von_mises=0.0,
+        anderson_darling=0.0,
+        jensen_shannon=0.0,
+        approximate_mmd=0.0,
+    ),
 )
 
 MARKS = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1), MarkCount(Direction.INBOUND, 120, 1)))

@@ -55,16 +55,30 @@ SIMILARITY = SimilarityConfig(
     multiscale_packet_weight=0.75,
     multiscale_byte_weight=0.25,
     max_direction_bin_cells=20,
+    cvm_iat_weight=0.25,
+    cvm_size_weight=0.75,
+    ad_iat_weight=0.75,
+    ad_size_weight=0.25,
+    js_iat_bin_count=7,
+    js_iat_weight=0.6,
+    js_mark_weight=0.4,
+    mmd_feature_count=12,
+    mmd_seed=42,
+    mmd_scale_floor=0.01,
     method_weights=MethodWeights(
-        frame_size_ks=0.2,
-        iat_ks=0.3,
-        autocorrelation=0.1,
-        multiscale_rate=0.4,
+        frame_size_ks=0.1,
+        iat_ks=0.15,
+        autocorrelation=0.05,
+        multiscale_rate=0.2,
+        cramer_von_mises=0.05,
+        anderson_darling=0.1,
+        jensen_shannon=0.15,
+        approximate_mmd=0.2,
     ),
 )
 
 
-def build_trial(seed: int, scores: tuple[float, float, float, float]) -> TrialResult:
+def build_trial(seed: int, scores: tuple[float, float, float, float, float, float, float, float]) -> TrialResult:
     methods = tuple(
         MethodTrialResult(
             name=name, score=score, diagnostics={"nested": [{"finite": score, "enabled": True}], "empty": None}
@@ -73,18 +87,22 @@ def build_trial(seed: int, scores: tuple[float, float, float, float]) -> TrialRe
     )
     aggregate = math.fsum(
         (
-            scores[0] * 0.1,
-            scores[1] * 0.2,
-            scores[2] * 0.3,
-            scores[3] * 0.4,
+            scores[0] * 0.05,
+            scores[1] * 0.1,
+            scores[2] * 0.15,
+            scores[3] * 0.2,
+            scores[4] * 0.05,
+            scores[5] * 0.1,
+            scores[6] * 0.15,
+            scores[7] * 0.2,
         )
     )
     return TrialResult(seed=seed, aggregate_score=aggregate, methods=cast(Any, methods))
 
 
-MMPP_TRIAL = build_trial(7, (0.8, 0.6, 0.4, 0.2))
+MMPP_TRIAL = build_trial(7, (0.8, 0.6, 0.4, 0.2, 0.8, 0.6, 0.4, 0.2))
 
-POISSON_TRIAL = build_trial(7, (0.9, 0.7, 0.5, 0.3))
+POISSON_TRIAL = build_trial(7, (0.9, 0.7, 0.5, 0.3, 0.9, 0.7, 0.5, 0.3))
 
 POPULATION = (
     Candidate(
@@ -199,7 +217,7 @@ GENETIC = GeneticCheckpointSettings(
 )
 
 COMPATIBILITY = CheckpointCompatibility(
-    scientific_artifact_schema=4,
+    scientific_artifact_schema=5,
     experiment_identity=ContentIdentity(size=101, sha256="a" * 64),
     reference_identity=ContentIdentity(size=102, sha256="b" * 64),
     capture_identity=ContentIdentity(size=103, sha256="c" * 64),

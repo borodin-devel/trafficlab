@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     Discriminator,
     Field,
+    StrictBool,
     StrictInt,
     Tag,
     model_validator,
@@ -17,7 +18,16 @@ from pydantic import (
 
 from trafficlab.comparison.similarity.common import FrozenJsonValue
 
-METHOD_NAMES = ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+FITNESS_METHOD_NAMES = (
+    "autocorrelation",
+    "frame_size_ks",
+    "iat_ks",
+    "multiscale_rate",
+    "cramer_von_mises",
+    "anderson_darling",
+    "jensen_shannon",
+    "approximate_mmd",
+)
 
 WEIGHT_TOLERANCE = 1e-12
 
@@ -50,7 +60,16 @@ type FloatTuple = Annotated[tuple[ExactFloat, ...], BeforeValidator(_tuple_input
 
 type IntTuple = Annotated[tuple[StrictInt, ...], BeforeValidator(_tuple_input)]
 
-type MethodName = Literal["autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate"]
+type MethodName = Literal[
+    "autocorrelation",
+    "frame_size_ks",
+    "iat_ks",
+    "multiscale_rate",
+    "cramer_von_mises",
+    "anderson_darling",
+    "jensen_shannon",
+    "approximate_mmd",
+]
 
 
 def require_close(actual: float, expected: float, *, name: str) -> None:
@@ -328,6 +347,215 @@ class MultiscaleDiagnostic(_DiagnosticModel):
         return self
 
 
+class EcdfFeatureWeights(StrictArtifactModel):
+    iat: UnitFloat
+    size: UnitFloat
+
+
+class EcdfFeatureDiagnostic(StrictArtifactModel):
+    reference_sample_count: PositiveInt
+    generated_sample_count: PositiveInt
+    reference_tie_count: NonnegativeInt
+    generated_tie_count: NonnegativeInt
+    raw_sum: NonnegativeFloat
+    normalization_weight: NonnegativeFloat
+    discrepancy: UnitFloat
+
+    @model_validator(mode="after")
+    def validate_sample_arithmetic(self) -> Self:
+        if self.reference_tie_count >= self.reference_sample_count:
+            raise ValueError("ECDF reference tie count must be less than its sample count")
+        if self.generated_tie_count >= self.generated_sample_count:
+            raise ValueError("ECDF generated tie count must be less than its sample count")
+        expected = self.raw_sum / self.normalization_weight if self.normalization_weight else 0.0
+        if not self.normalization_weight and self.raw_sum != 0.0:
+            raise ValueError("ECDF raw sum must be zero when normalization weight is zero")
+        require_close(self.discrepancy, expected, name="ECDF feature discrepancy")
+        return self
+
+
+class DirectionAvailability(StrictArtifactModel):
+    reference_available: StrictBool
+    generated_available: StrictBool
+    both_available: StrictBool
+
+    @model_validator(mode="after")
+    def both_matches_inputs(self) -> Self:
+        if self.both_available != (self.reference_available and self.generated_available):
+            raise ValueError("direction both_available must equal reference_available and generated_available")
+        return self
+
+
+class FeatureDirectionAvailability(StrictArtifactModel):
+    outbound: DirectionAvailability
+    inbound: DirectionAvailability
+
+
+class EcdfDirectionStrata(StrictArtifactModel):
+    iat: FeatureDirectionAvailability
+    size: FeatureDirectionAvailability
+
+
+class _EcdfDiagnostic(_DiagnosticModel):
+    observation_window_seconds: PositiveFloat
+    feature_weights: EcdfFeatureWeights
+    iat: EcdfFeatureDiagnostic
+    size: EcdfFeatureDiagnostic
+    direction_strata: EcdfDirectionStrata
+    discrepancy: UnitFloat
+
+    @model_validator(mode="after")
+    def validate_ecdf_arithmetic(self) -> Self:
+        weights = (self.feature_weights.iat, self.feature_weights.size)
+        _require_normalized(weights, name="ECDF diagnostics.feature_weights")
+        expected = math.fsum((weights[0] * self.iat.discrepancy, weights[1] * self.size.discrepancy))
+        require_close(self.discrepancy, expected, name="ECDF diagnostics.discrepancy")
+        return self
+
+
+class CramerVonMisesDiagnostic(_EcdfDiagnostic):
+    @model_validator(mode="after")
+    def normalization_is_pooled_mass(self) -> Self:
+        if self.iat.normalization_weight != 1.0 or self.size.normalization_weight != 1.0:
+            raise ValueError("Cramér--von Mises normalization weights must equal one")
+        return self
+
+
+class AndersonDarlingDiagnostic(_EcdfDiagnostic):
+    @model_validator(mode="after")
+    def normalization_is_tail_weight(self) -> Self:
+        for feature in (self.iat, self.size):
+            if 0.0 < feature.normalization_weight < 4.0:
+                raise ValueError("Anderson--Darling normalization weight must be zero or at least four")
+        return self
+
+
+type DirectionName = Literal["outbound", "inbound"]
+
+
+class JensenShannonFeatureWeights(StrictArtifactModel):
+    iat: UnitFloat
+    mark: UnitFloat
+
+
+class JensenShannonIatCategory(StrictArtifactModel):
+    direction: DirectionName
+    bin_index: NonnegativeInt
+    reference_count: NonnegativeInt
+    generated_count: NonnegativeInt
+
+
+class JensenShannonMarkCategory(StrictArtifactModel):
+    direction: DirectionName
+    frame_length: PositiveInt
+    reference_count: NonnegativeInt
+    generated_count: NonnegativeInt
+
+
+class JensenShannonIatDiagnostic(StrictArtifactModel):
+    reference_count: PositiveInt
+    generated_count: PositiveInt
+    bin_edges: FloatTuple
+    categories: Annotated[tuple[JensenShannonIatCategory, ...], BeforeValidator(_tuple_input)]
+    jsd: UnitFloat
+
+
+class JensenShannonMarkDiagnostic(StrictArtifactModel):
+    reference_count: PositiveInt
+    generated_count: PositiveInt
+    categories: Annotated[tuple[JensenShannonMarkCategory, ...], BeforeValidator(_tuple_input)]
+    jsd: UnitFloat
+
+
+def _direction_code(value: DirectionName) -> int:
+    return 0 if value == "outbound" else 1
+
+
+def _jsd_from_counts(categories: tuple[JensenShannonIatCategory | JensenShannonMarkCategory, ...]) -> float:
+    reference_total = sum(category.reference_count for category in categories)
+    generated_total = sum(category.generated_count for category in categories)
+    terms: list[float] = []
+    for category in categories:
+        p = category.reference_count / reference_total
+        q = category.generated_count / generated_total
+        midpoint = (p + q) / 2.0
+        if p:
+            terms.append(0.5 * p * math.log2(p / midpoint))
+        if q:
+            terms.append(0.5 * q * math.log2(q / midpoint))
+    return math.fsum(terms)
+
+
+class JensenShannonDiagnostic(_DiagnosticModel):
+    observation_window_seconds: PositiveFloat
+    feature_weights: JensenShannonFeatureWeights
+    iat: JensenShannonIatDiagnostic
+    mark: JensenShannonMarkDiagnostic
+    discrepancy: UnitFloat
+
+    @model_validator(mode="after")
+    def validate_js_arithmetic(self) -> Self:
+        weights = (self.feature_weights.iat, self.feature_weights.mark)
+        _require_normalized(weights, name="jensen_shannon diagnostics.feature_weights")
+        edges = self.iat.bin_edges
+        if len(edges) < 2 or edges[0] != 0.0 or any(left >= right for left, right in zip(edges, edges[1:], strict=False)):
+            raise ValueError("jensen_shannon diagnostics.bin_edges must start at zero and strictly increase")
+        require_close(
+            edges[-1], math.log1p(self.observation_window_seconds), name="jensen_shannon diagnostics final bin edge"
+        )
+        iat_keys = tuple((_direction_code(item.direction), item.bin_index) for item in self.iat.categories)
+        mark_keys = tuple((_direction_code(item.direction), item.frame_length) for item in self.mark.categories)
+        if not self.iat.categories or iat_keys != tuple(sorted(set(iat_keys))):
+            raise ValueError("jensen_shannon IAT categories must be unique and in canonical order")
+        if not self.mark.categories or mark_keys != tuple(sorted(set(mark_keys))):
+            raise ValueError("jensen_shannon mark categories must be unique and in canonical order")
+        if any(item.bin_index >= len(edges) - 1 for item in self.iat.categories):
+            raise ValueError("jensen_shannon IAT category bin index is outside the retained edges")
+        for name, component in (("iat", self.iat), ("mark", self.mark)):
+            categories = component.categories
+            if any(item.reference_count + item.generated_count == 0 for item in categories):
+                raise ValueError(f"jensen_shannon {name} categories must belong to the observed union")
+            if sum(item.reference_count for item in categories) != component.reference_count:
+                raise ValueError(f"jensen_shannon {name} reference count is inconsistent")
+            if sum(item.generated_count for item in categories) != component.generated_count:
+                raise ValueError(f"jensen_shannon {name} generated count is inconsistent")
+            require_close(component.jsd, _jsd_from_counts(categories), name=f"jensen_shannon {name} JSD")
+        expected = math.fsum((weights[0] * self.iat.jsd, weights[1] * self.mark.jsd))
+        require_close(self.discrepancy, expected, name="jensen_shannon diagnostics.discrepancy")
+        return self
+
+
+class MmdContinuousDiagnostic(StrictArtifactModel):
+    reference_mean: FloatTuple
+    reference_scale: FloatTuple
+    scale_floor: PositiveFloat
+
+    @model_validator(mode="after")
+    def validate_continuous_shape(self) -> Self:
+        if len(self.reference_mean) != 2 or len(self.reference_scale) != 2:
+            raise ValueError("approximate_mmd continuous vectors must contain IAT and frame-length coordinates")
+        if any(scale <= 0.0 or scale < self.scale_floor for scale in self.reference_scale):
+            raise ValueError("approximate_mmd reference scales must be positive and at least scale_floor")
+        return self
+
+
+class ApproximateMmdDiagnostic(_DiagnosticModel):
+    observation_window_seconds: PositiveFloat
+    feature_count: PositiveInt
+    embedding_dimension: PositiveInt
+    seed: NonnegativeInt
+    continuous: MmdContinuousDiagnostic
+    reference_sample_count: PositiveInt
+    generated_sample_count: PositiveInt
+    discrepancy: UnitFloat
+
+    @model_validator(mode="after")
+    def embedding_dimension_matches_feature_count(self) -> Self:
+        if self.embedding_dimension != 4 * self.feature_count:
+            raise ValueError("approximate_mmd embedding_dimension must equal four times feature_count")
+        return self
+
+
 def diagnostic_discriminator(value: object) -> str | None:
     if isinstance(value, FrameSizeDiagnostic) or isinstance(value, IatDiagnostic):
         return "iat_ks" if isinstance(value, IatDiagnostic) else "frame_size_ks"
@@ -335,15 +563,39 @@ def diagnostic_discriminator(value: object) -> str | None:
         return "autocorrelation"
     if isinstance(value, MultiscaleDiagnostic):
         return "multiscale_rate"
+    if isinstance(value, CramerVonMisesDiagnostic):
+        return "cramer_von_mises"
+    if isinstance(value, AndersonDarlingDiagnostic):
+        return "anderson_darling"
+    if isinstance(value, JensenShannonDiagnostic):
+        return "jensen_shannon"
+    if isinstance(value, ApproximateMmdDiagnostic):
+        return "approximate_mmd"
     if isinstance(value, Mapping):
-        if "lags" in value:
+        mapping = cast(Mapping[object, object], value)
+        if "lags" in mapping:
             return "autocorrelation"
-        if "widths" in value:
+        if "widths" in mapping:
             return "multiscale_rate"
-        if "diagnostic_quantile" in value:
+        if "diagnostic_quantile" in mapping:
             return "iat_ks"
-        if "distance" in value:
+        if "distance" in mapping:
             return "frame_size_ks"
+        iat = mapping.get("iat")
+        if "direction_strata" in mapping:
+            size = mapping.get("size")
+            if isinstance(iat, Mapping) and isinstance(size, Mapping):
+                iat_mapping = cast(Mapping[object, object], iat)
+                size_mapping = cast(Mapping[object, object], size)
+                normalizations = (
+                    iat_mapping.get("normalization_weight"),
+                    size_mapping.get("normalization_weight"),
+                )
+                return "cramer_von_mises" if normalizations == (1.0, 1.0) else "anderson_darling"
+        if "mark" in mapping and isinstance(iat, Mapping) and "bin_edges" in iat:
+            return "jensen_shannon"
+        if "embedding_dimension" in mapping:
+            return "approximate_mmd"
     return None
 
 
@@ -351,6 +603,10 @@ type MethodDiagnostic = Annotated[
     Annotated[AutocorrelationDiagnostic, Tag("autocorrelation")]
     | Annotated[FrameSizeDiagnostic, Tag("frame_size_ks")]
     | Annotated[IatDiagnostic, Tag("iat_ks")]
-    | Annotated[MultiscaleDiagnostic, Tag("multiscale_rate")],
+    | Annotated[MultiscaleDiagnostic, Tag("multiscale_rate")]
+    | Annotated[CramerVonMisesDiagnostic, Tag("cramer_von_mises")]
+    | Annotated[AndersonDarlingDiagnostic, Tag("anderson_darling")]
+    | Annotated[JensenShannonDiagnostic, Tag("jensen_shannon")]
+    | Annotated[ApproximateMmdDiagnostic, Tag("approximate_mmd")],
     Discriminator(diagnostic_discriminator),
 ]

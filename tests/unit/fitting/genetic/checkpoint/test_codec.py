@@ -26,6 +26,7 @@ from trafficlab.common.config import (
     MmppConfig,
 )
 from trafficlab.common.errors import TrafficlabError
+from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.fitting.genetic.checkpoint import (
     CheckpointArtifact,
@@ -56,7 +57,8 @@ def test_checkpoint_round_trip_is_canonical_and_preserves_frozen_nested_diagnost
     assert content.endswith(b"\n")
     decoded = json.loads(content)
     assert content == (json.dumps(decoded, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
-    assert decoded["scientific_artifact_schema"] == 4
+    assert SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 5
+    assert decoded["scientific_artifact_schema"] == 5
     assert tuple(method.name for method in loaded.population[0].trials[0].methods) == METHOD_ORDER
     with pytest.raises(TypeError):
         cast(dict[str, object], loaded.population[0].trials[0].methods[0].diagnostics)["changed"] = True
@@ -258,7 +260,7 @@ def test_checkpoint_round_trip_preserves_candidate_failure_scientific_diagnostic
         ("nonfinite_score", 7, "legacy nonfinite score"),
     ],
 )
-def test_schema_v4_checkpoint_rejects_incomplete_legacy_candidate_failure(
+def test_schema_v5_checkpoint_rejects_incomplete_legacy_candidate_failure(
     kind: str,
     seed: int | None,
     detail: str,

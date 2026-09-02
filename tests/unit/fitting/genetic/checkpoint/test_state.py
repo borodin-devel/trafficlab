@@ -513,7 +513,7 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
             duplicate_diagnostics=(),
         )
         for index, score in enumerate(literal_scores)
-        for trial in (build_trial(7, (score, score, score, score)),)
+        for trial in (build_trial(7, (score,) * 8),)
     )
     rows = summarize_generation(
         0,

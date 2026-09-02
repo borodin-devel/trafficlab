@@ -56,6 +56,21 @@ def test_strict_result_json_round_trip_has_the_documented_sorted_readable_shape(
     assert result.as_dict() is not result.as_dict()
 
 
+def test_result_parser_rejects_reordered_otherwise_valid_wire_fields() -> None:
+    """Object insertion order must not provide a second byte representation of one scientific result."""
+    document = valid_result_document()
+    reordered = {
+        "observation_window_seconds": document["observation_window_seconds"],
+        "methods": document["methods"],
+        "input_identities": document["input_identities"],
+        "aggregate_score": document["aggregate_score"],
+    }
+    content = (json.dumps(reordered, indent=2, allow_nan=False) + "\n").encode()
+
+    with pytest.raises(ValueError, match="canonical sorted readable encoding"):
+        parse_comparison_result(content)
+
+
 @pytest.mark.parametrize(
     "method_name",
     ["frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate"],
@@ -117,6 +132,9 @@ def test_result_parser_rejects_nested_diagnostic_schema_drift(
         ("autocorrelation", "feature_weights"),
         ("multiscale_rate", "scale_weights"),
         ("multiscale_rate", "feature_weights"),
+        ("cramer_von_mises", "feature_weights"),
+        ("anderson_darling", "feature_weights"),
+        ("jensen_shannon", "feature_weights"),
     ],
 )
 def test_result_parser_rejects_unnormalized_diagnostic_weights(method_name: str, weight_name: str) -> None:

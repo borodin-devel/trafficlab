@@ -71,7 +71,10 @@ def parse_comparison_result(content: bytes) -> ComparisonResult:
         if field.endswith("reference_count") and first["type"] == "int_type":
             raise ValueError("reference_count must be an integer") from error
         raise ValueError(f"invalid comparison result {field}: {first['msg']}") from error
-    return operational_comparison_result(published)
+    result = operational_comparison_result(published)
+    if canonical_comparison_bytes(result) != content:
+        raise ValueError("similarity JSON must use the canonical sorted readable encoding with one final newline")
+    return result
 
 
 def canonical_comparison_bytes(result: ComparisonResult) -> bytes:

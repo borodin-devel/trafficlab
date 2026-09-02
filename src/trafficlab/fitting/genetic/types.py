@@ -20,6 +20,7 @@ from pydantic import (
 
 from trafficlab.common.config import FamilyName
 from trafficlab.common.errors import EvidenceState, FailureAuthority
+from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES, MethodName
 from trafficlab.comparison.similarity.common import FrozenJsonValue, JsonValue, SimilarityResult
 from trafficlab.generation.models.common import (
     MARKOV_MODEL_DIAGNOSTIC_KEYS,
@@ -30,14 +31,13 @@ from trafficlab.generation.models.common import (
 
 type CandidateStatus = Literal["pending", "valid", "invalid"]
 type FamilyPriority = tuple[str, ...]
-type MethodName = Literal["autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate"]
 type CandidateFailureKind = Literal[
     "repair", "fit", "generation", "incomplete_generation", "similarity_precondition", "nonfinite_score"
 ]
 type DuplicateOutcome = Literal["invalid", "duplicate", "exhausted"]
 type TerminalReason = Literal["running", "hard_limit", "early_stop"]
 
-METHOD_ORDER: tuple[MethodName, ...] = ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+METHOD_ORDER: tuple[MethodName, ...] = FITNESS_METHOD_NAMES
 _METHOD_NAMES = frozenset(METHOD_ORDER)
 _FAILURE_KINDS = frozenset(
     ("repair", "fit", "generation", "incomplete_generation", "similarity_precondition", "nonfinite_score")
@@ -148,12 +148,21 @@ class MethodTrialResult(_StrictGeneticModel):
 
 
 class TrialResult(_StrictGeneticModel):
-    """All four scores from one deterministic generated-trace seed."""
+    """All eight scores from one deterministic generated-trace seed."""
 
     seed: NonnegativeInt
     aggregate_score: UnitFloat
     methods: Annotated[
-        tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
+        tuple[
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+            MethodTrialResult,
+        ],
         BeforeValidator(_tuple_input),
     ]
     model_diagnostics: ModelDiagnostics = Field(default_factory=_empty_model_diagnostics)

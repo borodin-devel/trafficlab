@@ -516,6 +516,13 @@ def test_parser_and_publication_reject_null_lineage_and_cross_key_diagnostics(tm
     with pytest.raises(ValueError, match="frame_size_ks.*wrong method discriminator"):
         comparison_codec.parse_comparison_result(json.dumps(wrong_method).encode())
 
+    wrong_ecdf_method = copy.deepcopy(document)
+    wrong_ecdf_method["methods"]["cramer_von_mises"] = copy.deepcopy(
+        wrong_ecdf_method["methods"]["anderson_darling"]
+    )
+    with pytest.raises(ValueError, match="cramer_von_mises.*wrong method discriminator"):
+        comparison_codec.parse_comparison_result(json.dumps(wrong_ecdf_method).encode())
+
     with pytest.raises(ValueError, match="comparison result"):
         comparison_codec.parse_comparison_result(b"[]")
 

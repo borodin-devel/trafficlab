@@ -38,7 +38,7 @@ The field dictionaries live beside the files:
 - [`data/README.md`](data/README.md) covers capture metadata, fitted models,
   similarity output, fixture manifests, and the offline fitting checkpoint.
 - [`schemas/README.md`](schemas/README.md) explains JSON Schema document fields;
-  [`scientific-artifact-v4/README.md`](schemas/scientific-artifact-v4/README.md)
+  [`scientific-artifact-v5/README.md`](schemas/scientific-artifact-v5/README.md)
   catalogs the artifact fields represented by every public schema.
 - [`scientific_stack/README.md`](scientific_stack/README.md) covers benchmark,
   probe, reduction, and retained-run evidence.

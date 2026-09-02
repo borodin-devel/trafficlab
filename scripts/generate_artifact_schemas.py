@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or verify every public scientific-artifact v4 JSON Schema."""
+"""Generate or verify every public scientific-artifact v5 JSON Schema."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
 from trafficlab.common.json import render_json_document
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-OUTPUT_DIRECTORY = REPOSITORY / "examples" / "schemas" / "scientific-artifact-v4"
+OUTPUT_DIRECTORY = REPOSITORY / "examples" / "schemas" / "scientific-artifact-v5"
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 _DOCUMENTATION_NAMES = frozenset({"README.md"})
 

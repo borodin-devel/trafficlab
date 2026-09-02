@@ -228,18 +228,31 @@ def test_checked_in_fixture_round_trip_preserves_canonical_values_and_one_shared
             "frame_size_ks": 0.8,
             "iat_ks": 0.5,
             "multiscale_rate": 0.20833333333333326,
+            "cramer_von_mises": 0.9527083333333334,
+            "anderson_darling": 0.9435717116419671,
+            "jensen_shannon": 0.4367546062174327,
+            "approximate_mmd": 0.6318760516653139,
         }
     )
-    assert result.aggregate_score == pytest.approx(0.5662202380952381)
+    assert result.aggregate_score == pytest.approx(0.653723956904875)
 
 
-def test_checked_in_similarity_artifact_keeps_the_fixed_four_method_json_shape() -> None:
+def test_checked_in_similarity_artifact_keeps_the_fixed_eight_method_json_shape() -> None:
     """A weight choice must not remove a required method or its retained diagnostics from published JSON."""
     document = load_comparison_result(_EXAMPLE_DATA / "similarity.json").as_dict()
 
     assert tuple(document) == ("aggregate_score", "input_identities", "methods", "observation_window_seconds")
     methods = cast(dict[str, dict[str, object]], document["methods"])
-    assert tuple(methods) == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert tuple(methods) == (
+        "autocorrelation",
+        "frame_size_ks",
+        "iat_ks",
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
+    )
     assert all(tuple(method) == ("diagnostics", "score", "weight") for method in methods.values())
 
 

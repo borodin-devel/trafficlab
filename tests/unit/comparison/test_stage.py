@@ -287,7 +287,7 @@ def test_compare_classifies_metric_infeasibility_after_model_reconstruction(
     def infeasible(*_args: object, **_kwargs: object) -> ComparisonResult:
         raise TrafficlabError("autocorrelation requires more samples", corrective_action="correct samples or settings")
 
-    monkeypatch.setattr(comparison_stage, "compare_traces", infeasible)
+    monkeypatch.setattr(comparison_stage, "evaluate_fitness", infeasible)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison_stage.compare_experiment(experiment_path)
@@ -331,7 +331,7 @@ def test_compare_rejects_foreign_best_model_provenance_before_similarity(
     def prohibit_similarity(*_args: object, **_kwargs: object) -> ComparisonResult:
         pytest.fail("foreign best-model provenance reached similarity evaluation")
 
-    monkeypatch.setattr(comparison_stage, "compare_traces", prohibit_similarity)
+    monkeypatch.setattr(comparison_stage, "evaluate_fitness", prohibit_similarity)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison_stage.compare_experiment(experiment_path)
@@ -380,7 +380,7 @@ def test_compare_preserves_a_typed_best_model_schema_incompatibility(
     experiment_path, run_directory = _prepare_comparison_run(valid_config_data, tmp_path)
     model_path = run_directory / "best_model.json"
     document = cast(dict[str, object], json.loads(model_path.read_bytes()))
-    document["scientific_artifact_schema"] = 1
+    document["scientific_artifact_schema"] = 4
     legacy = (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     model_path.write_bytes(legacy)
 
@@ -395,6 +395,7 @@ def test_compare_preserves_a_typed_best_model_schema_incompatibility(
         "best_model.json",
         "preserved",
     )
+    assert caught.value.corrective_action == "refit under the current schema"
     assert model_path.read_bytes() == legacy
     assert not (run_directory / "similarity.json").exists()
 
@@ -478,7 +479,7 @@ def test_compare_rejects_reference_mutation_before_similarity_publication(
         destination.write_bytes(source.read_bytes())
     _write_current_generated(run_directory)
     reference_path = run_directory / "reference.pcapng"
-    real_compare = comparison_metrics.compare_traces
+    real_compare = comparison_metrics.evaluate_fitness
 
     def compare_and_mutate(
         reference: tuple[TraceEvent, ...],
@@ -490,7 +491,7 @@ def test_compare_rejects_reference_mutation_before_similarity_publication(
         reference_path.write_bytes(reference_path.read_bytes() + b"changed after comparison")
         return result
 
-    monkeypatch.setattr(comparison_stage, "compare_traces", compare_and_mutate)
+    monkeypatch.setattr(comparison_stage, "evaluate_fitness", compare_and_mutate)
 
     with pytest.raises(TrafficlabError, match="reference.pcapng changed during compare") as caught:
         comparison_stage.compare_experiment(experiment_path)
@@ -781,7 +782,7 @@ def test_valid_but_changed_rendered_result_is_rejected_before_temporary_publicat
         changed_document = result.as_dict()
         methods = cast(dict[str, object], changed_document["methods"])
         cast(dict[str, object], methods["autocorrelation"])["weight"] = 0.1
-        cast(dict[str, object], methods["frame_size_ks"])["weight"] = 0.4
+        cast(dict[str, object], methods["frame_size_ks"])["weight"] = 0.15
         changed_document["aggregate_score"] = sum(
             cast(float, method["score"]) * cast(float, method["weight"])
             for method in cast(dict[str, dict[str, object]], methods).values()

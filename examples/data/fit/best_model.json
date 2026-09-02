@@ -5,10 +5,12 @@
   },
   "estimator_choices": {
     "first_event": "zero",
-    "marks": "joint_empirical_first_appearance",
-    "rate": "interval_count_over_window"
+    "quantile": "type7_linear",
+    "state_order": "first_appearance",
+    "timing": "conditional_source_global",
+    "transition": "additive_uniform_empty_row"
   },
-  "family": "poisson_empirical",
+  "family": "markov_renewal",
   "final_limits": {
     "max_output_bytes": 2000000,
     "max_packets": 1000,
@@ -16,61 +18,224 @@
   },
   "final_seed": 97,
   "fitted": {
-    "base_rate": 2.0,
-    "marks": [
+    "alpha": 0.2976956687643619,
+    "conditional_iats": [
+      [
+        [],
+        [
+          0.3999999999999986,
+          0.5,
+          0.6000000000000014,
+          0.3999999999999986
+        ],
+        []
+      ],
+      [
+        [
+          0.6000000000000014,
+          0.3999999999999986
+        ],
+        [
+          0.3999999999999986,
+          0.6000000000000014
+        ],
+        [
+          0.5,
+          0.5,
+          0.3999999999999986,
+          0.5,
+          0.6000000000000014,
+          0.5
+        ]
+      ],
+      [
+        [
+          0.3999999999999986
+        ],
+        [
+          0.5,
+          0.6000000000000014,
+          0.5,
+          0.5
+        ],
+        [
+          0.6000000000000014
+        ]
+      ]
+    ],
+    "global_iats": [
+      0.3999999999999986,
+      0.5,
+      0.6000000000000014,
+      0.5,
+      0.3999999999999986,
+      0.6000000000000014,
+      0.5,
+      0.5,
+      0.6000000000000014,
+      0.3999999999999986,
+      0.3999999999999986,
+      0.6000000000000014,
+      0.5,
+      0.5,
+      0.6000000000000014,
+      0.3999999999999986,
+      0.3999999999999986,
+      0.6000000000000014,
+      0.5,
+      0.5
+    ],
+    "minimum_support": 4,
+    "states": [
       {
-        "count": 4,
         "direction": "outbound",
-        "frame_length": 60
+        "frame_lengths": [
+          60,
+          60,
+          60,
+          60
+        ],
+        "size_bin": 0,
+        "source_iats": [
+          0.3999999999999986,
+          0.5,
+          0.6000000000000014,
+          0.3999999999999986
+        ]
       },
       {
-        "count": 5,
         "direction": "inbound",
-        "frame_length": 96
+        "frame_lengths": [
+          96,
+          96,
+          512,
+          128,
+          96,
+          128,
+          96,
+          512,
+          128,
+          96
+        ],
+        "size_bin": 1,
+        "source_iats": [
+          0.5,
+          0.3999999999999986,
+          0.6000000000000014,
+          0.5,
+          0.3999999999999986,
+          0.5,
+          0.6000000000000014,
+          0.3999999999999986,
+          0.6000000000000014,
+          0.5
+        ]
       },
       {
-        "count": 1,
         "direction": "outbound",
-        "frame_length": 128
-      },
-      {
-        "count": 4,
-        "direction": "outbound",
-        "frame_length": 256
-      },
-      {
-        "count": 2,
-        "direction": "inbound",
-        "frame_length": 512
-      },
-      {
-        "count": 3,
-        "direction": "inbound",
-        "frame_length": 128
-      },
-      {
-        "count": 2,
-        "direction": "outbound",
-        "frame_length": 512
+        "frame_lengths": [
+          128,
+          256,
+          256,
+          512,
+          256,
+          256,
+          512
+        ],
+        "size_bin": 1,
+        "source_iats": [
+          0.6000000000000014,
+          0.5,
+          0.6000000000000014,
+          0.3999999999999986,
+          0.5,
+          0.5
+        ]
       }
     ],
-    "rate": 2.213463578786912
+    "thresholds": [
+      66.9138034520154,
+      512.0
+    ],
+    "time_scale": 1.2628633976261572,
+    "timing_diagnostics": {
+      "reference_usage_counts": {
+        "global": 0,
+        "source": 6,
+        "transition": 14
+      },
+      "transition_tiers": [
+        [
+          "source",
+          "transition",
+          "source"
+        ],
+        [
+          "source",
+          "source",
+          "transition"
+        ],
+        [
+          "source",
+          "transition",
+          "source"
+        ]
+      ],
+      "unobserved_rows": []
+    },
+    "transition_rows": [
+      [
+        0.06084005217595563,
+        0.8783198956480888,
+        0.06084005217595563
+      ],
+      [
+        0.21093154469774741,
+        0.21093154469774741,
+        0.5781369106045051
+      ],
+      [
+        0.18826045102573388,
+        0.6234790979485323,
+        0.18826045102573388
+      ]
+    ]
   },
   "gene_bounds": {
-    "c_lambda": {
+    "alpha": {
+      "lower": 0.05,
+      "upper": 1.5
+    },
+    "c_t": {
       "lower": 0.5,
       "upper": 1.5
+    },
+    "q1": {
+      "lower": 0.15,
+      "upper": 0.45
+    },
+    "q2": {
+      "lower": 0.55,
+      "upper": 0.9
+    },
+    "r": {
+      "lower": 1,
+      "upper": 4
     }
   },
   "genes": [
-    1.106731789393456
+    0.15960250479446583,
+    0.8604188088971481,
+    0.2976956687643619,
+    4,
+    1.2628633976261572
   ],
   "observation_window_seconds": 10.0,
   "reference_identity": {
     "sha256": "fd1d361da6829381293c84018928ce3e329108af8d4308094b7a790485a887f6",
     "size": 5024
   },
-  "scientific_artifact_schema": 4,
+  "scientific_artifact_schema": 5,
   "seed_policy": {
     "empirical": "choice_scalar_index",
     "exponential": "exponential_scale_inverse_rate",

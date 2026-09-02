@@ -3,7 +3,7 @@
 This directory contains generated, checked JSON Schema documents for
 Trafficlab's public scientific artifacts. Versioned subdirectories make a
 compatibility break explicit; the current set is
-[`scientific-artifact-v4/`](scientific-artifact-v4/).
+[`scientific-artifact-v5/`](scientific-artifact-v5/).
 
 Generate or verify the complete set from the repository root:
 
@@ -37,4 +37,4 @@ array items or fixed tuples, constrain literal values, and bound numbers or
 array lengths respectively.
 
 The artifact field catalog is in
-[`scientific-artifact-v4/README.md`](scientific-artifact-v4/README.md).
+[`scientific-artifact-v5/README.md`](scientific-artifact-v5/README.md).

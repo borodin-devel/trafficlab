@@ -28,6 +28,7 @@ NonNegativeInteger = Annotated[StrictInt, Field(ge=0)]
 PositiveInteger = Annotated[StrictInt, Field(gt=0)]
 PositiveFloat = Annotated[StrictFloat, Field(gt=0)]
 AtLeastTwoInteger = Annotated[StrictInt, Field(ge=2)]
+BoundedSimilarityAllocation = Annotated[StrictInt, Field(gt=0, le=65_536)]
 Probability = Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
 Tolerance = Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
 NormalizedMutationScale = Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
@@ -341,11 +342,24 @@ class MethodWeights(StrictModel):
     iat_ks: Probability
     autocorrelation: Probability
     multiscale_rate: Probability
+    cramer_von_mises: Probability
+    anderson_darling: Probability
+    jensen_shannon: Probability
+    approximate_mmd: Probability
 
     @model_validator(mode="after")
     def values_are_normalized(self) -> Self:
         _weights_sum_to_one(
-            (self.frame_size_ks, self.iat_ks, self.autocorrelation, self.multiscale_rate),
+            (
+                self.frame_size_ks,
+                self.iat_ks,
+                self.autocorrelation,
+                self.multiscale_rate,
+                self.cramer_von_mises,
+                self.anderson_darling,
+                self.jensen_shannon,
+                self.approximate_mmd,
+            ),
             "method weights",
         )
         return self
@@ -362,6 +376,16 @@ class SimilarityConfig(StrictModel):
     multiscale_packet_weight: StrictFloat
     multiscale_byte_weight: StrictFloat
     max_direction_bin_cells: AtLeastTwoInteger
+    cvm_iat_weight: StrictFloat
+    cvm_size_weight: StrictFloat
+    ad_iat_weight: StrictFloat
+    ad_size_weight: StrictFloat
+    js_iat_bin_count: BoundedSimilarityAllocation
+    js_iat_weight: StrictFloat
+    js_mark_weight: StrictFloat
+    mmd_feature_count: BoundedSimilarityAllocation
+    mmd_seed: NonNegativeInteger
+    mmd_scale_floor: PositiveFloat
     method_weights: MethodWeights
 
     @field_validator("iat_diagnostic_quantile")
@@ -400,6 +424,9 @@ class SimilarityConfig(StrictModel):
             (self.multiscale_packet_weight, self.multiscale_byte_weight),
             "multiscale component weights",
         )
+        _weights_sum_to_one((self.cvm_iat_weight, self.cvm_size_weight), "Cramér--von Mises feature weights")
+        _weights_sum_to_one((self.ad_iat_weight, self.ad_size_weight), "Anderson--Darling feature weights")
+        _weights_sum_to_one((self.js_iat_weight, self.js_mark_weight), "Jensen--Shannon feature weights")
         return self
 
 

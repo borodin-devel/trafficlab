@@ -131,11 +131,41 @@ def test_configuration_realization_preserves_every_non_path_section(
 @pytest.mark.parametrize(
     "method_weights",
     [
-        {"frame_size_ks": 1.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
-        {"frame_size_ks": 0.0, "iat_ks": 1.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
-        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 1.0, "multiscale_rate": 0.0},
-        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 1.0},
-        {"frame_size_ks": 0.1, "iat_ks": 0.2, "autocorrelation": 0.3, "multiscale_rate": 0.4},
+        {
+            name: float(name == selected)
+            for name in (
+                "autocorrelation",
+                "frame_size_ks",
+                "iat_ks",
+                "multiscale_rate",
+                "cramer_von_mises",
+                "anderson_darling",
+                "jensen_shannon",
+                "approximate_mmd",
+            )
+        }
+        for selected in (
+            "autocorrelation",
+            "frame_size_ks",
+            "iat_ks",
+            "multiscale_rate",
+            "cramer_von_mises",
+            "anderson_darling",
+            "jensen_shannon",
+            "approximate_mmd",
+        )
+    ]
+    + [
+        {
+            "autocorrelation": 1.0 / 36.0,
+            "frame_size_ks": 2.0 / 36.0,
+            "iat_ks": 3.0 / 36.0,
+            "multiscale_rate": 4.0 / 36.0,
+            "cramer_von_mises": 5.0 / 36.0,
+            "anderson_darling": 6.0 / 36.0,
+            "jensen_shannon": 7.0 / 36.0,
+            "approximate_mmd": 8.0 / 36.0,
+        }
     ],
 )
 def test_similarity_method_weights_round_trip_through_portable_effective_toml(
@@ -164,6 +194,10 @@ def test_similarity_method_weights_round_trip_through_portable_effective_toml(
         "iat_ks",
         "autocorrelation",
         "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
     )
     assert _non_path_dump(reloaded.portable) == _non_path_dump(loaded.portable)
 

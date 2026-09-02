@@ -16,11 +16,15 @@ from pydantic import (
 
 from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.comparison.diagnostics import (
-    METHOD_NAMES,
+    FITNESS_METHOD_NAMES,
     WEIGHT_TOLERANCE,
+    AndersonDarlingDiagnostic,
+    ApproximateMmdDiagnostic,
     AutocorrelationDiagnostic,
+    CramerVonMisesDiagnostic,
     FrameSizeDiagnostic,
     IatDiagnostic,
+    JensenShannonDiagnostic,
     MethodDiagnostic,
     MultiscaleDiagnostic,
     NonnegativeInt,
@@ -73,7 +77,7 @@ class MethodComparison(StrictArtifactModel):
     @classmethod
     def from_dict(cls, method_name: str, value: object) -> Self:
         """Strictly validate one method object from parsed JSON."""
-        if method_name not in METHOD_NAMES:
+        if method_name not in FITNESS_METHOD_NAMES:
             raise ValueError(f"unsupported comparison method {method_name!r}")
         prepared: object = value
         if type(value) is dict:
@@ -103,8 +107,22 @@ class ComparisonMethods(StrictArtifactModel):
     frame_size_ks: MethodComparison
     iat_ks: MethodComparison
     multiscale_rate: MethodComparison
+    cramer_von_mises: MethodComparison
+    anderson_darling: MethodComparison
+    jensen_shannon: MethodComparison
+    approximate_mmd: MethodComparison
 
-    @field_validator("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate", mode="before")
+    @field_validator(
+        "autocorrelation",
+        "frame_size_ks",
+        "iat_ks",
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
+        mode="before",
+    )
     @classmethod
     def methods_are_reconstructed_from_primitives(cls, value: object) -> object:
         if isinstance(value, BaseModel):
@@ -119,18 +137,18 @@ class ComparisonMethods(StrictArtifactModel):
         return self
 
     def __getitem__(self, name: str) -> MethodComparison:
-        if name not in METHOD_NAMES:
+        if name not in FITNESS_METHOD_NAMES:
             raise KeyError(name)
         return cast(MethodComparison, getattr(self, name))
 
     def keys(self) -> tuple[str, ...]:
-        return METHOD_NAMES
+        return FITNESS_METHOD_NAMES
 
     def items(self) -> tuple[tuple[str, MethodComparison], ...]:
-        return tuple((name, self[name]) for name in METHOD_NAMES)
+        return tuple((name, self[name]) for name in FITNESS_METHOD_NAMES)
 
     def values(self) -> tuple[MethodComparison, ...]:
-        return tuple(self[name] for name in METHOD_NAMES)
+        return tuple(self[name] for name in FITNESS_METHOD_NAMES)
 
 
 class ContentIdentityPayload(StrictArtifactModel):
@@ -216,8 +234,59 @@ class PublishedMultiscaleMethod(StrictArtifactModel):
         return self
 
 
+class PublishedCramerVonMisesMethod(StrictArtifactModel):
+    diagnostics: CramerVonMisesDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.discrepancy, name="cramer_von_mises")
+        return self
+
+
+class PublishedAndersonDarlingMethod(StrictArtifactModel):
+    diagnostics: AndersonDarlingDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.discrepancy, name="anderson_darling")
+        return self
+
+
+class PublishedJensenShannonMethod(StrictArtifactModel):
+    diagnostics: JensenShannonDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.discrepancy, name="jensen_shannon")
+        return self
+
+
+class PublishedApproximateMmdMethod(StrictArtifactModel):
+    diagnostics: ApproximateMmdDiagnostic
+    score: UnitFloat
+    weight: UnitFloat
+
+    @model_validator(mode="after")
+    def score_matches_diagnostics(self) -> Self:
+        _require_method_score(self.score, self.diagnostics.discrepancy, name="approximate_mmd")
+        return self
+
+
 type PublishedMethod = (
-    PublishedAutocorrelationMethod | PublishedFrameSizeMethod | PublishedIatMethod | PublishedMultiscaleMethod
+    PublishedAutocorrelationMethod
+    | PublishedFrameSizeMethod
+    | PublishedIatMethod
+    | PublishedMultiscaleMethod
+    | PublishedCramerVonMisesMethod
+    | PublishedAndersonDarlingMethod
+    | PublishedJensenShannonMethod
+    | PublishedApproximateMmdMethod
 )
 
 
@@ -226,13 +295,14 @@ class PublishedComparisonMethods(StrictArtifactModel):
     frame_size_ks: PublishedFrameSizeMethod
     iat_ks: PublishedIatMethod
     multiscale_rate: PublishedMultiscaleMethod
+    cramer_von_mises: PublishedCramerVonMisesMethod
+    anderson_darling: PublishedAndersonDarlingMethod
+    jensen_shannon: PublishedJensenShannonMethod
+    approximate_mmd: PublishedApproximateMmdMethod
 
     def items(self) -> tuple[tuple[str, PublishedMethod], ...]:
-        return (
-            ("autocorrelation", self.autocorrelation),
-            ("frame_size_ks", self.frame_size_ks),
-            ("iat_ks", self.iat_ks),
-            ("multiscale_rate", self.multiscale_rate),
+        return tuple(
+            (name, cast(PublishedMethod, getattr(self, name))) for name in FITNESS_METHOD_NAMES
         )
 
 

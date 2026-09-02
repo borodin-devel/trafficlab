@@ -27,6 +27,30 @@ def test_every_public_root_has_one_canonical_draft_2020_12_schema() -> None:
         Draft202012Validator.check_schema(document)
 
 
+def test_schema_five_directory_contains_current_fitness_and_model_roots() -> None:
+    """Schema publication must move current artifacts without adding future model families."""
+    assert schemas.OUTPUT_DIRECTORY.name == "scientific-artifact-v5"
+    documents = {name: json.loads(content) for name, content in schemas.build_schema_documents().items()}
+    checkpoint = json.dumps(documents["checkpoint.schema.json"], sort_keys=True)
+    best_model = json.dumps(documents["best_model.schema.json"], sort_keys=True)
+    comparison = json.dumps(documents["comparison_result.schema.json"], sort_keys=True)
+    assert '"const": 5' in checkpoint
+    assert '"const": 5' in best_model
+    for method in (
+        "autocorrelation",
+        "frame_size_ks",
+        "iat_ks",
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
+    ):
+        assert f'"{method}"' in comparison
+    for future_family in ("packet_hmm", "markov_packet_train", "acd", "nhpp"):
+        assert f'"{future_family}"' not in best_model
+
+
 def test_schema_directory_check_rejects_changed_missing_and_foreign_files(tmp_path: Path) -> None:
     """A partial or hand-edited schema directory must not satisfy the deterministic check."""
     schemas.write_schema_directory(tmp_path)

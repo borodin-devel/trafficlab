@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from trafficlab.comparison.diagnostics import FITNESS_METHOD_NAMES
 from trafficlab.fitting.genetic.types import (
     METHOD_ORDER,
     Candidate,
@@ -27,6 +28,20 @@ _MARKOV_MODEL_DIAGNOSTICS = {
     "timing_tier_global_count": 3,
     "uniform_unobserved_row_count": 1,
 }
+
+
+def test_method_order_is_the_canonical_eight_fitness_method_order() -> None:
+    assert METHOD_ORDER == (
+        "autocorrelation",
+        "frame_size_ks",
+        "iat_ks",
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
+    )
+    assert METHOD_ORDER is FITNESS_METHOD_NAMES
 
 
 def test_method_trial_diagnostics_are_recursively_frozen_and_ordered() -> None:
@@ -118,7 +133,7 @@ def test_trial_result_requires_each_method_once_in_published_order() -> None:
             seed=3,
             aggregate_score=0.5,
             methods=cast(
-                tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods[::-1]
+                tuple[MethodTrialResult, ...], methods[::-1]
             ),
         )
 
@@ -180,7 +195,7 @@ def test_candidate_requires_model_diagnostics_owned_by_its_family() -> None:
         (lambda: MethodTrialResult(name="autocorrelation", score=math.inf, diagnostics={}), "score"),
         (lambda: TrialResult(seed=-1, aggregate_score=0.5, methods=_methods()), "seed"),
         (lambda: TrialResult(seed=1, aggregate_score=0.5, methods=cast(Any, ())), "methods"),
-        (lambda: TrialResult(seed=1, aggregate_score=0.5, methods=cast(Any, (object(),) * 4)), "MethodTrialResult"),
+        (lambda: TrialResult(seed=1, aggregate_score=0.5, methods=cast(Any, (object(),) * 8)), "MethodTrialResult"),
     ],
 )
 def test_method_and_trial_contracts_reject_invalid_scalar_or_method_values(factory: object, message: str) -> None:
@@ -189,9 +204,9 @@ def test_method_and_trial_contracts_reject_invalid_scalar_or_method_values(facto
         cast(Callable[[], object], factory)()
 
 
-def _methods() -> tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult]:
+def _methods() -> tuple[MethodTrialResult, ...]:
     return cast(
-        tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
+        tuple[MethodTrialResult, ...],
         tuple(MethodTrialResult(name=name, score=0.5, diagnostics={}) for name in METHOD_ORDER),
     )
 
@@ -321,7 +336,7 @@ def test_candidate_related_records_preserve_valid_immutable_values() -> None:
     trial = TrialResult(
         seed=7,
         aggregate_score=0.5,
-        methods=cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
+        methods=cast(tuple[MethodTrialResult, ...], methods),
     )
     candidate = Candidate(
         identifier=identifier,

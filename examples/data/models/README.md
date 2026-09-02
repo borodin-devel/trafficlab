@@ -38,4 +38,4 @@ Each `fitted.marks[]` row contains the observed `direction`, `frame_length`, and
 `count`. See the complete family-specific dictionary in
 [`../README.md`](../README.md#best_modeljson-fields) and the machine-readable
 contract in
-[`../../schemas/scientific-artifact-v4/best_model.schema.json`](../../schemas/scientific-artifact-v4/best_model.schema.json).
+[`../../schemas/scientific-artifact-v5/best_model.schema.json`](../../schemas/scientific-artifact-v5/best_model.schema.json).

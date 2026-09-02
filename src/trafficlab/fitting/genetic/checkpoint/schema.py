@@ -329,7 +329,7 @@ class BestCandidateRecord(_StrictCheckpointModel):
 class CheckpointArtifact(_StrictCheckpointModel):
     """Exact public checkpoint JSON root before cross-artifact compatibility checks."""
 
-    scientific_artifact_schema: Literal[4]
+    scientific_artifact_schema: Literal[5]
     experiment_identity: ContentIdentityRecord
     reference_identity: ContentIdentityRecord
     capture_identity: ContentIdentityRecord

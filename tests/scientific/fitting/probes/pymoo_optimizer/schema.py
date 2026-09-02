@@ -109,7 +109,26 @@ SIMILARITY = SimilarityConfig(
     multiscale_packet_weight=0.5,
     multiscale_byte_weight=0.5,
     max_direction_bin_cells=100,
-    method_weights=MethodWeights(frame_size_ks=0.25, iat_ks=0.25, autocorrelation=0.25, multiscale_rate=0.25),
+    cvm_iat_weight=0.5,
+    cvm_size_weight=0.5,
+    ad_iat_weight=0.5,
+    ad_size_weight=0.5,
+    js_iat_bin_count=8,
+    js_iat_weight=0.5,
+    js_mark_weight=0.5,
+    mmd_feature_count=32,
+    mmd_seed=17,
+    mmd_scale_floor=0.001,
+    method_weights=MethodWeights(
+        frame_size_ks=0.125,
+        iat_ks=0.125,
+        autocorrelation=0.125,
+        multiscale_rate=0.125,
+        cramer_von_mises=0.125,
+        anderson_darling=0.125,
+        jensen_shannon=0.125,
+        approximate_mmd=0.125,
+    ),
 )
 
 CACHE_KEY_FIELDS = ("family", "genes", "observation_window_seconds", "trial_seeds", "generation_limits", "similarity")

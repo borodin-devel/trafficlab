@@ -36,7 +36,7 @@ Packets at both endpoints are included.
 `TrafficTrace.from_events()` and `TrafficTrace.to_events()` are the external
 boundary for immutable `TraceEvent` records. Scapy PCAPNG reading and writing
 may use those records only inside `trafficlab.common.scapy_io`. Normalization,
-strategy setup, genetic evaluation, model repair/fit/generation, all four
+strategy setup, genetic evaluation, model repair/fit/generation, all eight
 similarity methods, final comparison, and validation-study reconstruction retain
 the exact `TrafficTrace` in memory. Generation results contain an immutable
 `TrafficTrace`, including bounded diagnostic prefixes.
@@ -158,13 +158,20 @@ hashes, and evidence, and every timestamp must remain in `[0, W]`.
 ### `compare`
 
 Normalize and crop the reference and final generated traces at the shared
-boundary, then compare them over the same W with all four mandatory similarity
+boundary, then compare them over the same W with all eight mandatory similarity
 methods. Every mandatory similarity method runs, validates its inputs, and
 retains diagnostics. A zero weight changes only aggregate contribution; it never
 disables execution, validation, diagnostic retention, or failure behavior. Write
-the fixed four-method result shape: `observation_window_seconds`, all component
+the fixed eight-method result shape: `observation_window_seconds`, all component
 scores, diagnostics, weights, and the weighted aggregate to `similarity.json`,
 then print a short summary.
+
+Schema 5 fixes the fitness order as `autocorrelation`, `frame_size_ks`,
+`iat_ks`, `multiscale_rate`, `cramer_von_mises`, `anderson_darling`,
+`jensen_shannon`, and `approximate_mmd`. Genetic trials and checkpoints contain
+exactly these methods. Final-only diagnostics belong to the final comparison
+boundary, carry no genetic weights, and are not emulated by setting a fitness
+method's weight to zero.
 
 ### `run`
 
@@ -277,7 +284,7 @@ substitution. Preflight rejects an unavailable or incompatible realization
 before scientific artifact publication. Every accepted study run retains the
 portable configuration, realized configuration, and their identities.
 
-All four mandatory similarity method settings are required. Their weights are
+All eight mandatory similarity method settings are required. Their weights are
 finite in `[0, 1]`, normalized under the existing numeric rule, and never
 enable or disable method execution.
 

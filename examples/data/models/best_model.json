@@ -50,7 +50,7 @@
     "sha256": "3bb8a2446a31f5f3f5dec79b9ea241abe9208c60dbdd9a26c0dcc76ee2cba034",
     "size": 668
   },
-  "scientific_artifact_schema": 4,
+  "scientific_artifact_schema": 5,
   "seed_policy": {
     "empirical": "choice_scalar_index",
     "exponential": "exponential_scale_inverse_rate",

@@ -11,7 +11,7 @@ Lexical output order is presentation-only for history and reports.
 
 ## Fitness
 
-For the four mandatory similarity method scores \(s_m\in[0,1]\) and configured
+For the eight mandatory similarity method scores \(s_m\in[0,1]\) and configured
 weights \(w_m\ge0\) with \(\sum_mw_m=1\), candidate fitness is
 
 \[
@@ -21,7 +21,7 @@ S=\sum_m w_m s_m.
 Each candidate is fitted to the same normalized reference and evaluated over the
 same complete `W`, list of trial seeds, and reliability guards. Its fitness is
 the arithmetic mean of its per-seed aggregate scores. Component scores and
-invalid-candidate diagnostics remain in history. All four methods execute and
+invalid-candidate diagnostics remain in history. All eight methods execute and
 validate at every weight; a zero weight contributes exactly zero to the
 aggregate but a failure of that method still invalidates the candidate.
 

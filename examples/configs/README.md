@@ -3,7 +3,7 @@
 `minimal.toml` is the complete small capture-oriented configuration.
 `default.toml` is the release-sized offline template for prepared external
 references under `dumps/`. Both enable all three classical model families and
-all four mandatory similarity methods.
+all eight mandatory fitness similarity methods.
 
 The checked file is intentionally safe: `example.invalid` cannot resolve to a
 live endpoint. To run a capture, copy the file, then change the target image,

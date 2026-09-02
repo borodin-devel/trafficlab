@@ -6,7 +6,7 @@ from typing import Final, Literal
 
 from trafficlab.common.errors import TrafficlabError
 
-SCIENTIFIC_ARTIFACT_SCHEMA_VERSION: Final = 4
+SCIENTIFIC_ARTIFACT_SCHEMA_VERSION: Final = 5
 
 
 class ScientificArtifactSchemaError(TrafficlabError):

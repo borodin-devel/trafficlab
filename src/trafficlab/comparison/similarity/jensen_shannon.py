@@ -81,7 +81,7 @@ def _iat_bin_edges(window: float, bin_count: int) -> tuple[float, ...]:
 
 
 def _iat_bin(value: float, edges: tuple[float, ...]) -> int:
-    """Assign one log1p-IAT to right-closed shared bins, including the final endpoint."""
+    """Assign one log1p-IAT to left-closed bins, with the final endpoint included."""
     transformed = math.log1p(value)
     index = bisect_right(edges, transformed) - 1
     return min(max(index, 0), len(edges) - 2)

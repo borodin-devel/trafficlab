@@ -71,11 +71,25 @@ SIMILARITY = SimilarityConfig(
     multiscale_packet_weight=1.0,
     multiscale_byte_weight=0.0,
     max_direction_bin_cells=10,
+    cvm_iat_weight=0.5,
+    cvm_size_weight=0.5,
+    ad_iat_weight=0.5,
+    ad_size_weight=0.5,
+    js_iat_bin_count=4,
+    js_iat_weight=0.5,
+    js_mark_weight=0.5,
+    mmd_feature_count=8,
+    mmd_seed=17,
+    mmd_scale_floor=0.001,
     method_weights=MethodWeights(
-        frame_size_ks=0.25,
-        iat_ks=0.25,
-        autocorrelation=0.25,
-        multiscale_rate=0.25,
+        frame_size_ks=0.125,
+        iat_ks=0.125,
+        autocorrelation=0.125,
+        multiscale_rate=0.125,
+        cramer_von_mises=0.125,
+        anderson_darling=0.125,
+        jensen_shannon=0.125,
+        approximate_mmd=0.125,
     ),
 )
 PENDING_POISSON = Candidate(
@@ -217,8 +231,9 @@ def test_evaluation_fits_once_and_gives_each_trial_the_same_window_and_limits(
     assert family.fit_calls == 1
     assert family.generate_calls == [(7, W, TRIAL_LIMITS), (9, W, TRIAL_LIMITS)]
     assert all(tuple(method.name for method in trial.methods) == METHOD_ORDER for trial in evaluated.trials)
-    assert tuple(trial.aggregate_score for trial in evaluated.trials) == (0.75, 0.75)
-    assert evaluated.fitness == math.fsum((0.75, 0.75)) / 2.0
+    expected = VALID_COMPARISON.aggregate_score
+    assert tuple(trial.aggregate_score for trial in evaluated.trials) == (expected, expected)
+    assert evaluated.fitness == math.fsum((expected, expected)) / 2.0
     with pytest.raises(TypeError):
         cast(dict[str, object], evaluated.trials[0].methods[0].diagnostics)["changed"] = True
 
@@ -226,7 +241,7 @@ def test_evaluation_fits_once_and_gives_each_trial_the_same_window_and_limits(
 def test_candidate_evaluation_never_materializes_reference_or_generated_events(
     family: RecordingFamily, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Candidate fit, generation, and all four metrics must share columnar traces end to end."""
+    """Candidate fit, generation, and all eight metrics must share columnar traces end to end."""
 
     def reject_event_materialization(_trace: TrafficTrace) -> tuple[TraceEvent, ...]:
         raise AssertionError("candidate evaluation materialized TraceEvent objects")
@@ -324,7 +339,7 @@ def test_final_validation_refits_once_and_returns_no_fitted_python_state(family:
     assert family.fit_calls == 1
     assert family.generate_calls == [(101, W, TRIAL_LIMITS)]
     assert tuple(trial.seed for trial in trials) == (101,)
-    assert trials[0].aggregate_score == 0.75
+    assert trials[0].aggregate_score == VALID_COMPARISON.aggregate_score
 
 
 @pytest.mark.parametrize(
@@ -401,7 +416,7 @@ def test_component_scores_must_be_exact_finite_bounded_floats(
     def compare_scores(*_args: object) -> Any:
         return result
 
-    monkeypatch.setattr(evaluation, "compare_traces", compare_scores)
+    monkeypatch.setattr(evaluation, "evaluate_fitness", compare_scores)
 
     evaluated = evaluate_candidate(PENDING_POISSON, validated)
 
@@ -423,7 +438,7 @@ def test_aggregate_score_is_checked_separately(family: RecordingFamily, monkeypa
     def compare_scores(*_args: object) -> Any:
         return SimpleNamespace(aggregate_score=math.nan, methods=methods)
 
-    monkeypatch.setattr(evaluation, "compare_traces", compare_scores)
+    monkeypatch.setattr(evaluation, "evaluate_fitness", compare_scores)
 
     evaluated = evaluate_candidate(PENDING_POISSON, validated)
 
@@ -456,7 +471,7 @@ def test_fitness_uses_math_fsum_across_all_trials(
         }
         return SimpleNamespace(aggregate_score=score, methods=methods)
 
-    monkeypatch.setattr(evaluation, "compare_traces", compare_scores)
+    monkeypatch.setattr(evaluation, "evaluate_fitness", compare_scores)
 
     evaluated = evaluate_candidate(PENDING_POISSON, validated)
 
@@ -476,7 +491,7 @@ def test_unclassified_evaluator_errors_abort(
     def fail(*_args: object) -> Any:
         raise error
 
-    monkeypatch.setattr(evaluation, "compare_traces", fail)
+    monkeypatch.setattr(evaluation, "evaluate_fitness", fail)
     with pytest.raises(type(error), match="injected"):
         evaluate_candidate(PENDING_POISSON, validated)
 
@@ -602,7 +617,13 @@ def test_malformed_generation_return_aborts_as_a_family_defect(family: Recording
 
 def test_all_generated_sample_preconditions_are_reported() -> None:
     """An empty generated trace identifies every configured method lacking samples."""
-    with pytest.raises(CandidateEvaluationError, match="frame_size_ks.*iat_ks.*multiscale_rate") as captured:
+    with pytest.raises(
+        CandidateEvaluationError,
+        match=(
+            "frame_size_ks.*iat_ks.*multiscale_rate.*cramer_von_mises.*"
+            "anderson_darling.*jensen_shannon.*approximate_mmd"
+        ),
+    ) as captured:
         validate_candidate_similarity_preconditions(EMPTY_TRACE, SIMILARITY, seed=7)
 
     assert captured.value.kind == "similarity_precondition"
@@ -616,6 +637,10 @@ def test_all_generated_sample_preconditions_are_reported() -> None:
         "iat_ks",
         "autocorrelation",
         "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
     ],
 )
 def test_zero_weight_method_preconditions_remain_mandatory(
@@ -636,6 +661,10 @@ def test_zero_weight_method_preconditions_remain_mandatory(
     ("zero_weight_method", "generated"),
     [
         ("iat_ks", (TraceEvent(0.0, Direction.OUTBOUND, 60),)),
+        ("cramer_von_mises", (TraceEvent(0.0, Direction.OUTBOUND, 60),)),
+        ("anderson_darling", (TraceEvent(0.0, Direction.OUTBOUND, 60),)),
+        ("jensen_shannon", (TraceEvent(0.0, Direction.OUTBOUND, 60),)),
+        ("approximate_mmd", (TraceEvent(0.0, Direction.OUTBOUND, 60),)),
         (
             "autocorrelation",
             (TraceEvent(0.0, Direction.OUTBOUND, 60), TraceEvent(1.0, Direction.INBOUND, 60)),
@@ -668,6 +697,10 @@ def test_zero_weight_method_preconditions_invalidate_evaluable_candidates(
         ("iat_ks", "iat_ks"),
         ("autocorrelation", "autocorrelation_similarity"),
         ("multiscale_rate", "multiscale_rate_similarity"),
+        ("cramer_von_mises", "cramer_von_mises_similarity"),
+        ("anderson_darling", "anderson_darling_similarity"),
+        ("jensen_shannon", "jensen_shannon_similarity"),
+        ("approximate_mmd", "approximate_mmd_similarity"),
     ],
 )
 def test_zero_weight_component_failure_invalidates_a_complete_candidate(
@@ -777,7 +810,7 @@ def test_final_validation_translates_a_classified_component_failure(
     def fail(*_args: object) -> Any:
         raise error
 
-    monkeypatch.setattr(evaluation, "compare_traces", fail)
+    monkeypatch.setattr(evaluation, "evaluate_fitness", fail)
     valid = replace(PENDING_POISSON, status="valid", fitness=0.75)
 
     with pytest.raises(TrafficlabError, match="final validation failed: evaluator defect") as captured:

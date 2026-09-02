@@ -15,6 +15,17 @@ from trafficlab.comparison.metrics import compare_traces
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.comparison.similarity.common import SimilarityResult
 
+FITNESS_METHOD_NAMES = (
+    "autocorrelation",
+    "frame_size_ks",
+    "iat_ks",
+    "multiscale_rate",
+    "cramer_von_mises",
+    "anderson_darling",
+    "jensen_shannon",
+    "approximate_mmd",
+)
+
 
 def test_compare_traces_accepts_equivalent_event_and_traffic_trace_inputs(valid_config_data: dict[str, object]) -> None:
     events = _trace()
@@ -42,7 +53,7 @@ def test_compare_traces_reuses_exact_traffic_trace_inputs(
     assert result.aggregate_score == 1.0
 
 
-def test_compare_traces_runs_all_four_metrics_without_event_materialization(
+def test_compare_traces_runs_all_eight_metrics_without_event_materialization(
     valid_config_data: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One columnar comparison must never rebuild event tuples for any mandatory metric."""
@@ -56,7 +67,7 @@ def test_compare_traces_runs_all_four_metrics_without_event_materialization(
     result = compare_traces(trace, trace, 3.0, _settings(valid_config_data))
 
     assert result.aggregate_score == 1.0
-    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert result.methods.keys() == FITNESS_METHOD_NAMES
 
 
 def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
@@ -66,10 +77,14 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
     data = copy.deepcopy(valid_config_data)
     similarity_data = cast(dict[str, object], data["similarity"])
     similarity_data["method_weights"] = {
-        "frame_size_ks": 0.1,
-        "iat_ks": 0.2,
-        "autocorrelation": 0.3,
-        "multiscale_rate": 0.4,
+        "frame_size_ks": 0.10,
+        "iat_ks": 0.15,
+        "autocorrelation": 0.05,
+        "multiscale_rate": 0.20,
+        "cramer_von_mises": 0.05,
+        "anderson_darling": 0.10,
+        "jensen_shannon": 0.15,
+        "approximate_mmd": 0.20,
     }
     settings = _settings(data)
     reference = _trace()
@@ -98,10 +113,30 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
         calls.append(("multiscale_rate", args))
         return components["multiscale_rate"]
 
+    def cvm(*args: object) -> SimilarityResult:
+        calls.append(("cramer_von_mises", args))
+        return components["cramer_von_mises"]
+
+    def ad(*args: object) -> SimilarityResult:
+        calls.append(("anderson_darling", args))
+        return components["anderson_darling"]
+
+    def js(*args: object) -> SimilarityResult:
+        calls.append(("jensen_shannon", args))
+        return components["jensen_shannon"]
+
+    def mmd(*args: object) -> SimilarityResult:
+        calls.append(("approximate_mmd", args))
+        return components["approximate_mmd"]
+
     monkeypatch.setattr(comparison, "frame_size_ks", frame_size)
     monkeypatch.setattr(comparison, "iat_ks", iat)
     monkeypatch.setattr(comparison, "autocorrelation_similarity", acf)
     monkeypatch.setattr(comparison, "multiscale_rate_similarity", multiscale)
+    monkeypatch.setattr(comparison, "cramer_von_mises_similarity", cvm)
+    monkeypatch.setattr(comparison, "anderson_darling_similarity", ad)
+    monkeypatch.setattr(comparison, "jensen_shannon_similarity", js)
+    monkeypatch.setattr(comparison, "approximate_mmd_similarity", mmd)
 
     result = compare_traces(reference, generated, window, settings)
 
@@ -111,15 +146,19 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
     )
     assert result.observation_window_seconds == 3.0
     assert result.input_sha256 is None
-    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert result.methods.keys() == FITNESS_METHOD_NAMES
     assert {name: method.score for name, method in result.methods.items()} == {
         name: component.score for name, component in components.items()
     }
     assert {name: method.weight for name, method in result.methods.items()} == {
-        "autocorrelation": 0.3,
-        "frame_size_ks": 0.1,
-        "iat_ks": 0.2,
-        "multiscale_rate": 0.4,
+        "autocorrelation": 0.05,
+        "frame_size_ks": 0.10,
+        "iat_ks": 0.15,
+        "multiscale_rate": 0.20,
+        "cramer_von_mises": 0.05,
+        "anderson_darling": 0.10,
+        "jensen_shannon": 0.15,
+        "approximate_mmd": 0.20,
     }
     assert result.methods["autocorrelation"].diagnostics == baseline.methods["autocorrelation"].diagnostics
     assert all(type(arguments[0]) is TrafficTrace and type(arguments[1]) is TrafficTrace for _, arguments in calls)
@@ -131,21 +170,25 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
             "multiscale_rate",
             (reference, generated, 3.0, (0.1, 1.0), (0.5, 0.5), 0.5, 0.5, 100_000),
         ),
+        ("cramer_von_mises", (reference, generated, 3.0, 0.5, 0.5)),
+        ("anderson_darling", (reference, generated, 3.0, 0.5, 0.5)),
+        ("jensen_shannon", (reference, generated, 3.0, 8, 0.5, 0.5)),
+        ("approximate_mmd", (reference, generated, 3.0, 16, 2026, 0.001)),
     ]
 
 
 @pytest.mark.parametrize(
     "method_weights",
     [
-        {"frame_size_ks": 1.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
-        {"frame_size_ks": 0.0, "iat_ks": 1.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
-        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 1.0, "multiscale_rate": 0.0},
-        {"frame_size_ks": 0.0, "iat_ks": 0.0, "autocorrelation": 0.0, "multiscale_rate": 1.0},
-        {"frame_size_ks": 0.1, "iat_ks": 0.2, "autocorrelation": 0.3, "multiscale_rate": 0.4},
-        {"frame_size_ks": 0.0, "iat_ks": 0.5, "autocorrelation": 0.5, "multiscale_rate": 0.0},
+        {name: float(name == selected) for name in FITNESS_METHOD_NAMES}
+        for selected in FITNESS_METHOD_NAMES
+    ]
+    + [
+        {name: (index + 1) / 36.0 for index, name in enumerate(FITNESS_METHOD_NAMES)},
+        {name: (0.5 if name in ("iat_ks", "jensen_shannon") else 0.0) for name in FITNESS_METHOD_NAMES},
     ],
 )
-def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
+def test_compare_traces_eagerly_retains_all_eight_methods_for_every_weight_case(
     valid_config_data: dict[str, object],
     monkeypatch: pytest.MonkeyPatch,
     method_weights: dict[str, float],
@@ -169,11 +212,24 @@ def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
     monkeypatch.setattr(comparison, "iat_ks", component("iat_ks"))
     monkeypatch.setattr(comparison, "autocorrelation_similarity", component("autocorrelation"))
     monkeypatch.setattr(comparison, "multiscale_rate_similarity", component("multiscale_rate"))
+    monkeypatch.setattr(comparison, "cramer_von_mises_similarity", component("cramer_von_mises"))
+    monkeypatch.setattr(comparison, "anderson_darling_similarity", component("anderson_darling"))
+    monkeypatch.setattr(comparison, "jensen_shannon_similarity", component("jensen_shannon"))
+    monkeypatch.setattr(comparison, "approximate_mmd_similarity", component("approximate_mmd"))
 
     result = compare_traces(_trace(), _trace(), 3.0, _settings(data))
 
-    assert calls == ["frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate"]
-    assert result.methods.keys() == ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
+    assert calls == [
+        "frame_size_ks",
+        "iat_ks",
+        "autocorrelation",
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
+    ]
+    assert result.methods.keys() == FITNESS_METHOD_NAMES
     assert {name: method.diagnostics for name, method in result.methods.items()} == {
         name: method.diagnostics for name, method in baseline.methods.items()
     }
@@ -202,6 +258,10 @@ def test_compare_traces_eagerly_retains_all_four_methods_for_every_weight_case(
         ("iat_ks", "iat_ks"),
         ("autocorrelation", "autocorrelation_similarity"),
         ("multiscale_rate", "multiscale_rate_similarity"),
+        ("cramer_von_mises", "cramer_von_mises_similarity"),
+        ("anderson_darling", "anderson_darling_similarity"),
+        ("jensen_shannon", "jensen_shannon_similarity"),
+        ("approximate_mmd", "approximate_mmd_similarity"),
     ],
 )
 def test_compare_traces_propagates_each_zero_weight_component_failure(
@@ -212,7 +272,7 @@ def test_compare_traces_propagates_each_zero_weight_component_failure(
 ) -> None:
     """A failed zero-weight component is evidence failure, not a score that can be ignored."""
     data = copy.deepcopy(valid_config_data)
-    weights = {name: 0.0 for name in ("frame_size_ks", "iat_ks", "autocorrelation", "multiscale_rate")}
+    weights = dict.fromkeys(FITNESS_METHOD_NAMES, 0.0)
     weights[next(name for name in weights if name != zero_weight_method)] = 1.0
     cast(dict[str, object], data["similarity"])["method_weights"] = weights
     failure = TrafficlabError(f"{zero_weight_method} failed", corrective_action="repair the component")
@@ -268,10 +328,14 @@ def test_compare_traces_clamps_only_accepted_weight_sum_roundoff(
     data = copy.deepcopy(valid_config_data)
     similarity_data = cast(dict[str, object], data["similarity"])
     similarity_data["method_weights"] = {
-        "frame_size_ks": 0.25,
-        "iat_ks": 0.25,
-        "autocorrelation": 0.25,
-        "multiscale_rate": 0.2500000000005,
+        "frame_size_ks": 0.125,
+        "iat_ks": 0.125,
+        "autocorrelation": 0.125,
+        "multiscale_rate": 0.125,
+        "cramer_von_mises": 0.125,
+        "anderson_darling": 0.125,
+        "jensen_shannon": 0.125,
+        "approximate_mmd": 0.1250000000005,
     }
 
     baseline = compare_traces(_trace(), _trace(), 3.0, _settings(valid_config_data))
