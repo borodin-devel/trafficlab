@@ -6,6 +6,7 @@ import json
 import runpy
 import subprocess
 import sys
+from fractions import Fraction
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -457,12 +458,25 @@ def test_current_architecture_schema_and_offline_audit_follow_runtime_contract()
     audit = testing.split("### Bounded offline audit\n", 1)[1].split("\n## ", 1)[0]
     normalized_audit = " ".join(audit.split())
     documented_methods = tuple(token for token in audit.split("`")[1::2] if token in FITNESS_METHOD_NAMES)
+    weight_row = " ".join(testing.split("<td>Similarity weights</td>", 1)[1].split("</tr>", 1)[0].split())
+    scores = tuple(Fraction(index, 10) for index in range(1, 9))
+    weights = tuple(Fraction(index, 36) for index in range(1, 9))
 
     assert SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 5
     assert stale_claims == {}
     assert documented_methods == FITNESS_METHOD_NAMES
     assert "Final-only post-fit diagnostics are recomputed separately" in normalized_audit
     assert "never enter genetic trials or the weighted aggregate" in normalized_audit
+    assert sum(weights) == 1
+    assert sum(score * weight for score, weight in zip(scores, weights, strict=True)) == Fraction(17, 30)
+    assert "Canonical method order " + ", ".join(
+        f"<code>{name}</code>" for name in FITNESS_METHOD_NAMES
+    ) in weight_row
+    assert "component scores <code>(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)</code>" in weight_row
+    assert "eight one-hot vectors" in weight_row
+    assert "normalized mixed weights <code>(1, 2, 3, 4, 5, 6, 7, 8) / 36</code>" in weight_row
+    assert "mixed aggregate equals <code>17/30</code>" in weight_row
+    assert "Final-only post-fit diagnostics remain separate and unweighted" in weight_row
 
 
 def test_visualization_contract_describes_stale_result_invalidation_and_atomic_replacement_cache_commit() -> None:

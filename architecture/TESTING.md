@@ -294,12 +294,21 @@ and an incomplete result when each reliability guard fires first.
     </tr>
     <tr>
       <td>Similarity weights</td>
-      <td>Method order frame-size KS, IAT KS, ACF, multiscale rate; component
-      scores <code>(0.2, 0.4, 0.6, 0.8)</code>; four one-hot vectors and mixed
-      weights <code>(0.1, 0.2, 0.3, 0.4)</code></td>
+      <td>Canonical method order <code>autocorrelation</code>,
+      <code>frame_size_ks</code>, <code>iat_ks</code>,
+      <code>multiscale_rate</code>, <code>cramer_von_mises</code>,
+      <code>anderson_darling</code>, <code>jensen_shannon</code>,
+      <code>approximate_mmd</code>; component scores
+      <code>(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)</code>; eight one-hot
+      vectors; normalized mixed weights
+      <code>(1, 2, 3, 4, 5, 6, 7, 8) / 36</code></td>
       <td>Each one-hot aggregate equals its selected component exactly; mixed
-      aggregate equals <code>0.6</code>; every zero-weight method still executes,
-      retains diagnostics, and propagates its injected failure</td>
+      aggregate equals <code>17/30</code>, since
+      <code>(1^2 + 2^2 + ... + 8^2) / (10 * 36) = 204/360</code>; every
+      zero-weight fitness method still executes, retains diagnostics, and
+      propagates its injected failure. Final-only post-fit diagnostics remain
+      separate and unweighted; they are never represented by a zero fitness
+      weight.</td>
     </tr>
   </tbody>
 </table>
