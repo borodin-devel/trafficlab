@@ -167,6 +167,51 @@ def test_backtracking_uses_exact_halves_of_the_original_m_step_proposal(
     assert result.diagnostics == inference_module.BaumWelchDiagnostics(True, 1, (0.0, 0.0))
 
 
+def test_baum_welch_rejects_a_step_when_every_original_proposal_fraction_lowers_likelihood(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An exhausted line search has no accepted update and cannot be recorded as zero-gain convergence."""
+    gamma = np.asarray(((0.8, 0.2), (0.2, 0.8)), dtype=np.float64)
+    xi = np.asarray((((0.1, 0.7), (0.1, 0.1)),), dtype=np.float64)
+    seen_emission_00: list[float] = []
+
+    def always_decreasing_forward(
+        observations: object,
+        initial_probabilities: object,
+        transition_rows: object,
+        emission_rows: object,
+    ) -> ForwardBackwardResult:
+        del observations, initial_probabilities, transition_rows
+        seen_emission_00.append(float(tuple(tuple(row) for row in emission_rows)[0][0]))  # type: ignore[arg-type]
+        return ForwardBackwardResult(
+            log_likelihood=0.0 if len(seen_emission_00) == 1 else -1.0,
+            alpha=gamma.copy(),
+            beta=np.ones_like(gamma),
+            gamma=gamma.copy(),
+            xi=xi.copy(),
+            scales=np.ones(2, dtype=np.float64),
+        )
+
+    monkeypatch.setattr(inference_module, "forward_backward", always_decreasing_forward)
+
+    with pytest.raises(ValueError, match="every backtracking fraction"):
+        fit_baum_welch(
+            (0, 1),
+            state_count=2,
+            symbol_count=2,
+            symbol_iat_means=(1.0, 2.0),
+            maximum_iterations=1,
+            tolerance=0.0,
+            smoothing=0.001,
+        )
+
+    proposed_emission_00 = 0.801 / 1.002
+    expected_fractions = (1.0, *(2.0**-power for power in range(1, 53)))
+    observed_fractions = tuple((value - 0.75) / (proposed_emission_00 - 0.75) for value in seen_emission_00[1:])
+    assert seen_emission_00[0] == pytest.approx(0.75)
+    assert observed_fractions == pytest.approx(expected_fractions, abs=2e-15)
+
+
 def test_canonicalization_is_invariant_to_input_label_permutation() -> None:
     """Swapping latent labels must not change the serialized fitted parameters."""
     canonical = canonicalize_states(

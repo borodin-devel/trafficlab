@@ -82,6 +82,9 @@ expected counts receive fixed additive smoothing `0.001` before normalization.
 Because a smoothed MAP-style update can reduce the unsmoothed data likelihood,
 Trafficlab deterministically halves the step between the current and proposed
 tables until likelihood is nondecreasing within absolute tolerance `1e-10`.
+If every positive binary fraction through `2^-52` still decreases likelihood,
+the fit fails deterministically before recording an update or a convergence
+claim; unchanged parameters are never appended as an accepted zero-gain step.
 The complete finite likelihood history, update count, and convergence Boolean
 are persisted. Conversely, a capped fit is nonconverged only when its final
 accepted improvement is strictly greater than `1e-8`; a capped zero or

@@ -321,9 +321,7 @@ def fit_baum_welch(
         while candidate_result.log_likelihood + _MONOTONE_TOLERANCE < current.log_likelihood:
             fraction *= 0.5
             if fraction < 2.0**-52:
-                candidate = parameters
-                candidate_result = current
-                break
+                raise ValueError("smoothed Baum-Welch update rejected at every backtracking fraction")
             candidate = _blend_parameters(parameters, proposal, fraction)
             candidate_result = forward_backward(
                 symbols, candidate.initial_probabilities, candidate.transition_rows, candidate.emission_rows
