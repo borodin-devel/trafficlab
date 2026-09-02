@@ -172,6 +172,15 @@ example. Important fixed expectations include:
   `[outbound, inbound]` layout, `[1, 0]` versus `[0, 1]` has discrepancy `1`.
   Multiple widths exercise direction-separated packet/byte cells and reject
   \(2\sum_h B_h>C_{max}\).
+- Fano/Allan: constant one-packet windows and an all-zero direction channel
+  have factors zero; alternating hand counts, a packet at `W`, bounded log1p
+  differences, scale weights, the two-window minimum, and the fixed 65,536
+  direction-window-cell cap are direct independent checks.
+- Transition fidelity: independent integer/Fraction PMFs cover Type-7
+  reference-only log thresholds, direction categories, generated below/above
+  edges, occupancy and row counts, positive additive smoothing, empty rows,
+  frozen run-length overflow, identical traces, and the 256-state/65,536-cell
+  caps.
 - Poisson: three packets over observation window two estimate rate one.
 - Markov Renewal: a hand-counted transition table matches additive smoothing
   and exercises both timing fallbacks.
