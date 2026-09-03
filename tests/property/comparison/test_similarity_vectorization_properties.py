@@ -32,6 +32,8 @@ def test_scipy_ks_statistic_matches_independent_merged_ecdf_for_discrete_samples
 
 
 def _scalar_acf(values: list[float], lag: int) -> float:
+    if all(value == values[0] for value in values):
+        return 0.0
     mean = math.fsum(values) / len(values)
     denominator = math.fsum((value - mean) ** 2 for value in values)
     if denominator == 0.0:

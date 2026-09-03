@@ -159,7 +159,7 @@
     {
       "mode": 420,
       "path": "validation_study/candidate/environment.json",
-      "sha256": "2f60ba48ed8c58cd57865a25dbdec26f28ac3ccc504f8939317aff834f874406",
+      "sha256": "796c1e1eb5ff646b18c02520f80bdfdafe853a2c53061cb3014eec4783be89d3",
       "size": 1147
     },
     {
@@ -621,7 +621,7 @@
     {
       "mode": 420,
       "path": "validation_study/candidate/manifest.json",
-      "sha256": "22778bb2f32fc4b5ed08b5ebb7540e67cf66c2c3bac2431f33e2009ef49f7b61",
+      "sha256": "86e8e0e56efd84025ae4ff1d2a29044a96c181ba5881a6206b6b99f9f7ec73fe",
       "size": 92152
     },
     {
@@ -873,7 +873,7 @@
     {
       "mode": 420,
       "path": "validation_study/candidate/prerequisites.json",
-      "sha256": "2791a0ef3060cd5ba9688bab92a09998b060ae561727ae9b708fbe2ff2945d0a",
+      "sha256": "eb429dff9aa9b3dfee50bc142dd773369027f67921edc341e4c6b9fc3bb81311",
       "size": 5085
     },
     {
