@@ -39,6 +39,10 @@ The final derived artifact identities retained in each canonical run are:
 | small | `6b1d9bbfc3ad7f396198a4243337d4194e2a7f55d6d1615a90a6ee0b368b2693` | `53353f725a361a217c3f0d971458d26ae2c10e2372b5481fe0c934e7c82b5244` | `7616f541edd37652f984a94be82f5646cca2f55141040f60a881586acbb470dd` | `1b8599d06dbd979641339314819d550459408f6a84e1d00569a357d1abf9aa53` | `b56cffa2c3dfa22cc472b702761fe065eb02bf2c750a6bf34399e4868972757d` | `32c0c4e91a6d34fd2de0ae09bd209526853f524fa504ca4706bd984f02a3ada8` |
 | medium | `8289364af80014f4f69f6eadca8233548cec1a9ee925fa3f48ef951538f32ec9` | `b6a9d7c4c94c72117022267c5438378fd9b7b7b4984ea29f3485c8b562db9250` | `63f9420ffa4b592a454fb71324517049783b88392d584455441b382e8d6b28f0` | `1a45c7559b26ccc85a9e8bb93c38c7d42a4ba7ebad2ab291eb0384f5f5e2eea8` | `40bf9806ec244bc35282f5448f6388d7754eafa0a311eaa74ed448f4ce3c893a` | `7a32bcba9fbe029b608774e7d66d8b9c00e26651880770e0735b68cfa1214a77` |
 
+The clean-r2 generated and similarity identities are byte-for-byte equal to
+both the earlier deterministic run and its preserved `*-diagnostic-r1` copy:
+Small `b56cffa2…` / `32c0c4e9…`; Medium `40bf9806…` / `7a32bcba…`.
+
 ## Commands and bounded resources
 
 Fresh canonical run directories were used: `runs/required-candidates-small/`
@@ -49,11 +53,14 @@ search. Existing `.work/required-candidates/*-run` preflight directories were
 not touched. The configs staged from the example profiles differ only in
 `run.directory`, pointing to those canonical siblings.
 
-Standalone config-only preflight commands:
+Standalone config-only preflight commands (also run under the same controller
+limits) were:
 
 ```text
-UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked trafficlab preflight runs/required-candidates-small.toml --config-only
-UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked trafficlab preflight runs/required-candidates-medium.toml --config-only
+/usr/bin/time -v -o .work/required-candidates/evidence/clean-r2/<tier>/preflight.time.txt \
+  scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 10m --kill-after 15s -- \
+  uv run --locked trafficlab preflight runs/required-candidates-<tier>.toml --config-only
 ```
 
 Each returned status 0. Generation and comparison used the available bounded
@@ -69,18 +76,21 @@ systemd controller and `/usr/bin/time -v`:
 ```
 
 The exact controller limits were `memory-high=2G`, `memory-max=3G`,
-`swap-max=512M`, `wall-time=10m`, and `kill-after=15s`; all four stage commands
-returned status 0. Stage sidecars are outside the run directories because
-strict final validation requires exactly the nine documented run entries.
+`swap-max=512M`, `wall-time=10m`, and `kill-after=15s`; all eight clean
+preflight/fit/generate/compare commands returned status 0. Stage sidecars are
+outside the run directories because strict final validation requires exactly
+the nine documented run entries.
 
 | tier | stage | elapsed | user + system CPU | max RSS | status |
 | --- | --- | ---: | ---: | ---: | ---: |
-| small | fit (inherited) | 1.39 s | 10.65 + 0.13 s | 135,396 KiB | 0 |
-| small | generate | 0.66 s | 5.90 + 0.10 s | 107,124 KiB | 0 |
-| small | compare | 1.09 s | 8.00 + 0.18 s | 135,184 KiB | 0 |
-| medium | fit (inherited) | 10.52 s | 22.11 + 0.11 s | 143,332 KiB | 0 |
-| medium | generate | 0.68 s | 5.85 + 0.16 s | 107,160 KiB | 0 |
-| medium | compare | 1.04 s | 6.60 + 0.19 s | 137,348 KiB | 0 |
+| small | preflight | 0.36 s | 3.62 + 0.12 s | 44,424 KiB | 0 |
+| small | fit | 1.33 s | 9.80 + 0.13 s | 135,960 KiB | 0 |
+| small | generate | 0.63 s | 6.60 + 0.14 s | 107,024 KiB | 0 |
+| small | compare | 1.00 s | 8.09 + 0.16 s | 135,424 KiB | 0 |
+| medium | preflight | 0.35 s | 3.72 + 0.11 s | 44,428 KiB | 0 |
+| medium | fit | 10.22 s | 21.49 + 0.12 s | 143,372 KiB | 0 |
+| medium | generate | 0.69 s | 6.32 + 0.14 s | 107,008 KiB | 0 |
+| medium | compare | 1.02 s | 7.24 + 0.16 s | 137,324 KiB | 0 |
 
 ## [STEP-118-4a99b800] Small outcome
 
@@ -158,23 +168,24 @@ All three post-fit diagnostics published: `fano_allan` score
 
 ## [STEP-120-6f6f63f1] Artifact and reproduction checks
 
-The strict validator command was an in-process call to
-`trafficlab.pipeline.validation.validate_final_artifacts` after loading the
-saved `checkpoint.json`, `best_model.json`, and `similarity.json`. Its companion
-reproducer called `trafficlab.generation.stage.reproduce_generated_pcapng` with
-the saved final seed and model, then called
-`trafficlab.comparison.metrics.compare_final_traces` with the saved comparison
-settings. The exact bounded command used for each tier was:
+The checked-in verifier [`scripts/check_required_candidate_run.py`](../../scripts/check_required_candidate_run.py)
+performs an in-process call to `trafficlab.pipeline.validation.validate_final_artifacts`
+after loading the saved `checkpoint.json`, `best_model.json`, and
+`similarity.json`. Its reproducer calls
+`trafficlab.generation.stage.reproduce_generated_pcapng` with the saved final
+seed/model, then calls `trafficlab.comparison.metrics.compare_final_traces` with
+the saved comparison settings. The exact file-backed bounded command was:
 
 ```text
-timeout --signal=TERM --kill-after=15s 10m env UV_CACHE_DIR=/tmp/trafficlab-uv-cache \
-  uv run --locked python - runs/required-candidates-<tier>.toml
+/usr/bin/time -v -o .work/required-candidates/evidence/clean-r2/checker-final/check.time.txt \
+  scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 10m --kill-after 15s -- \
+  uv run --locked python scripts/check_required_candidate_run.py \
+  runs/required-candidates-small runs/required-candidates-medium
 ```
 
-The Python stdin body loaded the persisted artifacts, asserted generated bytes
-equal the saved-model/seed reproduction, asserted recomputed comparison equals
-`similarity.json`, and called `validate_final_artifacts`; both commands returned
-status 0. Results:
+The command returned status 0 in 1.69 s with 150,012 KiB maximum RSS and
+retained its stdout/stderr/time sidecars. Results:
 
 ```text
 strict_artifacts=pass .../runs/required-candidates-small
@@ -213,7 +224,8 @@ git clone --no-local --no-hardlinks --no-checkout "$PWD" .work/required-candidat
 git -C .work/required-candidates/fixture-source-bound-r1 checkout --detach fb1978e8d41ffe845dc2e988db2568b17e867332
 cp -a --reflink=never tests/fixtures/data/validation_study/candidate/. \
   .work/required-candidates/fixture-source-bound-r1/tests/fixtures/data/validation_study/candidate/
-UV_CACHE_DIR=/tmp/trafficlab-uv-cache PYTHONPATH=.work/required-candidates/fixture-source-bound-r1/src uv run --offline --locked --active --no-project \
+cd .work/required-candidates/fixture-source-bound-r1
+PYTHONPATH="$PWD/src" UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --offline --locked --active --no-project \
   python scripts/generate_validation_study_fixture.py --check \
   --source-commit fb1978e8d41ffe845dc2e988db2568b17e867332 --source-tree "$TREE"
 ```

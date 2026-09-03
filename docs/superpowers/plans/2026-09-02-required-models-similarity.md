@@ -1126,15 +1126,15 @@ uv run --locked pytest -q -m 'not docker and not internet' \
 
 Fix failures at their smallest owning test tier, then repeat this step once.
 
-- [ ] **[STEP-118-4a99b800] Run and retain the Small experiment**
+- [x] **[STEP-118-4a99b800] Run and retain the Small experiment**
 
 Initialize `runs/required-candidates-small` from `examples/required_candidates/small.toml`, copy the derived pair, then run standalone `fit`, `generate`, and `compare` through `scripts/run_bounded.sh`. Require all seven families to receive candidates and all eleven final evaluations to publish.
 
-- [ ] **[STEP-119-3d9e8896] Run and retain the Medium experiment**
+- [x] **[STEP-119-3d9e8896] Run and retain the Medium experiment**
 
 Repeat with the 512-packet pair and medium profile. Record command lines, identities, elapsed time, peak RSS, family champions, aggregate/components, post-fit diagnostics, and any invalid candidate counts. Do not deepen the search after results are visible.
 
-- [ ] **[STEP-120-6f6f63f1] Verify medium artifacts and write the evidence summary**
+- [x] **[STEP-120-6f6f63f1] Verify medium artifacts and write the evidence summary**
 
 Use strict final artifact validation, reproduce generation/comparison from saved model/seeds, and explain that these are development checks rather than held-out scientific conclusions.
 
