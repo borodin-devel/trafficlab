@@ -145,6 +145,8 @@ scripts/run_bounded.sh \
 
 The wrapper preserves the child status, including timeout status 124. It returns
 125 when containment setup, ownership, or final cleanup cannot be proved.
+Leading `NAME=value` arguments after `--` are applied through `env` before the
+executable, without shell evaluation.
 
 ## Validation Study tools
 

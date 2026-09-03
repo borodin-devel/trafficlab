@@ -66,6 +66,7 @@ def _controlled_path(tmp_path: Path, *, omit: str | None = None, manager_availab
     for name in (
         "bash",
         "chmod",
+        "env",
         "mktemp",
         "mv",
         "rm",
@@ -123,6 +124,7 @@ def test_invalid_setup_returns_125_with_corrective_diagnostics(tmp_path: Path) -
         (("--memory-high", "999999999999999999999999999999999G", *_valid_prefix(unit)[2:], "/bin/true"), "range"),
         ((*_valid_prefix(unit)[:6], "--wall-time", "0ms", *_valid_prefix(unit)[8:], "/bin/true"), "duration"),
         ((*_valid_prefix(unit)[:10], "--unit", "bad/unit", "--", "/bin/true"), "unit"),
+        ((*_valid_prefix(unit), "TRAFFICLAB_GUARD_PROBE=inside"), "missing command"),
         (("--unexpected", "value", "--", "/bin/true"), "unknown option"),
     )
     for arguments, diagnostic in cases:
@@ -228,6 +230,23 @@ def test_child_status_is_preserved_and_named_scope_becomes_inactive(tmp_path: Pa
         if collision_pid is not None:
             _assert_pids_disappear((collision_pid, collision_pid, collision_pid))
         _assert_scope_inactive(collision_unit)
+
+
+def test_leading_environment_assignment_is_applied_inside_scope() -> None:
+    """Canonical guarded commands may set environment variables before the executable."""
+    unit = _unit_name("environment")
+    child_code = "import os,sys;sys.exit(0 if os.environ.get('TRAFFICLAB_GUARD_PROBE') == 'inside' else 41)"
+
+    result = _run_guard(
+        *_valid_prefix(unit),
+        "TRAFFICLAB_GUARD_PROBE=inside",
+        sys.executable,
+        "-c",
+        child_code,
+    )
+
+    assert result.returncode == 0, result.stderr
+    _assert_scope_inactive(unit)
 
 
 def test_concurrent_unit_creator_is_never_claimed_or_killed(tmp_path: Path) -> None:

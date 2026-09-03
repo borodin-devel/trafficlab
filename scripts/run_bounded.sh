@@ -83,6 +83,17 @@ done
 [[ $unit =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail "unit name must contain only letters, digits, underscores, or hyphens"
 (($#)) || fail "missing command after --"
 command=("$@")
+environment_count=0
+while ((environment_count < ${#command[@]})) && \
+    [[ ${command[$environment_count]} =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; do
+    environment_count=$((environment_count + 1))
+done
+if ((environment_count == ${#command[@]})); then
+    fail "missing command after leading environment assignments"
+fi
+if ((environment_count > 0)); then
+    command=(env "${command[@]}")
+fi
 
 normalize_memory() {
     input=$1
@@ -141,7 +152,7 @@ validate_duration "$kill_after" "--kill-after"
 kill_after=$NORMALIZED_DURATION
 ((memory_high_bytes < memory_max_bytes)) || fail "--memory-high must be less than --memory-max"
 
-for required_command in mktemp mv rm setsid systemd-run systemctl timeout; do
+for required_command in env mktemp mv rm setsid systemd-run systemctl timeout; do
     command -v "$required_command" >/dev/null 2>&1 || fail "required command ${required_command} is unavailable"
 done
 if ! timeout --kill-after=1s 10s systemctl --user is-system-running >/dev/null 2>&1; then
