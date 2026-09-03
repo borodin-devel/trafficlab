@@ -42,8 +42,10 @@ def _release_completed_module_memory() -> None:
     gc.collect()
     if sys.platform != "linux":
         return
-    process_library = ctypes.CDLL(None)
-    trim = process_library.malloc_trim
+    try:
+        trim = ctypes.CDLL(None).malloc_trim
+    except (AttributeError, OSError):
+        return
     trim.argtypes = (ctypes.c_size_t,)
     trim.restype = ctypes.c_int
     trim(0)
