@@ -17,7 +17,7 @@ from trafficlab.fitting.genetic.checkpoint.compatibility import (
     parse_family_name,
 )
 from trafficlab.fitting.genetic.checkpoint.schema import CheckpointCompatibility, CheckpointState
-from trafficlab.fitting.genetic.checkpoint.state import validate_state
+from trafficlab.fitting.genetic.checkpoint.state import canonical_mean_fitness, validate_state
 from trafficlab.fitting.genetic.types import CandidateId, HistoryRow
 
 _HISTORY_HEADER = (
@@ -97,8 +97,11 @@ def _validate_history_projection(
                 > best_numerator * row.valid_count * mean_denominator
             ):
                 raise ValueError("history mean_fitness is not feasible for valid_count")
-        expected_mean = math.fsum(row.mean_fitness * row.candidate_count for row in family_rows) / float(
-            overall.candidate_count
+        expected_mean = canonical_mean_fitness(
+            (row.mean_fitness * row.candidate_count for row in family_rows),
+            candidate_count=overall.candidate_count,
+            valid_count=overall.valid_count,
+            best_fitness=overall.best_fitness,
         )
         if overall.mean_fitness != expected_mean:
             raise ValueError("history overall mean does not equal the recomputed family mean")

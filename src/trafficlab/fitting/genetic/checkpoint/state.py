@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import cast
 
 from trafficlab.common.config import FamilyName, SimilarityConfig
@@ -31,6 +31,45 @@ from trafficlab.fitting.genetic.types import (
 
 _DUPLICATE_OUTCOMES = frozenset(("invalid", "duplicate", "exhausted"))
 _TERMINAL_REASONS = frozenset(("running", "hard_limit", "early_stop"))
+
+
+def _mean_fitness_is_feasible(
+    mean_fitness: float,
+    *,
+    candidate_count: int,
+    valid_count: int,
+    best_fitness: float,
+) -> bool:
+    mean_numerator, mean_denominator = mean_fitness.as_integer_ratio()
+    best_numerator, best_denominator = best_fitness.as_integer_ratio()
+    return mean_numerator * candidate_count * best_denominator <= best_numerator * valid_count * mean_denominator
+
+
+def canonical_mean_fitness(
+    values: Iterable[float],
+    *,
+    candidate_count: int,
+    valid_count: int,
+    best_fitness: float,
+) -> float:
+    """Round a derived mean without crossing its exact valid-count ceiling."""
+    mean_fitness = math.fsum(values) / float(candidate_count)
+    if _mean_fitness_is_feasible(
+        mean_fitness,
+        candidate_count=candidate_count,
+        valid_count=valid_count,
+        best_fitness=best_fitness,
+    ):
+        return mean_fitness
+    adjusted = math.nextafter(mean_fitness, 0.0)
+    if not _mean_fitness_is_feasible(
+        adjusted,
+        candidate_count=candidate_count,
+        valid_count=valid_count,
+        best_fitness=best_fitness,
+    ):
+        raise ValueError("computed history mean_fitness exceeds its valid-count ceiling")
+    return adjusted
 
 
 def _parse_gene(value: object, coordinate: GeneCoordinate, *, family: FamilyName) -> float | int:
@@ -134,14 +173,20 @@ def summarize_generation(
             if family is None
             else rank_candidates(candidates, family_priority=(family,))[0]
         )
+        valid_count = sum(candidate.status == "valid" for candidate in candidates)
         return HistoryRow(
             generation=generation,
             scope="overall" if family is None else "family",
             family=family,
             candidate_count=len(candidates),
-            valid_count=sum(candidate.status == "valid" for candidate in candidates),
+            valid_count=valid_count,
             best_fitness=best.fitness,
-            mean_fitness=math.fsum(candidate.fitness for candidate in candidates) / len(candidates),
+            mean_fitness=canonical_mean_fitness(
+                (candidate.fitness for candidate in candidates),
+                candidate_count=len(candidates),
+                valid_count=valid_count,
+                best_fitness=best.fitness,
+            ),
             best_identifier=best.identifier,
         )
 
@@ -151,7 +196,12 @@ def summarize_generation(
         for family in family_names
     ]
     overall = make_row(complete, None)
-    grouped_mean = math.fsum(row.mean_fitness * row.candidate_count for row in rows) / len(complete)
+    grouped_mean = canonical_mean_fitness(
+        (row.mean_fitness * row.candidate_count for row in rows),
+        candidate_count=len(complete),
+        valid_count=overall.valid_count,
+        best_fitness=overall.best_fitness,
+    )
     rows.append(rebuild_genetic_record(overall, mean_fitness=grouped_mean))
     return tuple(rows)
 
@@ -196,9 +246,12 @@ def _validate_history(state: CheckpointState, family_names: tuple[FamilyName, ..
                 raise ValueError("history valid_count must not exceed candidate_count")
             if valid_count == 0 and (best_fitness != 0.0 or mean_fitness != 0.0):
                 raise ValueError("history row with zero valid_count must have zero best_fitness and mean_fitness")
-            mean_numerator, mean_denominator = mean_fitness.as_integer_ratio()
-            best_numerator, best_denominator = best_fitness.as_integer_ratio()
-            if mean_numerator * candidate_count * best_denominator > best_numerator * valid_count * mean_denominator:
+            if not _mean_fitness_is_feasible(
+                mean_fitness,
+                candidate_count=candidate_count,
+                valid_count=valid_count,
+                best_fitness=best_fitness,
+            ):
                 raise ValueError("history mean_fitness is not feasible for valid_count")
             if row.best_identifier.birth_generation > generation:
                 raise ValueError("history best identifier birth generation exceeds row generation")
@@ -214,8 +267,11 @@ def _validate_history(state: CheckpointState, family_names: tuple[FamilyName, ..
             family_best.best_identifier,
         ):
             raise ValueError("history overall best does not equal the recomputed family best")
-        expected_mean = (
-            math.fsum(row.mean_fitness * row.candidate_count for row in family_rows) / overall.candidate_count
+        expected_mean = canonical_mean_fitness(
+            (row.mean_fitness * row.candidate_count for row in family_rows),
+            candidate_count=overall.candidate_count,
+            valid_count=overall.valid_count,
+            best_fitness=overall.best_fitness,
         )
         if overall.mean_fitness != expected_mean:
             raise ValueError("history overall mean does not equal the recomputed family mean")

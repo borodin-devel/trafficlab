@@ -550,6 +550,27 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
     assert parse_checkpoint(render_checkpoint(state), compatibility) == state
 
 
+def test_generation_summary_canonicalizes_rounded_mean_below_exact_valid_ceiling() -> None:
+    score = 0.7922045605901253
+    trial = build_trial(7, (score, score, score, score, score, score, score, score))
+    valid = replace(POPULATION[0], fitness=trial.aggregate_score, trials=(trial,))
+    invalid = replace(POPULATION[1], family="mmpp")
+    rows = summarize_generation(
+        0,
+        (valid, invalid, replace(invalid, identifier=CandidateId(birth_generation=0, birth_index=2))),
+        ("mmpp",),
+        family_priority=("mmpp",),
+    )
+
+    for row in rows:
+        mean_numerator, mean_denominator = row.mean_fitness.as_integer_ratio()
+        best_numerator, best_denominator = row.best_fitness.as_integer_ratio()
+        assert (
+            mean_numerator * row.candidate_count * best_denominator
+            <= best_numerator * row.valid_count * mean_denominator
+        )
+
+
 def test_integer_coordinate_bounds_and_gene_are_preserved_as_exact_integers() -> None:
     record = checkpoint_schema.IntegerCoordinateRecord.model_validate(
         {"name": "r", "kind": "integer", "lower": 1, "upper": 5}
