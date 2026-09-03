@@ -138,13 +138,17 @@ def _candidate_controlled_weight_analysis(training: Sequence[CandidateTraining])
         "frame_size_ks": 0.4,
         "iat_ks": 0.2,
         "multiscale_rate": 0.2,
+        "cramer_von_mises": 0.0,
+        "anderson_darling": 0.0,
+        "jensen_shannon": 0.0,
+        "approximate_mmd": 0.0,
     }
     for workload in ("short", "streaming", "bursty"):
         group = [item for item in training if item.workload == workload]
         selected = min(group, key=lambda item: (-item.checkpoint.best_fitness, item.repeat))
         baseline_weights = selected.config.similarity.method_weights.model_dump(mode="json")
         require(
-            baseline_weights == {method: 0.25 for method in PUBLISHED_METHOD_ORDER},
+            baseline_weights == {method: 0.125 for method in PUBLISHED_METHOD_ORDER},
             "controlled weight analysis requires the frozen equal-weight baseline",
         )
         scores = _candidate_score(selected.comparison)

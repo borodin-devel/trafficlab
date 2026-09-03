@@ -153,7 +153,7 @@ def _retained_prerequisites(
                     "uv_lock_identity",
                 )
             },
-            "schema_version": 4,
+            "schema_version": 5,
             "study_id": study_id,
             "url": url,
         }
@@ -183,7 +183,7 @@ def _collection_inputs(
         "kernel_release": "fixture-kernel-1",
         "python_implementation": "CPython",
         "python_version": platform.python_version(),
-        "scientific_artifact_schema": 4,
+        "scientific_artifact_schema": 5,
         "source_commit": commit,
         "source_tree": tree,
         "target_image_id": f"sha256:{vs_common.TARGET_REFERENCE.rsplit(':', 1)[-1]}",
@@ -514,7 +514,7 @@ def test_collection_builds_auditable_frozen_training_fresh_and_held_out_candidat
     protocol = cast(dict[str, object], json.loads((candidate / "protocol.json").read_text()))
     assert protocol["study_id"] == protocol["candidate_id"] == protocol["destination_id"] == "study-1"
     assert protocol["prerequisite_path"] == "examples/validation_study/prerequisites.json"
-    assert protocol["schema_version"] == 4
+    assert protocol["schema_version"] == 5
     assert "natural_variation_windows" not in protocol
     lifecycle = cast(dict[str, object], json.loads((candidate / "lifecycle.json").read_text()))
     assert lifecycle["study_id"] == "study-1"

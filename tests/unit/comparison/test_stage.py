@@ -267,7 +267,7 @@ def test_compare_joins_postfit_only_after_final_trace_reconstruction(
         calls.append((reference, generated, W, settings))
         return real_evaluate(reference, generated, W, settings)
 
-    monkeypatch.setattr(comparison_stage, "evaluate_postfit", evaluate_postfit)
+    monkeypatch.setattr(comparison_metrics, "evaluate_postfit", evaluate_postfit)
 
     result = comparison_stage.compare_experiment(experiment_path)
 
@@ -311,7 +311,7 @@ def test_compare_classifies_metric_infeasibility_after_model_reconstruction(
     def infeasible(*_args: object, **_kwargs: object) -> ComparisonResult:
         raise TrafficlabError("autocorrelation requires more samples", corrective_action="correct samples or settings")
 
-    monkeypatch.setattr(comparison_stage, "evaluate_fitness", infeasible)
+    monkeypatch.setattr(comparison_stage, "compare_final_traces", infeasible)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison_stage.compare_experiment(experiment_path)
@@ -355,7 +355,7 @@ def test_compare_rejects_foreign_best_model_provenance_before_similarity(
     def prohibit_similarity(*_args: object, **_kwargs: object) -> ComparisonResult:
         pytest.fail("foreign best-model provenance reached similarity evaluation")
 
-    monkeypatch.setattr(comparison_stage, "evaluate_fitness", prohibit_similarity)
+    monkeypatch.setattr(comparison_stage, "compare_final_traces", prohibit_similarity)
 
     with pytest.raises(TrafficlabError) as caught:
         comparison_stage.compare_experiment(experiment_path)
@@ -503,19 +503,14 @@ def test_compare_rejects_reference_mutation_before_similarity_publication(
         destination.write_bytes(source.read_bytes())
     _write_current_generated(run_directory)
     reference_path = run_directory / "reference.pcapng"
-    real_compare = comparison_metrics.evaluate_fitness
+    real_compare = comparison_metrics.compare_final_traces
 
-    def compare_and_mutate(
-        reference: tuple[TraceEvent, ...],
-        generated: tuple[TraceEvent, ...],
-        W: float,
-        settings: SimilarityConfig,
-    ) -> ComparisonResult:
-        result = real_compare(reference, generated, W, settings)
+    def compare_and_mutate(*args: Any, **kwargs: Any) -> ComparisonResult:
+        result = real_compare(*args, **kwargs)
         reference_path.write_bytes(reference_path.read_bytes() + b"changed after comparison")
         return result
 
-    monkeypatch.setattr(comparison_stage, "evaluate_fitness", compare_and_mutate)
+    monkeypatch.setattr(comparison_stage, "compare_final_traces", compare_and_mutate)
 
     with pytest.raises(TrafficlabError, match="reference.pcapng changed during compare") as caught:
         comparison_stage.compare_experiment(experiment_path)

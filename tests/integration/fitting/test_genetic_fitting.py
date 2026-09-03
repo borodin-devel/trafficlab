@@ -60,7 +60,8 @@ _EXPERIMENT_PATH = _FIT_DIRECTORY / "experiment.toml"
 _EXPERIMENT_BYTES = _EXPERIMENT_PATH.read_bytes()
 _CAPTURE_BYTES = (_FIT_DIRECTORY / "capture.json").read_bytes()
 _REFERENCE_BYTES = (_FIT_DIRECTORY / "reference.pcapng").read_bytes()
-_FAMILY_ORDER = ("markov_renewal", "mmpp", "poisson_empirical")
+_ALL_FAMILY_ORDER = ("acd", "markov_packet_train", "markov_renewal", "mmpp", "nhpp", "packet_hmm", "poisson_empirical")
+_THREE_FAMILY_ORDER = ("markov_renewal", "mmpp", "poisson_empirical")
 _OPERATOR_VALUES = {
     "markov_renewal": (1.0, 0.0, 0.06),
     "mmpp": (0.45, 0.0, 0.08),
@@ -71,6 +72,10 @@ _MIXED_METHOD_WEIGHTS = {
     "iat_ks": 0.2,
     "autocorrelation": 0.3,
     "multiscale_rate": 0.4,
+    "cramer_von_mises": 0.0,
+    "anderson_darling": 0.0,
+    "jensen_shannon": 0.0,
+    "approximate_mmd": 0.0,
 }
 _MIXED_COMPONENT_SCORES = {
     "markov_renewal": {
@@ -78,18 +83,30 @@ _MIXED_COMPONENT_SCORES = {
         "iat_ks": 0.4,
         "autocorrelation": 0.4,
         "multiscale_rate": 0.4,
+        "cramer_von_mises": 0.4,
+        "anderson_darling": 0.4,
+        "jensen_shannon": 0.4,
+        "approximate_mmd": 0.4,
     },
     "mmpp": {
         "frame_size_ks": 0.8,
         "iat_ks": 0.7,
         "autocorrelation": 0.9,
         "multiscale_rate": 0.8,
+        "cramer_von_mises": 0.8,
+        "anderson_darling": 0.8,
+        "jensen_shannon": 0.8,
+        "approximate_mmd": 0.8,
     },
     "poisson_empirical": {
         "frame_size_ks": 0.6,
         "iat_ks": 0.6,
         "autocorrelation": 0.6,
         "multiscale_rate": 0.6,
+        "cramer_von_mises": 0.6,
+        "anderson_darling": 0.6,
+        "jensen_shannon": 0.6,
+        "approximate_mmd": 0.6,
     },
 }
 
@@ -104,6 +121,24 @@ def _copy_fixture_experiment(tmp_path: Path) -> tuple[Path, Path, ExperimentConf
     (run_directory / "capture.json").write_bytes(_CAPTURE_BYTES)
     (run_directory / "reference.pcapng").write_bytes(_REFERENCE_BYTES)
     return caller_path, run_directory, config
+
+
+def _with_enabled_families(config: ExperimentConfig, enabled: tuple[FamilyName, ...]) -> ExperimentConfig:
+    """Retain only the selected family tables for intentionally narrow integration scenarios."""
+    selected = set(enabled)
+    models = config.models.model_copy(
+        update={
+            "enabled": enabled,
+            "poisson_empirical": config.models.poisson_empirical if "poisson_empirical" in selected else None,
+            "markov_renewal": config.models.markov_renewal if "markov_renewal" in selected else None,
+            "mmpp": config.models.mmpp if "mmpp" in selected else None,
+            "nhpp": config.models.nhpp if "nhpp" in selected else None,
+            "acd": config.models.acd if "acd" in selected else None,
+            "markov_packet_train": config.models.markov_packet_train if "markov_packet_train" in selected else None,
+            "packet_hmm": config.models.packet_hmm if "packet_hmm" in selected else None,
+        }
+    )
+    return config.model_copy(update={"models": models})
 
 
 def _strategy_context(config: ExperimentConfig, run_directory: Path):  # type: ignore[no-untyped-def]
@@ -169,7 +204,7 @@ def _configure_fairness_matrix(
                     "resume": False,
                 }
             ),
-            "models": config.models.model_copy(update={"enabled": enabled}),
+            "models": _with_enabled_families(config, enabled).models,
             "similarity": config.similarity.model_copy(
                 update={"method_weights": MethodWeights(**_MIXED_METHOD_WEIGHTS)}
             ),
@@ -184,11 +219,28 @@ def _configure_fairness_matrix(
 def _mixed_trial(family: FamilyName, seed: int) -> TrialResult:
     """Build deterministic component inputs while retaining the production strategy/fit owners."""
     components = _MIXED_COMPONENT_SCORES[family]
-    methods = cast(
-        tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult],
-        tuple(
-            MethodTrialResult(name=name, score=components[name], diagnostics={"matrix_family": family})
-            for name in METHOD_ORDER
+    methods = (
+        MethodTrialResult(
+            name="autocorrelation", score=components["autocorrelation"], diagnostics={"matrix_family": family}
+        ),
+        MethodTrialResult(
+            name="frame_size_ks", score=components["frame_size_ks"], diagnostics={"matrix_family": family}
+        ),
+        MethodTrialResult(name="iat_ks", score=components["iat_ks"], diagnostics={"matrix_family": family}),
+        MethodTrialResult(
+            name="multiscale_rate", score=components["multiscale_rate"], diagnostics={"matrix_family": family}
+        ),
+        MethodTrialResult(
+            name="cramer_von_mises", score=components["cramer_von_mises"], diagnostics={"matrix_family": family}
+        ),
+        MethodTrialResult(
+            name="anderson_darling", score=components["anderson_darling"], diagnostics={"matrix_family": family}
+        ),
+        MethodTrialResult(
+            name="jensen_shannon", score=components["jensen_shannon"], diagnostics={"matrix_family": family}
+        ),
+        MethodTrialResult(
+            name="approximate_mmd", score=components["approximate_mmd"], diagnostics={"matrix_family": family}
         ),
     )
     return TrialResult(
@@ -250,9 +302,9 @@ def test_checked_fit_artifacts_load_through_every_strict_production_codec() -> N
     checkpoint = load_checkpoint(_FIT_DIRECTORY / "checkpoint.json", context.compatibility)
     best = load_best_model((_FIT_DIRECTORY / "best_model.json").read_bytes(), source=_FIT_DIRECTORY / "best_model.json")
 
-    assert tuple(family.name for family in checkpoint.compatibility.families) == _FAMILY_ORDER
+    assert tuple(family.name for family in checkpoint.compatibility.families) == _ALL_FAMILY_ORDER
     assert checkpoint.family_priority == checkpoint.compatibility.family_priority
-    assert (checkpoint.compatibility.genetic.population_size, checkpoint.generation) == (6, 1)
+    assert (checkpoint.compatibility.genetic.population_size, checkpoint.generation) == (8, 1)
     assert render_history_csv(checkpoint) == (_FIT_DIRECTORY / "ga_history.csv").read_bytes()
     assert render_best_model(best) == (_FIT_DIRECTORY / "best_model.json").read_bytes()
     assert best.observation_window_seconds == window == 10.0
@@ -264,6 +316,10 @@ def test_small_nondefault_three_family_population_keeps_each_family_and_common_e
 ) -> None:
     """Dropping a family or giving it privileged seeds, limits, or W would invalidate heterogeneous competition."""
     caller_path, run_directory, config = _copy_fixture_experiment(tmp_path)
+    config = _with_enabled_families(config, _THREE_FAMILY_ORDER)
+    rendered = render_effective_config(config)
+    caller_path.write_bytes(rendered)
+    (run_directory / "experiment.toml").write_bytes(rendered)
     fit_trace: list[tuple[FamilyName, float]] = []
     generation_trace: list[tuple[FamilyName, int, float, GenerationLimits]] = []
     real_fit = genetic_evaluation._fit_candidate  # pyright: ignore[reportPrivateUsage]
@@ -298,11 +354,11 @@ def test_small_nondefault_three_family_population_keeps_each_family_and_common_e
         for family in checkpoint.compatibility.families
     }
 
-    assert families == set(_FAMILY_ORDER)
+    assert families == set(_THREE_FAMILY_ORDER)
     assert result.best_model.family in families
     assert stored_operators == _OPERATOR_VALUES
-    assert {family for family, window in fit_trace if window == 10.0} == set(_FAMILY_ORDER)
-    assert {family for family, seed, _window, _limits in generation_trace if seed == 17} == set(_FAMILY_ORDER)
+    assert {family for family, window in fit_trace if window == 10.0} == set(_THREE_FAMILY_ORDER)
+    assert {family for family, seed, _window, _limits in generation_trace if seed == 17} == set(_THREE_FAMILY_ORDER)
     assert all(window == 10.0 and limits == config.generation.trial for _, _, window, limits in generation_trace)
     assert [(family, seed) for family, seed, _, _ in generation_trace if seed != 17] == [(result.best_model.family, 97)]
     assert tuple(trial.seed for trial in result.outcome.final_trials) == (97,)
@@ -336,7 +392,11 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cross-family chromosomes must never enter uniform crossover or borrow another family's operators."""
-    caller_path, _, config = _copy_fixture_experiment(tmp_path)
+    caller_path, run_directory, config = _copy_fixture_experiment(tmp_path)
+    config = _with_enabled_families(config, _THREE_FAMILY_ORDER)
+    rendered = render_effective_config(config)
+    caller_path.write_bytes(rendered)
+    (run_directory / "experiment.toml").write_bytes(rendered)
     traces: list[_ReproductionTrace] = []
     active: _ReproductionTrace | None = None
     selection_call = 0
@@ -433,7 +493,7 @@ def test_real_strategy_trace_proves_same_family_only_crossover_and_cross_family_
 
     fit_experiment(caller_path)
 
-    assert len(traces) == 3
+    assert len(traces) == config.genetic.population_size - len(_THREE_FAMILY_ORDER)
     markov_same = next(trace for trace in traces if trace.parent_families == ("markov_renewal",) * 2)
     cross = next(trace for trace in traces if trace.parent_families[0] != trace.parent_families[1])
     assert markov_same.probabilities[:6] == [1.0, *([0.5] * 5)]
@@ -616,14 +676,14 @@ def test_in_process_fairness_matrix_preserves_slots_children_and_mixed_mmpp_winn
         first_path,
         first_directory,
         master_seed=master_seed,
-        enabled=tuple(_FAMILY_ORDER),
+        enabled=_THREE_FAMILY_ORDER,
     )
     second_config = _configure_fairness_matrix(
         second_config,
         second_path,
         second_directory,
         master_seed=master_seed,
-        enabled=tuple(reversed(_FAMILY_ORDER)),
+        enabled=tuple(reversed(_THREE_FAMILY_ORDER)),
     )
 
     first = fit_experiment(first_path)

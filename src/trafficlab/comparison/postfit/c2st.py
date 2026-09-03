@@ -241,9 +241,7 @@ def _reference_standardize(
         or not reference_training.shape[1]
         or not np.all(np.isfinite(reference_training))
         or any(
-            array.ndim != 2
-            or array.shape[1] != reference_training.shape[1]
-            or not np.all(np.isfinite(array))
+            array.ndim != 2 or array.shape[1] != reference_training.shape[1] or not np.all(np.isfinite(array))
             for array in arrays
         )
     ):
@@ -255,8 +253,10 @@ def _reference_standardize(
     raw_scale = np.std(reference_training, axis=0, ddof=0, dtype=np.float64)
     scale = np.where(raw_scale > 0.0, raw_scale, 1.0)
     transformed = tuple(np.asarray((array - mean) / scale, dtype=np.float64) for array in arrays)
-    if not np.all(np.isfinite(mean)) or not np.all(np.isfinite(scale)) or any(
-        not np.all(np.isfinite(value)) for value in transformed
+    if (
+        not np.all(np.isfinite(mean))
+        or not np.all(np.isfinite(scale))
+        or any(not np.all(np.isfinite(value)) for value in transformed)
     ):
         raise TrafficlabError(
             "invalid C2ST reference standardization arithmetic",
@@ -279,9 +279,7 @@ def _logistic_loss_gradient(
     return loss, gradient
 
 
-def _fit_logistic(
-    features: NDArray[np.float64], labels: NDArray[np.float64], settings: C2stSettings
-) -> LogisticFit:
+def _fit_logistic(features: NDArray[np.float64], labels: NDArray[np.float64], settings: C2stSettings) -> LogisticFit:
     """Fit one deterministic L2 logistic model from zero with an analytic gradient."""
     if (
         features.ndim != 2
@@ -442,7 +440,12 @@ def classical_c2st_diagnostic(
             reference_training,
             (reference_training, generated_training, reference_evaluation, generated_evaluation),
         )
-        standardized_reference_training, standardized_generated_training, standardized_reference_evaluation, standardized_generated_evaluation = transformed
+        (
+            standardized_reference_training,
+            standardized_generated_training,
+            standardized_reference_evaluation,
+            standardized_generated_evaluation,
+        ) = transformed
         training_features = np.vstack((standardized_reference_training, standardized_generated_training))
         training_labels = np.concatenate(
             (

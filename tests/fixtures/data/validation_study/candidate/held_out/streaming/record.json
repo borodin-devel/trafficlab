@@ -15,12 +15,12 @@
     "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
   },
   "comparison_identity": {
-    "sha256": "d9c678a12eeb0866bf32c1d3bade3f9b8dd064e3ada33a962cfc44fa505451ae",
-    "size": 5355
+    "sha256": "85b8550a56c0166b00b0333aa77947c2375bd95ca2b5a3561e38af10b9bed396",
+    "size": 190714
   },
   "generated_identity": {
-    "sha256": "a7b479a74847914fec179ad2e27474b9a28fed2d4b33d388e0d25c7cfeee07b1",
-    "size": 4344
+    "sha256": "209d4b76df476c467ff5e02fa87c60ec03948513225d85689bc056d0ffee2e9c",
+    "size": 5328
   },
   "observation_window_seconds": 12.0,
   "reference_identity": {
@@ -28,10 +28,10 @@
     "size": 5948
   },
   "seed": 97,
-  "training_directory": "training/streaming/r3",
+  "training_directory": "training/streaming/r1",
   "training_model_identity": {
-    "sha256": "dbd805b054db26ac0f92e0f7fc3c86f8fd1fdf43d514a560eb3aca4017a7b5eb",
-    "size": 6489
+    "sha256": "3f8975d437616ea70e21610867f0bbdae079609eed4ed0a9ad1e6f7b581ed7be",
+    "size": 7360
   },
   "workload": "streaming"
 }

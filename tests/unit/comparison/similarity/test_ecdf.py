@@ -10,6 +10,8 @@ import pytest
 
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.comparison.diagnostics import CramerVonMisesDiagnostic
+from trafficlab.comparison.schema import MethodComparison
 from trafficlab.comparison.similarity.common import SimilarityResult
 from trafficlab.comparison.similarity.ecdf import (
     EcdfSampleResult,
@@ -105,9 +107,7 @@ def test_sample_methods_match_an_independent_support_scan_on_small_random_sample
     for _ in range(20):
         left = tuple(float(value) for value in rng.integers(0, 6, size=7))
         right = tuple(float(value) for value in rng.integers(0, 6, size=9))
-        _raw_sum, _weight, expected = _independent_ecdf_oracle(
-            left, right, tail_weighted=method is bounded_ad_sample
-        )
+        _raw_sum, _weight, expected = _independent_ecdf_oracle(left, right, tail_weighted=method is bounded_ad_sample)
         assert method(left, right).discrepancy == pytest.approx(expected)
 
 
@@ -145,6 +145,18 @@ def test_trace_metrics_combine_only_normalized_feature_discrepancies(similarity:
     assert result.score == pytest.approx(1.0 - expected)
 
 
+def test_large_cvm_diagnostics_survive_pooled_mass_roundoff() -> None:
+    """A normalization within schema tolerance of one remains a CvM diagnostic."""
+    trace = _events(tuple(float(index) for index in range(491)), tuple(range(60, 551)))
+    result = cramer_von_mises_similarity(trace, trace, 490.0, 0.5, 0.5)
+
+    method = MethodComparison.model_validate(
+        {"score": result.score, "weight": 0.125, "diagnostics": result.diagnostics}
+    )
+
+    assert isinstance(method.diagnostics, CramerVonMisesDiagnostic)
+
+
 @pytest.mark.parametrize(
     ("similarity", "tail_weighted"),
     [(cramer_von_mises_similarity, False), (anderson_darling_similarity, True)],
@@ -166,9 +178,7 @@ def test_trace_metrics_publish_the_complete_public_diagnostic_contract(
         ("iat", (0.0, 1.0, 0.0), (1.0, 0.0, 1.0), 1, 1),
         ("size", (100.0, 100.0, 200.0, 200.0), (100.0, 200.0, 200.0, 300.0), 2, 1),
     ):
-        raw_sum, normalization_weight, discrepancy = _independent_ecdf_oracle(
-            left, right, tail_weighted=tail_weighted
-        )
+        raw_sum, normalization_weight, discrepancy = _independent_ecdf_oracle(left, right, tail_weighted=tail_weighted)
         component = cast(Mapping[str, float | int], diagnostics[name])
         assert component["reference_sample_count"] == len(left)
         assert component["generated_sample_count"] == len(right)
@@ -184,7 +194,9 @@ def test_trace_metrics_publish_the_complete_public_diagnostic_contract(
 
 
 @pytest.mark.parametrize("similarity", [cramer_von_mises_similarity, anderson_darling_similarity])
-def test_trace_metrics_report_a_missing_direction_stratum_without_inventing_samples(similarity: _SimilarityMethod) -> None:
+def test_trace_metrics_report_a_missing_direction_stratum_without_inventing_samples(
+    similarity: _SimilarityMethod,
+) -> None:
     """A missing generated direction must remain observable to later aggregation policy."""
     reference = _events(
         (0.0, 1.0, 3.0),

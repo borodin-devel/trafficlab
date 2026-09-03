@@ -48,7 +48,9 @@ def _bounded(value: float, *, name: str) -> float:
     )
 
 
-def _jsd[Category: Hashable](reference: Mapping[Category, int], generated: Mapping[Category, int], *, name: str) -> float:
+def _jsd[Category: Hashable](
+    reference: Mapping[Category, int], generated: Mapping[Category, int], *, name: str
+) -> float:
     """Return base-2 JSD over the union of two exact integer count maps."""
     reference_total = sum(reference.values())
     generated_total = sum(generated.values())
@@ -71,7 +73,9 @@ def _jsd[Category: Hashable](reference: Mapping[Category, int], generated: Mappi
 
 def _mark_counts(trace: TrafficTrace) -> Counter[tuple[int, int]]:
     """Count exact direction/frame-length marks without an ordinal direction conversion."""
-    return Counter((int(direction), int(length)) for direction, length in zip(trace.directions, trace.frame_lengths, strict=True))
+    return Counter(
+        (int(direction), int(length)) for direction, length in zip(trace.directions, trace.frame_lengths, strict=True)
+    )
 
 
 def _iat_bin_edges(window: float, bin_count: int) -> tuple[float, ...]:

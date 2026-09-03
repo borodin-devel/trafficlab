@@ -377,9 +377,7 @@ def test_fit_rejects_explicit_optimizer_nonconvergence(monkeypatch: pytest.Monke
 
 
 @pytest.mark.parametrize("defect", ("iterations", "shape", "nonfinite", "loss"))
-def test_fit_rejects_malformed_or_inconsistent_success_results(
-    monkeypatch: pytest.MonkeyPatch, defect: str
-) -> None:
+def test_fit_rejects_malformed_or_inconsistent_success_results(monkeypatch: pytest.MonkeyPatch, defect: str) -> None:
     """A nominal success cannot bypass the fixed solver-result and direct-loss checks."""
     parameters = np.zeros(3, dtype=np.float64)
     durations = (0.0, 0.5, 1.0, 0.5)
@@ -496,9 +494,7 @@ def test_generation_preserves_multilag_duration_and_conditional_mean_history_ord
 
     events = result.require_complete().to_events()
     assert tuple(event.timestamp for event in events) == pytest.approx(expected_timestamps, abs=1e-15)
-    assert tuple((event.direction, event.frame_length) for event in events) == (
-        (Direction.OUTBOUND, 60),
-    ) * 4
+    assert tuple((event.direction, event.frame_length) for event in events) == ((Direction.OUTBOUND, 60),) * 4
     assert rng.calls == [
         ("choice", 4),
         ("exponential", 1.0),

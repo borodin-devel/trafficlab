@@ -7,9 +7,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
-from scripts.validation_study.common import require_frozen_mapping, require_type
+from scripts.validation_study.common import (
+    FrozenJsonObject,
+    JsonObject,
+    JsonValue,
+    freeze_object,
+    require_frozen_mapping,
+    require_type,
+)
 
 if TYPE_CHECKING:
     from scripts.validation_study.common import FrozenJsonObject, WorkloadName
@@ -106,6 +113,35 @@ class StudyRunRecord:
             and all(type(item) is MappingProxyType for item in self.family_champions),
             "family_champions must be three frozen JSON objects",
         )
+
+
+def run_record_from_document(document: JsonObject) -> StudyRunRecord:
+    """Freeze one validated run document into its typed retained record."""
+    champions = tuple(
+        freeze_object(cast(JsonObject, item)) for item in cast(list[JsonValue], document["family_champions"])
+    )
+    return StudyRunRecord(
+        execution_order=cast(int, document["execution_order"]),
+        run_id=cast(str, document["run_id"]),
+        key=freeze_object(cast(JsonObject, document["key"])),
+        config_path=cast(str, document["config_path"]),
+        run_directory=cast(str, document["run_directory"]),
+        transfer_evidence_directory=cast(str, document["transfer_evidence_directory"]),
+        elapsed_seconds=cast(float, document["elapsed_seconds"]),
+        reuse=freeze_object(cast(JsonObject, document["reuse"])),
+        cleanup_verified=cast(bool, document["cleanup_verified"]),
+        transfer_responses=tuple(
+            freeze_object(cast(JsonObject, item)) for item in cast(list[JsonValue], document["transfer_responses"])
+        ),
+        artifact_sha256=freeze_object(cast(JsonObject, document["artifact_sha256"])),
+        reference=freeze_object(cast(JsonObject, document["reference"])),
+        generated=freeze_object(cast(JsonObject, document["generated"])),
+        family_champions=cast(tuple[FrozenJsonObject, FrozenJsonObject, FrozenJsonObject], champions),
+        winner=freeze_object(cast(JsonObject, document["winner"])),
+        fresh_simulation=freeze_object(cast(JsonObject, document["fresh_simulation"])),
+        published=freeze_object(cast(JsonObject, document["published"])),
+        raw_sequence=freeze_object(cast(JsonObject, document["raw_sequence"])),
+    )
 
 
 @dataclass(frozen=True, slots=True)

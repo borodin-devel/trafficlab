@@ -18,7 +18,13 @@ from scripts.validation_study.audit.environment import validate_source_identitie
 from scripts.validation_study.candidate.artifacts import load_candidate_training
 from scripts.validation_study.candidate.held_out import evaluate_study_held_out
 from scripts.validation_study.candidate.reporting import candidate_natural_variation, candidate_report_inputs
-from scripts.validation_study.common import ARTIFACT_NAMES, PRIMARY_ORDER, TARGET_REFERENCE, WorkloadName
+from scripts.validation_study.common import (
+    ARTIFACT_NAMES,
+    MODEL_FAMILIES,
+    PRIMARY_ORDER,
+    TARGET_REFERENCE,
+    WorkloadName,
+)
 from scripts.validation_study.prerequisites.codec import render_retained_prerequisites
 from scripts.validation_study.prerequisites.commands import prerequisite_command_argv, prerequisite_junit_counts
 from scripts.validation_study.transfer import (
@@ -45,7 +51,7 @@ from trafficlab.common.trace import (
     render_capture_metadata,
 )
 from trafficlab.comparison.codec import render_comparison_result, similarity_settings_identity
-from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.metrics import compare_final_traces
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import parse_checkpoint
 from trafficlab.fitting.genetic.strategy import make_strategy_context, run_strategy
@@ -82,6 +88,13 @@ _STUDY_ID = "fixture-study"
 
 def _base_config(workload: WorkloadName) -> ExperimentConfig:
     config = load_configuration_pair(FIT_FIXTURE / "experiment.toml").portable
+    document = config.model_dump(mode="python")
+    models = cast(dict[str, object], document["models"])
+    models["enabled"] = MODEL_FAMILIES
+    for family in tuple(models):
+        if family not in {"enabled", *MODEL_FAMILIES}:
+            del models[family]
+    config = ExperimentConfig.model_validate(document)
     profile = next(spec for spec in workload_specs(URL) if spec.name == workload)
     return config.model_copy(
         update={
@@ -268,15 +281,17 @@ def _write_training_tree(
         parsed_reference, window = normalize_reference(
             read_pcapng_bytes(reference, metadata, source=Path("reference.pcapng"))
         )
-        comparison = compare_traces(
-            parsed_reference, align_generated(generated.trace, window), window, config.similarity
-        ).with_input_identities(
+        comparison = compare_final_traces(
+            parsed_reference,
+            align_generated(generated.trace, window),
+            window,
+            config.similarity,
             {
                 "capture_json": identify_bytes(capture),
                 "generated_pcapng": identify_bytes(generated.content),
                 "reference_pcapng": identify_bytes(reference),
                 "similarity_settings": similarity_settings_identity(config.similarity),
-            }
+            },
         )
         (run_directory / "generated.pcapng").write_bytes(generated.content)
         (run_directory / "similarity.json").write_bytes(render_comparison_result(comparison))
@@ -443,7 +458,7 @@ def _write_held_out(
 
 
 def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, bytes]:
-    """Build one complete, credential-free schema-4 candidate through public scientific owners."""
+    """Build one complete, credential-free schema-5 candidate through public scientific owners."""
     validate_source_identities(source_commit, source_tree)
     configs: dict[WorkloadName, ExperimentConfig] = {}
     for workload in WORKLOADS:
@@ -515,7 +530,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             "final_seed": 97,
             "model_selection": {"rule": "highest_best_fitness_then_lowest_repeat", "selected": list(selections)},
             "prerequisite_path": "examples/validation_study/prerequisites.json",
-            "schema_version": 4,
+            "schema_version": 5,
             "selection_seeds": list(configs["short"].genetic.trial_seeds),
             "study_id": _STUDY_ID,
             "training_repetitions": 3,
@@ -535,7 +550,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             "kernel_release": "fixture-kernel-1",
             "python_implementation": "CPython",
             "python_version": sys.version.split()[0],
-            "scientific_artifact_schema": 4,
+            "scientific_artifact_schema": 5,
             "source_commit": source_commit,
             "source_tree": source_tree,
             "target_image_id": TARGET_ID,
@@ -616,7 +631,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
                     },
                     "commands": prerequisite_commands,
                     "environment": prerequisite_environment,
-                    "schema_version": 4,
+                    "schema_version": 5,
                     "study_id": _STUDY_ID,
                     "url": URL,
                 }
@@ -690,7 +705,7 @@ def generate_fixture_tree(*, source_commit: str, source_tree: str) -> dict[str, 
             "protocol": "protocol.json",
             "report": "report.json",
             "report_inputs": "report_inputs.json",
-            "schema_version": 4,
+            "schema_version": 5,
             "training": training,
         }
         (root / "index.json").write_bytes(fixture_canonical_json(index))

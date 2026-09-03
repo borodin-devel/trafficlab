@@ -13,7 +13,6 @@ from scripts import generate_artifact_schemas as schemas
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
 from trafficlab.common.config import ExperimentConfig
 
-
 REPOSITORY = Path(__file__).resolve().parents[3]
 _RELEASE_FAMILIES = (
     "poisson_empirical",
@@ -91,9 +90,10 @@ def test_release_configs_enable_exactly_all_families_and_equal_fitness_weights()
         config = ExperimentConfig.model_validate(document)
 
         assert config.models.enabled == _RELEASE_FAMILIES
-        assert tuple(
-            family for family in _RELEASE_FAMILIES if getattr(config.models, family) is not None
-        ) == _RELEASE_FAMILIES
+        assert (
+            tuple(family for family in _RELEASE_FAMILIES if getattr(config.models, family) is not None)
+            == _RELEASE_FAMILIES
+        )
         assert config.genetic.population_size >= config.genetic.elite_count + len(_RELEASE_FAMILIES)
         assert tuple(config.similarity.method_weights.model_dump()) == _FITNESS_METHODS
         assert config.similarity.method_weights.model_dump() == dict.fromkeys(_FITNESS_METHODS, 0.125)

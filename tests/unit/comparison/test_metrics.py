@@ -227,10 +227,7 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
 
 @pytest.mark.parametrize(
     "method_weights",
-    [
-        {name: float(name == selected) for name in FITNESS_METHOD_NAMES}
-        for selected in FITNESS_METHOD_NAMES
-    ]
+    [{name: float(name == selected) for name in FITNESS_METHOD_NAMES} for selected in FITNESS_METHOD_NAMES]
     + [
         {name: (index + 1) / 36.0 for index, name in enumerate(FITNESS_METHOD_NAMES)},
         {name: (0.5 if name in ("iat_ks", "jensen_shannon") else 0.0) for name in FITNESS_METHOD_NAMES},
@@ -289,14 +286,18 @@ def test_compare_traces_eagerly_retains_all_eight_methods_for_every_weight_case(
     if 1.0 in method_weights.values():
         selected_method = next(name for name, weight in method_weights.items() if weight == 1.0)
         assert result.aggregate_score == scores[selected_method]
-    artifact = result.with_postfit_diagnostics(postfit).with_input_identities(
-        {
-            "capture_json": ContentIdentity(size=1, sha256="a" * 64),
-            "generated_pcapng": ContentIdentity(size=2, sha256="b" * 64),
-            "reference_pcapng": ContentIdentity(size=3, sha256="c" * 64),
-            "similarity_settings": ContentIdentity(size=4, sha256="d" * 64),
-        }
-    ).as_dict()
+    artifact = (
+        result.with_postfit_diagnostics(postfit)
+        .with_input_identities(
+            {
+                "capture_json": ContentIdentity(size=1, sha256="a" * 64),
+                "generated_pcapng": ContentIdentity(size=2, sha256="b" * 64),
+                "reference_pcapng": ContentIdentity(size=3, sha256="c" * 64),
+                "similarity_settings": ContentIdentity(size=4, sha256="d" * 64),
+            }
+        )
+        .as_dict()
+    )
     assert tuple(artifact) == (
         "aggregate_score",
         "input_identities",

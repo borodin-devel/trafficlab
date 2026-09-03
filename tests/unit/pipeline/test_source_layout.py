@@ -31,7 +31,15 @@ EXPECTED_MODULES = {
     },
     "fitting": {"stage.py"},
     "generation": {"stage.py"},
-    "comparison": {"codec.py", "diagnostics.py", "metrics.py", "publication.py", "schema.py", "stage.py"},
+    "comparison": {
+        "codec.py",
+        "diagnostic_types.py",
+        "diagnostics.py",
+        "metrics.py",
+        "publication.py",
+        "schema.py",
+        "stage.py",
+    },
 }
 
 EXPECTED_NESTED_PACKAGES = {
@@ -46,10 +54,13 @@ EXPECTED_NESTED_PACKAGES = {
     },
     "generation/models": {
         "__init__.py",
+        "acd.py",
+        "acd_fitting.py",
         "common.py",
         "fitted_model.py",
         "fitted_schema.py",
         "mmpp.py",
+        "nhpp.py",
         "poisson.py",
         "registry.py",
     },
@@ -57,8 +68,20 @@ EXPECTED_NESTED_PACKAGES = {
         "__init__.py",
         "autocorrelation.py",
         "common.py",
+        "ecdf.py",
+        "jensen_shannon.py",
         "ks.py",
+        "mmd.py",
         "multiscale.py",
+    },
+    "comparison/postfit": {
+        "__init__.py",
+        "c2st.py",
+        "c2st_schema.py",
+        "diagnostics.py",
+        "dispersion.py",
+        "schema.py",
+        "transitions.py",
     },
     "capture/docker": {"__init__.py", "compose.py", "image.py", "process.py", "types.py"},
     "fitting/genetic/checkpoint": {
@@ -184,3 +207,14 @@ def test_production_modules_stay_within_the_cohesion_backstop() -> None:
     }
 
     assert offenders == {}
+
+
+def test_postfit_schema_and_diagnostic_owners_are_importable_without_a_cycle() -> None:
+    """Post-fit records remain available through the public comparison schema."""
+    import importlib
+
+    schema = importlib.import_module("trafficlab.comparison.schema")
+    diagnostics = importlib.import_module("trafficlab.comparison.postfit.diagnostics")
+
+    assert schema.FanoAllanDiagnostic.__module__ == "trafficlab.comparison.postfit.schema"
+    assert diagnostics.FrameSizeDiagnostic.__module__ == "trafficlab.comparison.postfit.diagnostics"

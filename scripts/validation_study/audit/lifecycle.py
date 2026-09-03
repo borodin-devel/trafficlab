@@ -199,8 +199,8 @@ def _audit(
         fail(
             "scientific_semantics_incompatible",
             INDEX,
-            "evidence index must use schema version 4",
-            "rebuild retained evidence under schema 4",
+            "evidence index must use schema version 5",
+            "rebuild retained evidence under schema 5",
         )
     index = validated_study_root(index, ValidationStudyLineage, name=INDEX)
     metadata(index, entries)

@@ -259,7 +259,7 @@ max_output_bytes = 2000000
 max_wall_seconds = 10.0
 
 [genetic]
-population_size = 6
+population_size = 8
 generation_count = 1
 tournament_size = 2
 elite_count = 1
@@ -354,9 +354,53 @@ multiscale_scale_weights = [
 multiscale_packet_weight = 0.5
 multiscale_byte_weight = 0.5
 max_direction_bin_cells = 100
+cvm_iat_weight = 0.5
+cvm_size_weight = 0.5
+ad_iat_weight = 0.5
+ad_size_weight = 0.5
+js_iat_bin_count = 8
+js_iat_weight = 0.5
+js_mark_weight = 0.5
+mmd_feature_count = 32
+mmd_seed = 17
+mmd_scale_floor = 0.001
 
 [similarity.method_weights]
-frame_size_ks = 0.25
-iat_ks = 0.25
-autocorrelation = 0.25
-multiscale_rate = 0.25
+frame_size_ks = 0.125
+iat_ks = 0.125
+autocorrelation = 0.125
+multiscale_rate = 0.125
+cramer_von_mises = 0.125
+anderson_darling = 0.125
+jensen_shannon = 0.125
+approximate_mmd = 0.125
+
+[similarity.postfit.dispersion]
+widths_seconds = [
+    1.0,
+    2.5,
+]
+scale_weights = [
+    0.5,
+    0.5,
+]
+fano_weight = 0.5
+allan_weight = 0.5
+
+[similarity.postfit.transition]
+size_bin_count = 2
+iat_bin_count = 2
+pseudocount = 0.5
+occupancy_weight = 0.34
+transition_rows_weight = 0.33
+runs_weight = 0.33
+
+[similarity.postfit.c2st]
+feature_version = "window-v1"
+window_width_seconds = 1.0
+fold_count = 2
+guard_window_count = 1
+maximum_window_count = 64
+l2_regularization = 1.0
+maximum_iterations = 100
+tolerance = 1e-09

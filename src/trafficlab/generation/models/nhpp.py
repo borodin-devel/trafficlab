@@ -254,23 +254,31 @@ def _load_marks(value: object, *, name: str, allow_empty: bool) -> MarkDistribut
     entries: list[MarkCount] = []
     for raw in cast(list[object], value):
         if type(raw) is not dict:
-            raise _invalid(f"invalid NHPP {name}", corrective_action="provide strict direction, frame_length, count marks")
+            raise _invalid(
+                f"invalid NHPP {name}", corrective_action="provide strict direction, frame_length, count marks"
+            )
         mark = cast(dict[str, object], raw)
         if set(mark) != {"direction", "frame_length", "count"}:
-            raise _invalid(f"invalid NHPP {name}", corrective_action="provide strict direction, frame_length, count marks")
+            raise _invalid(
+                f"invalid NHPP {name}", corrective_action="provide strict direction, frame_length, count marks"
+            )
         direction, frame_length, count = mark["direction"], mark["frame_length"], mark["count"]
         if type(direction) is not str or type(frame_length) is not int or type(count) is not int:
             raise _invalid(f"invalid NHPP {name}", corrective_action="provide exact empirical mark primitives")
         try:
             entries.append(MarkCount(Direction(direction), frame_length, count))
         except (TypeError, ValueError) as error:
-            raise _invalid(f"invalid NHPP {name}: {error}", corrective_action="provide valid empirical marks") from error
+            raise _invalid(
+                f"invalid NHPP {name}: {error}", corrective_action="provide valid empirical marks"
+            ) from error
     if not entries and allow_empty:
         return None
     try:
         return MarkDistribution(tuple(entries))
     except (TypeError, ValueError) as error:
-        raise _invalid(f"invalid NHPP {name}: {error}", corrective_action="provide nonempty unique empirical marks") from error
+        raise _invalid(
+            f"invalid NHPP {name}: {error}", corrective_action="provide nonempty unique empirical marks"
+        ) from error
 
 
 class NhppFamily:
@@ -342,17 +350,23 @@ class NhppFamily:
     def load_fitted(self, data: object, *, genes: Genes, bounds: FamilyBounds) -> NhppModel:
         bin_count = _repair_genes(genes, bounds)[0]
         if type(data) is not dict:
-            raise _invalid("invalid fitted NHPP payload", corrective_action="provide rates, bin_marks, and global_marks")
+            raise _invalid(
+                "invalid fitted NHPP payload", corrective_action="provide rates, bin_marks, and global_marks"
+            )
         payload = cast(dict[str, object], data)
         if set(payload) != {"rates", "bin_marks", "global_marks"}:
-            raise _invalid("invalid fitted NHPP payload", corrective_action="provide rates, bin_marks, and global_marks")
+            raise _invalid(
+                "invalid fitted NHPP payload", corrective_action="provide rates, bin_marks, and global_marks"
+            )
         raw_rates, raw_tables = payload["rates"], payload["bin_marks"]
         if type(raw_rates) is not list or type(raw_tables) is not list:
             raise _invalid("invalid fitted NHPP payload", corrective_action="provide list rates and bin mark tables")
         rates = cast(list[object], raw_rates)
         tables = cast(list[object], raw_tables)
         if len(rates) != bin_count or len(tables) != bin_count:
-            raise _invalid("invalid fitted NHPP payload", corrective_action="match rates and bin marks to repaired bin_count")
+            raise _invalid(
+                "invalid fitted NHPP payload", corrective_action="match rates and bin marks to repaired bin_count"
+            )
         if any(type(rate) is not float or not math.isfinite(rate) or rate < 0.0 for rate in rates):
             raise _invalid("invalid fitted NHPP rates", corrective_action="provide finite nonnegative float rates")
         global_marks = _load_marks(payload["global_marks"], name="global_marks", allow_empty=False)
@@ -361,4 +375,6 @@ class NhppFamily:
         try:
             return NhppModel(tuple(cast(float, rate) for rate in rates), bin_marks, global_marks)
         except (TypeError, ValueError) as error:
-            raise _invalid(f"invalid fitted NHPP payload: {error}", corrective_action="provide valid NHPP parameters") from error
+            raise _invalid(
+                f"invalid fitted NHPP payload: {error}", corrective_action="provide valid NHPP parameters"
+            ) from error

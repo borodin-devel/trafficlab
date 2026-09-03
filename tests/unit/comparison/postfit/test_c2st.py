@@ -160,24 +160,13 @@ def test_logistic_loss_and_analytic_gradient_match_an_independent_scalar_oracle(
 
     logits = [1.25, -0.25, -1.25]
     expected_loss = (
-        sum(
-            math.log1p(math.exp(logit)) - label * logit
-            for logit, label in zip(logits, labels, strict=True)
-        )
-        / 3
+        sum(math.log1p(math.exp(logit)) - label * logit for logit, label in zip(logits, labels, strict=True)) / 3
     )
     expected_loss += 0.5 * regularization * parameters[1] ** 2
-    residuals = [
-        1.0 / (1.0 + math.exp(-logit)) - label
-        for logit, label in zip(logits, labels, strict=True)
-    ]
+    residuals = [1.0 / (1.0 + math.exp(-logit)) - label for logit, label in zip(logits, labels, strict=True)]
     expected_gradient = (
         sum(residuals) / 3,
-        sum(
-            residual * value
-            for residual, value in zip(residuals, (-2.0, 1.0, 3.0), strict=True)
-        )
-        / 3
+        sum(residual * value for residual, value in zip(residuals, (-2.0, 1.0, 3.0), strict=True)) / 3
         + regularization * parameters[1],
     )
     assert loss == pytest.approx(expected_loss, abs=1e-15)

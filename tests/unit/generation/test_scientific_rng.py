@@ -76,9 +76,9 @@ def test_pcg64_state_is_exact_json_and_restore_replays_all_next_primitives() -> 
         Path("examples/validation_study/evidence/2026-08-18-research-fitness-r21/training/bursty/r1/best_model.json"),
     ],
 )
-def test_schema_v4_is_current_and_older_best_models_require_refit(legacy: Path) -> None:
+def test_schema_v5_is_current_and_older_best_models_require_refit(legacy: Path) -> None:
     """Custom-codec fitted artifacts must not silently enter the Scapy workflow."""
-    assert SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 4
+    assert SCIENTIFIC_ARTIFACT_SCHEMA_VERSION == 5
     with pytest.raises(TrafficlabError, match="best model schema is incompatible") as caught:
         load_best_model(legacy.read_bytes(), source=legacy)
     assert caught.value.corrective_action == "refit under the current schema"

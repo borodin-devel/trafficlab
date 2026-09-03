@@ -67,7 +67,7 @@ def test_final_artifact_validation_rejects_a_fit_result_with_mismatched_priority
         ("generated-lineage", "compare", "similarity.json lineage"),
         ("similarity", "compare", "similarity.json"),
         ("similarity-invalid", "compare", "similarity.json is invalid"),
-        ("similarity-noncanonical", "compare", "not canonical"),
+        ("similarity-noncanonical", "compare", "canonical sorted"),
         ("extra-entry", "run", "directory entries"),
     ],
 )
@@ -258,10 +258,10 @@ def test_final_reload_preserves_schema_incompatibility_outcome(
     assert [record for record in records if record.get("event") == "run_completed"] == []
 
 
-def test_final_reload_preserves_the_generic_checkpoint_error_boundary(
+def test_final_reload_classifies_an_older_checkpoint_schema_as_scientifically_incompatible(
     valid_config_data: dict[str, object], tmp_path: Path
 ) -> None:
-    """A non-schema checkpoint decode error still follows the existing fit corruption fallback."""
+    """An older checkpoint schema is rejected as incompatible scientific evidence."""
     experiment_path, prepared = prepared_experiment(valid_config_data, tmp_path)
     dependencies, _results = success_dependencies(experiment_path, prepared, [])
     checkpoint_path = prepared.run_directory / "checkpoint.json"
@@ -280,9 +280,9 @@ def test_final_reload_preserves_the_generic_checkpoint_error_boundary(
     outcome = captured.value.failure_outcome
     assert outcome is not None
     assert (outcome.kind, outcome.stage, outcome.affected_evidence, outcome.evidence_state) == (
-        "artifact_corrupt",
+        "scientific_semantics_incompatible",
         "fit",
-        "fit inputs",
+        "checkpoint.json",
         "preserved",
     )
 

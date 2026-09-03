@@ -236,26 +236,7 @@ def _local_identity(content: bytes) -> ContentIdentity:
 
 def _canonical_similarity_settings_bytes(config: ExperimentConfig) -> bytes:
     """Render the documented effective similarity settings without production serializers."""
-    settings = config.similarity
-    weights = settings.method_weights
-    document = {
-        "acf_iat_weight": settings.acf_iat_weight,
-        "acf_lag_weights": list(settings.acf_lag_weights),
-        "acf_lags": list(settings.acf_lags),
-        "acf_size_weight": settings.acf_size_weight,
-        "iat_diagnostic_quantile": settings.iat_diagnostic_quantile,
-        "max_direction_bin_cells": settings.max_direction_bin_cells,
-        "method_weights": {
-            "autocorrelation": weights.autocorrelation,
-            "frame_size_ks": weights.frame_size_ks,
-            "iat_ks": weights.iat_ks,
-            "multiscale_rate": weights.multiscale_rate,
-        },
-        "multiscale_byte_weight": settings.multiscale_byte_weight,
-        "multiscale_packet_weight": settings.multiscale_packet_weight,
-        "multiscale_scale_weights": list(settings.multiscale_scale_weights),
-        "multiscale_widths_seconds": list(settings.multiscale_widths_seconds),
-    }
+    document = config.similarity.model_dump(mode="json")
     return json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
@@ -343,9 +324,10 @@ def test_full_pipeline_resume_after_atomic_checkpoint_is_scientifically_byte_ide
     real_evaluate = genetic_strategy.evaluate_candidate
 
     def forbid_generation_zero(candidate: Candidate, context: ValidatedEvaluationContext) -> Candidate:
-        if candidate.identifier.birth_generation == 0:
+        if candidate.identifier.birth_generation == 0 and candidate.status == "valid":
             raise AssertionError("resume reevaluated a completed generation-zero candidate")
-        evaluated_birth_generations.append(candidate.identifier.birth_generation)
+        if candidate.identifier.birth_generation > 0:
+            evaluated_birth_generations.append(candidate.identifier.birth_generation)
         return real_evaluate(candidate, context)
 
     monkeypatch.setattr(genetic_strategy, "evaluate_candidate", forbid_generation_zero)

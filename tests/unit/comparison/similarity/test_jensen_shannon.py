@@ -11,9 +11,7 @@ from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.comparison.similarity.jensen_shannon import jensen_shannon_similarity
 
 
-def _trace(
-    timestamps: tuple[float, ...], lengths: tuple[int, ...], directions: tuple[Direction, ...]
-) -> TrafficTrace:
+def _trace(timestamps: tuple[float, ...], lengths: tuple[int, ...], directions: tuple[Direction, ...]) -> TrafficTrace:
     """Build one compact canonical trace without production metric helpers."""
     return TrafficTrace.from_events(
         TraceEvent(timestamp, direction, length)
@@ -24,7 +22,9 @@ def _trace(
 def _entropy(counts: Counter[object]) -> float:
     """Compute base-2 entropy from exact rational masses for a tiny oracle PMF."""
     total = sum(counts.values())
-    return -sum(float(Fraction(count, total)) * log2(float(Fraction(count, total))) for count in counts.values() if count)
+    return -sum(
+        float(Fraction(count, total)) * log2(float(Fraction(count, total))) for count in counts.values() if count
+    )
 
 
 def _jsd(reference: Counter[object], generated: Counter[object]) -> float:
@@ -79,7 +79,9 @@ def test_mark_jsd_matches_a_fraction_entropy_oracle_on_exact_direction_length_ca
         (60, 120, 120, 120),
         (Direction.OUTBOUND, Direction.OUTBOUND, Direction.INBOUND, Direction.INBOUND),
     )
-    reference_counts: Counter[tuple[Direction, int]] = Counter((event.direction, event.frame_length) for event in reference)
+    reference_counts: Counter[tuple[Direction, int]] = Counter(
+        (event.direction, event.frame_length) for event in reference
+    )
     generated_counts = Counter((event.direction, event.frame_length) for event in generated)
 
     result = jensen_shannon_similarity(reference, generated, 3.0, 3, 0.0, 1.0)
@@ -107,9 +109,7 @@ def test_iat_bin_edges_are_fixed_by_reference_window_and_include_generated_endpo
     iat = cast(dict[str, object], result.diagnostics["iat"])
     assert iat["bin_edges"] == pytest.approx((0.0, log1p(4.0) / 2.0, log1p(4.0)))
     categories = cast(tuple[dict[str, object], ...], iat["categories"])
-    assert categories == (
-        {"direction": "outbound", "bin_index": 1, "reference_count": 2, "generated_count": 1},
-    )
+    assert categories == ({"direction": "outbound", "bin_index": 1, "reference_count": 2, "generated_count": 1},)
 
 
 def test_generated_iat_at_an_internal_reference_bin_endpoint_uses_the_later_bin() -> None:
@@ -130,12 +130,8 @@ def test_generated_iat_at_an_internal_reference_bin_endpoint_uses_the_later_bin(
 
 def test_zero_mass_union_categories_use_only_defined_jsd_terms() -> None:
     """Evaluating a zero-mass logarithm would make this finite PMF comparison fail."""
-    reference = _trace(
-        (0.0, 1.0, 2.0), (60, 60, 60), (Direction.OUTBOUND, Direction.OUTBOUND, Direction.OUTBOUND)
-    )
-    generated = _trace(
-        (0.0, 1.0, 2.0), (60, 60, 60), (Direction.INBOUND, Direction.INBOUND, Direction.INBOUND)
-    )
+    reference = _trace((0.0, 1.0, 2.0), (60, 60, 60), (Direction.OUTBOUND, Direction.OUTBOUND, Direction.OUTBOUND))
+    generated = _trace((0.0, 1.0, 2.0), (60, 60, 60), (Direction.INBOUND, Direction.INBOUND, Direction.INBOUND))
 
     result = jensen_shannon_similarity(reference, generated, 2.0, 2, 0.5, 0.5)
 

@@ -264,6 +264,8 @@ def nonoperational_config_mutation(config: ExperimentConfig, case: str) -> Exper
 def config_semantic_leaf_paths(value: Any, prefix: tuple[str | int, ...] = ()) -> tuple[tuple[str | int, ...], ...]:
     if prefix == ("run", "directory"):
         return ()
+    if prefix == ("similarity", "postfit", "c2st", "feature_version"):
+        return ()
     if prefix == ("target", "mounts"):
         mounts = cast(list[dict[str, Any]], value)
         return tuple(
@@ -280,6 +282,12 @@ def config_semantic_leaf_paths(value: Any, prefix: tuple[str | int, ...] = ()) -
             "acf_lag_weights",
             "acf_iat_weight",
             "acf_size_weight",
+            "ad_iat_weight",
+            "ad_size_weight",
+            "cvm_iat_weight",
+            "cvm_size_weight",
+            "js_iat_weight",
+            "js_mark_weight",
             "multiscale_packet_weight",
             "multiscale_byte_weight",
         }
@@ -287,11 +295,36 @@ def config_semantic_leaf_paths(value: Any, prefix: tuple[str | int, ...] = ()) -
         return (
             ("similarity", "__acf_lags_and_weights__"),
             ("similarity", "__acf_component_weights__"),
+            ("similarity", "__ad_component_weights__"),
+            ("similarity", "__cvm_component_weights__"),
+            ("similarity", "__js_component_weights__"),
             ("similarity", "__multiscale_component_weights__"),
             *(
                 path
                 for key, child in settings.items()
                 if key not in coupled
+                for path in config_semantic_leaf_paths(child, (*prefix, key))
+            ),
+        )
+    if prefix == ("similarity", "postfit", "dispersion"):
+        settings = cast(dict[str, Any], value)
+        return (
+            (*prefix, "__component_weights__"),
+            *(
+                path
+                for key, child in settings.items()
+                if key not in {"fano_weight", "allan_weight"}
+                for path in config_semantic_leaf_paths(child, (*prefix, key))
+            ),
+        )
+    if prefix == ("similarity", "postfit", "transition"):
+        settings = cast(dict[str, Any], value)
+        return (
+            (*prefix, "__component_weights__"),
+            *(
+                path
+                for key, child in settings.items()
+                if key not in {"occupancy_weight", "transition_rows_weight", "runs_weight"}
                 for path in config_semantic_leaf_paths(child, (*prefix, key))
             ),
         )
@@ -329,10 +362,36 @@ def set_config_semantic_path_value(
         similarity["acf_iat_weight"] = 0.6
         similarity["acf_size_weight"] = 0.4
         return
+    if path == ("similarity", "__ad_component_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["ad_iat_weight"] = 0.6
+        similarity["ad_size_weight"] = 0.4
+        return
+    if path == ("similarity", "__cvm_component_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["cvm_iat_weight"] = 0.6
+        similarity["cvm_size_weight"] = 0.4
+        return
+    if path == ("similarity", "__js_component_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["js_iat_weight"] = 0.6
+        similarity["js_mark_weight"] = 0.4
+        return
     if path == ("similarity", "__multiscale_component_weights__"):
         similarity = cast(dict[str, Any], document["similarity"])
         similarity["multiscale_packet_weight"] = 0.6
         similarity["multiscale_byte_weight"] = 0.4
+        return
+    if path == ("similarity", "postfit", "dispersion", "__component_weights__"):
+        dispersion = cast(dict[str, Any], cast(dict[str, Any], document["similarity"])["postfit"])["dispersion"]
+        cast(dict[str, Any], dispersion)["fano_weight"] = 0.6
+        cast(dict[str, Any], dispersion)["allan_weight"] = 0.4
+        return
+    if path == ("similarity", "postfit", "transition", "__component_weights__"):
+        transition = cast(dict[str, Any], cast(dict[str, Any], document["similarity"])["postfit"])["transition"]
+        cast(dict[str, Any], transition)["occupancy_weight"] = 0.4
+        cast(dict[str, Any], transition)["transition_rows_weight"] = 0.3
+        cast(dict[str, Any], transition)["runs_weight"] = 0.3
         return
     parent = config_semantic_path_value(document, path[:-1])
     parent[path[-1]] = replacement
@@ -349,7 +408,13 @@ def config_semantic_replacements(path: tuple[str | int, ...], value: Any) -> tup
         return ("https://example.test/changed",)
     if path == ("similarity", "method_weights"):
         weights = cast(dict[str, float], value)
-        return ({**weights, "frame_size_ks": 0.30, "iat_ks": 0.20},)
+        return (
+            {
+                **weights,
+                "frame_size_ks": weights["frame_size_ks"] + 0.025,
+                "iat_ks": weights["iat_ks"] - 0.025,
+            },
+        )
     if type(value) is bool:
         return (not value,)
     if type(value) is int:

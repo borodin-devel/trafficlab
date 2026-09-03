@@ -145,8 +145,26 @@ def test_prepare_experiment_failure_before_publication_leaves_no_run_directory(
 @pytest.mark.parametrize(
     "method_weights",
     [
-        {"frame_size_ks": 0.0, "iat_ks": 1.0, "autocorrelation": 0.0, "multiscale_rate": 0.0},
-        {"frame_size_ks": 0.1, "iat_ks": 0.2, "autocorrelation": 0.3, "multiscale_rate": 0.4},
+        {
+            "frame_size_ks": 0.0,
+            "iat_ks": 1.0,
+            "autocorrelation": 0.0,
+            "multiscale_rate": 0.0,
+            "cramer_von_mises": 0.0,
+            "anderson_darling": 0.0,
+            "jensen_shannon": 0.0,
+            "approximate_mmd": 0.0,
+        },
+        {
+            "frame_size_ks": 0.1,
+            "iat_ks": 0.2,
+            "autocorrelation": 0.3,
+            "multiscale_rate": 0.4,
+            "cramer_von_mises": 0.0,
+            "anderson_darling": 0.0,
+            "jensen_shannon": 0.0,
+            "approximate_mmd": 0.0,
+        },
     ],
     ids=("zero-weight", "mixed-weights"),
 )
@@ -220,6 +238,10 @@ def test_config_only_cli_uses_production_python_api_without_subprocess_or_docker
         "iat_ks",
         "autocorrelation",
         "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd",
     )
     assert {name for name in sys.modules if _is_docker_adapter_module(name)} == set()
     assert not hasattr(docker_package, "compose")
@@ -397,6 +419,10 @@ def test_checked_in_example_is_complete_and_uses_repository_relative_paths() -> 
     assert config.models.poisson_empirical is not None
     assert config.models.markov_renewal is not None
     assert config.models.mmpp is not None
+    assert config.models.nhpp is not None
+    assert config.models.acd is not None
+    assert config.models.markov_packet_train is not None
+    assert config.models.packet_hmm is not None
     assert config.models.poisson_empirical.operator_values == (0.9, 1.0, 0.1)
     assert config.models.markov_renewal.operator_values == (0.9, 0.2, 0.1)
     assert config.models.mmpp.operator_values == (0.9, 0.25, 0.1)
@@ -455,7 +481,15 @@ def test_checked_in_external_reference_default_is_release_sized_and_config_only_
     assert config.genetic.early_stopping_generations == 20
     assert config.genetic.early_stopping_tolerance == 0.0001
     assert config.genetic.resume is True
-    assert config.models.enabled == ("poisson_empirical", "markov_renewal", "mmpp")
+    assert config.models.enabled == (
+        "poisson_empirical",
+        "markov_renewal",
+        "mmpp",
+        "nhpp",
+        "acd",
+        "markov_packet_train",
+        "packet_hmm",
+    )
     assert config.models.poisson_empirical is not None
     assert config.models.markov_renewal is not None
     assert config.models.mmpp is not None
@@ -484,11 +518,47 @@ def test_checked_in_external_reference_default_is_release_sized_and_config_only_
         "lambda0": {"lower": 0.01, "upper": 100.0},
         "lambda1": {"lower": 0.1, "upper": 1000.0},
     }
+    nhpp = config.models.nhpp
+    acd = config.models.acd
+    markov_packet_train = config.models.markov_packet_train
+    packet_hmm = config.models.packet_hmm
+    assert nhpp is not None
+    assert acd is not None
+    assert markov_packet_train is not None
+    assert packet_hmm is not None
+    assert nhpp.model_dump() == {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "bin_count": {"lower": 2, "upper": 16},
+    }
+    assert acd.model_dump() == {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "order": {"lower": 1, "upper": 3},
+    }
+    assert markov_packet_train.model_dump() == {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "length_cap": {"lower": 3, "upper": 8},
+    }
+    assert packet_hmm.model_dump() == {
+        "crossover_probability": 0.9,
+        "mutation_probability": 1.0,
+        "mutation_scale": 0.1,
+        "state_count": {"lower": 2, "upper": 4},
+    }
     assert config.similarity.multiscale_widths_seconds == (0.25, 1.0)
     assert config.similarity.max_direction_bin_cells == 100_000
     assert config.similarity.method_weights.model_dump() == {
-        "frame_size_ks": 0.25,
-        "iat_ks": 0.25,
-        "autocorrelation": 0.25,
-        "multiscale_rate": 0.25,
+        "frame_size_ks": 0.125,
+        "iat_ks": 0.125,
+        "autocorrelation": 0.125,
+        "multiscale_rate": 0.125,
+        "cramer_von_mises": 0.125,
+        "anderson_darling": 0.125,
+        "jensen_shannon": 0.125,
+        "approximate_mmd": 0.125,
     }

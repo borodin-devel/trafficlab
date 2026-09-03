@@ -1,8 +1,9 @@
 """Traffic comparison metrics ownership."""
 
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
+from trafficlab.common.compatibility import ContentIdentity
 from trafficlab.common.config import SimilarityConfig
 from trafficlab.common.errors import (
     TrafficlabError,
@@ -179,6 +180,21 @@ def evaluate_postfit(
             f"invalid post-fit comparison result: {error}",
             corrective_action="report the post-fit comparison result assembly defect",
         ) from error
+
+
+def compare_final_traces(
+    reference: TrafficTrace,
+    generated: TrafficTrace,
+    W: float,
+    settings: SimilarityConfig,
+    input_identities: Mapping[str, ContentIdentity],
+) -> ComparisonResult:
+    """Compose the one final-only schema-5 comparison artifact from pure trace inputs."""
+    return (
+        evaluate_fitness(reference, generated, W, settings)
+        .with_postfit_diagnostics(evaluate_postfit(reference, generated, W, settings))
+        .with_input_identities(input_identities)
+    )
 
 
 def compare_traces(

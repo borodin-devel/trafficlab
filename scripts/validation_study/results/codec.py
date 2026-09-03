@@ -8,8 +8,8 @@ from typing import cast
 
 from scripts.validation_study.common import (
     ARTIFACT_NAMES,
-    ENVIRONMENT_KEYS,
     FAMILY_ORDER,
+    HISTORIC_PUBLISHED_METHOD_ORDER,
     HISTORIC_SCHEMA_ONE_RESULT_COMMIT,
     HISTORIC_SCHEMA_ONE_RESULT_STUDY_ID,
     HISTORIC_SCHEMA_ONE_RESULT_URL,
@@ -32,7 +32,6 @@ from scripts.validation_study.common import (
     WorkloadName,
     exact_object,
     freeze_object,
-    git_commit_value,
     image_id_value,
     load_json,
     profile_hashes,
@@ -46,7 +45,6 @@ from scripts.validation_study.common import (
     strict_list,
     strict_string,
     string_array,
-    utc_timestamp,
     validate_endpoint_url,
     validate_study_id,
 )
@@ -56,7 +54,8 @@ from scripts.validation_study.prerequisites.codec import (
     validate_capability,
 )
 from scripts.validation_study.prerequisites.commands import guard_prefix
-from scripts.validation_study.records import ReproductionRecord, StudyResults, StudyRunRecord
+from scripts.validation_study.records import ReproductionRecord, StudyResults, run_record_from_document
+from scripts.validation_study.results.environment import validate_environment
 from scripts.validation_study.results.reporting import (
     bounded_score,
     render_study_document,
@@ -68,7 +67,6 @@ from scripts.validation_study.results.reporting import (
     validate_workload_summary,
 )
 from scripts.validation_study.workloads import workload_specs
-from trafficlab import __version__
 
 
 def _validate_run_key(value: object, *, name: str = "run key") -> JsonObject:
@@ -224,7 +222,9 @@ def validate_transfer_responses(
     return cast(list[JsonValue], responses)
 
 
-def _validate_family_champion(value: object, *, expected_family: str) -> JsonObject:
+def _validate_family_champion(
+    value: object, *, expected_family: str, historic_schema_one_result: bool = False
+) -> JsonObject:
     keys = ("family", "candidate_id", "genes", "selection_fitness", "selection_seeds", "selection_score")
     document = exact_object(value, keys, name="family champion")
     family = strict_string(document["family"], name="champion family")
@@ -235,18 +235,24 @@ def _validate_family_champion(value: object, *, expected_family: str) -> JsonObj
         "family champion selection seeds must be exactly [17, 29]",
     )
     fitness = bounded_score(document["selection_fitness"], name="selection fitness")
-    score = validate_score(document["selection_score"], name="selection score")
+    score = validate_score(
+        document["selection_score"],
+        name="selection score",
+        historic_schema_one_result=historic_schema_one_result,
+    )
     require(score["aggregate"] == fitness, "family champion selection score aggregate must equal selection fitness")
     validate_candidate_id(document["candidate_id"])
     validate_genes(document["genes"], family=family)
     return cast(JsonObject, document)
 
 
-def _validate_champions(value: object) -> list[JsonValue]:
+def _validate_champions(value: object, *, historic_schema_one_result: bool = False) -> list[JsonValue]:
     champions = strict_list(value, name="family champions")
     require(len(champions) == 3, "family champions must contain all three families")
     for champion, family in zip(champions, FAMILY_ORDER, strict=True):
-        _validate_family_champion(champion, expected_family=family)
+        _validate_family_champion(
+            champion, expected_family=family, historic_schema_one_result=historic_schema_one_result
+        )
     return cast(list[JsonValue], champions)
 
 
@@ -270,7 +276,9 @@ def _validate_winner(value: object, *, champions: Sequence[JsonValue]) -> JsonOb
     return cast(JsonObject, document)
 
 
-def _validate_fresh_simulation(value: object, *, expected_source: str) -> JsonObject:
+def _validate_fresh_simulation(
+    value: object, *, expected_source: str, historic_schema_one_result: bool = False
+) -> JsonObject:
     document = exact_object(value, ("seed", "score", "source"), name="fresh simulation record")
     seed = strict_int(document["seed"], name="fresh simulation seed")
     source = strict_string(document["source"], name="fresh simulation source")
@@ -278,15 +286,17 @@ def _validate_fresh_simulation(value: object, *, expected_source: str) -> JsonOb
         seed == 97 and source == expected_source,
         f"fresh simulation evidence must use seed 97 and source {expected_source}",
     )
-    validate_score(document["score"], name="fresh simulation score")
+    validate_score(
+        document["score"], name="fresh simulation score", historic_schema_one_result=historic_schema_one_result
+    )
     return cast(JsonObject, document)
 
 
-def _validate_published(value: object) -> JsonObject:
+def _validate_published(value: object, *, historic_schema_one_result: bool = False) -> JsonObject:
     document = exact_object(value, ("seed", "score"), name="published record")
     seed = strict_int(document["seed"], name="published seed")
     require(seed == 97, "published seed must be exactly 97")
-    validate_score(document["score"], name="published score")
+    validate_score(document["score"], name="published score", historic_schema_one_result=historic_schema_one_result)
     return cast(JsonObject, document)
 
 
@@ -359,7 +369,7 @@ def validate_run_evidence(
         name="generated trace",
         historic_schema_one_result=historic_schema_one_result,
     )
-    champions = _validate_champions(document["family_champions"])
+    champions = _validate_champions(document["family_champions"], historic_schema_one_result=historic_schema_one_result)
     _validate_reuse(document["reuse"])
     validate_transfer_responses(
         document["transfer_responses"],
@@ -371,8 +381,12 @@ def validate_run_evidence(
     )
     _validate_artifact_hashes(document["artifact_sha256"])
     _validate_winner(document["winner"], champions=champions)
-    _validate_fresh_simulation(document["fresh_simulation"], expected_source=fresh_simulation_source)
-    _validate_published(document["published"])
+    _validate_fresh_simulation(
+        document["fresh_simulation"],
+        expected_source=fresh_simulation_source,
+        historic_schema_one_result=historic_schema_one_result,
+    )
+    _validate_published(document["published"], historic_schema_one_result=historic_schema_one_result)
     _validate_raw_sequence(document["raw_sequence"], reference=reference, generated=generated)
 
 
@@ -423,21 +437,6 @@ def validate_run_document(
         object_size=object_size,
         fresh_simulation_source="run_experiment_fit_outcome",
         historic_schema_one_result=historic_schema_one_result,
-    )
-    return cast(JsonObject, document)
-
-
-def _validate_environment(value: object) -> JsonObject:
-    document = exact_object(value, ENVIRONMENT_KEYS, name="environment")
-    git_commit_value(document["git_commit"])
-    for key in ("python_version", "trafficlab_version", "docker_engine_version", "docker_compose_version", "platform"):
-        strict_string(document[key], name=f"environment {key}")
-    image_id_value(document["target_image_id"], name="environment target image ID")
-    image_id_value(document["capture_image_id"], name="environment capture image ID")
-    utc_timestamp(document["study_date_utc"], name="environment study date")
-    require(
-        document["python_version"] == "3.12.3" and document["trafficlab_version"] == __version__,
-        "environment Python and Trafficlab versions must equal the locked study versions",
     )
     return cast(JsonObject, document)
 
@@ -520,7 +519,8 @@ def _validate_protocol(value: object, *, repository_root: Path, historic_schema_
     families = string_array(document["families"], name="protocol families")
     methods = string_array(document["methods"], name="protocol methods")
     require(families == FAMILY_ORDER, "protocol families must use exact lexical family order")
-    require(methods == PUBLISHED_METHOD_ORDER, "protocol methods must use exact published method order")
+    expected_methods = HISTORIC_PUBLISHED_METHOD_ORDER if historic_schema_one_result else PUBLISHED_METHOD_ORDER
+    require(methods == expected_methods, "protocol methods must use exact published method order")
     runtime = strict_string(document["runtime_boundary"], name="protocol runtime boundary")
     require(runtime == RUNTIME_BOUNDARY, "protocol runtime boundary must equal the locked full-lifecycle token")
     sha256(document["prerequisites_sha256"], name="prerequisite file SHA-256")
@@ -530,20 +530,28 @@ def _validate_protocol(value: object, *, repository_root: Path, historic_schema_
     return cast(JsonObject, document)
 
 
-def _validate_delta_score(value: object, *, name: str, reproduction: JsonObject, source: JsonObject) -> JsonObject:
+def _validate_delta_score(
+    value: object,
+    *,
+    name: str,
+    reproduction: JsonObject,
+    source: JsonObject,
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
+    method_order = HISTORIC_PUBLISHED_METHOD_ORDER if historic_schema_one_result else PUBLISHED_METHOD_ORDER
     document = exact_object(value, ("aggregate", "methods"), name=name)
     aggregate = strict_float(document["aggregate"], name=f"{name}.aggregate", lower=-1.0, upper=1.0)
-    methods_document = exact_object(document["methods"], PUBLISHED_METHOD_ORDER, name=f"{name}.methods")
+    methods_document = exact_object(document["methods"], method_order, name=f"{name}.methods")
     methods = {
         method: strict_float(methods_document[method], name=f"{name}.{method}", lower=-1.0, upper=1.0)
-        for method in PUBLISHED_METHOD_ORDER
+        for method in method_order
     }
     expected_aggregate = cast(float, reproduction["aggregate"]) - cast(float, source["aggregate"])
     reproduction_methods = cast(dict[str, JsonValue], reproduction["methods"])
     source_methods = cast(dict[str, JsonValue], source["methods"])
     expected_methods = {
         method: cast(float, reproduction_methods[method]) - cast(float, source_methods[method])
-        for method in PUBLISHED_METHOD_ORDER
+        for method in method_order
     }
     require(
         aggregate == expected_aggregate and methods == expected_methods,
@@ -552,7 +560,13 @@ def _validate_delta_score(value: object, *, name: str, reproduction: JsonObject,
     return cast(JsonObject, document)
 
 
-def validate_reproduction_comparison(value: object, *, reproduction: JsonObject, source: JsonObject) -> JsonObject:
+def validate_reproduction_comparison(
+    value: object,
+    *,
+    reproduction: JsonObject,
+    source: JsonObject,
+    historic_schema_one_result: bool = False,
+) -> JsonObject:
     document = exact_object(value, REPRODUCTION_COMPARISON_KEYS, name="reproduction comparison")
     source_winner = cast(dict[str, JsonValue], source["winner"])
     reproduction_winner = cast(dict[str, JsonValue], reproduction["winner"])
@@ -583,14 +597,20 @@ def validate_reproduction_comparison(value: object, *, reproduction: JsonObject,
         name="fresh simulation delta",
         reproduction=reproduction_held,
         source=source_held,
+        historic_schema_one_result=historic_schema_one_result,
     )
     _validate_delta_score(
         document["published_delta"],
         name="published delta",
         reproduction=reproduction_published,
         source=source_published,
+        historic_schema_one_result=historic_schema_one_result,
     )
-    validate_score(document["reference_similarity"], name="reproduction reference similarity")
+    validate_score(
+        document["reference_similarity"],
+        name="reproduction reference similarity",
+        historic_schema_one_result=historic_schema_one_result,
+    )
     return cast(JsonObject, document)
 
 
@@ -663,44 +683,19 @@ def _validate_reproduction(
         historic_schema_one_result=historic_schema_one_result,
     )
     validate_reproduction_comparison(
-        document["comparison_to_source"], reproduction=cast(JsonObject, document), source=source
+        document["comparison_to_source"],
+        reproduction=cast(JsonObject, document),
+        source=source,
+        historic_schema_one_result=historic_schema_one_result,
     )
     return cast(JsonObject, document)
-
-
-def run_record_from_document(document: JsonObject) -> StudyRunRecord:
-    champions = tuple(
-        freeze_object(cast(JsonObject, item)) for item in cast(list[JsonValue], document["family_champions"])
-    )
-    return StudyRunRecord(
-        execution_order=cast(int, document["execution_order"]),
-        run_id=cast(str, document["run_id"]),
-        key=freeze_object(cast(JsonObject, document["key"])),
-        config_path=cast(str, document["config_path"]),
-        run_directory=cast(str, document["run_directory"]),
-        transfer_evidence_directory=cast(str, document["transfer_evidence_directory"]),
-        elapsed_seconds=cast(float, document["elapsed_seconds"]),
-        reuse=freeze_object(cast(JsonObject, document["reuse"])),
-        cleanup_verified=cast(bool, document["cleanup_verified"]),
-        transfer_responses=tuple(
-            freeze_object(cast(JsonObject, item)) for item in cast(list[JsonValue], document["transfer_responses"])
-        ),
-        artifact_sha256=freeze_object(cast(JsonObject, document["artifact_sha256"])),
-        reference=freeze_object(cast(JsonObject, document["reference"])),
-        generated=freeze_object(cast(JsonObject, document["generated"])),
-        family_champions=cast(tuple[FrozenJsonObject, FrozenJsonObject, FrozenJsonObject], champions),
-        winner=freeze_object(cast(JsonObject, document["winner"])),
-        fresh_simulation=freeze_object(cast(JsonObject, document["fresh_simulation"])),
-        published=freeze_object(cast(JsonObject, document["published"])),
-        raw_sequence=freeze_object(cast(JsonObject, document["raw_sequence"])),
-    )
 
 
 def validate_study_document(document: JsonObject, *, repository_root: Path) -> StudyResults:
     root = exact_object(document, RESULT_ROOT_KEYS, name="result root")
     schema_version = strict_int(root["schema_version"], name="result schema version")
     require(schema_version == 1, "result schema version must be exactly 1")
-    environment = _validate_environment(root["environment"])
+    environment = validate_environment(root["environment"])
     historic_schema_one_result = cast(str, environment["git_commit"]) == HISTORIC_SCHEMA_ONE_RESULT_COMMIT
     protocol = _validate_protocol(
         root["protocol"], repository_root=repository_root, historic_schema_one_result=historic_schema_one_result

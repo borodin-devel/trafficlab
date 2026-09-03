@@ -1,11 +1,11 @@
 {
   "comparison_identity": {
-    "sha256": "a00f6806260758f4923cd39f2b976b78db4842bf554ea45c6329a02cb5726340",
-    "size": 5352
+    "sha256": "46c8f88be4cb45be7594555eee4ba88d63184d38ff3e7e46a7fa6cd96595b6eb",
+    "size": 189123
   },
   "generated_identity": {
-    "sha256": "944867d5be7023dbd983db2e89b3f1cadcb9acca47f384fbd1718f48e2aa7cf7",
-    "size": 3744
+    "sha256": "29e11a3cd4f1d9e6b4305b3fdcb4426aef3ea3b6ec384291c7abc4cddcd31cd6",
+    "size": 4576
   },
   "path": "fresh_simulation/short/r2.json",
   "reference_identity": {
@@ -16,8 +16,8 @@
   "seed": 97,
   "training_directory": "training/short/r2",
   "training_model_identity": {
-    "sha256": "0ac23244748df4391755ff9500f77560712902ff72b8ae1ba59beb66bd810887",
-    "size": 6489
+    "sha256": "7c3bc2dfe0cb909e304749d141e808660936ec800d8352c43e58ad94ee4f1a44",
+    "size": 7359
   },
   "workload": "short"
 }

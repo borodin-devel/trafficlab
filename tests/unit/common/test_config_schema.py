@@ -36,7 +36,7 @@ def test_required_structural_bound_types_are_strict() -> None:
     assert MarkovPacketTrainConfig(length_cap=IntegerBounds(lower=3, upper=8)).length_cap.lower == 3
     assert NhppConfig(bin_count=IntegerBounds(lower=2, upper=16)).bin_count.upper == 16
     with pytest.raises(ValidationError):
-        AcdConfig(order={"lower": 0, "upper": 3})
+        AcdConfig.model_validate({"order": {"lower": 0, "upper": 3}})
 
 
 def test_unknown_root_key_is_rejected(valid_config_data: dict[str, object]) -> None:

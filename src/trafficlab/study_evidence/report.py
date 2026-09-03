@@ -7,9 +7,13 @@ from typing import Annotated, Literal, Self
 from pydantic import BeforeValidator, Field, StrictInt, model_validator
 
 from trafficlab.comparison.diagnostics import (
+    AndersonDarlingDiagnostic,
+    ApproximateMmdDiagnostic,
     AutocorrelationDiagnostic,
+    CramerVonMisesDiagnostic,
     FrameSizeDiagnostic,
     IatDiagnostic,
+    JensenShannonDiagnostic,
     MultiscaleDiagnostic,
 )
 from trafficlab.study_evidence.protocol import (
@@ -35,6 +39,10 @@ class StudyMethodValues(StrictStudyModel):
     frame_size_ks: UnitFloat
     iat_ks: UnitFloat
     multiscale_rate: UnitFloat
+    cramer_von_mises: UnitFloat
+    anderson_darling: UnitFloat
+    jensen_shannon: UnitFloat
+    approximate_mmd: UnitFloat
 
 
 class StudyScore(StrictStudyModel):
@@ -47,6 +55,10 @@ class StudyDiagnostics(StrictStudyModel):
     frame_size_ks: FrameSizeDiagnostic
     iat_ks: IatDiagnostic
     multiscale_rate: MultiscaleDiagnostic
+    cramer_von_mises: CramerVonMisesDiagnostic
+    anderson_darling: AndersonDarlingDiagnostic
+    jensen_shannon: JensenShannonDiagnostic
+    approximate_mmd: ApproximateMmdDiagnostic
 
 
 class StudyControlledWeightAnalysis(StrictStudyModel):
@@ -57,7 +69,7 @@ class StudyControlledWeightAnalysis(StrictStudyModel):
     components: StudyMethodValues
     diagnostics: StudyDiagnostics
     executed_methods: Annotated[
-        tuple[NonemptyString, ...], Field(min_length=4, max_length=4), BeforeValidator(tuple_input)
+        tuple[NonemptyString, ...], Field(min_length=8, max_length=8), BeforeValidator(tuple_input)
     ]
     training_directory: RelativePath
     workload: Workload

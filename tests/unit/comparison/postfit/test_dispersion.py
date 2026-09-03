@@ -98,7 +98,10 @@ def test_alternating_counts_endpoint_and_scale_weights_match_the_hand_oracle() -
     two_allan = _log_difference(allan_two, generated_allan_two)
     # Total and outbound carry these nonzero curves; the required inbound
     # channel is all zero, so each unweighted component mean has factor 2/3.
-    expected = 1.0 - (0.25 * (0.25 * (2.0 * one_fano / 3.0) + 0.75 * (2.0 * one_allan / 3.0)) + 0.75 * (0.25 * (2.0 * two_fano / 3.0) + 0.75 * (2.0 * two_allan / 3.0)))
+    expected = 1.0 - (
+        0.25 * (0.25 * (2.0 * one_fano / 3.0) + 0.75 * (2.0 * one_allan / 3.0))
+        + 0.75 * (0.25 * (2.0 * two_fano / 3.0) + 0.75 * (2.0 * two_allan / 3.0))
+    )
 
     assert result.score == pytest.approx(expected)
     scales = cast(tuple[Mapping[str, object], ...], result.diagnostics["scales"])

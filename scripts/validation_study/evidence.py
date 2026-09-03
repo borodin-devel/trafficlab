@@ -23,11 +23,8 @@ from scripts.validation_study.common import (
     strict_string,
     thaw_json,
 )
-from scripts.validation_study.results.codec import (
-    run_record_from_document,
-    validate_run_evidence,
-    validate_transfer_responses,
-)
+from scripts.validation_study.records import run_record_from_document
+from scripts.validation_study.results.codec import validate_run_evidence, validate_transfer_responses
 from scripts.validation_study.results.reporting import (
     family_champions,
     sample_record,
@@ -56,7 +53,7 @@ from trafficlab.comparison.codec import (
     similarity_settings_identity,
 )
 from trafficlab.comparison.diagnostics import MultiscaleDiagnostic
-from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.metrics import compare_final_traces, compare_traces
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState, parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.evaluation import validate_evaluation_context
@@ -396,13 +393,17 @@ def reconstruct_science(
     )
     aligned = align_generated(reparsed, window)
     settings_identity = similarity_settings_identity(evidence.config.similarity)
-    published = compare_traces(evidence.reference, aligned, window, evidence.config.similarity).with_input_identities(
+    published = compare_final_traces(
+        evidence.reference,
+        aligned,
+        window,
+        evidence.config.similarity,
         {
             "capture_json": identify_bytes(evidence.contents["capture.json"]),
             "reference_pcapng": identify_bytes(evidence.contents["reference.pcapng"]),
             "generated_pcapng": identify_bytes(evidence.contents["generated.pcapng"]),
             "similarity_settings": settings_identity,
-        }
+        },
     )
     _require_published_lineage(published, evidence.comparison, evidence.contents, settings_identity)
     return _ReconstructedScience(fresh_simulation, raw_trial, reparsed, aligned, published)

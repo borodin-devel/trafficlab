@@ -7,35 +7,35 @@
     "selected": [
       {
         "best_model_identity": {
-          "sha256": "ee4abae2d914b82f80acd729c4277970c5e706fe099f58596b9505e38d8b929c",
-          "size": 6482
+          "sha256": "0494f9e7b99a8635c7e0f305a0527dc063623ef2c4c7715501108192d2f1a006",
+          "size": 6451
         },
-        "repeat": 3,
-        "training_directory": "training/short/r3",
+        "repeat": 1,
+        "training_directory": "training/short/r1",
         "workload": "short"
       },
       {
         "best_model_identity": {
-          "sha256": "dbd805b054db26ac0f92e0f7fc3c86f8fd1fdf43d514a560eb3aca4017a7b5eb",
-          "size": 6489
+          "sha256": "3f8975d437616ea70e21610867f0bbdae079609eed4ed0a9ad1e6f7b581ed7be",
+          "size": 7360
         },
-        "repeat": 3,
-        "training_directory": "training/streaming/r3",
+        "repeat": 1,
+        "training_directory": "training/streaming/r1",
         "workload": "streaming"
       },
       {
         "best_model_identity": {
-          "sha256": "6ab7b0203c849fb1576f8954c705a4435516b6a376405e4688711cfdad3cfa34",
-          "size": 6492
+          "sha256": "bd475a2f8989d3de55903ba1af4e3685954995498e355462291dd03e04349b98",
+          "size": 7363
         },
-        "repeat": 3,
-        "training_directory": "training/bursty/r3",
+        "repeat": 2,
+        "training_directory": "training/bursty/r2",
         "workload": "bursty"
       }
     ]
   },
   "prerequisite_path": "examples/validation_study/prerequisites.json",
-  "schema_version": 4,
+  "schema_version": 5,
   "selection_seeds": [
     17
   ],

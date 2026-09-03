@@ -98,7 +98,7 @@
       "type": "string"
     },
     "scientific_artifact_schema": {
-      "const": 4,
+      "const": 5,
       "title": "Scientific Artifact Schema",
       "type": "integer"
     },

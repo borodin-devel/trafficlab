@@ -43,9 +43,7 @@ def _replace_transition_with_one_state(diagnostics: dict[str, object]) -> None:
     occupancy_counts = [0] * state_count
     occupancy_counts[state_index] = 1
     occupancy_denominator = 1.0 + pseudocount * state_count
-    occupancy_probabilities = [
-        (count + pseudocount) / occupancy_denominator for count in occupancy_counts
-    ]
+    occupancy_probabilities = [(count + pseudocount) / occupancy_denominator for count in occupancy_counts]
     empty_counts = [0] * state_count
     uniform = [1.0 / state_count] * state_count
     diagnostics["reference_states"] = [state]
@@ -100,7 +98,9 @@ def test_final_result_publishes_exact_typed_postfit_keys_and_shared_window(
     )
     assert tuple(postfit) == ("classical_c2st", "fano_allan", "transition_matrix")
     assert all(tuple(value) == ("diagnostics", "score") for value in postfit.values())
-    assert all(cast(dict[str, object], value["diagnostics"])["observation_window_seconds"] == 3.0 for value in postfit.values())
+    assert all(
+        cast(dict[str, object], value["diagnostics"])["observation_window_seconds"] == 3.0 for value in postfit.values()
+    )
 
 
 def test_fitness_result_cannot_publish_without_final_postfit_diagnostics(
@@ -197,9 +197,7 @@ def test_final_result_rejects_corrupt_postfit_arithmetic_or_shape(
     elif corruption == "fold-order":
         cast(list[dict[str, object]], diagnostics["folds"])[0]["fold_index"] = 1
     elif corruption == "fold-range":
-        cast(list[int], cast(list[dict[str, object]], diagnostics["folds"])[0]["training_window_indexes"])[
-            -1
-        ] = 999
+        cast(list[int], cast(list[dict[str, object]], diagnostics["folds"])[0]["training_window_indexes"])[-1] = 999
     elif corruption == "guard-partition":
         cast(list[int], cast(list[dict[str, object]], diagnostics["folds"])[0]["guard_window_indexes"])[0] = 999
     elif corruption == "fano-curve":
@@ -224,9 +222,9 @@ def test_final_result_rejects_corrupt_postfit_arithmetic_or_shape(
         elif corruption == "fano-width-shape":
             cast(list[float], fano_diagnostics["scale_differences"]).pop()
         elif corruption == "fano-cell-count":
-            fano_diagnostics["total_direction_window_cells"] = cast(
-                int, fano_diagnostics["total_direction_window_cells"]
-            ) + 2
+            fano_diagnostics["total_direction_window_cells"] = (
+                cast(int, fano_diagnostics["total_direction_window_cells"]) + 2
+            )
         elif corruption == "fano-scale-width":
             scales[0]["width_seconds"] = 0.5
         elif corruption == "fano-one-window":
@@ -263,7 +261,9 @@ def test_final_result_rejects_corrupt_postfit_arithmetic_or_shape(
         elif corruption == "transition-active-count":
             transition_diagnostics["active_state_count"] = cast(int, transition_diagnostics["active_state_count"]) + 1
         elif corruption == "transition-cell-count":
-            transition_diagnostics["transition_cell_count"] = cast(int, transition_diagnostics["transition_cell_count"]) + 1
+            transition_diagnostics["transition_cell_count"] = (
+                cast(int, transition_diagnostics["transition_cell_count"]) + 1
+            )
         elif corruption == "transition-count-rows":
             cast(list[int], cast(list[object], transitions["reference_counts"])[0])[0] += 1
         elif corruption == "transition-rows-length":

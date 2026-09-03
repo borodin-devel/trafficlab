@@ -31,8 +31,12 @@ _SIMILARITY_LABELS = {
 }
 _DISPLAY_DIRECTION_NAMES = {"total": "total", "outbound": "uplink", "inbound": "downlink"}
 _GA_LABELS: dict[str, str] = {
+    "acd": "Exponential ACD",
+    "markov_packet_train": "Markov packet train",
     "markov_renewal": "Markov Renewal",
     "mmpp": "MMPP",
+    "nhpp": "Piecewise-constant NHPP",
+    "packet_hmm": "Categorical packet HMM",
     "poisson_empirical": "Poisson empirical",
     "overall": "Overall",
 }
@@ -266,7 +270,10 @@ class FanoAllanAspect:
                         label=f"Reference total {factor.title()}",
                         x=widths,
                         y=np.asarray(
-                            [(scale.reference_fano if factor == "fano" else scale.reference_allan).total for scale in diagnostics.scales],
+                            [
+                                (scale.reference_fano if factor == "fano" else scale.reference_allan).total
+                                for scale in diagnostics.scales
+                            ],
                             dtype=np.float64,
                         ),
                         maximum_points=settings.maximum_display_points,
@@ -275,7 +282,10 @@ class FanoAllanAspect:
                         label=f"Generated total {factor.title()}",
                         x=widths,
                         y=np.asarray(
-                            [(scale.generated_fano if factor == "fano" else scale.generated_allan).total for scale in diagnostics.scales],
+                            [
+                                (scale.generated_fano if factor == "fano" else scale.generated_allan).total
+                                for scale in diagnostics.scales
+                            ],
                             dtype=np.float64,
                         ),
                         maximum_points=settings.maximum_display_points,
@@ -442,6 +452,8 @@ class C2stAspect:
             reference_sample_count=0,
             generated_sample_count=0,
         )
+
+
 @dataclass(frozen=True, slots=True)
 class GaFitnessHistoryAspect:
     identifier: str = "ga_fitness_history"

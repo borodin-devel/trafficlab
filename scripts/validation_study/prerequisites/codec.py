@@ -126,7 +126,7 @@ def _retained_prerequisite_capability(value: object) -> JsonObject:
 def _retained_prerequisite_document(value: object) -> dict[str, object]:
     require(type(value) is dict, "retained prerequisite evidence must be a JSON object")
     raw = cast(dict[str, object], value)
-    require(raw.get("schema_version") == 4, "retained prerequisite schema version must be exactly 4")
+    require(raw.get("schema_version") == 5, "retained prerequisite schema version must be exactly 5")
     validated = validate_study_model(ValidationStudyPrerequisite, raw, name="retained prerequisite evidence")
     root = cast(dict[str, object], validated.model_dump(mode="json"))
     study_id = validate_study_id(strict_string(root["study_id"], name="retained prerequisite study ID"))
@@ -172,7 +172,7 @@ def _retained_prerequisite_document(value: object) -> dict[str, object]:
         "capability": _retained_prerequisite_capability(root["capability"]),
         "commands": commands,
         "environment": _retained_prerequisite_environment(root["environment"]),
-        "schema_version": 4,
+        "schema_version": 5,
         "study_id": study_id,
         "url": url,
     }

@@ -49,14 +49,14 @@ _STUDY_ROOTS: dict[str, tuple[type[BaseModel], str]] = {
 
 
 def _checked_study_paths(filename: str) -> tuple[Path, ...]:
-    return (_STUDY_FIXTURE / filename, _SCAPY_R2_STUDY / filename, _CURRENT_STUDY / filename)
+    return (_STUDY_FIXTURE / filename,)
 
 
 @pytest.mark.integration
-def test_current_study_is_schema_v4_scapy_production_and_passes_offline_audit(tmp_path: Path) -> None:
-    """The navigated study must be the accepted schema-v4 production Scapy bundle."""
+def test_retained_schema_v4_scapy_production_study_passes_its_source_bound_offline_audit(tmp_path: Path) -> None:
+    """The navigated historical study remains verifiable only by its recorded schema-v4 source."""
 
-    environment = ValidationStudyEnvironment.model_validate_json((_CURRENT_STUDY / "environment.json").read_bytes())
+    environment = cast(dict[str, object], json.loads((_CURRENT_STUDY / "environment.json").read_bytes()))
     repository = tmp_path / "recorded-source"
     subprocess.run(
         ("git", "clone", "--no-local", "--no-hardlinks", "--no-checkout", str(REPOSITORY), str(repository)),
@@ -64,7 +64,7 @@ def test_current_study_is_schema_v4_scapy_production_and_passes_offline_audit(tm
         capture_output=True,
     )
     subprocess.run(
-        ("git", "checkout", "--detach", environment.source_commit),
+        ("git", "checkout", "--detach", cast(str, environment["source_commit"])),
         cwd=repository,
         check=True,
         capture_output=True,
@@ -95,7 +95,9 @@ def test_current_study_is_schema_v4_scapy_production_and_passes_offline_audit(tm
         text=True,
     )
 
-    assert environment.scientific_artifact_schema == 4
+    assert environment["scientific_artifact_schema"] == 4
+    with pytest.raises(ValidationError):
+        ValidationStudyEnvironment.model_validate(environment)
     assert not alternates.exists() or alternates.read_bytes() == b""
     assert files
     assert all(not path.is_symlink() and path.stat().st_nlink == 1 for path in files)
@@ -138,7 +140,7 @@ def test_public_validation_study_roots_are_strict_frozen_and_match_checked_wire_
         schema = model.model_json_schema(mode="validation")
         Draft202012Validator.check_schema(schema)
         paths = _checked_study_paths(filename)
-        assert len(paths) == 3, name
+        assert len(paths) == 1, name
         for path in paths:
             content = path.read_bytes()
             document = json.loads(content)

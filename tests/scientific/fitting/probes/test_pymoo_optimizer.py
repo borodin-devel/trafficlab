@@ -116,10 +116,14 @@ def test_common_traffic_policy_remains_predeclared_and_family_neutral() -> None:
         "max_wall_seconds": 5.0,
     }
     assert SIMILARITY.method_weights.model_dump(mode="json") == {
-        "frame_size_ks": 0.25,
-        "iat_ks": 0.25,
-        "autocorrelation": 0.25,
-        "multiscale_rate": 0.25,
+        "frame_size_ks": 0.125,
+        "iat_ks": 0.125,
+        "autocorrelation": 0.125,
+        "multiscale_rate": 0.125,
+        "cramer_von_mises": 0.125,
+        "anderson_darling": 0.125,
+        "jensen_shannon": 0.125,
+        "approximate_mmd": 0.125,
     }
     assert CACHE_KEY_FIELDS == (
         "family",
@@ -423,7 +427,7 @@ def test_loc_gate_is_indeterminate_without_designing_the_rejected_adapter() -> N
         "strategy.py",
         "types.py",
     ]
-    assert loc["current_sloc"] == 3_170
+    assert loc["current_sloc"] == 3_244
     assert "line-level" in loc["reason"]
     assert "rejected adapter" in loc["reason"]
     assert "maximum" not in loc

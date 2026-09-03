@@ -50,6 +50,80 @@
       "title": "AcfFeatureWeights",
       "type": "object"
     },
+    "AndersonDarlingDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "direction_strata": {
+          "$ref": "#/$defs/EcdfDirectionStrata"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "feature_weights": {
+          "$ref": "#/$defs/EcdfFeatureWeights"
+        },
+        "iat": {
+          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "size": {
+          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "feature_weights",
+        "iat",
+        "size",
+        "direction_strata",
+        "discrepancy"
+      ],
+      "title": "AndersonDarlingDiagnostic",
+      "type": "object"
+    },
+    "ApproximateMmdDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "continuous": {
+          "$ref": "#/$defs/MmdContinuousDiagnostic"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "embedding_dimension": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "feature_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "generated_sample_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "reference_sample_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "seed": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "feature_count",
+        "embedding_dimension",
+        "seed",
+        "continuous",
+        "reference_sample_count",
+        "generated_sample_count",
+        "discrepancy"
+      ],
+      "title": "ApproximateMmdDiagnostic",
+      "type": "object"
+    },
     "AutocorrelationDiagnostic": {
       "additionalProperties": false,
       "properties": {
@@ -87,6 +161,70 @@
       "title": "AutocorrelationDiagnostic",
       "type": "object"
     },
+    "CramerVonMisesDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "direction_strata": {
+          "$ref": "#/$defs/EcdfDirectionStrata"
+        },
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "feature_weights": {
+          "$ref": "#/$defs/EcdfFeatureWeights"
+        },
+        "iat": {
+          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "size": {
+          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "feature_weights",
+        "iat",
+        "size",
+        "direction_strata",
+        "discrepancy"
+      ],
+      "title": "CramerVonMisesDiagnostic",
+      "type": "object"
+    },
+    "DirectionAvailability": {
+      "additionalProperties": false,
+      "properties": {
+        "both_available": {
+          "title": "Both Available",
+          "type": "boolean"
+        },
+        "generated_available": {
+          "title": "Generated Available",
+          "type": "boolean"
+        },
+        "reference_available": {
+          "title": "Reference Available",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reference_available",
+        "generated_available",
+        "both_available"
+      ],
+      "title": "DirectionAvailability",
+      "type": "object"
+    },
+    "DirectionName": {
+      "enum": [
+        "outbound",
+        "inbound"
+      ],
+      "type": "string"
+    },
     "DirectionTotals": {
       "additionalProperties": false,
       "properties": {
@@ -121,6 +259,77 @@
       "title": "DirectionValues",
       "type": "object"
     },
+    "EcdfDirectionStrata": {
+      "additionalProperties": false,
+      "properties": {
+        "iat": {
+          "$ref": "#/$defs/FeatureDirectionAvailability"
+        },
+        "size": {
+          "$ref": "#/$defs/FeatureDirectionAvailability"
+        }
+      },
+      "required": [
+        "iat",
+        "size"
+      ],
+      "title": "EcdfDirectionStrata",
+      "type": "object"
+    },
+    "EcdfFeatureDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "generated_sample_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "generated_tie_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "normalization_weight": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "raw_sum": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
+        "reference_sample_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "reference_tie_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "reference_sample_count",
+        "generated_sample_count",
+        "reference_tie_count",
+        "generated_tie_count",
+        "raw_sum",
+        "normalization_weight",
+        "discrepancy"
+      ],
+      "title": "EcdfFeatureDiagnostic",
+      "type": "object"
+    },
+    "EcdfFeatureWeights": {
+      "additionalProperties": false,
+      "properties": {
+        "iat": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "size": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "iat",
+        "size"
+      ],
+      "title": "EcdfFeatureWeights",
+      "type": "object"
+    },
     "ExactFloat": {
       "type": "number"
     },
@@ -133,6 +342,23 @@
           "$ref": "#/$defs/ExactFloat"
         }
       ]
+    },
+    "FeatureDirectionAvailability": {
+      "additionalProperties": false,
+      "properties": {
+        "inbound": {
+          "$ref": "#/$defs/DirectionAvailability"
+        },
+        "outbound": {
+          "$ref": "#/$defs/DirectionAvailability"
+        }
+      },
+      "required": [
+        "outbound",
+        "inbound"
+      ],
+      "title": "FeatureDirectionAvailability",
+      "type": "object"
     },
     "FloatTuple": {
       "items": {
@@ -241,6 +467,185 @@
         "type": "integer"
       },
       "type": "array"
+    },
+    "JensenShannonDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "feature_weights": {
+          "$ref": "#/$defs/JensenShannonFeatureWeights"
+        },
+        "iat": {
+          "$ref": "#/$defs/JensenShannonIatDiagnostic"
+        },
+        "mark": {
+          "$ref": "#/$defs/JensenShannonMarkDiagnostic"
+        },
+        "observation_window_seconds": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "observation_window_seconds",
+        "feature_weights",
+        "iat",
+        "mark",
+        "discrepancy"
+      ],
+      "title": "JensenShannonDiagnostic",
+      "type": "object"
+    },
+    "JensenShannonFeatureWeights": {
+      "additionalProperties": false,
+      "properties": {
+        "iat": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "mark": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "iat",
+        "mark"
+      ],
+      "title": "JensenShannonFeatureWeights",
+      "type": "object"
+    },
+    "JensenShannonIatCategory": {
+      "additionalProperties": false,
+      "properties": {
+        "bin_index": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "direction": {
+          "$ref": "#/$defs/DirectionName"
+        },
+        "generated_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "reference_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "direction",
+        "bin_index",
+        "reference_count",
+        "generated_count"
+      ],
+      "title": "JensenShannonIatCategory",
+      "type": "object"
+    },
+    "JensenShannonIatDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "bin_edges": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/JensenShannonIatCategory"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "generated_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "jsd": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "reference_count": {
+          "$ref": "#/$defs/PositiveInt"
+        }
+      },
+      "required": [
+        "reference_count",
+        "generated_count",
+        "bin_edges",
+        "categories",
+        "jsd"
+      ],
+      "title": "JensenShannonIatDiagnostic",
+      "type": "object"
+    },
+    "JensenShannonMarkCategory": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/DirectionName"
+        },
+        "frame_length": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "generated_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        },
+        "reference_count": {
+          "$ref": "#/$defs/NonnegativeInt"
+        }
+      },
+      "required": [
+        "direction",
+        "frame_length",
+        "reference_count",
+        "generated_count"
+      ],
+      "title": "JensenShannonMarkCategory",
+      "type": "object"
+    },
+    "JensenShannonMarkDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/JensenShannonMarkCategory"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "generated_count": {
+          "$ref": "#/$defs/PositiveInt"
+        },
+        "jsd": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "reference_count": {
+          "$ref": "#/$defs/PositiveInt"
+        }
+      },
+      "required": [
+        "reference_count",
+        "generated_count",
+        "categories",
+        "jsd"
+      ],
+      "title": "JensenShannonMarkDiagnostic",
+      "type": "object"
+    },
+    "MmdContinuousDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "reference_mean": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "reference_scale": {
+          "$ref": "#/$defs/FloatTuple"
+        },
+        "scale_floor": {
+          "$ref": "#/$defs/PositiveFloat"
+        }
+      },
+      "required": [
+        "reference_mean",
+        "reference_scale",
+        "scale_floor"
+      ],
+      "title": "MmdContinuousDiagnostic",
+      "type": "object"
     },
     "MultiscaleDiagnostic": {
       "additionalProperties": false,
@@ -481,8 +886,8 @@
           "items": {
             "$ref": "#/$defs/NonemptyString"
           },
-          "maxItems": 4,
-          "minItems": 4,
+          "maxItems": 8,
+          "minItems": 8,
           "title": "Executed Methods",
           "type": "array"
         },
@@ -531,14 +936,26 @@
     "StudyDiagnostics": {
       "additionalProperties": false,
       "properties": {
+        "anderson_darling": {
+          "$ref": "#/$defs/AndersonDarlingDiagnostic"
+        },
+        "approximate_mmd": {
+          "$ref": "#/$defs/ApproximateMmdDiagnostic"
+        },
         "autocorrelation": {
           "$ref": "#/$defs/AutocorrelationDiagnostic"
+        },
+        "cramer_von_mises": {
+          "$ref": "#/$defs/CramerVonMisesDiagnostic"
         },
         "frame_size_ks": {
           "$ref": "#/$defs/FrameSizeDiagnostic"
         },
         "iat_ks": {
           "$ref": "#/$defs/IatDiagnostic"
+        },
+        "jensen_shannon": {
+          "$ref": "#/$defs/JensenShannonDiagnostic"
         },
         "multiscale_rate": {
           "$ref": "#/$defs/MultiscaleDiagnostic"
@@ -548,7 +965,11 @@
         "autocorrelation",
         "frame_size_ks",
         "iat_ks",
-        "multiscale_rate"
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd"
       ],
       "title": "StudyDiagnostics",
       "type": "object"
@@ -708,13 +1129,25 @@
     "StudyMethodValues": {
       "additionalProperties": false,
       "properties": {
+        "anderson_darling": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "approximate_mmd": {
+          "$ref": "#/$defs/UnitFloat"
+        },
         "autocorrelation": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "cramer_von_mises": {
           "$ref": "#/$defs/UnitFloat"
         },
         "frame_size_ks": {
           "$ref": "#/$defs/UnitFloat"
         },
         "iat_ks": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "jensen_shannon": {
           "$ref": "#/$defs/UnitFloat"
         },
         "multiscale_rate": {
@@ -725,7 +1158,11 @@
         "autocorrelation",
         "frame_size_ks",
         "iat_ks",
-        "multiscale_rate"
+        "multiscale_rate",
+        "cramer_von_mises",
+        "anderson_darling",
+        "jensen_shannon",
+        "approximate_mmd"
       ],
       "title": "StudyMethodValues",
       "type": "object"

@@ -492,7 +492,7 @@ def test_checkpoint_priority_ties_unify_current_history_and_retained_winners() -
 
 
 def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation() -> None:
-    literal_scores = (
+    literal_scores: tuple[float, float, float, float, float, float, float] = (
         0.1151174344528102,
         0.24536013787059519,
         0.708159688965432,
@@ -513,7 +513,7 @@ def test_generation_summary_uses_the_same_grouped_mean_arithmetic_as_validation(
             duplicate_diagnostics=(),
         )
         for index, score in enumerate(literal_scores)
-        for trial in (build_trial(7, (score,) * 8),)
+        for trial in (build_trial(7, (score, score, score, score, score, score, score, score)),)
     )
     rows = summarize_generation(
         0,

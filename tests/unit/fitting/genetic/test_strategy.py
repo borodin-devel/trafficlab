@@ -89,8 +89,12 @@ def _config(
     run["final_seed"] = 101
     models = cast(dict[str, object], data["models"])
     models["enabled"] = ["poisson_empirical"]
+    models["acd"] = None
+    models["markov_packet_train"] = None
     models["markov_renewal"] = None
     models["mmpp"] = None
+    models["nhpp"] = None
+    models["packet_hmm"] = None
     return ExperimentConfig.model_validate(data)
 
 
@@ -183,7 +187,15 @@ def _matrix_context(
     generation["final"] = dict(cast(dict[str, object], generation["trial"]))
     models = cast(dict[str, object], data["models"])
     models["enabled"] = list(enabled)
-    for family in ("markov_renewal", "mmpp", "poisson_empirical"):
+    for family in (
+        "acd",
+        "markov_packet_train",
+        "markov_renewal",
+        "mmpp",
+        "nhpp",
+        "packet_hmm",
+        "poisson_empirical",
+    ):
         if family not in enabled:
             models[family] = None
     config = ExperimentConfig.model_validate(data)
@@ -198,9 +210,24 @@ def _matrix_context(
     )
 
 
-def _trial(seed: int, score: float, *, family: str = "poisson_empirical") -> TrialResult:
+def _trial(
+    seed: int,
+    score: float,
+    *,
+    family: str = "poisson_empirical",
+    packet_hmm_state_count: int | None = None,
+) -> TrialResult:
     methods = tuple(MethodTrialResult(name=name, score=score, diagnostics={"literal": score}) for name in METHOD_ORDER)
-    diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
+    if family in {"markov_renewal", "markov_packet_train"}:
+        diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS}
+    elif family == "packet_hmm":
+        assert packet_hmm_state_count is not None
+        diagnostics = {
+            **{f"hidden_state_{index}_count": 1 for index in range(packet_hmm_state_count)},
+            "category_0_count": packet_hmm_state_count,
+        }
+    else:
+        diagnostics = {}
     return TrialResult(seed=seed, aggregate_score=score, methods=cast(Any, methods), model_diagnostics=diagnostics)
 
 
@@ -224,13 +251,35 @@ def _install_scoring(
             candidate,
             status="valid",
             fitness=score,
-            trials=(_trial(context.trial_seeds[0], score, family=candidate.family),),
+            trials=(
+                _trial(
+                    context.trial_seeds[0],
+                    score,
+                    family=candidate.family,
+                    packet_hmm_state_count=(
+                        int(candidate.genes[0])
+                        if candidate.family == "packet_hmm" and candidate.genes is not None
+                        else None
+                    ),
+                ),
+            ),
         )
 
     def final(candidate: Candidate, context: ValidatedEvaluationContext, final_seed: int) -> tuple[TrialResult, ...]:
         if events is not None:
             events.append(f"final:{candidate.identifier.birth_generation}")
-        return (_trial(final_seed, candidate.fitness, family=candidate.family),)
+        return (
+            _trial(
+                final_seed,
+                candidate.fitness,
+                family=candidate.family,
+                packet_hmm_state_count=(
+                    int(candidate.genes[0])
+                    if candidate.family == "packet_hmm" and candidate.genes is not None
+                    else None
+                ),
+            ),
+        )
 
     monkeypatch.setattr(strategy, "evaluate_candidate", evaluate)
     monkeypatch.setattr(strategy, "evaluate_final", final)
@@ -269,7 +318,19 @@ def _install_family_scoring(
             candidate,
             status="valid",
             fitness=score,
-            trials=tuple(_trial(seed, score, family=candidate.family) for seed in context.trial_seeds),
+            trials=tuple(
+                _trial(
+                    seed,
+                    score,
+                    family=candidate.family,
+                    packet_hmm_state_count=(
+                        int(candidate.genes[0])
+                        if candidate.family == "packet_hmm" and candidate.genes is not None
+                        else None
+                    ),
+                )
+                for seed in context.trial_seeds
+            ),
             invalid=None,
         )
 
@@ -544,14 +605,27 @@ def test_context_resolves_lexical_families_and_exact_effective_settings_once(
         capture_identity=ContentIdentity(size=3, sha256="c" * 64),
     )
 
-    assert tuple(context.evaluation.families) == ("markov_renewal", "mmpp", "poisson_empirical")
-    assert tuple(spec.name for spec in context.compatibility.families) == (
+    expected_names = (
+        "acd",
+        "markov_packet_train",
         "markov_renewal",
         "mmpp",
+        "nhpp",
+        "packet_hmm",
         "poisson_empirical",
     )
-    assert context.compatibility.families[0].gene_order == ("q1", "q2", "alpha", "r", "c_t")
-    assert context.compatibility.families[1].crossover_probability == 0.9
+    assert tuple(context.evaluation.families) == expected_names
+    assert tuple(spec.name for spec in context.compatibility.families) == (
+        "acd",
+        "markov_packet_train",
+        "markov_renewal",
+        "mmpp",
+        "nhpp",
+        "packet_hmm",
+        "poisson_empirical",
+    )
+    assert context.compatibility.families[2].gene_order == ("q1", "q2", "alpha", "r", "c_t")
+    assert context.compatibility.families[3].crossover_probability == 0.9
     assert context.compatibility.genetic.master_seed == config.run.master_seed
     assert context.compatibility.genetic.final_seed == config.run.final_seed
     assert context.compatibility.genetic.early_stopping_tolerance == 0.0
@@ -559,8 +633,16 @@ def test_context_resolves_lexical_families_and_exact_effective_settings_once(
     assert context.compatibility.similarity == config.similarity
     assert context.compatibility.similarity is not config.similarity
     names = tuple(spec.name for spec in context.compatibility.families)
-    assert names == ("markov_renewal", "mmpp", "poisson_empirical")
-    assert context.compatibility.family_priority == ("markov_renewal", "poisson_empirical", "mmpp")
+    assert names == expected_names
+    assert context.compatibility.family_priority == (
+        "nhpp",
+        "mmpp",
+        "acd",
+        "markov_renewal",
+        "markov_packet_train",
+        "poisson_empirical",
+        "packet_hmm",
+    )
 
 
 @pytest.mark.parametrize("master_seed", (4, 0, 6))
@@ -586,9 +668,33 @@ def test_context_persists_each_documented_priority_seed_without_advancing_search
     )
     context.run_directory.mkdir(parents=True)
     expected_priority = {
-        4: ("markov_renewal", "mmpp", "poisson_empirical"),
-        0: ("poisson_empirical", "markov_renewal", "mmpp"),
-        6: ("markov_renewal", "mmpp", "poisson_empirical"),
+        4: (
+            "markov_packet_train",
+            "markov_renewal",
+            "acd",
+            "packet_hmm",
+            "nhpp",
+            "mmpp",
+            "poisson_empirical",
+        ),
+        0: (
+            "markov_renewal",
+            "nhpp",
+            "mmpp",
+            "poisson_empirical",
+            "packet_hmm",
+            "acd",
+            "markov_packet_train",
+        ),
+        6: (
+            "markov_renewal",
+            "mmpp",
+            "acd",
+            "packet_hmm",
+            "nhpp",
+            "markov_packet_train",
+            "poisson_empirical",
+        ),
     }[master_seed]
     assert context.compatibility.family_priority == expected_priority
 

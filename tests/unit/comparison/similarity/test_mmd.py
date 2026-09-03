@@ -16,9 +16,7 @@ from trafficlab.comparison.similarity.mmd import (
 )
 
 
-def _trace(
-    timestamps: tuple[float, ...], lengths: tuple[int, ...], direction_codes: tuple[int, ...]
-) -> TrafficTrace:
+def _trace(timestamps: tuple[float, ...], lengths: tuple[int, ...], direction_codes: tuple[int, ...]) -> TrafficTrace:
     """Build a canonical trace from the documented categorical direction codes."""
     directions = tuple(Direction.OUTBOUND if code == 0 else Direction.INBOUND for code in direction_codes)
     return TrafficTrace.from_events(
@@ -45,9 +43,7 @@ def test_random_feature_mean_matches_a_tiny_explicit_cosine_sine_oracle() -> Non
     accumulator.add(0, np.array((1.0, 3.0), dtype=np.float64))
     accumulator.add(1, np.array((2.0, 4.0), dtype=np.float64))
 
-    expected = (
-        _explicit_feature(0, (1.0, 3.0), frequencies) + _explicit_feature(1, (2.0, 4.0), frequencies)
-    ) / 2.0
+    expected = (_explicit_feature(0, (1.0, 3.0), frequencies) + _explicit_feature(1, (2.0, 4.0), frequencies)) / 2.0
     assert accumulator.count == 2
     assert accumulator.mean == pytest.approx(expected)
 
@@ -85,9 +81,7 @@ def test_mmd_uses_reference_only_continuous_mean_and_scale() -> None:
     result = approximate_mmd_similarity(reference, generated, 3.0, 3, 9, 0.25)
 
     continuous = cast(Mapping[str, object], result.diagnostics["continuous"])
-    assert continuous["reference_mean"] == pytest.approx(
-        ((math.log1p(1.0) + math.log1p(2.0)) / 2.0, math.log(10.0))
-    )  # type: ignore[index]
+    assert continuous["reference_mean"] == pytest.approx(((math.log1p(1.0) + math.log1p(2.0)) / 2.0, math.log(10.0)))  # type: ignore[index]
     assert continuous["reference_scale"] == pytest.approx((0.25, 0.25))  # type: ignore[index]
 
 

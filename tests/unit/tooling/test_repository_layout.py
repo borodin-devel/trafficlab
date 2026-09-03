@@ -25,6 +25,8 @@ VALIDATION_STUDY_TOOLING = {
     "audit/common.py",
     "audit/environment.py",
     "audit/lifecycle.py",
+    "audit/profile_checks.py",
+    "audit/report_values.py",
     "audit/science.py",
     "candidate/__init__.py",
     "candidate/artifacts.py",
@@ -42,6 +44,7 @@ VALIDATION_STUDY_TOOLING = {
     "records.py",
     "results/__init__.py",
     "results/codec.py",
+    "results/environment.py",
     "results/reporting.py",
     "results/reproduction.py",
     "rotation/__init__.py",
@@ -449,7 +452,9 @@ def test_current_architecture_schema_and_offline_audit_follow_runtime_contract()
         "four retained schema-4 component scores",
     )
     stale_claims = {
-        path.relative_to(architecture).as_posix(): tuple(fragment for fragment in stale_fragments if fragment in content)
+        path.relative_to(architecture).as_posix(): tuple(
+            fragment for fragment in stale_fragments if fragment in content
+        )
         for path in architecture.rglob("*.md")
         for content in (path.read_text(encoding="utf-8"),)
         if any(fragment in content for fragment in stale_fragments)
@@ -469,9 +474,7 @@ def test_current_architecture_schema_and_offline_audit_follow_runtime_contract()
     assert "never enter genetic trials or the weighted aggregate" in normalized_audit
     assert sum(weights) == 1
     assert sum(score * weight for score, weight in zip(scores, weights, strict=True)) == Fraction(17, 30)
-    assert "Canonical method order " + ", ".join(
-        f"<code>{name}</code>" for name in FITNESS_METHOD_NAMES
-    ) in weight_row
+    assert "Canonical method order " + ", ".join(f"<code>{name}</code>" for name in FITNESS_METHOD_NAMES) in weight_row
     assert "component scores <code>(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)</code>" in weight_row
     assert "eight one-hot vectors" in weight_row
     assert "normalized mixed weights <code>(1, 2, 3, 4, 5, 6, 7, 8) / 36</code>" in weight_row

@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final, cast
 
+import pytest
 from PySide6.QtGui import QStandardItemModel
 from pytestqt.qtbot import QtBot
 
 from tests.trafficlab_dashboard.support.dashboard_fixtures import copy_checked_dashboard_run
 from trafficlab_dashboard.app import create_window
+from trafficlab_dashboard.aspects.base import PlotData
 from trafficlab_dashboard.aspects.registry import ASPECTS
 from trafficlab_dashboard.run_loader import load_dashboard_run
 from trafficlab_dashboard.window import DashboardWindow
@@ -57,8 +59,20 @@ def test_checked_run_supports_every_available_aspect(tmp_path: Path) -> None:
     assert dict(run.unavailable) == {}
 
 
-def test_checked_run_window_selects_every_enabled_aspect(qtbot: QtBot, tmp_path: Path) -> None:
+def test_checked_run_window_selects_every_enabled_aspect(
+    qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     window = _loaded_window(qtbot, copy_checked_dashboard_run(tmp_path))
+
+    def record_render(data: PlotData, *_args: object, **_kwargs: object) -> None:
+        window.canvas._current_aspect = data.identifier  # pyright: ignore[reportPrivateUsage]
+
+    def record_error(title: str, message: str) -> None:
+        errors.append((title, message))
+
+    errors: list[tuple[str, str]] = []
+    monkeypatch.setattr(window.canvas, "render", record_render)
+    monkeypatch.setattr(window, "_show_error_dialog", record_error)
     model = cast(QStandardItemModel, window.aspect_combo.model())
 
     assert window.state.run is not None
@@ -70,4 +84,7 @@ def test_checked_run_window_selects_every_enabled_aspect(qtbot: QtBot, tmp_path:
         assert item is not None
         assert item.isEnabled() is True
         window.aspect_combo.setCurrentIndex(index)
-        qtbot.waitUntil(lambda aspect_id=aspect_id: window.canvas.current_aspect == aspect_id, timeout=10_000)
+        qtbot.waitUntil(
+            lambda aspect_id=aspect_id: window.canvas.current_aspect == aspect_id or bool(errors), timeout=10_000
+        )
+        assert errors == []

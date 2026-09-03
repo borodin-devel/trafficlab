@@ -61,7 +61,7 @@ def write_candidate_lifecycle(candidate: Path) -> dict[str, object]:
     index["lifecycle"] = "lifecycle.json"
     index["ownership"] = ownership
     index["lineage"] = lineage
-    index["schema_version"] = 4
+    index["schema_version"] = 5
     write_candidate_index(candidate, index)
     rewrite_candidate_manifest(candidate)
     return lifecycle

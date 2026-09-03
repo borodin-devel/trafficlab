@@ -65,9 +65,7 @@ def _sample(values: Iterable[object], *, name: str) -> tuple[int | float, ...]:
     )
 
 
-def _pooled_ecdf(
-    reference: Iterable[object], generated: Iterable[object], *, kind: _EcdfKind
-) -> EcdfSampleResult:
+def _pooled_ecdf(reference: Iterable[object], generated: Iterable[object], *, kind: _EcdfKind) -> EcdfSampleResult:
     """Scan tied pooled support once for a bounded CvM or AD discrepancy."""
     reference_values = _sample(reference, name="reference")
     generated_values = _sample(generated, name="generated")

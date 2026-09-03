@@ -185,10 +185,12 @@ EXPECTED_DECOMPOSED_ROOT_TESTS = {
         "test_types.py",
     },
     "unit/generation/models": {
+        "test_acd.py",
         "test_common.py",
         "test_contract.py",
         "test_fixture_generator.py",
         "test_mmpp.py",
+        "test_nhpp.py",
         "test_poisson.py",
         "test_registry.py",
     },

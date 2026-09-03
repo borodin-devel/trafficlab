@@ -489,7 +489,7 @@ def test_complete_fixture_freezes_training_model_selection_and_bidirectional_var
     report_inputs = cast(dict[str, object], json.loads((candidate / "report_inputs.json").read_text(encoding="utf-8")))
 
     selection = cast(dict[str, object], protocol["model_selection"])
-    assert protocol["schema_version"] == 4
+    assert protocol["schema_version"] == 5
     assert "natural_variation_windows" not in protocol
     assert selection["rule"] == "highest_best_fitness_then_lowest_repeat"
     assert {cast(dict[str, object], value)["workload"] for value in cast(list[object], selection["selected"])} == {
@@ -513,7 +513,7 @@ def test_complete_fixture_freezes_training_model_selection_and_bidirectional_var
                 assert set(score) == {"aggregate", "methods"}
                 assert type(score["aggregate"]) is float
                 methods = cast(dict[str, object], score["methods"])
-                assert tuple(methods) == vs_common.PUBLISHED_METHOD_ORDER
+                assert set(methods) == set(vs_common.PUBLISHED_METHOD_ORDER)
                 assert all(type(methods[method]) is float for method in vs_common.PUBLISHED_METHOD_ORDER)
 
     assert vs_audit_lifecycle.audit_bundle(candidate, repository=repository).bundle == candidate

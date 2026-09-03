@@ -283,7 +283,7 @@ def test_offline_auditor_config_semantics_retains_every_nonoperational_control()
     """Only the two documented host-path classes are removed from config comparison."""
 
     baseline = auditor_semantics_fixture_config()
-    document = baseline.model_dump(mode="json")
+    document = baseline.model_dump(mode="json", exclude_none=True)
     paths = config_semantic_leaf_paths(document)
     assert paths
     for path in paths:
@@ -661,7 +661,7 @@ def test_offline_bundle_fixture_carries_complete_real_program_validation_evidenc
     before = candidate_bytes(candidate)
     index = json.loads((candidate / "index.json").read_text(encoding="utf-8"))
 
-    assert index["schema_version"] == 4
+    assert index["schema_version"] == 5
     assert set(index) == {
         "environment",
         "fresh_simulation",
@@ -791,7 +791,7 @@ def test_retained_prerequisite_codec_freezes_all_output_identities_and_aggregate
             "target_image_reference": vs_common.TARGET_REFERENCE,
             "uv_lock_identity": identify_bytes(b"locked\n").as_dict(),
         },
-        "schema_version": 4,
+        "schema_version": 5,
         "study_id": study_id,
         "url": url,
     }

@@ -16,8 +16,8 @@ from trafficlab.common.config import (
     MarkovRenewalConfig,
     MethodWeights,
     MmppConfig,
-    PostfitSettings,
     PoissonConfig,
+    PostfitSettings,
     SimilarityConfig,
     TransitionSettings,
 )

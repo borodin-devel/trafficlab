@@ -15,12 +15,12 @@
     "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
   },
   "comparison_identity": {
-    "sha256": "1ff8a3810103a2bb23d36c91f859914d27bccdfdbc7954a2023c8c1ef60ebd0a",
-    "size": 5245
+    "sha256": "69d045a31d30a7c67347b2550b5045b5abedcaeba1679e088229da6f0bae3435",
+    "size": 185956
   },
   "generated_identity": {
-    "sha256": "79e21efbfcf68af78570d534872f7ba348fe282c7d047cf8888cd9b22d8b5dd2",
-    "size": 2136
+    "sha256": "788b006eafcb3ebaa5cdaa1ac929bbaa37c7aa23b5bead1353165ec7626655ef",
+    "size": 1772
   },
   "observation_window_seconds": 5.0,
   "reference_identity": {
@@ -28,10 +28,10 @@
     "size": 5864
   },
   "seed": 97,
-  "training_directory": "training/short/r3",
+  "training_directory": "training/short/r1",
   "training_model_identity": {
-    "sha256": "ee4abae2d914b82f80acd729c4277970c5e706fe099f58596b9505e38d8b929c",
-    "size": 6482
+    "sha256": "0494f9e7b99a8635c7e0f305a0527dc063623ef2c4c7715501108192d2f1a006",
+    "size": 6451
   },
   "workload": "short"
 }

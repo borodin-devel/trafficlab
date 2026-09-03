@@ -37,7 +37,7 @@ from trafficlab.comparison.codec import (
     render_comparison_result,
     similarity_settings_identity,
 )
-from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.metrics import compare_final_traces
 from trafficlab.generation.models.fitted_model import load_best_model, runtime_fitted_model
 from trafficlab.generation.models.registry import get_family
 
@@ -89,13 +89,17 @@ def evaluate_study_held_out(
     generated_pcapng = encoded.content
     aligned = align_generated(generated, W)
     settings_identity = similarity_settings_identity(config.similarity)
-    comparison = compare_traces(reference, aligned, W, config.similarity).with_input_identities(
+    comparison = compare_final_traces(
+        reference,
+        aligned,
+        W,
+        config.similarity,
         {
             "capture_json": capture_identity,
             "generated_pcapng": identify_bytes(generated_pcapng),
             "reference_pcapng": reference_identity,
             "similarity_settings": settings_identity,
-        }
+        },
     )
     comparison_json = render_comparison_result(comparison)
     return HeldOutEvaluation(

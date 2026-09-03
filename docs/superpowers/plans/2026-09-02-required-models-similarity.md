@@ -86,9 +86,14 @@ Existing cross-cutting owners:
 def test_existing_families_declare_coordinate_kinds() -> None:
     assert POISSON_FAMILY.gene_coordinate_kinds == ("log",)
     assert MARKOV_RENEWAL_FAMILY.gene_coordinate_kinds == (
-        "linear", "linear", "linear", "integer", "log",
+        "linear",
+        "linear",
+        "linear",
+        "integer",
+        "log",
     )
     assert MMPP_FAMILY.gene_coordinate_kinds == ("log", "log", "log", "log")
+
 
 def test_required_structural_bound_types_are_strict() -> None:
     assert PacketHmmConfig(state_count=IntegerBounds(lower=2, upper=4)).state_count.upper == 4
@@ -125,6 +130,7 @@ Define the common metadata directly on `ModelFamily`:
 ```python
 type GeneCoordinateKind = Literal["linear", "log", "integer"]
 
+
 class ModelFamily(Protocol):
     @property
     def gene_names(self) -> tuple[str, ...]:
@@ -147,11 +153,14 @@ Implement exact integer structural bounds:
 class PacketHmmConfig(FamilyOperators):
     state_count: IntegerBounds
 
+
 class MarkovPacketTrainConfig(FamilyOperators):
     length_cap: IntegerBounds
 
+
 class AcdConfig(FamilyOperators):
     order: IntegerBounds
+
 
 class NhppConfig(FamilyOperators):
     bin_count: IntegerBounds
@@ -397,8 +406,14 @@ Create one canonical tuple:
 
 ```python
 FITNESS_METHOD_NAMES = (
-    "autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate",
-    "cramer_von_mises", "anderson_darling", "jensen_shannon", "approximate_mmd",
+    "autocorrelation",
+    "frame_size_ks",
+    "iat_ks",
+    "multiscale_rate",
+    "cramer_von_mises",
+    "anderson_darling",
+    "jensen_shannon",
+    "approximate_mmd",
 )
 ```
 
@@ -1098,7 +1113,7 @@ git commit -m "feat(experiments): add tiered development runs"
 - Produces: reproducible small/medium run evidence and one human-readable technical summary.
 - Consumes: complete schema-5 algorithms, derived local captures, strict profiles.
 
-- [ ] **[STEP-117-da26a591] Run the complete Medium test tier**
+- [x] **[STEP-117-da26a591] Run the complete Medium test tier**
 
 ```bash
 uv sync --locked --all-groups --all-extras

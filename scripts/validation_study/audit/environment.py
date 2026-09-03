@@ -383,12 +383,12 @@ def require_permitted_relocated_worktree(
 
 def load_environment(content: bytes, *, repository: Path) -> dict[str, object]:
     document = parse_json_object(content, name="environment.json")
-    if document.get("scientific_artifact_schema") != 4:
+    if document.get("scientific_artifact_schema") != 5:
         fail(
             "scientific_semantics_incompatible",
             "environment",
-            "environment must record scientific schema 4",
-            "recreate evidence under schema 4",
+            "environment must record scientific schema 5",
+            "recreate evidence under schema 5",
         )
     if (
         "python_implementation" in document
@@ -559,11 +559,11 @@ def load_environment(content: bytes, *, repository: Path) -> dict[str, object]:
 
 def load_protocol(content: bytes) -> dict[str, object]:
     document = parse_json_object(content, name="protocol.json")
-    if document.get("schema_version") != 4 or document.get("final_seed") != 97:
+    if document.get("schema_version") != 5 or document.get("final_seed") != 97:
         fail(
             "scientific_semantics_incompatible",
             "protocol",
-            "protocol must freeze schema 4 and final seed 97",
+            "protocol must freeze schema 5 and final seed 97",
             "restore frozen protocol",
         )
     raw_selection = document.get("model_selection")

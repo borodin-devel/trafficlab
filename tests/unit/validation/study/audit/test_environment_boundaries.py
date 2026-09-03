@@ -762,12 +762,12 @@ def test_offline_auditor_rejects_collection_lifecycle_scalar_type_spoofs(
 
 
 def test_offline_auditor_rejects_a_noninteger_collection_index_schema_version(tmp_path: Path) -> None:
-    """The schema-4 index version is an integer fact rather than an equality alias."""
+    """The schema-5 index version is an integer fact rather than an equality alias."""
 
     repository, candidate = copy_validation_study_candidate(tmp_path)
     write_candidate_lifecycle(candidate)
     index = candidate_index(candidate)
-    index["schema_version"] = 4.0
+    index["schema_version"] = 5.0
     write_candidate_index(candidate, index)
     rewrite_candidate_manifest(candidate)
 

@@ -116,9 +116,10 @@ def test_real_offline_comparison_uses_the_snapshot_one_window_all_metrics_and_du
     assert json.loads((run_directory / "similarity.json").read_text(encoding="utf-8"))["methods"] == {
         name: method.as_dict() for name, method in result.methods.items()
     }
-    assert json.loads((run_directory / "similarity.json").read_text(encoding="utf-8"))[
-        "postfit_diagnostics"
-    ] == result.as_dict()["postfit_diagnostics"]
+    assert (
+        json.loads((run_directory / "similarity.json").read_text(encoding="utf-8"))["postfit_diagnostics"]
+        == result.as_dict()["postfit_diagnostics"]
+    )
     assert json.loads((run_directory / "run.log").read_text(encoding="utf-8").splitlines()[-1]) == {
         "aggregate_score": _EXPECTED_AGGREGATE_SCORE,
         "event": "comparison_succeeded",

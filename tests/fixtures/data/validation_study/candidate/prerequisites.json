@@ -160,8 +160,8 @@
     "capture_image_id": "sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
     "capture_image_reference": "trafficlab-capture@sha256:704e90f23055657bb8ad7108bf6650b5e83fb2b711a1168725441599b8a73859",
     "capture_tool_version": "4.0.17",
-    "source_commit": "23d43c8506cfd522523859f2f7c01fb9d85e41b4",
-    "source_tree": "edc614141930d7a4228bff5203baf36370830db0",
+    "source_commit": "ad7cc3ecba61a9c680b9305242f559fa66e276fc",
+    "source_tree": "3254a5939c43a7a375093af83622abf708ef0acf",
     "target_image_id": "sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
     "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b",
     "uv_lock_identity": {
@@ -169,7 +169,7 @@
       "size": 112618
     }
   },
-  "schema_version": 4,
+  "schema_version": 5,
   "study_id": "fixture-study",
   "url": "https://downloads.example.test/object.bin"
 }

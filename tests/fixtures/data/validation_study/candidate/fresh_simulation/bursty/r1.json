@@ -1,11 +1,11 @@
 {
   "comparison_identity": {
-    "sha256": "2eaa86671f0ea247b551ee993a37b352b2b5a1520e70b714a7514890f9a59c93",
-    "size": 5348
+    "sha256": "b83a08764b1b5a5d0ea744e1cfa28d9d667c0b2b2c8e071f52ab58f4e05e6869",
+    "size": 189050
   },
   "generated_identity": {
-    "sha256": "c2a7b230c7e87bd6dd27604f95b39ac523f1d4c89e898169254032cacbd0e173",
-    "size": 3952
+    "sha256": "39f731995c2691f64ec3515e798525141070c2595521762342d6b3c2588fd79c",
+    "size": 4628
   },
   "path": "fresh_simulation/bursty/r1.json",
   "reference_identity": {
@@ -16,8 +16,8 @@
   "seed": 97,
   "training_directory": "training/bursty/r1",
   "training_model_identity": {
-    "sha256": "678b144efbe75fd5e4440764853468982c0c48bdfa3d8bf87ce1f15a337ed682",
-    "size": 6496
+    "sha256": "c991b39f5d1de9097a1c196d505f9bb2d86eab25ccb0413dabd76ac9621f0cb3",
+    "size": 7366
   },
   "workload": "bursty"
 }

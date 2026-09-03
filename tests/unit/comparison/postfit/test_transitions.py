@@ -24,7 +24,9 @@ def _trace(events: tuple[tuple[float, Direction, int], ...]) -> TrafficTrace:
     return TrafficTrace.from_events(TraceEvent(timestamp, direction, length) for timestamp, direction, length in events)
 
 
-def _pmf[Category: Hashable](counts: Counter[Category], alpha: int, vocabulary: tuple[Category, ...]) -> dict[Category, Fraction]:
+def _pmf[Category: Hashable](
+    counts: Counter[Category], alpha: int, vocabulary: tuple[Category, ...]
+) -> dict[Category, Fraction]:
     """Build one hand-derived smoothed PMF using exact rational arithmetic."""
     denominator = sum(counts.values()) + alpha * len(vocabulary)
     return {key: Fraction(counts[key] + alpha, denominator) for key in vocabulary}
@@ -66,7 +68,9 @@ def test_reference_type7_thresholds_and_directional_states_are_frozen_for_genera
 
     result = transition_matrix_diagnostic(reference, generated, 10.0, 2, 2, 1.0, (1.0, 0.0, 0.0))
 
-    assert result.diagnostics["log_size_thresholds"] == pytest.approx((log1p(10.0), (log1p(20.0) + log1p(30.0)) / 2.0, log1p(40.0)))
+    assert result.diagnostics["log_size_thresholds"] == pytest.approx(
+        (log1p(10.0), (log1p(20.0) + log1p(30.0)) / 2.0, log1p(40.0))
+    )
     assert result.diagnostics["log_iat_thresholds"] == pytest.approx((log1p(1.0), log1p(2.0), log1p(3.0)))
     assert result.diagnostics["reference_states"] == (
         ("outbound", 0, "initial"),
@@ -88,7 +92,11 @@ def test_reference_type7_thresholds_and_directional_states_are_frozen_for_genera
         ("inbound", 0, 0): 1,
         ("outbound", 1, 1): 1,
         ("inbound", 1, 1): 1,
-        **{state: 0 for state in vocabulary if state not in {("outbound", 0, "initial"), ("inbound", 0, 0), ("outbound", 1, 1), ("inbound", 1, 1)}},
+        **{
+            state: 0
+            for state in vocabulary
+            if state not in {("outbound", 0, "initial"), ("inbound", 0, 0), ("outbound", 1, 1), ("inbound", 1, 1)}
+        },
     }
     assert result.diagnostics["active_state_count"] == 40
 
@@ -144,8 +152,12 @@ def test_hand_counted_occupancy_rows_empty_rows_and_run_pmf_use_declared_smoothi
     expected_reference_occupancy = _pmf(reference_occupancy, 1, vocabulary)
     expected_generated_occupancy = _pmf(generated_occupancy, 1, vocabulary)
     expected_occupancy_jsd = _jsd(reference_occupancy, generated_occupancy, 1, vocabulary)
-    assert occupancy["reference_probabilities"] == pytest.approx(tuple(expected_reference_occupancy[state] for state in vocabulary))
-    assert occupancy["generated_probabilities"] == pytest.approx(tuple(expected_generated_occupancy[state] for state in vocabulary))
+    assert occupancy["reference_probabilities"] == pytest.approx(
+        tuple(expected_reference_occupancy[state] for state in vocabulary)
+    )
+    assert occupancy["generated_probabilities"] == pytest.approx(
+        tuple(expected_generated_occupancy[state] for state in vocabulary)
+    )
     assert occupancy["jsd"] == pytest.approx(expected_occupancy_jsd)
     reference_rows: dict[State, Counter[State]] = {
         ("outbound", 0, "initial"): Counter({("outbound", 0, 0): 1}),
@@ -170,7 +182,9 @@ def test_hand_counted_occupancy_rows_empty_rows_and_run_pmf_use_declared_smoothi
         assert row["generated_probabilities"] == pytest.approx(
             tuple(expected_generated_row[destination] for destination in vocabulary)
         )
-    assert empty_row["reference_probabilities"] == pytest.approx(tuple(Fraction(1, len(vocabulary)) for _ in vocabulary))
+    assert empty_row["reference_probabilities"] == pytest.approx(
+        tuple(Fraction(1, len(vocabulary)) for _ in vocabulary)
+    )
     assert tuple(row["jsd"] for row in rows) == pytest.approx(expected_row_jsds)
     assert transitions["jsd"] == pytest.approx(expected_transition_jsd)
     assert runs["reference_counts"] == (2, 1, 0)
@@ -233,9 +247,7 @@ def test_transition_smoothing_rejects_a_huge_integer_count_before_float_conversi
     ("size_bins", "iat_bins", "pseudocount"),
     [(0, 1, 1.0), (1, 0, 1.0), (1, 1, 0.0), (1, 1, float("inf"))],
 )
-def test_transition_rejects_invalid_bins_and_smoothing(
-    size_bins: int, iat_bins: int, pseudocount: float
-) -> None:
+def test_transition_rejects_invalid_bins_and_smoothing(size_bins: int, iat_bins: int, pseudocount: float) -> None:
     """Invalid dimensions or smoothing would make declared PMFs undefined."""
     trace = _trace(((0.0, Direction.OUTBOUND, 10), (1.0, Direction.INBOUND, 20)))
 

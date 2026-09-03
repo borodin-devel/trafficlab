@@ -72,7 +72,9 @@ def _thresholds(values: Iterable[float], *, bin_count: int, name: str) -> tuple[
             corrective_action="provide finite nonnegative canonical reference values",
         )
     quantiles = tuple(index / bin_count for index in range(bin_count + 1))
-    return tuple(float(value) for value in np.quantile(np.asarray(sample, dtype=np.float64), quantiles, method="linear"))
+    return tuple(
+        float(value) for value in np.quantile(np.asarray(sample, dtype=np.float64), quantiles, method="linear")
+    )
 
 
 def _bin(value: float, thresholds: tuple[float, ...]) -> BinCategory:
@@ -103,12 +105,16 @@ def _vocabulary(size_bin_count: int, iat_bin_count: int) -> tuple[State, ...]:
     return states
 
 
-def _states(trace: TrafficTrace, *, size_thresholds: tuple[float, ...], iat_thresholds: tuple[float, ...]) -> tuple[State, ...]:
+def _states(
+    trace: TrafficTrace, *, size_thresholds: tuple[float, ...], iat_thresholds: tuple[float, ...]
+) -> tuple[State, ...]:
     """Encode one event sequence without changing reference-frozen categories."""
     values: list[State] = []
     previous: float | None = None
     for timestamp, direction, frame_length in zip(trace.timestamps, trace.directions, trace.frame_lengths, strict=True):
-        iat_category: BinCategory = "initial" if previous is None else _bin(math.log1p(float(timestamp - previous)), iat_thresholds)
+        iat_category: BinCategory = (
+            "initial" if previous is None else _bin(math.log1p(float(timestamp - previous)), iat_thresholds)
+        )
         values.append(
             (
                 Direction.OUTBOUND.value if direction == 0 else Direction.INBOUND.value,
@@ -207,12 +213,18 @@ def transition_matrix_diagnostic(
     size_count = _positive_int(size_bin_count, name="transition size bin count")
     iat_count = _positive_int(iat_bin_count, name="transition IAT bin count")
     alpha = _pseudocount(pseudocount)
-    weights = validated_weights(component_weights, name="transition component weights", expected_length=3, count_name="component")
+    weights = validated_weights(
+        component_weights, name="transition component weights", expected_length=3, count_name="component"
+    )
     vocabulary = _vocabulary(size_count, iat_count)
     reference_trace = validate_traffic_trace(reference, minimum_events=2, trace_name="reference", window=window)
     generated_trace = validate_traffic_trace(generated, minimum_events=2, trace_name="generated", window=window)
-    size_thresholds = _thresholds((math.log1p(float(value)) for value in reference_trace.frame_lengths), bin_count=size_count, name="size")
-    iat_thresholds = _thresholds((math.log1p(float(value)) for value in reference_trace.iats()), bin_count=iat_count, name="IAT")
+    size_thresholds = _thresholds(
+        (math.log1p(float(value)) for value in reference_trace.frame_lengths), bin_count=size_count, name="size"
+    )
+    iat_thresholds = _thresholds(
+        (math.log1p(float(value)) for value in reference_trace.iats()), bin_count=iat_count, name="IAT"
+    )
     reference_states = _states(reference_trace, size_thresholds=size_thresholds, iat_thresholds=iat_thresholds)
     generated_states = _states(generated_trace, size_thresholds=size_thresholds, iat_thresholds=iat_thresholds)
     reference_occupancy = _counts(reference_states, vocabulary)
@@ -222,7 +234,9 @@ def transition_matrix_diagnostic(
     generated_transitions = _transition_counts(generated_states, vocabulary)
     rows: list[dict[str, object]] = []
     row_jsds: list[float] = []
-    for state, reference_row, generated_row in zip(vocabulary, reference_transitions, generated_transitions, strict=True):
+    for state, reference_row, generated_row in zip(
+        vocabulary, reference_transitions, generated_transitions, strict=True
+    ):
         row_jsd = _jsd(reference_row, generated_row, pseudocount=alpha, name="transition row JSD")
         row_jsds.append(row_jsd)
         rows.append(

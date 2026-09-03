@@ -36,7 +36,7 @@ INDEX = "index.json"
 
 SCHEMA = 2
 
-INDEX_SCHEMA = 4
+INDEX_SCHEMA = 5
 
 WORKLOADS = ("short", "streaming", "bursty")
 
@@ -49,8 +49,6 @@ HEX64 = re.compile("[0-9a-f]{64}", flags=re.ASCII)
 _TEMP_SUFFIXES = (".tmp", ".partial", ".swp")
 
 _TRANSFER_PROFILE_URL = "https://validation-study.example/object"
-
-MODEL_FAMILIES = ("poisson_empirical", "markov_renewal", "mmpp")
 
 FIXTURE_STUDY_ID = "fixture-study"
 

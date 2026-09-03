@@ -46,8 +46,12 @@ def build_config(valid_config_data: dict[str, object], run_directory: Path) -> E
     cast(dict[str, object], data["run"])["directory"] = str(run_directory)
     models = cast(dict[str, object], data["models"])
     models["enabled"] = ["poisson_empirical"]
+    models["acd"] = None
+    models["markov_packet_train"] = None
     models["markov_renewal"] = None
     models["mmpp"] = None
+    models["nhpp"] = None
+    models["packet_hmm"] = None
     genetic = cast(dict[str, object], data["genetic"])
     genetic.update(
         population_size=2,

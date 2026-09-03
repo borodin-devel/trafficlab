@@ -126,13 +126,13 @@ def test_candidate_id_rejects_an_unrelated_value() -> None:
 
 def test_trial_result_requires_each_method_once_in_published_order() -> None:
     """A reordered or partial metric tuple would make checkpoint scores ambiguous."""
-    methods = tuple(MethodTrialResult(name=name, score=0.5, diagnostics={}) for name in METHOD_ORDER)
+    methods = _methods()
 
     with pytest.raises(ValueError, match="published order"):
         TrialResult(
             seed=3,
             aggregate_score=0.5,
-            methods=cast(tuple[MethodTrialResult, ...], methods[::-1]),
+            methods=cast(Any, methods[::-1]),
         )
 
 
@@ -269,10 +269,25 @@ def test_method_and_trial_contracts_reject_invalid_scalar_or_method_values(facto
         cast(Callable[[], object], factory)()
 
 
-def _methods() -> tuple[MethodTrialResult, ...]:
-    return cast(
-        tuple[MethodTrialResult, ...],
-        tuple(MethodTrialResult(name=name, score=0.5, diagnostics={}) for name in METHOD_ORDER),
+def _methods() -> tuple[
+    MethodTrialResult,
+    MethodTrialResult,
+    MethodTrialResult,
+    MethodTrialResult,
+    MethodTrialResult,
+    MethodTrialResult,
+    MethodTrialResult,
+    MethodTrialResult,
+]:
+    return (
+        MethodTrialResult(name="autocorrelation", score=0.5, diagnostics={}),
+        MethodTrialResult(name="frame_size_ks", score=0.5, diagnostics={}),
+        MethodTrialResult(name="iat_ks", score=0.5, diagnostics={}),
+        MethodTrialResult(name="multiscale_rate", score=0.5, diagnostics={}),
+        MethodTrialResult(name="cramer_von_mises", score=0.5, diagnostics={}),
+        MethodTrialResult(name="anderson_darling", score=0.5, diagnostics={}),
+        MethodTrialResult(name="jensen_shannon", score=0.5, diagnostics={}),
+        MethodTrialResult(name="approximate_mmd", score=0.5, diagnostics={}),
     )
 
 
@@ -397,11 +412,10 @@ def test_failure_and_duplicate_records_reject_invalid_values(factory: object, me
 def test_candidate_related_records_preserve_valid_immutable_values() -> None:
     """Population/history contracts retain typed, immutable candidate state."""
     identifier = CandidateId(birth_generation=2, birth_index=4)
-    methods = tuple(MethodTrialResult(name=name, score=0.5, diagnostics={}) for name in METHOD_ORDER)
     trial = TrialResult(
         seed=7,
         aggregate_score=0.5,
-        methods=cast(tuple[MethodTrialResult, ...], methods),
+        methods=_methods(),
     )
     candidate = Candidate(
         identifier=identifier,

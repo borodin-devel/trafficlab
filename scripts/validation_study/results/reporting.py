@@ -11,6 +11,7 @@ from scripts.validation_study.common import (
     BOOTSTRAP_SEED,
     DESCRIPTOR_KEYS,
     FAMILY_ORDER,
+    HISTORIC_PUBLISHED_METHOD_ORDER,
     PRIMARY_ORDER,
     PUBLISHED_METHOD_ORDER,
     WORKLOAD_SUMMARY_KEYS,
@@ -391,17 +392,26 @@ def bounded_score(value: object, *, name: str) -> float:
     return strict_float(value, name=name, lower=0.0, upper=1.0)
 
 
-def _validate_method_scores(value: object, *, name: str = "method scores") -> JsonObject:
-    document = exact_object(value, PUBLISHED_METHOD_ORDER, name=name)
-    for method in PUBLISHED_METHOD_ORDER:
+def _method_order(*, historic_schema_one_result: bool) -> tuple[str, ...]:
+    return HISTORIC_PUBLISHED_METHOD_ORDER if historic_schema_one_result else PUBLISHED_METHOD_ORDER
+
+
+def _validate_method_scores(
+    value: object, *, name: str = "method scores", historic_schema_one_result: bool = False
+) -> JsonObject:
+    method_order = _method_order(historic_schema_one_result=historic_schema_one_result)
+    document = exact_object(value, method_order, name=name)
+    for method in method_order:
         bounded_score(document[method], name=f"{name}.{method}")
     return cast(JsonObject, document)
 
 
-def validate_score(value: object, *, name: str = "score") -> JsonObject:
+def validate_score(value: object, *, name: str = "score", historic_schema_one_result: bool = False) -> JsonObject:
     document = exact_object(value, ("aggregate", "methods"), name=name)
     bounded_score(document["aggregate"], name=f"{name}.aggregate")
-    _validate_method_scores(document["methods"], name=f"{name}.methods")
+    _validate_method_scores(
+        document["methods"], name=f"{name}.methods", historic_schema_one_result=historic_schema_one_result
+    )
     return cast(JsonObject, document)
 
 
@@ -467,7 +477,8 @@ def _validate_score_summary(
 ) -> JsonObject:
     document = exact_object(value, ("aggregate", "methods"), name=name)
     aggregate_values = [cast(float, score["aggregate"]) for score in observations]
-    methods = exact_object(document["methods"], PUBLISHED_METHOD_ORDER, name=f"{name}.methods")
+    method_order = _method_order(historic_schema_one_result=historic_schema_one_result)
+    methods = exact_object(document["methods"], method_order, name=f"{name}.methods")
     source_methods = [cast(dict[str, JsonValue], score["methods"]) for score in observations]
     _validate_descriptive(
         document["aggregate"],
@@ -475,7 +486,7 @@ def _validate_score_summary(
         observations=aggregate_values,
         historic_schema_one_result=historic_schema_one_result,
     )
-    for method in PUBLISHED_METHOD_ORDER:
+    for method in method_order:
         _validate_descriptive(
             methods[method],
             name=f"{name}.methods.{method}",
@@ -517,14 +528,15 @@ def _validate_descriptors(
     return cast(JsonObject, document)
 
 
-def _average_score(forward: JsonObject, reverse: JsonObject) -> JsonObject:
+def _average_score(forward: JsonObject, reverse: JsonObject, *, historic_schema_one_result: bool = False) -> JsonObject:
+    method_order = _method_order(historic_schema_one_result=historic_schema_one_result)
     forward_methods = cast(dict[str, JsonValue], forward["methods"])
     reverse_methods = cast(dict[str, JsonValue], reverse["methods"])
     return {
         "aggregate": (cast(float, forward["aggregate"]) + cast(float, reverse["aggregate"])) / 2.0,
         "methods": {
             method: (cast(float, forward_methods[method]) + cast(float, reverse_methods[method])) / 2.0
-            for method in PUBLISHED_METHOD_ORDER
+            for method in method_order
         },
     }
 
@@ -545,11 +557,17 @@ def validate_natural_variation(
         left = strict_int(pair["left_repeat"], name="left repeat")
         right = strict_int(pair["right_repeat"], name="right repeat")
         require((left, right) == expected, "natural variation pair order must be (1,2), (1,3), (2,3)")
-        forward = validate_score(pair["forward"], name="forward pair score")
-        reverse = validate_score(pair["reverse"], name="reverse pair score")
-        symmetric = validate_score(pair["symmetric"], name="symmetric pair score")
+        forward = validate_score(
+            pair["forward"], name="forward pair score", historic_schema_one_result=historic_schema_one_result
+        )
+        reverse = validate_score(
+            pair["reverse"], name="reverse pair score", historic_schema_one_result=historic_schema_one_result
+        )
+        symmetric = validate_score(
+            pair["symmetric"], name="symmetric pair score", historic_schema_one_result=historic_schema_one_result
+        )
         require(
-            symmetric == _average_score(forward, reverse),
+            symmetric == _average_score(forward, reverse, historic_schema_one_result=historic_schema_one_result),
             "symmetric pair score must be the arithmetic mean of forward and reverse",
         )
     _validate_descriptors(
@@ -570,16 +588,15 @@ def _validate_family_summary(
         cast(dict[str, JsonValue], cast(dict[str, JsonValue], champion["selection_score"])["methods"])
         for champion in champions
     ]
-    components = exact_object(
-        document["selection_components"], PUBLISHED_METHOD_ORDER, name=f"{family} selection components"
-    )
+    method_order = _method_order(historic_schema_one_result=historic_schema_one_result)
+    components = exact_object(document["selection_components"], method_order, name=f"{family} selection components")
     _validate_descriptive(
         document["selection_fitness"],
         name=f"{family} selection fitness",
         observations=fitness_values,
         historic_schema_one_result=historic_schema_one_result,
     )
-    for method in PUBLISHED_METHOD_ORDER:
+    for method in method_order:
         _validate_descriptive(
             components[method],
             name=f"{family} selection component {method}",

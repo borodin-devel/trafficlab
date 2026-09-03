@@ -38,7 +38,7 @@ from scripts.validation_study.audit.common import (
     workload_name,
 )
 from scripts.validation_study.audit.environment import config_semantics, git_bytes
-from scripts.validation_study.common import ARTIFACT_NAMES
+from scripts.validation_study.common import ARTIFACT_NAMES, MODEL_FAMILIES
 from scripts.validation_study.records import HeldOutEvaluation
 from scripts.validation_study.transfer import parse_transfer_header
 from trafficlab.common.compatibility import identify_bytes
@@ -48,7 +48,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import encode_pcapng, read_pcapng_bytes
 from trafficlab.common.trace import align_generated, normalize_reference, parse_capture_metadata
 from trafficlab.comparison.codec import render_comparison_result, similarity_settings_identity
-from trafficlab.comparison.metrics import compare_traces
+from trafficlab.comparison.metrics import compare_final_traces
 from trafficlab.comparison.schema import ComparisonResult
 from trafficlab.fitting.genetic.checkpoint import CheckpointState
 from trafficlab.generation.models.fitted_model import (
@@ -450,10 +450,17 @@ def fixture_profile(
             "recorded fixture profile is not canonical",
             "restore the canonical fixture profile",
         )
+    document = pair.portable.model_dump(mode="python")
+    models_document = cast(dict[str, object], document["models"])
+    models_document["enabled"] = MODEL_FAMILIES
+    for family in tuple(models_document):
+        if family not in {"enabled", *MODEL_FAMILIES}:
+            del models_document[family]
+    profile = ExperimentConfig.model_validate(document)
     spec = frozen_workload_profiles(url)[workload]
-    target = pair.portable.target.model_copy(update={"argv": spec.argv, "image": environment["target_image_reference"]})
-    capture = pair.portable.capture.model_copy(update={"image": environment["capture_image_reference"]})
-    return pair.portable.model_copy(update={"target": target, "capture": capture})
+    target = profile.target.model_copy(update={"argv": spec.argv, "image": environment["target_image_reference"]})
+    capture = profile.capture.model_copy(update={"image": environment["capture_image_reference"]})
+    return profile.model_copy(update={"target": target, "capture": capture})
 
 
 def rebuild_fresh(bundle: Path, value: object, training: Training, *, final_seed: int) -> str:
@@ -593,13 +600,17 @@ def reconstruct_held_out_trace(
     generated = encoded.trace
     generated_pcapng = encoded.content
     settings_identity = similarity_settings_identity(config.similarity)
-    comparison = compare_traces(reference, align_generated(generated, W), W, config.similarity).with_input_identities(
+    comparison = compare_final_traces(
+        reference,
+        align_generated(generated, W),
+        W,
+        config.similarity,
         {
             "capture_json": identify_bytes(capture_content),
             "generated_pcapng": identify_bytes(generated_pcapng),
             "reference_pcapng": identify_bytes(reference_content),
             "similarity_settings": settings_identity,
-        }
+        },
     )
     comparison_json = render_comparison_result(comparison)
     return HeldOutEvaluation(

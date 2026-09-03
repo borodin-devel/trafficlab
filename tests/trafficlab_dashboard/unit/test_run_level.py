@@ -48,7 +48,12 @@ def _checked_similarity() -> ComparisonResult:
 
 
 def _experiment() -> ExperimentConfig:
-    return ExperimentConfig.model_validate(valid_config_data(Path.cwd()))
+    data = valid_config_data(Path.cwd())
+    models = cast(dict[str, object], data["models"])
+    models["enabled"] = ["poisson_empirical", "markov_renewal", "mmpp"]
+    for family in ("acd", "markov_packet_train", "nhpp", "packet_hmm"):
+        models[family] = None
+    return ExperimentConfig.model_validate(data)
 
 
 def _history_rows() -> tuple[HistoryRow, ...]:
@@ -270,9 +275,15 @@ def test_fano_allan_aspect_projects_exact_stored_reference_and_generated_curves(
     )
     assert [series.x.tolist() for series in data.series] == [pytest.approx(stored.widths)] * 4
     expected_curves = tuple(
-        tuple(getattr(scale.reference_fano if factor == "fano" else scale.reference_allan, direction) for scale in stored.scales)
+        tuple(
+            getattr(scale.reference_fano if factor == "fano" else scale.reference_allan, direction)
+            for scale in stored.scales
+        )
         if dataset == "Reference"
-        else tuple(getattr(scale.generated_fano if factor == "fano" else scale.generated_allan, direction) for scale in stored.scales)
+        else tuple(
+            getattr(scale.generated_fano if factor == "fano" else scale.generated_allan, direction)
+            for scale in stored.scales
+        )
         for factor in ("fano", "allan")
         for direction in ("total",)
         for dataset in ("Reference", "Generated")

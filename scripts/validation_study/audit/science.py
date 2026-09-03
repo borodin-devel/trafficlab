@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping, Sequence
 from itertools import combinations
 from pathlib import Path
-from statistics import fmean, variance
+from statistics import variance
 from typing import TYPE_CHECKING, cast
 
 from scripts.validation_study.audit.artifacts import (
@@ -19,7 +19,6 @@ from scripts.validation_study.audit.artifacts import (
 from scripts.validation_study.audit.common import (
     FIXTURE_STUDY_ID,
     FIXTURE_URL,
-    MODEL_FAMILIES,
     WORKLOADS,
     Training,
     artifact_identity,
@@ -39,18 +38,37 @@ from scripts.validation_study.audit.common import (
     workload_name,
 )
 from scripts.validation_study.audit.environment import config_semantics
-from scripts.validation_study.common import ARTIFACT_NAMES, PUBLISHED_METHOD_ORDER
+from scripts.validation_study.audit.profile_checks import (
+    capture_lineage as _capture_lineage,
+)
+from scripts.validation_study.audit.profile_checks import (
+    require_config_images as _require_config_images,
+)
+from scripts.validation_study.audit.profile_checks import (
+    require_config_workload_argv as _require_config_workload_argv,
+)
+from scripts.validation_study.audit.profile_checks import (
+    require_frozen_profile as _require_frozen_profile,
+)
+from scripts.validation_study.audit.report_values import (
+    comparison_score,
+)
+from scripts.validation_study.audit.report_values import (
+    sample_summary as _sample_summary,
+)
+from scripts.validation_study.audit.report_values import (
+    winner_family as _winner_family,
+)
+from scripts.validation_study.common import ARTIFACT_NAMES, MODEL_FAMILIES, PUBLISHED_METHOD_ORDER
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_configuration_pair, render_effective_config
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.scapy_io import read_pcapng_bytes
-from trafficlab.common.statistics import bootstrap_interval
 from trafficlab.common.trace import align_generated, normalize_reference, parse_capture_metadata
 from trafficlab.comparison.codec import parse_comparison_result, render_comparison_result, similarity_settings_identity
-from trafficlab.comparison.metrics import compare_traces
-from trafficlab.comparison.schema import ComparisonResult
+from trafficlab.comparison.metrics import compare_final_traces, compare_traces
 from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.population import rank_candidates
 from trafficlab.fitting.genetic.strategy import make_strategy_context
@@ -139,11 +157,51 @@ def _validation_profile(*, workload: str, url: str, environment: Mapping[str, ob
                 "multiscale_packet_weight": 0.5,
                 "multiscale_byte_weight": 0.5,
                 "max_direction_bin_cells": 100000,
+                "cvm_iat_weight": 0.5,
+                "cvm_size_weight": 0.5,
+                "ad_iat_weight": 0.5,
+                "ad_size_weight": 0.5,
+                "js_iat_bin_count": 8,
+                "js_iat_weight": 0.5,
+                "js_mark_weight": 0.5,
+                "mmd_feature_count": 16,
+                "mmd_seed": 2026,
+                "mmd_scale_floor": 0.001,
                 "method_weights": {
-                    "frame_size_ks": 0.25,
-                    "iat_ks": 0.25,
-                    "autocorrelation": 0.25,
-                    "multiscale_rate": 0.25,
+                    "frame_size_ks": 0.125,
+                    "iat_ks": 0.125,
+                    "autocorrelation": 0.125,
+                    "multiscale_rate": 0.125,
+                    "cramer_von_mises": 0.125,
+                    "anderson_darling": 0.125,
+                    "jensen_shannon": 0.125,
+                    "approximate_mmd": 0.125,
+                },
+                "postfit": {
+                    "dispersion": {
+                        "widths_seconds": (0.25, 1.0),
+                        "scale_weights": (0.5, 0.5),
+                        "fano_weight": 0.5,
+                        "allan_weight": 0.5,
+                    },
+                    "transition": {
+                        "size_bin_count": 2,
+                        "iat_bin_count": 2,
+                        "pseudocount": 0.5,
+                        "occupancy_weight": 0.34,
+                        "transition_rows_weight": 0.33,
+                        "runs_weight": 0.33,
+                    },
+                    "c2st": {
+                        "feature_version": "window-v1",
+                        "window_width_seconds": 0.25,
+                        "fold_count": 3,
+                        "guard_window_count": 1,
+                        "maximum_window_count": 4096,
+                        "l2_regularization": 1.0,
+                        "maximum_iterations": 200,
+                        "tolerance": 1e-9,
+                    },
                 },
             },
         }
@@ -183,59 +241,6 @@ def load_frozen_profiles(
                 "restore the complete frozen model-family profile",
             )
     return profiles
-
-
-def _require_frozen_profile(config: ExperimentConfig, frozen: ExperimentConfig, *, affected: str) -> None:
-    """Require one retained configuration to equal its independently reconstructed profile."""
-    if tuple(config.models.enabled) != MODEL_FAMILIES or config_semantics(config) != config_semantics(frozen):
-        fail(
-            "artifact_foreign",
-            affected,
-            "configuration does not match the frozen source-owned study profile",
-            "restore the exact frozen workload configuration",
-        )
-
-
-def comparison_score(result: ComparisonResult) -> dict[str, object]:
-    return {
-        "aggregate": result.aggregate_score,
-        "methods": {name: result.methods[name].score for name in PUBLISHED_METHOD_ORDER},
-    }
-
-
-def _capture_lineage(content: bytes, environment: Mapping[str, object]) -> dict[str, object]:
-    return {
-        "capture_identity": artifact_identity(content),
-        "capture_image_id": environment["capture_image_id"],
-        "capture_image_reference": environment["capture_image_reference"],
-        "capture_tool_version": environment["capture_tool_version"],
-        "target_image_id": environment["target_image_id"],
-        "target_image_reference": environment["target_image_reference"],
-    }
-
-
-def _require_config_images(config: ExperimentConfig, environment: Mapping[str, object], *, affected: str) -> None:
-    if (
-        config.target.image != environment["target_image_reference"]
-        or config.capture.image != environment["capture_image_reference"]
-    ):
-        fail(
-            "artifact_foreign",
-            affected,
-            "configuration image references do not match the frozen prerequisite environment",
-            "restore image-lock-bound configuration evidence",
-        )
-
-
-def _require_config_workload_argv(config: ExperimentConfig, *, workload: str, url: str, affected: str) -> None:
-    expected = frozen_workload_profiles(url)[workload].argv
-    if config.target.argv != expected:
-        fail(
-            "artifact_foreign",
-            affected,
-            "configuration target argv does not match the frozen workload profile",
-            "restore the exact frozen curl workload configuration",
-        )
 
 
 def rebuild_training(
@@ -403,15 +408,17 @@ def rebuild_training(
             "restore matching generated trace",
         )
     settings_identity = similarity_settings_identity(config.similarity)
-    expected_comparison = compare_traces(
-        reference, align_generated(generated.trace, window), window, config.similarity
-    ).with_input_identities(
+    expected_comparison = compare_final_traces(
+        reference,
+        align_generated(generated.trace, window),
+        window,
+        config.similarity,
         {
             "capture_json": identify_bytes(contents["capture.json"]),
             "generated_pcapng": identify_bytes(contents["generated.pcapng"]),
             "reference_pcapng": identify_bytes(contents["reference.pcapng"]),
             "similarity_settings": settings_identity,
-        }
+        },
     )
     try:
         persisted_comparison = parse_comparison_result(contents["similarity.json"])
@@ -606,29 +613,23 @@ def rebuild_held_out(
     return (directory_relative, config_paths | {f"{directory_relative}/{name}" for name in names}, evaluation)
 
 
-def _sample_summary(values: Sequence[float], *, name: str) -> dict[str, object]:
-    if len(values) != 3 or any(not math.isfinite(value) or value < 0.0 for value in values):
-        fail("artifact_corrupt", "report_inputs.json", f"{name} requires finite observations", "restore report inputs")
-    return {
-        "bootstrap": bootstrap_interval(values, seed=20260819).as_dict(),
-        "mean": fmean(values),
-        "sample_variance": variance(values),
-    }
-
-
-def _winner_family(training: Training) -> str:
-    candidate = rank_candidates(training.checkpoint.population, family_priority=training.checkpoint.family_priority)[0]
-    return candidate.family
-
-
 def _controlled_weight_analysis(training: Sequence[Training]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    alternate_weights = {"autocorrelation": 0.2, "frame_size_ks": 0.4, "iat_ks": 0.2, "multiscale_rate": 0.2}
+    alternate_weights = {
+        "autocorrelation": 0.2,
+        "frame_size_ks": 0.4,
+        "iat_ks": 0.2,
+        "multiscale_rate": 0.2,
+        "cramer_von_mises": 0.0,
+        "anderson_darling": 0.0,
+        "jensen_shannon": 0.0,
+        "approximate_mmd": 0.0,
+    }
     for workload in WORKLOADS:
         group = [item for item in training if item.workload == workload]
         selected = min(group, key=lambda item: (-item.checkpoint.best_fitness, item.repeat))
         baseline_weights = cast(dict[str, object], selected.config.similarity.method_weights.model_dump(mode="json"))
-        if baseline_weights != {method: 0.25 for method in PUBLISHED_METHOD_ORDER}:
+        if baseline_weights != {method: 0.125 for method in PUBLISHED_METHOD_ORDER}:
             fail(
                 "scientific_semantics_incompatible",
                 "report_inputs.json",

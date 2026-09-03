@@ -50,9 +50,12 @@ TARGET_REFERENCE = "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea6
 
 BOOTSTRAP_SEED = 20260819
 
+MODEL_FAMILIES: tuple[FamilyName, ...] = ("poisson_empirical", "markov_renewal", "mmpp")
 FAMILY_ORDER: tuple[FamilyName, ...] = ("markov_renewal", "mmpp", "poisson_empirical")
 
 PUBLISHED_METHOD_ORDER = METHOD_ORDER
+
+HISTORIC_PUBLISHED_METHOD_ORDER = ("autocorrelation", "frame_size_ks", "iat_ks", "multiscale_rate")
 
 ARTIFACT_NAMES = (
     "experiment.toml",

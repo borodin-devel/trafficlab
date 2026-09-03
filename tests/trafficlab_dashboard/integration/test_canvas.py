@@ -209,9 +209,7 @@ def _postfit_line_data(*, identifier: Literal["transition_fidelity", "c2st"]) ->
         x_label="Index",
         y_label="Value",
         unit="unitless",
-        series=(
-            LineSeries(label="Stored values", x=x, y=x / max(count, 1), sample_count=count),
-        ),
+        series=(LineSeries(label="Stored values", x=x, y=x / max(count, 1), sample_count=count),),
         x_limits=(0.0, float(count - 1)),
         y_limits=(0.0, 1.0),
         metadata=metadata,

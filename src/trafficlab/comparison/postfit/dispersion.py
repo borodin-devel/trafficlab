@@ -107,7 +107,11 @@ def _log_difference(reference: float, generated: float) -> float:
     reference_log = math.log1p(reference)
     generated_log = math.log1p(generated)
     denominator = reference_log + generated_log
-    return 0.0 if denominator == 0.0 else _bounded(abs(reference_log - generated_log) / denominator, name="log1p dispersion difference")
+    return (
+        0.0
+        if denominator == 0.0
+        else _bounded(abs(reference_log - generated_log) / denominator, name="log1p dispersion difference")
+    )
 
 
 def _counts_by_channel(trace: TrafficTrace, *, width: float, window_count: int) -> dict[str, tuple[int, ...]]:
@@ -155,12 +159,20 @@ def fano_allan_diagnostic(
         generated_fano = {channel: _curve(counts)[0] for channel, counts in generated_counts.items()}
         reference_allan = {channel: _curve(counts)[1] for channel, counts in reference_counts.items()}
         generated_allan = {channel: _curve(counts)[1] for channel, counts in generated_counts.items()}
-        fano_difference = math.fsum(
-            _log_difference(reference_fano[channel], generated_fano[channel]) for channel in ("total", "outbound", "inbound")
-        ) / 3.0
-        allan_difference = math.fsum(
-            _log_difference(reference_allan[channel], generated_allan[channel]) for channel in ("total", "outbound", "inbound")
-        ) / 3.0
+        fano_difference = (
+            math.fsum(
+                _log_difference(reference_fano[channel], generated_fano[channel])
+                for channel in ("total", "outbound", "inbound")
+            )
+            / 3.0
+        )
+        allan_difference = (
+            math.fsum(
+                _log_difference(reference_allan[channel], generated_allan[channel])
+                for channel in ("total", "outbound", "inbound")
+            )
+            / 3.0
+        )
         scale_difference = _bounded(
             math.fsum((component_weights[0] * fano_difference, component_weights[1] * allan_difference)),
             name="Fano/Allan scale discrepancy",

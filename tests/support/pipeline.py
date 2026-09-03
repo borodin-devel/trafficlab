@@ -59,7 +59,12 @@ def prepared_experiment(valid_config_data: dict[str, object], tmp_path: Path) ->
 
 def trial(seed: int, score: float = 0.8, *, family: FamilyName = "poisson_empirical") -> TrialResult:
     methods = tuple(MethodTrialResult(name=name, score=score, diagnostics={"literal": score}) for name in METHOD_ORDER)
-    diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS} if family == "markov_renewal" else {}
+    if family in {"markov_renewal", "markov_packet_train"}:
+        diagnostics = {name: 0 for name in MARKOV_MODEL_DIAGNOSTIC_KEYS}
+    elif family == "packet_hmm":
+        diagnostics = {"hidden_state_0_count": 1, "hidden_state_1_count": 1, "category_0_count": 2}
+    else:
+        diagnostics = {}
     return TrialResult(seed=seed, aggregate_score=score, methods=cast(Any, methods), model_diagnostics=diagnostics)
 
 
@@ -189,8 +194,12 @@ def stage_results(
     fit = replace(fit, outcome=replace(fit.outcome, family_priority=context.compatibility.family_priority))
     family_names = cast(tuple[FamilyName, ...], tuple(family.name for family in context.compatibility.families))
     family_genes = {
+        "acd": (1,),
+        "markov_packet_train": (3,),
         "markov_renewal": (0.2, 0.7, 0.5, 2, 1.0),
         "mmpp": (1.0, 2.0, 3.0, 4.0),
+        "nhpp": (2,),
+        "packet_hmm": (2,),
         "poisson_empirical": (1.0,),
     }
     population = [fit.outcome.winner]

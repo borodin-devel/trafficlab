@@ -241,7 +241,7 @@
       "$ref": "#/$defs/StudyPrerequisiteEnvironment"
     },
     "schema_version": {
-      "const": 4,
+      "const": 5,
       "title": "Schema Version",
       "type": "integer"
     },
