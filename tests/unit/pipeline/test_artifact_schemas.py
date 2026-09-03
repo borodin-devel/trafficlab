@@ -163,6 +163,7 @@ def test_family_and_method_payloads_publish_union_schemas() -> None:
         {"$ref": "#/$defs/NhppPayload"},
         {"$ref": "#/$defs/AcdPayload"},
         {"$ref": "#/$defs/MarkovPacketTrainPayload"},
+        {"$ref": "#/$defs/PacketHmmPayload"},
     ]
     acd_schema = family_schema["$defs"][AcdPayload.__name__]
     assert acd_schema["title"] == "AcdPayload"

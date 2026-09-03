@@ -107,7 +107,8 @@ def test_stage_rejects_model_outside_authoritative_family_configuration(
     models = cast(dict[str, object], data["models"])
     if defect == "disabled":
         models["enabled"] = ["markov_renewal", "mmpp"]
-        models.pop("poisson_empirical")
+        for family in ("poisson_empirical", "nhpp", "acd", "markov_packet_train", "packet_hmm"):
+            models.pop(family)
     elif defect == "bounds":
         poisson = cast(dict[str, object], models["poisson_empirical"])
         cast(dict[str, object], poisson["c_lambda"])["upper"] = 5.0

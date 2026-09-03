@@ -400,6 +400,10 @@ def fit_config(valid_config_data: dict[str, object], run_directory: Path) -> Exp
     models["enabled"] = ["poisson_empirical"]
     models["markov_renewal"] = None
     models["mmpp"] = None
+    models["nhpp"] = None
+    models["acd"] = None
+    models["markov_packet_train"] = None
+    models["packet_hmm"] = None
     genetic = cast(dict[str, object], data["genetic"])
     genetic.update(
         population_size=2,
@@ -428,7 +432,19 @@ def fit_trial(seed: int) -> TrialResult:
     return TrialResult(
         seed=seed,
         aggregate_score=0.75,
-        methods=cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
+        methods=cast(
+            tuple[
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+            ],
+            methods,
+        ),
     )
 
 

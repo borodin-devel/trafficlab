@@ -7,6 +7,8 @@ from typing import Annotated, Any, Literal, Self, TypedDict, cast
 from pydantic import BaseModel, BeforeValidator, ConfigDict, StrictBool, StrictFloat, StrictInt, model_validator
 
 from trafficlab.common.config import (
+    C2stSettings,
+    DispersionSettings,
     FamilyName,
     FloatBounds,
     GenerationLimits,
@@ -14,8 +16,10 @@ from trafficlab.common.config import (
     MarkovRenewalConfig,
     MethodWeights,
     MmppConfig,
+    PostfitSettings,
     PoissonConfig,
     SimilarityConfig,
+    TransitionSettings,
 )
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.fitting.genetic.checkpoint import RngState
@@ -128,6 +132,32 @@ SIMILARITY = SimilarityConfig(
         anderson_darling=0.125,
         jensen_shannon=0.125,
         approximate_mmd=0.125,
+    ),
+    postfit=PostfitSettings(
+        dispersion=DispersionSettings(
+            widths_seconds=(1.0, 2.0),
+            scale_weights=(0.5, 0.5),
+            fano_weight=0.5,
+            allan_weight=0.5,
+        ),
+        transition=TransitionSettings(
+            size_bin_count=2,
+            iat_bin_count=2,
+            pseudocount=0.5,
+            occupancy_weight=0.34,
+            transition_rows_weight=0.33,
+            runs_weight=0.33,
+        ),
+        c2st=C2stSettings(
+            feature_version="window-v1",
+            window_width_seconds=1.0,
+            fold_count=2,
+            guard_window_count=1,
+            maximum_window_count=64,
+            l2_regularization=1.0,
+            maximum_iterations=100,
+            tolerance=1e-9,
+        ),
     ),
 )
 

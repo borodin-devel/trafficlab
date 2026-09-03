@@ -27,6 +27,15 @@ def test_fit_fixture_generator_check_mode_accepts_checked_in_bytes() -> None:
     assert fixture_generator.main(["--check"]) == 0
 
 
+def test_fit_fixture_readme_describes_the_complete_schema_five_search() -> None:
+    """The generated fixture guide must not describe the superseded three-family search."""
+    readme = " ".join(fixture_generator._README.decode("utf-8").split())  # pyright: ignore[reportPrivateUsage]
+
+    assert "Population size is 8, with one base candidate per family and the retained-priority remainder assigned to NHPP" in readme
+    assert "`nhpp`, `mmpp`, `markov_renewal`, `packet_hmm`, `acd`, `poisson_empirical`, and `markov_packet_train`" in readme
+    assert "- `packet_hmm`: crossover 0.7, mutation 0.0, normalized scale 0.08." in readme
+
+
 def test_development_runtime_pin_exactly_matches_checked_checkpoint_python_version() -> None:
     """A floating patch runtime would make strict fixture checkpoint loading fail after an otherwise valid checkout."""
     runtime_pin = (_ROOT / ".python-version").read_text(encoding="utf-8").strip()

@@ -5,12 +5,6 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from tests.support.config import (
-    acd_config_data,
-    markov_packet_train_config_data,
-    nhpp_config_data,
-    packet_hmm_config_data,
-)
 from trafficlab.common.config import AcdConfig, ExperimentConfig, MarkovPacketTrainConfig, NhppConfig, PacketHmmConfig
 
 
@@ -95,15 +89,12 @@ def test_required_family_structural_bounds_are_enforced(
         config_type(**{field: {"lower": bounds[0], "upper": bounds[1]}})  # type: ignore[operator]
 
 
-def test_nhpp_can_be_explicitly_enabled_without_changing_default_model_selection(
+def test_nhpp_is_part_of_the_required_default_model_selection(
     valid_config_data: dict[str, object],
 ) -> None:
     """An NHPP table must participate in the same exact enabled/table agreement as live families."""
     data = copy.deepcopy(valid_config_data)
     models = cast(dict[str, object], data["models"])
-    models["enabled"] = ["poisson_empirical", "markov_renewal", "mmpp", "nhpp"]
-    models["nhpp"] = nhpp_config_data()
-
     config = ExperimentConfig.model_validate(data)
 
     assert config.models.nhpp is not None
@@ -111,15 +102,12 @@ def test_nhpp_can_be_explicitly_enabled_without_changing_default_model_selection
     assert config.models.nhpp.bin_count.upper == 16
 
 
-def test_acd_can_be_explicitly_enabled_without_changing_default_model_selection(
+def test_acd_is_part_of_the_required_default_model_selection(
     valid_config_data: dict[str, object],
 ) -> None:
     """An ACD table must participate in the same exact enabled/table agreement as live families."""
     data = copy.deepcopy(valid_config_data)
     models = cast(dict[str, object], data["models"])
-    models["enabled"] = ["poisson_empirical", "markov_renewal", "mmpp", "acd"]
-    models["acd"] = acd_config_data()
-
     config = ExperimentConfig.model_validate(data)
 
     assert config.models.acd is not None
@@ -127,14 +115,11 @@ def test_acd_can_be_explicitly_enabled_without_changing_default_model_selection(
     assert config.models.acd.order.upper == 3
 
 
-def test_markov_packet_train_can_be_explicitly_enabled_without_changing_default_model_selection(
+def test_markov_packet_train_is_part_of_the_required_default_model_selection(
     valid_config_data: dict[str, object],
 ) -> None:
-    """The sixth family is opt-in and participates in exact enabled/table agreement."""
+    """The sixth family participates in exact enabled/table agreement."""
     data = copy.deepcopy(valid_config_data)
-    models = cast(dict[str, object], data["models"])
-    models["enabled"] = ["poisson_empirical", "markov_renewal", "mmpp", "markov_packet_train"]
-    models["markov_packet_train"] = markov_packet_train_config_data()
 
     config = ExperimentConfig.model_validate(data)
 
@@ -143,14 +128,11 @@ def test_markov_packet_train_can_be_explicitly_enabled_without_changing_default_
     assert config.models.markov_packet_train.length_cap.upper == 8
 
 
-def test_packet_hmm_can_be_explicitly_enabled_without_changing_default_model_selection(
+def test_packet_hmm_is_part_of_the_required_default_model_selection(
     valid_config_data: dict[str, object],
 ) -> None:
-    """The seventh family is opt-in and participates in exact enabled/table agreement."""
+    """The seventh family participates in exact enabled/table agreement."""
     data = copy.deepcopy(valid_config_data)
-    models = cast(dict[str, object], data["models"])
-    models["enabled"] = ["poisson_empirical", "markov_renewal", "mmpp", "packet_hmm"]
-    models["packet_hmm"] = packet_hmm_config_data()
 
     config = ExperimentConfig.model_validate(data)
 

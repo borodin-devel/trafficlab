@@ -33,7 +33,7 @@ max_output_bytes = 2000000
 max_wall_seconds = 10.0
 
 [genetic]
-population_size = 6
+population_size = 8
 generation_count = 1
 tournament_size = 2
 elite_count = 1
@@ -50,6 +50,10 @@ enabled = [
     "poisson_empirical",
     "markov_renewal",
     "mmpp",
+    "nhpp",
+    "acd",
+    "markov_packet_train",
+    "packet_hmm",
 ]
 
 [models.poisson_empirical]
@@ -106,6 +110,42 @@ upper = 3.0
 [models.mmpp.lambda1]
 lower = 3.0
 upper = 8.0
+
+[models.nhpp]
+crossover_probability = 0.6
+mutation_probability = 0.0
+mutation_scale = 0.09
+
+[models.nhpp.bin_count]
+lower = 2
+upper = 4
+
+[models.acd]
+crossover_probability = 0.55
+mutation_probability = 0.0
+mutation_scale = 0.08
+
+[models.acd.order]
+lower = 1
+upper = 2
+
+[models.markov_packet_train]
+crossover_probability = 0.65
+mutation_probability = 0.0
+mutation_scale = 0.09
+
+[models.markov_packet_train.length_cap]
+lower = 3
+upper = 5
+
+[models.packet_hmm]
+crossover_probability = 0.7
+mutation_probability = 0.0
+mutation_scale = 0.08
+
+[models.packet_hmm.state_count]
+lower = 2
+upper = 3
 
 [similarity]
 iat_diagnostic_quantile = 0.75
@@ -171,10 +211,10 @@ runs_weight = 0.33
 
 [similarity.postfit.c2st]
 feature_version = "window-v1"
-window_width_seconds = 0.5
-fold_count = 5
+window_width_seconds = 1.0
+fold_count = 2
 guard_window_count = 1
-maximum_window_count = 4096
+maximum_window_count = 64
 l2_regularization = 1.0
-maximum_iterations = 200
+maximum_iterations = 100
 tolerance = 1e-09

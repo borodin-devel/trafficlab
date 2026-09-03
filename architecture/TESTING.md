@@ -442,7 +442,7 @@ These tests join real modules without Docker:
 4. Use a direction-asymmetric fixture, keep timestamps and lengths fixed, reverse
    every packet direction, and require multiscale similarity below `1` while
    frame-size KS, IAT KS, and ACF remain unchanged.
-5. Run a small heterogeneous population with all three families and nondefault
+5. Run a small heterogeneous population with all seven families and nondefault
    operator values for every family. Require every family to remain represented
    and prove that crossover occurs only within one family, each child uses its
    own family settings, and cross-family reproduction forces mutation.
@@ -957,12 +957,18 @@ evidence recomputes it: MMPP rejects on held-out likelihood and pymoo rejects
 on transparent replay and reduction. Scapy is the sole production PCAPNG
 implementation and is covered by ordinary reader/writer tests plus the
 non-gating `benchmark_scapy_production.py` diagnostic. The small
-scientific-stack example uses PCG64 seeds and enables all three production
+scientific-stack example uses PCG64 seeds and enables all seven production
 model families through the ordinary full-workflow configuration boundary. Its
 retained real-run record binds the actual bounded command, endpoint, source,
 lock/config/images, environment, nine companion artifacts, scientific results,
 and empty cleanup label inventory. The offline check reparses those companion
-artifacts and recomputes every verifiable fact without rerunning Docker.
+artifacts and recomputes every verifiable fact without rerunning Docker. Once a
+schema changes, the current checker must not reinterpret the retained artifacts:
+it reads the recorded source commit, creates a detached `git clone --no-local
+--no-hardlinks --no-checkout`, copies the entire retained
+`examples/scientific_stack/` evidence tree into the same clone-relative path as
+regular files, and runs that commit's checker offline. This preserves the
+immutable schema-4 bytes while retaining a source-bound verification path.
 
 ## Accepted Validation Study evidence
 

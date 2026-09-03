@@ -6,15 +6,20 @@ verify every expected path and byte with `uv run --locked python scripts/generat
 
 The reference contains 21 Ethernet events from timestamp 20.0 through 30.0, so the one normalized observation
 window is exactly `W = 10.0` seconds. Registry metadata remains lexical for display, while master seed 73 derives
-the neutral family priority `mmpp`, `markov_renewal`, `poisson_empirical` before any search draw. Population size is
-6, with quota 2 per family, elite count 1, generation count 1 (evaluated generations 0 and 1), tournament size 2,
-duplicate mutation attempts 1, selection seeds `[17]`, and the distinct final-validation seed 97. Resume is enabled
-and early stopping is disabled.
+the neutral family priority `nhpp`, `mmpp`, `markov_renewal`, `packet_hmm`, `acd`, `poisson_empirical`, and
+`markov_packet_train` before any search draw. Population size is 8, with one base candidate per family and the
+retained-priority remainder assigned to NHPP, elite count 1, generation count 1 (evaluated generations 0 and 1),
+tournament size 2, duplicate mutation attempts 1, selection seeds `[17]`, and the distinct final-validation seed 97.
+Resume is enabled and early stopping is disabled.
 
 Every family deliberately uses nondefault operators:
 
 - `markov_renewal`: crossover 1.0, mutation 0.0, normalized scale 0.06.
 - `mmpp`: crossover 0.45, mutation 0.0, normalized scale 0.08.
+- `nhpp`: crossover 0.6, mutation 0.0, normalized scale 0.09.
+- `acd`: crossover 0.55, mutation 0.0, normalized scale 0.08.
+- `markov_packet_train`: crossover 0.65, mutation 0.0, normalized scale 0.09.
+- `packet_hmm`: crossover 0.7, mutation 0.0, normalized scale 0.08.
 - `poisson_empirical`: crossover 0.35, mutation 0.0, normalized scale 0.07.
 
 Zero ordinary mutation makes the different-family forced-mutation boundary directly observable in the integration

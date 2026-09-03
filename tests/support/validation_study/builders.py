@@ -700,7 +700,19 @@ def trial_result(seed: int, value: float) -> TrialResult:
     return TrialResult(
         seed=seed,
         aggregate_score=value,
-        methods=cast(tuple[MethodTrialResult, MethodTrialResult, MethodTrialResult, MethodTrialResult], methods),
+        methods=cast(
+            tuple[
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+                MethodTrialResult,
+            ],
+            methods,
+        ),
     )
 
 

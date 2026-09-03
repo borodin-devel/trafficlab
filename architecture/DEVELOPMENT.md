@@ -260,6 +260,15 @@ evidence path with regular copies rather than links. From that prepared clone,
 run the audit below. A later checkout containing non-evidence changes must fail
 source binding; that failure is not evidence corruption and must not be bypassed.
 
+The retained schema-4 scientific-stack run follows the same source-binding
+rule. Its `--check` reads the commit recorded in `example_run.json`, creates an
+offline detached `git clone --no-local --no-hardlinks --no-checkout`, replaces
+the clone's `examples/scientific_stack/` tree with regular copies of the
+retained evidence, and invokes that commit's checker with `uv run --offline
+--locked --active --no-project`, with the detached clone's `src/` first on
+`PYTHONPATH`. Current schema-5 code never parses or migrates those historical
+best-model, checkpoint, or comparison artifacts.
+
 ```bash
 uv run --all-extras python scripts/generate_similarity_fixtures.py --check
 uv run --all-extras python scripts/generate_model_fixtures.py --check

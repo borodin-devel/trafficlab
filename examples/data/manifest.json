@@ -15,14 +15,14 @@
     {
       "mode": 420,
       "path": "fit/README.md",
-      "sha256": "91fa85fe3c810d9841cd4d07126dee983bd54a4edce9fb1e3710f38e5c177392",
-      "size": 4978
+      "sha256": "2720c608a3c04f85f8e1933aa45f2cbe61330ab4b151cea7804ab37fe6f3281f",
+      "size": 5368
     },
     {
       "mode": 420,
       "path": "fit/best_model.json",
-      "sha256": "10f5d14a94f6823a5300a8a3f99a14c9cc7be047dcf5bbc9a794755607cc9e17",
-      "size": 4733
+      "sha256": "ad9a7aecc2b65f5cff0d9e6d04dd9f42a6836da1d89e09324402136c0b6f8852",
+      "size": 9200
     },
     {
       "mode": 420,
@@ -33,20 +33,20 @@
     {
       "mode": 420,
       "path": "fit/checkpoint.json",
-      "sha256": "be61445cba8c157cc2a43149fd225ced962673ce55db0cf5f1f6cf6bfd7478f2",
-      "size": 99737
+      "sha256": "2ed8fe17106df469fee694203625db6dbb94282715284b77df057aac99c1cd37",
+      "size": 119848
     },
     {
       "mode": 420,
       "path": "fit/experiment.toml",
-      "sha256": "f517f3ef36f0f2d8e971cd24aa0e874ee399849c42dc911e713f99f0e789dc11",
-      "size": 2998
+      "sha256": "f99d833f887206acafccff2213a504828ca233eaa9e6ed58b7faed8a28d2d003",
+      "size": 3653
     },
     {
       "mode": 420,
       "path": "fit/ga_history.csv",
-      "sha256": "c1b62e6053141ef74def754151d5faed620c1a46d227182cf6819d7f913ac437",
-      "size": 635
+      "sha256": "d2d79ee29e960a333fef420d0e6c059dc20efd48d2904632169302943a3ca531",
+      "size": 1097
     },
     {
       "mode": 420,

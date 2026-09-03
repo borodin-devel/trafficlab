@@ -13,7 +13,7 @@ not test-only infrastructure.
 | `reference.pcapng` | Five-event hand-defined reference capture. | `generate_similarity_fixtures.py` |
 | `best_model.json` | Self-contained fitted Poisson empirical model for the reference. | `generate_similarity_fixtures.py` |
 | `generated.pcapng` | Deterministic final-seed generation from `best_model.json`. | `generate_similarity_fixtures.py` |
-| `similarity.json` | Four-method comparison between the reference and generated traces. | `generate_similarity_fixtures.py` |
+| `similarity.json` | Eight-method comparison between the reference and generated traces. | `generate_similarity_fixtures.py` |
 | `request.txt` | Small read-only workload input mounted by `minimal.toml`. | Hand-authored fixture input |
 | [`fit/`](fit/) | Complete Docker-free genetic-fitting and checkpoint fixture. | `generate_fit_fixtures.py` |
 | [`models/`](models/) | Focused model-load/generate fixture pair. | `generate_model_fixtures.py` |
@@ -45,9 +45,9 @@ copy has the same schema but records the winner of the heterogeneous search.
 
 | Field | Description |
 | --- | --- |
-| `scientific_artifact_schema` | Shared public artifact schema version; currently `4`. |
+| `scientific_artifact_schema` | Shared public artifact schema version; currently `5`. |
 | `version` | Version of the fitted-model payload format. |
-| `family` | Registered model family: `poisson_empirical`, `markov_renewal`, or `mmpp`. |
+| `family` | Registered model family: `poisson_empirical`, `markov_renewal`, `mmpp`, `nhpp`, `acd`, `markov_packet_train`, or `packet_hmm`. |
 | `genes` | Winning chromosome values in the family's registered coordinate order. |
 | `gene_bounds` | Map from coordinate name to the exact `lower` and `upper` bounds used for fitting. |
 | `fitted` | Family-specific fitted parameters and empirical data needed to generate without the original reference. |

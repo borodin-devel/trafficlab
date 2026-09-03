@@ -81,7 +81,15 @@ def valid_config_data(root: Path) -> dict[str, object]:
             "resume": False,
         },
         "models": {
-            "enabled": ["poisson_empirical", "markov_renewal", "mmpp"],
+            "enabled": [
+                "poisson_empirical",
+                "markov_renewal",
+                "mmpp",
+                "nhpp",
+                "acd",
+                "markov_packet_train",
+                "packet_hmm",
+            ],
             "poisson_empirical": {
                 "crossover_probability": 0.9,
                 "mutation_probability": 1.0,
@@ -107,6 +115,10 @@ def valid_config_data(root: Path) -> dict[str, object]:
                 "lambda0": {"lower": 0.01, "upper": 100.0},
                 "lambda1": {"lower": 0.1, "upper": 1_000.0},
             },
+            "nhpp": nhpp_config_data(),
+            "acd": acd_config_data(),
+            "markov_packet_train": markov_packet_train_config_data(),
+            "packet_hmm": packet_hmm_config_data(),
         },
         "similarity": {
             "iat_diagnostic_quantile": 0.95,

@@ -76,7 +76,7 @@ max_output_bytes = 2000000
 max_wall_seconds = 10.0
 
 [genetic]
-population_size = 6
+population_size = 8
 generation_count = 1
 tournament_size = 2
 elite_count = 1
@@ -87,7 +87,7 @@ early_stopping_tolerance = 0.0
 resume = true
 
 [models]
-enabled = ["poisson_empirical", "markov_renewal", "mmpp"]
+enabled = ["poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train", "packet_hmm"]
 
 [models.poisson_empirical]
 crossover_probability = 0.35
@@ -144,6 +144,42 @@ upper = 3.0
 lower = 3.0
 upper = 8.0
 
+[models.nhpp]
+crossover_probability = 0.6
+mutation_probability = 0.0
+mutation_scale = 0.09
+
+[models.nhpp.bin_count]
+lower = 2
+upper = 4
+
+[models.acd]
+crossover_probability = 0.55
+mutation_probability = 0.0
+mutation_scale = 0.08
+
+[models.acd.order]
+lower = 1
+upper = 2
+
+[models.markov_packet_train]
+crossover_probability = 0.65
+mutation_probability = 0.0
+mutation_scale = 0.09
+
+[models.markov_packet_train.length_cap]
+lower = 3
+upper = 5
+
+[models.packet_hmm]
+crossover_probability = 0.7
+mutation_probability = 0.0
+mutation_scale = 0.08
+
+[models.packet_hmm.state_count]
+lower = 2
+upper = 3
+
 [similarity]
 iat_diagnostic_quantile = 0.75
 acf_lags = [1]
@@ -165,6 +201,30 @@ js_mark_weight = 0.5
 mmd_feature_count = 32
 mmd_seed = 17
 mmd_scale_floor = 0.001
+
+[similarity.postfit.dispersion]
+widths_seconds = [1.0, 2.5]
+scale_weights = [0.5, 0.5]
+fano_weight = 0.5
+allan_weight = 0.5
+
+[similarity.postfit.transition]
+size_bin_count = 2
+iat_bin_count = 2
+pseudocount = 0.5
+occupancy_weight = 0.34
+transition_rows_weight = 0.33
+runs_weight = 0.33
+
+[similarity.postfit.c2st]
+feature_version = "window-v1"
+window_width_seconds = 1.0
+fold_count = 2
+guard_window_count = 1
+maximum_window_count = 64
+l2_regularization = 1.0
+maximum_iterations = 100
+tolerance = 0.000000001
 
 [similarity.method_weights]
 frame_size_ks = 0.125
@@ -211,15 +271,20 @@ verify every expected path and byte with `uv run --locked python scripts/generat
 
 The reference contains 21 Ethernet events from timestamp 20.0 through 30.0, so the one normalized observation
 window is exactly `W = 10.0` seconds. Registry metadata remains lexical for display, while master seed 73 derives
-the neutral family priority `mmpp`, `markov_renewal`, `poisson_empirical` before any search draw. Population size is
-6, with quota 2 per family, elite count 1, generation count 1 (evaluated generations 0 and 1), tournament size 2,
-duplicate mutation attempts 1, selection seeds `[17]`, and the distinct final-validation seed 97. Resume is enabled
-and early stopping is disabled.
+the neutral family priority `nhpp`, `mmpp`, `markov_renewal`, `packet_hmm`, `acd`, `poisson_empirical`, and
+`markov_packet_train` before any search draw. Population size is 8, with one base candidate per family and the
+retained-priority remainder assigned to NHPP, elite count 1, generation count 1 (evaluated generations 0 and 1),
+tournament size 2, duplicate mutation attempts 1, selection seeds `[17]`, and the distinct final-validation seed 97.
+Resume is enabled and early stopping is disabled.
 
 Every family deliberately uses nondefault operators:
 
 - `markov_renewal`: crossover 1.0, mutation 0.0, normalized scale 0.06.
 - `mmpp`: crossover 0.45, mutation 0.0, normalized scale 0.08.
+- `nhpp`: crossover 0.6, mutation 0.0, normalized scale 0.09.
+- `acd`: crossover 0.55, mutation 0.0, normalized scale 0.08.
+- `markov_packet_train`: crossover 0.65, mutation 0.0, normalized scale 0.09.
+- `packet_hmm`: crossover 0.7, mutation 0.0, normalized scale 0.08.
 - `poisson_empirical`: crossover 0.35, mutation 0.0, normalized scale 0.07.
 
 Zero ordinary mutation makes the different-family forced-mutation boundary directly observable in the integration

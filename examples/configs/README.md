@@ -2,7 +2,7 @@
 
 `minimal.toml` is the complete small capture-oriented configuration.
 `default.toml` is the release-sized offline template for prepared external
-references under `dumps/`. Both enable all three classical model families and
+references under `dumps/`. Both enable all seven classical model families and
 all eight mandatory fitness similarity methods.
 
 The checked file is intentionally safe: `example.invalid` cannot resolve to a

@@ -31,6 +31,7 @@ from pydantic import (
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.scientific_stack_source_bound import verify_source_bound_evidence
 from trafficlab.common.compatibility import identify_bytes
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import (
@@ -714,8 +715,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if cast(bool, arguments.check):
             if arguments.source_commit is not None:
                 raise ValueError("--source-commit is valid only with --record-run")
-            parse_and_validate_evidence(EVIDENCE_PATH.read_bytes(), repository_root=REPOSITORY)
-            print(f"scientific-stack-example: verified {EVIDENCE_PATH}")
+            commit = verify_source_bound_evidence(EVIDENCE_PATH, repository=REPOSITORY)
+            print(f"scientific-stack-example: verified {EVIDENCE_PATH} against {commit}")
             return 0
         source_commit = cast(str | None, arguments.source_commit)
         if source_commit is None:

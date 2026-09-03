@@ -81,6 +81,8 @@ select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
 include = ["src/trafficlab", "src/trafficlab_dashboard", "tests", "tests/trafficlab_dashboard"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/trafficlab", "src/trafficlab_dashboard"]

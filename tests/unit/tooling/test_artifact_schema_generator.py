@@ -4,12 +4,36 @@ from __future__ import annotations
 
 import json
 import os
+import tomllib
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
 from scripts import generate_artifact_schemas as schemas
 from trafficlab.artifact_schemas import PUBLIC_ARTIFACT_MODELS
+from trafficlab.common.config import ExperimentConfig
+
+
+REPOSITORY = Path(__file__).resolve().parents[3]
+_RELEASE_FAMILIES = (
+    "poisson_empirical",
+    "markov_renewal",
+    "mmpp",
+    "nhpp",
+    "acd",
+    "markov_packet_train",
+    "packet_hmm",
+)
+_FITNESS_METHODS = (
+    "frame_size_ks",
+    "iat_ks",
+    "autocorrelation",
+    "multiscale_rate",
+    "cramer_von_mises",
+    "anderson_darling",
+    "jensen_shannon",
+    "approximate_mmd",
+)
 
 
 def test_every_public_root_has_one_canonical_draft_2020_12_schema() -> None:
@@ -58,6 +82,46 @@ def test_schema_five_directory_contains_current_fitness_and_model_roots() -> Non
     assert '"packet_hmm"' in checkpoint
     assert '"PacketHmmPayload"' in best_model
     assert len(documents["best_model.schema.json"]["$defs"]["FamilyPayload"]["oneOf"]) == 7
+
+
+def test_release_configs_enable_exactly_all_families_and_equal_fitness_weights() -> None:
+    """Release templates must carry every configured family and one equal contribution per mandatory method."""
+    for name in ("default.toml", "minimal.toml"):
+        document = tomllib.loads((REPOSITORY / "examples" / "configs" / name).read_text(encoding="utf-8"))
+        config = ExperimentConfig.model_validate(document)
+
+        assert config.models.enabled == _RELEASE_FAMILIES
+        assert tuple(
+            family for family in _RELEASE_FAMILIES if getattr(config.models, family) is not None
+        ) == _RELEASE_FAMILIES
+        assert config.genetic.population_size >= config.genetic.elite_count + len(_RELEASE_FAMILIES)
+        assert tuple(config.similarity.method_weights.model_dump()) == _FITNESS_METHODS
+        assert config.similarity.method_weights.model_dump() == dict.fromkeys(_FITNESS_METHODS, 0.125)
+        assert config.similarity.mmd_feature_count <= 65_536
+        assert config.similarity.postfit.c2st.maximum_window_count <= 65_536
+        assert config.similarity.postfit.c2st.fold_count >= 2
+        assert config.models.packet_hmm is not None
+        assert config.models.packet_hmm.state_count.lower >= 2
+        assert config.models.packet_hmm.state_count.upper <= 4
+
+
+def test_candidate_catalog_does_not_duplicate_normative_algorithms() -> None:
+    """Implemented algorithms belong to their normative documents, not the non-normative catalog."""
+    content = (REPOSITORY / "architecture" / "CANDIDATES.md").read_text(encoding="utf-8")
+
+    for heading in (
+        "### Packet-level Hidden Markov Model",
+        "### Autoregressive Conditional Duration",
+        "### Non-homogeneous Poisson process",
+        "| **Two-sample Cramér–von Mises** |",
+        "| **Anderson–Darling** |",
+        "| **Jensen–Shannon divergence** |",
+        "| **Approximate joint MMD** |",
+        "| **Fano- and Allan-factor curves** |",
+        "| **Transition-matrix fidelity** |",
+        "| **Classical classifier two-sample test** |",
+    ):
+        assert heading not in content
 
 
 def test_schema_directory_check_rejects_changed_missing_and_foreign_files(tmp_path: Path) -> None:

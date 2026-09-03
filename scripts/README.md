@@ -18,7 +18,7 @@ uv run --locked python scripts/NAME.py --help
 | `generate_similarity_fixtures.py` | Rebuilds or byte-checks the canonical capture, reference, fitted model, generated trace, and similarity result under `examples/data/`. |
 | `generate_model_fixtures.py` | Rebuilds or byte-checks the model-generation pair under `examples/data/models/`. |
 | `generate_fit_fixtures.py` | Runs the Docker-free heterogeneous fit and rebuilds or byte-checks its checkpoint-compatible fixture tree. |
-| `generate_artifact_schemas.py` | Generates or checks the 13 public scientific-artifact v4 JSON Schemas. `--output` selects another directory. |
+| `generate_artifact_schemas.py` | Generates or checks the 13 public scientific-artifact v5 JSON Schemas. `--output` selects another directory. |
 | `generate_validation_study_fixture.py` | Generates or checks deterministic Validation Study fixture evidence; optional source commit/tree arguments bind the fixture. |
 | `check_fixture_layout.py` | Checks example and test fixture manifests plus repository layout; `--write-manifest` rewrites both manifests and `--check-manifest` checks only manifests. |
 | `run_scientific_stack_probes.py` | Generates or checks MMPP and pymoo probe evidence; `--probe` selects `all`, `mmpp`, or `pymoo`. |

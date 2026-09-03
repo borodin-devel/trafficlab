@@ -58,8 +58,8 @@ repeating a real capture.
 - [Research fitness criteria](RESEARCH_FITNESS_CRITERIA.md) defines a five-level
   rubric for scientific correctness, configurability, robustness, and
   reproducibility without grading the current implementation.
-- [Research candidates](CANDIDATES.md) catalogs literature-backed traffic-model
-  and similarity-method alternatives without declaring them implemented.
+- [Research candidates](CANDIDATES.md) catalogs literature-backed unimplemented
+  traffic-model and similarity-method alternatives without declaring behavior.
 - [Genetic models](genetic_models/README.md) describes model-family competition
   and the enabled evolutionary strategy.
 - [Traffic models](traffic_models/README.md) owns the common model interface and

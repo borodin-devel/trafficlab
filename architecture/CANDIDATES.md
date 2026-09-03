@@ -1,24 +1,21 @@
 # Traffic Model and Similarity Method Candidates
 
-## Status and purpose
+## Purpose
 
 This document is a non-normative research catalog. It records classical traffic
 model families and similarity methods that may be evaluated against
 Trafficlab's implemented algorithms; it does not define implemented behavior,
 commit future work, or track task status. The authoritative runtime families
 are Poisson empirical, Markov Renewal, two-state MMPP, piecewise-constant NHPP,
-and exponential ACD as defined in [Traffic Models](traffic_models/README.md).
-The authoritative similarity methods remain frame-size KS, IAT KS,
-autocorrelation, and multiscale rate as defined in
-[Similarity Methods](similarity_methods/README.md).
+exponential ACD, Markov packet trains, and categorical packet HMMs as defined
+in [Traffic Models](traffic_models/README.md). The authoritative similarity
+methods are frame-size KS, IAT KS, autocorrelation, multiscale rate,
+Cramér--von Mises, Anderson--Darling, Jensen--Shannon, and approximate MMD as
+defined in [Similarity Methods](similarity_methods/README.md).
 
-The priority labels express research value for the canonical data and artifact
-contract available in this repository. `Required` therefore means
-"required in the next comparative model study before making broader fidelity
-claims," not "required for the present MVP to operate." A candidate becomes
-part of the normative architecture only when its implementation, focused tests,
-mathematical document, registry entry, deterministic fixtures, and direct
-scientific validation are added together.
+The research-relevance labels express value for the canonical data and artifact
+contract available in this repository. Implemented algorithms are documented in
+their normative architecture documents rather than duplicated here.
 
 ## Compatibility boundary and research rationale
 
@@ -38,7 +35,7 @@ deterministic single-process classical-model prototype. Dated experiment
 results and performance evidence belong in research reports outside
 `architecture/`.
 
-Every implemented candidate must retain the existing closed observation-window
+Every normative implementation retains the existing closed observation-window
 semantics, deterministic local RNG, reliability guards, complete
 serialization, and common-family evaluation protocol. Direction and frame
 length should normally be modeled jointly and, where a latent state exists,
@@ -47,68 +44,17 @@ parameters should be fitted by likelihood, EM, or moments; the genetic
 algorithm should search only a small bounded set of structural
 hyperparameters.
 
-## Priority definitions
+## Research relevance definitions
 
-| Priority | Meaning |
+| Research relevance | Meaning |
 |---|---|
-| **Required** | Highest-value additions needed for the next credible model and similarity comparison on the existing dumps. They fit the current canonical trace and have a bounded implementation path. |
-| **Nice to have** | Strong scientific additions after the required set. They add materially different dependence but need more fitting care or evidence. |
-| **Optional** | Valid classical experiments with narrower applicability, substantial overlap, or an extra packet-disaggregation contract. |
-| **Expensive (special requirements)** | Scientifically valid families that need costly inference, substantially more metadata, live protocol stacks, or an architectural scope change. |
-| **Not recommended** | Poor matches for the current event-level artifact and metrics, superseded by better candidates, or explicitly excluded by approved scope. |
+| **High** | Strong candidates for the current canonical trace that have a bounded implementation path. |
+| **Moderate** | Scientifically useful additions with materially different dependence that need more fitting care or evidence. |
+| **Specialized** | Valid classical experiments with narrower applicability, substantial overlap, or an extra packet-disaggregation contract. |
+| **Costly or extended-scope** | Scientifically valid families that need costly inference, substantially more metadata, live protocol stacks, or an architectural scope change. |
+| **Excluded** | Poor matches for the current event-level artifact, superseded candidates, or methods outside approved scope. |
 
-## Traffic models — Required
-
-### Packet-level Hidden Markov Model
-
-A small hidden state sequence controls a joint emission distribution for IAT,
-direction, and frame length. It can represent idle, interactive, burst, and
-sustained-transfer regimes without needing flow headers. Fit two to four states
-with bounded Baum--Welch/EM and use held-out likelihood plus the common
-similarity components for model selection. The expected fitting cost is
-`O(N K^2)` per iteration.
-
-This is the best general first addition because it models timing and marks
-together, whereas the current MMPP uses regime-independent empirical marks.
-The main risks are state-count overfitting, local optima, and poorly identified
-emission families.
-
-Primary evidence: Dainotti et al.,
-[“Internet traffic modeling by means of Hidden Markov Models”](https://doi.org/10.1016/j.comnet.2008.05.004),
-*Computer Networks*, 2008.
-
-### Autoregressive Conditional Duration
-
-An ACD model makes the conditional expected IAT depend recursively on previous
-durations. It supplies a compact likelihood-based model for duration clustering
-without a latent continuous-time Markov chain. Simple orders fit and generate
-in linear time.
-
-The innovation law, initialization, and stationarity constraints must be
-explicit. Direction and frame length require a joint empirical or
-state/lag-conditioned mark law.
-
-Primary evidence: Engle and Russell,
-[“Autoregressive Conditional Duration: A New Model for Irregularly Spaced Transaction Data”](https://doi.org/10.2307/2999632),
-*Econometrica*, 1998.
-
-### Non-homogeneous Poisson process
-
-An NHPP uses a deterministic time-varying intensity, represented by a small
-piecewise-constant, spline, or otherwise bounded basis. It can reproduce
-repeatable startup, active, and cooldown phases and control packet volume over
-the complete observation window. Fit by point-process likelihood or frozen-bin
-counts and generate by integrated-intensity inversion or thinning.
-
-It remains conditionally independent and cannot explain stochastic burst
-clustering by itself. A flexible intensity fitted to one trace can overfit, so
-basis size and knots must be bounded and validated on held-out windows.
-
-Primary evidence: Lewis and Shedler,
-[“Simulation of Nonhomogeneous Poisson Processes by Thinning”](https://doi.org/10.1002/nav.3800260304),
-*Naval Research Logistics Quarterly*, 1979.
-
-## Traffic models — Nice to have
+## Traffic models — High
 
 ### Parametric and empirical renewal models
 
@@ -267,7 +213,7 @@ Traffic-specific evidence: Stoudt et al.,
 [“Modeling Internet Traffic Generations Based on Users and Activities for Telecommunication Applications”](https://scholarworks.smith.edu/mth_facpubs/34/),
 2016.
 
-## Traffic models — Optional
+## Traffic models — Specialized
 
 ### Cox process
 
@@ -427,7 +373,7 @@ Primary evidence: Feldmann, Gilbert, and Willinger,
 [“A New Multifractal Network Traffic Model”](https://doi.org/10.1016/S0960-0779(01)00159-X),
 2002.
 
-## Traffic models — Expensive (special requirements)
+## Traffic models — Costly or extended-scope
 
 ### Log-Gaussian Cox process
 
@@ -539,7 +485,7 @@ Primary evidence: Cao et al.,
 [“Stochastic Models for Generating Synthetic HTTP Source Traffic”](https://doi.org/10.1109/INFCOM.2004.1354568),
 *IEEE INFOCOM*, 2004.
 
-## Traffic models — Not recommended
+## Traffic models — Excluded
 
 ### AR, ARMA, ARIMA, and SARIMA
 
@@ -677,19 +623,7 @@ Some candidates are model-adequacy or research diagnostics rather than
 symmetric trace-to-trace similarities. Their entries label that distinction so
 they are not silently inserted into genetic fitness.
 
-## Similarity methods — Required
-
-| Candidate | Representation and value | Limitations and intended role | Primary evidence |
-|---|---|---|---|
-| **Two-sample Cramér–von Mises** | Compare the complete ECDF discrepancy for frame length and IAT, separately by direction where sample size permits. It complements the maximum-only KS statistic at sorting cost. | Less tail-sensitive than Anderson–Darling. Use the statistic descriptively; serial dependence and ties invalidate an ordinary IID p-value. **Fitness candidate.** | Anderson, [“On the Distribution of the Two-Sample Cramér–von Mises Criterion”](https://doi.org/10.1214/aoms/1177704477), 1962. |
-| **Anderson–Darling** | Tail-weighted ECDF comparison for frame length and IAT, including long silences and unusually large frames. | Sparse tails and tied values need declared handling. It should complement rather than replace an all-distribution statistic. **Fitness candidate.** | Scholz and Stephens, [“K-Sample Anderson–Darling Tests”](https://doi.org/10.1080/01621459.1987.10478517), 1987. |
-| **Jensen–Shannon divergence** | Compare exact frame-length PMFs and shared-bin IAT or direction-by-time distributions. It is symmetric, finite, and bounded after a declared logarithm base. | Results depend on common binning and pseudocount policy; it does not know that neighboring bins are close. **Fitness and decomposition candidate.** | Lin, [“Divergence Measures Based on the Shannon Entropy”](https://doi.org/10.1109/18.61115), 1991. |
-| **Approximate joint MMD** | Apply a characteristic product kernel to fixed-window or lag vectors such as `(log1p(IAT), log(frame_length), direction)` and adjacent-packet pairs. Standardize only continuous coordinates; use a declared delta/Hamming kernel for unordered direction. Random features or deterministic block estimates avoid whole-trace quadratic cost. | Kernel, bandwidth, scaling, categorical handling, approximation dimension, and seed materially determine sensitivity. Overlapping windows require blocked calibration. **Highest-value joint-distribution fitness candidate.** | Gretton et al., [“A Kernel Two-Sample Test”](https://jmlr.org/papers/v13/gretton12a.html), 2012. |
-| **Fano- and Allan-factor curves** | Compare packet-count dispersion and adjacent-window rate variation over logarithmically spaced window sizes. These expose clustering and scale-dependent overdispersion that mean-rate comparison misses. | Large scales have few windows and are sensitive to nonstationarity and boundaries. Compare the full frozen curves rather than only one fitted exponent. **Multiscale diagnostic and possible fitness candidate.** | Lowen and Teich, [“Estimation and Simulation of Fractal Stochastic Point Processes”](https://doi.org/10.1142/S0218348X95000151), 1995. |
-| **Transition-matrix fidelity** | Quantize `(direction, log-size bin, log-IAT bin)` into a small frozen state vocabulary; compare transition rows, state occupancy, and dwell/run distributions. | State design and sparse rows dominate the result. Use few reference-defined bins and smoothing with explicit diagnostics. **Required structural diagnostic**, closely aligned with Markov-renewal behavior but family-neutral. | Anderson and Goodman, [“Statistical Inference about Markov Chains”](https://doi.org/10.1214/aoms/1177707039), 1957. |
-| **Classical classifier two-sample test** | Label held-out fixed windows as reference/generated and train a bounded logistic regression, optionally compared with a shallow tree ensemble. Report time-blocked balanced accuracy/AUC and interpretable coefficients. | Leakage between adjacent windows and classifier flexibility inflate results. It establishes distinguishability, not which trace is better. **Required post-fit diagnostic, not initial GA fitness.** | Lopez-Paz and Oquab, [“Revisiting Classifier Two-Sample Tests”](https://openreview.net/pdf?id=SJkXfE5xx), 2017. |
-
-## Similarity methods — Nice to have
+## Similarity methods — High
 
 | Candidate | Representation and value | Limitations and intended role | Primary evidence |
 |---|---|---|---|
@@ -705,7 +639,7 @@ they are not silently inserted into genetic fitness.
 | **Low-order n-gram cross-entropy** | Quantize a frozen `(direction, size, IAT)` state and compare reference-to-generated and generated-to-reference order-one or order-two predictive cross-entropy against a reference-heldout baseline. | Binning, smoothing, and order control sparsity; higher orders are inappropriate for current sample sizes. **Sequential diagnostic and possible score.** | Kullback and Leibler, [“On Information and Sufficiency”](https://doi.org/10.1214/aoms/1177729694), 1951. |
 | **Conditional-intensity time-rescaling** | For a fitted model exposing conditional intensity, transform event intervals and test whether residuals behave as unit exponential and independent. This evaluates model calibration directly rather than comparing two realizations. | Requires a model-specific intensity and is neither symmetric nor available for every current family. **High-value model-adequacy diagnostic, never a shared trace fitness component.** | Brown et al., [“The Time-Rescaling Theorem and Its Application to Neural Spike Train Data Analysis”](https://doi.org/10.1162/08997660252741149), 2002. |
 
-## Similarity methods — Optional
+## Similarity methods — Specialized
 
 | Candidate | Representation and value | Limitations and intended role | Primary evidence |
 |---|---|---|---|
@@ -731,7 +665,7 @@ they are not silently inserted into genetic fitness.
 | **Density and coverage** | Refine nearest-neighbor precision/recall on the same frozen traffic-window feature space to expose local fidelity and mode coverage. | Still representation- and `k`-dependent and potentially quadratic. **Phase-two diversity diagnostic.** | Naeem et al., [“Reliable Fidelity and Diversity Metrics for Generative Models”](https://proceedings.mlr.press/v119/naeem20a.html), 2020. |
 | **TSTR/TRTS predictive utility** | Define an operational task such as next-window count, next burst, or next symbolic state; train a classical predictor on synthetic and test real, then reverse it and compare with real-to-real. | Invalid without a frozen task, horizon, split, and baseline; measures usefulness rather than general resemblance. **Goal-specific validation only.** | Esteban, Hyland, and Rätsch, [“Real-valued (Medical) Time Series Generation with Recurrent Conditional GANs”](https://arxiv.org/abs/1706.02633), 2017; use only its protocol with classical predictors. |
 
-## Similarity methods — Expensive (special requirements)
+## Similarity methods — Costly or extended-scope
 
 | Candidate | Special requirement and value | Why deferred | Primary evidence |
 |---|---|---|---|
@@ -742,7 +676,7 @@ they are not silently inserted into genetic fitness.
 | **Marked point-process rescaling** | Jointly test event intensity and the conditional direction/size mark distribution for models exposing both laws. | Every model needs a common evaluable conditional intensity and mark interface; current empirical and latent-state families do not share one. | Vere-Jones and Schoenberg, [“Rescaling Marked Point Processes”](https://doi.org/10.1080/0266476042000248818), 2004. |
 | **GAN-train/GAN-test analogue** | With multiple trusted workload labels, train a classical classifier on generated windows and test real, then reverse it to separate utility and coverage. | Current captures do not provide a validated multi-workload label task; direction is not an adequate label. | Shmelkov, Schmid, and Alahari, [“How Good Is My GAN?”](https://www.ecva.net/papers/eccv_2018/papers_ECCV/html/Konstantin_Shmelkov_How_good_is_ECCV_2018_paper.php), 2018; use only the evaluation protocol. |
 
-## Similarity methods — Not recommended
+## Similarity methods — Excluded
 
 | Candidate or use | Reason | Primary evidence |
 |---|---|---|
