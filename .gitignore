@@ -27,6 +27,7 @@ dist/
 # Runtime logs and generated run directories.
 *.log
 runs/
+/.work/
 
 # Retain manifest-bound validation logs despite the general log rule.
 !/examples/scientific_stack/example_run_artifacts/run.log

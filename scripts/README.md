@@ -27,6 +27,41 @@ uv run --locked python scripts/NAME.py --help
 | `measure_scientific_stack_reduction.py` | Recomputes or checks source-reduction inventories from Git revisions. |
 | `check_scientific_stack_example.py` | Strictly verifies a retained real run, or records a new explicitly supplied run directory. |
 | `prepare_traffic_dumps.py` | Creates ordered, TrafficLab-validated PCAPNG copies of external PCAP/PCAPNG dumps without modifying their sources. |
+| `derive_required_candidates_reference.py` | Derives bounded, ordered, strictly validated development references and publishes provenance manifests without overwriting. |
+
+## Development reference candidates
+
+The imported Moutai reference has three strict experiment profiles under
+[`examples/required_candidates/`](../examples/required_candidates/). They are
+development runs for checking the complete model and similarity stack, not
+evidence for selecting a best model. `small.toml` uses 256 packets,
+population 8, one generation, and seed `[17]`; `medium.toml` uses 512 packets,
+population 12, three generations, and seeds `[17, 29]`; `big.toml` uses the
+full capture, population 21, ten generations, and seeds `[17, 29, 43]`.
+Generation packet/byte/wall limits are guards, and each profile enables bounded
+early stopping. A guard exhaustion is a failed run, not a partial result.
+
+Derive the two bounded local inputs from the existing source capture (the
+source and metadata are read-only):
+
+```bash
+UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python scripts/derive_required_candidates_reference.py \
+  --source /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
+  --capture-json /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/capture.json \
+  --packet-limit 256 --output .work/required-candidates/small
+UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python scripts/derive_required_candidates_reference.py \
+  --source /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
+  --capture-json /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/capture.json \
+  --packet-limit 512 --output .work/required-candidates/medium
+```
+
+For each profile, run the stages independently. First run
+`trafficlab preflight PROFILE --config-only`, then copy the profile's
+`reference.pcapng` and `capture.json` into its configured run directory; the
+big profile uses the full source pair directly. Then run `trafficlab fit
+PROFILE`, `trafficlab generate PROFILE`, and `trafficlab compare PROFILE`.
+These profiles deliberately do not support best-model claims; use an
+authoritative, pre-registered full experiment for that purpose.
 
 Most generators write their owned checked paths when called without `--check`.
 Use `--check` in normal verification so a stale artifact fails without mutating

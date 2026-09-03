@@ -1,0 +1,68 @@
+# Development-only imported-reference profile; do not claim a best model.
+[run]
+directory = "../../.work/required-candidates/small-run"
+minimum_free_bytes = 1048576
+master_seed = 20260903
+final_seed = 20260904
+[target]
+image = "invalid@@external-reference"
+argv = ["external-reference-not-executed"]
+working_directory = "/"
+mounts = []
+[capture]
+image = "invalid@@external-reference"
+network_probe_url = "https://example.invalid/"
+readiness_timeout_seconds = 10.0
+workload_timeout_seconds = 60.0
+flush_timeout_seconds = 10.0
+total_timeout_seconds = 90.0
+[generation.trial]
+max_packets = 256
+max_output_bytes = 1000000
+max_wall_seconds = 5.0
+[generation.final]
+max_packets = 1000
+max_output_bytes = 2000000
+max_wall_seconds = 10.0
+[genetic]
+population_size = 8
+generation_count = 1
+tournament_size = 2
+elite_count = 1
+trial_seeds = [17]
+duplicate_mutation_attempts = 2
+early_stopping_generations = 0
+early_stopping_tolerance = 0.0
+resume = false
+[models]
+enabled = ["poisson_empirical", "markov_renewal", "mmpp", "nhpp", "acd", "markov_packet_train", "packet_hmm"]
+poisson_empirical = { c_lambda = { lower = 0.25, upper = 4.0 } }
+markov_renewal = { q1 = { lower = 0.1, upper = 0.4 }, q2 = { lower = 0.6, upper = 0.9 }, alpha = { lower = 0.0, upper = 2.0 }, r = { lower = 1, upper = 8 }, c_t = { lower = 0.25, upper = 4.0 } }
+mmpp = { q01 = { lower = 0.01, upper = 10.0 }, q10 = { lower = 0.01, upper = 10.0 }, lambda0 = { lower = 0.01, upper = 100.0 }, lambda1 = { lower = 0.1, upper = 1000.0 } }
+nhpp = { bin_count = { lower = 2, upper = 16 } }
+acd = { order = { lower = 1, upper = 3 } }
+markov_packet_train = { length_cap = { lower = 3, upper = 8 } }
+packet_hmm = { state_count = { lower = 2, upper = 4 } }
+[similarity]
+iat_diagnostic_quantile = 0.95
+acf_lags = [1]
+acf_lag_weights = [1.0]
+acf_iat_weight = 0.5
+acf_size_weight = 0.5
+multiscale_widths_seconds = [0.25, 1.0]
+multiscale_scale_weights = [0.5, 0.5]
+multiscale_packet_weight = 0.5
+multiscale_byte_weight = 0.5
+max_direction_bin_cells = 100000
+cvm_iat_weight = 0.5
+cvm_size_weight = 0.5
+ad_iat_weight = 0.5
+ad_size_weight = 0.5
+js_iat_bin_count = 32
+js_iat_weight = 0.5
+js_mark_weight = 0.5
+mmd_feature_count = 32
+mmd_seed = 17
+mmd_scale_floor = 0.000001
+method_weights = { frame_size_ks = 0.125, iat_ks = 0.125, autocorrelation = 0.125, multiscale_rate = 0.125, cramer_von_mises = 0.125, anderson_darling = 0.125, jensen_shannon = 0.125, approximate_mmd = 0.125 }
+postfit = { dispersion = { widths_seconds = [0.25, 1.0], scale_weights = [0.5, 0.5], fano_weight = 0.5, allan_weight = 0.5 }, transition = { size_bin_count = 2, iat_bin_count = 2, pseudocount = 0.5, occupancy_weight = 0.34, transition_rows_weight = 0.33, runs_weight = 0.33 }, c2st = { feature_version = "window-v1", window_width_seconds = 0.5, fold_count = 3, guard_window_count = 1, maximum_window_count = 4096, l2_regularization = 1.0, maximum_iterations = 200, tolerance = 0.000000001 } }
