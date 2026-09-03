@@ -562,6 +562,8 @@ def test_generation_summary_canonicalizes_rounded_mean_below_exact_valid_ceiling
         family_priority=("mmpp",),
     )
 
+    assert rows[0].mean_fitness == math.nextafter(trial.aggregate_score / 3.0, 0.0)
+    assert rows[1].mean_fitness == rows[0].mean_fitness
     for row in rows:
         mean_numerator, mean_denominator = row.mean_fitness.as_integer_ratio()
         best_numerator, best_denominator = row.best_fitness.as_integer_ratio()
