@@ -94,7 +94,6 @@ def test_nhpp_is_part_of_the_required_default_model_selection(
 ) -> None:
     """An NHPP table must participate in the same exact enabled/table agreement as live families."""
     data = copy.deepcopy(valid_config_data)
-    models = cast(dict[str, object], data["models"])
     config = ExperimentConfig.model_validate(data)
 
     assert config.models.nhpp is not None
@@ -107,7 +106,6 @@ def test_acd_is_part_of_the_required_default_model_selection(
 ) -> None:
     """An ACD table must participate in the same exact enabled/table agreement as live families."""
     data = copy.deepcopy(valid_config_data)
-    models = cast(dict[str, object], data["models"])
     config = ExperimentConfig.model_validate(data)
 
     assert config.models.acd is not None
