@@ -1138,7 +1138,7 @@ Repeat with the 512-packet pair and medium profile. Record command lines, identi
 
 Use strict final artifact validation, reproduce generation/comparison from saved model/seeds, and explain that these are development checks rather than held-out scientific conclusions.
 
-- [ ] **[STEP-121-18685367] Review, fix, commit, and push the integrated medium milestone**
+- [x] **[STEP-121-18685367] Review, fix, commit, and push the integrated medium milestone**
 
 After independent review and one repeated Medium gate:
 
