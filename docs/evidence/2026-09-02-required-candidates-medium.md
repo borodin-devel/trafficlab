@@ -26,6 +26,12 @@ The exact derived pairs were copied without modification:
 Metadata SHA-256 is the same in both copied pairs. Wireshark tools recorded by
 the manifests are Editcap/Reordercap 4.2.2.
 
+The saved fit artifacts were produced by implementation commit
+`fb1978e8d41ffe845dc2e988db2568b17e867332` (tree
+`4e404e05de5058e2cf8593377fabacb1f68cd924`). The evidence document is retained
+later at commit `9479284`; its tree is not used as the fixture generator
+source.
+
 The final derived artifact identities retained in each canonical run are:
 
 | tier | effective config | checkpoint | history | best model | generated PCAPNG | similarity |
@@ -36,9 +42,12 @@ The final derived artifact identities retained in each canonical run are:
 ## Commands and bounded resources
 
 Fresh canonical run directories were used: `runs/required-candidates-small/`
-and `runs/required-candidates-medium/`. Existing `.work/required-candidates/*-run`
-preflight directories were not touched. The configs staged from the example
-profiles differ only in `run.directory`, pointing to those canonical siblings.
+and `runs/required-candidates-medium/`. The prior published runs were preserved
+intact as `.work/required-candidates/{small,medium}-run-diagnostic-r1/`; the
+canonical trees were rebuilt from their fit-complete artifacts without refit or
+search. Existing `.work/required-candidates/*-run` preflight directories were
+not touched. The configs staged from the example profiles differ only in
+`run.directory`, pointing to those canonical siblings.
 
 Standalone config-only preflight commands:
 
@@ -47,31 +56,31 @@ UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked trafficlab preflight runs/
 UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked trafficlab preflight runs/required-candidates-medium.toml --config-only
 ```
 
-Each returned status 0. For every fit, generate, and compare stage, the
-prescribed no-systemd fallback was used:
+Each returned status 0. Generation and comparison used the available bounded
+systemd controller and `/usr/bin/time -v`:
 
 ```text
-/usr/bin/time -v -o .work/required-candidates/evidence/<tier>/<stage>.time.txt \
-  timeout --signal=TERM --kill-after=15s 10m env UV_CACHE_DIR=/tmp/trafficlab-uv-cache \
+/usr/bin/time -v -o .work/required-candidates/evidence/clean-r1/<tier>/<stage>.time.txt \
+  scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
+  --wall-time 10m --kill-after 15s -- \
   uv run --locked trafficlab <stage> runs/required-candidates-<tier>.toml \
-  >.work/required-candidates/evidence/<tier>/<stage>.stdout \
-  2>.work/required-candidates/evidence/<tier>/<stage>.stderr
+  >.work/required-candidates/evidence/clean-r1/<tier>/<stage>.stdout \
+  2>.work/required-candidates/evidence/clean-r1/<tier>/<stage>.stderr
 ```
 
-The stage sidecars are outside the run directories because strict final
-validation requires exactly the nine documented run entries. No systemd scope
-was used for the experiment stages; the inherited Medium-gate environment
-reported the user manager unavailable. A no-op `run_bounded.sh` probe is
-retained in `.work/required-candidates/evidence/`.
+The exact controller limits were `memory-high=2G`, `memory-max=3G`,
+`swap-max=512M`, `wall-time=10m`, and `kill-after=15s`; all four stage commands
+returned status 0. Stage sidecars are outside the run directories because
+strict final validation requires exactly the nine documented run entries.
 
 | tier | stage | elapsed | user + system CPU | max RSS | status |
 | --- | --- | ---: | ---: | ---: | ---: |
-| small | fit | 1.39 s | 10.65 + 0.13 s | 135,396 KiB | 0 |
-| small | generate | 0.55 s | 6.05 + 0.15 s | 107,028 KiB | 0 |
-| small | compare | 0.91 s | 7.46 + 0.20 s | 135,200 KiB | 0 |
-| medium | fit | 10.52 s | 22.11 + 0.11 s | 143,332 KiB | 0 |
-| medium | generate | 0.56 s | 5.70 + 0.14 s | 107,084 KiB | 0 |
-| medium | compare | 1.03 s | 7.87 + 0.24 s | 137,212 KiB | 0 |
+| small | fit (inherited) | 1.39 s | 10.65 + 0.13 s | 135,396 KiB | 0 |
+| small | generate | 0.66 s | 5.90 + 0.10 s | 107,124 KiB | 0 |
+| small | compare | 1.09 s | 8.00 + 0.18 s | 135,184 KiB | 0 |
+| medium | fit (inherited) | 10.52 s | 22.11 + 0.11 s | 143,332 KiB | 0 |
+| medium | generate | 0.68 s | 5.85 + 0.16 s | 107,160 KiB | 0 |
+| medium | compare | 1.04 s | 6.60 + 0.19 s | 137,348 KiB | 0 |
 
 ## [STEP-118-4a99b800] Small outcome
 
@@ -149,10 +158,23 @@ All three post-fit diagnostics published: `fano_allan` score
 
 ## [STEP-120-6f6f63f1] Artifact and reproduction checks
 
-The repository strict validator passed for both run directories, including the
-capture pair, checkpoint/history projection, best-model lineage, generated
-PCAPNG round trip, similarity schema/arithmetic, and final identity stability.
-The saved-model reproduction checker also passed for both tiers:
+The strict validator command was an in-process call to
+`trafficlab.pipeline.validation.validate_final_artifacts` after loading the
+saved `checkpoint.json`, `best_model.json`, and `similarity.json`. Its companion
+reproducer called `trafficlab.generation.stage.reproduce_generated_pcapng` with
+the saved final seed and model, then called
+`trafficlab.comparison.metrics.compare_final_traces` with the saved comparison
+settings. The exact bounded command used for each tier was:
+
+```text
+timeout --signal=TERM --kill-after=15s 10m env UV_CACHE_DIR=/tmp/trafficlab-uv-cache \
+  uv run --locked python - runs/required-candidates-<tier>.toml
+```
+
+The Python stdin body loaded the persisted artifacts, asserted generated bytes
+equal the saved-model/seed reproduction, asserted recomputed comparison equals
+`similarity.json`, and called `validate_final_artifacts`; both commands returned
+status 0. Results:
 
 ```text
 strict_artifacts=pass .../runs/required-candidates-small
@@ -178,6 +200,46 @@ and did not alter fit artifacts; the subsequent validator loaded the saved
 checkpoint/model directly and passed strict validation and both reproductions.
 That diagnostic is preserved in `run.log` and does not constitute a search
 retry or a scientific result.
+
+## Source-bound fixture reproduction
+
+The candidate fixture was regenerated and checked with:
+
+```text
+TREE=$(git rev-parse fb1978e^{tree})
+UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python scripts/generate_validation_study_fixture.py \
+  --source-commit fb1978e8d41ffe845dc2e988db2568b17e867332 --source-tree "$TREE"
+git clone --no-local --no-hardlinks --no-checkout "$PWD" .work/required-candidates/fixture-source-bound-r1
+git -C .work/required-candidates/fixture-source-bound-r1 checkout --detach fb1978e8d41ffe845dc2e988db2568b17e867332
+cp -a --reflink=never tests/fixtures/data/validation_study/candidate/. \
+  .work/required-candidates/fixture-source-bound-r1/tests/fixtures/data/validation_study/candidate/
+UV_CACHE_DIR=/tmp/trafficlab-uv-cache PYTHONPATH=.work/required-candidates/fixture-source-bound-r1/src uv run --offline --locked --active --no-project \
+  python scripts/generate_validation_study_fixture.py --check \
+  --source-commit fb1978e8d41ffe845dc2e988db2568b17e867332 --source-tree "$TREE"
+```
+
+The clean clone check returned status 0 with
+`symlinks=0`, `hardlinks_above_one=0`, and no Git alternates. It reported
+`validation-study fixture: checked-in paths and bytes match deterministic
+production output`.
+
+## Complete Medium gate
+
+The inherited integrated gate remains authoritative; its exact command and
+recorded outcome were:
+
+```text
+UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv sync --locked --all-groups --all-extras
+uv run --locked ruff format --check .
+uv run --locked ruff check src scripts tests
+uv run --locked pyright src scripts tests
+uv run --locked pytest -q -m 'not docker and not internet' \
+  tests/unit tests/scientific tests/integration/generation tests/integration/comparison tests/trafficlab_dashboard
+```
+
+The outcome was **4,436 passed in 426.74 seconds**; sync, format, Ruff, and
+Pyright also passed as recorded in the Task 14 report. No fit/search rerun was
+performed for this fix.
 
 ## Development-only and causal caveat
 
