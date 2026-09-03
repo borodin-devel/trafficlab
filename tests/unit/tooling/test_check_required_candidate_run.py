@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -73,3 +74,48 @@ def test_check_run_rejects_foreign_generated_capture(tmp_path: Path) -> None:
 
     with pytest.raises(TrafficlabError, match="generated.pcapng"):
         checker.check_run(run)
+
+
+def test_check_run_rejects_mismatched_configured_directory_without_creating_it(tmp_path: Path) -> None:
+    run = _effective_fixture(tmp_path)
+    config = load_experiment(run / "experiment.toml")
+    foreign = tmp_path / "foreign-run"
+    mismatched = config.model_copy(update={"run": config.run.model_copy(update={"directory": foreign})})
+    (run / "experiment.toml").write_bytes(render_effective_config(mismatched))
+
+    with pytest.raises(TrafficlabError, match="configured run directory"):
+        checker.check_run(run)
+
+    assert not foreign.exists()
+
+
+def test_check_run_rejects_nonterminal_checkpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _effective_fixture(tmp_path)
+    candidate = SimpleNamespace(identifier=(0,))
+    state = SimpleNamespace(population=(candidate,), best_identifier=(0,), terminal_reason="running")
+
+    def fake_parse_checkpoint(*_args: object) -> object:
+        return state
+
+    monkeypatch.setattr(checker, "parse_checkpoint", fake_parse_checkpoint)
+
+    with pytest.raises(TrafficlabError, match="checkpoint is not terminal"):
+        checker.check_run(run)
+
+
+def test_check_run_rejects_mismatched_recomputed_comparison(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    run = _effective_fixture(tmp_path)
+
+    def fake_compare(*_args: object, **_kwargs: object) -> object:
+        return object()
+
+    monkeypatch.setattr(checker, "compare_final_traces", fake_compare)
+
+    with pytest.raises(TrafficlabError, match="saved-input recomputation"):
+        checker.check_run(run)
+
+
+def test_main_reports_checker_failure(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert checker.main([str(tmp_path / "missing-run")]) == 1
+
+    assert "check_required_candidate_run:" in capsys.readouterr().err

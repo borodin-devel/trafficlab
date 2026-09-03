@@ -46,12 +46,13 @@ Small `b56cffa2…` / `32c0c4e9…`; Medium `40bf9806…` / `7a32bcba…`.
 ## Commands and bounded resources
 
 Fresh canonical run directories were used: `runs/required-candidates-small/`
-and `runs/required-candidates-medium/`. The prior published runs were preserved
-intact as `.work/required-candidates/{small,medium}-run-diagnostic-r1/`; the
-canonical trees were rebuilt from their fit-complete artifacts without refit or
-search. Existing `.work/required-candidates/*-run` preflight directories were
-not touched. The configs staged from the example profiles differ only in
-`run.directory`, pointing to those canonical siblings.
+and `runs/required-candidates-medium/`. These final clean-r2 trees were rebuilt
+from zero with the unchanged derived pairs and exact profile settings; the
+fit/checkpoint/history artifacts are from the clean-r2 bounded fit. Earlier
+published trees remain intact under `.work/required-candidates/*-diagnostic-r1`
+and `*-diagnostic-r2`. Existing `.work/required-candidates/*-run` preflight
+directories were not touched. The configs staged from the example profiles
+differ only in `run.directory`, pointing to those canonical siblings.
 
 Standalone config-only preflight commands (also run under the same controller
 limits) were:
@@ -63,16 +64,16 @@ limits) were:
   uv run --locked trafficlab preflight runs/required-candidates-<tier>.toml --config-only
 ```
 
-Each returned status 0. Generation and comparison used the available bounded
-systemd controller and `/usr/bin/time -v`:
+Each returned status 0. Preflight, fit, generation, and comparison all used the
+available bounded systemd controller and `/usr/bin/time -v`:
 
 ```text
-/usr/bin/time -v -o .work/required-candidates/evidence/clean-r1/<tier>/<stage>.time.txt \
+/usr/bin/time -v -o .work/required-candidates/evidence/clean-r2/<tier>/<stage>.time.txt \
   scripts/run_bounded.sh --memory-high 2G --memory-max 3G --swap-max 512M \
   --wall-time 10m --kill-after 15s -- \
   uv run --locked trafficlab <stage> runs/required-candidates-<tier>.toml \
-  >.work/required-candidates/evidence/clean-r1/<tier>/<stage>.stdout \
-  2>.work/required-candidates/evidence/clean-r1/<tier>/<stage>.stderr
+  >.work/required-candidates/evidence/clean-r2/<tier>/<stage>.stdout \
+  2>.work/required-candidates/evidence/clean-r2/<tier>/<stage>.stderr
 ```
 
 The exact controller limits were `memory-high=2G`, `memory-max=3G`,
@@ -196,6 +197,10 @@ strict_artifacts=pass .../runs/required-candidates-medium
 reproduction=pass generated_bytes_equal=true comparison_equal=true
 fitness_methods=8 postfit_diagnostics=3
 ```
+
+After the round-3 read-only guard change, the same checked-in verifier was
+rerun under the clean-r3 sidecar with status 0 (1.72 s, 150,136 KiB maximum
+RSS); its output remained identical for both runs.
 
 The final run trees contain exactly `experiment.toml`, `run.log`,
 `capture.json`, `reference.pcapng`, `checkpoint.json`, `ga_history.csv`,

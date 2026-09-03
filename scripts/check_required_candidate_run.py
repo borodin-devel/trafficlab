@@ -46,6 +46,11 @@ def check_run(run_directory: Path) -> RunCheckResult:
     run = run_directory.resolve()
     config_path = run / "experiment.toml"
     pair = load_configuration_pair(config_path)
+    if pair.realized.run.directory != run:
+        raise TrafficlabError(
+            "configured run directory does not match the supplied saved run directory",
+            corrective_action="provide the matching saved run directory without publishing a new one",
+        )
     prepared = open_or_prepare_experiment(config_path)
     metadata_path = run / "capture.json"
     reference_path = run / "reference.pcapng"
