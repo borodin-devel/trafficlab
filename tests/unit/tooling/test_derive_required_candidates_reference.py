@@ -147,8 +147,9 @@ def test_derivation_uses_same_parent_snapshots_when_original_inputs_change(tmp_p
         if calls == 1:
             source.write_bytes(b"replaced-source")
             metadata.write_bytes(b"replaced-metadata")
-        destination = command[-2] if command[0] == "editcap" else command[-1]
-        Path(destination).write_bytes(source_bytes if command[0] == "editcap" else b"ordered")
+        input_path = Path(command[2] if command[0] == "editcap" else command[1])
+        destination = Path(command[-2] if command[0] == "editcap" else command[-1])
+        destination.write_bytes(input_path.read_bytes())
 
     def validate(snapshot_metadata: Path, snapshot_pcapng: Path) -> _Inspection:
         seen.append((snapshot_metadata, snapshot_pcapng))
@@ -168,8 +169,12 @@ def test_derivation_uses_same_parent_snapshots_when_original_inputs_change(tmp_p
     )
 
     assert result.source_snapshot.parent.parent == result.output.parent
-    assert (output / "reference.pcapng").read_bytes() == b"ordered"
+    assert (output / "reference.pcapng").read_bytes() == source_bytes
     assert (output / "capture.json").read_bytes() == metadata_bytes
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert manifest["source"]["sha256"] == hashlib.sha256(source_bytes).hexdigest()
+    assert manifest["source"]["sha256"] != hashlib.sha256(b"replaced-source").hexdigest()
+    assert manifest["output"]["sha256"] == hashlib.sha256(source_bytes).hexdigest()
     assert source.read_bytes() == b"replaced-source"
     assert metadata.read_bytes() == b"replaced-metadata"
     assert len(seen) == 1
