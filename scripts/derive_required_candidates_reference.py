@@ -42,6 +42,8 @@ class DerivationResult:
     observation_window_seconds: float
     staged_extracted: Path
     staged_ordered: Path
+    source_snapshot: Path
+    metadata_snapshot: Path
 
 
 type CommandRunner = Callable[[tuple[str, ...]], None]
@@ -131,6 +133,7 @@ def _manifest_bytes(
     versions: dict[str, str],
     packet_count: int,
     observation_window_seconds: float,
+    selected_limit: int,
 ) -> bytes:
     return render_json_document(
         {
@@ -145,6 +148,7 @@ def _manifest_bytes(
             "tools": {"editcap": versions[tools.editcap], "reordercap": versions[tools.reordercap]},
             "packet_count": packet_count,
             "W": observation_window_seconds,
+            "range": {"first_packet": 1, "last_packet": selected_limit},
         }
     )
 
@@ -171,17 +175,10 @@ def derive_required_candidates(
     if os.path.lexists(output):
         raise FileExistsError(output)
 
-    source_bytes = source.read_bytes()
-    capture_bytes = capture_json.read_bytes()
-    # Parse before invoking external tools, while preserving the original bytes verbatim.
-    load_capture_metadata(capture_json)
-    selected_tools = tools or find()
-    versions_by_tool = {
-        selected_tools.editcap: versions(selected_tools.editcap),
-        selected_tools.reordercap: versions(selected_tools.reordercap),
-    }
     output.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
+    source_snapshot = stage / "source.pcapng"
+    metadata_snapshot = stage / "capture.snapshot.json"
     extracted = stage / "extracted.pcapng"
     ordered = stage / "ordered.pcapng"
     reference = stage / "reference.pcapng"
@@ -189,19 +186,30 @@ def derive_required_candidates(
     manifest = stage / "manifest.json"
     published = False
     try:
+        # Snapshot both inputs before any external command, validation, hashing, or copy.
+        source_snapshot.write_bytes(source.read_bytes())
+        metadata_snapshot.write_bytes(capture_json.read_bytes())
+        load_capture_metadata(metadata_snapshot)
+        selected_tools = tools or find()
+        versions_by_tool = {
+            selected_tools.editcap: versions(selected_tools.editcap),
+            selected_tools.reordercap: versions(selected_tools.reordercap),
+        }
+        source_bytes = source_snapshot.read_bytes()
+        capture_bytes = metadata_snapshot.read_bytes()
         selected_limit = packet_limit
         if selected_limit is None:
-            selected_limit = _packet_count(validate(capture_json, source))
-        run((selected_tools.editcap, "-r", str(source), str(extracted), f"1-{selected_limit}"))
+            selected_limit = _packet_count(validate(metadata_snapshot, source_snapshot))
+        run((selected_tools.editcap, "-r", str(source_snapshot), str(extracted), f"1-{selected_limit}"))
         run((selected_tools.reordercap, str(extracted), str(ordered)))
         extracted.unlink()
-        inspection = validate(capture_json, ordered)
+        inspection = validate(metadata_snapshot, ordered)
         count = _packet_count(inspection)
         if count != selected_limit:
             raise ValueError(f"derived capture contains {count} packets, expected exactly {selected_limit}")
         window = _window(inspection)
         ordered.replace(reference)
-        metadata.write_bytes(capture_bytes)
+        metadata.write_bytes(metadata_snapshot.read_bytes())
         with reference.open("rb") as stream:
             reference_bytes = stream.read()
         manifest.write_bytes(
@@ -216,8 +224,11 @@ def derive_required_candidates(
                 versions=versions_by_tool,
                 packet_count=count,
                 observation_window_seconds=window,
+                selected_limit=selected_limit,
             )
         )
+        source_snapshot.unlink()
+        metadata_snapshot.unlink()
         _publish_directory_no_replace(stage, output)
         published = True
         return DerivationResult(
@@ -229,6 +240,8 @@ def derive_required_candidates(
             observation_window_seconds=window,
             staged_extracted=extracted,
             staged_ordered=ordered,
+            source_snapshot=source_snapshot,
+            metadata_snapshot=metadata_snapshot,
         )
     finally:
         if not published and stage.exists():

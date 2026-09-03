@@ -38,8 +38,9 @@ evidence for selecting a best model. `small.toml` uses 256 packets,
 population 8, one generation, and seed `[17]`; `medium.toml` uses 512 packets,
 population 12, three generations, and seeds `[17, 29]`; `big.toml` uses the
 full capture, population 21, ten generations, and seeds `[17, 29, 43]`.
-Generation packet/byte/wall limits are guards, and each profile enables bounded
-early stopping. A guard exhaustion is a failed run, not a partial result.
+Generation packet/byte/wall limits are bounded guards. Early stopping is
+disabled for small and enabled for medium and big. A guard exhaustion is a
+failed run, not a partial result.
 
 Derive the two bounded local inputs from the existing source capture (the
 source and metadata are read-only):

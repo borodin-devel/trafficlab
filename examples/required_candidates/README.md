@@ -8,10 +8,10 @@ They are bounded development checks only: no result from `small.toml`,
 | Profile | Reference | Population | Generations | Trial seeds | Early stopping |
 | --- | ---: | ---: | ---: | --- | ---: |
 | small | first 256 packets | 8 | 1 | `[17]` | disabled (`0`) |
-| medium | first 512 packets | 12 | 3 | `[17, 29]` | one generation, tolerance `0.0001` |
+| medium | first 512 packets | 12 | 3 | `[17, 29]` | two generations, tolerance `0.0001` |
 | big | full capture | 21 | 10 | `[17, 29, 43]` | three generations, tolerance `0.0001` |
 
-All generation packet, byte, and wall-clock values are hard guards. Guard
+All generation packet, byte, and wall-clock values are bounded guards. Guard
 exhaustion invalidates the candidate instead of publishing a partial trace.
 The configs use an unexecuted external-reference target and therefore support
 only the standalone `preflight --config-only`, `fit`, `generate`, and
