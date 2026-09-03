@@ -98,7 +98,11 @@ def write_run_docker_experiment(
     run = cast(dict[str, object], configured["run"])
     generation = cast(dict[str, object], configured["generation"])
     genetic = cast(dict[str, object], configured["genetic"])
+    models = cast(dict[str, object], configured["models"])
     similarity = cast(dict[str, object], configured["similarity"])
+    postfit = cast(dict[str, object], similarity["postfit"])
+    dispersion = cast(dict[str, object], postfit["dispersion"])
+    c2st = cast(dict[str, object], postfit["c2st"])
     run["master_seed"] = 73
     run["final_seed"] = 97
     generation["trial"] = {
@@ -124,7 +128,14 @@ def write_run_docker_experiment(
             "resume": True,
         }
     )
+    enabled_models = ("poisson_empirical", "markov_renewal", "mmpp")
+    configured["models"] = {
+        "enabled": list(enabled_models),
+        **{name: models[name] for name in enabled_models},
+    }
     similarity["multiscale_widths_seconds"] = [0.001, 0.005]
+    dispersion["widths_seconds"] = [0.001, 0.002]
+    c2st["window_width_seconds"] = 0.001
     return write_docker_experiment(
         path,
         configured,
