@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import gc
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol, cast
@@ -35,11 +37,23 @@ settings.register_profile(
 settings.load_profile("trafficlab_locked")
 
 
+def _release_completed_module_memory() -> None:
+    """Collect cycles and return free glibc heap pages before another test module."""
+    gc.collect()
+    if sys.platform != "linux":
+        return
+    process_library = ctypes.CDLL(None)
+    trim = process_library.malloc_trim
+    trim.argtypes = (ctypes.c_size_t,)
+    trim.restype = ctypes.c_int
+    trim(0)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def release_completed_test_module_cycles() -> Iterator[None]:
     """Release cyclic GUI/scientific fixtures before later bounded-scope modules."""
     yield
-    gc.collect()
+    _release_completed_module_memory()
 
 
 class _ItemFixtureRequest(Protocol):
