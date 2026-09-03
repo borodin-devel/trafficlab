@@ -1159,7 +1159,7 @@ git push origin feature/required-models-similarity-v5
 - Produces: final bounded real-program evidence, clean reviewed branch, pushed head ready for integration.
 - Consumes: every prior reviewed task and medium evidence.
 
-- [ ] **[STEP-122-816102dd] Run the full Big test and release gate once**
+- [x] **[STEP-122-816102dd] Run the full Big test and release gate once**
 
 ```bash
 uv sync --locked --all-groups --all-extras
@@ -1197,7 +1197,7 @@ scripts/run_bounded.sh \
 
 Run Big only after every earlier checkbox is complete. Fix any failure at its smallest owning tier before repeating the affected gate.
 
-- [ ] **[STEP-123-f666324b] Run the bounded full-capture Big experiment**
+- [x] **[STEP-123-f666324b] Run the bounded full-capture Big experiment**
 
 Use the unmodified 3,649-packet Moutai pair with `examples/required_candidates/big.toml`. Run standalone stages through a bounded outer scope, retain all canonical artifacts and resource measurements, and do not increase ten generations or three seeds after inspecting output.
 
