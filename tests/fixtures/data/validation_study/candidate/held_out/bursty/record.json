@@ -15,12 +15,12 @@
     "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
   },
   "comparison_identity": {
-    "sha256": "2ab9382fdf48490e4d2fac5afab9deaba3cb099e3836328d53794139c96def0d",
-    "size": 188952
+    "sha256": "290fc07da245ffaa55a64e700b4e9226323cf06800a170e06a352d96dbc6a6f6",
+    "size": 191495
   },
   "generated_identity": {
-    "sha256": "86821a96360faccf08125293b9a8dea5981323f9b6179062a4b1565af439435c",
-    "size": 3732
+    "sha256": "865e97d05a6aed918b6c88dd75849a2b09221a47e8323dad9d350772e1c3353d",
+    "size": 3024
   },
   "observation_window_seconds": 8.0,
   "reference_identity": {
@@ -28,10 +28,10 @@
     "size": 5976
   },
   "seed": 97,
-  "training_directory": "training/bursty/r2",
+  "training_directory": "training/bursty/r3",
   "training_model_identity": {
-    "sha256": "bd475a2f8989d3de55903ba1af4e3685954995498e355462291dd03e04349b98",
-    "size": 7363
+    "sha256": "9e81c3555eb7fa8baeb92aa212b1f8df6938bd34b9ed41f2ae0ac9e8145301ff",
+    "size": 6464
   },
   "workload": "bursty"
 }

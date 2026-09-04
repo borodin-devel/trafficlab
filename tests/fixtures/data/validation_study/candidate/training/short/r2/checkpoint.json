@@ -1,6 +1,6 @@
 {
   "best": {
-    "fitness": 0.8121659615147253,
+    "fitness": 0.8108273265178582,
     "identifier": [
       0,
       2
@@ -12,8 +12,8 @@
   },
   "consecutive_stagnation": 1,
   "experiment_identity": {
-    "sha256": "b4d07b4e227e69207581d73ecbd64da6170ea4415b33a5a6d257c6b6e86c70ec",
-    "size": 3683
+    "sha256": "2d49be794eb47ceff41666fdf4b9b836128ee645c6c4af91737470c1039f64c1",
+    "size": 3832
   },
   "families": [
     {
@@ -143,7 +143,7 @@
   },
   "history": [
     {
-      "best_fitness": 0.8121659615147253,
+      "best_fitness": 0.8108273265178582,
       "best_identifier": [
         0,
         2
@@ -151,12 +151,12 @@
       "candidate_count": 3,
       "family": "markov_renewal",
       "generation": 0,
-      "mean_fitness": 0.7500013504191686,
+      "mean_fitness": 0.7482420756934797,
       "scope": "family",
       "valid_count": 3
     },
     {
-      "best_fitness": 0.6948408462627017,
+      "best_fitness": 0.6936085779189478,
       "best_identifier": [
         0,
         7
@@ -164,12 +164,12 @@
       "candidate_count": 2,
       "family": "mmpp",
       "generation": 0,
-      "mean_fitness": 0.6925699964400067,
+      "mean_fitness": 0.6916333416478326,
       "scope": "family",
       "valid_count": 2
     },
     {
-      "best_fitness": 0.7410003199777735,
+      "best_fitness": 0.7395398193239563,
       "best_identifier": [
         0,
         3
@@ -177,12 +177,12 @@
       "candidate_count": 3,
       "family": "poisson_empirical",
       "generation": 0,
-      "mean_fitness": 0.7311301638916831,
+      "mean_fitness": 0.7297846631509072,
       "scope": "family",
       "valid_count": 3
     },
     {
-      "best_fitness": 0.8121659615147253,
+      "best_fitness": 0.8108273265178582,
       "best_identifier": [
         0,
         2
@@ -190,12 +190,12 @@
       "candidate_count": 8,
       "family": null,
       "generation": 0,
-      "mean_fitness": 0.7285668169765711,
+      "mean_fitness": 0.7271683624786032,
       "scope": "overall",
       "valid_count": 8
     },
     {
-      "best_fitness": 0.8121659615147253,
+      "best_fitness": 0.8108273265178582,
       "best_identifier": [
         0,
         2
@@ -203,12 +203,12 @@
       "candidate_count": 4,
       "family": "markov_renewal",
       "generation": 1,
-      "mean_fitness": 0.7857268676880365,
+      "mean_fitness": 0.7847186955183242,
       "scope": "family",
       "valid_count": 4
     },
     {
-      "best_fitness": 0.6948408462627017,
+      "best_fitness": 0.6936085779189478,
       "best_identifier": [
         0,
         7
@@ -216,12 +216,12 @@
       "candidate_count": 1,
       "family": "mmpp",
       "generation": 1,
-      "mean_fitness": 0.6948408462627017,
+      "mean_fitness": 0.6936085779189478,
       "scope": "family",
       "valid_count": 1
     },
     {
-      "best_fitness": 0.7410003199777735,
+      "best_fitness": 0.7395398193239563,
       "best_identifier": [
         0,
         3
@@ -229,12 +229,12 @@
       "candidate_count": 3,
       "family": "poisson_empirical",
       "generation": 1,
-      "mean_fitness": 0.7409791185254037,
+      "mean_fitness": 0.7395186178715866,
       "scope": "family",
       "valid_count": 3
     },
     {
-      "best_fitness": 0.8121659615147253,
+      "best_fitness": 0.8108273265178582,
       "best_identifier": [
         0,
         2
@@ -242,7 +242,7 @@
       "candidate_count": 8,
       "family": null,
       "generation": 1,
-      "mean_fitness": 0.7575857090738823,
+      "mean_fitness": 0.7563799017008755,
       "scope": "overall",
       "valid_count": 8
     }
@@ -252,7 +252,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "markov_renewal",
-      "fitness": 0.8121659615147253,
+      "fitness": 0.8108273265178582,
       "genes": [
         0.3669714995331845,
         0.5777220641074957,
@@ -268,7 +268,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.8121659615147253,
+          "aggregate_score": 0.8108273265178582,
           "methods": [
             {
               "diagnostics": {
@@ -444,115 +444,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.050889868960355036,
+                "discrepancy": 0.05643265277993479,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.0915017361111111,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.0915017361111111,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.010278001809598966,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 7,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.010278001809598966,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.050889868960355036,
+                    "iat": {
+                      "discrepancy": 0.0915017361111111,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.0915017361111111,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010278001809598966,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 7,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.010278001809598966,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.08559921215074723,
+                    "iat": {
+                      "discrepancy": 0.14812499999999998,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.14812499999999998,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.023073424301494477,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.023073424301494477,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.03835166104828185,
+                    "iat": {
+                      "discrepancy": 0.06531249999999998,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.06531249999999998,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.011390822096563722,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.011390822096563722,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.9491101310396449
+              "score": 0.9435673472200652
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.029243334270088454,
+                "discrepancy": 0.03440963042544593,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.04694768763749723,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 166.22866889973304,
-                  "raw_sum": 7.804051623901617,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.011538980902679678,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 7,
-                  "normalization_weight": 121.01964055452424,
-                  "raw_sum": 1.3964433212078144,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.029243334270088454,
+                    "iat": {
+                      "discrepancy": 0.04694768763749723,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 166.22866889973304,
+                      "raw_sum": 7.804051623901617,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.011538980902679678,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 7,
+                      "normalization_weight": 121.01964055452424,
+                      "raw_sum": 1.3964433212078144,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.05094602612587864,
+                    "iat": {
+                      "discrepancy": 0.08297638952578128,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 90.2207689369454,
+                      "raw_sum": 7.486193666627489,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.018915662725975998,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 69.7735217396982,
+                      "raw_sum": 1.3198124044316852,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.028205827035728173,
+                    "iat": {
+                      "discrepancy": 0.037798755750343214,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 88.24759211376858,
+                      "raw_sum": 3.3356491798642525,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.018612898321113135,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 63.900109041285496,
+                      "raw_sum": 1.189366232293489,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9707566657299116
+              "score": 0.965590369574554
             },
             {
               "diagnostics": {
@@ -743,7 +807,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "poisson_empirical",
-      "fitness": 0.7410003199777735,
+      "fitness": 0.7395398193239563,
       "genes": [
         0.5679599837954589
       ],
@@ -755,7 +819,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.7410003199777735,
+          "aggregate_score": 0.7395398193239563,
           "methods": [
             {
               "diagnostics": {
@@ -931,115 +995,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.042934905443658945,
+                "discrepancy": 0.04753111969458735,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.07873199279711884,
-                  "generated_sample_count": 14,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.07873199279711884,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.007137818090199044,
-                  "generated_sample_count": 15,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.007137818090199044,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.042934905443658945,
+                    "iat": {
+                      "discrepancy": 0.07873199279711884,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.07873199279711884,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.007137818090199044,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.007137818090199044,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.02548611111111111,
+                    "iat": {
+                      "discrepancy": 0.04069444444444444,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.04069444444444444,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010277777777777776,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.010277777777777776,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.07876855677992041,
+                    "iat": {
+                      "discrepancy": 0.14347222222222222,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.14347222222222222,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.014064891337618608,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.014064891337618608,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.957065094556341
+              "score": 0.9524688803054127
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.0323064015774093,
+                "discrepancy": 0.03939419255701882,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.059167525532657306,
-                  "generated_sample_count": 14,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 221.45535938694294,
-                  "raw_sum": 13.102965630870747,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.005445277622161287,
-                  "generated_sample_count": 15,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 85.66992024506376,
-                  "raw_sum": 0.46649649960278794,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.0323064015774093,
+                    "iat": {
+                      "discrepancy": 0.059167525532657306,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 221.45535938694294,
+                      "raw_sum": 13.102965630870747,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.005445277622161287,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 85.66992024506376,
+                      "raw_sum": 0.46649649960278794,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.027224185815444016,
+                    "iat": {
+                      "discrepancy": 0.04280687052713527,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 91.55573315573315,
+                      "raw_sum": 3.919214415214415,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.011641501103752758,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 47.93650793650794,
+                      "raw_sum": 0.55805291005291,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.06573978125781267,
+                    "iat": {
+                      "discrepancy": 0.12127690995371634,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 98.08038432156079,
+                      "raw_sum": 11.89488593759182,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010202652561909005,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 56.92701536509584,
+                      "raw_sum": 0.5808065591565283,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9676935984225907
+              "score": 0.9606058074429812
             },
             {
               "diagnostics": {
@@ -1255,7 +1383,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "mmpp",
-      "fitness": 0.6948408462627017,
+      "fitness": 0.6936085779189478,
       "genes": [
         0.20726469105354414,
         0.2829564518549296,
@@ -1270,7 +1398,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.6948408462627017,
+          "aggregate_score": 0.6936085779189478,
           "methods": [
             {
               "diagnostics": {
@@ -1446,115 +1574,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.0965873801219396,
+                "discrepancy": 0.09903343995015038,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.1865041062425282,
-                  "generated_sample_count": 33,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.1865041062425282,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.006670654001350989,
-                  "generated_sample_count": 34,
-                  "generated_tie_count": 23,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.006670654001350989,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.0965873801219396,
+                    "iat": {
+                      "discrepancy": 0.1865041062425282,
+                      "generated_sample_count": 33,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.1865041062425282,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.006670654001350989,
+                      "generated_sample_count": 34,
+                      "generated_tie_count": 23,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.006670654001350989,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.11210725623582765,
+                    "iat": {
+                      "discrepancy": 0.20683673469387753,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.20683673469387753,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.01737777777777777,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 9,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.01737777777777777,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.09085174332089466,
+                    "iat": {
+                      "discrepancy": 0.17337950138504155,
+                      "generated_sample_count": 19,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.17337950138504155,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.00832398525674778,
+                      "generated_sample_count": 19,
+                      "generated_tie_count": 12,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.00832398525674778,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.9034126198780604
+              "score": 0.9009665600498497
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.049775965149203655,
+                "discrepancy": 0.05718805207102383,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.09554405371924432,
-                  "generated_sample_count": 33,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 413.88479003444155,
-                  "raw_sum": 39.54423061262884,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.004007876579162982,
-                  "generated_sample_count": 34,
-                  "generated_tie_count": 23,
-                  "normalization_weight": 82.10530292549358,
-                  "raw_sum": 0.32906792062016754,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.049775965149203655,
+                    "iat": {
+                      "discrepancy": 0.09554405371924432,
+                      "generated_sample_count": 33,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 413.88479003444155,
+                      "raw_sum": 39.54423061262884,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.004007876579162982,
+                      "generated_sample_count": 34,
+                      "generated_tie_count": 23,
+                      "normalization_weight": 82.10530292549358,
+                      "raw_sum": 0.32906792062016754,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.07274196023432514,
+                    "iat": {
+                      "discrepancy": 0.1378203965315505,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 159.9294659215241,
+                      "raw_sum": 22.041542410383546,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.007663523937099755,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 9,
+                      "normalization_weight": 40.52562021312021,
+                      "raw_sum": 0.3105690605690604,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.056458317751362876,
+                    "iat": {
+                      "discrepancy": 0.10783469670622679,
+                      "generated_sample_count": 19,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 197.76804656511686,
+                      "raw_sum": 21.326257319532314,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.005081938796498957,
+                      "generated_sample_count": 19,
+                      "generated_tie_count": 12,
+                      "normalization_weight": 51.93511880276587,
+                      "raw_sum": 0.26393109514455837,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9502240348507963
+              "score": 0.9428119479289762
             },
             {
               "diagnostics": {
@@ -1770,7 +1962,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "markov_renewal",
-      "fitness": 0.7592877738613477,
+      "fitness": 0.7586100645187902,
       "genes": [
         0.15960250479446583,
         0.8491439883976586,
@@ -1786,7 +1978,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.7592877738613477,
+          "aggregate_score": 0.7586100645187902,
           "methods": [
             {
               "diagnostics": {
@@ -1962,115 +2154,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.09891579934024693,
+                "discrepancy": 0.10022171523422789,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.18848090277777776,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 9,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.18848090277777776,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.009350695902716089,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.009350695902716089,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.09891579934024693,
+                    "iat": {
+                      "discrepancy": 0.18848090277777776,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 9,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.18848090277777776,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.009350695902716089,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.009350695902716089,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.07228037048152594,
+                    "iat": {
+                      "discrepancy": 0.12131944444444444,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.12131944444444444,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.02324129651860745,
+                      "generated_sample_count": 7,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.02324129651860745,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.13077489177489177,
+                    "iat": {
+                      "discrepancy": 0.248,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.248,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.013549783549783551,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.013549783549783551,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.901084200659753
+              "score": 0.8997782847657722
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.0580597660933231,
+                "discrepancy": 0.06217552493980244,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.10588681330383391,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 9,
-                  "normalization_weight": 117.35528767751944,
-                  "raw_sum": 12.426377436527222,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.01023271888281228,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 91.58470604499526,
-                  "raw_sum": 0.937160550923435,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.0580597660933231,
+                    "iat": {
+                      "discrepancy": 0.10588681330383391,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 9,
+                      "normalization_weight": 117.35528767751944,
+                      "raw_sum": 12.426377436527222,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.01023271888281228,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 91.58470604499526,
+                      "raw_sum": 0.937160550923435,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.054029600768481276,
+                    "iat": {
+                      "discrepancy": 0.0848996184653013,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 75.45316905316905,
+                      "raw_sum": 6.4059452646119315,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.023159583071661258,
+                      "generated_sample_count": 7,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 39.84777167277167,
+                      "raw_sum": 0.9228577782761458,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.07855296680408229,
+                    "iat": {
+                      "discrepancy": 0.14116924830870448,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 65.10955504763555,
+                      "raw_sum": 9.191466943788926,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.0159366852994601,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 51.32795055821372,
+                      "raw_sum": 0.8179973951124996,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9419402339066769
+              "score": 0.9378244750601976
             },
             {
               "diagnostics": {
@@ -2261,7 +2517,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "poisson_empirical",
-      "fitness": 0.7409599996552558,
+      "fitness": 0.7394994990014385,
       "genes": [
         0.60839311729508
       ],
@@ -2273,7 +2529,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.7409599996552558,
+          "aggregate_score": 0.7394994990014385,
           "methods": [
             {
               "diagnostics": {
@@ -2449,115 +2705,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.042934905443658945,
+                "discrepancy": 0.04753111969458735,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.07873199279711884,
-                  "generated_sample_count": 14,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.07873199279711884,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.007137818090199044,
-                  "generated_sample_count": 15,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.007137818090199044,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.042934905443658945,
+                    "iat": {
+                      "discrepancy": 0.07873199279711884,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.07873199279711884,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.007137818090199044,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.007137818090199044,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.02548611111111111,
+                    "iat": {
+                      "discrepancy": 0.04069444444444444,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.04069444444444444,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010277777777777776,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.010277777777777776,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.07876855677992041,
+                    "iat": {
+                      "discrepancy": 0.14347222222222222,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.14347222222222222,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.014064891337618608,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.014064891337618608,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.957065094556341
+              "score": 0.9524688803054127
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.0323064015774093,
+                "discrepancy": 0.03939419255701882,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.059167525532657306,
-                  "generated_sample_count": 14,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 221.45535938694294,
-                  "raw_sum": 13.102965630870747,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.005445277622161287,
-                  "generated_sample_count": 15,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 85.66992024506376,
-                  "raw_sum": 0.46649649960278794,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.0323064015774093,
+                    "iat": {
+                      "discrepancy": 0.059167525532657306,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 221.45535938694294,
+                      "raw_sum": 13.102965630870747,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.005445277622161287,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 85.66992024506376,
+                      "raw_sum": 0.46649649960278794,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.027224185815444016,
+                    "iat": {
+                      "discrepancy": 0.04280687052713527,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 91.55573315573315,
+                      "raw_sum": 3.919214415214415,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.011641501103752758,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 47.93650793650794,
+                      "raw_sum": 0.55805291005291,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.06573978125781267,
+                    "iat": {
+                      "discrepancy": 0.12127690995371634,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 98.08038432156079,
+                      "raw_sum": 11.89488593759182,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010202652561909005,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 56.92701536509584,
+                      "raw_sum": 0.5808065591565283,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9676935984225907
+              "score": 0.9606058074429812
             },
             {
               "diagnostics": {
@@ -2767,7 +3087,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "markov_renewal",
-      "fitness": 0.7592877738613477,
+      "fitness": 0.7586100645187902,
       "genes": [
         0.15960250479446583,
         0.8151882616325913,
@@ -2783,7 +3103,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.7592877738613477,
+          "aggregate_score": 0.7586100645187902,
           "methods": [
             {
               "diagnostics": {
@@ -2959,115 +3279,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.09891579934024693,
+                "discrepancy": 0.10022171523422789,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.18848090277777776,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 9,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.18848090277777776,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.009350695902716089,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.009350695902716089,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.09891579934024693,
+                    "iat": {
+                      "discrepancy": 0.18848090277777776,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 9,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.18848090277777776,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.009350695902716089,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.009350695902716089,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.07228037048152594,
+                    "iat": {
+                      "discrepancy": 0.12131944444444444,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.12131944444444444,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.02324129651860745,
+                      "generated_sample_count": 7,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.02324129651860745,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.13077489177489177,
+                    "iat": {
+                      "discrepancy": 0.248,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.248,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.013549783549783551,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.013549783549783551,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.901084200659753
+              "score": 0.8997782847657722
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.0580597660933231,
+                "discrepancy": 0.06217552493980244,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.10588681330383391,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 9,
-                  "normalization_weight": 117.35528767751944,
-                  "raw_sum": 12.426377436527222,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.01023271888281228,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 91.58470604499526,
-                  "raw_sum": 0.937160550923435,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.0580597660933231,
+                    "iat": {
+                      "discrepancy": 0.10588681330383391,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 9,
+                      "normalization_weight": 117.35528767751944,
+                      "raw_sum": 12.426377436527222,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.01023271888281228,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 91.58470604499526,
+                      "raw_sum": 0.937160550923435,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.054029600768481276,
+                    "iat": {
+                      "discrepancy": 0.0848996184653013,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 75.45316905316905,
+                      "raw_sum": 6.4059452646119315,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.023159583071661258,
+                      "generated_sample_count": 7,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 39.84777167277167,
+                      "raw_sum": 0.9228577782761458,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.07855296680408229,
+                    "iat": {
+                      "discrepancy": 0.14116924830870448,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 65.10955504763555,
+                      "raw_sum": 9.191466943788926,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.0159366852994601,
+                      "generated_sample_count": 10,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 51.32795055821372,
+                      "raw_sum": 0.8179973951124996,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9419402339066769
+              "score": 0.9378244750601976
             },
             {
               "diagnostics": {
@@ -3258,7 +3642,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "markov_renewal",
-      "fitness": 0.8121659615147253,
+      "fitness": 0.8108273265178582,
       "genes": [
         0.2977908567864579,
         0.5777220641074957,
@@ -3274,7 +3658,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.8121659615147253,
+          "aggregate_score": 0.8108273265178582,
           "methods": [
             {
               "diagnostics": {
@@ -3450,115 +3834,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.050889868960355036,
+                "discrepancy": 0.05643265277993479,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.0915017361111111,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.0915017361111111,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.010278001809598966,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 7,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.010278001809598966,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.050889868960355036,
+                    "iat": {
+                      "discrepancy": 0.0915017361111111,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.0915017361111111,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010278001809598966,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 7,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.010278001809598966,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.08559921215074723,
+                    "iat": {
+                      "discrepancy": 0.14812499999999998,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.14812499999999998,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.023073424301494477,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.023073424301494477,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.03835166104828185,
+                    "iat": {
+                      "discrepancy": 0.06531249999999998,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.06531249999999998,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.011390822096563722,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.011390822096563722,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.9491101310396449
+              "score": 0.9435673472200652
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.029243334270088454,
+                "discrepancy": 0.03440963042544593,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.04694768763749723,
-                  "generated_sample_count": 16,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 166.22866889973304,
-                  "raw_sum": 7.804051623901617,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.011538980902679678,
-                  "generated_sample_count": 17,
-                  "generated_tie_count": 7,
-                  "normalization_weight": 121.01964055452424,
-                  "raw_sum": 1.3964433212078144,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.029243334270088454,
+                    "iat": {
+                      "discrepancy": 0.04694768763749723,
+                      "generated_sample_count": 16,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 166.22866889973304,
+                      "raw_sum": 7.804051623901617,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.011538980902679678,
+                      "generated_sample_count": 17,
+                      "generated_tie_count": 7,
+                      "normalization_weight": 121.01964055452424,
+                      "raw_sum": 1.3964433212078144,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.05094602612587864,
+                    "iat": {
+                      "discrepancy": 0.08297638952578128,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 3,
+                      "normalization_weight": 90.2207689369454,
+                      "raw_sum": 7.486193666627489,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.018915662725975998,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 69.7735217396982,
+                      "raw_sum": 1.3198124044316852,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.028205827035728173,
+                    "iat": {
+                      "discrepancy": 0.037798755750343214,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 1,
+                      "normalization_weight": 88.24759211376858,
+                      "raw_sum": 3.3356491798642525,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.018612898321113135,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 63.900109041285496,
+                      "raw_sum": 1.189366232293489,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9707566657299116
+              "score": 0.965590369574554
             },
             {
               "diagnostics": {
@@ -3749,7 +4197,7 @@
     {
       "duplicate_diagnostics": [],
       "family": "poisson_empirical",
-      "fitness": 0.740977035943182,
+      "fitness": 0.7395165352893647,
       "genes": [
         0.6073097569716615
       ],
@@ -3761,7 +4209,7 @@
       "status": "valid",
       "trials": [
         {
-          "aggregate_score": 0.740977035943182,
+          "aggregate_score": 0.7395165352893647,
           "methods": [
             {
               "diagnostics": {
@@ -3937,115 +4385,179 @@
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.042934905443658945,
+                "discrepancy": 0.04753111969458735,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.07873199279711884,
-                  "generated_sample_count": 14,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.07873199279711884,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.007137818090199044,
-                  "generated_sample_count": 15,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 1.0,
-                  "raw_sum": 0.007137818090199044,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.042934905443658945,
+                    "iat": {
+                      "discrepancy": 0.07873199279711884,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.07873199279711884,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.007137818090199044,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.007137818090199044,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.02548611111111111,
+                    "iat": {
+                      "discrepancy": 0.04069444444444444,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.04069444444444444,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010277777777777776,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.010277777777777776,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.07876855677992041,
+                    "iat": {
+                      "discrepancy": 0.14347222222222222,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.14347222222222222,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.014064891337618608,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 1.0,
+                      "raw_sum": 0.014064891337618608,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "cramer_von_mises",
-              "score": 0.957065094556341
+              "score": 0.9524688803054127
             },
             {
               "diagnostics": {
-                "direction_strata": {
-                  "iat": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  },
-                  "size": {
-                    "inbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    },
-                    "outbound": {
-                      "both_available": true,
-                      "generated_available": true,
-                      "reference_available": true
-                    }
-                  }
-                },
-                "discrepancy": 0.0323064015774093,
+                "discrepancy": 0.03939419255701882,
                 "feature_weights": {
                   "iat": 0.5,
                   "size": 0.5
                 },
-                "iat": {
-                  "discrepancy": 0.059167525532657306,
-                  "generated_sample_count": 14,
-                  "generated_tie_count": 0,
-                  "normalization_weight": 221.45535938694294,
-                  "raw_sum": 13.102965630870747,
-                  "reference_sample_count": 20,
-                  "reference_tie_count": 11
-                },
                 "observation_window_seconds": 10.0,
-                "size": {
-                  "discrepancy": 0.005445277622161287,
-                  "generated_sample_count": 15,
-                  "generated_tie_count": 6,
-                  "normalization_weight": 85.66992024506376,
-                  "raw_sum": 0.46649649960278794,
-                  "reference_sample_count": 21,
-                  "reference_tie_count": 6
+                "strata": {
+                  "global": {
+                    "discrepancy": 0.0323064015774093,
+                    "iat": {
+                      "discrepancy": 0.059167525532657306,
+                      "generated_sample_count": 14,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 221.45535938694294,
+                      "raw_sum": 13.102965630870747,
+                      "reference_sample_count": 20,
+                      "reference_tie_count": 11,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.005445277622161287,
+                      "generated_sample_count": 15,
+                      "generated_tie_count": 6,
+                      "normalization_weight": 85.66992024506376,
+                      "raw_sum": 0.46649649960278794,
+                      "reference_sample_count": 21,
+                      "reference_tie_count": 6,
+                      "status": "compared"
+                    }
+                  },
+                  "inbound": {
+                    "discrepancy": 0.027224185815444016,
+                    "iat": {
+                      "discrepancy": 0.04280687052713527,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 91.55573315573315,
+                      "raw_sum": 3.919214415214415,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 3,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.011641501103752758,
+                      "generated_sample_count": 6,
+                      "generated_tie_count": 2,
+                      "normalization_weight": 47.93650793650794,
+                      "raw_sum": 0.55805291005291,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  },
+                  "outbound": {
+                    "discrepancy": 0.06573978125781267,
+                    "iat": {
+                      "discrepancy": 0.12127690995371634,
+                      "generated_sample_count": 8,
+                      "generated_tie_count": 0,
+                      "normalization_weight": 98.08038432156079,
+                      "raw_sum": 11.89488593759182,
+                      "reference_sample_count": 10,
+                      "reference_tie_count": 5,
+                      "status": "compared"
+                    },
+                    "size": {
+                      "discrepancy": 0.010202652561909005,
+                      "generated_sample_count": 9,
+                      "generated_tie_count": 4,
+                      "normalization_weight": 56.92701536509584,
+                      "raw_sum": 0.5808065591565283,
+                      "reference_sample_count": 11,
+                      "reference_tie_count": 2,
+                      "status": "compared"
+                    }
+                  }
+                },
+                "stratum_weights": {
+                  "global": 0.5,
+                  "inbound": 0.25,
+                  "outbound": 0.25
                 }
               },
               "name": "anderson_darling",
-              "score": 0.9676935984225907
+              "score": 0.9606058074429812
             },
             {
               "diagnostics": {
@@ -4280,10 +4792,16 @@
       1
     ],
     "acf_size_weight": 0.5,
+    "ad_downlink_weight": 0.25,
+    "ad_global_weight": 0.5,
     "ad_iat_weight": 0.5,
     "ad_size_weight": 0.5,
+    "ad_uplink_weight": 0.25,
+    "cvm_downlink_weight": 0.25,
+    "cvm_global_weight": 0.5,
     "cvm_iat_weight": 0.5,
     "cvm_size_weight": 0.5,
+    "cvm_uplink_weight": 0.25,
     "iat_diagnostic_quantile": 0.75,
     "js_iat_bin_count": 8,
     "js_iat_weight": 0.5,

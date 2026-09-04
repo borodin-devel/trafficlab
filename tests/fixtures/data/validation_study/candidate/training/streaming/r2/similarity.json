@@ -1,5 +1,5 @@
 {
-  "aggregate_score": 0.849500223575977,
+  "aggregate_score": 0.8478440997908916,
   "input_identities": {
     "capture_json": {
       "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
@@ -14,65 +14,97 @@
       "size": 5276
     },
     "similarity_settings": {
-      "sha256": "b8f43ffaf72b463c821fbcd2b7ea65f6a67d8d845e32cc89be1b80c9fa1f4e6f",
-      "size": 1144
+      "sha256": "73f65d17eda47310b10436d6e591d2996651461f5591c560a51a98b391b3753d",
+      "size": 1293
     }
   },
   "methods": {
     "anderson_darling": {
       "diagnostics": {
-        "direction_strata": {
-          "iat": {
-            "inbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            },
-            "outbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            }
-          },
-          "size": {
-            "inbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            },
-            "outbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            }
-          }
-        },
-        "discrepancy": 0.022312057966604806,
+        "discrepancy": 0.029309364825446146,
         "feature_weights": {
           "iat": 0.5,
           "size": 0.5
         },
-        "iat": {
-          "discrepancy": 0.043936024132778244,
-          "generated_sample_count": 17,
-          "generated_tie_count": 5,
-          "normalization_weight": 173.1317907963672,
-          "raw_sum": 7.6067225385803034,
-          "reference_sample_count": 20,
-          "reference_tie_count": 11
-        },
         "observation_window_seconds": 10.0,
-        "size": {
-          "discrepancy": 0.0006880918004313692,
-          "generated_sample_count": 18,
-          "generated_tie_count": 7,
-          "normalization_weight": 86.63995965871035,
-          "raw_sum": 0.05961624583086321,
-          "reference_sample_count": 21,
-          "reference_tie_count": 6
+        "strata": {
+          "global": {
+            "discrepancy": 0.022312057966604806,
+            "iat": {
+              "discrepancy": 0.043936024132778244,
+              "generated_sample_count": 17,
+              "generated_tie_count": 5,
+              "normalization_weight": 173.1317907963672,
+              "raw_sum": 7.6067225385803034,
+              "reference_sample_count": 20,
+              "reference_tie_count": 11,
+              "status": "compared"
+            },
+            "size": {
+              "discrepancy": 0.0006880918004313692,
+              "generated_sample_count": 18,
+              "generated_tie_count": 7,
+              "normalization_weight": 86.63995965871035,
+              "raw_sum": 0.05961624583086321,
+              "reference_sample_count": 21,
+              "reference_tie_count": 6,
+              "status": "compared"
+            }
+          },
+          "inbound": {
+            "discrepancy": 0.01755460830013008,
+            "iat": {
+              "discrepancy": 0.028967928463222492,
+              "generated_sample_count": 8,
+              "generated_tie_count": 1,
+              "normalization_weight": 104.07389081506727,
+              "raw_sum": 3.014805024020097,
+              "reference_sample_count": 10,
+              "reference_tie_count": 3,
+              "status": "compared"
+            },
+            "size": {
+              "discrepancy": 0.006141288137037671,
+              "generated_sample_count": 8,
+              "generated_tie_count": 3,
+              "normalization_weight": 42.2001998001998,
+              "raw_sum": 0.2591635864135865,
+              "reference_sample_count": 10,
+              "reference_tie_count": 2,
+              "status": "compared"
+            }
+          },
+          "outbound": {
+            "discrepancy": 0.0550587350684449,
+            "iat": {
+              "discrepancy": 0.1038506441592082,
+              "generated_sample_count": 9,
+              "generated_tie_count": 2,
+              "normalization_weight": 76.76842267209915,
+              "raw_sum": 7.972450145583859,
+              "reference_sample_count": 10,
+              "reference_tie_count": 5,
+              "status": "compared"
+            },
+            "size": {
+              "discrepancy": 0.006266825977681601,
+              "generated_sample_count": 10,
+              "generated_tie_count": 3,
+              "normalization_weight": 49.81919946668398,
+              "raw_sum": 0.31220825340511654,
+              "reference_sample_count": 11,
+              "reference_tie_count": 2,
+              "status": "compared"
+            }
+          }
+        },
+        "stratum_weights": {
+          "global": 0.5,
+          "inbound": 0.25,
+          "outbound": 0.25
         }
       },
-      "score": 0.9776879420333952,
+      "score": 0.9706906351745539,
       "weight": 0.125
     },
     "approximate_mmd": {
@@ -147,58 +179,90 @@
     },
     "cramer_von_mises": {
       "diagnostics": {
-        "direction_strata": {
-          "iat": {
-            "inbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            },
-            "outbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            }
-          },
-          "size": {
-            "inbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            },
-            "outbound": {
-              "both_available": true,
-              "generated_available": true,
-              "reference_available": true
-            }
-          }
-        },
-        "discrepancy": 0.03962457908048889,
+        "discrepancy": 0.04587626250233094,
         "feature_weights": {
           "iat": 0.5,
           "size": 0.5
         },
-        "iat": {
-          "discrepancy": 0.07876624894790984,
-          "generated_sample_count": 17,
-          "generated_tie_count": 5,
-          "normalization_weight": 1.0,
-          "raw_sum": 0.07876624894790984,
-          "reference_sample_count": 20,
-          "reference_tie_count": 11
-        },
         "observation_window_seconds": 10.0,
-        "size": {
-          "discrepancy": 0.0004829092130679433,
-          "generated_sample_count": 18,
-          "generated_tie_count": 7,
-          "normalization_weight": 1.0,
-          "raw_sum": 0.0004829092130679433,
-          "reference_sample_count": 21,
-          "reference_tie_count": 6
+        "strata": {
+          "global": {
+            "discrepancy": 0.03962457908048889,
+            "iat": {
+              "discrepancy": 0.07876624894790984,
+              "generated_sample_count": 17,
+              "generated_tie_count": 5,
+              "normalization_weight": 1.0,
+              "raw_sum": 0.07876624894790984,
+              "reference_sample_count": 20,
+              "reference_tie_count": 11,
+              "status": "compared"
+            },
+            "size": {
+              "discrepancy": 0.0004829092130679433,
+              "generated_sample_count": 18,
+              "generated_tie_count": 7,
+              "normalization_weight": 1.0,
+              "raw_sum": 0.0004829092130679433,
+              "reference_sample_count": 21,
+              "reference_tie_count": 6,
+              "status": "compared"
+            }
+          },
+          "inbound": {
+            "discrepancy": 0.02067708333333333,
+            "iat": {
+              "discrepancy": 0.03802083333333332,
+              "generated_sample_count": 8,
+              "generated_tie_count": 1,
+              "normalization_weight": 1.0,
+              "raw_sum": 0.03802083333333332,
+              "reference_sample_count": 10,
+              "reference_tie_count": 3,
+              "status": "compared"
+            },
+            "size": {
+              "discrepancy": 0.0033333333333333344,
+              "generated_sample_count": 8,
+              "generated_tie_count": 3,
+              "normalization_weight": 1.0,
+              "raw_sum": 0.0033333333333333344,
+              "reference_sample_count": 10,
+              "reference_tie_count": 2,
+              "status": "compared"
+            }
+          },
+          "outbound": {
+            "discrepancy": 0.08357880851501266,
+            "iat": {
+              "discrepancy": 0.1578817413905133,
+              "generated_sample_count": 9,
+              "generated_tie_count": 2,
+              "normalization_weight": 1.0,
+              "raw_sum": 0.1578817413905133,
+              "reference_sample_count": 10,
+              "reference_tie_count": 5,
+              "status": "compared"
+            },
+            "size": {
+              "discrepancy": 0.009275875639512005,
+              "generated_sample_count": 10,
+              "generated_tie_count": 3,
+              "normalization_weight": 1.0,
+              "raw_sum": 0.009275875639512005,
+              "reference_sample_count": 11,
+              "reference_tie_count": 2,
+              "status": "compared"
+            }
+          }
+        },
+        "stratum_weights": {
+          "global": 0.5,
+          "inbound": 0.25,
+          "outbound": 0.25
         }
       },
-      "score": 0.9603754209195111,
+      "score": 0.9541237374976691,
       "weight": 0.125
     },
     "frame_size_ks": {

@@ -16,20 +16,20 @@
       },
       {
         "best_model_identity": {
-          "sha256": "3f8975d437616ea70e21610867f0bbdae079609eed4ed0a9ad1e6f7b581ed7be",
+          "sha256": "be37a222399e316b69ce21f16347500743fd5f840e0c27ebb989e4c5759b3833",
           "size": 7360
         },
-        "repeat": 1,
-        "training_directory": "training/streaming/r1",
+        "repeat": 3,
+        "training_directory": "training/streaming/r3",
         "workload": "streaming"
       },
       {
         "best_model_identity": {
-          "sha256": "bd475a2f8989d3de55903ba1af4e3685954995498e355462291dd03e04349b98",
-          "size": 7363
+          "sha256": "9e81c3555eb7fa8baeb92aa212b1f8df6938bd34b9ed41f2ae0ac9e8145301ff",
+          "size": 6464
         },
-        "repeat": 2,
-        "training_directory": "training/bursty/r2",
+        "repeat": 3,
+        "training_directory": "training/bursty/r3",
         "workload": "bursty"
       }
     ]

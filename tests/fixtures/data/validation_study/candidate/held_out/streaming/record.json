@@ -15,12 +15,12 @@
     "target_image_reference": "curlimages/curl@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b"
   },
   "comparison_identity": {
-    "sha256": "85b8550a56c0166b00b0333aa77947c2375bd95ca2b5a3561e38af10b9bed396",
-    "size": 190714
+    "sha256": "79fcb19a36c5ad16c1248e32306b4cddabd3469db705df6582c50514312a3be4",
+    "size": 193381
   },
   "generated_identity": {
-    "sha256": "209d4b76df476c467ff5e02fa87c60ec03948513225d85689bc056d0ffee2e9c",
-    "size": 5328
+    "sha256": "72516e1513eb80b506e6782f744f4dca9a6dd3521caac9e759384a5fb9dd63d8",
+    "size": 5432
   },
   "observation_window_seconds": 12.0,
   "reference_identity": {
@@ -28,9 +28,9 @@
     "size": 5948
   },
   "seed": 97,
-  "training_directory": "training/streaming/r1",
+  "training_directory": "training/streaming/r3",
   "training_model_identity": {
-    "sha256": "3f8975d437616ea70e21610867f0bbdae079609eed4ed0a9ad1e6f7b581ed7be",
+    "sha256": "be37a222399e316b69ce21f16347500743fd5f840e0c27ebb989e4c5759b3833",
     "size": 7360
   },
   "workload": "streaming"
