@@ -12,6 +12,20 @@ from scripts import benchmark_scapy_production as diagnostic
 from scripts.benchmark_scapy_production import CaseRecord, EnvironmentRecord, SampleRecord, render_diagnostic
 
 
+def test_implementation_identity_tracks_the_current_scapy_trace_owner() -> None:
+    paths = tuple(
+        path.relative_to(diagnostic._REPOSITORY).as_posix()  # pyright: ignore[reportPrivateUsage]
+        for path in diagnostic._SOURCE_PATHS  # pyright: ignore[reportPrivateUsage]
+    )
+
+    assert paths == (
+        "scripts/benchmark_scapy_production.py",
+        "src/trafficlab/common/scapy_io/trace.py",
+        "src/trafficlab/common/trace.py",
+    )
+    assert all(path.is_file() for path in diagnostic._SOURCE_PATHS)  # pyright: ignore[reportPrivateUsage]
+
+
 def _current_identities(_frame_count: int) -> tuple[str, str, int, str]:
     return "e" * 64, "a" * 64, 100, "b" * 64
 

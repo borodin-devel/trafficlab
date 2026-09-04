@@ -414,14 +414,14 @@ def test_malformed_capture_is_validation_primary_and_never_published(
     assert docker.calls[-1:] == ["start_down"]
 
 
-def test_validation_total_deadline_is_primary_and_zero_budget_cleanup_makes_no_docker_call(
+def test_publication_total_deadline_is_primary_and_zero_budget_cleanup_makes_no_docker_call(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Validation or cleanup work after total expiry would violate the single end-to-end deadline."""
+    """Publication or cleanup work after total expiry would violate the single end-to-end deadline."""
     experiment_path, prepared = prepared_capture(valid_config_data, tmp_path, monkeypatch)
     docker = DockerDouble("validation_deadline")
 
-    with pytest.raises(TrafficlabError, match="capture validation failed: capture inspection exceeded"):
+    with pytest.raises(TrafficlabError, match="capture publication copy exceeded its absolute deadline"):
         capture_experiment(experiment_path, docker=docker, clock=Clock(docker), interruption=lambda: False)
 
     assert "start_down" not in docker.calls

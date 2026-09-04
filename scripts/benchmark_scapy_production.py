@@ -55,7 +55,7 @@ _COMMAND = (
 _METADATA = CaptureMetadata(interface="eth0", target_mac="02:42:ac:11:00:02")
 _SOURCE_PATHS = (
     Path(__file__),
-    _REPOSITORY / "src" / "trafficlab" / "common" / "scapy_io.py",
+    _REPOSITORY / "src" / "trafficlab" / "common" / "scapy_io" / "trace.py",
     _REPOSITORY / "src" / "trafficlab" / "common" / "trace.py",
 )
 

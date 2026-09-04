@@ -79,6 +79,7 @@ def test_scapy_io_is_one_owned_package_with_stable_public_exports() -> None:
     assert {path.name for path in package.glob("*.py")} == {"__init__.py", "trace.py"}
     assert not (PACKAGE / "common" / "scapy_io.py").exists()
     from trafficlab.common.scapy_io import encode_pcapng, read_pcapng
+
     assert encode_pcapng.__name__ == "encode_pcapng"
     assert read_pcapng.__name__ == "read_pcapng"
 ```
