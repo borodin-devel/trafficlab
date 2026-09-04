@@ -284,7 +284,7 @@ uv run --locked python scripts/check_fixture_layout.py --check
 git diff --check
 ```
 
-- [ ] **[STEP-19-76059f7f] Request independent raw-normalization review and fix blockers**
+- [x] **[STEP-19-76059f7f] Request independent raw-normalization review and fix blockers**
 
 Review exact timestamp arithmetic, Scapy metadata handling, frame preservation, multi-interface collapse, spool safety, deadline coverage, and fixture independence. Repeat the raw owner after any fix.
 
