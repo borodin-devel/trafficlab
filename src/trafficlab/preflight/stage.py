@@ -29,6 +29,8 @@ from trafficlab.preflight.docker import check_docker, finding_from_error, prefli
 from trafficlab.preflight.local import check_free_space, check_local, check_mounts, default_writable
 from trafficlab.preflight.types import DockerPreflight, PreflightFinding, PreflightReport, PreparedExperiment, Writable
 
+type ConfigurationGuard = Callable[[ConfigurationPair], None]
+
 
 def _prepare_configuration_pair(path: Path, pair: ConfigurationPair, *, writable: Writable) -> PreparedExperiment:
     config = pair.realized
@@ -88,9 +90,16 @@ def _validate_existing_run(config: ExperimentConfig) -> None:
         ) from error
 
 
-def open_or_prepare_experiment(path: Path, *, writable: Writable = default_writable) -> PreparedExperiment:
+def open_or_prepare_experiment(
+    path: Path,
+    *,
+    writable: Writable = default_writable,
+    configuration_guard: ConfigurationGuard | None = None,
+) -> PreparedExperiment:
     """Prepare an absent run or reopen an exact, authoritative prepared run without mutation."""
     pair = load_configuration_pair(path)
+    if configuration_guard is not None:
+        configuration_guard(pair)
     config = pair.realized
     if not config.run.directory.exists():
         return _prepare_configuration_pair(path, pair, writable=writable)
@@ -139,10 +148,18 @@ def run_preflight(
     docker: DockerPreflight | None = None,
     clock: Callable[[], float] = time.monotonic,
     writable: Writable = default_writable,
+    configuration_guard: ConfigurationGuard | None = None,
 ) -> PreparedExperiment:
     """Run local preparation and, unless disabled, the injected Docker preflight."""
     try:
-        prepared = open_or_prepare_experiment(path, writable=writable)
+        if configuration_guard is None:
+            prepared = open_or_prepare_experiment(path, writable=writable)
+        else:
+            prepared = open_or_prepare_experiment(
+                path,
+                writable=writable,
+                configuration_guard=configuration_guard,
+            )
     except TrafficlabError as error:
         if error.failure_outcome is None:
             outcome = failure_outcome_from_error(

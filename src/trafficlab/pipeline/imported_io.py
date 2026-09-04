@@ -51,6 +51,11 @@ def _check_deadline(deadline: float, clock: Callable[[], float]) -> None:
         )
 
 
+def _check_optional_deadline(deadline: float | None, clock: Callable[[], float]) -> None:
+    if deadline is not None:
+        _check_deadline(deadline, clock)
+
+
 def _read_bytes_deadline(
     path: Path,
     *,

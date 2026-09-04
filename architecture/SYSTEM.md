@@ -260,8 +260,9 @@ named exactly `capture.json`; all other files, nested directories, links, and
 special entries are errors. Trafficlab resolves and retains the three paths but
 never writes below the supplied directory.
 
-Acquisition uses one monotonic absolute deadline derived from
-`capture.total_timeout_seconds`. It identifies both source files, copies them
+Acquisition starts one monotonic absolute deadline derived from
+`capture.total_timeout_seconds` before reading the prepared snapshot,
+rediscovering the source, or inspecting canonical paths. It identifies both source files, copies them
 to an owned same-filesystem temporary directory below the run, re-identifies
 both the sources and snapshots, and reparses supplied metadata before raw
 normalization. It normalizes only the capture snapshot in process, validates
@@ -285,7 +286,8 @@ run byte and fails; imported acquisition never invokes live-capture recovery.
 Canonical names are recognized with non-following filesystem inspection, so a
 dangling link or special entry cannot be mistaken for absence or opened for
 hashing. Publication lineage remains bound to the publisher-owned file
-identities across record construction and append. It creates no Docker resource
+identities across record construction and append, and the sole authority is
+revalidated after append before success. It creates no Docker resource
 and a clean import of the acquisition module does not load Docker adapters or
 `subprocess`; execution invokes no subprocess, shell, Wireshark executable, or
 repository script.

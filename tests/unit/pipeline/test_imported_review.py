@@ -135,13 +135,13 @@ def test_post_preflight_configuration_change_is_owned_by_capture_failure(
     experiment.write_text(tomli_w.dumps(valid_config_data), encoding="utf-8")
     real_preflight = imported_module._config_only_preflight
 
-    def changed_preflight(path: Path) -> imported_module.PreparedExperiment:
+    def changed_preflight(path: Path, source_directory: Path) -> imported_module.PreparedExperiment:
         changed = dict(valid_config_data)
         capture = dict(cast(dict[str, object], changed["capture"]))
         capture["total_timeout_seconds"] = 61.0
         changed["capture"] = capture
         path.write_text(tomli_w.dumps(changed), encoding="utf-8")
-        return real_preflight(path)
+        return real_preflight(path, source_directory)
 
     monkeypatch.setattr(imported_module, "_config_only_preflight", changed_preflight)
     with pytest.raises(TrafficlabError, match="changed during imported preflight"):
@@ -316,7 +316,7 @@ def test_canonical_presence_translates_lstat_error(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setattr(Path, "stat", failed_stat)
     with pytest.raises(TrafficlabError, match="canonical lstat sentinel"):
-        imported_module._canonical_pair_presence(tmp_path)
+        imported_module._canonical_pair_presence(tmp_path, deadline=1.0, clock=lambda: 0.0)
 
 
 def test_complete_nonregular_pair_is_rejected_before_content_hashing(
@@ -471,3 +471,96 @@ def test_fresh_publication_race_preserves_new_nonregular_canonical_entry(
 
     assert canonical.is_symlink()
     assert os.readlink(canonical) == str(prepared.run_directory / "missing")
+
+
+def test_fresh_import_revalidates_single_authority_after_lineage_append(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_copy(tmp_path)
+    _experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+    real_append = imported_module.append_run_log
+
+    def append_with_competing_authority(run_directory: Path, record: object) -> None:
+        document = cast(dict[str, object], record)
+        real_append(run_directory, document)
+        if document.get("event") == "reference_imported":
+            real_append(run_directory, {**document, "packet_count": 999, "reused": False})
+
+    monkeypatch.setattr(imported_module, "append_run_log", append_with_competing_authority)
+
+    with pytest.raises(TrafficlabError, match="lineage changed after publication append"):
+        import_reference(source, prepared, clock=lambda: 0.0)
+
+    records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
+    authorities = [record for record in records if record.get("event") == "reference_imported"]
+    assert len(authorities) == 2
+
+
+def test_import_deadline_starts_before_prepared_snapshot_read_and_source_inspection(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_copy(tmp_path)
+    _experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+    values = iter((0.0, 61.0))
+
+    def forbidden_discovery(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("expired prepared-snapshot read reached source discovery")
+
+    monkeypatch.setattr(imported_module, "discover_import_source", forbidden_discovery)
+    with pytest.raises(TrafficlabError, match="total_timeout_seconds expired"):
+        import_reference(source, prepared, clock=lambda: next(values))
+
+
+@pytest.mark.parametrize("boundary", ["discovery", "canonical-presence"])
+def test_import_inspection_boundaries_honor_existing_absolute_deadline(
+    boundary: str, valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    source = _source_copy(tmp_path)
+    _experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+    with pytest.raises(TrafficlabError, match="total_timeout_seconds expired"):
+        if boundary == "discovery":
+            discover_import_source(source.directory, deadline=1.0, clock=lambda: 1.0)
+        else:
+            imported_module._canonical_pair_presence(
+                prepared.run_directory,
+                deadline=1.0,
+                clock=lambda: 1.0,
+            )
+
+
+def test_authoritative_preflight_overlap_race_never_creates_source_artifact(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_copy(tmp_path)
+    experiment = tmp_path / "experiment.toml"
+    experiment.write_text(tomli_w.dumps(valid_config_data), encoding="utf-8")
+    original_load = imported_module.load_configuration_pair
+    import trafficlab.preflight.stage as preflight_stage
+
+    preflight_load = preflight_stage.load_configuration_pair
+    calls = 0
+
+    def race_on_authoritative_load(path: Path) -> object:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            changed = dict(valid_config_data)
+            changed_run = dict(cast(dict[str, object], changed["run"]))
+            changed_run["directory"] = str(source.directory / "nested-run")
+            changed["run"] = changed_run
+            path.write_text(tomli_w.dumps(changed), encoding="utf-8")
+        return preflight_load(path)
+
+    monkeypatch.setattr(preflight_stage, "load_configuration_pair", race_on_authoritative_load)
+    monkeypatch.setattr(imported_module, "load_configuration_pair", original_load)
+    before = _run_entries(source.directory)
+
+    with pytest.raises(TrafficlabError, match="overlap"):
+        run_imported_experiment(experiment, source.directory)
+
+    assert _run_entries(source.directory) == before
+    assert not (source.directory / "nested-run").exists()

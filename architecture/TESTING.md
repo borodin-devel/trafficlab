@@ -131,7 +131,10 @@ Unit tests are deterministic and do not start Docker. They cover:
   duplicate, or contradictory lineage. A fresh-interpreter guard proves the
   imported acquisition module has repository provenance without eagerly loading
   Docker adapters or `subprocess`; chunk-loop fake clocks and publisher
-  copy/link interruptions prove bounded reads and owned-temporary cleanup;
+  copy/link interruptions prove bounded reads and owned-temporary cleanup.
+  Race tests require post-append sole-authority validation and make the
+  authoritative preflight reject a newly overlapping run path before creating
+  any source entry;
 - source-MAC classification for outbound, inbound unicast, and inbound broadcast
   frames;
 - canonical trace ordering, direction values, IAT extraction, reference

@@ -382,13 +382,13 @@ def test_run_imported_experiment_rejects_config_changed_before_authoritative_pre
     experiment_path.write_text(tomli_w.dumps(valid_config_data), encoding="utf-8")
     real_preflight = imported_module._config_only_preflight
 
-    def changed_preflight(path: Path) -> PreparedExperiment:
+    def changed_preflight(path: Path, source_directory: Path) -> PreparedExperiment:
         changed = dict(valid_config_data)
         changed_capture = dict(cast(dict[str, object], changed["capture"]))
         changed_capture["total_timeout_seconds"] = 61.0
         changed["capture"] = changed_capture
         path.write_text(tomli_w.dumps(changed), encoding="utf-8")
-        return real_preflight(path)
+        return real_preflight(path, source_directory)
 
     monkeypatch.setattr(imported_module, "_config_only_preflight", changed_preflight)
 
@@ -699,7 +699,7 @@ def test_import_rejects_invalid_prepared_contracts(valid_config_data: dict[str, 
 
     snapshot = prepared.run_directory / "experiment.toml"
     snapshot.unlink()
-    with pytest.raises(TrafficlabError, match="could not read the prepared experiment snapshot"):
+    with pytest.raises(TrafficlabError, match="could not read prepared experiment snapshot"):
         import_reference(source, prepared)
     snapshot.write_bytes(b"changed")
     with pytest.raises(TrafficlabError, match="effective configuration changed"):
@@ -843,7 +843,8 @@ def test_reuse_detects_pair_removed_after_initial_presence_check(
     source = _source_copy(tmp_path)
     _experiment_path, prepared = _prepared(valid_config_data, tmp_path)
 
-    def pair_present(_directory: Path) -> tuple[bool, bool]:
+    def pair_present(_directory: Path, *, deadline: float, clock: Callable[[], float]) -> tuple[bool, bool]:
+        del deadline, clock
         return (True, True)
 
     monkeypatch.setattr(imported_module, "_canonical_pair_presence", pair_present)

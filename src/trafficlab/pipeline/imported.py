@@ -1,6 +1,4 @@
 # pyright: reportPrivateUsage=false
-"""Imported reference acquisition and full-pipeline composition."""
-
 from __future__ import annotations
 
 import json
@@ -20,12 +18,13 @@ from trafficlab.artifacts.io import FileIdentity, append_run_log, file_identity
 from trafficlab.capture.types import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes
-from trafficlab.common.config_io import load_configuration_pair, render_effective_config
+from trafficlab.common.config_io import ConfigurationPair, load_configuration_pair, render_effective_config
 from trafficlab.common.errors import DeadlineExceededError, TrafficlabError
 from trafficlab.common.scapy_io import normalize_raw_capture
 from trafficlab.common.trace import parse_capture_metadata
 from trafficlab.pipeline.imported_io import (
     _check_deadline,
+    _check_optional_deadline,
     _identify_file_deadline,
     _path_identity,
     _path_state,
@@ -62,10 +61,16 @@ def _source_error(detail: str) -> TrafficlabError:
     )
 
 
-def discover_import_source(directory: Path) -> ImportSource:
+def discover_import_source(
+    directory: Path,
+    *,
+    deadline: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> ImportSource:
     """Resolve and validate the complete direct inventory of an import source."""
     if not isinstance(directory, Path):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError("directory must be a Path")
+    _check_optional_deadline(deadline, clock)
     try:
         directory_status = directory.stat(follow_symlinks=False)
     except OSError as error:
@@ -73,6 +78,7 @@ def discover_import_source(directory: Path) -> ImportSource:
     if not stat.S_ISDIR(directory_status.st_mode):
         raise _source_error(f"path is not a real directory: {directory}")
 
+    _check_optional_deadline(deadline, clock)
     try:
         resolved = directory.resolve(strict=True)
         entries = sorted(resolved.iterdir(), key=lambda path: path.name.encode("utf-8"))
@@ -84,6 +90,7 @@ def discover_import_source(directory: Path) -> ImportSource:
     unexpected: list[Path] = []
     initial_states: dict[str, _PathState] = {}
     for entry in entries:
+        _check_optional_deadline(deadline, clock)
         try:
             entry_status = entry.stat(follow_symlinks=False)
         except OSError as error:
@@ -103,6 +110,7 @@ def discover_import_source(directory: Path) -> ImportSource:
             "expected one capture, one capture.json, and no other direct entries; "
             f"found captures={len(captures)}, metadata={len(metadata)}, unexpected={len(unexpected)}"
         )
+    _check_optional_deadline(deadline, clock)
     try:
         resolved_capture = captures[0].resolve(strict=True)
         resolved_metadata = metadata[0].resolve(strict=True)
@@ -119,6 +127,7 @@ def discover_import_source(directory: Path) -> ImportSource:
         or final_states != initial_states
     ):
         raise _source_error("directory or direct entry changed during discovery")
+    _check_optional_deadline(deadline, clock)
     return ImportSource(directory=resolved, capture_path=resolved_capture, metadata_path=resolved_metadata)
 
 
@@ -161,6 +170,7 @@ def _copy_snapshot(source: Path, destination: Path, *, deadline: float, clock: C
 def _source_identities(
     source: ImportSource, *, deadline: float, clock: Callable[[], float]
 ) -> tuple[ContentIdentity, ContentIdentity, FileIdentity, FileIdentity]:
+    _check_deadline(deadline, clock)
     before = (_path_identity(source.capture_path), _path_identity(source.metadata_path))
     content = (
         _identify_file_deadline(source.capture_path, deadline=deadline, clock=clock, kind="source capture"),
@@ -168,6 +178,7 @@ def _source_identities(
     )
     if (_path_identity(source.capture_path), _path_identity(source.metadata_path)) != before:
         raise _import_error("supplied source changed during content identity")
+    _check_deadline(deadline, clock)
     return (*content, *before)
 
 
@@ -179,7 +190,7 @@ def _require_unchanged_source(
     clock: Callable[[], float],
 ) -> None:
     if (
-        discover_import_source(source.directory) != source
+        discover_import_source(source.directory, deadline=deadline, clock=clock) != source
         or _source_identities(source, deadline=deadline, clock=clock) != expected
     ):
         raise _import_error("supplied source changed during import")
@@ -216,22 +227,23 @@ def _lineage_record(
     }
 
 
-def _validate_prepared_import(prepared: PreparedExperiment) -> None:
-    if type(prepared) is not PreparedExperiment:
-        raise TypeError("prepared must be a PreparedExperiment")
+def _validate_prepared_import(prepared: PreparedExperiment, *, deadline: float, clock: Callable[[], float]) -> None:
     if prepared.run_directory != prepared.config.run.directory or not prepared.run_directory.is_absolute():
         raise _import_error("prepared run directory does not match the effective configuration")
-    try:
-        snapshot = (prepared.run_directory / "experiment.toml").read_bytes()
-    except OSError as error:
-        raise _import_error(f"could not read the prepared experiment snapshot: {error}") from error
+    snapshot = _read_bytes_deadline(
+        prepared.run_directory / "experiment.toml",
+        deadline=deadline,
+        clock=clock,
+        kind="prepared experiment snapshot",
+    )
     if snapshot != render_effective_config(prepared.config):
         raise _import_error("prepared effective configuration changed")
 
 
-def _canonical_pair_presence(run_directory: Path) -> tuple[bool, bool]:
+def _canonical_pair_presence(run_directory: Path, *, deadline: float, clock: Callable[[], float]) -> tuple[bool, bool]:
     presence: list[bool] = []
     for path in (run_directory / "capture.json", run_directory / "reference.pcapng"):
+        _check_deadline(deadline, clock)
         try:
             path.stat(follow_symlinks=False)
         except FileNotFoundError:
@@ -240,6 +252,7 @@ def _canonical_pair_presence(run_directory: Path) -> tuple[bool, bool]:
             raise _reuse_error(f"could not inspect canonical capture entry {path}: {error}") from error
         else:
             presence.append(True)
+    _check_deadline(deadline, clock)
     return (presence[0], presence[1])
 
 
@@ -472,6 +485,8 @@ def _fresh_import(
             deadline=deadline,
             clock=clock,
         )
+        if _read_import_lineage(run_directory, deadline=deadline, clock=clock) != [record]:
+            raise _reuse_error("lineage changed after publication append")
         return CaptureResult(
             run_directory=run_directory,
             reference_path=run_directory / "reference.pcapng",
@@ -495,10 +510,12 @@ def import_reference(
     """Publish or exactly reuse a supplied reference capture pair."""
     if type(source) is not ImportSource:
         raise TypeError("source must be an ImportSource")
-    _validate_prepared_import(prepared)
-    source = discover_import_source(source.directory)
-    presence = _canonical_pair_presence(prepared.run_directory)
+    if type(prepared) is not PreparedExperiment:
+        raise TypeError("prepared must be a PreparedExperiment")
     deadline = _deadline(prepared, clock)
+    _validate_prepared_import(prepared, deadline=deadline, clock=clock)
+    source = discover_import_source(source.directory, deadline=deadline, clock=clock)
+    presence = _canonical_pair_presence(prepared.run_directory, deadline=deadline, clock=clock)
     if presence == (True, True):
         return _reuse_import(source, prepared, deadline=deadline, clock=clock)
     if presence != (False, False):
@@ -517,10 +534,13 @@ def _require_separate_directories(source_directory: Path, run_directory: Path) -
         raise _source_error(f"supplied directory {source_resolved} and run.directory {run_resolved} overlap")
 
 
-def _config_only_preflight(path: Path) -> PreparedExperiment:
+def _config_only_preflight(path: Path, source_directory: Path) -> PreparedExperiment:
     from trafficlab.preflight.stage import run_preflight
 
-    return run_preflight(path, config_only=True)
+    def require_nonoverlap(pair: ConfigurationPair) -> None:
+        _require_separate_directories(source_directory, pair.realized.run.directory)
+
+    return run_preflight(path, config_only=True, configuration_guard=require_nonoverlap)
 
 
 def _fit_experiment(path: Path) -> FitStageResult:
@@ -558,7 +578,7 @@ def run_imported_experiment(experiment_path: Path, dump_directory: Path) -> RunR
         _require_separate_directories(source.directory, current.realized.run.directory)
         if current != preliminary:
             raise _import_error("experiment configuration changed during imported preflight")
-        return _config_only_preflight(path)
+        return _config_only_preflight(path, source.directory)
 
     def import_capture(_path: Path, prepared: PreparedExperiment) -> CaptureResult:
         if prepared.config != preliminary.realized or prepared.portable_config != preliminary.portable:
