@@ -306,11 +306,12 @@ def _pcapng_capture(
     *,
     resolution_option: int,
     block_type: Literal[3, 6] = 6,
+    linktype: int = 1,
 ) -> bytes:
     byte_order = b"\x4d\x3c\x2b\x1a" if endian == "<" else b"\x1a\x2b\x3c\x4d"
     section = _pcapng_block(endian, 0x0A0D0D0A, byte_order + struct.pack(f"{endian}HHq", 1, 0, -1))
     options = struct.pack(f"{endian}HHB", 9, 1, resolution_option) + b"\x00" * 3 + struct.pack(f"{endian}HH", 0, 0)
-    interface = _pcapng_block(endian, 1, struct.pack(f"{endian}HHI", 1, 0, 262_144) + options)
+    interface = _pcapng_block(endian, 1, struct.pack(f"{endian}HHI", linktype, 0, 262_144) + options)
     content = bytearray(section + interface)
     for ticks, frame, wire_length in packets:
         if block_type == 6:
@@ -460,7 +461,7 @@ def test_expected_oracle_uses_valid_uint32_timestamp_ticks() -> None:
 @pytest.mark.parametrize(
     ("content", "message"),
     [
-        (b"\xd4\xc3\xb2\xa1\x02\x00", "Scapy could not decode"),
+        (b"\xd4\xc3\xb2\xa1\x02\x00", "truncated PCAP global header"),
         (b"\x0a\x0d\x0d\x0a\x00\x00\x00\x1c", "PCAPNG section byte-order magic"),
     ],
     ids=["pcap", "pcapng"],
@@ -485,6 +486,224 @@ def test_normalization_rejects_trailing_partial_pcap_packet_record(tmp_path: Pat
     source.write_bytes(source.read_bytes() + b"\x00" * 8)
 
     _assert_trafficlab_error(source, tmp_path / "output.pcapng", message="truncated PCAP packet record")
+
+
+def test_normalization_rejects_invalid_pcapng_interface_before_it_can_hide_later_packets(tmp_path: Path) -> None:
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    content = bytearray(
+        _pcapng_capture(
+            ">",
+            (
+                (1_000_000, frames[0], 60),
+                (2_000_000, frames[1], 64),
+                (3_000_000, frames[0], 60),
+                (4_000_000, frames[1], 64),
+            ),
+            resolution_option=6,
+        )
+    )
+    offset = 0
+    packet_offsets: list[int] = []
+    while offset < len(content):
+        block_type, block_length = struct.unpack_from(">II", content, offset)
+        if block_type == 6:
+            packet_offsets.append(offset)
+        offset += block_length
+    struct.pack_into(">I", content, packet_offsets[2] + 8, 99)
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(content)
+    destination = tmp_path / "output.pcapng"
+
+    _assert_trafficlab_error(
+        source,
+        destination,
+        message="packet block references interface 99 but the section defines 1",
+    )
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("block_type", "name", "minimum"),
+    [
+        (1, "Interface Description Block", 8),
+        (3, "Simple Packet Block", 4),
+        (10, "Decryption Secrets Block", 8),
+        (0x80000001, "Process Information Block", 4),
+    ],
+)
+def test_normalization_rejects_short_scapy_handled_pcapng_blocks(
+    block_type: int, name: str, minimum: int, tmp_path: Path
+) -> None:
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    content = _pcapng_capture(
+        ">", ((1_000_000, frames[0], 60), (2_000_000, frames[1], 64)), resolution_option=6
+    ) + _pcapng_block(">", block_type, b"")
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(content)
+    destination = tmp_path / "output.pcapng"
+
+    _assert_trafficlab_error(source, destination, message=f"{name} body must be at least {minimum} bytes")
+    assert not destination.exists()
+
+
+def test_normalization_rejects_decryption_secrets_length_beyond_its_block(tmp_path: Path) -> None:
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    content = _pcapng_capture(
+        ">", ((1_000_000, frames[0], 60), (2_000_000, frames[1], 64)), resolution_option=6
+    ) + _pcapng_block(">", 10, struct.pack(">II", 0x1234, 8) + b"\x00" * 4)
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(content)
+    destination = tmp_path / "output.pcapng"
+
+    _assert_trafficlab_error(source, destination, message="Decryption Secrets Block data length 8 exceeds 4 bytes")
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("option_code", "name"),
+    [(2, "flags"), (0x8001, "process index")],
+)
+def test_normalization_rejects_epb_options_that_make_scapy_abort_packet_decoding(
+    option_code: int, name: str, tmp_path: Path
+) -> None:
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    content = _pcapng_capture(">", ((1_000_000, frames[0], 60), (2_000_000, frames[1], 64)), resolution_option=6)
+    invalid_frame = frames[0]
+    packet_body = (
+        struct.pack(">IIIII", 0, 0, 3_000_000, len(invalid_frame), 60)
+        + invalid_frame
+        + b"\x00" * (-len(invalid_frame) % 4)
+        + struct.pack(">HHB", option_code, 1, 0)
+        + b"\x00" * 3
+    )
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(content + _pcapng_block(">", 6, packet_body))
+    destination = tmp_path / "output.pcapng"
+
+    _assert_trafficlab_error(source, destination, message=f"Enhanced Packet Block {name} option must contain 4 bytes")
+    assert not destination.exists()
+
+
+def test_valid_scapy_metadata_blocks_do_not_end_packet_decoding_early(tmp_path: Path) -> None:
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    content = _pcapng_capture(">", ((1_000_000, frames[0], 60), (2_000_000, frames[1], 64)), resolution_option=6)
+    metadata_blocks = _pcapng_block(">", 10, struct.pack(">II", 0x1234, 4) + b"data") + _pcapng_block(
+        ">", 0x80000001, struct.pack(">I", 42)
+    )
+    option_frame = frames[0]
+    option_packet = _pcapng_block(
+        ">",
+        6,
+        struct.pack(">IIIII", 0, 0, 3_000_000, len(option_frame), 60)
+        + option_frame
+        + b"\x00" * (-len(option_frame) % 4)
+        + struct.pack(">HHI", 2, 4, 1),
+    )
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(content + metadata_blocks + option_packet)
+
+    result = normalize_raw_capture(source, tmp_path / "output.pcapng", deadline=None)
+
+    assert result == RawNormalizationResult("pcapng", 3, 2.0, False)
+
+
+@pytest.mark.parametrize("block_type", [3, 6], ids=["simple", "enhanced"])
+def test_normalization_rejects_packet_block_before_the_first_interface(block_type: int, tmp_path: Path) -> None:
+    frame = bytes.fromhex("ffffffffffff0242ac1100020806")
+    section = _pcapng_capture(">", (), resolution_option=6)[:28]
+    body = (
+        struct.pack(">I", len(frame)) + frame
+        if block_type == 3
+        else struct.pack(">IIIII", 0, 0, 1_000_000, len(frame), 60) + frame
+    )
+    packet = _pcapng_block(">", block_type, body)
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(section + packet)
+
+    _assert_trafficlab_error(
+        source,
+        tmp_path / "output.pcapng",
+        message="packet block references interface 0 but the section defines 0",
+    )
+
+
+@pytest.mark.parametrize(
+    "second_section",
+    [
+        _pcapng_capture(
+            "<",
+            (
+                (3_072, bytes.fromhex("ffffffffffff0242ac1100020806"), 60),
+                (4_096, bytes.fromhex("0011223344550242ac110002080045000000"), 64),
+            ),
+            resolution_option=0x8A,
+        ),
+        _pcapng_capture(
+            ">",
+            (
+                (3_000_000, bytes.fromhex("ffffffffffff0242ac1100020806"), 60),
+                (4_000_000, bytes.fromhex("0011223344550242ac110002080045000000"), 64),
+            ),
+            resolution_option=6,
+            linktype=101,
+        ),
+    ],
+    ids=["mixed-endian-resolution", "changed-linktype"],
+)
+def test_normalization_rejects_repeated_pcapng_section_headers(second_section: bytes, tmp_path: Path) -> None:
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    first_section = _pcapng_capture(">", ((1_000_000, frames[0], 60), (2_000_000, frames[1], 64)), resolution_option=6)
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(first_section + second_section)
+    destination = tmp_path / "output.pcapng"
+
+    _assert_trafficlab_error(source, destination, message="multiple PCAPNG sections are unsupported")
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("endian", "major", "minor"),
+    [("<", 3, 4), (">", 2, 3)],
+    ids=["unsupported-major", "unsupported-minor"],
+)
+def test_normalization_rejects_unsupported_classic_pcap_version(
+    endian: Literal["<", ">"], major: int, minor: int, tmp_path: Path
+) -> None:
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    content = bytearray(
+        _classic_capture(
+            ((1, 0, frames[0], len(frames[0]), 60), (2, 0, frames[1], len(frames[1]), 64)),
+            endian=endian,
+        )
+    )
+    struct.pack_into(f"{endian}HH", content, 4, major, minor)
+    source = tmp_path / "source.pcap"
+    source.write_bytes(content)
+    destination = tmp_path / "output.pcapng"
+
+    _assert_trafficlab_error(source, destination, message=f"unsupported PCAP version {major}.{minor}; expected 2.4")
+    assert not destination.exists()
 
 
 def test_normalization_rejects_pcapng_captured_length_mismatch(tmp_path: Path) -> None:
@@ -514,7 +733,12 @@ def test_normalization_rejects_simple_packet_blocks_without_timestamps(tmp_path:
     )
     source = tmp_path / "source.pcapng"
     source.write_bytes(
-        _pcapng_capture("<", ((0, frames[0], 60), (0, frames[1], 64)), resolution_option=6, block_type=3)
+        _pcapng_capture(
+            "<",
+            ((0, frames[0], len(frames[0])), (0, frames[1], len(frames[1]))),
+            resolution_option=6,
+            block_type=3,
+        )
     )
 
     _assert_trafficlab_error(source, tmp_path / "output.pcapng", message="PCAPNG timestamp high field")

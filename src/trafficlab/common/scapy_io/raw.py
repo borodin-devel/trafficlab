@@ -20,6 +20,12 @@ _MALFORMED_ACTION = "replace the source with a complete valid Ethernet PCAP or P
 _DEADLINE_ACTION = "increase capture.total_timeout_seconds and retry import-run"
 _READ_ACTION = "verify the source capture exists and is readable"
 _WRITE_ACTION = "verify free space and permissions for the run directory, then retry import-run"
+_PCAP_ENDIAN_BY_MAGIC: dict[bytes, Literal["<", ">"]] = {
+    b"\xa1\xb2\xc3\xd4": ">",
+    b"\xd4\xc3\xb2\xa1": "<",
+    b"\xa1\xb2\x3c\x4d": ">",
+    b"\x4d\x3c\xb2\xa1": "<",
+}
 
 type RawCaptureFormat = Literal["pcap", "pcapng"]
 
@@ -136,21 +142,30 @@ def _check_deadline(deadline: float | None, clock: Callable[[], float], boundary
         )
 
 
-def _detect_format(source: Path) -> RawCaptureFormat:
+def _read_prefix(source: Path, size: int) -> bytes:
     try:
         with source.open("rb") as stream:
-            magic = stream.read(4)
+            return stream.read(size)
     except OSError as error:
         raise TrafficlabError(
             f"could not read raw capture {source}: {error}",
             corrective_action=_READ_ACTION,
         ) from error
-    if magic in {
-        b"\xa1\xb2\xc3\xd4",
-        b"\xd4\xc3\xb2\xa1",
-        b"\xa1\xb2\x3c\x4d",
-        b"\x4d\x3c\xb2\xa1",
-    }:
+
+
+def _validate_pcap_header(header: bytes, endian: Literal["<", ">"]) -> None:
+    if len(header) < 24:
+        raise _invalid_capture("truncated PCAP global header")
+    major, minor = struct.unpack_from(f"{endian}HH", header, 4)
+    if (major, minor) != (2, 4):
+        raise _invalid_capture(f"unsupported PCAP version {major}.{minor}; expected 2.4")
+
+
+def _detect_format(source: Path) -> RawCaptureFormat:
+    header = _read_prefix(source, 24)
+    magic = header[:4]
+    if magic in _PCAP_ENDIAN_BY_MAGIC:
+        _validate_pcap_header(header, _PCAP_ENDIAN_BY_MAGIC[magic])
         return "pcap"
     if magic == b"\x0a\x0d\x0d\x0a":
         return "pcapng"
@@ -164,6 +179,37 @@ def _invalid_capture(message: str) -> TrafficlabError:
     return TrafficlabError(f"invalid raw capture: {message}", corrective_action=_MALFORMED_ACTION)
 
 
+def _require_pcapng_body(body_length: int, minimum: int, name: str) -> None:
+    if body_length < minimum:
+        raise _invalid_capture(f"PCAPNG {name} body must be at least {minimum} bytes")
+
+
+def _validate_pcapng_packet_area(captured_length: int, available_length: int) -> None:
+    padded_length = captured_length + (-captured_length % 4)
+    if padded_length > available_length:
+        raise _invalid_capture(
+            f"PCAPNG captured length {captured_length} exceeds {available_length} available packet bytes"
+        )
+
+
+def _validate_epb_options(
+    stream: BinaryIO,
+    *,
+    offset: int,
+    length: int,
+    endian: Literal["<", ">"],
+) -> None:
+    cursor = 0
+    while length - cursor >= 4:
+        stream.seek(offset + cursor)
+        code, value_length = struct.unpack(f"{endian}HH", stream.read(4))
+        if code == 2 and value_length != 4:
+            raise _invalid_capture("PCAPNG Enhanced Packet Block flags option must contain 4 bytes")
+        if code in {0x8001, 0x8003} and value_length != 4:
+            raise _invalid_capture("PCAPNG Enhanced Packet Block process index option must contain 4 bytes")
+        cursor += 4 + value_length + (-value_length % 4)
+
+
 def _validate_pcapng_structure(
     source: Path,
     *,
@@ -175,6 +221,7 @@ def _validate_pcapng_structure(
         size = source.stat().st_size
         with source.open("rb") as stream:
             endian: Literal["<", ">"] | None = None
+            interface_snaplens: list[int] = []
             offset = 0
             while offset < size:
                 stream.seek(offset)
@@ -183,6 +230,8 @@ def _validate_pcapng_structure(
                     raise _invalid_capture("truncated PCAPNG block header")
                 raw_type, raw_length = header[:4], header[4:]
                 if raw_type == b"\x0a\x0d\x0d\x0a":
+                    if offset != 0:
+                        raise _invalid_capture("multiple PCAPNG sections are unsupported")
                     byte_order = stream.read(4)
                     if byte_order == b"\x4d\x3c\x2b\x1a":
                         endian = "<"
@@ -205,18 +254,55 @@ def _validate_pcapng_structure(
                 tail = stream.read(4)
                 if len(tail) != 4 or struct.unpack(f"{endian}I", tail)[0] != block_length:
                     raise _invalid_capture("PCAPNG block length trailer does not match its header")
-                if block_type in {2, 6}:
-                    body_length = block_length - 12
+                body_length = block_length - 12
+                if block_type == 1:
+                    _require_pcapng_body(body_length, 8, "Interface Description Block")
+                    stream.seek(offset + 8)
+                    _linktype, snaplen = struct.unpack(f"{endian}HxxI", stream.read(8))
+                    interface_snaplens.append(snaplen)
+                elif block_type in {2, 6}:
                     if body_length < 20:
                         raise _invalid_capture("PCAPNG packet block is shorter than its fixed header")
-                    stream.seek(offset + 20)
-                    captured_length = struct.unpack(f"{endian}I", stream.read(4))[0]
-                    padded_length = captured_length + (-captured_length % 4)
+                    stream.seek(offset + 8)
+                    fixed_header = stream.read(20)
+                    interface = struct.unpack_from(f"{endian}{'H' if block_type == 2 else 'I'}", fixed_header)[0]
+                    if interface >= len(interface_snaplens):
+                        raise _invalid_capture(
+                            f"PCAPNG packet block references interface {interface} "
+                            f"but the section defines {len(interface_snaplens)}"
+                        )
+                    captured_length = struct.unpack_from(f"{endian}I", fixed_header, 12)[0]
                     available_length = body_length - 20
+                    _validate_pcapng_packet_area(captured_length, available_length)
+                    if block_type == 6:
+                        padded_length = captured_length + (-captured_length % 4)
+                        _validate_epb_options(
+                            stream,
+                            offset=offset + 28 + padded_length,
+                            length=available_length - padded_length,
+                            endian=endian,
+                        )
+                elif block_type == 3:
+                    _require_pcapng_body(body_length, 4, "Simple Packet Block")
+                    if not interface_snaplens:
+                        raise _invalid_capture("PCAPNG packet block references interface 0 but the section defines 0")
+                    stream.seek(offset + 8)
+                    wire_length = struct.unpack(f"{endian}I", stream.read(4))[0]
+                    captured_length = min(wire_length, interface_snaplens[0])
+                    _validate_pcapng_packet_area(captured_length, body_length - 4)
+                elif block_type == 10:
+                    _require_pcapng_body(body_length, 8, "Decryption Secrets Block")
+                    stream.seek(offset + 8)
+                    _secrets_type, secrets_length = struct.unpack(f"{endian}II", stream.read(8))
+                    padded_length = secrets_length + (-secrets_length % 4)
+                    available_length = body_length - 8
                     if padded_length > available_length:
                         raise _invalid_capture(
-                            f"PCAPNG captured length {captured_length} exceeds {available_length} available packet bytes"
+                            f"PCAPNG Decryption Secrets Block data length {secrets_length} "
+                            f"exceeds {available_length} bytes"
                         )
+                elif block_type == 0x80000001:
+                    _require_pcapng_body(body_length, 4, "Process Information Block")
                 offset += block_length
                 _check_deadline(deadline, clock, "after validating a PCAPNG block")
     except TrafficlabError:

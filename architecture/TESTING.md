@@ -118,8 +118,8 @@ Unit tests are deterministic and do not start Docker. They cover:
 - Scapy PCAPNG reading/writing and raw PCAP/PCAPNG normalization, accepted
   container syntax and byte orders, timestamp resolutions and exact stable
   ordering, unsupported interfaces/link types, frame and wire lengths,
-  microsecond truncation, outbound/inbound round trips, and stable actionable
-  errors;
+  microsecond truncation, PCAP versions, PCAPNG section and fixed-block
+  boundaries, outbound/inbound round trips, and stable actionable errors;
 - source-MAC classification for outbound, inbound unicast, and inbound broadcast
   frames;
 - canonical trace ordering, direction values, IAT extraction, reference

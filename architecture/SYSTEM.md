@@ -62,12 +62,13 @@ the target as destination. Rendering any other direction value is an error.
 
 Imported raw captures are decoded and encoded only inside
 `trafficlab.common.scapy_io`. The decoder selects classic PCAP or PCAPNG from
-the file magic, independently of the filename suffix. Classic PCAP accepts both
-byte orders and both microsecond and nanosecond timestamp variants. PCAPNG
-accepts either byte order, multiple interfaces, Scapy-supported decimal or
-binary timestamp resolutions, and packet blocks for which Scapy supplies a
-complete frame, wire length, interface link type, and timestamp. Every packet
-must use Ethernet link type 1.
+the file magic, independently of the filename suffix. Classic PCAP accepts
+version 2.4 in both byte orders and both microsecond and nanosecond timestamp
+variants. PCAPNG accepts exactly one section in either byte order, multiple
+interfaces within that section, Scapy-supported decimal or binary timestamp
+resolutions, and packet blocks for which Scapy supplies a complete frame, wire
+length, interface link type, and timestamp. Every packet must reference an
+interface declared in that section and use Ethernet link type 1.
 
 For classic PCAP, the timestamp is the exact fraction
 `(seconds * resolution + subsecond_ticks) / resolution`. Scapy exposes PCAPNG
@@ -76,8 +77,11 @@ For classic PCAP, the timestamp is the exact fraction
 be nonnegative, finite, within their encoded integer ranges, and representable
 in canonical microsecond PCAPNG. Captured length must equal the exact returned
 frame bytes and be at least 14; wire length must be no smaller than captured
-length. Missing timestamps, malformed or truncated containers and blocks,
-unsupported magic, non-Ethernet packets, and inconsistent lengths are errors.
+length. Before Scapy decoding, Trafficlab validates every fixed block header
+handled by its raw PCAPNG reader, packet interface references, packet data
+bounds, and decoder-sensitive metadata lengths. Missing timestamps, repeated
+sections, malformed or truncated containers and blocks, unsupported magic or
+versions, non-Ethernet packets, and inconsistent lengths are errors.
 
 Each validated frame is written exactly once to a temporary binary spool on the
 destination filesystem. Memory retains only an index containing its exact
