@@ -472,13 +472,13 @@ def test_checked_in_external_reference_default_is_release_sized_and_config_only_
         "max_output_bytes": 4_000_000_000,
         "max_wall_seconds": 300.0,
     }
-    assert config.genetic.population_size == 30
-    assert config.genetic.generation_count == 100
+    assert config.genetic.population_size == 28
+    assert config.genetic.generation_count == 50
     assert config.genetic.tournament_size == 5
     assert config.genetic.elite_count == 2
-    assert config.genetic.trial_seeds == (17, 29, 43, 71, 101)
+    assert config.genetic.trial_seeds == (17, 29, 43)
     assert config.genetic.duplicate_mutation_attempts == 10
-    assert config.genetic.early_stopping_generations == 20
+    assert config.genetic.early_stopping_generations == 12
     assert config.genetic.early_stopping_tolerance == 0.0001
     assert config.genetic.resume is True
     assert config.models.enabled == (
@@ -562,3 +562,70 @@ def test_checked_in_external_reference_default_is_release_sized_and_config_only_
         "jensen_shannon": 0.125,
         "approximate_mmd": 0.125,
     }
+
+
+@pytest.mark.parametrize(
+    (
+        "filename",
+        "run_name",
+        "population_size",
+        "generation_count",
+        "trial_seeds",
+        "early_stopping_generations",
+        "maximum_simulations",
+    ),
+    [
+        ("fast_routine.toml", "fast-routine", 14, 10, (17,), 3, 154),
+        ("balanced.toml", "balanced", 28, 50, (17, 29, 43), 12, 4_284),
+        ("maximum_quality.toml", "maximum-quality", 35, 100, (17, 29, 43, 71, 101), 25, 17_675),
+    ],
+)
+def test_checked_in_external_reference_search_profiles_are_config_only_runnable(
+    filename: str,
+    run_name: str,
+    population_size: int,
+    generation_count: int,
+    trial_seeds: tuple[int, ...],
+    early_stopping_generations: int,
+    maximum_simulations: int,
+    tmp_path: Path,
+) -> None:
+    """Named search profiles must make their cost and intended run directory exact."""
+    repository = Path(__file__).parents[3]
+    checked = repository / "examples" / "configs" / filename
+    checked_pair = load_configuration_pair(checked)
+    run_directory = tmp_path / "runs" / run_name
+    local = tmp_path / "configs" / filename
+    local.parent.mkdir()
+    content = checked.read_text(encoding="utf-8").replace(
+        f'directory = "../../runs/{run_name}"',
+        f'directory = "{run_directory}"',
+        1,
+    )
+    local.write_text(content, encoding="utf-8")
+
+    prepared = preflight_module.run_preflight(local, config_only=True)
+    config = prepared.config
+
+    assert checked_pair.portable.run.directory == Path(f"../../runs/{run_name}")
+    assert checked_pair.realized.run.directory == repository / "runs" / run_name
+    assert prepared.run_directory == run_directory
+    assert config.genetic.population_size == population_size
+    assert config.genetic.generation_count == generation_count
+    assert config.genetic.trial_seeds == trial_seeds
+    assert config.genetic.early_stopping_generations == early_stopping_generations
+    assert config.genetic.early_stopping_tolerance == 0.0001
+    assert population_size * (generation_count + 1) * len(trial_seeds) == maximum_simulations
+
+
+def test_default_external_reference_search_matches_balanced_profile() -> None:
+    """The unnamed default must remain the recommended balanced search rather than a fourth budget."""
+    repository = Path(__file__).parents[3]
+    default = load_configuration_pair(repository / "examples" / "configs" / "default.toml").realized
+    balanced = load_configuration_pair(repository / "examples" / "configs" / "balanced.toml").realized
+
+    normalized_balanced = balanced.model_copy(
+        update={"run": balanced.run.model_copy(update={"directory": default.run.directory})}
+    )
+
+    assert default == normalized_balanced

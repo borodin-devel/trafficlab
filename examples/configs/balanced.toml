@@ -1,5 +1,5 @@
-# Recommended balanced template for fitting prepared external references from
-# dumps/.  This has the same scientific and safety settings as balanced.toml.
+# Balanced search profile for fitting prepared external references from dumps/.
+# This has the same scientific and safety settings as default.toml.
 #
 # Copy this file for every experiment and change [run].directory to a fresh,
 # unique path.  Initialize it with `trafficlab preflight ... --config-only`,
@@ -9,7 +9,7 @@
 # are deliberately non-runnable provenance placeholders.
 
 [run]
-directory = "../../runs/default"
+directory = "../../runs/balanced"
 # Covers the largest checked local dump, a generated trace up to the final
 # guard, checkpoints, histories, temporary siblings, and ordinary filesystem
 # overhead.  Increase this for larger future inputs.

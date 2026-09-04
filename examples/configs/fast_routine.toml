@@ -1,5 +1,5 @@
-# Recommended balanced template for fitting prepared external references from
-# dumps/.  This has the same scientific and safety settings as balanced.toml.
+# Fast routine profile for fitting prepared external references from dumps/.
+# It retains the complete scientific surface while limiting optimization cost.
 #
 # Copy this file for every experiment and change [run].directory to a fresh,
 # unique path.  Initialize it with `trafficlab preflight ... --config-only`,
@@ -9,7 +9,7 @@
 # are deliberately non-runnable provenance placeholders.
 
 [run]
-directory = "../../runs/default"
+directory = "../../runs/fast-routine"
 # Covers the largest checked local dump, a generated trace up to the final
 # guard, checkpoints, histories, temporary siblings, and ordinary filesystem
 # overhead.  Increase this for larger future inputs.
@@ -51,18 +51,17 @@ max_output_bytes = 4_000_000_000
 max_wall_seconds = 300.0
 
 [genetic]
-# Twenty-eight individuals give each of the seven families four initial lanes.
-# Fifty generations and three common simulation seeds permit at most 4,284
-# full-window simulations.  Resume preserves every whole-generation checkpoint.
-# Early stopping requires 12 consecutive generations without an absolute
-# best-fitness improvement greater than 0.0001.
-population_size = 28
-generation_count = 50
+# Fourteen individuals give each of the seven families two initial lanes.  Ten
+# generations and one simulation seed permit at most 154 full-window
+# simulations.  This profile favors turnaround over optimizer robustness.
+# Early stopping requires three consecutive stagnant generations.
+population_size = 14
+generation_count = 10
 tournament_size = 5
 elite_count = 2
-trial_seeds = [17, 29, 43]
+trial_seeds = [17]
 duplicate_mutation_attempts = 10
-early_stopping_generations = 12
+early_stopping_generations = 3
 early_stopping_tolerance = 0.0001
 resume = true
 

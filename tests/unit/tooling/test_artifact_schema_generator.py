@@ -85,7 +85,13 @@ def test_schema_five_directory_contains_current_fitness_and_model_roots() -> Non
 
 def test_release_configs_enable_exactly_all_families_and_equal_fitness_weights() -> None:
     """Release templates must carry every configured family and one equal contribution per mandatory method."""
-    for name in ("default.toml", "minimal.toml"):
+    for name in (
+        "default.toml",
+        "minimal.toml",
+        "fast_routine.toml",
+        "balanced.toml",
+        "maximum_quality.toml",
+    ):
         document = tomllib.loads((REPOSITORY / "examples" / "configs" / name).read_text(encoding="utf-8"))
         config = ExperimentConfig.model_validate(document)
 
