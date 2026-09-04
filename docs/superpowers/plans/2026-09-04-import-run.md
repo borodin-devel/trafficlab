@@ -529,7 +529,7 @@ git commit -m "feat(cli): run imported traffic captures"
 - Produces: reproducible current-head validation evidence and a reviewed clean branch ready for integration.
 - Consumes: complete imported acquisition, CLI, fixtures, architecture, and user documentation.
 
-- [ ] **[STEP-46-9bcd76ab] Run locked sync and repository-wide static checks**
+- [x] **[STEP-46-9bcd76ab] Run locked sync and repository-wide static checks**
 
 ```bash
 uv sync --locked --all-groups --all-extras
@@ -540,23 +540,23 @@ uv run --all-extras pyright
 
 Stop on the first failure, return it to its smallest owner, and repeat only the failed static command after the focused correction.
 
-- [ ] **[STEP-47-ecca463d] Run the authoritative Ordinary gate**
+- [x] **[STEP-47-ecca463d] Run the authoritative Ordinary gate**
 
 Copy the exact Ordinary command from `architecture/DEVELOPMENT.md`, including its `run_bounded.sh` memory/swap/wall limits, four workers, work stealing, marker expression, and duration report. Require every non-Docker/non-Internet test to pass.
 
-- [ ] **[STEP-48-7c755bac] Run the authoritative branch-aware Coverage gate**
+- [x] **[STEP-48-7c755bac] Run the authoritative branch-aware Coverage gate**
 
 Copy the exact Coverage command from `architecture/DEVELOPMENT.md`. Require all selected tests to pass and combined `trafficlab` plus `trafficlab_dashboard` branch-aware coverage to remain at least 90%.
 
-- [ ] **[STEP-49-0b726b3a] Run every deterministic fixture, schema, benchmark, and probe check**
+- [x] **[STEP-49-0b726b3a] Run every deterministic fixture, schema, benchmark, and probe check**
 
 Run the exact deterministic command list from the Release gate in `architecture/DEVELOPMENT.md`, including fixture generators, 13 public schemas, reduction, both benchmarks, immutable scientific-stack example, and both current/historical probes. Add the import-run fixture manifest/check command established by Task 2.
 
-- [ ] **[STEP-50-6bb5e2df] Run the available bounded Docker and Internet gate once**
+- [x] **[STEP-50-6bb5e2df] Run the available bounded Docker and Internet gate once**
 
 Use the exact External command from `architecture/DEVELOPMENT.md` with the repository's credential-free Wikimedia HTTPS URL. This verifies the feature did not regress the live-capture path; `import-run` itself must not create a Docker resource.
 
-- [ ] **[STEP-51-1cb2d249] Run the installed command from the classic PCAP fixture**
+- [x] **[STEP-51-1cb2d249] Run the installed command from the classic PCAP fixture**
 
 Create a temporary configuration by loading the checked small fit configuration through `load_configuration_pair`, changing only `run.directory` to a fresh absolute temporary directory, and writing it with `render_effective_config`. Invoke under the focused bounded wrapper:
 
@@ -568,11 +568,11 @@ uv run --locked trafficlab import-run \
 
 Require status 0, exact source hashes unchanged, no child process observed, exactly nine artifacts, one non-reused import lineage, and saved-model generation/comparison reproduction.
 
-- [ ] **[STEP-52-85bb83f3] Run the installed command from the noncanonical PCAPNG fixture**
+- [x] **[STEP-52-85bb83f3] Run the installed command from the noncanonical PCAPNG fixture**
 
 Repeat Step 51 with a different fresh temporary configuration/run directory and `tests/fixtures/data/import_run/noncanonical-pcapng-source`. Require stable timestamp correction, multi-interface collapse, exact frame/length preservation, no Docker resource, nine artifacts, and reproduction. Do not reuse the PCAP run or change scientific settings.
 
-- [ ] **[STEP-53-f2bcb365] Write and commit reproducible validation evidence**
+- [x] **[STEP-53-f2bcb365] Write and commit reproducible validation evidence**
 
 Create `docs/evidence/2026-09-04-import-run.md` with the exact commands, source/output identities, resource/status sidecars, normalized packet facts, no-external-process proof, nine-file inventories, reproduction result, and selected family/scores labeled as non-causal smoke observations.
 
