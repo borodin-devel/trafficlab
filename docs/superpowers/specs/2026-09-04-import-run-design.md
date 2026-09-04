@@ -239,9 +239,17 @@ checked input. Independent review must report no Critical or Important finding.
 `architecture/SYSTEM.md` defines the public command, normalization, composition,
 reuse, and failure contract. `architecture/CAPTURE.md` distinguishes imported
 reference acquisition from Docker capture. `architecture/TESTING.md` owns its
-verification matrix. The root README and Russian quick start show exact command
-examples and explain that supplied `capture.json` direction metadata is not
-re-inferred.
+verification matrix.
+
+The root `README.md` and `QUICK_START_RU.md` make `import-run` the primary,
+shortest workflow for prepared or raw supplied directories. Each shows one
+copyable command using a named configuration profile and a directory containing
+the exact capture pair. They state that Trafficlab converts and orders the
+capture internally, uses the supplied `capture.json` without re-inferring its
+MAC, performs no Docker capture, and retains results under configured
+`run.directory`. The older config-only preflight, manual copy, `fit`, `generate`,
+and `compare` sequence remains documented only as the advanced staged/resume
+workflow.
 
 Architecture documents contain only stable behavior and verification
 requirements, not implementation progress or dated results.
