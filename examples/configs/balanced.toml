@@ -1,12 +1,12 @@
-# Balanced search profile for fitting prepared external references from dumps/.
+# Balanced search profile for importing external references from dumps/.
 # This has the same scientific and safety settings as default.toml.
 #
 # Copy this file for every experiment and change [run].directory to a fresh,
-# unique path.  Initialize it with `trafficlab preflight ... --config-only`,
-# then copy the prepared pair into that run directory as `reference.pcapng`
-# and `capture.json`.  Use the standalone `fit`, `generate`, and `compare`
-# commands.  Do not use `capture` or `run`: the target and capture values below
-# are deliberately non-runnable provenance placeholders.
+# unique path, then run `trafficlab import-run EXPERIMENT DUMP_DIRECTORY`.
+# The manual `preflight --config-only`, pair copy, `fit`, `generate`, and
+# `compare` sequence is only for advanced diagnosis or resume.  Do not use
+# `capture` or `run`: the target and capture values below are deliberately
+# non-runnable provenance placeholders.
 
 [run]
 directory = "../../runs/balanced"

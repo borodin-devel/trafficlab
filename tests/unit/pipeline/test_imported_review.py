@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -287,7 +288,7 @@ def test_deadline_file_helpers_reject_unstable_or_unreadable_inputs(
             nonlocal calls
             calls += 1
             state = real_state(status)
-            mismatch_call = 2 if failure == "during" else 6
+            mismatch_call = 2 if failure == "during" else 3
             return (*state[:-1], state[-1] + 1) if calls == mismatch_call else state
 
         monkeypatch.setattr(imported_io, "_path_state", unstable_state)
@@ -564,3 +565,204 @@ def test_authoritative_preflight_overlap_race_never_creates_source_artifact(
 
     assert _run_entries(source.directory) == before
     assert not (source.directory / "nested-run").exists()
+
+
+@pytest.mark.parametrize("operation", ["read", "identify", "copy"])
+@pytest.mark.parametrize("replacement_kind", ["symlink", "fifo"])
+def test_import_reads_bind_nonfollowing_nonblocking_descriptor_before_validation(
+    operation: str,
+    replacement_kind: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    source.write_bytes(b"original")
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"outside")
+    destination = tmp_path / "snapshot"
+    real_open = os.open
+    raced = False
+
+    def racing_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777) -> int:
+        nonlocal raced
+        if Path(path) == source and not raced:
+            raced = True
+            source.unlink()
+            if replacement_kind == "symlink":
+                source.symlink_to(outside)
+            else:
+                os.mkfifo(source)
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(imported_io.os, "open", racing_open)
+
+    with pytest.raises(TrafficlabError, match="imported reference acquisition failed"):
+        if operation == "read":
+            imported_io._read_bytes_deadline(source, deadline=1.0, clock=lambda: 0.0, kind="source")
+        elif operation == "identify":
+            imported_io._identify_file_deadline(source, deadline=1.0, clock=lambda: 0.0, kind="source")
+        else:
+            imported_module._copy_snapshot(source, destination, deadline=1.0, clock=lambda: 0.0)
+
+    assert raced is True
+    assert not destination.exists()
+
+
+def test_run_creation_rejects_parent_swapped_to_source_symlink_after_overlap_guard(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_copy(tmp_path)
+    safe_parent = tmp_path / "safe-parent"
+    safe_parent.mkdir()
+    run_directory = safe_parent / "run"
+    configured = copy.deepcopy(valid_config_data)
+    cast(dict[str, object], configured["run"])["directory"] = str(run_directory)
+    experiment = tmp_path / "experiment.toml"
+    experiment.write_text(tomli_w.dumps(configured), encoding="utf-8")
+    real_require = imported_module._require_separate_directories
+    calls = 0
+
+    def swap_after_authoritative_guard(source_directory: Path, configured_run: Path) -> None:
+        nonlocal calls
+        real_require(source_directory, configured_run)
+        calls += 1
+        if calls == 3:
+            safe_parent.rename(tmp_path / "displaced-safe-parent")
+            safe_parent.symlink_to(source.directory, target_is_directory=True)
+
+    monkeypatch.setattr(imported_module, "_require_separate_directories", swap_after_authoritative_guard)
+    before = _run_entries(source.directory)
+
+    with pytest.raises(TrafficlabError, match="run directory"):
+        run_imported_experiment(experiment, source.directory)
+
+    assert _run_entries(source.directory) == before
+    assert not (source.directory / "run").exists()
+
+
+@pytest.mark.parametrize("entrypoint", ["direct", "coordinator"])
+def test_import_temp_root_creation_failure_is_actionable_and_coordinator_owned(
+    entrypoint: str,
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_copy(tmp_path)
+    experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+
+    def failed_mkdtemp(*args: object, **kwargs: object) -> str:
+        del args, kwargs
+        raise PermissionError("mkdtemp permission sentinel")
+
+    monkeypatch.setattr(imported_module.tempfile, "mkdtemp", failed_mkdtemp)
+
+    with pytest.raises(TrafficlabError, match="could not create owned temporary directory"):
+        if entrypoint == "direct":
+            import_reference(source, prepared, clock=lambda: 0.0)
+        else:
+            shutil.rmtree(prepared.run_directory)
+            run_imported_experiment(experiment, source.directory)
+
+    if entrypoint == "coordinator":
+        records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
+        assert records[-1]["event"] == "run_failed"
+        assert records[-1]["failed_stage"] == "capture"
+
+
+@pytest.mark.parametrize("persistent", [False, True], ids=["retry-succeeds", "retry-fails"])
+def test_import_resolves_publisher_cleanup_warnings_before_success_lineage(
+    persistent: bool,
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_copy(tmp_path)
+    _experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+    real_unlink = os.unlink
+    attempts: dict[Path, int] = {}
+
+    def fail_creator_temp_once(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], *args: object, **kwargs: object
+    ) -> None:
+        candidate = Path(path)
+        if candidate.name.startswith(".capture-pair."):
+            attempts[candidate] = attempts.get(candidate, 0) + 1
+            if persistent or attempts[candidate] == 1:
+                raise OSError("publisher cleanup sentinel")
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(imported_io.os, "unlink", fail_creator_temp_once)
+
+    if persistent:
+        with pytest.raises(TrafficlabError, match="publisher.*cleanup"):
+            import_reference(source, prepared, clock=lambda: 0.0)
+        records = [json.loads(line) for line in (prepared.run_directory / "run.log").read_text().splitlines()]
+        assert not [record for record in records if record.get("event") == "reference_imported"]
+        assert tuple(prepared.run_directory.glob(".capture-pair.*"))
+    else:
+        result = import_reference(source, prepared, clock=lambda: 0.0)
+        assert result.reused is False
+        assert not tuple(prepared.run_directory.glob(".capture-pair.*"))
+        assert all(count == 2 for count in attempts.values())
+
+
+@pytest.mark.parametrize("boundary", ["source", "output", "authority", "deadline"])
+def test_reuse_revalidates_every_authority_after_lineage_append(
+    boundary: str,
+    valid_config_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_copy(tmp_path)
+    _experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+    import_reference(source, prepared, clock=lambda: 0.0)
+    real_append = imported_module.append_run_log
+    appended = False
+
+    def append_then_race(run_directory: Path, record: object) -> None:
+        nonlocal appended
+        document = cast(dict[str, object], record)
+        real_append(run_directory, document)
+        if document.get("event") != "reference_imported" or document.get("reused") is not True:
+            return
+        appended = True
+        if boundary == "source":
+            source.capture_path.write_bytes(source.capture_path.read_bytes() + b"changed")
+        elif boundary == "output":
+            canonical = run_directory / "reference.pcapng"
+            replacement = run_directory / "replacement.pcapng"
+            replacement.write_bytes(canonical.read_bytes())
+            os.replace(replacement, canonical)
+        elif boundary == "authority":
+            real_append(run_directory, {**document, "reused": False, "packet_count": 999})
+
+    monkeypatch.setattr(imported_module, "append_run_log", append_then_race)
+
+    def clock() -> float:
+        return 61.0 if boundary == "deadline" and appended else 0.0
+
+    with pytest.raises(TrafficlabError):
+        import_reference(source, prepared, clock=clock)
+
+
+def test_fresh_import_rechecks_source_after_lineage_append(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_copy(tmp_path)
+    _experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+    real_append = imported_module.append_run_log
+
+    def append_then_mutate_source(run_directory: Path, record: object) -> None:
+        document = cast(dict[str, object], record)
+        real_append(run_directory, document)
+        if document.get("event") == "reference_imported":
+            source.metadata_path.write_bytes(source.metadata_path.read_bytes() + b" ")
+
+    monkeypatch.setattr(imported_module, "append_run_log", append_then_mutate_source)
+
+    with pytest.raises(TrafficlabError, match="source changed"):
+        import_reference(source, prepared, clock=lambda: 0.0)

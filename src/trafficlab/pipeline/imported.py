@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import shutil
 import stat
 import tempfile
@@ -25,10 +24,12 @@ from trafficlab.common.trace import parse_capture_metadata
 from trafficlab.pipeline.imported_io import (
     _check_deadline,
     _check_optional_deadline,
+    _copy_snapshot,
     _identify_file_deadline,
     _path_identity,
     _path_state,
     _read_bytes_deadline,
+    _resolve_publication_warnings,
 )
 from trafficlab.pipeline.types import RunDependencies, RunResult
 from trafficlab.preflight.types import PreparedExperiment
@@ -39,7 +40,6 @@ if TYPE_CHECKING:
     from trafficlab.generation.stage import GenerationStageResult
 
 _NORMALIZATION_VERSION = "scapy-raw-v1"
-_COPY_CHUNK_SIZE = 1024 * 1024
 type _PathState = tuple[int, int, int, int, int, int]
 
 
@@ -147,24 +147,6 @@ def _deadline(prepared: PreparedExperiment, clock: Callable[[], float]) -> float
     if not math.isfinite(started) or not math.isfinite(deadline) or deadline <= started:
         raise _import_error("could not calculate a finite future import deadline")
     return deadline
-
-
-def _copy_snapshot(source: Path, destination: Path, *, deadline: float, clock: Callable[[], float]) -> None:
-    try:
-        with source.open("rb") as input_stream, destination.open("xb") as output_stream:
-            while True:
-                _check_deadline(deadline, clock)
-                chunk = input_stream.read(_COPY_CHUNK_SIZE)
-                if not chunk:
-                    break
-                output_stream.write(chunk)
-            output_stream.flush()
-            os.fsync(output_stream.fileno())
-        _check_deadline(deadline, clock)
-    except TrafficlabError:
-        raise
-    except OSError as error:
-        raise _import_error(f"could not snapshot source file {source}: {error}") from error
 
 
 def _source_identities(
@@ -326,6 +308,21 @@ def _read_import_lineage(
         raise _reuse_error(f"could not read canonical import lineage: {error}") from error
 
 
+def _require_matching_import_lineage(
+    records: list[dict[str, object]], publication: dict[str, object]
+) -> dict[str, object]:
+    publications = [record for record in records if record.get("reused") is False]
+    reuses = [record for record in records if record.get("reused") is True]
+    if len(publications) != 1 or len(publications) + len(reuses) != len(records):
+        raise _reuse_error("lineage must contain exactly one authoritative publication")
+    if publications[0] != publication:
+        raise _reuse_error("authoritative publication lineage does not match current identities")
+    current_reuse = {**publication, "reused": True}
+    if any(record != current_reuse for record in reuses):
+        raise _reuse_error("a retained reuse record contradicts the authoritative publication")
+    return current_reuse
+
+
 def _reuse_import(
     source: ImportSource,
     prepared: PreparedExperiment,
@@ -369,20 +366,20 @@ def _reuse_import(
         reused=False,
     )
     records = _read_import_lineage(prepared.run_directory, deadline=deadline, clock=clock)
-    publications = [record for record in records if record.get("reused") is False]
-    reuses = [record for record in records if record.get("reused") is True]
-    if len(publications) != 1 or len(publications) + len(reuses) != len(records):
-        raise _reuse_error("lineage must contain exactly one authoritative publication")
-    if publications[0] != current_publication:
-        raise _reuse_error("authoritative publication lineage does not match current identities")
-    current_reuse = {**current_publication, "reused": True}
-    if any(record != current_reuse for record in reuses):
-        raise _reuse_error("a retained reuse record contradicts the authoritative publication")
+    current_reuse = _require_matching_import_lineage(records, current_publication)
 
     _require_unchanged_source(source, source_identities, deadline=deadline, clock=clock)
     if _canonical_identities(prepared.run_directory, deadline=deadline, clock=clock) != output_identities:
         raise _reuse_error("the canonical capture pair changed before reuse logging")
     append_run_log(prepared.run_directory, current_reuse)
+    _check_deadline(deadline, clock)
+    _require_unchanged_source(source, source_identities, deadline=deadline, clock=clock)
+    if _canonical_identities(prepared.run_directory, deadline=deadline, clock=clock) != output_identities:
+        raise _reuse_error("the canonical capture pair changed after reuse logging")
+    _require_matching_import_lineage(
+        _read_import_lineage(prepared.run_directory, deadline=deadline, clock=clock),
+        current_publication,
+    )
     return CaptureResult(
         run_directory=prepared.run_directory,
         reference_path=prepared.run_directory / "reference.pcapng",
@@ -404,7 +401,10 @@ def _fresh_import(
         raise _reuse_error("retained import lineage forbids a second authoritative publication")
     expected = _source_identities(source, deadline=deadline, clock=clock)
     _check_deadline(deadline, clock)
-    temporary_root = Path(tempfile.mkdtemp(dir=run_directory, prefix=".import-reference."))
+    try:
+        temporary_root = Path(tempfile.mkdtemp(dir=run_directory, prefix=".import-reference."))
+    except OSError as error:
+        raise _import_error(f"could not create owned temporary directory in {run_directory}: {error}") from error
     try:
         capture_snapshot = temporary_root / "source.capture"
         metadata_snapshot = temporary_root / "capture.json"
@@ -452,6 +452,7 @@ def _fresh_import(
             raise _import_error("canonical capture pair appeared during imported publication")
         if publication.inspection.packet_count != normalization.packet_count:
             raise _import_error("published packet count differs from normalized output")
+        _resolve_publication_warnings(run_directory, publication)
         _require_owned_publication(
             run_directory,
             publication,
@@ -478,6 +479,8 @@ def _fresh_import(
             clock=clock,
         )
         append_run_log(run_directory, record)
+        _check_deadline(deadline, clock)
+        _require_unchanged_source(source, expected, deadline=deadline, clock=clock)
         _require_owned_publication(
             run_directory,
             publication,

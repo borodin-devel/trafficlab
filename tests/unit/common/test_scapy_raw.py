@@ -22,6 +22,7 @@ from trafficlab.common.scapy_io import raw as scapy_raw
 _FIXTURES = raw_support.FIXTURES
 _UINT32_MAX = raw_support.UINT32_MAX
 _capture_fact = raw_support.capture_fact
+_capture_with_option_areas = raw_support.capture_with_option_areas
 _classic_capture = raw_support.classic_capture
 _expected_packets = raw_support.expected_packets
 _pcapng_block = raw_support.pcapng_block
@@ -145,6 +146,21 @@ class _ErrorSpool:
     def write(self, frame: bytes) -> int:
         del frame
         raise AssertionError("write must not follow a failed tell")
+
+
+class _ReadErrorSpool:
+    def __init__(self, boundary: Literal["seek", "read"]) -> None:
+        self._boundary = boundary
+
+    def seek(self, offset: int) -> int:
+        del offset
+        if self._boundary == "seek":
+            raise OSError("spool seek sentinel")
+        return 0
+
+    def read(self, size: int) -> bytes:
+        del size
+        raise OSError("spool read sentinel")
 
 
 def _assert_trafficlab_error(
@@ -431,6 +447,52 @@ def test_valid_scapy_metadata_blocks_do_not_end_packet_decoding_early(tmp_path: 
     result = normalize_raw_capture(source, tmp_path / "output.pcapng", deadline=None)
 
     assert result == RawNormalizationResult("pcapng", 3, 2.0, False)
+
+
+def test_pcapng_structure_rejects_malformed_if_tsresol_before_scapy_decode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source.pcapng"
+    tsresol = struct.pack(">HHH", 9, 2, 6) + b"\x00\x00" + struct.pack(">HH", 0, 0)
+    source.write_bytes(_capture_with_option_areas(idb_options=tsresol))
+
+    def forbidden_reader(_input_format: scapy_raw.RawCaptureFormat) -> scapy_raw._RawReaderFactory:
+        raise AssertionError("malformed if_tsresol reached Scapy decoding")
+
+    monkeypatch.setattr(scapy_raw, "_reader_boundary", forbidden_reader)
+
+    _assert_trafficlab_error(
+        source,
+        tmp_path / "output.pcapng",
+        message="Interface Description Block if_tsresol option must contain exactly 1 byte",
+    )
+
+
+@pytest.mark.parametrize("owner", ["idb", "epb"])
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (struct.pack(">HH", 1, 5) + b"abcd", "option value and padding exceed"),
+        (struct.pack(">HHI", 0, 1, 0), "end-of-options marker must have length 0"),
+        (struct.pack(">HHHH", 0, 0, 1, 0), "data follows the end-of-options marker"),
+    ],
+    ids=["value-padding-overrun", "invalid-end-length", "data-after-end"],
+)
+def test_pcapng_structure_rejects_malformed_bounded_option_areas(
+    owner: str, options: bytes, message: str, tmp_path: Path
+) -> None:
+    source = tmp_path / "source.pcapng"
+    source.write_bytes(
+        _capture_with_option_areas(
+            idb_options=options if owner == "idb" else b"",
+            epb_options=options if owner == "epb" else b"",
+        )
+    )
+
+    with pytest.raises(TrafficlabError, match=message) as caught:
+        scapy_raw._validate_pcapng_structure(source)
+
+    assert caught.value.corrective_action == _MALFORMED_ACTION
 
 
 @pytest.mark.parametrize("block_type", [3, 6], ids=["simple", "enhanced"])
@@ -906,6 +968,19 @@ def test_short_spool_read_is_an_actionable_output_failure() -> None:
 
     with pytest.raises(TrafficlabError, match="spool returned a short frame") as caught:
         scapy_raw._read_spooled_frame(BytesIO(b"\x00" * 13), packet)
+
+    assert (
+        caught.value.corrective_action
+        == "verify free space and permissions for the run directory, then retry import-run"
+    )
+
+
+@pytest.mark.parametrize("boundary", ["seek", "read"])
+def test_spool_seek_or_read_oserror_names_the_spool_boundary(boundary: Literal["seek", "read"]) -> None:
+    packet = scapy_raw._RawPacketIndex(Fraction(1), 0, 0, 14, 14)
+
+    with pytest.raises(TrafficlabError, match="could not read raw capture normalization spool") as caught:
+        scapy_raw._read_spooled_frame(cast(BinaryIO, _ReadErrorSpool(boundary)), packet)
 
     assert (
         caught.value.corrective_action

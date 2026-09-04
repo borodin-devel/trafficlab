@@ -197,6 +197,27 @@ def pcapng_capture(
     return bytes(content)
 
 
+def capture_with_option_areas(*, idb_options: bytes = b"", epb_options: bytes = b"") -> bytes:
+    byte_order = b"\x1a\x2b\x3c\x4d"
+    section = pcapng_block(">", 0x0A0D0D0A, byte_order + struct.pack(">HHq", 1, 0, -1))
+    interface = pcapng_block(">", 1, struct.pack(">HHI", 1, 0, 262_144) + idb_options)
+    frames = (
+        bytes.fromhex("ffffffffffff0242ac1100020806"),
+        bytes.fromhex("0011223344550242ac110002080045000000"),
+    )
+    packets = bytearray()
+    for index, frame in enumerate(frames, start=1):
+        options = epb_options if index == 1 else b""
+        body = (
+            struct.pack(">IIIII", 0, 0, index * 1_000_000, len(frame), 64)
+            + frame
+            + b"\x00" * (-len(frame) % 4)
+            + options
+        )
+        packets.extend(pcapng_block(">", 6, body))
+    return section + interface + bytes(packets)
+
+
 def write_two_packet_capture(
     path: Path,
     *,

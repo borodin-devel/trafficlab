@@ -192,22 +192,43 @@ def _validate_pcapng_packet_area(captured_length: int, available_length: int) ->
         )
 
 
-def _validate_epb_options(
+def _validate_pcapng_options(
     stream: BinaryIO,
     *,
     offset: int,
     length: int,
     endian: Literal["<", ">"],
+    owner: Literal["Interface Description Block", "Enhanced Packet Block"],
 ) -> None:
     cursor = 0
-    while length - cursor >= 4:
+    while cursor < length:
+        remaining = length - cursor
+        if remaining < 4:
+            raise _invalid_capture(f"PCAPNG {owner} option header is truncated")
         stream.seek(offset + cursor)
-        code, value_length = struct.unpack(f"{endian}HH", stream.read(4))
-        if code == 2 and value_length != 4:
+        header = stream.read(4)
+        if len(header) != 4:
+            raise _invalid_capture(f"PCAPNG {owner} option header is truncated")
+        code, value_length = struct.unpack(f"{endian}HH", header)
+        if code == 0:
+            if value_length != 0:
+                raise _invalid_capture(f"PCAPNG {owner} end-of-options marker must have length 0")
+            if remaining != 4:
+                raise _invalid_capture(f"PCAPNG {owner} data follows the end-of-options marker")
+            return
+        padded_length = value_length + (-value_length % 4)
+        if 4 + padded_length > remaining:
+            raise _invalid_capture(f"PCAPNG {owner} option value and padding exceed the option area")
+        value_and_padding = stream.read(padded_length)
+        if len(value_and_padding) != padded_length:
+            raise _invalid_capture(f"PCAPNG {owner} option value or padding is truncated")
+        if owner == "Interface Description Block" and code == 9 and value_length != 1:
+            raise _invalid_capture("PCAPNG Interface Description Block if_tsresol option must contain exactly 1 byte")
+        if owner == "Enhanced Packet Block" and code == 2 and value_length != 4:
             raise _invalid_capture("PCAPNG Enhanced Packet Block flags option must contain 4 bytes")
-        if code in {0x8001, 0x8003} and value_length != 4:
+        if owner == "Enhanced Packet Block" and code in {0x8001, 0x8003} and value_length != 4:
             raise _invalid_capture("PCAPNG Enhanced Packet Block process index option must contain 4 bytes")
-        cursor += 4 + value_length + (-value_length % 4)
+        cursor += 4 + padded_length
 
 
 def _validate_pcapng_structure(
@@ -260,6 +281,13 @@ def _validate_pcapng_structure(
                     stream.seek(offset + 8)
                     _linktype, snaplen = struct.unpack(f"{endian}HxxI", stream.read(8))
                     interface_snaplens.append(snaplen)
+                    _validate_pcapng_options(
+                        stream,
+                        offset=offset + 16,
+                        length=body_length - 8,
+                        endian=endian,
+                        owner="Interface Description Block",
+                    )
                 elif block_type in {2, 6}:
                     if body_length < 20:
                         raise _invalid_capture("PCAPNG packet block is shorter than its fixed header")
@@ -276,11 +304,12 @@ def _validate_pcapng_structure(
                     _validate_pcapng_packet_area(captured_length, available_length)
                     if block_type == 6:
                         padded_length = captured_length + (-captured_length % 4)
-                        _validate_epb_options(
+                        _validate_pcapng_options(
                             stream,
                             offset=offset + 28 + padded_length,
                             length=available_length - padded_length,
                             endian=endian,
+                            owner="Enhanced Packet Block",
                         )
                 elif block_type == 3:
                     _require_pcapng_body(body_length, 4, "Simple Packet Block")
@@ -461,8 +490,14 @@ def _timestamp_text(ticks: int) -> str:
 
 
 def _read_spooled_frame(spool: BinaryIO, packet: _RawPacketIndex) -> bytes:
-    spool.seek(packet.offset)
-    frame = spool.read(packet.captured_length)
+    try:
+        spool.seek(packet.offset)
+        frame = spool.read(packet.captured_length)
+    except OSError as error:
+        raise TrafficlabError(
+            f"could not read raw capture normalization spool: {error}",
+            corrective_action=_WRITE_ACTION,
+        ) from error
     if len(frame) != packet.captured_length:
         raise TrafficlabError(
             "raw capture normalization spool returned a short frame",

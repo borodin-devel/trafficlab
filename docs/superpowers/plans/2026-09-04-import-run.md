@@ -69,7 +69,7 @@ Checked deterministic evidence:
 - Produces: unchanged imports for `EncodedPcapng`, `PcapngPacket`, `encode_pcapng`, `read_pcapng`, `read_pcapng_bytes`, and `read_pcapng_packets`; empty package slot for later raw normalization.
 - Consumes: the complete current `scapy_io.py` behavior at `c503f77`.
 
-- [ ] **[STEP-1-d6b49f5f] Write the failing package-boundary and public-import tests**
+- [x] **[STEP-1-d6b49f5f] Write the failing package-boundary and public-import tests**
 
 Add a structural expectation that `trafficlab/common/scapy_io/` contains exactly `__init__.py` and `trace.py`, while `trafficlab/common/scapy_io.py` is absent. Extend the import test to assert every existing public object remains importable from `trafficlab.common.scapy_io` and keeps its public name.
 
@@ -84,7 +84,7 @@ def test_scapy_io_is_one_owned_package_with_stable_public_exports() -> None:
     assert read_pcapng.__name__ == "read_pcapng"
 ```
 
-- [ ] **[STEP-2-4fbdcee5] Run the focused tests and preserve the expected structural RED**
+- [x] **[STEP-2-4fbdcee5] Run the focused tests and preserve the expected structural RED**
 
 Run:
 
@@ -96,7 +96,7 @@ uv run --locked pytest -q -n 0 \
 
 Expected: the new package inventory fails because the current owner is the flat `scapy_io.py` module; existing behavioral tests remain green.
 
-- [ ] **[STEP-3-38bafe73] Move the existing implementation without semantic edits**
+- [x] **[STEP-3-38bafe73] Move the existing implementation without semantic edits**
 
 Mechanically move the complete flat module to `scapy_io/trace.py`. Create an explicit export surface:
 
@@ -122,7 +122,7 @@ __all__ = (
 
 Do not rename functions, change dynamic Scapy imports, or change PCAPNG semantics.
 
-- [ ] **[STEP-4-a6de6bd0] Update structural ownership for the package**
+- [x] **[STEP-4-a6de6bd0] Update structural ownership for the package**
 
 Remove `scapy_io.py` from the flat `common` inventory and add:
 
@@ -132,7 +132,7 @@ Remove `scapy_io.py` from the flat `common` inventory and add:
 
 to the nested-package inventory. Keep the 600-line cap on both files.
 
-- [ ] **[STEP-5-d1d95b46] Run unchanged Scapy and downstream behavior green**
+- [x] **[STEP-5-d1d95b46] Run unchanged Scapy and downstream behavior green**
 
 Run the full current Scapy owner plus capture, fit-input, generation-publication, and comparison selections that import it:
 
@@ -147,7 +147,7 @@ uv run --locked pytest -q -n 0 \
 
 Expected: PASS with no fixture byte changes.
 
-- [ ] **[STEP-6-48d00afc] Run targeted format, lint, typing, and layout checks**
+- [x] **[STEP-6-48d00afc] Run targeted format, lint, typing, and layout checks**
 
 ```bash
 uv run --locked ruff format --check src/trafficlab/common/scapy_io tests/unit/common/test_scapy_io.py tests/unit/pipeline/test_source_layout.py
@@ -161,7 +161,7 @@ git diff --check
 
 Review the exact Task 1 range for import compatibility, cycles, changed exception text, and accidental byte changes. Repeat only the affected focused gate after fixes.
 
-- [ ] **[STEP-8-af6827fb] Commit the behavior-preserving package split**
+- [x] **[STEP-8-af6827fb] Commit the behavior-preserving package split**
 
 ```bash
 git add src/trafficlab/common/scapy_io tests/unit/common/test_scapy_io.py tests/unit/pipeline/test_source_layout.py

@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 import tempfile
 import tomllib
 from pathlib import Path
@@ -11,6 +12,63 @@ from pydantic import ValidationError
 from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import render_effective_config
 from trafficlab.common.errors import TrafficlabError
+
+_DIRECTORY_OPEN_FLAGS = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+
+
+def _open_directory_nofollow(path: Path, *, create_missing: bool) -> int:
+    if not path.is_absolute():
+        raise OSError(f"directory path is not absolute: {path}")
+    descriptor = os.open(path.anchor, _DIRECTORY_OPEN_FLAGS)
+    try:
+        for component in path.parts[1:]:
+            try:
+                child = os.open(component, _DIRECTORY_OPEN_FLAGS, dir_fd=descriptor)
+            except FileNotFoundError:
+                if not create_missing:
+                    raise
+                try:
+                    os.mkdir(component, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+                child = os.open(component, _DIRECTORY_OPEN_FLAGS, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def _create_bound_run_directory(run_directory: Path) -> None:
+    parent_descriptor = _open_directory_nofollow(run_directory.parent, create_missing=True)
+    created = False
+    try:
+        bound_parent = os.fstat(parent_descriptor)
+        visible_parent = run_directory.parent.stat(follow_symlinks=False)
+        if not stat.S_ISDIR(visible_parent.st_mode) or (bound_parent.st_dev, bound_parent.st_ino) != (
+            visible_parent.st_dev,
+            visible_parent.st_ino,
+        ):
+            raise OSError(f"run parent changed before directory creation: {run_directory.parent}")
+        os.mkdir(run_directory.name, dir_fd=parent_descriptor)
+        created = True
+        bound_run = os.stat(run_directory.name, dir_fd=parent_descriptor, follow_symlinks=False)
+        visible_run = run_directory.stat(follow_symlinks=False)
+        if not stat.S_ISDIR(visible_run.st_mode) or (bound_run.st_dev, bound_run.st_ino) != (
+            visible_run.st_dev,
+            visible_run.st_ino,
+        ):
+            raise OSError(f"run path changed during directory creation: {run_directory}")
+    except BaseException:
+        if created:
+            try:
+                os.rmdir(run_directory.name, dir_fd=parent_descriptor)
+            except OSError:
+                pass
+        raise
+    finally:
+        os.close(parent_descriptor)
 
 
 def _validate_persisted_snapshot(path: Path, expected: ExperimentConfig) -> None:
@@ -83,7 +141,7 @@ def create_run_directory(config: ExperimentConfig) -> Path:
     """Create a run directory and atomically publish its realized configuration."""
     run_directory = config.run.directory
     try:
-        run_directory.mkdir(parents=True, exist_ok=False)
+        _create_bound_run_directory(run_directory)
     except FileExistsError as error:
         raise TrafficlabError(
             f"run directory already exists: {run_directory}",

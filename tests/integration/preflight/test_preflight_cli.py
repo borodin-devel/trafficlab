@@ -650,6 +650,16 @@ def test_default_external_reference_search_matches_balanced_profile() -> None:
     assert default == normalized_balanced
 
 
+def test_balanced_profile_header_leads_with_import_run_and_marks_manual_stages_advanced() -> None:
+    """The recommended checked profile must agree with both quick-start documents."""
+    repository = Path(__file__).parents[3]
+    header = (repository / "examples/configs/balanced.toml").read_text(encoding="utf-8").split("\n[run]\n", 1)[0]
+
+    assert "trafficlab import-run" in header
+    assert "advanced" in header.lower()
+    assert header.index("trafficlab import-run") < header.index("preflight")
+
+
 def test_external_reference_profile_documentation_counts_only_selection_trials() -> None:
     """The profile budget table must disclose simulations outside genetic selection."""
     repository = Path(__file__).parents[3]
