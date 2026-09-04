@@ -13,6 +13,7 @@ from typing import Literal, cast
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.scientific_stack_source_bound import verify_historical_pymoo_evidence
 from tests.scientific.fitting.probes.mmpp_likelihood.evidence import build_probe_evidence as build_mmpp_evidence
 from tests.scientific.fitting.probes.mmpp_likelihood.evidence import write_probe_evidence as write_mmpp_evidence
 from tests.scientific.fitting.probes.pymoo_optimizer.evidence import build_probe_evidence as build_pymoo_evidence
@@ -26,6 +27,7 @@ _DEFAULT_OUTPUTS = {
 }
 _HISTORICAL_PYMOO_SIZE = 2_026_258
 _HISTORICAL_PYMOO_SHA256 = "6985ec0f1291b675f240cf2f7a32e90ac16bad6be3f3978968b82f24a56f486e"
+_HISTORICAL_PYMOO_SOURCE_COMMIT = "970fcd3cc559d443f400574478272b701de6297f"
 type ProbeName = Literal["mmpp", "pymoo", "pymoo-v5"]
 
 
@@ -48,9 +50,16 @@ def _run_probe(name: ProbeName, output: Path, *, check: bool) -> bool:
             content = output.read_bytes()
         except OSError:
             return False
-        return (
+        matched = (
             len(content) == _HISTORICAL_PYMOO_SIZE and hashlib.sha256(content).hexdigest() == _HISTORICAL_PYMOO_SHA256
         )
+        if matched:
+            verify_historical_pymoo_evidence(
+                output,
+                repository=_REPOSITORY,
+                source_commit=_HISTORICAL_PYMOO_SOURCE_COMMIT,
+            )
+        return matched
     if name == "pymoo-v5":
         return write_pymoo_evidence(output, build_pymoo_evidence(), check=check)
     raise AssertionError(f"unreachable scientific-stack probe {name!r}")

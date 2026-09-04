@@ -288,10 +288,11 @@ scripts/run_bounded.sh \
 ```
 
 The combined probe check treats `pymoo_cases.json` as immutable schema-3
-history and validates only its accepted byte identity. Current schema-5 pymoo
-semantics are generated and strictly parsed under the distinct evidence schema
-version and path `pymoo_schema5_cases.json`; current tooling never rewrites or
-reinterprets the historical snapshot.
+history, requires its accepted byte identity, and executes its source
+revision's checker in an offline no-local/no-hardlink detached clone. Current
+schema-5 pymoo semantics are generated and strictly parsed under the distinct
+evidence schema version and path `pymoo_schema5_cases.json`; current tooling
+never rewrites or reinterprets the historical snapshot.
 
 ### Process-tree containment
 

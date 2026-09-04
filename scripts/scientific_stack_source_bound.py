@@ -104,3 +104,62 @@ def verify_source_bound_evidence(evidence_path: Path, *, repository: Path) -> st
             },
         )
     return commit
+
+
+def verify_historical_pymoo_evidence(evidence_path: Path, *, repository: Path, source_commit: str) -> str:
+    """Run the immutable pymoo snapshot through its source revision's checker."""
+    repository_root = repository.resolve()
+    evidence = evidence_path.resolve()
+    try:
+        relative = evidence.relative_to(repository_root)
+    except ValueError as error:
+        raise ValueError("historical pymoo evidence must be inside the repository") from error
+    if (
+        type(source_commit) is not str
+        or len(source_commit) != 40
+        or any(character not in "0123456789abcdef" for character in source_commit)
+    ):
+        raise ValueError("historical pymoo source commit is invalid")
+    if evidence.is_symlink() or not evidence.is_file():
+        raise ValueError("historical pymoo evidence must be a regular file")
+    with tempfile.TemporaryDirectory(prefix="trafficlab-pymoo-history-") as temporary:
+        clone = Path(temporary) / "source"
+        _run_historical_command(
+            (
+                "git",
+                "clone",
+                "--no-checkout",
+                "--no-local",
+                "--no-hardlinks",
+                str(repository_root),
+                str(clone),
+            ),
+            cwd=repository_root,
+        )
+        _run_historical_command(("git", "checkout", "--detach", source_commit), cwd=clone)
+        destination = clone / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(evidence, destination)
+        _run_historical_command(
+            (
+                "uv",
+                "run",
+                "--offline",
+                "--locked",
+                "--active",
+                "--no-project",
+                "python",
+                "scripts/run_scientific_stack_probes.py",
+                "--probe",
+                "pymoo",
+                "--check",
+            ),
+            cwd=clone,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.pathsep.join(
+                    item for item in (str(clone / "src"), os.environ.get("PYTHONPATH")) if item
+                ),
+            },
+        )
+    return source_commit

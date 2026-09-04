@@ -85,9 +85,11 @@ independent simulation-distance baseline and retains the true rates and window.
 
 ## `pymoo_cases.json` and `pymoo_schema5_cases.json` fields
 
-`pymoo_cases.json` is byte-immutable schema-3 history and is checked only by
-its exact accepted byte identity. It is never passed through the current
-schema-5 configuration model or overwritten by the probe runner.
+`pymoo_cases.json` is byte-immutable schema-3 history. Its check first requires
+the exact accepted byte identity, then runs the snapshot through the checker in
+an offline no-local/no-hardlink detached clone of its source revision. It is
+never passed through the current schema-5 configuration model or overwritten by
+the probe runner.
 `pymoo_schema5_cases.json` has evidence schema version 4 and probe identity
 `pymoo_optimizer_schema5`; it is the generator-owned current snapshot. The
 structural fields below apply to each snapshot under its owning version.
