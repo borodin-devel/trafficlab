@@ -83,7 +83,7 @@ EXPECTED_NESTED_PACKAGES = {
         "transitions.py",
     },
     "capture/docker": {"__init__.py", "compose.py", "image.py", "process.py", "types.py"},
-    "common/scapy_io": {"__init__.py", "trace.py"},
+    "common/scapy_io": {"__init__.py", "raw.py", "trace.py"},
     "fitting/genetic/checkpoint": {
         "__init__.py",
         "codec.py",

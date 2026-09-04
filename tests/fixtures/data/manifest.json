@@ -44,6 +44,42 @@
     },
     {
       "mode": 420,
+      "path": "import_run/classic-nanosecond.pcap",
+      "sha256": "c28504e38740ee0007a0df18c0b25ce5bf7aa99ea474547365441fb59b3b9d49",
+      "size": 88
+    },
+    {
+      "mode": 420,
+      "path": "import_run/classic-pcap-source/capture.json",
+      "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
+      "size": 63
+    },
+    {
+      "mode": 420,
+      "path": "import_run/classic-pcap-source/source.pcap",
+      "sha256": "bbe915ef29375ca541bf5c057e213e8dd37a60581548451cb370128eae786d83",
+      "size": 155
+    },
+    {
+      "mode": 420,
+      "path": "import_run/expected.json",
+      "sha256": "e2a3dff2ab5215c7bd59319993cd8178728140bf3a6d5430692245ea698ab548",
+      "size": 3576
+    },
+    {
+      "mode": 420,
+      "path": "import_run/noncanonical-pcapng-source/capture.json",
+      "sha256": "2573517a5b00a2cdde835ea2b16e6d537f8dbd90c9de843aa55b70f1a8944315",
+      "size": 63
+    },
+    {
+      "mode": 420,
+      "path": "import_run/noncanonical-pcapng-source/source.pcapng",
+      "sha256": "9d8ccbd5a5304486b243de5992b92a7b620ca214964c8766efd63d56b50b2c71",
+      "size": 292
+    },
+    {
+      "mode": 420,
       "path": "process_guard/process_guard_tree.py",
       "sha256": "7b9122b821ac8b3db392f97e2bab4fc6e56b3c48622de73474a0c175f35f5621",
       "size": 2547

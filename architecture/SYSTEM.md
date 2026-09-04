@@ -58,6 +58,49 @@ Generated Ethernet frames use `capture.json`'s target MAC. Their peer MAC is
 `02:00:00:00:00:02`. Outbound frames use the target as source; inbound frames use
 the target as destination. Rendering any other direction value is an error.
 
+### Raw capture normalization
+
+Imported raw captures are decoded and encoded only inside
+`trafficlab.common.scapy_io`. The decoder selects classic PCAP or PCAPNG from
+the file magic, independently of the filename suffix. Classic PCAP accepts both
+byte orders and both microsecond and nanosecond timestamp variants. PCAPNG
+accepts either byte order, multiple interfaces, Scapy-supported decimal or
+binary timestamp resolutions, and packet blocks for which Scapy supplies a
+complete frame, wire length, interface link type, and timestamp. Every packet
+must use Ethernet link type 1.
+
+For classic PCAP, the timestamp is the exact fraction
+`(seconds * resolution + subsecond_ticks) / resolution`. Scapy exposes PCAPNG
+`tsresol` metadata as ticks per second, so its exact timestamp is
+`((timestamp_high << 32) | timestamp_low) / tsresol`. Timestamp components must
+be nonnegative, finite, within their encoded integer ranges, and representable
+in canonical microsecond PCAPNG. Captured length must equal the exact returned
+frame bytes and be at least 14; wire length must be no smaller than captured
+length. Missing timestamps, malformed or truncated containers and blocks,
+unsupported magic, non-Ethernet packets, and inconsistent lengths are errors.
+
+Each validated frame is written exactly once to a temporary binary spool on the
+destination filesystem. Memory retains only an index containing its exact
+timestamp fraction, input ordinal, spool offset, captured length, and wire
+length. Sorting by `(timestamp, input_ordinal)` makes timestamp ordering stable,
+including exact ties, without retaining all frame bytes in memory. Temporary
+spool state is removed on success, failure, deadline expiry, and interruption.
+
+The normalized capture has one Ethernet interface and only Enhanced Packet
+Blocks. It preserves each captured frame byte, captured length, and wire length.
+Each exact timestamp is converted with
+`floor(timestamp * 1_000_000)`; therefore an already-microsecond value is stable
+and higher precision is truncated toward the past. The canonical output must
+retain at least two packets and its last microsecond tick must exceed its first;
+their difference divided by `1_000_000` is the observation window.
+
+Raw normalization receives one absolute monotonic deadline. It checks that
+deadline before input access, at structural block and decoded-packet boundaries,
+on both sides of index sorting, after every encoded packet, and after output
+closure. Source read failures and destination or spool failures become
+actionable Trafficlab errors; no script, subprocess, alternate packet library,
+or payload rewrite participates.
+
 ## One program
 
 Trafficlab is one Python package with one CLI. Pipeline stages are ordinary

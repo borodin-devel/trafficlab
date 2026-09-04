@@ -188,11 +188,11 @@ git commit -m "refactor(io): split Scapy boundary"
 - Produces: `RawNormalizationResult`, `normalize_raw_capture(source, destination, *, deadline, clock) -> RawNormalizationResult` exported from `trafficlab.common.scapy_io`.
 - Consumes: Scapy 2.7 raw readers/writer, the existing microsecond output convention, and same-filesystem temporary destinations supplied by callers.
 
-- [ ] **[STEP-9-d86f176d] Create independent deterministic raw-capture fixtures and expected facts**
+- [x] **[STEP-9-d86f176d] Create independent deterministic raw-capture fixtures and expected facts**
 
 Construct checked binary fixtures with literal Ethernet frames and timestamps. `expected.json` must independently record ordered frame hex, captured lengths, wire lengths, input ordinals, exact source timestamp fractions, canonical microsecond ticks, and whether reordering is expected. Include equal timestamp ties and two PCAPNG Ethernet interfaces. Update the fixture manifest only after manually checking these literals.
 
-- [ ] **[STEP-10-0fd927db] Write failing format, ordering, and preservation tests**
+- [x] **[STEP-10-0fd927db] Write failing format, ordering, and preservation tests**
 
 Define the desired public records in tests:
 
@@ -212,7 +212,7 @@ assert read_raw_output(output) == expected_frames_and_lengths
 
 Require byte-for-byte frame preservation, stable ties, one output Ethernet interface, Enhanced Packet Blocks, microsecond truncation toward the past, and format detection independent of suffix.
 
-- [ ] **[STEP-11-78de174d] Run normalization tests RED**
+- [x] **[STEP-11-78de174d] Run normalization tests RED**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/common/test_scapy_raw.py
@@ -220,7 +220,7 @@ uv run --locked pytest -q -n 0 tests/unit/common/test_scapy_raw.py
 
 Expected: collection or assertions fail because `RawNormalizationResult` and `normalize_raw_capture` do not exist.
 
-- [ ] **[STEP-12-e1d746f7] Implement exact raw-reader format detection and timestamp conversion**
+- [x] **[STEP-12-e1d746f7] Implement exact raw-reader format detection and timestamp conversion**
 
 Use magic bytes to select `RawPcapReader` or `RawPcapNgReader`; never use the suffix. Convert timestamps to exact `Fraction` values:
 
@@ -233,7 +233,7 @@ microsecond_ticks = timestamp.numerator * 1_000_000 // timestamp.denominator
 
 Require finite nonnegative effective timestamps, Ethernet link type 1, `caplen == len(frame) >= 14`, and `wirelen >= caplen > 0`. Wrap Scapy/OSError failures as actionable `TrafficlabError` without exposing a traceback.
 
-- [ ] **[STEP-13-96d07661] Implement the owned spool and compact stable ordering index**
+- [x] **[STEP-13-96d07661] Implement the owned spool and compact stable ordering index**
 
 Write each frame once to a temporary binary spool and retain only:
 
@@ -249,15 +249,15 @@ class _RawPacketIndex:
 
 Sort by `(timestamp, ordinal)`. Check the absolute deadline before reading, after every packet, before sorting, after sorting, after every output packet, and after closing output. The spool is always caller-owned temporary state.
 
-- [ ] **[STEP-14-08b4e3c2] Implement canonical single-interface Enhanced Packet Block output**
+- [x] **[STEP-14-08b4e3c2] Implement canonical single-interface Enhanced Packet Block output**
 
 Set writer link type 1, write the first header once, seek and read every exact spooled frame, and write `caplen`, `wirelen`, and the canonical microsecond timestamp. Fail if spool reads are short or if fewer than two packets remain. Compute the observation window from canonical output ticks and require it to be positive.
 
-- [ ] **[STEP-15-7fb3d354] Add malformed, non-Ethernet, length, timestamp, and deadline RED/GREEN cases**
+- [x] **[STEP-15-7fb3d354] Add malformed, non-Ethernet, length, timestamp, and deadline RED/GREEN cases**
 
 Cover PCAP/PCAPNG truncation, unsupported magic, non-Ethernet readers, 13-byte frames, captured-length mismatch, `wirelen < caplen`, negative/overflow timestamp fields, one packet, equal-only timestamps, deadline before open, deadline during input, and deadline during output. Each expected error names the violated boundary and corrective action.
 
-- [ ] **[STEP-16-e6ba82ee] Prove failed-function line and branch coverage**
+- [x] **[STEP-16-e6ba82ee] Prove failed-function line and branch coverage**
 
 Run the raw owner with branch coverage and inspect its missing regions:
 
@@ -269,11 +269,11 @@ uv run --locked coverage report -m src/trafficlab/common/scapy_io/raw.py
 
 Add direct cases until every function exposed by RED has 100% executable line and branch coverage.
 
-- [ ] **[STEP-17-91bdb278] Document stable raw normalization semantics**
+- [x] **[STEP-17-91bdb278] Document stable raw normalization semantics**
 
 Update `SYSTEM.md` with decoded-format selection, exact accepted variants, stable ordering, microsecond truncation, frame/length preservation, spool bounds, and rejection behavior. Update `TESTING.md` with the independent fixture oracle. Do not mention task state or dated results.
 
-- [ ] **[STEP-18-0102afe9] Run the raw-I/O focused gate and deterministic fixture audit**
+- [x] **[STEP-18-0102afe9] Run the raw-I/O focused gate and deterministic fixture audit**
 
 ```bash
 uv run --locked ruff format --check src/trafficlab/common/scapy_io tests/unit/common tests/fixtures/data/import_run
@@ -288,7 +288,7 @@ git diff --check
 
 Review exact timestamp arithmetic, Scapy metadata handling, frame preservation, multi-interface collapse, spool safety, deadline coverage, and fixture independence. Repeat the raw owner after any fix.
 
-- [ ] **[STEP-20-24f47418] Commit raw normalization and its normative contract**
+- [x] **[STEP-20-24f47418] Commit raw normalization and its normative contract**
 
 ```bash
 git add src/trafficlab/common/scapy_io tests/unit/common/test_scapy_raw.py \

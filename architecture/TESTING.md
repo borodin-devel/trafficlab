@@ -115,9 +115,11 @@ Unit tests are deterministic and do not start Docker. They cover:
   counts;
 - strict `capture.json` parsing, normalized target MACs, unknown fields, and
   missing or invalid metadata;
-- Scapy PCAPNG reading/writing, accepted container syntax, timestamp
-  resolutions, unsupported interfaces/link types, frame lengths,
-  outbound/inbound round trips, and stable normalized errors;
+- Scapy PCAPNG reading/writing and raw PCAP/PCAPNG normalization, accepted
+  container syntax and byte orders, timestamp resolutions and exact stable
+  ordering, unsupported interfaces/link types, frame and wire lengths,
+  microsecond truncation, outbound/inbound round trips, and stable actionable
+  errors;
 - source-MAC classification for outbound, inbound unicast, and inbound broadcast
   frames;
 - canonical trace ordering, direction values, IAT extraction, reference
@@ -156,6 +158,18 @@ Unit tests are deterministic and do not start Docker. They cover:
 Every equation in an algorithm document has at least one independent small
 example. Important fixed expectations include:
 
+- Raw-capture normalization uses immutable binary inputs under
+  `tests/fixtures/data/import_run`. `expected.json` independently records each
+  ordered frame as literal hex, captured and wire lengths, original ordinal,
+  reduced source timestamp fraction, canonical microsecond ticks, packet count,
+  observation window, and reordering result. A test-only `struct` parser checks
+  the classic little-endian microsecond PCAP, classic big-endian nanosecond PCAP,
+  and big-endian two-interface obsolete-block PCAPNG against those literals
+  without Scapy or production normalization code. The output oracle separately
+  requires one Ethernet Interface Description Block, only Enhanced Packet
+  Blocks, exact frame and length preservation, stable equal-timestamp order,
+  exact submicrosecond ordering before truncation, and suffix-independent format
+  detection.
 - Observation window: reference `[10, 11, 13]` normalizes to `[0, 1, 3]` with
   `W = 3`. A generated event at `3` is retained and one after `3` is cropped. A
   naturally earlier last event creates multiscale trailing zeros; a safety guard

@@ -1,0 +1,112 @@
+{
+  "captures": {
+    "classic_nanosecond": {
+      "input_format": "pcap",
+      "observation_window_seconds": 1.25,
+      "ordered_packets": [
+        {
+          "canonical_microsecond_ticks": 4000000,
+          "captured_length": 14,
+          "frame_hex": "ffffffffffff0242ac1100020806",
+          "input_ordinal": 0,
+          "source_timestamp_fraction": "4000000999/1000000000",
+          "wire_length": 60
+        },
+        {
+          "canonical_microsecond_ticks": 5250000,
+          "captured_length": 18,
+          "frame_hex": "0011223344550242ac110002080045000000",
+          "input_ordinal": 1,
+          "source_timestamp_fraction": "5250000999/1000000000",
+          "wire_length": 64
+        }
+      ],
+      "packet_count": 2,
+      "reordered": false,
+      "source_path": "classic-nanosecond.pcap"
+    },
+    "classic_pcap": {
+      "input_format": "pcap",
+      "observation_window_seconds": 1.25,
+      "ordered_packets": [
+        {
+          "canonical_microsecond_ticks": 10250000,
+          "captured_length": 14,
+          "frame_hex": "ffffffffffff0242ac1100020806",
+          "input_ordinal": 1,
+          "source_timestamp_fraction": "41/4",
+          "wire_length": 60
+        },
+        {
+          "canonical_microsecond_ticks": 10250000,
+          "captured_length": 16,
+          "frame_hex": "0242ac11000202000000000186dd6000",
+          "input_ordinal": 2,
+          "source_timestamp_fraction": "41/4",
+          "wire_length": 72
+        },
+        {
+          "canonical_microsecond_ticks": 11500000,
+          "captured_length": 18,
+          "frame_hex": "0011223344550242ac110002080045000000",
+          "input_ordinal": 0,
+          "source_timestamp_fraction": "23/2",
+          "wire_length": 64
+        },
+        {
+          "canonical_microsecond_ticks": 11500000,
+          "captured_length": 19,
+          "frame_hex": "33330000000102000000000186dddeadbeef00",
+          "input_ordinal": 3,
+          "source_timestamp_fraction": "23/2",
+          "wire_length": 80
+        }
+      ],
+      "packet_count": 4,
+      "reordered": true,
+      "source_path": "classic-pcap-source/source.pcap"
+    },
+    "noncanonical_pcapng": {
+      "input_format": "pcapng",
+      "observation_window_seconds": 1.25,
+      "ordered_packets": [
+        {
+          "canonical_microsecond_ticks": 10250000,
+          "captured_length": 16,
+          "frame_hex": "0242ac11000202000000000186dd6000",
+          "input_ordinal": 2,
+          "source_timestamp_fraction": "102500001/10000000",
+          "wire_length": 74
+        },
+        {
+          "canonical_microsecond_ticks": 10250000,
+          "captured_length": 14,
+          "frame_hex": "ffffffffffff0242ac1100020806",
+          "input_ordinal": 1,
+          "source_timestamp_fraction": "102500009/10000000",
+          "wire_length": 62
+        },
+        {
+          "canonical_microsecond_ticks": 11500000,
+          "captured_length": 18,
+          "frame_hex": "0011223344550242ac110002080045000000",
+          "input_ordinal": 0,
+          "source_timestamp_fraction": "115000009/10000000",
+          "wire_length": 68
+        },
+        {
+          "canonical_microsecond_ticks": 11500000,
+          "captured_length": 19,
+          "frame_hex": "33330000000102000000000186dddeadbeef00",
+          "input_ordinal": 3,
+          "source_timestamp_fraction": "115000009/10000000",
+          "wire_length": 82
+        }
+      ],
+      "packet_count": 4,
+      "reordered": true,
+      "source_path": "noncanonical-pcapng-source/source.pcapng"
+    }
+  },
+  "schema_version": 1
+}
