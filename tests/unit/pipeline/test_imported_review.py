@@ -766,3 +766,21 @@ def test_fresh_import_rechecks_source_after_lineage_append(
 
     with pytest.raises(TrafficlabError, match="source changed"):
         import_reference(source, prepared, clock=lambda: 0.0)
+
+
+def test_reuse_rejects_a_noop_lineage_append(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reuse success requires exactly one newly durable matching lineage record."""
+    source = _source_copy(tmp_path)
+    _experiment, prepared_object = _prepared(valid_config_data, tmp_path)
+    prepared = cast(imported_module.PreparedExperiment, prepared_object)
+    import_reference(source, prepared, clock=lambda: 0.0)
+
+    def noop_append(_run_directory: Path, _record: object) -> None:
+        return None
+
+    monkeypatch.setattr(imported_module, "append_run_log", noop_append)
+
+    with pytest.raises(TrafficlabError, match="exactly one new reuse record"):
+        import_reference(source, prepared, clock=lambda: 0.0)

@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import stat
 from pathlib import Path
 from typing import cast
 
@@ -29,13 +30,26 @@ def test_create_run_directory_atomically_publishes_a_reloadable_snapshot(
     real_replace = os.replace
     replaced_sources: list[Path] = []
 
-    def observed_replace(source: str | Path, destination: str | Path) -> None:
+    def observed_replace(
+        source: str | Path,
+        destination: str | Path,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+    ) -> None:
         source_path = Path(source)
         destination_path = Path(destination)
-        assert source_path.is_file()
-        assert not destination_path.exists()
+        assert src_dir_fd is not None and dst_dir_fd == src_dir_fd
+        assert stat.S_ISREG(os.stat(source, dir_fd=src_dir_fd, follow_symlinks=False).st_mode)
+        with pytest.raises(FileNotFoundError):
+            os.stat(destination, dir_fd=dst_dir_fd, follow_symlinks=False)
         replaced_sources.append(source_path)
-        real_replace(source_path, destination_path)
+        real_replace(
+            source_path,
+            destination_path,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+        )
 
     monkeypatch.setattr(artifacts.os, "replace", observed_replace)
 
@@ -56,6 +70,52 @@ def test_create_run_directory_atomically_publishes_a_reloadable_snapshot(
     assert all(source.suffix == ".tmp" for source in replaced_sources)
     assert list(run_path.glob(".experiment.toml.*.tmp")) == []
     assert list(run_path.glob(".run.log.*.tmp")) == []
+
+
+def test_create_run_directory_keeps_publication_bound_after_parent_swap(
+    valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post-create parent swap must never redirect config or log writes into a source tree."""
+    source = tmp_path / "source"
+    source.mkdir()
+    sentinel = source / "source.pcap"
+    sentinel.write_bytes(b"source-bytes")
+    safe_parent = tmp_path / "safe-parent"
+    safe_parent.mkdir()
+    displaced_parent = tmp_path / "displaced-safe-parent"
+    config = _config_with_run_directory(valid_config_data, safe_parent / source.name)
+    real_render = artifacts.render_effective_config
+
+    def swap_parent_before_publication(current: ExperimentConfig) -> bytes:
+        safe_parent.rename(displaced_parent)
+        safe_parent.symlink_to(tmp_path, target_is_directory=True)
+        return real_render(current)
+
+    monkeypatch.setattr(artifacts, "render_effective_config", swap_parent_before_publication)
+
+    with pytest.raises(TrafficlabError, match="run path changed"):
+        create_run_directory(config)
+
+    assert {path.name: path.read_bytes() for path in source.iterdir()} == {sentinel.name: b"source-bytes"}
+    assert not (displaced_parent / source.name).exists()
+
+
+def test_create_run_directory_supports_a_stable_symlink_parent(
+    valid_config_data: dict[str, object], tmp_path: Path
+) -> None:
+    """Ordinary preflight may publish beneath a stable configured parent alias."""
+    real_parent = tmp_path / "real-parent"
+    real_parent.mkdir()
+    alias_parent = tmp_path / "alias-parent"
+    alias_parent.symlink_to(real_parent, target_is_directory=True)
+    run_directory = alias_parent / "case"
+    config = _config_with_run_directory(valid_config_data, run_directory)
+
+    result = create_run_directory(config)
+
+    assert result == run_directory
+    assert load_experiment(real_parent / "case" / "experiment.toml") == config
+    assert (real_parent / "case" / "run.log").is_file()
 
 
 def test_existing_run_directory_is_never_replaced(valid_config_data: dict[str, object], tmp_path: Path) -> None:
@@ -106,8 +166,18 @@ def test_failed_publication_preserves_an_unowned_file_in_the_new_directory(
     config = _config_with_run_directory(valid_config_data, run_directory)
     unowned = run_directory / "unowned.txt"
 
-    def fail_replace(_source: str | Path, destination: str | Path) -> None:
-        Path(destination).parent.joinpath(unowned.name).write_text("external", encoding="utf-8")
+    def fail_replace(
+        _source: str | Path,
+        _destination: str | Path,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+    ) -> None:
+        del src_dir_fd
+        assert dst_dir_fd is not None
+        descriptor = os.open(unowned.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=dst_dir_fd)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(b"external")
         raise OSError("injected replace failure")
 
     monkeypatch.setattr(artifacts.os, "replace", fail_replace)
@@ -179,13 +249,15 @@ def test_log_publication_failure_reports_cleanup_without_broad_deletion(
     """A failed owned-file unlink must leave visible evidence rather than trigger broad cleanup."""
     run_directory = tmp_path / "runs" / "case"
     config = _config_with_run_directory(valid_config_data, run_directory)
-    real_unlink = Path.unlink
+    real_unlink = os.unlink
     real_fsync = os.fsync
 
-    def fail_snapshot_unlink(path: Path, missing_ok: bool = False) -> None:
-        if path.name == "experiment.toml":
+    def fail_snapshot_unlink(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], *, dir_fd: int | None = None
+    ) -> None:
+        if Path(path).name == "experiment.toml":
             raise OSError("injected unlink failure")
-        real_unlink(path, missing_ok=missing_ok)
+        real_unlink(path, dir_fd=dir_fd)
 
     fsync_calls = 0
 
@@ -196,7 +268,7 @@ def test_log_publication_failure_reports_cleanup_without_broad_deletion(
             raise OSError("injected log fsync failure")
         real_fsync(file_descriptor)
 
-    monkeypatch.setattr(Path, "unlink", fail_snapshot_unlink)
+    monkeypatch.setattr(artifacts.os, "unlink", fail_snapshot_unlink)
     monkeypatch.setattr(artifacts.os, "fsync", fail_log_fsync)
 
     with pytest.raises(TrafficlabError, match="cleanup incomplete.*injected unlink failure"):

@@ -32,11 +32,24 @@ from trafficlab.preflight.types import DockerPreflight, PreflightFinding, Prefli
 type ConfigurationGuard = Callable[[ConfigurationPair], None]
 
 
-def _prepare_configuration_pair(path: Path, pair: ConfigurationPair, *, writable: Writable) -> PreparedExperiment:
+def _prepare_configuration_pair(
+    path: Path,
+    pair: ConfigurationPair,
+    *,
+    writable: Writable,
+    configuration_guard: ConfigurationGuard | None = None,
+) -> PreparedExperiment:
     config = pair.realized
     report = check_local(config, writable=writable)
     report.require_success()
-    run_directory = create_run_directory(config)
+    guard: Callable[[], None] | None = None
+    if configuration_guard is not None:
+
+        def guard_configuration() -> None:
+            configuration_guard(pair)
+
+        guard = guard_configuration
+    run_directory = create_run_directory(config, configuration_guard=guard)
     return PreparedExperiment(
         source=path,
         portable_config=pair.portable,
@@ -98,11 +111,16 @@ def open_or_prepare_experiment(
 ) -> PreparedExperiment:
     """Prepare an absent run or reopen an exact, authoritative prepared run without mutation."""
     pair = load_configuration_pair(path)
-    if configuration_guard is not None:
-        configuration_guard(pair)
     config = pair.realized
     if not config.run.directory.exists():
-        return _prepare_configuration_pair(path, pair, writable=writable)
+        return _prepare_configuration_pair(
+            path,
+            pair,
+            writable=writable,
+            configuration_guard=configuration_guard,
+        )
+    if configuration_guard is not None:
+        configuration_guard(pair)
     if not config.run.directory.is_dir():
         raise TrafficlabError(
             f"existing run is not reusable: run path is not a directory: {config.run.directory}",

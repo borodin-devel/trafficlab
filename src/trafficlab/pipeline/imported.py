@@ -376,10 +376,10 @@ def _reuse_import(
     _require_unchanged_source(source, source_identities, deadline=deadline, clock=clock)
     if _canonical_identities(prepared.run_directory, deadline=deadline, clock=clock) != output_identities:
         raise _reuse_error("the canonical capture pair changed after reuse logging")
-    _require_matching_import_lineage(
-        _read_import_lineage(prepared.run_directory, deadline=deadline, clock=clock),
-        current_publication,
-    )
+    retained_records = _read_import_lineage(prepared.run_directory, deadline=deadline, clock=clock)
+    if retained_records != [*records, current_reuse]:
+        raise _reuse_error("lineage must retain prior records plus exactly one new reuse record")
+    _require_matching_import_lineage(retained_records, current_publication)
     return CaptureResult(
         run_directory=prepared.run_directory,
         reference_path=prepared.run_directory / "reference.pcapng",
