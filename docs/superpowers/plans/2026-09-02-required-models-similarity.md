@@ -1201,7 +1201,7 @@ Run Big only after every earlier checkbox is complete. Fix any failure at its sm
 
 Use the unmodified 3,649-packet Moutai pair with `examples/required_candidates/big.toml`. Run standalone stages through a bounded outer scope, retain all canonical artifacts and resource measurements, and do not increase ten generations or three seeds after inspecting output.
 
-- [ ] **[STEP-124-6802a7e8] Audit evidence and obtain final independent review**
+- [x] **[STEP-124-6802a7e8] Audit evidence and obtain final independent review**
 
 Reproduce the saved final generation and comparison, verify schema-5 arithmetic/identities, document family/component outcomes without causal claims, and request final specification plus code-quality review. Fix every Critical/Important finding and rerun only its owning Small/Medium gate plus the final affected Big check.
 
