@@ -287,6 +287,12 @@ scripts/run_bounded.sh \
   examples/validation_study/evidence/<study-id>/ --repository .
 ```
 
+The combined probe check treats `pymoo_cases.json` as immutable schema-3
+history and validates only its accepted byte identity. Current schema-5 pymoo
+semantics are generated and strictly parsed under the distinct evidence schema
+version and path `pymoo_schema5_cases.json`; current tooling never rewrites or
+reinterprets the historical snapshot.
+
 ### Process-tree containment
 
 On Linux and WSL2 with systemd, `scripts/run_bounded.sh` creates a unique

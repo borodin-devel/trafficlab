@@ -18,6 +18,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.generation.models.acd import (
     AcdFamily,
+    AcdFitDiagnostics,
     AcdModel,
     _conditional_means,
     _exponential_negative_log_likelihood,
@@ -74,7 +75,13 @@ class ScriptedClock:
 
 
 def _model() -> AcdModel:
-    return AcdModel(omega=0.5, alpha=(0.2,), beta=(0.3,), marks=MARKS)
+    return AcdModel(
+        omega=0.5,
+        alpha=(0.2,),
+        beta=(0.3,),
+        diagnostics=AcdFitDiagnostics(1.0, 2.5, 7, True),
+        marks=MARKS,
+    )
 
 
 def test_family_declares_integer_order_chromosome_and_fixed_estimator_policy() -> None:
@@ -351,10 +358,42 @@ def test_fit_accepts_zero_iats_is_deterministic_and_returns_a_stationary_ordered
     assert first.omega > 0.0
     assert all(value >= 0.0 for value in (*first.alpha, *first.beta))
     assert math.fsum((*first.alpha, *first.beta)) < 1.0
+    assert first.diagnostics.initial_conditional_duration == 0.5
+    assert math.isfinite(first.diagnostics.final_negative_log_likelihood)
+    assert 0 <= first.diagnostics.iterations <= 500
+    assert first.diagnostics.converged is True
     assert first.marks.entries == (
         MarkCount(Direction.OUTBOUND, 60, 3),
         MarkCount(Direction.INBOUND, 100, 2),
     )
+
+
+def test_acd_wire_schema_requires_converged_bounded_likelihood_diagnostics() -> None:
+    """Discarding optimizer diagnostics would make a serialized ACD estimate unauditable."""
+    payload = {
+        **FAMILY.dump_fitted(_model()),
+        "diagnostics": {
+            "initial_conditional_duration": 1.0,
+            "final_negative_log_likelihood": 2.5,
+            "iterations": 7,
+            "converged": True,
+        },
+    }
+
+    assert AcdPayload.model_validate(payload).diagnostics.iterations == 7
+    for malformed in (
+        {**payload, "diagnostics": {**cast(dict[str, object], payload["diagnostics"]), "converged": False}},
+        {**payload, "diagnostics": {**cast(dict[str, object], payload["diagnostics"]), "iterations": 501}},
+        {
+            **payload,
+            "diagnostics": {
+                **cast(dict[str, object], payload["diagnostics"]),
+                "initial_conditional_duration": 0.0,
+            },
+        },
+    ):
+        with pytest.raises(ValidationError, match="diagnostics|converged|iterations|conditional"):
+            AcdPayload.model_validate(malformed)
 
 
 def test_fit_rejects_explicit_optimizer_nonconvergence(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -417,7 +456,7 @@ def test_model_rejects_nonpositive_nonstationary_or_unusable_parameters(
 ) -> None:
     """Invalid recursion state must fail at construction instead of during a later generation."""
     with pytest.raises((TypeError, ValueError)):
-        AcdModel(*parameters, MARKS)
+        AcdModel(*parameters, AcdFitDiagnostics(1.0, 2.5, 7, True), MARKS)
 
 
 def test_model_rejects_huge_finite_coefficients_as_nonstationary_without_overflow() -> None:
@@ -425,7 +464,7 @@ def test_model_rejects_huge_finite_coefficients_as_nonstationary_without_overflo
     maximum = math.nextafter(math.inf, 0.0)
 
     with pytest.raises(ValueError, match="coefficient"):
-        AcdModel(0.5, (maximum,), (maximum,), MARKS)
+        AcdModel(0.5, (maximum,), (maximum,), AcdFitDiagnostics(1.0, 2.5, 7, True), MARKS)
 
 
 def test_wire_payload_rejects_huge_finite_coefficients_as_validation_error() -> None:
@@ -435,6 +474,12 @@ def test_wire_payload_rejects_huge_finite_coefficients_as_validation_error() -> 
         "omega": 0.5,
         "alpha": [maximum],
         "beta": [maximum],
+        "diagnostics": {
+            "initial_conditional_duration": 1.0,
+            "final_negative_log_likelihood": 2.5,
+            "iterations": 7,
+            "converged": True,
+        },
         "marks": [{"direction": "outbound", "frame_length": 60, "count": 1}],
     }
 
@@ -467,13 +512,25 @@ def test_generation_uses_stationary_prehistory_unit_innovations_and_mark_after_a
     ("model", "exponentials", "window", "expected_timestamps"),
     (
         (
-            AcdModel(omega=0.6, alpha=(0.2, 0.1), beta=(0.3, 0.1), marks=MARKS),
+            AcdModel(
+                omega=0.6,
+                alpha=(0.2, 0.1),
+                beta=(0.3, 0.1),
+                diagnostics=AcdFitDiagnostics(2.0, 2.5, 7, True),
+                marks=MARKS,
+            ),
             (0.5, 2.0, 1.0, 10.0),
             7.0,
             (0.0, 1.0, 4.6, 6.76),
         ),
         (
-            AcdModel(omega=0.23, alpha=(0.1, 0.05, 0.02), beta=(0.3, 0.2, 0.1), marks=MARKS),
+            AcdModel(
+                omega=0.23,
+                alpha=(0.1, 0.05, 0.02),
+                beta=(0.3, 0.2, 0.1),
+                diagnostics=AcdFitDiagnostics(1.0, 2.5, 7, True),
+                marks=MARKS,
+            ),
             (0.5, 2.0, 1.0, 10.0),
             4.0,
             (0.0, 0.5, 2.4, 3.45),
@@ -619,7 +676,13 @@ def test_generation_rejects_invalid_empirical_choice_primitive() -> None:
 
 def test_generation_rejects_overflowed_duration_or_arrival_time() -> None:
     """Finite primitives whose product overflows must fail explicitly."""
-    model = AcdModel(omega=math.ldexp(1.0, 1023), alpha=(0.0,), beta=(0.0,), marks=MARKS)
+    model = AcdModel(
+        omega=math.ldexp(1.0, 1023),
+        alpha=(0.0,),
+        beta=(0.0,),
+        diagnostics=AcdFitDiagnostics(1.0, 2.5, 7, True),
+        marks=MARKS,
+    )
     with pytest.raises(TrafficlabError, match="duration|arrival time"):
         _generate_with_rng(
             model,
@@ -658,6 +721,12 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
         "omega": 0.5,
         "alpha": [0.2],
         "beta": [0.3],
+        "diagnostics": {
+            "initial_conditional_duration": 1.0,
+            "final_negative_log_likelihood": 2.5,
+            "iterations": 7,
+            "converged": True,
+        },
         "marks": [
             {"direction": "outbound", "frame_length": 60, "count": 1},
             {"direction": "inbound", "frame_length": 100, "count": 3},
@@ -671,6 +740,8 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
         {**payload, "alpha": [-0.1]},
         {**payload, "alpha": [0.7], "beta": [0.3]},
         {**payload, "alpha": [0.2, 0.1]},
+        {**payload, "diagnostics": {**cast(dict[str, object], payload["diagnostics"]), "converged": False}},
+        {**payload, "diagnostics": {**cast(dict[str, object], payload["diagnostics"]), "iterations": 501}},
         {**payload, "marks": []},
         {**payload, "marks": [first_mark, first_mark]},
         {**payload, "extra": 1},

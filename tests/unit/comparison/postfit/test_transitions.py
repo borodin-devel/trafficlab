@@ -229,6 +229,28 @@ def test_transition_rejects_a_declared_vocabulary_outside_the_fixed_state_cap() 
         transition_matrix_diagnostic(trace, trace, 1.0, 10, 10, 1.0, (1.0, 0.0, 0.0))
 
 
+def test_transition_vocabulary_accepts_the_exact_state_and_cell_boundary() -> None:
+    """An off-by-one cap would reject the largest safe Cartesian vocabulary."""
+    vocabulary = transitions._vocabulary(6, 13)  # pyright: ignore[reportPrivateUsage]
+
+    assert len(vocabulary) == 256
+    assert len(vocabulary) * len(vocabulary) == 65_536
+
+
+def test_transition_rejects_overflow_before_constructing_any_cartesian_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Materializing attacker-sized ranges before the coupled cap would exhaust memory."""
+
+    def allocation_started(*_args: object) -> object:
+        raise AssertionError("Cartesian vocabulary allocation started before validation")
+
+    monkeypatch.setattr(transitions, "range", allocation_started, raising=False)
+
+    with pytest.raises(TrafficlabError, match="state or transition-cell count exceeds the cap"):
+        transitions._vocabulary(65_536, 65_536)  # pyright: ignore[reportPrivateUsage]
+
+
 def test_transition_rejects_a_finite_pseudocount_that_overflows_its_pmf_denominator() -> None:
     """A finite but extreme pseudocount must report a domain error, never divide by zero."""
     trace = _trace(((0.0, Direction.OUTBOUND, 10), (1.0, Direction.INBOUND, 20)))

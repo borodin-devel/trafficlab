@@ -12,7 +12,6 @@ from pydantic import (
     ConfigDict,
     Discriminator,
     Field,
-    StrictBool,
     StrictInt,
     Tag,
     model_validator,
@@ -99,16 +98,34 @@ class MmppPayload(_StrictWireModel):
 
 
 class NhppPayload(_StrictWireModel):
+    bin_edges: FloatVector
     rates: FloatVector
+    integrated_intensity: NonnegativeFloat
     bin_marks: MarkPayloadLists
     global_marks: MarkPayloads
 
     @model_validator(mode="after")
     def tables_match_rates_and_global_marks_are_valid(self) -> Self:
-        if not self.rates or len(self.rates) != len(self.bin_marks):
-            raise ValueError("rates and bin_marks must be nonempty and have the same length")
+        if not self.rates or len(self.rates) != len(self.bin_marks) or len(self.bin_edges) != len(self.rates) + 1:
+            raise ValueError("bin_edges, rates, and bin_marks must have matching nonempty dimensions")
         if any(rate < 0.0 for rate in self.rates):
             raise ValueError("rates must be finite nonnegative floats")
+        if self.bin_edges[0] != 0.0 or any(
+            left >= right for left, right in zip(self.bin_edges[:-1], self.bin_edges[1:], strict=True)
+        ):
+            raise ValueError("bin_edges must start at zero and be strictly increasing")
+        width = self.bin_edges[-1] / len(self.rates)
+        expected_edges = tuple(
+            self.bin_edges[-1] if index == len(self.rates) else index * width for index in range(len(self.rates) + 1)
+        )
+        if self.bin_edges != expected_edges:
+            raise ValueError("bin_edges must be the exact equal-width partition of their final window")
+        expected_intensity = math.fsum(
+            rate * (right - left)
+            for rate, left, right in zip(self.rates, self.bin_edges[:-1], self.bin_edges[1:], strict=True)
+        )
+        if self.integrated_intensity != expected_intensity:
+            raise ValueError("integrated_intensity must equal the exact rate integral over bin_edges")
         if not self.global_marks:
             raise ValueError("global_marks must not be empty")
         for marks in (self.global_marks, *self.bin_marks):
@@ -117,10 +134,18 @@ class NhppPayload(_StrictWireModel):
         return self
 
 
+class AcdDiagnosticsPayload(_StrictWireModel):
+    initial_conditional_duration: PositiveFloat
+    final_negative_log_likelihood: ExactFloat
+    iterations: Annotated[StrictInt, Field(ge=0, le=500)]
+    converged: Literal[True]
+
+
 class AcdPayload(_StrictWireModel):
     omega: PositiveFloat
     alpha: FloatVector
     beta: FloatVector
+    diagnostics: AcdDiagnosticsPayload
     marks: MarkPayloads
 
     @model_validator(mode="after")
@@ -251,7 +276,7 @@ class PacketHmmSamplePayload(_StrictWireModel):
 
 
 class PacketHmmDiagnosticsPayload(_StrictWireModel):
-    converged: StrictBool
+    converged: Literal[True]
     iterations: NonnegativeInt
     log_likelihoods: FloatVector
 
@@ -321,20 +346,11 @@ class PacketHmmPayload(_StrictWireModel):
             raise ValueError("transition_rows must be K x K")
         if len(self.emission_rows) != self.state_count or any(len(row) != symbol_count for row in self.emission_rows):
             raise ValueError("emission_rows must be K x M")
-        if self.diagnostics.converged:
-            if self.diagnostics.iterations < 1:
-                raise ValueError("converged diagnostics require at least one update")
-            else:
-                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
-                if not 0.0 <= final_improvement <= self.convergence_tolerance:
-                    raise ValueError("converged diagnostics require final improvement within tolerance")
-        else:
-            if self.diagnostics.iterations != self.maximum_iterations:
-                raise ValueError("nonconverged diagnostics must reach maximum_iterations")
-            else:
-                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
-                if final_improvement <= self.convergence_tolerance:
-                    raise ValueError("nonconverged diagnostics require final improvement above tolerance")
+        if self.diagnostics.iterations < 1:
+            raise ValueError("converged diagnostics require at least one update")
+        final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
+        if not 0.0 <= final_improvement <= self.convergence_tolerance:
+            raise ValueError("converged diagnostics require final improvement within tolerance")
         return self
 
 

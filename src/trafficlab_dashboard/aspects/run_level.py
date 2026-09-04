@@ -263,35 +263,42 @@ class FanoAllanAspect:
         diagnostics = _require_fano_allan(run, aspect_id=self.identifier)
         widths = np.asarray(diagnostics.widths, dtype=np.float64)
         series: list[LineSeries] = []
+        display_direction = {"total": "total", "outbound": "uplink", "inbound": "downlink"}
         for factor in ("fano", "allan"):
-            series.extend(
-                (
-                    _reduced_line_series(
-                        label=f"Reference total {factor.title()}",
-                        x=widths,
-                        y=np.asarray(
-                            [
-                                (scale.reference_fano if factor == "fano" else scale.reference_allan).total
-                                for scale in diagnostics.scales
-                            ],
-                            dtype=np.float64,
+            for direction in ("total", "outbound", "inbound"):
+                label_direction = display_direction[direction]
+                series.extend(
+                    (
+                        _reduced_line_series(
+                            label=f"Reference {label_direction} {factor.title()}",
+                            x=widths,
+                            y=np.asarray(
+                                [
+                                    getattr(
+                                        scale.reference_fano if factor == "fano" else scale.reference_allan, direction
+                                    )
+                                    for scale in diagnostics.scales
+                                ],
+                                dtype=np.float64,
+                            ),
+                            maximum_points=settings.maximum_display_points,
                         ),
-                        maximum_points=settings.maximum_display_points,
-                    ),
-                    _reduced_line_series(
-                        label=f"Generated total {factor.title()}",
-                        x=widths,
-                        y=np.asarray(
-                            [
-                                (scale.generated_fano if factor == "fano" else scale.generated_allan).total
-                                for scale in diagnostics.scales
-                            ],
-                            dtype=np.float64,
+                        _reduced_line_series(
+                            label=f"Generated {label_direction} {factor.title()}",
+                            x=widths,
+                            y=np.asarray(
+                                [
+                                    getattr(
+                                        scale.generated_fano if factor == "fano" else scale.generated_allan, direction
+                                    )
+                                    for scale in diagnostics.scales
+                                ],
+                                dtype=np.float64,
+                            ),
+                            maximum_points=settings.maximum_display_points,
                         ),
-                        maximum_points=settings.maximum_display_points,
-                    ),
+                    )
                 )
-            )
         resolved_series = tuple(series)
         x_limits, y_limits = _line_limits(resolved_series)
         return LinePlotData(
@@ -306,7 +313,7 @@ class FanoAllanAspect:
             y_limits=(0.0, max(1.0, y_limits[1])),
             metadata={
                 "direction_channels": ("total", "outbound", "inbound"),
-                "rendered_direction_channels": ("total",),
+                "rendered_direction_channels": ("total", "outbound", "inbound"),
                 "display_directions": ("total", "uplink", "downlink"),
                 "scale_weights": diagnostics.scale_weights,
                 "component_weights": {

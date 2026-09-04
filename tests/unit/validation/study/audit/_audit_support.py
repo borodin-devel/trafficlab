@@ -284,8 +284,14 @@ def config_semantic_leaf_paths(value: Any, prefix: tuple[str | int, ...] = ()) -
             "acf_size_weight",
             "ad_iat_weight",
             "ad_size_weight",
+            "ad_global_weight",
+            "ad_uplink_weight",
+            "ad_downlink_weight",
             "cvm_iat_weight",
             "cvm_size_weight",
+            "cvm_global_weight",
+            "cvm_uplink_weight",
+            "cvm_downlink_weight",
             "js_iat_weight",
             "js_mark_weight",
             "multiscale_packet_weight",
@@ -296,7 +302,9 @@ def config_semantic_leaf_paths(value: Any, prefix: tuple[str | int, ...] = ()) -
             ("similarity", "__acf_lags_and_weights__"),
             ("similarity", "__acf_component_weights__"),
             ("similarity", "__ad_component_weights__"),
+            ("similarity", "__ad_stratum_weights__"),
             ("similarity", "__cvm_component_weights__"),
+            ("similarity", "__cvm_stratum_weights__"),
             ("similarity", "__js_component_weights__"),
             ("similarity", "__multiscale_component_weights__"),
             *(
@@ -367,10 +375,22 @@ def set_config_semantic_path_value(
         similarity["ad_iat_weight"] = 0.6
         similarity["ad_size_weight"] = 0.4
         return
+    if path == ("similarity", "__ad_stratum_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["ad_global_weight"] = 0.4
+        similarity["ad_uplink_weight"] = 0.4
+        similarity["ad_downlink_weight"] = 0.2
+        return
     if path == ("similarity", "__cvm_component_weights__"):
         similarity = cast(dict[str, Any], document["similarity"])
         similarity["cvm_iat_weight"] = 0.6
         similarity["cvm_size_weight"] = 0.4
+        return
+    if path == ("similarity", "__cvm_stratum_weights__"):
+        similarity = cast(dict[str, Any], document["similarity"])
+        similarity["cvm_global_weight"] = 0.4
+        similarity["cvm_uplink_weight"] = 0.4
+        similarity["cvm_downlink_weight"] = 0.2
         return
     if path == ("similarity", "__js_component_weights__"):
         similarity = cast(dict[str, Any], document["similarity"])

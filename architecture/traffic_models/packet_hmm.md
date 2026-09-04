@@ -86,11 +86,12 @@ If every positive binary fraction through `2^-52` still decreases likelihood,
 the fit fails deterministically before recording an update or a convergence
 claim; unchanged parameters are never appended as an accepted zero-gain step.
 The complete finite likelihood history, update count, and convergence Boolean
-are persisted. Conversely, a capped fit is nonconverged only when its final
-accepted improvement is strictly greater than `1e-8`; a capped zero or
-tolerance-sized improvement is converged. Reaching the iteration cap is thus a
-valid explicitly nonconverged fit only under that inverse condition, never a
-false convergence claim or an unbounded retry.
+are retained as estimator diagnostics. A capped fit is nonconverged only when
+its final accepted improvement remains strictly greater than `1e-8`; it is an
+invalid candidate and is rejected at fit, runtime-model reconstruction, strict
+wire validation, and load. It cannot enter family competition or generation.
+A capped zero or tolerance-sized improvement is converged. No boundary retries,
+arbitrary parameters, or false convergence claims replace estimator failure.
 
 Latent labels are canonicalized after fitting. A state's first key is its
 emission-weighted mean raw IAT, where each category contributes its reservoir
@@ -141,8 +142,9 @@ payloads, protocol fields, causal semantics, or unseen category combinations.
 - A two-state, three-observation likelihood and every state posterior are
   checked against enumeration of all eight hidden paths.
 - Fixed initialization, smoothing positivity, nondecreasing accepted
-  likelihood, the 100-update bound, explicit nonconvergence, and state-label
-  permutation invariance have direct tests.
+  likelihood, the 100-update bound, deterministic nonconvergence invalidation
+  at every fitted boundary, and state-label permutation invariance have direct
+  tests.
 - Zero IAT, Type-7 thresholds, observed-only vocabulary, category membership,
   raw reservoirs, strict payload mutations, scalar endpoint failures, `t=W`,
   and mid-stream guards are exercised independently.

@@ -62,8 +62,8 @@ to declared aggregation policy from a change in measured trace behavior.
 | [Frame-size KS][frame-size] | Frame lengths | None | One packet/trace | Sorting | Ignores order/timing |
 | [IAT KS][iat] | Inter-arrival times | Quantile | Two packets/trace | Sorting | Ignores dependence |
 | [Multiscale rate][rate] | Directional volume by scale | Widths, weights, cap | Nonempty | Linear | Time alignment |
-| [Cramér--von Mises][cvm] | Pooled ECDF difference for IAT and size | IAT/size weights | Two packets/trace | Sorting | No tail emphasis |
-| [Anderson--Darling][ad] | Endpoint-normalized tail ECDF difference | IAT/size weights | Two packets/trace | Sorting | Sparse tails dominate |
+| [Cramér--von Mises][cvm] | Pooled ECDF difference for IAT and size in global/uplink/downlink strata | Feature and stratum weights | Two packets/trace | Sorting | No tail emphasis |
+| [Anderson--Darling][ad] | Endpoint-normalized tail ECDF difference in global/uplink/downlink strata | Feature and stratum weights | Two packets/trace | Sorting | Sparse tails dominate |
 | [Jensen--Shannon][js] | Exact marks and shared-bin direction/IAT PMFs | Bin count, IAT/mark weights | Two packets/trace | Counting + support sort | Ignores category geometry |
 | [Approximate joint MMD][mmd] | Random-Fourier timing/size/direction embedding | Feature count, seed, scale floor | Two packets/trace | Linear in packets × features | Kernel approximation sensitivity |
 

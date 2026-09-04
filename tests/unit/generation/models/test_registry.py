@@ -249,6 +249,26 @@ def test_best_model_round_trips_every_real_fitted_family(
     assert loaded == artifact
 
 
+def test_best_model_rejects_nhpp_bin_edges_from_a_different_outer_window() -> None:
+    """A self-consistent NHPP payload must still be bound to the best-model observation window."""
+    artifact = make_best_model(
+        NHPP_FAMILY,
+        REFERENCE,
+        (2,),
+        reference_identity=REFERENCE_IDENTITY,
+        capture_identity=CAPTURE_IDENTITY,
+        final_seed=FINAL_SEED,
+        final_limits=FINAL_LIMITS,
+        W=WINDOW,
+        bounds=NHPP_BOUNDS,
+    )
+    document = _document(artifact)
+    document["observation_window_seconds"] = WINDOW + 1.0
+
+    with pytest.raises(TrafficlabError, match="NHPP bin edges.*observation window"):
+        load_best_model(_encoded(document), source=Path("best_model.json"))
+
+
 def test_best_model_loader_translates_huge_acd_coefficients_to_stable_domain_error() -> None:
     """A finite but individually nonstationary coefficient must not escape as an OverflowError."""
     artifact = make_best_model(

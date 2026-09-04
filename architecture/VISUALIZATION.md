@@ -105,8 +105,9 @@ Run-level:
 - Similarity component scores for all eight configured fitness methods plus
   their weighted aggregate, ordered by the canonical artifact method order
 - Multiscale packet/byte discrepancy by configured scale
-- Fano/Allan reference and generated total-factor curves at every retained
-  scale, retaining the artifact direction channels as immutable plot metadata
+- Fano/Allan reference and generated total, uplink, and downlink factor curves
+  for both factors at every retained scale; values are projected from the
+  stored canonical total/outbound/inbound channels without recomputation
 - Transition-fidelity reference/generated occupancy, per-source-row JSD, and
   retained occupancy/row/run component discrepancies
 - Classical C2ST stored AUC, balanced accuracy, and fitted coefficient

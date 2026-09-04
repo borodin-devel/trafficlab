@@ -78,6 +78,12 @@ Family-specific `fitted` fields are:
 | Markov renewal | `alpha` | Additive smoothing value for transition probabilities. |
 | Markov renewal | `time_scale` | Fitted multiplier applied to sampled timing. |
 | Markov renewal | `timing_diagnostics` | Counts of transition/source/global fallback use and unobserved rows. |
+| NHPP | `bin_edges`, `rates`, `integrated_intensity` | Exact equal-width fitted window geometry, one rate per bin, and the exact stored rate integral. |
+| NHPP | `bin_marks`, `global_marks` | Bin-conditional empirical marks and the fallback mark distribution. |
+| ACD | `omega`, `alpha`, `beta` | Positive level and ordered stationary duration-recursion coefficients. |
+| ACD | `diagnostics` | Initial conditional duration, final negative log likelihood, bounded iteration count, and required successful convergence. |
+| ACD | `marks` | Empirical joint mark distribution independent of the duration recursion. |
+| Packet HMM | `diagnostics` | Complete nondecreasing likelihood history and a required converged result; nonconverged estimates cannot be serialized. |
 
 The exact union, bounds, and required fields are in
 [`best_model.schema.json`](../schemas/scientific-artifact-v5/best_model.schema.json).
@@ -100,8 +106,8 @@ method-specific `diagnostics`:
 | IAT KS | `distance`, `diagnostic_quantile`, reference/generated IAT counts, medians, selected quantiles, zero counts, `observation_window_seconds` | Two-sample inter-arrival-time comparison and descriptive values; score is `1 - distance`. |
 | Autocorrelation | `lags`, `lag_weights`, `feature_weights`, `iat`, `size`, `discrepancy`, `observation_window_seconds` | Selected-lag ACF arrays, absolute differences, sample counts, and the weighted size/IAT discrepancy; score is `1 - discrepancy`. |
 | Multiscale rate | `widths`, `scale_weights`, `feature_weights`, `scales`, `scale_discrepancies`, `feature_discrepancies`, cell counts, `discrepancy`, `observation_window_seconds` | Per-width inbound/outbound byte and packet totals plus bounded cell counts and weighted discrepancies; score is `1 - discrepancy`. |
-| Cramér--von Mises | `feature_weights`, `iat`, `size`, `direction_strata`, `discrepancy`, `observation_window_seconds` | Tie-aware pooled-ECDF component evidence and bounded weighted discrepancy. |
-| Anderson--Darling | `feature_weights`, `iat`, `size`, `direction_strata`, `discrepancy`, `observation_window_seconds` | Tail-weighted endpoint-normalized ECDF component evidence and bounded discrepancy. |
+| Cramér--von Mises | `feature_weights`, `stratum_weights`, `strata`, `discrepancy`, `observation_window_seconds` | Tie-aware pooled-ECDF evidence for global/outbound/inbound IAT and size, including explicit empty status and exact two-level weighting. |
+| Anderson--Darling | `feature_weights`, `stratum_weights`, `strata`, `discrepancy`, `observation_window_seconds` | Tail-weighted endpoint-normalized ECDF evidence for the same three strata and empty policy. |
 | Jensen--Shannon | `feature_weights`, `iat`, `mark`, `discrepancy`, `observation_window_seconds` | Union-aligned exact mark and direction/IAT-bin count records with component JSD values. |
 | Approximate MMD | `feature_count`, `embedding_dimension`, `seed`, `continuous`, sample counts, `discrepancy`, `observation_window_seconds` | Reference-scaled deterministic random-feature joint discrepancy. |
 

@@ -21,7 +21,7 @@ uv run --locked python scripts/NAME.py --help
 | `generate_artifact_schemas.py` | Generates or checks the 13 public scientific-artifact v5 JSON Schemas. `--output` selects another directory. |
 | `generate_validation_study_fixture.py` | Generates or checks deterministic Validation Study fixture evidence; optional source commit/tree arguments bind the fixture. |
 | `check_fixture_layout.py` | Checks example and test fixture manifests plus repository layout; `--write-manifest` rewrites both manifests and `--check-manifest` checks only manifests. |
-| `run_scientific_stack_probes.py` | Generates or checks MMPP and pymoo probe evidence; `--probe` selects `all`, `mmpp`, or `pymoo`. |
+| `run_scientific_stack_probes.py` | Generates/checks MMPP and schema-5 pymoo probe evidence and exact-checks immutable historical pymoo bytes; `--probe` selects `all`, `mmpp`, `pymoo`, or `pymoo-v5`. |
 | `benchmark_scientific_stack.py` | Records or checks scalar-versus-NumPy scientific-kernel benchmark evidence. |
 | `benchmark_scapy_production.py` | Records or checks non-gating production Scapy encode/read benchmark evidence. |
 | `measure_scientific_stack_reduction.py` | Recomputes or checks source-reduction inventories from Git revisions. |
@@ -48,12 +48,12 @@ source and metadata are read-only):
 
 ```bash
 UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python scripts/derive_required_candidates_reference.py \
-  --source /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
-  --capture-json /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/capture.json \
+  --source dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
+  --capture-json dumps/moutai-stock-price-response-success/capture.json \
   --packet-limit 256 --output .work/required-candidates/small
 UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python scripts/derive_required_candidates_reference.py \
-  --source /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
-  --capture-json /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/capture.json \
+  --source dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
+  --capture-json dumps/moutai-stock-price-response-success/capture.json \
   --packet-limit 512 --output .work/required-candidates/medium
 ```
 

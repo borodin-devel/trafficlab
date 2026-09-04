@@ -72,7 +72,9 @@ def _repair_genes(genes: Sequence[Gene], bounds: object) -> tuple[int]:
 class NhppModel:
     """Equal-width rates plus bin-conditioned joint marks and a global fallback."""
 
+    bin_edges: tuple[float, ...]
     rates: tuple[float, ...]
+    integrated_intensity: float
     bin_marks: tuple[MarkDistribution | None, ...]
     global_marks: MarkDistribution
 
@@ -83,6 +85,28 @@ class NhppModel:
             raise ValueError("bin_marks must have exactly one table per rate")
         if any(type(rate) is not float or not math.isfinite(rate) or rate < 0.0 for rate in self.rates):
             raise ValueError("rates must be finite nonnegative floats")
+        if (
+            type(self.bin_edges) is not tuple
+            or len(self.bin_edges) != len(self.rates) + 1
+            or any(type(edge) is not float or not math.isfinite(edge) for edge in self.bin_edges)
+            or self.bin_edges[0] != 0.0
+            or any(left >= right for left, right in zip(self.bin_edges[:-1], self.bin_edges[1:], strict=True))
+        ):
+            raise ValueError("bin_edges must contain zero and one finite increasing edge per rate")
+        width = _equal_bin_width(self.bin_edges[-1], len(self.rates))
+        expected_edges = tuple(
+            self.bin_edges[-1] if index == len(self.rates) else index * width for index in range(len(self.rates) + 1)
+        )
+        if self.bin_edges != expected_edges:
+            raise ValueError("bin_edges must be the exact equal-width partition of the fitted window")
+        if type(self.integrated_intensity) is not float or not math.isfinite(self.integrated_intensity):
+            raise ValueError("integrated_intensity must be a finite exact float")
+        expected_intensity = math.fsum(
+            rate * (right - left)
+            for rate, left, right in zip(self.rates, self.bin_edges[:-1], self.bin_edges[1:], strict=True)
+        )
+        if self.integrated_intensity != expected_intensity:
+            raise ValueError("integrated_intensity must equal the exact rate integral over bin_edges")
         if type(self.global_marks) is not MarkDistribution:
             raise TypeError("global_marks must be a MarkDistribution")
         MarkDistribution(self.global_marks.entries)
@@ -101,7 +125,13 @@ def _validate_model(model: object) -> NhppModel:
     if type(model) is not NhppModel:
         raise TypeError("model must be an NhppModel")
     try:
-        return NhppModel(model.rates, model.bin_marks, model.global_marks)
+        return NhppModel(
+            model.bin_edges,
+            model.rates,
+            model.integrated_intensity,
+            model.bin_marks,
+            model.global_marks,
+        )
     except (TypeError, ValueError) as error:
         raise _invalid(
             f"invalid fitted NHPP model: {error}",
@@ -171,6 +201,11 @@ def _generate_with_rng(
     """Generate one closed complete window while preserving scalar PCG64 draw order."""
     checked_model = _validate_model(model)
     window = _validate_window(W)
+    if window != checked_model.bin_edges[-1]:
+        raise _invalid(
+            "invalid NHPP observation window: it does not match fitted bin_edges",
+            corrective_action="generate with the exact observation window retained by the fitted NHPP payload",
+        )
     guard = GenerationGuard.start(limits, clock=clock)
     timestamps: list[float] = []
     directions: list[Direction] = []
@@ -199,10 +234,9 @@ def _generate_with_rng(
     frame_lengths.append(frame_length)
     output_bytes = frame_length
 
-    bin_width = _equal_bin_width(window, len(checked_model.rates))
     current_time = 0.0
     for bin_index, rate in enumerate(checked_model.rates):
-        bin_end = window if bin_index == len(checked_model.rates) - 1 else (bin_index + 1) * bin_width
+        bin_end = checked_model.bin_edges[bin_index + 1]
         if rate == 0.0:
             current_time = bin_end
             continue
@@ -302,6 +336,7 @@ class NhppFamily:
         trace = validate_fit_inputs(reference, W=W)
         bin_count = _repair_genes(genes, bounds)[0]
         width = _equal_bin_width(W, bin_count)
+        bin_edges = tuple(W if index == bin_count else index * width for index in range(bin_count + 1))
         rate_counts = [0] * bin_count
         mark_events: list[list[tuple[Direction, int]]] = [[] for _ in range(bin_count)]
         for index, event in enumerate(trace.to_events()):
@@ -317,8 +352,14 @@ class NhppFamily:
             else None
             for entries in mark_events
         )
+        rates = tuple(_rate_from_count(count, width=width) for count in rate_counts)
+        integrated_intensity = math.fsum(
+            rate * (right - left) for rate, left, right in zip(rates, bin_edges[:-1], bin_edges[1:], strict=True)
+        )
         return NhppModel(
-            rates=tuple(_rate_from_count(count, width=width) for count in rate_counts),
+            bin_edges=bin_edges,
+            rates=rates,
+            integrated_intensity=integrated_intensity,
             bin_marks=bin_marks,
             global_marks=MarkDistribution.from_trace(trace),
         )
@@ -342,7 +383,9 @@ class NhppFamily:
     def dump_fitted(self, model: FittedModel) -> dict[str, object]:
         checked_model = _validate_model(model)
         return {
+            "bin_edges": list(checked_model.bin_edges),
             "rates": list(checked_model.rates),
+            "integrated_intensity": checked_model.integrated_intensity,
             "bin_marks": [_mark_payload(marks) if marks is not None else [] for marks in checked_model.bin_marks],
             "global_marks": _mark_payload(checked_model.global_marks),
         }
@@ -351,29 +394,48 @@ class NhppFamily:
         bin_count = _repair_genes(genes, bounds)[0]
         if type(data) is not dict:
             raise _invalid(
-                "invalid fitted NHPP payload", corrective_action="provide rates, bin_marks, and global_marks"
+                "invalid fitted NHPP payload",
+                corrective_action="provide bin_edges, rates, integrated_intensity, bin_marks, and global_marks",
             )
         payload = cast(dict[str, object], data)
-        if set(payload) != {"rates", "bin_marks", "global_marks"}:
+        if set(payload) != {"bin_edges", "rates", "integrated_intensity", "bin_marks", "global_marks"}:
             raise _invalid(
-                "invalid fitted NHPP payload", corrective_action="provide rates, bin_marks, and global_marks"
+                "invalid fitted NHPP payload",
+                corrective_action="provide bin_edges, rates, integrated_intensity, bin_marks, and global_marks",
             )
-        raw_rates, raw_tables = payload["rates"], payload["bin_marks"]
-        if type(raw_rates) is not list or type(raw_tables) is not list:
-            raise _invalid("invalid fitted NHPP payload", corrective_action="provide list rates and bin mark tables")
+        raw_edges, raw_rates, raw_tables = payload["bin_edges"], payload["rates"], payload["bin_marks"]
+        if type(raw_edges) is not list or type(raw_rates) is not list or type(raw_tables) is not list:
+            raise _invalid(
+                "invalid fitted NHPP payload", corrective_action="provide list bin edges, rates, and bin mark tables"
+            )
+        edges = cast(list[object], raw_edges)
         rates = cast(list[object], raw_rates)
         tables = cast(list[object], raw_tables)
-        if len(rates) != bin_count or len(tables) != bin_count:
+        if len(edges) != bin_count + 1 or len(rates) != bin_count or len(tables) != bin_count:
             raise _invalid(
-                "invalid fitted NHPP payload", corrective_action="match rates and bin marks to repaired bin_count"
+                "invalid fitted NHPP payload",
+                corrective_action="match bin edges, rates, and bin marks to repaired bin_count",
             )
+        if any(type(edge) is not float or not math.isfinite(edge) for edge in edges):
+            raise _invalid("invalid fitted NHPP bin_edges", corrective_action="provide finite exact float bin edges")
         if any(type(rate) is not float or not math.isfinite(rate) or rate < 0.0 for rate in rates):
             raise _invalid("invalid fitted NHPP rates", corrective_action="provide finite nonnegative float rates")
+        integrated_intensity = payload["integrated_intensity"]
+        if type(integrated_intensity) is not float or not math.isfinite(integrated_intensity):
+            raise _invalid(
+                "invalid fitted NHPP integrated_intensity", corrective_action="provide a finite exact float integral"
+            )
         global_marks = _load_marks(payload["global_marks"], name="global_marks", allow_empty=False)
         assert global_marks is not None
         bin_marks = tuple(_load_marks(table, name="bin_marks", allow_empty=True) for table in tables)
         try:
-            return NhppModel(tuple(cast(float, rate) for rate in rates), bin_marks, global_marks)
+            return NhppModel(
+                tuple(cast(float, edge) for edge in edges),
+                tuple(cast(float, rate) for rate in rates),
+                integrated_intensity,
+                bin_marks,
+                global_marks,
+            )
         except (TypeError, ValueError) as error:
             raise _invalid(
                 f"invalid fitted NHPP payload: {error}", corrective_action="provide valid NHPP parameters"

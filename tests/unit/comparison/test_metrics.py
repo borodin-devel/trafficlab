@@ -218,8 +218,8 @@ def test_compare_traces_uses_every_setting_and_retains_exact_component_results(
             "multiscale_rate",
             (reference, generated, 3.0, (0.1, 1.0), (0.5, 0.5), 0.5, 0.5, 100_000),
         ),
-        ("cramer_von_mises", (reference, generated, 3.0, 0.5, 0.5)),
-        ("anderson_darling", (reference, generated, 3.0, 0.5, 0.5)),
+        ("cramer_von_mises", (reference, generated, 3.0, 0.5, 0.5, 0.5, 0.25, 0.25)),
+        ("anderson_darling", (reference, generated, 3.0, 0.5, 0.5, 0.5, 0.25, 0.25)),
         ("jensen_shannon", (reference, generated, 3.0, 8, 0.5, 0.5)),
         ("approximate_mmd", (reference, generated, 3.0, 16, 2026, 0.001)),
     ]

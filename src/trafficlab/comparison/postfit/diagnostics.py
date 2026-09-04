@@ -4,7 +4,7 @@ import math
 from collections.abc import Mapping
 from typing import Annotated, Literal, Self, cast
 
-from pydantic import BeforeValidator, Discriminator, Field, StrictBool, Tag, model_validator
+from pydantic import BeforeValidator, ConfigDict, Discriminator, Field, Tag, model_validator
 
 from trafficlab.comparison.diagnostic_types import (
     WEIGHT_TOLERANCE,
@@ -279,8 +279,9 @@ class EcdfFeatureWeights(StrictArtifactModel):
 
 
 class EcdfFeatureDiagnostic(StrictArtifactModel):
-    reference_sample_count: PositiveInt
-    generated_sample_count: PositiveInt
+    status: Literal["compared", "both_empty", "one_sided_empty"]
+    reference_sample_count: NonnegativeInt
+    generated_sample_count: NonnegativeInt
     reference_tie_count: NonnegativeInt
     generated_tie_count: NonnegativeInt
     raw_sum: NonnegativeFloat
@@ -289,10 +290,24 @@ class EcdfFeatureDiagnostic(StrictArtifactModel):
 
     @model_validator(mode="after")
     def validate_sample_arithmetic(self) -> Self:
-        if self.reference_tie_count >= self.reference_sample_count:
+        if self.reference_sample_count and self.reference_tie_count >= self.reference_sample_count:
             raise ValueError("ECDF reference tie count must be less than its sample count")
-        if self.generated_tie_count >= self.generated_sample_count:
+        if self.generated_sample_count and self.generated_tie_count >= self.generated_sample_count:
             raise ValueError("ECDF generated tie count must be less than its sample count")
+        if self.status == "both_empty":
+            if self.reference_sample_count or self.generated_sample_count:
+                raise ValueError("ECDF both_empty status requires two empty samples")
+            if self.raw_sum or self.normalization_weight or self.discrepancy:
+                raise ValueError("ECDF both_empty status requires zero arithmetic values")
+            return self
+        if self.status == "one_sided_empty":
+            if (self.reference_sample_count == 0) == (self.generated_sample_count == 0):
+                raise ValueError("ECDF one_sided_empty status requires exactly one empty sample")
+            if self.raw_sum or self.normalization_weight or self.discrepancy != 1.0:
+                raise ValueError("ECDF one_sided_empty status requires maximum discrepancy and no invented sum")
+            return self
+        if not self.reference_sample_count or not self.generated_sample_count:
+            raise ValueError("ECDF compared status requires two nonempty samples")
         expected = self.raw_sum / self.normalization_weight if self.normalization_weight else 0.0
         if not self.normalization_weight and self.raw_sum != 0.0:
             raise ValueError("ECDF raw sum must be zero when normalization weight is zero")
@@ -300,43 +315,61 @@ class EcdfFeatureDiagnostic(StrictArtifactModel):
         return self
 
 
-class DirectionAvailability(StrictArtifactModel):
-    reference_available: StrictBool
-    generated_available: StrictBool
-    both_available: StrictBool
+class EcdfStratumWeights(StrictArtifactModel):
+    model_config = ConfigDict(serialize_by_alias=True)
 
-    @model_validator(mode="after")
-    def both_matches_inputs(self) -> Self:
-        if self.both_available != (self.reference_available and self.generated_available):
-            raise ValueError("direction both_available must equal reference_available and generated_available")
-        return self
+    global_: UnitFloat = Field(alias="global")
+    outbound: UnitFloat
+    inbound: UnitFloat
 
 
-class FeatureDirectionAvailability(StrictArtifactModel):
-    outbound: DirectionAvailability
-    inbound: DirectionAvailability
+class EcdfStratumDiagnostic(StrictArtifactModel):
+    iat: EcdfFeatureDiagnostic
+    size: EcdfFeatureDiagnostic
+    discrepancy: UnitFloat
 
 
-class EcdfDirectionStrata(StrictArtifactModel):
-    iat: FeatureDirectionAvailability
-    size: FeatureDirectionAvailability
+class EcdfStrata(StrictArtifactModel):
+    model_config = ConfigDict(serialize_by_alias=True)
+
+    global_: EcdfStratumDiagnostic = Field(alias="global")
+    outbound: EcdfStratumDiagnostic
+    inbound: EcdfStratumDiagnostic
 
 
 class _EcdfDiagnostic(_DiagnosticModel):
     observation_window_seconds: PositiveFloat
     feature_weights: EcdfFeatureWeights
-    iat: EcdfFeatureDiagnostic
-    size: EcdfFeatureDiagnostic
-    direction_strata: EcdfDirectionStrata
+    stratum_weights: EcdfStratumWeights
+    strata: EcdfStrata
     discrepancy: UnitFloat
 
     @model_validator(mode="after")
     def validate_ecdf_arithmetic(self) -> Self:
         weights = (self.feature_weights.iat, self.feature_weights.size)
         require_normalized(weights, name="ECDF diagnostics.feature_weights")
-        expected = math.fsum((weights[0] * self.iat.discrepancy, weights[1] * self.size.discrepancy))
+        strata = (self.strata.global_, self.strata.outbound, self.strata.inbound)
+        for name, stratum in zip(("global", "outbound", "inbound"), strata, strict=True):
+            expected_stratum = math.fsum((weights[0] * stratum.iat.discrepancy, weights[1] * stratum.size.discrepancy))
+            require_close(stratum.discrepancy, expected_stratum, name=f"ECDF diagnostics.strata.{name}.discrepancy")
+        stratum_weights = (
+            self.stratum_weights.global_,
+            self.stratum_weights.outbound,
+            self.stratum_weights.inbound,
+        )
+        require_normalized(stratum_weights, name="ECDF diagnostics.stratum_weights")
+        expected = math.fsum(
+            weight * stratum.discrepancy for weight, stratum in zip(stratum_weights, strata, strict=True)
+        )
         require_close(self.discrepancy, expected, name="ECDF diagnostics.discrepancy")
         return self
+
+    def _features(self) -> tuple[EcdfFeatureDiagnostic, ...]:
+        return tuple(
+            feature
+            for stratum in (self.strata.global_, self.strata.outbound, self.strata.inbound)
+            for feature in (stratum.iat, stratum.size)
+        )
 
 
 class CramerVonMisesDiagnostic(_EcdfDiagnostic):
@@ -344,7 +377,8 @@ class CramerVonMisesDiagnostic(_EcdfDiagnostic):
     def normalization_is_pooled_mass(self) -> Self:
         if any(
             not math.isclose(feature.normalization_weight, 1.0, rel_tol=0.0, abs_tol=WEIGHT_TOLERANCE)
-            for feature in (self.iat, self.size)
+            for feature in self._features()
+            if feature.status == "compared"
         ):
             raise ValueError("Cramér--von Mises normalization weights must equal one")
         return self
@@ -353,7 +387,9 @@ class CramerVonMisesDiagnostic(_EcdfDiagnostic):
 class AndersonDarlingDiagnostic(_EcdfDiagnostic):
     @model_validator(mode="after")
     def normalization_is_tail_weight(self) -> Self:
-        for feature in (self.iat, self.size):
+        for feature in self._features():
+            if feature.status != "compared":
+                continue
             if 0.0 < feature.normalization_weight < 4.0:
                 raise ValueError("Anderson--Darling normalization weight must be zero or at least four")
         return self
@@ -515,8 +551,13 @@ def diagnostic_discriminator(value: object) -> str | None:
         if "distance" in mapping:
             return "frame_size_ks"
         iat = mapping.get("iat")
-        if "direction_strata" in mapping:
-            size = mapping.get("size")
+        strata = mapping.get("strata")
+        if isinstance(strata, Mapping):
+            global_stratum = cast(Mapping[object, object], strata).get("global")
+            if not isinstance(global_stratum, Mapping):
+                return None
+            iat = cast(Mapping[object, object], global_stratum).get("iat")
+            size = cast(Mapping[object, object], global_stratum).get("size")
             if isinstance(iat, Mapping) and isinstance(size, Mapping):
                 iat_mapping = cast(Mapping[object, object], iat)
                 size_mapping = cast(Mapping[object, object], size)

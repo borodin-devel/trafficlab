@@ -477,7 +477,9 @@ def test_generation_count_zero_means_only_generation_zero(valid_config_data: dic
         (("similarity", "multiscale_packet_weight"), 0.6),
         (("similarity", "max_direction_bin_cells"), 1),
         (("similarity", "cvm_iat_weight"), 0.6),
+        (("similarity", "cvm_uplink_weight"), 0.6),
         (("similarity", "ad_iat_weight"), 0.6),
+        (("similarity", "ad_downlink_weight"), 0.6),
         (("similarity", "js_iat_weight"), 0.6),
         (("similarity", "js_iat_bin_count"), 0),
         (("similarity", "js_iat_bin_count"), 65_537),
@@ -613,6 +615,31 @@ def test_c2st_maximum_window_count_accepts_65536_and_rejects_65537(
         ExperimentConfig.model_validate(rejected)
 
 
+def test_transition_bin_counts_accept_the_exact_coupled_state_and_cell_boundary(
+    valid_config_data: dict[str, object],
+) -> None:
+    """The largest safe Cartesian vocabulary must remain representable in strict configuration."""
+    data = copy.deepcopy(valid_config_data)
+    _set_value(data, ("similarity", "postfit", "transition", "size_bin_count"), 6)
+    _set_value(data, ("similarity", "postfit", "transition", "iat_bin_count"), 13)
+
+    transition = ExperimentConfig.model_validate(data).similarity.postfit.transition
+
+    assert 2 * (transition.size_bin_count + 2) * (transition.iat_bin_count + 3) == 256
+
+
+def test_transition_bin_counts_reject_a_coupled_cartesian_overflow(
+    valid_config_data: dict[str, object],
+) -> None:
+    """Individually small bin counts must not configure more than 256 states or 65,536 cells."""
+    data = copy.deepcopy(valid_config_data)
+    _set_value(data, ("similarity", "postfit", "transition", "size_bin_count"), 6)
+    _set_value(data, ("similarity", "postfit", "transition", "iat_bin_count"), 14)
+
+    with pytest.raises(ValidationError, match="256-state|65536-transition-cell"):
+        ExperimentConfig.model_validate(data)
+
+
 @pytest.mark.parametrize(
     ("path", "value"),
     [
@@ -660,8 +687,14 @@ def test_postfit_settings_reject_ambiguous_or_unbounded_values(
         ("max_direction_bin_cells",),
         ("cvm_iat_weight",),
         ("cvm_size_weight",),
+        ("cvm_global_weight",),
+        ("cvm_uplink_weight",),
+        ("cvm_downlink_weight",),
         ("ad_iat_weight",),
         ("ad_size_weight",),
+        ("ad_global_weight",),
+        ("ad_uplink_weight",),
+        ("ad_downlink_weight",),
         ("js_iat_bin_count",),
         ("js_iat_weight",),
         ("js_mark_weight",),
@@ -702,7 +735,9 @@ def test_every_similarity_setting_and_method_weight_is_mandatory(
         ("multiscale_scale_weights", ("similarity",)),
         ("multiscale_component_weights", ("similarity",)),
         ("cvm_component_weights", ("similarity",)),
+        ("cvm_stratum_weights", ("similarity",)),
         ("ad_component_weights", ("similarity",)),
+        ("ad_stratum_weights", ("similarity",)),
         ("js_component_weights", ("similarity",)),
         ("method_weights", ("similarity", "method_weights")),
     ],
@@ -742,9 +777,17 @@ def _set_normalized_weight_sum(data: dict[str, object], location: str, total: fl
     elif location == "cvm_component_weights":
         similarity["cvm_iat_weight"] = total
         similarity["cvm_size_weight"] = 0.0
+    elif location == "cvm_stratum_weights":
+        similarity["cvm_global_weight"] = total
+        similarity["cvm_uplink_weight"] = 0.0
+        similarity["cvm_downlink_weight"] = 0.0
     elif location == "ad_component_weights":
         similarity["ad_iat_weight"] = total
         similarity["ad_size_weight"] = 0.0
+    elif location == "ad_stratum_weights":
+        similarity["ad_global_weight"] = total
+        similarity["ad_uplink_weight"] = 0.0
+        similarity["ad_downlink_weight"] = 0.0
     elif location == "js_component_weights":
         similarity["js_iat_weight"] = total
         similarity["js_mark_weight"] = 0.0

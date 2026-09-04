@@ -4,9 +4,7 @@ import math
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
-
-import numpy as np
+from typing import Literal, cast
 
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TrafficTrace, validate_traffic_trace
@@ -21,6 +19,7 @@ from trafficlab.comparison.similarity.common import (
 
 _ROUNDING_TOLERANCE = 1e-15
 type _EcdfKind = Literal["cvm", "ad"]
+type _SampleStatus = Literal["compared", "both_empty", "one_sided_empty"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +33,7 @@ class EcdfSampleResult:
     generated_sample_count: int
     reference_tie_count: int
     generated_tie_count: int
+    status: _SampleStatus = "compared"
 
 
 def _bounded(value: float, *, name: str) -> float:
@@ -134,18 +134,50 @@ def _feature_diagnostics(result: EcdfSampleResult) -> dict[str, FrozenJsonValue]
         "raw_sum": result.raw_sum,
         "normalization_weight": result.normalization_weight,
         "discrepancy": result.discrepancy,
+        "status": result.status,
     }
 
 
-def _direction_availability(reference: np.ndarray, generated: np.ndarray) -> dict[str, FrozenJsonValue]:
-    """Retain whether each trace has values in every future direction stratum."""
+def _possibly_empty_sample(
+    reference: tuple[int | float, ...], generated: tuple[int | float, ...], *, kind: _EcdfKind
+) -> EcdfSampleResult:
+    """Apply the declared empty-stratum policy or compare two observed samples."""
+    if reference and generated:
+        sample_method = bounded_cvm_sample if kind == "cvm" else bounded_ad_sample
+        return sample_method(reference, generated)
+    status: _SampleStatus = "both_empty" if not reference and not generated else "one_sided_empty"
+    return EcdfSampleResult(
+        raw_sum=0.0,
+        normalization_weight=0.0,
+        discrepancy=0.0 if status == "both_empty" else 1.0,
+        reference_sample_count=len(reference),
+        generated_sample_count=len(generated),
+        reference_tie_count=len(reference) - len(set(reference)),
+        generated_tie_count=len(generated) - len(set(generated)),
+        status=status,
+    )
+
+
+def _stratum_diagnostics(
+    reference_iats: tuple[float, ...],
+    generated_iats: tuple[float, ...],
+    reference_sizes: tuple[int, ...],
+    generated_sizes: tuple[int, ...],
+    *,
+    kind: _EcdfKind,
+    feature_weights: tuple[float, float],
+) -> dict[str, FrozenJsonValue]:
+    """Evaluate both features within one global or canonical-direction stratum."""
+    iat_result = _possibly_empty_sample(reference_iats, generated_iats, kind=kind)
+    size_result = _possibly_empty_sample(reference_sizes, generated_sizes, kind=kind)
+    discrepancy = _bounded(
+        math.fsum((feature_weights[0] * iat_result.discrepancy, feature_weights[1] * size_result.discrepancy)),
+        name=f"{kind} stratum discrepancy",
+    )
     return {
-        direction.value: {
-            "reference_available": bool(np.any(reference == index)),
-            "generated_available": bool(np.any(generated == index)),
-            "both_available": bool(np.any(reference == index) and np.any(generated == index)),
-        }
-        for index, direction in enumerate((Direction.OUTBOUND, Direction.INBOUND))
+        "iat": _feature_diagnostics(iat_result),
+        "size": _feature_diagnostics(size_result),
+        "discrepancy": discrepancy,
     }
 
 
@@ -155,48 +187,130 @@ def _trace_similarity(
     W: object,
     iat_weight: object,
     size_weight: object,
+    global_weight: object,
+    uplink_weight: object,
+    downlink_weight: object,
     *,
     kind: _EcdfKind,
 ) -> SimilarityResult:
     """Aggregate documented IAT and complete-frame samples for one ECDF method."""
     window = validate_observation_window(W)
-    feature_weights = validated_weights((iat_weight, size_weight), name=f"{kind} feature weights")
+    feature_weights = cast(
+        tuple[float, float], validated_weights((iat_weight, size_weight), name=f"{kind} feature weights")
+    )
+    stratum_weights = cast(
+        tuple[float, float, float],
+        validated_weights((global_weight, uplink_weight, downlink_weight), name=f"{kind} stratum weights"),
+    )
     reference_trace = validate_traffic_trace(reference, minimum_events=2, trace_name="reference")
     generated_trace = validate_traffic_trace(generated, minimum_events=2, trace_name="generated")
-    sample_method = bounded_cvm_sample if kind == "cvm" else bounded_ad_sample
-    iat_result = sample_method(
-        (float(value) for value in reference_trace.iats()), (float(value) for value in generated_trace.iats())
-    )
-    size_result = sample_method(
-        (int(value) for value in reference_trace.frame_lengths), (int(value) for value in generated_trace.frame_lengths)
+    reference_iats = tuple(float(value) for value in reference_trace.iats())
+    generated_iats = tuple(float(value) for value in generated_trace.iats())
+    reference_sizes = tuple(int(value) for value in reference_trace.frame_lengths)
+    generated_sizes = tuple(int(value) for value in generated_trace.frame_lengths)
+    reference_iat_directions = tuple(int(value) for value in reference_trace.directions[1:])
+    generated_iat_directions = tuple(int(value) for value in generated_trace.directions[1:])
+    reference_size_directions = tuple(int(value) for value in reference_trace.directions)
+    generated_size_directions = tuple(int(value) for value in generated_trace.directions)
+    strata: dict[str, dict[str, FrozenJsonValue]] = {
+        "global": _stratum_diagnostics(
+            reference_iats,
+            generated_iats,
+            reference_sizes,
+            generated_sizes,
+            kind=kind,
+            feature_weights=feature_weights,
+        )
+    }
+    for direction_index, direction in enumerate((Direction.OUTBOUND, Direction.INBOUND)):
+        strata[direction.value] = _stratum_diagnostics(
+            tuple(
+                value
+                for value, code in zip(reference_iats, reference_iat_directions, strict=True)
+                if code == direction_index
+            ),
+            tuple(
+                value
+                for value, code in zip(generated_iats, generated_iat_directions, strict=True)
+                if code == direction_index
+            ),
+            tuple(
+                value
+                for value, code in zip(reference_sizes, reference_size_directions, strict=True)
+                if code == direction_index
+            ),
+            tuple(
+                value
+                for value, code in zip(generated_sizes, generated_size_directions, strict=True)
+                if code == direction_index
+            ),
+            kind=kind,
+            feature_weights=feature_weights,
+        )
+    stratum_discrepancies = tuple(
+        cast(float, strata[name]["discrepancy"]) for name in ("global", "outbound", "inbound")
     )
     discrepancy = _bounded(
-        math.fsum((feature_weights[0] * iat_result.discrepancy, feature_weights[1] * size_result.discrepancy)),
+        math.fsum(weight * value for weight, value in zip(stratum_weights, stratum_discrepancies, strict=True)),
         name=f"{kind} aggregate discrepancy",
     )
     diagnostics: JsonDiagnostics = {
         "observation_window_seconds": window,
         "feature_weights": {"iat": feature_weights[0], "size": feature_weights[1]},
-        "iat": _feature_diagnostics(iat_result),
-        "size": _feature_diagnostics(size_result),
-        "direction_strata": {
-            "iat": _direction_availability(reference_trace.directions[1:], generated_trace.directions[1:]),
-            "size": _direction_availability(reference_trace.directions, generated_trace.directions),
+        "stratum_weights": {
+            "global": stratum_weights[0],
+            "outbound": stratum_weights[1],
+            "inbound": stratum_weights[2],
         },
+        "strata": strata,
         "discrepancy": discrepancy,
     }
     return SimilarityResult(score=1.0 - discrepancy, diagnostics=diagnostics)
 
 
 def cramer_von_mises_similarity(
-    reference: TrafficTrace, generated: TrafficTrace, W: float, iat_weight: float, size_weight: float
+    reference: TrafficTrace,
+    generated: TrafficTrace,
+    W: float,
+    iat_weight: float,
+    size_weight: float,
+    global_weight: float,
+    uplink_weight: float,
+    downlink_weight: float,
 ) -> SimilarityResult:
     """Compare IAT and frame-size ECDFs with bounded pooled-mass CvM distance."""
-    return _trace_similarity(reference, generated, W, iat_weight, size_weight, kind="cvm")
+    return _trace_similarity(
+        reference,
+        generated,
+        W,
+        iat_weight,
+        size_weight,
+        global_weight,
+        uplink_weight,
+        downlink_weight,
+        kind="cvm",
+    )
 
 
 def anderson_darling_similarity(
-    reference: TrafficTrace, generated: TrafficTrace, W: float, iat_weight: float, size_weight: float
+    reference: TrafficTrace,
+    generated: TrafficTrace,
+    W: float,
+    iat_weight: float,
+    size_weight: float,
+    global_weight: float,
+    uplink_weight: float,
+    downlink_weight: float,
 ) -> SimilarityResult:
     """Compare IAT and frame-size ECDFs with bounded tail-weighted AD distance."""
-    return _trace_similarity(reference, generated, W, iat_weight, size_weight, kind="ad")
+    return _trace_similarity(
+        reference,
+        generated,
+        W,
+        iat_weight,
+        size_weight,
+        global_weight,
+        uplink_weight,
+        downlink_weight,
+        kind="ad",
+    )

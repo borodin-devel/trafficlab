@@ -42,25 +42,30 @@ support value, where both ECDFs are equal.
 
 ## Trace inputs and aggregation
 
-`anderson_darling_similarity` compares complete IAT and frame-size samples
-separately, retaining zero IATs. It combines their bounded discrepancies under
-finite nonnegative weights summing to one:
+`anderson_darling_similarity` compares IAT and frame-size samples separately in
+global, canonical `outbound`, and canonical `inbound` strata, retaining zero
+IATs. IAT direction belongs to the destination packet. It combines each
+stratum's bounded feature discrepancies under finite nonnegative weights
+summing to one:
 
 \[
 D=w_{IAT}D_{IAT}+w_{size}D_{size},\qquad s=1-D.
 \]
 
-Direction availability is reported for IAT destination-packet and frame-size
-packet strata. This method does not fabricate samples for a missing one-sided
-stratum and does not apply direction-stratum weighting at its pure-function
-boundary.
+Strict configured `global`/`uplink`/`downlink` weights then aggregate the three
+stratum discrepancies exactly; `uplink` maps to canonical `outbound` and
+`downlink` to canonical `inbound`. A feature absent from both traces in one
+stratum has discrepancy zero. A one-sided empty feature has discrepancy one,
+without a fabricated sample or tail weight. Zero-weight strata remain retained
+and validated.
 
 ## Diagnostics and edge cases
 
-Per-feature diagnostics retain sample and tie counts, raw sum \(T_{AD}\),
-normalization weight \(Q_{AD}\), and normalized discrepancy. Top-level
-diagnostics retain the observation window, feature weights, direction-stratum
-availability, and final discrepancy. No p-value is reported.
+Per-stratum feature diagnostics retain empty/comparison status, sample and tie
+counts, raw sum \(T_{AD}\), normalization weight \(Q_{AD}\), and normalized
+discrepancy. Top-level diagnostics retain the observation window, feature and
+canonical-direction stratum weights, each stratum result, and final discrepancy.
+No p-value is reported.
 
 Both traces need two canonical events, and direct sample calls require
 nonempty finite numeric samples. Equal values are consumed together before an

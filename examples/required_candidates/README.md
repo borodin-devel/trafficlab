@@ -21,12 +21,12 @@ From the repository root:
 
 ```bash
 UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python scripts/derive_required_candidates_reference.py \
-  --source /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
-  --capture-json /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/capture.json \
+  --source dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
+  --capture-json dumps/moutai-stock-price-response-success/capture.json \
   --packet-limit 256 --output .work/required-candidates/small
 UV_CACHE_DIR=/tmp/trafficlab-uv-cache uv run --locked python scripts/derive_required_candidates_reference.py \
-  --source /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
-  --capture-json /home/bsa/projects/trafficlab/dumps/moutai-stock-price-response-success/capture.json \
+  --source dumps/moutai-stock-price-response-success/trafficlab-ready-moutai-stock-price-response-success.pcapng \
+  --capture-json dumps/moutai-stock-price-response-success/capture.json \
   --packet-limit 512 --output .work/required-candidates/medium
 ```
 

@@ -23,11 +23,20 @@ categories, so generated outliers cannot move a threshold or alter the
 vocabulary. Interior threshold values use the later ordinary bin. The first
 event uses `initial`, never a fabricated numerical IAT.
 
-The declared support is the complete two-direction Cartesian vocabulary. It is
-formed before examining generated data and is the only state support that
-receives smoothing. Require no more than 256 states and no more than 65,536
-state-to-state cells before allocating rows. Each trace needs at least two
-events; this supplies one noninitial IAT and a defined frozen state sequence.
+The declared support is the complete two-direction Cartesian vocabulary. Its
+prospective size is computed without constructing categories or tuples:
+
+\[
+|V|=2(S+2)(I+3),\qquad C=|V|^2.
+\]
+
+Configuration and the pure diagnostic both reject unless `|V| <= 256` and
+`C <= 65,536`, before Cartesian range construction or row allocation. The
+strict individual configuration bounds are `S <= 30` and `I <= 39`, followed
+by this coupled check. The support is formed only after validation, before
+examining generated data, and is the only state support that receives
+smoothing. Each trace needs at least two events; this supplies one noninitial
+IAT and a defined frozen state sequence.
 
 ## Components
 
@@ -70,6 +79,8 @@ error; only negligible endpoint roundoff is clamped.
 - Opposite directions are distinct states even at equal size and IAT values.
 - Empty source rows are uniform under positive smoothing.
 - Identical traces have zero occupancy, row, and run divergences and score one.
+- The exact safe boundary `(S=6,I=13)` declares 256 states and 65,536 cells;
+  `(S=6,I=14)` is rejected before allocation.
 
 The categorical state design, edge categories, active support, caps, row
 average, and run overflow convention are Trafficlab definitions.

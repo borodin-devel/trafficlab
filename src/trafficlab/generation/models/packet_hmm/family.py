@@ -138,7 +138,7 @@ class PacketHmmFamily:
         trace = validate_fit_inputs(reference, W=W)
         state_count = _canonical_genes(genes, bounds)[0]
         try:
-            return fit_trace(trace, state_count=state_count)
+            return validate_model(fit_trace(trace, state_count=state_count))
         except (TypeError, ValueError, TrafficlabError) as error:
             raise _invalid(
                 f"reference fit: {error}",
@@ -248,6 +248,8 @@ class PacketHmmFamily:
                 diagnostic["iterations"],
                 _float_list(diagnostic["log_likelihoods"], context="diagnostic log_likelihoods"),
             )
+            if not diagnostics.converged:
+                raise ValueError("diagnostics must report estimator convergence")
             vocabulary_value = payload["vocabulary"]
             if type(vocabulary_value) is not list or not vocabulary_value:
                 raise ValueError("vocabulary must be a nonempty list")

@@ -13,6 +13,7 @@ from trafficlab.common.config import (
     MarkovPacketTrainConfig,
     NhppConfig,
     PacketHmmConfig,
+    TransitionSettings,
 )
 
 
@@ -37,6 +38,14 @@ def test_required_structural_bound_types_are_strict() -> None:
     assert NhppConfig(bin_count=IntegerBounds(lower=2, upper=16)).bin_count.upper == 16
     with pytest.raises(ValidationError):
         AcdConfig.model_validate({"order": {"lower": 0, "upper": 3}})
+
+
+def test_transition_schema_exposes_individual_preallocation_caps() -> None:
+    """External strict-schema readers must reject unsafe dimensions before semantic coupled validation."""
+    properties = TransitionSettings.model_json_schema()["properties"]
+
+    assert cast(dict[str, object], properties["size_bin_count"])["maximum"] == 30
+    assert cast(dict[str, object], properties["iat_bin_count"])["maximum"] == 39
 
 
 def test_unknown_root_key_is_rejected(valid_config_data: dict[str, object]) -> None:

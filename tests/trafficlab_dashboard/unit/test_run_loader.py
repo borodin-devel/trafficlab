@@ -388,7 +388,7 @@ def test_history_counts_must_match_experiment_population_at_load_time(tmp_path: 
     history_path = run_directory / "ga_history.csv"
     content = history_path.read_text(encoding="utf-8")
     changed = content.replace("0,family,markov_renewal,1,1,", "0,family,markov_renewal,2,1,", 1)
-    history_path.write_text(changed.replace("0,overall,,8,7,", "0,overall,,9,7,", 1), encoding="utf-8")
+    history_path.write_text(changed.replace("0,overall,,8,6,", "0,overall,,9,6,", 1), encoding="utf-8")
 
     loaded = load_dashboard_run(run_directory)
 
@@ -398,35 +398,20 @@ def test_history_counts_must_match_experiment_population_at_load_time(tmp_path: 
 
 def test_impossible_history_mean_disables_ga_history_at_load_time(tmp_path: Path) -> None:
     run_directory = copy_checked_dashboard_run(tmp_path)
-    experiment_path = run_directory / "experiment.toml"
-    experiment_path.write_text(
-        experiment_path.read_text(encoding="utf-8").replace("population_size = 8", "population_size = 14", 1),
-        encoding="utf-8",
-    )
     history_path = run_directory / "ga_history.csv"
     content = history_path.read_text(encoding="utf-8")
-    replacements = (
-        (
-            "0,family,mmpp,1,1,0.7245842971184945,0.7245842971184945,0,2",
-            "0,family,mmpp,7,1,0.5,0.2,0,2",
+    family_original = "0,family,mmpp,1,1,0.7220251606878283,0.7220251606878283,0,2"
+    family_replacement = "0,family,mmpp,1,1,0.7220251606878283,1.0,0,2"
+    overall_original = "0,overall,,8,6,0.8636028231040744,0.5735595501451406,0,3"
+    overall_replacement = "0,overall,,8,6,0.8636028231040744,0.608306405059162,0,3"
+    assert family_original in content
+    assert overall_original in content
+    history_path.write_text(
+        content.replace(family_original, family_replacement, 1).replace(
+            overall_original, overall_replacement, 1
         ),
-        (
-            "0,overall,,8,7,0.8867190861117602,0.6861569251863127,0,4",
-            "0,overall,,14,7,0.8867190861117602,0.44033365031228616,0,4",
-        ),
-        (
-            "1,family,markov_renewal,2,2,0.8647521675988381,0.8647521675988381,0,3",
-            "1,family,markov_renewal,8,8,0.8647521675988381,0.8647521675988381,0,3",
-        ),
-        (
-            "1,overall,,8,7,0.8867190861117602,0.7013477859317385,0,4",
-            "1,overall,,14,13,0.8867190861117602,0.7713782352176384,0,4",
-        ),
+        encoding="utf-8",
     )
-    for original, replacement in replacements:
-        assert original in content
-        content = content.replace(original, replacement, 1)
-    history_path.write_text(content, encoding="utf-8")
 
     loaded = load_dashboard_run(run_directory)
 

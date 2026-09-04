@@ -18,7 +18,13 @@ from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSI
 from trafficlab.comparison.codec import parse_comparison_result
 from trafficlab.comparison.diagnostics import MethodDiagnostic
 from trafficlab.comparison.schema import ComparisonResult, MethodComparison
-from trafficlab.generation.models.fitted_schema import AcdPayload, FamilyPayload, MarkovPacketTrainPayload
+from trafficlab.generation.models.fitted_schema import (
+    AcdPayload,
+    FamilyPayload,
+    MarkovPacketTrainPayload,
+    NhppPayload,
+    PacketHmmPayload,
+)
 from trafficlab.study_evidence.report import StudyBootstrapInterval
 
 _ROOT = Path(__file__).parents[3]
@@ -168,7 +174,12 @@ def test_family_and_method_payloads_publish_union_schemas() -> None:
     acd_schema = family_schema["$defs"][AcdPayload.__name__]
     assert acd_schema["title"] == "AcdPayload"
     assert acd_schema["additionalProperties"] is False
-    assert acd_schema["required"] == ["omega", "alpha", "beta", "marks"]
+    assert acd_schema["required"] == ["omega", "alpha", "beta", "diagnostics", "marks"]
+    nhpp_schema = family_schema["$defs"][NhppPayload.__name__]
+    assert nhpp_schema["required"] == ["bin_edges", "rates", "integrated_intensity", "bin_marks", "global_marks"]
+    packet_hmm_schema = family_schema["$defs"][PacketHmmPayload.__name__]
+    diagnostics_ref = packet_hmm_schema["properties"]["diagnostics"]["$ref"].split("/")[-1]
+    assert family_schema["$defs"][diagnostics_ref]["properties"]["converged"]["const"] is True
     packet_train_schema = family_schema["$defs"][MarkovPacketTrainPayload.__name__]
     assert packet_train_schema["title"] == "MarkovPacketTrainPayload"
     assert packet_train_schema["additionalProperties"] is False

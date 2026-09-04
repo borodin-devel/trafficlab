@@ -16,7 +16,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.json import render_json_document
 from trafficlab.common.scientific_schema import SCIENTIFIC_ARTIFACT_SCHEMA_VERSION, require_current_scientific_schema
 from trafficlab.generation.models.common import FamilyBounds, FittedModel, Gene, Genes, ModelFamily, ReferenceTrace
-from trafficlab.generation.models.fitted_schema import FamilyPayload, tuple_input, validate_family_payload
+from trafficlab.generation.models.fitted_schema import FamilyPayload, NhppPayload, tuple_input, validate_family_payload
 from trafficlab.generation.models.registry import (
     MARKOV_RENEWAL_FAMILY,
     MMPP_FAMILY,
@@ -319,7 +319,12 @@ def _validate_best_model(model: BestModel) -> None:
     _validate_identity(model.capture_identity, name="capture")
     _validate_final_seed(model.final_seed)
     _validate_final_limits(model.final_limits)
-    _validate_window(model.observation_window_seconds)
+    window = _validate_window(model.observation_window_seconds)
+    if model.family == "nhpp" and cast(NhppPayload, model.fitted).bin_edges[-1] != window:
+        raise invalid_best_model(
+            "invalid fitted NHPP bin edges: final edge does not match the outer observation window",
+            corrective_action="refit the NHPP model for the exact retained observation window",
+        )
     _exact_mapping(model.estimator_choices, dict(family.estimator_choices), name="estimator choices")
     _exact_mapping(model.seed_policy, _SEED_POLICY, name="seed policy")
     try:

@@ -1275,6 +1275,14 @@
           "title": "Acf Size Weight",
           "type": "number"
         },
+        "ad_downlink_weight": {
+          "title": "Ad Downlink Weight",
+          "type": "number"
+        },
+        "ad_global_weight": {
+          "title": "Ad Global Weight",
+          "type": "number"
+        },
         "ad_iat_weight": {
           "title": "Ad Iat Weight",
           "type": "number"
@@ -1283,12 +1291,28 @@
           "title": "Ad Size Weight",
           "type": "number"
         },
+        "ad_uplink_weight": {
+          "title": "Ad Uplink Weight",
+          "type": "number"
+        },
+        "cvm_downlink_weight": {
+          "title": "Cvm Downlink Weight",
+          "type": "number"
+        },
+        "cvm_global_weight": {
+          "title": "Cvm Global Weight",
+          "type": "number"
+        },
         "cvm_iat_weight": {
           "title": "Cvm Iat Weight",
           "type": "number"
         },
         "cvm_size_weight": {
           "title": "Cvm Size Weight",
+          "type": "number"
+        },
+        "cvm_uplink_weight": {
+          "title": "Cvm Uplink Weight",
           "type": "number"
         },
         "iat_diagnostic_quantile": {
@@ -1374,8 +1398,14 @@
         "max_direction_bin_cells",
         "cvm_iat_weight",
         "cvm_size_weight",
+        "cvm_global_weight",
+        "cvm_uplink_weight",
+        "cvm_downlink_weight",
         "ad_iat_weight",
         "ad_size_weight",
+        "ad_global_weight",
+        "ad_uplink_weight",
+        "ad_downlink_weight",
         "js_iat_bin_count",
         "js_iat_weight",
         "js_mark_weight",
@@ -1451,7 +1481,7 @@
       "properties": {
         "iat_bin_count": {
           "exclusiveMinimum": 0,
-          "maximum": 65536,
+          "maximum": 39,
           "title": "Iat Bin Count",
           "type": "integer"
         },
@@ -1474,7 +1504,7 @@
         },
         "size_bin_count": {
           "exclusiveMinimum": 0,
-          "maximum": 65536,
+          "maximum": 30,
           "title": "Size Bin Count",
           "type": "integer"
         },

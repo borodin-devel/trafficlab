@@ -34,26 +34,40 @@ statistic.
 
 ## Trace inputs and aggregation
 
-`cramer_von_mises_similarity` applies the formula separately to all IATs and
-all frame lengths. IATs retain zero intervals and are associated with the
-direction of their destination packet for availability reporting. Frame lengths
-use each packet's own direction. Finite nonnegative feature weights
+`cramer_von_mises_similarity` applies the formula separately to IATs and frame
+lengths in three strata: global, canonical `outbound`, and canonical `inbound`.
+IATs retain zero intervals and use the direction of their destination packet;
+frame lengths use each packet's own direction. At the configuration boundary,
+the canonical directions are named `uplink` and `downlink`. Finite nonnegative
+feature weights
 \(w_{IAT}+w_{size}=1\) combine the component discrepancies:
 
 \[
 D=w_{IAT}D_{IAT}+w_{size}D_{size},\qquad s=1-D.
 \]
 
-The method reports each direction stratum's availability but compares complete
-global feature samples at this pure-function boundary. A missing one-sided
-stratum is never replaced with an invented observation.
+produce one discrepancy in each stratum. Independently configured
+`global`/`uplink`/`downlink` weights (v_G,v_U,v_D) are finite, nonnegative,
+sum to one, and produce
+
+\[
+D=v_GD_G+v_UD_{outbound}+v_DD_{inbound}.
+\]
+
+Both features are evaluated in every stratum. When both traces have no sample
+for one stratum/feature, its discrepancy is zero. When exactly one trace has no
+sample, its discrepancy is one; no observation is fabricated. A zero-weight
+stratum remains retained and validated in diagnostics.
 
 ## Diagnostics and edge cases
 
-For each feature, return reference/generated sample counts, duplicate-observation
-tie counts, raw sum, normalization weight `1`, and normalized discrepancy. The
-top-level diagnostics retain the observation window, feature weights,
-direction-stratum availability, and final discrepancy. No p-value is present.
+For each stratum and feature, return its status (`compared`, `both_empty`, or
+`one_sided_empty`), reference/generated sample counts, duplicate-observation tie
+counts, raw sum, normalization weight, and normalized discrepancy. Empirical
+CvM comparisons have normalization weight `1`; empty-policy records use zero
+raw sum and normalization. The top-level diagnostics retain the observation
+window, feature weights, canonical-direction stratum weights, all three
+stratum discrepancies, and the exact final discrepancy. No p-value is present.
 
 Both traces require at least two canonical events so each IAT sample is
 nonempty. Direct sample evaluation likewise requires each sample to be
@@ -75,6 +89,10 @@ support use \(O(n+m)\) space in the straightforward implementation.
 - `[1, 1, 2]` versus `[1, 2, 2]` consumes each tie group once and has
   discrepancy `1/18`.
 - Identical tied samples, including zero IATs, have score `1`.
+- With feature weights `(IAT=1/4,size=3/4)` and stratum weights
+  `(global=1/2,uplink=1/4,downlink=1/4)`, the direction-swapped three-packet
+  example in the direct tests has discrepancies `(0,3/64,3/8)` and aggregate
+  `27/256`.
 
 ## References
 

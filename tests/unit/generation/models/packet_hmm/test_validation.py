@@ -82,14 +82,12 @@ def test_model_binds_convergence_claim_to_final_likelihood_improvement() -> None
             iterations=100,
             log_likelihoods=(-2.0, *(-1.0 for _ in range(99)), -0.999999999),
         ),
+        BaumWelchDiagnostics(
+            converged=False,
+            iterations=100,
+            log_likelihoods=tuple(float(index) for index in range(101)),
+        ),
     )
     for diagnostics in invalid:
         with pytest.raises(ValueError, match="converg|improvement"):
             replace(two_state_model(), diagnostics=diagnostics)
-
-    nonconverged = BaumWelchDiagnostics(
-        converged=False,
-        iterations=100,
-        log_likelihoods=tuple(float(index) for index in range(101)),
-    )
-    assert replace(two_state_model(), diagnostics=nonconverged).diagnostics == nonconverged

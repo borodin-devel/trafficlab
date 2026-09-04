@@ -57,7 +57,7 @@ from trafficlab.generation.models import (
     render_best_model,
     runtime_fitted_model,
 )
-from trafficlab.generation.models.acd import AcdFamily, AcdModel
+from trafficlab.generation.models.acd import AcdFamily, AcdFitDiagnostics, AcdModel
 from trafficlab.generation.models.common import GenerationResult, MarkCount, MarkDistribution
 from trafficlab.generation.models.markov_packet_train import MarkovPacketTrainFamily, MarkovPacketTrainModel
 from trafficlab.generation.models.markov_packet_train.model import fit_trace as fit_packet_train
@@ -154,11 +154,19 @@ _MMPP_MODEL = MmppModel(q01=1.0, q10=3.0, lambda0=1.0, lambda1=9.0, marks=_MARKS
 _NHPP_LOW_MARKS = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1), MarkCount(Direction.INBOUND, 120, 3)))
 _NHPP_HIGH_MARKS = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 3), MarkCount(Direction.INBOUND, 120, 1)))
 _NHPP_MODEL = NhppModel(
+    bin_edges=(0.0, 400.0, 800.0, 1200.0),
     rates=(2.0, 0.0, 4.0),
+    integrated_intensity=2400.0,
     bin_marks=(_NHPP_LOW_MARKS, None, _NHPP_HIGH_MARKS),
     global_marks=_MARKS,
 )
-_ACD_MODEL = AcdModel(omega=0.4, alpha=(0.2,), beta=(0.4,), marks=_MARKS)
+_ACD_MODEL = AcdModel(
+    omega=0.4,
+    alpha=(0.2,),
+    beta=(0.4,),
+    diagnostics=AcdFitDiagnostics(1.0, 2.5, 7, True),
+    marks=_MARKS,
+)
 
 
 def _packet_train_model() -> MarkovPacketTrainModel:

@@ -37,6 +37,8 @@ PositiveInteger = Annotated[StrictInt, Field(gt=0)]
 PositiveFloat = Annotated[StrictFloat, Field(gt=0)]
 AtLeastTwoInteger = Annotated[StrictInt, Field(ge=2)]
 BoundedSimilarityAllocation = Annotated[StrictInt, Field(gt=0, le=65_536)]
+TransitionSizeBinCount = Annotated[StrictInt, Field(gt=0, le=30)]
+TransitionIatBinCount = Annotated[StrictInt, Field(gt=0, le=39)]
 Probability = Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
 Tolerance = Annotated[StrictFloat, Field(ge=0.0, le=1.0)]
 NormalizedMutationScale = Annotated[StrictFloat, Field(gt=0.0, le=1.0)]
@@ -410,8 +412,8 @@ class DispersionSettings(StrictModel):
 
 
 class TransitionSettings(StrictModel):
-    size_bin_count: BoundedSimilarityAllocation
-    iat_bin_count: BoundedSimilarityAllocation
+    size_bin_count: TransitionSizeBinCount
+    iat_bin_count: TransitionIatBinCount
     pseudocount: PositiveFloat
     occupancy_weight: Probability
     transition_rows_weight: Probability
@@ -419,6 +421,10 @@ class TransitionSettings(StrictModel):
 
     @model_validator(mode="after")
     def component_weights_are_normalized(self) -> Self:
+        state_count = 2 * (self.size_bin_count + 2) * (self.iat_bin_count + 3)
+        transition_cell_count = state_count * state_count
+        if state_count > 256 or transition_cell_count > 65_536:
+            raise ValueError("post-fit transition bins must fit the 256-state and 65536-transition-cell caps")
         _weights_sum_to_one(
             (self.occupancy_weight, self.transition_rows_weight, self.runs_weight),
             "post-fit transition component weights",
@@ -445,8 +451,14 @@ class SimilarityConfig(StrictModel):
     max_direction_bin_cells: AtLeastTwoInteger
     cvm_iat_weight: StrictFloat
     cvm_size_weight: StrictFloat
+    cvm_global_weight: StrictFloat
+    cvm_uplink_weight: StrictFloat
+    cvm_downlink_weight: StrictFloat
     ad_iat_weight: StrictFloat
     ad_size_weight: StrictFloat
+    ad_global_weight: StrictFloat
+    ad_uplink_weight: StrictFloat
+    ad_downlink_weight: StrictFloat
     js_iat_bin_count: BoundedSimilarityAllocation
     js_iat_weight: StrictFloat
     js_mark_weight: StrictFloat
@@ -493,7 +505,15 @@ class SimilarityConfig(StrictModel):
             "multiscale component weights",
         )
         _weights_sum_to_one((self.cvm_iat_weight, self.cvm_size_weight), "Cramér--von Mises feature weights")
+        _weights_sum_to_one(
+            (self.cvm_global_weight, self.cvm_uplink_weight, self.cvm_downlink_weight),
+            "Cramér--von Mises stratum weights",
+        )
         _weights_sum_to_one((self.ad_iat_weight, self.ad_size_weight), "Anderson--Darling feature weights")
+        _weights_sum_to_one(
+            (self.ad_global_weight, self.ad_uplink_weight, self.ad_downlink_weight),
+            "Anderson--Darling stratum weights",
+        )
         _weights_sum_to_one((self.js_iat_weight, self.js_mark_weight), "Jensen--Shannon feature weights")
         return self
 

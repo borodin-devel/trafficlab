@@ -41,6 +41,8 @@ type BoundedFanoDirectionCells = Annotated[
 ]
 type BoundedTransitionStateCount = Annotated[StrictInt, Field(gt=0, le=_MAXIMUM_TRANSITION_STATES)]
 type BoundedTransitionCellCount = Annotated[StrictInt, Field(gt=0, le=_MAXIMUM_TRANSITION_CELLS)]
+type BoundedTransitionSizeBinCount = Annotated[StrictInt, Field(gt=0, le=30)]
+type BoundedTransitionIatBinCount = Annotated[StrictInt, Field(gt=0, le=39)]
 
 
 def _snapped_window_count(W: float, width: float, *, name: str) -> int:
@@ -324,8 +326,8 @@ def _state_run_counts(states: tuple[TransitionState, ...], maximum: int) -> tupl
 
 class TransitionMatrixDiagnostic(StrictArtifactModel):
     observation_window_seconds: PositiveFloat
-    size_bin_count: PositiveInt
-    iat_bin_count: PositiveInt
+    size_bin_count: BoundedTransitionSizeBinCount
+    iat_bin_count: BoundedTransitionIatBinCount
     log_size_thresholds: FloatTuple
     log_iat_thresholds: FloatTuple
     pseudocount: PositiveFloat

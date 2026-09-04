@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
@@ -10,12 +11,15 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import ValidationError
 
+import trafficlab.generation.models.packet_hmm.family as packet_hmm_family
 from tests.unit.generation.models.packet_hmm._support import two_state_model
 from trafficlab.common.config import IntegerBounds, PacketHmmConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.generation.models.fitted_schema import PacketHmmPayload
 from trafficlab.generation.models.packet_hmm.family import PacketHmmFamily
+from trafficlab.generation.models.packet_hmm.inference import BaumWelchDiagnostics
+from trafficlab.generation.models.packet_hmm.model import PacketHmmModel
 
 FAMILY = PacketHmmFamily()
 BOUNDS = PacketHmmConfig(state_count=IntegerBounds(lower=2, upper=4))
@@ -95,6 +99,35 @@ def test_fit_is_repeatable_and_persists_non_decreasing_likelihoods() -> None:
     )
 
 
+def _valid_nonconverged_diagnostics() -> BaumWelchDiagnostics:
+    return BaumWelchDiagnostics(
+        converged=False,
+        iterations=100,
+        log_likelihoods=tuple(float(index) for index in range(101)),
+    )
+
+
+def test_runtime_model_rejects_a_mathematically_consistent_nonconverged_estimate() -> None:
+    """A well-formed capped EM history is still not an admissible competitive model."""
+    with pytest.raises(ValueError, match="converg"):
+        replace(two_state_model(), diagnostics=_valid_nonconverged_diagnostics())
+
+
+def test_family_fit_rejects_a_bypassed_nonconverged_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Candidate fitting must invalidate nonconvergence even if an estimator object bypasses construction."""
+    corrupted = two_state_model()
+    object.__setattr__(corrupted, "diagnostics", _valid_nonconverged_diagnostics())
+
+    def nonconverged_fit(_trace: TrafficTrace, *, state_count: int) -> PacketHmmModel:
+        del state_count
+        return corrupted
+
+    monkeypatch.setattr(packet_hmm_family, "fit_trace", nonconverged_fit)
+
+    with pytest.raises(TrafficlabError, match="converg"):
+        FAMILY.fit(REFERENCE, (2,), W=6.0, bounds=BOUNDS)
+
+
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     (
@@ -171,6 +204,22 @@ def test_payload_and_loader_reject_false_convergence_or_nonconvergence_claims(
     with pytest.raises(ValidationError, match="converg|improvement"):
         PacketHmmPayload.model_validate(payload)
     with pytest.raises(TrafficlabError, match="converg|improvement"):
+        FAMILY.load_fitted(payload, genes=(2,), bounds=BOUNDS)
+
+
+def test_wire_and_loader_reject_a_consistent_nonconverged_history() -> None:
+    """Strict wire validation must reject nonconvergence, not merely contradictory termination fields."""
+    payload = FAMILY.dump_fitted(two_state_model())
+    diagnostics = _valid_nonconverged_diagnostics()
+    payload["diagnostics"] = {
+        "converged": diagnostics.converged,
+        "iterations": diagnostics.iterations,
+        "log_likelihoods": list(diagnostics.log_likelihoods),
+    }
+
+    with pytest.raises(ValidationError, match="converg"):
+        PacketHmmPayload.model_validate(payload)
+    with pytest.raises(TrafficlabError, match="converg"):
         FAMILY.load_fitted(payload, genes=(2,), bounds=BOUNDS)
 
 

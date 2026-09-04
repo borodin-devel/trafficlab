@@ -85,6 +85,9 @@ def evaluate_fitness(
             W,
             settings.cvm_iat_weight,
             settings.cvm_size_weight,
+            settings.cvm_global_weight,
+            settings.cvm_uplink_weight,
+            settings.cvm_downlink_weight,
         ),
         "anderson_darling": anderson_darling_similarity(
             reference_trace,
@@ -92,6 +95,9 @@ def evaluate_fitness(
             W,
             settings.ad_iat_weight,
             settings.ad_size_weight,
+            settings.ad_global_weight,
+            settings.ad_uplink_weight,
+            settings.ad_downlink_weight,
         ),
         "jensen_shannon": jensen_shannon_similarity(
             reference_trace,

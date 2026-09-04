@@ -16,6 +16,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TrafficTrace
 from trafficlab.generation.models import acd_fitting
 from trafficlab.generation.models.acd_fitting import (
+    AcdFitDiagnostics,
     optimizer_maximum_iterations,
     optimizer_tolerance,
 )
@@ -80,6 +81,7 @@ minimize = acd_fitting.minimize
 
 __all__ = (
     "AcdFamily",
+    "AcdFitDiagnostics",
     "AcdModel",
     "_conditional_means",
     "_exponential_negative_log_likelihood",
@@ -117,7 +119,7 @@ def _likelihood_and_gradient(
 
 def _fit_parameters(
     durations: tuple[float, ...], *, order: int, reference_mean: float
-) -> tuple[float, tuple[float, ...], tuple[float, ...]]:
+) -> tuple[float, tuple[float, ...], tuple[float, ...], AcdFitDiagnostics]:
     """Retain the historical solver seam while delegating fitting mechanics."""
     acd_fitting.minimize = minimize
     return acd_fitting.fit_parameters(durations, order=order, reference_mean=reference_mean)
@@ -130,6 +132,7 @@ class AcdModel:
     omega: float
     alpha: tuple[float, ...]
     beta: tuple[float, ...]
+    diagnostics: AcdFitDiagnostics
     marks: MarkDistribution
 
     def __post_init__(self) -> None:
@@ -151,6 +154,14 @@ class AcdModel:
         stationary_mean = self.omega / (1.0 - persistence)
         if not math.isfinite(stationary_mean) or stationary_mean <= 0.0:
             raise ValueError("ACD stationary mean must be finite and positive")
+        if type(self.diagnostics) is not AcdFitDiagnostics:
+            raise TypeError("diagnostics must be AcdFitDiagnostics")
+        AcdFitDiagnostics(
+            initial_conditional_duration=self.diagnostics.initial_conditional_duration,
+            final_negative_log_likelihood=self.diagnostics.final_negative_log_likelihood,
+            iterations=self.diagnostics.iterations,
+            converged=self.diagnostics.converged,
+        )
         if type(self.marks) is not MarkDistribution:
             raise TypeError("marks must be a MarkDistribution")
         MarkDistribution(self.marks.entries)
@@ -164,7 +175,7 @@ def _validate_model(model: object) -> AcdModel:
     if type(model) is not AcdModel:
         raise TypeError("model must be an AcdModel")
     try:
-        return AcdModel(model.omega, model.alpha, model.beta, model.marks)
+        return AcdModel(model.omega, model.alpha, model.beta, model.diagnostics, model.marks)
     except (TypeError, ValueError) as error:
         raise _invalid(
             f"invalid fitted ACD model: {error}",
@@ -189,17 +200,6 @@ def _validate_innovation(value: object) -> float:
             corrective_action="use a random generator that returns finite nonnegative scalar innovations",
         )
     return value
-
-
-def _stationary_mean(model: AcdModel) -> float:
-    persistence = math.fsum((*model.alpha, *model.beta))
-    mean = model.omega / (1.0 - persistence)
-    if not math.isfinite(mean) or mean <= 0.0:
-        raise _invalid(
-            "invalid ACD stationary mean",
-            corrective_action="use finite positive omega and stationary nonnegative coefficients",
-        )
-    return mean
 
 
 def _generate_with_rng(
@@ -242,9 +242,9 @@ def _generate_with_rng(
     output_bytes = frame_length
 
     order = len(checked_model.alpha)
-    mean = _stationary_mean(checked_model)
-    duration_history = [mean] * order
-    conditional_mean_history = [mean] * order
+    initial_duration = checked_model.diagnostics.initial_conditional_duration
+    duration_history = [initial_duration] * order
+    conditional_mean_history = [initial_duration] * order
     current_time = 0.0
     while True:
         reason = guard.pre_draw_reason(len(timestamps), output_bytes)
@@ -372,8 +372,14 @@ class AcdFamily:
                 "invalid ACD reference mean",
                 corrective_action="provide a finite positive observation window with at least one positive duration",
             )
-        omega, alpha, beta = _fit_parameters(durations, order=order, reference_mean=reference_mean)
-        return AcdModel(omega=omega, alpha=alpha, beta=beta, marks=MarkDistribution.from_trace(trace))
+        omega, alpha, beta, diagnostics = _fit_parameters(durations, order=order, reference_mean=reference_mean)
+        return AcdModel(
+            omega=omega,
+            alpha=alpha,
+            beta=beta,
+            diagnostics=diagnostics,
+            marks=MarkDistribution.from_trace(trace),
+        )
 
     def generate(
         self,
@@ -397,6 +403,12 @@ class AcdFamily:
             "omega": checked_model.omega,
             "alpha": list(checked_model.alpha),
             "beta": list(checked_model.beta),
+            "diagnostics": {
+                "initial_conditional_duration": checked_model.diagnostics.initial_conditional_duration,
+                "final_negative_log_likelihood": checked_model.diagnostics.final_negative_log_likelihood,
+                "iterations": checked_model.diagnostics.iterations,
+                "converged": checked_model.diagnostics.converged,
+            },
             "marks": _mark_payload(checked_model.marks),
         }
 
@@ -405,13 +417,13 @@ class AcdFamily:
         if type(data) is not dict:
             raise _invalid(
                 "invalid fitted ACD payload",
-                corrective_action="provide exactly omega, alpha, beta, and marks",
+                corrective_action="provide exactly omega, alpha, beta, diagnostics, and marks",
             )
         payload = cast(dict[str, object], data)
-        if set(payload) != {"omega", "alpha", "beta", "marks"}:
+        if set(payload) != {"omega", "alpha", "beta", "diagnostics", "marks"}:
             raise _invalid(
                 "invalid fitted ACD payload",
-                corrective_action="provide exactly omega, alpha, beta, and marks",
+                corrective_action="provide exactly omega, alpha, beta, diagnostics, and marks",
             )
         omega, raw_alpha, raw_beta = payload["omega"], payload["alpha"], payload["beta"]
         if type(omega) is not float or type(raw_alpha) is not list or type(raw_beta) is not list:
@@ -431,12 +443,37 @@ class AcdFamily:
                 "invalid fitted ACD coefficients",
                 corrective_action="provide exact finite nonnegative float coefficients",
             )
+        raw_diagnostics = payload["diagnostics"]
+        if type(raw_diagnostics) is not dict or set(cast(dict[object, object], raw_diagnostics)) != {
+            "initial_conditional_duration",
+            "final_negative_log_likelihood",
+            "iterations",
+            "converged",
+        }:
+            raise _invalid(
+                "invalid fitted ACD diagnostics",
+                corrective_action="provide the exact initial duration, final likelihood, iterations, and convergence",
+            )
+        diagnostic_values = cast(dict[str, object], raw_diagnostics)
+        try:
+            diagnostics = AcdFitDiagnostics(
+                initial_conditional_duration=cast(float, diagnostic_values["initial_conditional_duration"]),
+                final_negative_log_likelihood=cast(float, diagnostic_values["final_negative_log_likelihood"]),
+                iterations=cast(int, diagnostic_values["iterations"]),
+                converged=cast(bool, diagnostic_values["converged"]),
+            )
+        except (TypeError, ValueError) as error:
+            raise _invalid(
+                f"invalid fitted ACD diagnostics: {error}",
+                corrective_action="provide a finite successful outcome from the fixed bounded optimizer",
+            ) from error
         marks = _load_marks(payload["marks"])
         try:
             return AcdModel(
                 omega,
                 tuple(cast(float, value) for value in alpha_values),
                 tuple(cast(float, value) for value in beta_values),
+                diagnostics,
                 marks,
             )
         except (TypeError, ValueError) as error:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 import numpy as np
@@ -26,6 +27,32 @@ _MINIMUM_SIMPLEX_SLACK = 1e-12
 
 optimizer_maximum_iterations = _OPTIMIZER_MAXIMUM_ITERATIONS
 optimizer_tolerance = _OPTIMIZER_TOLERANCE
+
+
+@dataclass(frozen=True, slots=True)
+class AcdFitDiagnostics:
+    """Finite deterministic optimizer outcome retained by every fitted ACD model."""
+
+    initial_conditional_duration: float
+    final_negative_log_likelihood: float
+    iterations: int
+    converged: bool
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.initial_conditional_duration) is not float
+            or not math.isfinite(self.initial_conditional_duration)
+            or self.initial_conditional_duration <= 0.0
+        ):
+            raise ValueError("initial_conditional_duration must be a finite positive exact float")
+        if type(self.final_negative_log_likelihood) is not float or not math.isfinite(
+            self.final_negative_log_likelihood
+        ):
+            raise ValueError("final_negative_log_likelihood must be a finite exact float")
+        if type(self.iterations) is not int or not 0 <= self.iterations <= _OPTIMIZER_MAXIMUM_ITERATIONS:
+            raise ValueError("ACD diagnostic iterations must be an exact integer in 0..500")
+        if type(self.converged) is not bool or not self.converged:
+            raise ValueError("ACD diagnostics must report optimizer convergence")
 
 
 class _OptimizeResult(Protocol):
@@ -224,7 +251,7 @@ def _likelihood_and_gradient(
 
 def _fit_parameters(
     durations: tuple[float, ...], *, order: int, reference_mean: float
-) -> tuple[float, tuple[float, ...], tuple[float, ...]]:
+) -> tuple[float, tuple[float, ...], tuple[float, ...], AcdFitDiagnostics]:
     result = minimize(
         _likelihood_and_gradient,
         np.zeros(1 + 2 * order, dtype=np.float64),
@@ -277,7 +304,15 @@ def _fit_parameters(
             "invalid ACD optimizer result: final loss does not match fitted parameters",
             corrective_action="refit under the fixed deterministic ACD solver policy",
         )
-    return fitted
+    return (
+        *fitted,
+        AcdFitDiagnostics(
+            initial_conditional_duration=reference_mean,
+            final_negative_log_likelihood=final_loss,
+            iterations=iterations,
+            converged=True,
+        ),
+    )
 
 
 conditional_means = _conditional_means

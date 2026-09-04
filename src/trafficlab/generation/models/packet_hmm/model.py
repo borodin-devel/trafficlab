@@ -240,20 +240,13 @@ class PacketHmmModel:
         )
         if self.diagnostics.iterations > self.maximum_iterations:
             raise ValueError("diagnostic iterations exceed maximum_iterations")
-        if self.diagnostics.converged:
-            if self.diagnostics.iterations < 1:
-                raise ValueError("converged diagnostics require at least one update")
-            else:
-                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
-                if not 0.0 <= final_improvement <= self.convergence_tolerance:
-                    raise ValueError("converged diagnostics require final improvement within tolerance")
-        else:
-            if self.diagnostics.iterations != self.maximum_iterations:
-                raise ValueError("nonconverged diagnostics must reach maximum_iterations")
-            else:
-                final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
-                if final_improvement <= self.convergence_tolerance:
-                    raise ValueError("nonconverged diagnostics require final improvement above tolerance")
+        if not self.diagnostics.converged:
+            raise ValueError("packet-HMM estimator diagnostics must report convergence")
+        if self.diagnostics.iterations < 1:
+            raise ValueError("converged diagnostics require at least one update")
+        final_improvement = self.diagnostics.log_likelihoods[-1] - self.diagnostics.log_likelihoods[-2]
+        if not 0.0 <= final_improvement <= self.convergence_tolerance:
+            raise ValueError("converged diagnostics require final improvement within tolerance")
         if type(self.initial_marks) is not MarkDistribution or self.initial_marks.total_count != 1:
             raise ValueError("initial_marks must contain exactly the observed t0 mark")
         initial_marks = MarkDistribution(

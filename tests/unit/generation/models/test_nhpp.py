@@ -7,11 +7,13 @@ import math
 from collections.abc import Sequence
 
 import pytest
+from pydantic import ValidationError
 
 from trafficlab.common.config import GenerationLimits, IntegerBounds, NhppConfig
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.generation.models.common import MarkCount, MarkDistribution
+from trafficlab.generation.models.fitted_schema import NhppPayload
 from trafficlab.generation.models.nhpp import NhppFamily, NhppModel, _generate_with_rng
 
 FAMILY = NhppFamily()
@@ -53,6 +55,26 @@ class ScriptedClock:
         return next(self._values)
 
 
+def _nhpp_model(
+    *,
+    rates: tuple[float, ...],
+    bin_marks: tuple[MarkDistribution | None, ...],
+    global_marks: MarkDistribution,
+    window: float,
+) -> NhppModel:
+    width = window / len(rates)
+    edges = tuple(window if index == len(rates) else index * width for index in range(len(rates) + 1))
+    return NhppModel(
+        bin_edges=edges,
+        rates=rates,
+        integrated_intensity=math.fsum(
+            rate * (right - left) for rate, left, right in zip(rates, edges[:-1], edges[1:], strict=True)
+        ),
+        bin_marks=bin_marks,
+        global_marks=global_marks,
+    )
+
+
 def test_family_declares_integer_bin_chromosome_and_estimators() -> None:
     assert FAMILY.name == "nhpp"
     assert FAMILY.gene_names == ("bin_count",)
@@ -86,13 +108,33 @@ def test_repair_rejects_non_nhpp_bounds() -> None:
 def test_fit_uses_equal_bins_excludes_conditioned_zero_from_rates_and_keeps_bin_marks() -> None:
     model = FAMILY.fit(REFERENCE, (2,), W=2.0, bounds=BOUNDS)
 
+    assert model.bin_edges == (0.0, 1.0, 2.0)
     assert model.rates == (1.0, 3.0)
+    assert model.integrated_intensity == 4.0
     assert model.global_marks.entries == (
         MarkCount(Direction.OUTBOUND, 60, 2),
         MarkCount(Direction.INBOUND, 100, 3),
     )
     assert model.bin_marks[0] == MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 2),))
     assert model.bin_marks[1] == MarkDistribution((MarkCount(Direction.INBOUND, 100, 3),))
+
+
+def test_wire_schema_binds_exact_edges_and_integrated_intensity_to_rates() -> None:
+    """A payload with omitted or inconsistent NHPP geometry cannot reproduce the fitted intensity."""
+    payload = {
+        **FAMILY.dump_fitted(FAMILY.fit(REFERENCE, (2,), W=2.0, bounds=BOUNDS)),
+        "bin_edges": [0.0, 1.0, 2.0],
+        "integrated_intensity": 4.0,
+    }
+
+    assert NhppPayload.model_validate(payload).integrated_intensity == 4.0
+    for malformed in (
+        {**payload, "bin_edges": [0.0, 0.5, 2.0]},
+        {**payload, "bin_edges": [0.0, 1.0]},
+        {**payload, "integrated_intensity": 3.0},
+    ):
+        with pytest.raises(ValidationError, match="bin_edges|integrated_intensity"):
+            NhppPayload.model_validate(malformed)
 
 
 def test_fit_assigns_window_endpoint_to_final_bin() -> None:
@@ -152,7 +194,7 @@ def test_fit_rejects_unrepresentable_bin_width_or_rate(window: float) -> None:
 
 def test_generation_crosses_nonzero_and_empty_bins_without_spurious_mark_draws() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(2.0, 0.0, 3.0), bin_marks=(marks, None, marks), global_marks=marks)
+    model = _nhpp_model(rates=(2.0, 0.0, 3.0), bin_marks=(marks, None, marks), global_marks=marks, window=3.0)
     rng = ScriptedNhppRng(indices=[0, 0], exponentials=[1.5, 0.5, 0.6])
 
     result = _generate_with_rng(model, rng, W=3.0, limits=LIMITS, clock=ScriptedClock([0.0] * 20))
@@ -172,7 +214,7 @@ def test_generation_crosses_nonzero_and_empty_bins_without_spurious_mark_draws()
 
 def test_generation_emits_an_arrival_at_the_closed_window_endpoint() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     rng = ScriptedNhppRng(indices=[0, 0], exponentials=[1.0, 0.5])
 
     result = _generate_with_rng(model, rng, W=1.0, limits=LIMITS, clock=ScriptedClock([0.0] * 20))
@@ -186,7 +228,7 @@ def test_generation_emits_an_arrival_at_the_closed_window_endpoint() -> None:
 
 def test_generation_uses_global_marks_when_the_active_bin_has_no_reference_mark() -> None:
     global_marks = MarkDistribution((MarkCount(Direction.INBOUND, 100, 1),))
-    model = NhppModel(rates=(0.0, 1.0), bin_marks=(None, None), global_marks=global_marks)
+    model = _nhpp_model(rates=(0.0, 1.0), bin_marks=(None, None), global_marks=global_marks, window=2.0)
     rng = ScriptedNhppRng(indices=[0, 0], exponentials=[0.5, 1.0])
 
     result = _generate_with_rng(model, rng, W=2.0, limits=LIMITS, clock=ScriptedClock([0.0] * 20))
@@ -199,7 +241,7 @@ def test_generation_uses_global_marks_when_the_active_bin_has_no_reference_mark(
 
 def test_generation_checks_packet_and_byte_guards_at_the_initial_and_following_boundaries() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     initial_byte = _generate_with_rng(
         model,
         ScriptedNhppRng(indices=[0], exponentials=[]),
@@ -220,7 +262,7 @@ def test_generation_checks_packet_and_byte_guards_at_the_initial_and_following_b
 
 def test_generation_checks_wall_guard_before_and_after_draws() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     before = _generate_with_rng(
         model,
         ScriptedNhppRng(indices=[0], exponentials=[]),
@@ -241,7 +283,7 @@ def test_generation_checks_wall_guard_before_and_after_draws() -> None:
 
 def test_generation_checks_wall_guard_after_exponential_and_later_mark_draws() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     after_exponential = _generate_with_rng(
         model,
         ScriptedNhppRng(indices=[0], exponentials=[0.5]),
@@ -262,7 +304,7 @@ def test_generation_checks_wall_guard_after_exponential_and_later_mark_draws() -
 
 def test_generation_checks_later_event_byte_budget_before_emitting() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     result = _generate_with_rng(
         model,
         ScriptedNhppRng(indices=[0, 0], exponentials=[0.5]),
@@ -276,7 +318,7 @@ def test_generation_checks_later_event_byte_budget_before_emitting() -> None:
 
 def test_generation_rejects_invalid_exponential_values() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     with pytest.raises(TrafficlabError, match="random delay"):
         _generate_with_rng(
             model,
@@ -289,7 +331,7 @@ def test_generation_rejects_invalid_exponential_values() -> None:
 
 def test_generation_rejects_invalid_empirical_choice_primitive() -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     with pytest.raises(TrafficlabError, match="empirical random draw"):
         _generate_with_rng(
             model,
@@ -310,9 +352,18 @@ def test_generate_rejects_noncanonical_seed_primitives(seed: object) -> None:
 @pytest.mark.parametrize("window", [True, 0.0, math.nan, math.inf])
 def test_generate_rejects_invalid_window_primitives(window: object) -> None:
     marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
-    model = NhppModel(rates=(1.0,), bin_marks=(marks,), global_marks=marks)
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
     with pytest.raises(TrafficlabError, match="observation window"):
         _generate_with_rng(model, ScriptedNhppRng(indices=[], exponentials=[]), W=window, limits=LIMITS)  # type: ignore[arg-type]
+
+
+def test_generation_rejects_a_window_inconsistent_with_fitted_bin_edges() -> None:
+    """Generation must use the exact window geometry retained at fit time."""
+    marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
+    model = _nhpp_model(rates=(1.0,), bin_marks=(marks,), global_marks=marks, window=1.0)
+
+    with pytest.raises(TrafficlabError, match="does not match fitted bin_edges"):
+        _generate_with_rng(model, ScriptedNhppRng(indices=[], exponentials=[]), W=2.0, limits=LIMITS)
 
 
 def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> None:
@@ -320,7 +371,9 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
     payload = FAMILY.dump_fitted(model)
 
     assert payload == {
+        "bin_edges": [0.0, 1.0, 2.0],
         "rates": [1.0, 3.0],
+        "integrated_intensity": 4.0,
         "bin_marks": [
             [{"direction": "outbound", "frame_length": 60, "count": 2}],
             [{"direction": "inbound", "frame_length": 100, "count": 3}],
@@ -334,6 +387,8 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
     malformed_payloads: tuple[object, ...] = (
         {**payload, "rates": [1.0, -3.0]},
         {**payload, "rates": [1.0]},
+        {**payload, "bin_edges": [0.0, 0.5, 2.0]},
+        {**payload, "integrated_intensity": 3.0},
         {**payload, "bin_marks": [[{"direction": "outbound", "frame_length": 60, "count": 1}] * 2, []]},
         {**payload, "global_marks": []},
         {**payload, "extra": 1},

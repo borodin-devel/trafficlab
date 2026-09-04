@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "AcdDiagnosticsPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "converged": {
+          "const": true,
+          "title": "Converged",
+          "type": "boolean"
+        },
+        "final_negative_log_likelihood": {
+          "$ref": "#/$defs/ExactFloat"
+        },
+        "initial_conditional_duration": {
+          "$ref": "#/$defs/PositiveFloat"
+        },
+        "iterations": {
+          "maximum": 500,
+          "minimum": 0,
+          "title": "Iterations",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "initial_conditional_duration",
+        "final_negative_log_likelihood",
+        "iterations",
+        "converged"
+      ],
+      "title": "AcdDiagnosticsPayload",
+      "type": "object"
+    },
     "AcdPayload": {
       "additionalProperties": false,
       "properties": {
@@ -8,6 +38,9 @@
         },
         "beta": {
           "$ref": "#/$defs/FloatVector"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/AcdDiagnosticsPayload"
         },
         "marks": {
           "$ref": "#/$defs/MarkPayloads"
@@ -20,6 +53,7 @@
         "omega",
         "alpha",
         "beta",
+        "diagnostics",
         "marks"
       ],
       "title": "AcdPayload",
@@ -423,18 +457,26 @@
     "NhppPayload": {
       "additionalProperties": false,
       "properties": {
+        "bin_edges": {
+          "$ref": "#/$defs/FloatVector"
+        },
         "bin_marks": {
           "$ref": "#/$defs/MarkPayloadLists"
         },
         "global_marks": {
           "$ref": "#/$defs/MarkPayloads"
         },
+        "integrated_intensity": {
+          "$ref": "#/$defs/NonnegativeFloat"
+        },
         "rates": {
           "$ref": "#/$defs/FloatVector"
         }
       },
       "required": [
+        "bin_edges",
         "rates",
+        "integrated_intensity",
         "bin_marks",
         "global_marks"
       ],
@@ -486,6 +528,7 @@
       "additionalProperties": false,
       "properties": {
         "converged": {
+          "const": true,
           "title": "Converged",
           "type": "boolean"
         },

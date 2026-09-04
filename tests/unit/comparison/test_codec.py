@@ -134,7 +134,9 @@ def test_result_parser_rejects_nested_diagnostic_schema_drift(
         ("multiscale_rate", "scale_weights"),
         ("multiscale_rate", "feature_weights"),
         ("cramer_von_mises", "feature_weights"),
+        ("cramer_von_mises", "stratum_weights"),
         ("anderson_darling", "feature_weights"),
+        ("anderson_darling", "stratum_weights"),
         ("jensen_shannon", "feature_weights"),
     ],
 )

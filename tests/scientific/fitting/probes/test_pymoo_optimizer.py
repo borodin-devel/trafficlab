@@ -786,14 +786,14 @@ def test_canonical_evidence_is_deterministic_and_checkable(tmp_path: Path) -> No
     assert write_probe_evidence(destination, evidence, check=True) is False
 
 
-def test_shared_runner_generates_and_checks_the_named_pymoo_probe(tmp_path: Path) -> None:
+def test_shared_runner_generates_and_checks_the_named_schema_five_pymoo_probe(tmp_path: Path) -> None:
     repository = Path(__file__).resolve().parents[4]
     destination = tmp_path / "pymoo_cases.json"
     command = [
         sys.executable,
         str(repository / "scripts" / "run_scientific_stack_probes.py"),
         "--probe",
-        "pymoo",
+        "pymoo-v5",
         "--output",
         str(destination),
     ]

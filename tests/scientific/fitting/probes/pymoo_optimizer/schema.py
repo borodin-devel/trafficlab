@@ -115,8 +115,14 @@ SIMILARITY = SimilarityConfig(
     max_direction_bin_cells=100,
     cvm_iat_weight=0.5,
     cvm_size_weight=0.5,
+    cvm_global_weight=0.5,
+    cvm_uplink_weight=0.25,
+    cvm_downlink_weight=0.25,
     ad_iat_weight=0.5,
     ad_size_weight=0.5,
+    ad_global_weight=0.5,
+    ad_uplink_weight=0.25,
+    ad_downlink_weight=0.25,
     js_iat_bin_count=8,
     js_iat_weight=0.5,
     js_mark_weight=0.5,
@@ -637,8 +643,8 @@ class PolicyRecord(_StrictProbeRecord):
 
 
 class ProbeEvidence(_StrictProbeRecord):
-    schema_version: Literal[3]
-    probe: Literal["pymoo_optimizer"]
+    schema_version: Literal[4]
+    probe: Literal["pymoo_optimizer_schema5"]
     policy: PolicyRecord
     known_cases: Annotated[tuple[KnownCaseEvidence, KnownCaseEvidence], BeforeValidator(_tuple_input)]
     families: Annotated[tuple[FamilyEvidence, FamilyEvidence, FamilyEvidence], BeforeValidator(_tuple_input)]

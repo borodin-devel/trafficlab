@@ -138,7 +138,8 @@ Unit tests are deterministic and do not start Docker. They cover:
 - categorical packet-HMM explicit zero-IAT and Type-7 tercile categories,
   observed-only vocabulary, scaled forward/backward likelihood and posteriors,
   fixed initialization, bounded smoothed Baum--Welch, canonical labels,
-  individual raw reservoirs, exact scalar draw order, convergence records,
+  individual raw reservoirs, exact scalar draw order, rejection of a
+  mathematically consistent nonconverged record at fit/runtime/wire/load,
   strict codecs, endpoint completion, and guard behavior;
 - population quotas, tournament ties, family compatibility, uniform crossover,
   transformed Gaussian mutation, normalized reflection, forced mutation, exact
@@ -162,10 +163,12 @@ example. Important fixed expectations include:
 - KS: `[1, 2]` versus `[1, 3]` has distance `1/2`.
 - CvM: `[1, 2]` versus `[1, 3]` has pooled-mass discrepancy `1/16`; tied
   `[1, 1, 2]` versus `[1, 2, 2]` has discrepancy `1/18` after one update per
-  support value.
+  support value. Independent global/uplink/downlink arithmetic covers both
+  features, one-sided empty discrepancy one, and shared-empty discrepancy zero.
 - AD: the endpoint is excluded before tail-weight normalization; `[1]` versus
   `[2]` has discrepancy `1`, and an equal lower-tail ECDF difference outweighs
-  the corresponding central difference.
+  the corresponding central difference. Its same strict direction-stratum
+  weighting and empty policy are tested independently.
 - Jensen--Shannon: equal PMFs have divergence `0`; disjoint PMFs have base-2
   divergence `1`; Fraction-derived entropy examples cover zero masses without
   pseudocounts, exact direction/frame-length marks, and generated IAT values at
@@ -196,8 +199,8 @@ example. Important fixed expectations include:
 - Transition fidelity: independent integer/Fraction PMFs cover Type-7
   reference-only log thresholds, direction categories, generated below/above
   edges, occupancy and row counts, positive additive smoothing, empty rows,
-  frozen run-length overflow, identical traces, and the 256-state/65,536-cell
-  caps.
+  frozen run-length overflow, identical traces, the exact 256-state/65,536-cell
+  boundary, coupled config overflow, and rejection before Cartesian allocation.
 - Poisson: three packets over observation window two estimate rate one.
 - Markov Renewal: a hand-counted transition table matches additive smoothing
   and exercises both timing fallbacks.
@@ -216,6 +219,8 @@ example. Important fixed expectations include:
   Central differences independently cover analytic gradients at orders one,
   two, and three, while scripted order-two and order-three generators detect
   either reversed duration history or reversed conditional-mean history.
+  Fit/wire round trips retain the initial conditional duration, final negative
+  log likelihood, bounded iteration count, and successful convergence result.
 - Markov packet train: ten gaps of one and two of ten give Type-7 q90 `9.1`;
   train lengths `(3,4,6)` with cap four give active states `(3,4)`, occupancy
   `(1/3,2/3)`, actual reservoirs `(3)` and `(4,6)`, and transition rows

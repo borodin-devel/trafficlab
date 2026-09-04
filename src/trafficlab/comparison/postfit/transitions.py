@@ -88,6 +88,13 @@ def _bin(value: float, thresholds: tuple[float, ...]) -> BinCategory:
 
 def _vocabulary(size_bin_count: int, iat_bin_count: int) -> tuple[State, ...]:
     """Declare every smoothed state before looking at generated data."""
+    state_count = 2 * (size_bin_count + 2) * (iat_bin_count + 3)
+    cell_count = state_count * state_count
+    if state_count > _MAXIMUM_ACTIVE_STATES or cell_count > _MAXIMUM_TRANSITION_CELLS:
+        raise TrafficlabError(
+            "invalid transition state bins: declared state or transition-cell count exceeds the cap",
+            corrective_action="configure bins within the 256-state and 65536-transition-cell caps",
+        )
     size_categories: tuple[BinCategory, ...] = ("below", *range(size_bin_count), "above")
     iat_categories: tuple[BinCategory, ...] = ("initial", "below", *range(iat_bin_count), "above")
     states = tuple(
@@ -96,12 +103,7 @@ def _vocabulary(size_bin_count: int, iat_bin_count: int) -> tuple[State, ...]:
         for size_category in size_categories
         for iat_category in iat_categories
     )
-    cell_count = len(states) * len(states)
-    if len(states) > _MAXIMUM_ACTIVE_STATES or cell_count > _MAXIMUM_TRANSITION_CELLS:
-        raise TrafficlabError(
-            "invalid transition state bins: declared state or transition-cell count exceeds the cap",
-            corrective_action="configure bins within the 256-state and 65536-transition-cell caps",
-        )
+    assert len(states) == state_count
     return states
 
 

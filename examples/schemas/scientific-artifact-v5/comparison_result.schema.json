@@ -53,31 +53,27 @@
     "AndersonDarlingDiagnostic": {
       "additionalProperties": false,
       "properties": {
-        "direction_strata": {
-          "$ref": "#/$defs/EcdfDirectionStrata"
-        },
         "discrepancy": {
           "$ref": "#/$defs/UnitFloat"
         },
         "feature_weights": {
           "$ref": "#/$defs/EcdfFeatureWeights"
         },
-        "iat": {
-          "$ref": "#/$defs/EcdfFeatureDiagnostic"
-        },
         "observation_window_seconds": {
           "$ref": "#/$defs/PositiveFloat"
         },
-        "size": {
-          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        "strata": {
+          "$ref": "#/$defs/EcdfStrata"
+        },
+        "stratum_weights": {
+          "$ref": "#/$defs/EcdfStratumWeights"
         }
       },
       "required": [
         "observation_window_seconds",
         "feature_weights",
-        "iat",
-        "size",
-        "direction_strata",
+        "stratum_weights",
+        "strata",
         "discrepancy"
       ],
       "title": "AndersonDarlingDiagnostic",
@@ -178,6 +174,16 @@
     "BoundedTransitionCellCount": {
       "exclusiveMinimum": 0,
       "maximum": 65536,
+      "type": "integer"
+    },
+    "BoundedTransitionIatBinCount": {
+      "exclusiveMinimum": 0,
+      "maximum": 39,
+      "type": "integer"
+    },
+    "BoundedTransitionSizeBinCount": {
+      "exclusiveMinimum": 0,
+      "maximum": 30,
       "type": "integer"
     },
     "BoundedTransitionStateCount": {
@@ -430,58 +436,30 @@
     "CramerVonMisesDiagnostic": {
       "additionalProperties": false,
       "properties": {
-        "direction_strata": {
-          "$ref": "#/$defs/EcdfDirectionStrata"
-        },
         "discrepancy": {
           "$ref": "#/$defs/UnitFloat"
         },
         "feature_weights": {
           "$ref": "#/$defs/EcdfFeatureWeights"
         },
-        "iat": {
-          "$ref": "#/$defs/EcdfFeatureDiagnostic"
-        },
         "observation_window_seconds": {
           "$ref": "#/$defs/PositiveFloat"
         },
-        "size": {
-          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        "strata": {
+          "$ref": "#/$defs/EcdfStrata"
+        },
+        "stratum_weights": {
+          "$ref": "#/$defs/EcdfStratumWeights"
         }
       },
       "required": [
         "observation_window_seconds",
         "feature_weights",
-        "iat",
-        "size",
-        "direction_strata",
+        "stratum_weights",
+        "strata",
         "discrepancy"
       ],
       "title": "CramerVonMisesDiagnostic",
-      "type": "object"
-    },
-    "DirectionAvailability": {
-      "additionalProperties": false,
-      "properties": {
-        "both_available": {
-          "title": "Both Available",
-          "type": "boolean"
-        },
-        "generated_available": {
-          "title": "Generated Available",
-          "type": "boolean"
-        },
-        "reference_available": {
-          "title": "Reference Available",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "reference_available",
-        "generated_available",
-        "both_available"
-      ],
-      "title": "DirectionAvailability",
       "type": "object"
     },
     "DirectionName": {
@@ -584,23 +562,6 @@
       "title": "DispersionComponentValues",
       "type": "object"
     },
-    "EcdfDirectionStrata": {
-      "additionalProperties": false,
-      "properties": {
-        "iat": {
-          "$ref": "#/$defs/FeatureDirectionAvailability"
-        },
-        "size": {
-          "$ref": "#/$defs/FeatureDirectionAvailability"
-        }
-      },
-      "required": [
-        "iat",
-        "size"
-      ],
-      "title": "EcdfDirectionStrata",
-      "type": "object"
-    },
     "EcdfFeatureDiagnostic": {
       "additionalProperties": false,
       "properties": {
@@ -608,7 +569,7 @@
           "$ref": "#/$defs/UnitFloat"
         },
         "generated_sample_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/NonnegativeInt"
         },
         "generated_tie_count": {
           "$ref": "#/$defs/NonnegativeInt"
@@ -620,13 +581,23 @@
           "$ref": "#/$defs/NonnegativeFloat"
         },
         "reference_sample_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/NonnegativeInt"
         },
         "reference_tie_count": {
           "$ref": "#/$defs/NonnegativeInt"
+        },
+        "status": {
+          "enum": [
+            "compared",
+            "both_empty",
+            "one_sided_empty"
+          ],
+          "title": "Status",
+          "type": "string"
         }
       },
       "required": [
+        "status",
         "reference_sample_count",
         "generated_sample_count",
         "reference_tie_count",
@@ -653,6 +624,69 @@
         "size"
       ],
       "title": "EcdfFeatureWeights",
+      "type": "object"
+    },
+    "EcdfStrata": {
+      "additionalProperties": false,
+      "properties": {
+        "global": {
+          "$ref": "#/$defs/EcdfStratumDiagnostic"
+        },
+        "inbound": {
+          "$ref": "#/$defs/EcdfStratumDiagnostic"
+        },
+        "outbound": {
+          "$ref": "#/$defs/EcdfStratumDiagnostic"
+        }
+      },
+      "required": [
+        "global",
+        "outbound",
+        "inbound"
+      ],
+      "title": "EcdfStrata",
+      "type": "object"
+    },
+    "EcdfStratumDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "discrepancy": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "iat": {
+          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        },
+        "size": {
+          "$ref": "#/$defs/EcdfFeatureDiagnostic"
+        }
+      },
+      "required": [
+        "iat",
+        "size",
+        "discrepancy"
+      ],
+      "title": "EcdfStratumDiagnostic",
+      "type": "object"
+    },
+    "EcdfStratumWeights": {
+      "additionalProperties": false,
+      "properties": {
+        "global": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "inbound": {
+          "$ref": "#/$defs/UnitFloat"
+        },
+        "outbound": {
+          "$ref": "#/$defs/UnitFloat"
+        }
+      },
+      "required": [
+        "global",
+        "outbound",
+        "inbound"
+      ],
+      "title": "EcdfStratumWeights",
       "type": "object"
     },
     "ExactFloat": {
@@ -771,23 +805,6 @@
         "discrepancy"
       ],
       "title": "FanoAllanScaleDiagnostic",
-      "type": "object"
-    },
-    "FeatureDirectionAvailability": {
-      "additionalProperties": false,
-      "properties": {
-        "inbound": {
-          "$ref": "#/$defs/DirectionAvailability"
-        },
-        "outbound": {
-          "$ref": "#/$defs/DirectionAvailability"
-        }
-      },
-      "required": [
-        "outbound",
-        "inbound"
-      ],
-      "title": "FeatureDirectionAvailability",
       "type": "object"
     },
     "FloatTuple": {
@@ -1525,7 +1542,7 @@
           "$ref": "#/$defs/TransitionStates"
         },
         "iat_bin_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/BoundedTransitionIatBinCount"
         },
         "log_iat_thresholds": {
           "$ref": "#/$defs/FloatTuple"
@@ -1549,7 +1566,7 @@
           "$ref": "#/$defs/TransitionRunsDiagnostic"
         },
         "size_bin_count": {
-          "$ref": "#/$defs/PositiveInt"
+          "$ref": "#/$defs/BoundedTransitionSizeBinCount"
         },
         "transition_cell_count": {
           "$ref": "#/$defs/BoundedTransitionCellCount"

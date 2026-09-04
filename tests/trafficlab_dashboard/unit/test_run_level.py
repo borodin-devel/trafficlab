@@ -270,10 +270,18 @@ def test_fano_allan_aspect_projects_exact_stored_reference_and_generated_curves(
     assert tuple(series.label for series in data.series) == (
         "Reference total Fano",
         "Generated total Fano",
+        "Reference uplink Fano",
+        "Generated uplink Fano",
+        "Reference downlink Fano",
+        "Generated downlink Fano",
         "Reference total Allan",
         "Generated total Allan",
+        "Reference uplink Allan",
+        "Generated uplink Allan",
+        "Reference downlink Allan",
+        "Generated downlink Allan",
     )
-    assert [series.x.tolist() for series in data.series] == [pytest.approx(stored.widths)] * 4
+    assert [series.x.tolist() for series in data.series] == [pytest.approx(stored.widths)] * 12
     expected_curves = tuple(
         tuple(
             getattr(scale.reference_fano if factor == "fano" else scale.reference_allan, direction)
@@ -285,11 +293,16 @@ def test_fano_allan_aspect_projects_exact_stored_reference_and_generated_curves(
             for scale in stored.scales
         )
         for factor in ("fano", "allan")
-        for direction in ("total",)
+        for direction in ("total", "outbound", "inbound")
         for dataset in ("Reference", "Generated")
     )
     assert [series.y.tolist() for series in data.series] == [pytest.approx(values) for values in expected_curves]
     assert cast(tuple[str, ...], data.metadata["direction_channels"]) == ("total", "outbound", "inbound")
+    assert cast(tuple[str, ...], data.metadata["rendered_direction_channels"]) == (
+        "total",
+        "outbound",
+        "inbound",
+    )
     assert data.metadata["component_weights"] == {
         "fano": stored.component_weights.fano,
         "allan": stored.component_weights.allan,

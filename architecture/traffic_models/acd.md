@@ -84,7 +84,8 @@ For the hand case `omega=0.5`, `alpha=(0.2)`, `beta=(0.3)`, prehistory mean
 ## Generation and reproducibility
 
 Generation initializes the prior `p` durations and prior `p` conditional means
-to the fitted stationary mean `mu`. It emits one conditioned marked event at
+to the retained initial conditional duration used by the likelihood fit. It
+emits one conditioned marked event at
 `t=0`. For each later event it recurses `psi`, draws exactly one scalar
 `rng.exponential(1.0)`, multiplies it by `psi`, and draws a joint empirical mark
 only when the resulting event lies in the closed window `[0,W]`. A zero
@@ -103,12 +104,17 @@ absolute times, seeds, or windows fail explicitly rather than being clipped.
 ## Payload, cost, and validation
 
 The strict fitted payload contains exactly `omega`, ordered `alpha`, ordered
-`beta`, and ordered joint `marks`. Coefficient vectors must have equal length
+`beta`, ordered joint `marks`, and diagnostics containing the finite positive
+initial conditional duration, finite final negative log likelihood, exact
+iteration count in `0..500`, and convergence result. Only `converged=true` is
+admissible because estimator failure never publishes a model. The fit boundary
+independently recomputes the likelihood from the returned coefficients and
+initial duration before retaining the solver outcome. Coefficient vectors must have equal length
 matching the repaired outer `order` gene, with order in `1..3`; all numeric
 primitives are exact finite floats; marks are nonempty and unique; and the
 stationarity and finite-mean constraints are rechecked after loading. Extra,
-missing, coercible, nonfinite, negative, nonstationary, or order-mismatched
-values are rejected.
+missing, coercible, nonfinite, negative, nonstationary, nonconverged,
+over-budget, or order-mismatched values are rejected.
 
 Fitting costs `O(np)` per likelihood/gradient evaluation and bounded
 `O(500np)` overall; generation costs `O(mp)` for `m` proposed arrivals. Direct

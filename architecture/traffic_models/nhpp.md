@@ -50,6 +50,20 @@ assignment. A positive window is rejected when equal-bin division underflows to
 zero, and fitting rejects a nonfinite `count / h` rate. These are stable domain
 errors rather than leaked division or constructor failures.
 
+The fitted runtime and wire payload retain the exact `B+1` bin-edge floats and
+the integrated intensity
+
+\[
+\Lambda(W)=\sum_b \lambda_b(b_{b+1}-b_b).
+\]
+
+Strict construction and loading require an edge at zero, a finite increasing
+equal-width partition whose final edge is the fitted `W`, one rate and mark
+table per interval, and an integrated intensity exactly reproduced from the
+stored rates and edge differences. The best-model boundary binds the final edge
+to its outer `observation_window_seconds`; generation rejects a different
+window before drawing.
+
 ## Limits and validation
 
 Fitting is `O(n + B)` and generating `m` arrivals is `O(m + B)`. The model

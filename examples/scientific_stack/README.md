@@ -12,7 +12,8 @@ runtime configuration defaults.
 | `benchmark.json` | Scalar-versus-NumPy correctness, time, and peak-RSS comparison. | `uv run --locked python scripts/benchmark_scientific_stack.py --check` |
 | `code_reduction.json` | Git-derived executable-line inventories before and after stack adoption. | `uv run --locked python scripts/measure_scientific_stack_reduction.py --check` |
 | `mmpp_cases.json` | Hand likelihood, extreme-value, recovery, and held-out MMPP probe results. | `uv run --locked python scripts/run_scientific_stack_probes.py --probe mmpp --check` |
-| `pymoo_cases.json` | Optimizer correctness, fairness, invalid-candidate, checkpoint, and line-reduction probe results. | `uv run --locked python scripts/run_scientific_stack_probes.py --probe pymoo --check` |
+| `pymoo_cases.json` | Immutable schema-3 optimizer evidence from the four-method scientific stack. | `uv run --locked python scripts/run_scientific_stack_probes.py --probe pymoo --check` |
+| `pymoo_schema5_cases.json` | Current schema-4 probe document for optimizer correctness under schema-5 eight-method settings. | `uv run --locked python scripts/run_scientific_stack_probes.py --probe pymoo-v5 --check` |
 | `scapy_production_benchmark.json` | Non-gating production codec time and memory measurements. | `uv run --locked python scripts/benchmark_scapy_production.py --check` |
 | `experiment.toml` | Portable configuration for the retained real run. | `uv run --locked python scripts/check_scientific_stack_example.py --check` |
 | `example_run.json` | Source, environment, image, execution, artifact, result, and cleanup evidence for that run. | Same retained-run check |
@@ -82,7 +83,14 @@ and `lambda1`. Optimizer objects record the method and every setting that can
 change evaluations. Each trial distinguishes likelihood fitting from the
 independent simulation-distance baseline and retains the true rates and window.
 
-## `pymoo_cases.json` fields
+## `pymoo_cases.json` and `pymoo_schema5_cases.json` fields
+
+`pymoo_cases.json` is byte-immutable schema-3 history and is checked only by
+its exact accepted byte identity. It is never passed through the current
+schema-5 configuration model or overwritten by the probe runner.
+`pymoo_schema5_cases.json` has evidence schema version 4 and probe identity
+`pymoo_optimizer_schema5`; it is the generator-owned current snapshot. The
+structural fields below apply to each snapshot under its owning version.
 
 | Field | Description |
 | --- | --- |

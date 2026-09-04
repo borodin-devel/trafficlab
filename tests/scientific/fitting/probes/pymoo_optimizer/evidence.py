@@ -153,8 +153,8 @@ def build_probe_evidence() -> JsonObject:
         production_loc_reduction=False,
     )
     provisional = ProbeEvidence(
-        schema_version=3,
-        probe="pymoo_optimizer",
+        schema_version=4,
+        probe="pymoo_optimizer_schema5",
         policy=policy(),
         known_cases=known,
         families=family_tuple,
