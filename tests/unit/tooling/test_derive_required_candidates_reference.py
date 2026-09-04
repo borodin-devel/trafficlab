@@ -13,7 +13,10 @@ from scripts.derive_required_candidates_reference import (
     ToolPaths,
     derive_required_candidates,
 )
+from trafficlab.common.config_io import load_configuration_pair
 from trafficlab.common.json import render_json_document
+from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
+from trafficlab.comparison.postfit.c2st import classical_c2st_diagnostic
 
 
 @dataclass(frozen=True)
@@ -217,3 +220,23 @@ def test_profiles_are_exact_and_strict(
         "markov_packet_train",
         "packet_hmm",
     )
+
+
+def test_small_profile_postfit_is_feasible_for_the_import_run_fixture_window() -> None:
+    repository = Path(__file__).parents[3]
+    config = load_configuration_pair(repository / "examples/required_candidates/small.toml").realized
+    fixture = json.loads((repository / "tests/fixtures/data/import_run/expected.json").read_bytes())
+    window = fixture["captures"]["classic_pcap"]["observation_window_seconds"]
+    trace = TrafficTrace.from_events(
+        (
+            TraceEvent(0.0, Direction.OUTBOUND, 60),
+            TraceEvent(0.0, Direction.INBOUND, 72),
+            TraceEvent(window, Direction.OUTBOUND, 64),
+            TraceEvent(window, Direction.INBOUND, 80),
+        )
+    )
+
+    result = classical_c2st_diagnostic(trace, trace, window, config.similarity.postfit.c2st)
+
+    assert result.score == 1.0
+    assert result.diagnostics["window_count_per_trace"] == 5
