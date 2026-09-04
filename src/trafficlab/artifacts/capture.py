@@ -11,8 +11,25 @@ from trafficlab.artifacts.io import FileIdentity, file_identity, fsync_published
 from trafficlab.capture.validation import CaptureInspection, validate_capture_pair
 from trafficlab.common.errors import DeadlineExceededError, TrafficlabError
 
+_CAPTURE_COPY_CHUNK_SIZE = 64 * 1024
 
-def _copy_capture_temporary(source: Path, run_directory: Path, *, label: str) -> Path:
+
+def _capture_copy_deadline(deadline: float | None, clock: Callable[[], float]) -> None:
+    if deadline is not None and clock() >= deadline:
+        raise DeadlineExceededError(
+            "capture publication copy exceeded its absolute deadline",
+            corrective_action="increase the total run timeout and retry capture",
+        )
+
+
+def _copy_capture_temporary(
+    source: Path,
+    run_directory: Path,
+    *,
+    label: str,
+    deadline: float | None,
+    clock: Callable[[], float],
+) -> Path:
     temporary_path: Path | None = None
     try:
         with (
@@ -26,12 +43,32 @@ def _copy_capture_temporary(source: Path, run_directory: Path, *, label: str) ->
             ) as output_stream,
         ):
             temporary_path = Path(output_stream.name)
-            while chunk := input_stream.read(64 * 1024):
+            while True:
+                _capture_copy_deadline(deadline, clock)
+                chunk = input_stream.read(_CAPTURE_COPY_CHUNK_SIZE)
+                if not chunk:
+                    break
                 output_stream.write(chunk)
             output_stream.flush()
             os.fsync(output_stream.fileno())
-    except OSError as error:
+        _capture_copy_deadline(deadline, clock)
+    except KeyboardInterrupt as error:
         cleanup_detail = _unlink_capture_temporary(temporary_path)
+        if cleanup_detail is not None:
+            raise TrafficlabError(
+                f"capture publication was interrupted; cleanup incomplete: {cleanup_detail}",
+                corrective_action="remove the owned temporary capture file and retry when ready",
+            ) from error
+        raise
+    except (OSError, TrafficlabError) as error:
+        cleanup_detail = _unlink_capture_temporary(temporary_path)
+        if isinstance(error, TrafficlabError):
+            if cleanup_detail is None:
+                raise
+            raise TrafficlabError(
+                f"{error}; cleanup incomplete: {cleanup_detail}",
+                corrective_action=error.corrective_action,
+            ) from error
         detail = f"could not prepare capture artifact from {source}: {error}"
         if cleanup_detail is not None:
             detail = f"{detail}; cleanup incomplete: {cleanup_detail}"
@@ -260,6 +297,7 @@ def publish_capture_pair(
     target_success: bool,
     deadline: float | None,
     clock: Callable[[], float] = monotonic,
+    recover_invalid: bool = True,
 ) -> CapturePublication:
     """Validate and exclusively publish a reusable or diagnostic capture pair."""
     if type(target_success) is not bool:
@@ -271,9 +309,15 @@ def publish_capture_pair(
     final_metadata = run_directory / "capture.json"
     final_pcapng = run_directory / "reference.pcapng"
     if target_success:
-        existing = _existing_capture(final_metadata, final_pcapng, deadline=deadline, clock=clock)
-        if existing is not None:
-            return CapturePublication(inspection=existing, created_by_call=False, owned_identity=None)
+        if recover_invalid:
+            existing = _existing_capture(final_metadata, final_pcapng, deadline=deadline, clock=clock)
+            if existing is not None:
+                return CapturePublication(inspection=existing, created_by_call=False, owned_identity=None)
+        elif _capture_pair_identity(final_metadata, final_pcapng) != (None, None):
+            raise TrafficlabError(
+                "capture artifact already exists during exclusive publication",
+                corrective_action="preserve the existing artifact and retry in a new run directory",
+            )
         destinations = (final_metadata, final_pcapng)
     else:
         existing_identity = _capture_pair_identity(final_metadata, final_pcapng)
@@ -286,9 +330,21 @@ def publish_capture_pair(
     temporary_paths: list[Path] = []
     current_destination = destinations[0]
     try:
-        temporary_metadata = _copy_capture_temporary(source_metadata_path, run_directory, label="metadata")
+        temporary_metadata = _copy_capture_temporary(
+            source_metadata_path,
+            run_directory,
+            label="metadata",
+            deadline=deadline,
+            clock=clock,
+        )
         temporary_paths.append(temporary_metadata)
-        temporary_pcapng = _copy_capture_temporary(source_pcapng_path, run_directory, label="pcapng")
+        temporary_pcapng = _copy_capture_temporary(
+            source_pcapng_path,
+            run_directory,
+            label="pcapng",
+            deadline=deadline,
+            clock=clock,
+        )
         temporary_paths.append(temporary_pcapng)
         inspection = validate_capture_pair(
             temporary_metadata,
@@ -307,6 +363,18 @@ def publish_capture_pair(
             stage="capture",
             affected_evidence="capture pair",
         )
+    except KeyboardInterrupt as error:
+        cleanup_details = [
+            detail
+            for temporary_path in temporary_paths
+            if (detail := _unlink_capture_temporary(temporary_path)) is not None
+        ]
+        if cleanup_details:
+            raise TrafficlabError(
+                f"capture publication was interrupted; cleanup incomplete: {'; '.join(cleanup_details)}",
+                corrective_action="remove the owned temporary capture files and retry when ready",
+            ) from error
+        raise
     except Exception as error:
         cleanup_details = [
             detail

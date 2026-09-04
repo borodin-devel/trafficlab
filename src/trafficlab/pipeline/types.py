@@ -5,15 +5,45 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
-from trafficlab.capture.stage import CaptureResult, capture_prepared_experiment
-from trafficlab.comparison.schema import ComparisonResult
-from trafficlab.comparison.stage import compare_experiment
-from trafficlab.fitting.stage import FitStageResult, fit_experiment
-from trafficlab.generation.stage import GenerationStageResult, generate_experiment
-from trafficlab.preflight.stage import run_preflight
+from trafficlab.capture.types import CaptureResult
 from trafficlab.preflight.types import PreparedExperiment
+
+if TYPE_CHECKING:
+    from trafficlab.comparison.schema import ComparisonResult
+    from trafficlab.fitting.stage import FitStageResult
+    from trafficlab.generation.stage import GenerationStageResult
+
+
+def run_preflight(path: Path, *, config_only: bool) -> PreparedExperiment:
+    from trafficlab.preflight.stage import run_preflight as run_preflight_stage
+
+    return run_preflight_stage(path, config_only=config_only)
+
+
+def capture_prepared_experiment(path: Path, prepared: PreparedExperiment) -> CaptureResult:
+    from trafficlab.capture.stage import capture_prepared_experiment as capture_prepared_stage
+
+    return capture_prepared_stage(path, prepared)
+
+
+def fit_experiment(path: Path) -> FitStageResult:
+    from trafficlab.fitting.stage import fit_experiment as fit_stage
+
+    return fit_stage(path)
+
+
+def generate_experiment(path: Path) -> GenerationStageResult:
+    from trafficlab.generation.stage import generate_experiment as generate_stage
+
+    return generate_stage(path)
+
+
+def compare_experiment(path: Path) -> ComparisonResult:
+    from trafficlab.comparison.stage import compare_experiment as compare_stage
+
+    return compare_stage(path)
 
 
 @dataclass(frozen=True, slots=True)

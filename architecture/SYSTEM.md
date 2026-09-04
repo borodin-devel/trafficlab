@@ -266,8 +266,11 @@ to an owned same-filesystem temporary directory below the run, re-identifies
 both the sources and snapshots, and reparses supplied metadata before raw
 normalization. It normalizes only the capture snapshot in process, validates
 the normalized snapshot with the metadata snapshot, then delegates canonical
-publication to the existing capture-pair publisher. Owned temporary paths are
-removed on success, failure, deadline expiry, and interruption.
+publication to the existing capture-pair publisher. Source, metadata, lineage,
+and output reads or hashes check the deadline within each bounded chunk loop;
+the publisher does the same while copying each member. Owned temporary paths
+are removed on success, failure, deadline expiry, and interruption, including
+an interruption during publisher copy or exclusive linking.
 
 Fresh publication appends exactly one authoritative `reference_imported`
 record with `reused=false`. It binds the effective configuration,
@@ -279,8 +282,13 @@ effective configuration, the normalization version, the sole authoritative
 publication record, and every earlier reuse record agree exactly. A missing,
 malformed, changed, duplicate, or contradictory input preserves every existing
 run byte and fails; imported acquisition never invokes live-capture recovery.
-It creates no Docker resource and invokes no subprocess, shell, Wireshark
-executable, or repository script.
+Canonical names are recognized with non-following filesystem inspection, so a
+dangling link or special entry cannot be mistaken for absence or opened for
+hashing. Publication lineage remains bound to the publisher-owned file
+identities across record construction and append. It creates no Docker resource
+and a clean import of the acquisition module does not load Docker adapters or
+`subprocess`; execution invokes no subprocess, shell, Wireshark executable, or
+repository script.
 
 Capture reuse is exact: both files are absent, so capture starts; one absent or either
 corrupt reruns capture; both valid with matching effective configuration and

@@ -6,7 +6,7 @@ import pytest
 
 import trafficlab.capture.stage as capture_module
 from tests.support.capture import Clock, DockerDouble, prepared_capture
-from trafficlab.capture.stage import CaptureResult, capture_experiment, capture_prepared_experiment
+from trafficlab.capture.stage import capture_experiment, capture_prepared_experiment
 from trafficlab.common.errors import TrafficlabError
 
 
@@ -47,25 +47,6 @@ def test_capture_rejects_internal_success_without_a_reusable_result(
         capture_experiment(experiment_path, docker=docker, clock=Clock(docker), interruption=lambda: False)
 
 
-@pytest.mark.parametrize(
-    ("arguments", "error"),
-    [
-        (("run", Path("/reference"), 1, 0), "run_directory"),
-        ((Path("run"), Path("/reference"), 1, 0), "run_directory"),
-        ((Path("/run"), "reference", 1, 0), "reference_path"),
-        ((Path("/run"), Path("reference"), 1, 0), "reference_path"),
-        ((Path("/run"), Path("/reference"), True, 0), "packet_count"),
-        ((Path("/run"), Path("/reference"), 0, 0), "packet_count"),
-        ((Path("/run"), Path("/reference"), -1, 0), "packet_count"),
-        ((Path("/run"), Path("/reference"), 1, True), "target_status"),
-    ],
-)
-def test_capture_result_strictly_rejects_invalid_public_values(arguments: tuple[object, ...], error: str) -> None:
-    """Accepting coerced or relative result fields would break the public capture contract."""
-    with pytest.raises((TypeError, ValueError), match=error):
-        CaptureResult(*cast(tuple[Any, Any, Any, Any], arguments))
-
-
 def test_fresh_capture_requires_full_preflight_image_identity_before_compose(
     valid_config_data: dict[str, object],
     tmp_path: Path,
@@ -91,9 +72,3 @@ def test_fresh_capture_requires_full_preflight_image_identity_before_compose(
         )
 
     assert caught.value.corrective_action == "run full preflight without --config-only and retry capture"
-
-
-def test_capture_result_rejects_a_non_boolean_reuse_flag() -> None:
-    """Truthiness coercion would make capture ownership ambiguous to the coordinator."""
-    with pytest.raises(TypeError, match="reused"):
-        CaptureResult(Path("/run"), Path("/run/reference.pcapng"), 1, 0, cast(Any, 1))

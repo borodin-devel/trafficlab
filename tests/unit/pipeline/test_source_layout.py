@@ -26,6 +26,7 @@ EXPECTED_MODULES = {
         "policy.py",
         "stage.py",
         "topology.py",
+        "types.py",
         "validation.py",
     },
     "fitting": {"stage.py"},
@@ -92,7 +93,7 @@ EXPECTED_NESTED_PACKAGES = {
         "schema.py",
         "state.py",
     },
-    "pipeline": {"__init__.py", "imported.py", "stage.py", "types.py", "validation.py"},
+    "pipeline": {"__init__.py", "imported.py", "imported_io.py", "stage.py", "types.py", "validation.py"},
     "generation/models/markov_renewal": {
         "__init__.py",
         "family.py",
@@ -179,13 +180,17 @@ def test_artifact_persistence_is_owned_by_artifact_kind() -> None:
     assert not (PACKAGE / "artifacts.py").exists()
 
 
-def test_capture_public_records_are_owned_only_by_the_stage() -> None:
-    """The public capture boundary must not be defined below or imported upward from its operations."""
+def test_capture_public_records_are_owned_only_by_focused_types_and_stage() -> None:
+    """The public capture result stays importable without loading capture operations."""
     capture = PACKAGE / "capture"
     stage_tree = ast.parse((capture / "stage.py").read_text(encoding="utf-8"))
     stage_classes = {node.name for node in stage_tree.body if isinstance(node, ast.ClassDef)}
+    types_tree = ast.parse((capture / "types.py").read_text(encoding="utf-8"))
+    types_classes = {node.name for node in types_tree.body if isinstance(node, ast.ClassDef)}
 
-    assert {"CaptureDocker", "CaptureResult"} <= stage_classes
+    assert "CaptureDocker" in stage_classes
+    assert "CaptureResult" not in stage_classes
+    assert "CaptureResult" in types_classes
     for owner in ("lineage.py", "lifecycle.py", "failures.py"):
         tree = ast.parse((capture / owner).read_text(encoding="utf-8"))
         classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}

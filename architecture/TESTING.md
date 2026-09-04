@@ -127,7 +127,11 @@ Unit tests are deterministic and do not start Docker. They cover:
   one shared deadline; cleanup after every injected boundary and interruption;
   sole non-reused publication lineage; exact reuse without normalization; and
   nonmutating rejection of changed source/config/version/output, incomplete or
-  malformed pairs, and missing, duplicate, or contradictory lineage;
+  malformed pairs, dangling links and special canonical entries, and missing,
+  duplicate, or contradictory lineage. A fresh-interpreter guard proves the
+  imported acquisition module has repository provenance without eagerly loading
+  Docker adapters or `subprocess`; chunk-loop fake clocks and publisher
+  copy/link interruptions prove bounded reads and owned-temporary cleanup;
 - source-MAC classification for outbound, inbound unicast, and inbound broadcast
   frames;
 - canonical trace ordering, direction values, IAT extraction, reference

@@ -49,6 +49,7 @@ EXPECTED_DECOMPOSED_OWNER_TREES = {
         "__init__.py",
         "test_best_model.py",
         "test_capture.py",
+        "test_capture_interrupt.py",
         "test_generated.py",
         "test_io.py",
         "test_run_directory.py",
@@ -64,6 +65,7 @@ EXPECTED_DECOMPOSED_OWNER_TREES = {
         "test_lineage.py",
         "test_stage.py",
         "test_topology.py",
+        "test_types.py",
     },
     "unit/capture/docker": {"__init__.py", "test_compose.py", "test_image.py", "test_process.py"},
     "unit/comparison": {
@@ -200,6 +202,7 @@ EXPECTED_DECOMPOSED_ROOT_TESTS = {
         "test_cli.py",
         "test_final_validation.py",
         "test_imported.py",
+        "test_imported_review.py",
         "test_package.py",
         "test_source_layout.py",
         "test_stage.py",

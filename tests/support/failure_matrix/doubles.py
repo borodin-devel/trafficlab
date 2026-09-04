@@ -174,6 +174,7 @@ class CaptureDocker:
         self.lifecycle_done = False
         self.total_pending = False
         self.total_emitted = False
+        self.post_flush_clock_calls = 0
         self.cleanup_handle: CompletedHandle | None = None
         self.created_metadata: bytes | None = None
         self.created_reference: bytes | None = None
@@ -311,7 +312,9 @@ class CaptureDocker:
             self.lifecycle_done = True
             return 11.0 if self.scenario == "flush_and_total_timeout" else 6.0
         if self.scenario == "validation_total_timeout" and self.flush_done and not self.total_emitted:
-            self.total_emitted = True
-            self.lifecycle_done = True
-            return 11.0
+            self.post_flush_clock_calls += 1
+            if self.post_flush_clock_calls >= 7:
+                self.total_emitted = True
+                self.lifecycle_done = True
+                return 11.0
         return 0.0

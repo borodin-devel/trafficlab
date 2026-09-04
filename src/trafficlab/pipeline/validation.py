@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from trafficlab.artifacts.io import FileIdentity, file_identity
-from trafficlab.capture.stage import CaptureResult
+from trafficlab.capture.types import CaptureResult
 from trafficlab.capture.validation import validate_capture_pair
 from trafficlab.common.compatibility import ContentIdentity, identify_bytes, require_compatible
 from trafficlab.common.config_io import render_effective_config

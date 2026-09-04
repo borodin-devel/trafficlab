@@ -153,13 +153,13 @@ def test_import_reference_snapshots_normalizes_validates_and_publishes_once(
         for path in (source.capture_path, source.metadata_path)
     }
     calls: list[tuple[str, Path, float | None]] = []
-    real_load_metadata = imported_module.load_capture_metadata
+    real_parse_metadata = imported_module.parse_capture_metadata
     real_normalize = imported_module.normalize_raw_capture
     real_validate = imported_module.validate_capture_pair
 
-    def tracked_load_metadata(path: Path) -> object:
-        calls.append(("metadata", path, None))
-        return real_load_metadata(path)
+    def tracked_parse_metadata(content: bytes, *, source: Path) -> object:
+        calls.append(("metadata", source, None))
+        return real_parse_metadata(content, source=source)
 
     def tracked_normalize(
         source_path: Path, destination: Path, *, deadline: float | None, clock: Callable[[], float]
@@ -174,7 +174,7 @@ def test_import_reference_snapshots_normalizes_validates_and_publishes_once(
         calls.append(("validate", pcapng_path, deadline))
         return real_validate(metadata_path, pcapng_path, deadline=deadline, clock=clock)
 
-    monkeypatch.setattr(imported_module, "load_capture_metadata", tracked_load_metadata)
+    monkeypatch.setattr(imported_module, "parse_capture_metadata", tracked_parse_metadata)
     monkeypatch.setattr(imported_module, "normalize_raw_capture", tracked_normalize)
     monkeypatch.setattr(imported_module, "validate_capture_pair", tracked_validate)
 
@@ -443,7 +443,7 @@ def test_real_import_acquisition_reaches_fit_without_subprocess_docker_or_script
 
     monkeypatch.setattr("subprocess.run", forbidden_subprocess)
     monkeypatch.setattr(builtins, "__import__", guarded_import)
-    monkeypatch.setattr(imported_module, "fit_experiment", stop_after_capture)
+    monkeypatch.setattr(imported_module, "_fit_experiment", stop_after_capture)
 
     with pytest.raises(TrafficlabError, match="fit sentinel"):
         run_imported_experiment(experiment_path, source.directory)
@@ -488,7 +488,7 @@ def test_import_reference_boundary_failures_clean_owned_temporary_and_preserve_a
         monkeypatch.setattr(imported_module, "_copy_snapshot", fail_copy)
     else:
         attribute = {
-            "metadata": "load_capture_metadata",
+            "metadata": "parse_capture_metadata",
             "normalize": "normalize_raw_capture",
             "validate": "validate_capture_pair",
             "publish": "publish_capture_pair",
@@ -751,8 +751,10 @@ def test_import_reuse_detects_output_identity_races(
     else:
         real_read = imported_module._read_import_lineage
 
-        def changing_read(run_directory: Path) -> list[dict[str, object]]:
-            result = real_read(run_directory)
+        def changing_read(
+            run_directory: Path, *, deadline: float, clock: Callable[[], float]
+        ) -> list[dict[str, object]]:
+            result = real_read(run_directory, deadline=deadline, clock=clock)
             os.utime(reference, ns=(reference.stat().st_atime_ns, reference.stat().st_mtime_ns + 1))
             return result
 
@@ -846,7 +848,7 @@ def test_reuse_detects_pair_removed_after_initial_presence_check(
 
     monkeypatch.setattr(imported_module, "_canonical_pair_presence", pair_present)
 
-    with pytest.raises(TrafficlabError, match="capture pair is incomplete"):
+    with pytest.raises(TrafficlabError, match="canonical capture entry"):
         import_reference(source, prepared, clock=lambda: 10.0)
 
 

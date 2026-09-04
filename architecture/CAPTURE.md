@@ -250,8 +250,10 @@ the capture in process, and validates the pair before the ordinary publisher
 creates `capture.json` and `reference.pcapng`.
 
 The whole imported acquisition shares one absolute
-`capture.total_timeout_seconds` deadline. Every owned temporary path is cleaned
-after success, ordinary failure, expiry, or interruption. Existing canonical
+`capture.total_timeout_seconds` deadline. Stable reads, content hashing, and
+capture-publisher copies check it within each bounded chunk loop. Every owned
+temporary path is cleaned after success, ordinary failure, expiry, or
+interruption, including interruption during publisher copy or linking. Existing canonical
 capture artifacts are inspected without the live-capture recovery deletion
 path: only a complete, valid pair with one exact authoritative import lineage
 may be reused, and all other states are preserved and rejected. Imported
