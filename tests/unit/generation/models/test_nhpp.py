@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
@@ -14,7 +16,7 @@ from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
 from trafficlab.generation.models.common import MarkCount, MarkDistribution
 from trafficlab.generation.models.fitted_schema import NhppPayload
-from trafficlab.generation.models.nhpp import NhppFamily, NhppModel, _generate_with_rng
+from trafficlab.generation.models.nhpp import NhppFamily, NhppModel, _generate_with_rng, _validate_model
 
 FAMILY = NhppFamily()
 BOUNDS = NhppConfig(bin_count=IntegerBounds(lower=2, upper=4))
@@ -128,13 +130,46 @@ def test_wire_schema_binds_exact_edges_and_integrated_intensity_to_rates() -> No
     }
 
     assert NhppPayload.model_validate(payload).integrated_intensity == 4.0
+    duplicate_mark = {"direction": "outbound", "frame_length": 60, "count": 2}
     for malformed in (
+        {**payload, "rates": [1.0, -3.0]},
+        {**payload, "bin_edges": [1.0, 2.0, 3.0]},
+        {**payload, "bin_edges": [0.0, 1.5, 1.0]},
         {**payload, "bin_edges": [0.0, 0.5, 2.0]},
         {**payload, "bin_edges": [0.0, 1.0]},
         {**payload, "integrated_intensity": 3.0},
+        {**payload, "global_marks": []},
+        {**payload, "bin_marks": [[duplicate_mark, duplicate_mark], cast(list[object], payload["bin_marks"])[1]]},
     ):
-        with pytest.raises(ValidationError, match="bin_edges|integrated_intensity"):
+        with pytest.raises(ValidationError, match="rates|bin_edges|integrated_intensity|global_marks|unique"):
             NhppPayload.model_validate(malformed)
+
+
+def test_runtime_model_rejects_every_persisted_geometry_and_mark_type_invariant() -> None:
+    """Every malformed runtime field must fail before an NHPP generator can allocate or draw."""
+    model = FAMILY.fit(REFERENCE, (2,), W=2.0, bounds=BOUNDS)
+    cases: tuple[tuple[dict[str, object], str], ...] = (
+        ({"rates": cast(Any, [])}, "rates"),
+        ({"bin_marks": cast(Any, [])}, "bin_marks"),
+        ({"rates": (-1.0, 3.0)}, "rates"),
+        ({"bin_edges": cast(Any, [0.0, 1.0, 2.0])}, "bin_edges"),
+        ({"integrated_intensity": math.nan}, "integrated_intensity"),
+        ({"global_marks": cast(Any, object())}, "global_marks"),
+        ({"bin_marks": (cast(Any, object()), model.bin_marks[1])}, "bin marks"),
+    )
+    for changes, message in cases:
+        with pytest.raises((TypeError, ValueError), match=message):
+            replace(model, **changes)  # type: ignore[arg-type]
+
+
+def test_runtime_validation_rejects_wrong_and_corrupted_model_objects() -> None:
+    """Direct generation/dump validation must reconstruct state instead of trusting frozen attributes."""
+    with pytest.raises(TypeError, match="NhppModel"):
+        _validate_model(object())
+    model = FAMILY.fit(REFERENCE, (2,), W=2.0, bounds=BOUNDS)
+    object.__setattr__(model, "integrated_intensity", 3.0)
+    with pytest.raises(TrafficlabError, match="invalid fitted NHPP model"):
+        _validate_model(model)
 
 
 def test_fit_assigns_window_endpoint_to_final_bin() -> None:
@@ -224,6 +259,48 @@ def test_generation_emits_an_arrival_at_the_closed_window_endpoint() -> None:
         TraceEvent(1.0, Direction.OUTBOUND, 60),
     )
     assert rng.calls == [("choice", 1), ("exponential", 1.0), ("choice", 1), ("exponential", 1.0)]
+
+
+def test_generation_crosses_an_exact_interior_endpoint_without_drawing_a_mark() -> None:
+    """An arrival on a nonfinal right edge belongs to the next bin and consumes no prior-bin mark."""
+    marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
+    model = _nhpp_model(rates=(1.0, 1.0), bin_marks=(marks, marks), global_marks=marks, window=2.0)
+    rng = ScriptedNhppRng(indices=[0, 0], exponentials=[1.0, 0.5, 1.0])
+
+    result = _generate_with_rng(model, rng, W=2.0, limits=LIMITS, clock=ScriptedClock([0.0] * 30))
+
+    assert result.require_complete() == (
+        TraceEvent(0.0, Direction.OUTBOUND, 60),
+        TraceEvent(1.5, Direction.OUTBOUND, 60),
+    )
+    assert rng.calls == [
+        ("choice", 1),
+        ("exponential", 1.0),
+        ("exponential", 1.0),
+        ("choice", 1),
+        ("exponential", 1.0),
+    ]
+
+
+def test_generation_rejects_an_overflowed_arrival_after_advancing_bins() -> None:
+    """Two individually finite clock values must not overflow into a published timestamp."""
+    maximum = math.nextafter(math.inf, 0.0)
+    marks = MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 1),))
+    model = _nhpp_model(
+        rates=(0.0, math.ulp(0.0)),
+        bin_marks=(None, marks),
+        global_marks=marks,
+        window=maximum,
+    )
+
+    with pytest.raises(TrafficlabError, match="arrival time"):
+        _generate_with_rng(
+            model,
+            ScriptedNhppRng(indices=[0], exponentials=[maximum]),
+            W=maximum,
+            limits=LIMITS,
+            clock=ScriptedClock([0.0] * 10),
+        )
 
 
 def test_generation_uses_global_marks_when_the_active_bin_has_no_reference_mark() -> None:
@@ -387,8 +464,11 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
     malformed_payloads: tuple[object, ...] = (
         {**payload, "rates": [1.0, -3.0]},
         {**payload, "rates": [1.0]},
+        {**payload, "bin_edges": object()},
+        {**payload, "bin_edges": [0.0, math.nan, 2.0]},
         {**payload, "bin_edges": [0.0, 0.5, 2.0]},
         {**payload, "integrated_intensity": 3.0},
+        {**payload, "integrated_intensity": 4},
         {**payload, "bin_marks": [[{"direction": "outbound", "frame_length": 60, "count": 1}] * 2, []]},
         {**payload, "global_marks": []},
         {**payload, "extra": 1},
@@ -398,6 +478,9 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
     for malformed in malformed_payloads:
         with pytest.raises(TrafficlabError):
             FAMILY.load_fitted(malformed, genes=(2,), bounds=BOUNDS)
+
+    with pytest.raises(TrafficlabError, match="payload"):
+        FAMILY.load_fitted(object(), genes=(2,), bounds=BOUNDS)
 
 
 def test_same_seed_generation_is_identical() -> None:

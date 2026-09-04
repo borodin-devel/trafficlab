@@ -269,6 +269,34 @@ def test_best_model_rejects_nhpp_bin_edges_from_a_different_outer_window() -> No
         load_best_model(_encoded(document), source=Path("best_model.json"))
 
 
+@pytest.mark.parametrize(("field", "value", "message"), (("version", 2, "version"), ("family", 1, "family")))
+def test_internal_best_model_validation_defends_against_constructed_outer_types(
+    valid_best_model: BestModel, field: str, value: object, message: str
+) -> None:
+    """A caller bypassing Pydantic construction must still fail before registry or payload access."""
+    fields = valid_best_model.model_dump(mode="python")
+    fields[field] = value
+    constructed = BestModel.model_construct(**fields)
+
+    with pytest.raises(TrafficlabError, match=message):
+        registry_module._validate_best_model(constructed)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_internal_best_model_validation_wraps_a_family_reload_failure(
+    valid_best_model: BestModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A strict family-load error must remain an actionable best-model domain error."""
+
+    def fail_load(_self: object, _data: object, *, genes: object, bounds: object) -> object:
+        del genes, bounds
+        raise TrafficlabError("injected family load failure", corrective_action="test")
+
+    monkeypatch.setattr(type(POISSON_FAMILY), "load_fitted", fail_load)
+
+    with pytest.raises(TrafficlabError, match="invalid fitted poisson_empirical model"):
+        registry_module._validate_best_model(valid_best_model)  # pyright: ignore[reportPrivateUsage]
+
+
 def test_best_model_loader_translates_huge_acd_coefficients_to_stable_domain_error() -> None:
     """A finite but individually nonstationary coefficient must not escape as an OverflowError."""
     artifact = make_best_model(

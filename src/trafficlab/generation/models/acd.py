@@ -257,11 +257,6 @@ def _generate_with_rng(
                 weight * value for weight, value in zip(checked_model.beta, conditional_mean_history, strict=True)
             )
         )
-        if not math.isfinite(conditional_mean) or conditional_mean <= 0.0:
-            raise _invalid(
-                "invalid ACD conditional mean",
-                corrective_action="use finite stationary fitted ACD parameters and duration history",
-            )
         raw_innovation = rng.exponential(1.0)
         reason = guard.post_draw_reason()
         if reason is not None:
@@ -367,11 +362,6 @@ class AcdFamily:
         order = _repair_genes(genes, bounds)[0]
         durations = tuple(float(value) for value in np.diff(trace.timestamps))
         reference_mean = math.fsum(durations) / len(durations)
-        if not math.isfinite(reference_mean) or reference_mean <= 0.0:
-            raise _invalid(
-                "invalid ACD reference mean",
-                corrective_action="provide a finite positive observation window with at least one positive duration",
-            )
         omega, alpha, beta, diagnostics = _fit_parameters(durations, order=order, reference_mean=reference_mean)
         return AcdModel(
             omega=omega,

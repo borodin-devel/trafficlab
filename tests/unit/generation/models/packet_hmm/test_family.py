@@ -135,10 +135,21 @@ def test_family_fit_rejects_a_bypassed_nonconverged_estimate(monkeypatch: pytest
         (("additive_smoothing",), 0.01, "smoothing"),
         (("maximum_iterations",), 99, "maximum_iterations"),
         (("initialization",), "random", "initialization"),
+        (("convergence_tolerance",), 1e-7, "convergence tolerance"),
         (("emission_rows", 0), [0.7, 0.2], "sum to one"),
         (("transition_rows", 0), [0.8], "K x K"),
         (("reservoirs", 0, 0, "iat"), 2.0, "IAT"),
         (("diagnostics", "log_likelihoods"), [-4.0, -4.1, -3.5], "nondecreasing"),
+        (("diagnostics",), [], "diagnostics must contain"),
+        (("diagnostics", "converged"), 1, "exact bool"),
+        (("vocabulary",), [], "nonempty"),
+        (("vocabulary", 0), {}, "vocabulary entries"),
+        (("vocabulary", 0, "iat_bin"), 1.0, "exact scalar"),
+        (("reservoirs",), {}, "reservoirs must be a list"),
+        (("reservoirs", 0), {}, "reservoir must be a list"),
+        (("reservoirs", 0, 0), {}, "reservoir entries"),
+        (("reservoirs", 0, 0, "iat"), 1, "exact float"),
+        (("iat_quantiles",), [1.0 / 3.0], "contain two"),
     ),
 )
 def test_loader_rejects_corrupt_and_outer_gene_inconsistent_payload(
@@ -162,6 +173,44 @@ def test_wire_payload_rejects_changed_fixed_constants_before_family_load() -> No
 
     with pytest.raises(ValidationError, match="additive_smoothing"):
         PacketHmmPayload.model_validate(payload)
+
+
+def test_wire_payload_cross_validator_rejects_every_estimator_table_shape() -> None:
+    """Every cross-field HMM shape and fixed-estimator branch must remain strict in the public union."""
+    base = FAMILY.dump_fitted(two_state_model())
+    mutations: tuple[tuple[tuple[str | int, ...], object, str], ...] = (
+        (("convergence_tolerance",), 1e-7, "convergence_tolerance"),
+        (("iat_quantiles",), [0.2, 0.8], "quantiles"),
+        (("iat_thresholds",), [1.0], "iat_thresholds"),
+        (("size_thresholds",), [120.0, 100.0], "size_thresholds"),
+        (("vocabulary", 1), copy.deepcopy(cast(list[object], base["vocabulary"])[0]), "vocabulary"),
+        (("reservoirs", 0), [], "reservoirs"),
+        (
+            ("initial_marks",),
+            [
+                {"direction": "outbound", "frame_length": 60, "count": 1},
+                {"direction": "inbound", "frame_length": 70, "count": 1},
+            ],
+            "initial_marks",
+        ),
+        (("initial_probabilities",), [1.0], "initial_probabilities"),
+        (("transition_rows",), [[0.5, 0.5]], "transition_rows"),
+        (("emission_rows",), [[0.5, 0.5]], "emission_rows"),
+    )
+    for path, value, message in mutations:
+        payload = copy.deepcopy(base)
+        cursor: object = payload
+        for component in path[:-1]:
+            cursor = cursor[component]  # type: ignore[index]
+        cursor[path[-1]] = value  # type: ignore[index]
+        with pytest.raises(ValidationError, match=message):
+            PacketHmmPayload.model_validate(payload)
+
+
+def test_loader_rejects_a_non_mapping_payload_before_field_access() -> None:
+    """A non-object wire value must remain a stable family-domain error."""
+    with pytest.raises(TrafficlabError, match="fitted payload"):
+        FAMILY.load_fitted(object(), genes=(2,), bounds=BOUNDS)
 
 
 @pytest.mark.parametrize(

@@ -10,10 +10,12 @@ import pytest
 
 from tests.unit.generation.models.packet_hmm._support import two_state_model
 from trafficlab.common.trace import Direction
+from trafficlab.generation.models.common import MarkCount, MarkDistribution
 from trafficlab.generation.models.packet_hmm.model import (
     BaumWelchDiagnostics,
     PacketCategory,
     PacketSample,
+    fit_trace,
 )
 
 
@@ -46,13 +48,52 @@ def test_value_objects_reject_malformed_scalars_and_diagnostics(factory: object,
 @pytest.mark.parametrize(
     ("changes", "message"),
     (
+        ({"state_count": 1}, "state_count"),
+        ({"additive_smoothing": 0.01}, "smoothing"),
+        ({"initialization": "random"}, "initialization"),
+        ({"iat_quantiles": (0.2, 0.8)}, "IAT quantiles"),
+        ({"size_quantiles": (0.2, 0.8)}, "size quantiles"),
+        ({"diagnostics": cast(Any, object())}, "diagnostics"),
+        (
+            {
+                "diagnostics": BaumWelchDiagnostics(
+                    converged=True,
+                    iterations=101,
+                    log_likelihoods=tuple(0.0 for _ in range(102)),
+                )
+            },
+            "exceed",
+        ),
+        ({"initial_marks": MarkDistribution((MarkCount(Direction.OUTBOUND, 60, 2),))}, "initial_marks"),
         ({"state_count": 3}, "state_count"),
         ({"initial_probabilities": (0.4, 0.4)}, "sum to one"),
         ({"transition_rows": ((0.5, 0.5),)}, "K x K"),
         ({"emission_rows": ((0.5, 0.5), (0.5, math.nan))}, "finite"),
         ({"vocabulary": ()}, "vocabulary"),
+        ({"vocabulary": (cast(Any, object()), PacketCategory(3, Direction.OUTBOUND, 2))}, "PacketCategory"),
         ({"vocabulary": (PacketCategory(1, Direction.INBOUND, 0),) * 2}, "unique"),
+        ({"reservoirs": ((), (PacketSample(3.0, 130),))}, "nonempty"),
         ({"reservoirs": (((PacketSample(1.0, 70),),))}, "reservoir"),
+        (
+            {
+                "vocabulary": (
+                    PacketCategory(2, Direction.INBOUND, 0),
+                    PacketCategory(3, Direction.OUTBOUND, 2),
+                )
+            },
+            "IAT bin",
+        ),
+        (
+            {
+                "vocabulary": (
+                    PacketCategory(1, Direction.INBOUND, 1),
+                    PacketCategory(3, Direction.OUTBOUND, 2),
+                )
+            },
+            "size bin",
+        ),
+        ({"emission_rows": ((0.8, 0.2),)}, "K x M"),
+        ({"emission_rows": ((0.1, 0.9), (0.8, 0.2))}, "canonical"),
         ({"iat_thresholds": (2.0, 1.0)}, "IAT thresholds"),
         ({"size_thresholds": (120.0, 100.0)}, "size thresholds"),
         ({"maximum_iterations": 99}, "maximum_iterations"),
@@ -91,3 +132,9 @@ def test_model_binds_convergence_claim_to_final_likelihood_improvement() -> None
     for diagnostics in invalid:
         with pytest.raises(ValueError, match="converg|improvement"):
             replace(two_state_model(), diagnostics=diagnostics)
+
+
+def test_fit_trace_rejects_an_invalid_state_count_before_encoding() -> None:
+    """The direct estimator boundary must reject an unsupported latent dimension before allocating observations."""
+    with pytest.raises(ValueError, match="state_count"):
+        fit_trace(cast(Any, object()), state_count=1)

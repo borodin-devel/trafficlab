@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from dataclasses import replace
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -396,6 +397,38 @@ def test_acd_wire_schema_requires_converged_bounded_likelihood_diagnostics() -> 
             AcdPayload.model_validate(malformed)
 
 
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    (
+        ((0.0, 2.5, 7, True), "initial_conditional_duration"),
+        ((1.0, math.nan, 7, True), "final_negative_log_likelihood"),
+        ((1.0, 2.5, 501, True), "iterations"),
+        ((1.0, 2.5, 7, False), "convergence"),
+    ),
+)
+def test_runtime_acd_diagnostics_reject_every_invalid_solver_field(
+    arguments: tuple[float, float, int, bool], message: str
+) -> None:
+    """Runtime diagnostics must enforce the same finite successful bounded outcome as the wire schema."""
+    with pytest.raises(ValueError, match=message):
+        AcdFitDiagnostics(*arguments)
+
+
+def test_acd_payload_cross_validator_rejects_coefficient_and_mark_inconsistency() -> None:
+    """Typed fields alone cannot admit mismatched order, persistence, or duplicate empirical marks."""
+    payload = FAMILY.dump_fitted(_model())
+    first_mark = cast(list[object], payload["marks"])[0]
+    cases: tuple[tuple[dict[str, object], str], ...] = (
+        ({**payload, "alpha": [0.2, 0.1]}, "matching order"),
+        ({**payload, "alpha": [0.7], "beta": [0.3]}, "sum must be below"),
+        ({**payload, "marks": cast(list[object], [])}, "must not be empty"),
+        ({**payload, "marks": [first_mark, first_mark]}, "unique"),
+    )
+    for malformed, message in cases:
+        with pytest.raises(ValidationError, match=message):
+            AcdPayload.model_validate(malformed)
+
+
 def test_fit_rejects_explicit_optimizer_nonconvergence(monkeypatch: pytest.MonkeyPatch) -> None:
     """Publishing a capped or failed MLE would hide an invalid fitted family candidate."""
     failed = SimpleNamespace(
@@ -415,7 +448,7 @@ def test_fit_rejects_explicit_optimizer_nonconvergence(monkeypatch: pytest.Monke
         FAMILY.fit(REFERENCE, (1,), W=2.0, bounds=BOUNDS)
 
 
-@pytest.mark.parametrize("defect", ("iterations", "shape", "nonfinite", "loss"))
+@pytest.mark.parametrize("defect", ("iterations", "shape", "nonfinite", "loss", "transform"))
 def test_fit_rejects_malformed_or_inconsistent_success_results(monkeypatch: pytest.MonkeyPatch, defect: str) -> None:
     """A nominal success cannot bypass the fixed solver-result and direct-loss checks."""
     parameters = np.zeros(3, dtype=np.float64)
@@ -428,6 +461,9 @@ def test_fit_rejects_malformed_or_inconsistent_success_results(monkeypatch: pyte
         result.x = np.zeros(4, dtype=np.float64)
     elif defect == "nonfinite":
         result.fun = math.nan
+    elif defect == "transform":
+        result.x = np.asarray([1_000.0, 0.0, 0.0], dtype=np.float64)
+        result.fun = 1.0
     else:
         result.fun = final_loss + 1.0
 
@@ -465,6 +501,20 @@ def test_model_rejects_huge_finite_coefficients_as_nonstationary_without_overflo
 
     with pytest.raises(ValueError, match="coefficient"):
         AcdModel(0.5, (maximum,), (maximum,), AcdFitDiagnostics(1.0, 2.5, 7, True), MARKS)
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    (
+        ({"alpha": cast(Any, [0.2])}, "tuples"),
+        ({"diagnostics": cast(Any, object())}, "AcdFitDiagnostics"),
+        ({"marks": cast(Any, object())}, "MarkDistribution"),
+    ),
+)
+def test_model_rejects_wrong_runtime_container_types(changes: dict[str, object], message: str) -> None:
+    """Container coercion would bypass exact fitted-model identity and validation."""
+    with pytest.raises(TypeError, match=message):
+        replace(_model(), **changes)  # type: ignore[arg-type]
 
 
 def test_wire_payload_rejects_huge_finite_coefficients_as_validation_error() -> None:
@@ -693,6 +743,27 @@ def test_generation_rejects_overflowed_duration_or_arrival_time() -> None:
         )
 
 
+def test_generation_rejects_a_finite_duration_that_overflows_absolute_time() -> None:
+    """A later finite duration must not overflow when added to an already large in-window arrival."""
+    maximum = math.nextafter(math.inf, 0.0)
+    model = AcdModel(
+        omega=maximum / 4.0,
+        alpha=(0.0,),
+        beta=(0.0,),
+        diagnostics=AcdFitDiagnostics(1.0, 2.5, 7, True),
+        marks=MARKS,
+    )
+
+    with pytest.raises(TrafficlabError, match="arrival time"):
+        _generate_with_rng(
+            model,
+            ScriptedAcdRng(indices=[0, 0], exponentials=[3.0, 2.0]),
+            W=maximum,
+            limits=LIMITS,
+            clock=ScriptedClock([0.0] * 20),
+        )
+
+
 @pytest.mark.parametrize("seed", [True, -1, 1.0])
 def test_generate_rejects_noncanonical_seed_primitives(seed: object) -> None:
     """Coercible seeds would weaken byte-for-byte reproduction."""
@@ -740,8 +811,10 @@ def test_fitted_model_round_trips_strict_payload_and_rejects_corruption() -> Non
         {**payload, "alpha": [-0.1]},
         {**payload, "alpha": [0.7], "beta": [0.3]},
         {**payload, "alpha": [0.2, 0.1]},
+        {**payload, "alpha": [1]},
         {**payload, "diagnostics": {**cast(dict[str, object], payload["diagnostics"]), "converged": False}},
         {**payload, "diagnostics": {**cast(dict[str, object], payload["diagnostics"]), "iterations": 501}},
+        {**payload, "diagnostics": []},
         {**payload, "marks": []},
         {**payload, "marks": [first_mark, first_mark]},
         {**payload, "extra": 1},

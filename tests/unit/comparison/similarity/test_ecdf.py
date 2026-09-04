@@ -10,7 +10,11 @@ import pytest
 
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.common.trace import Direction, TraceEvent, TrafficTrace
-from trafficlab.comparison.diagnostics import CramerVonMisesDiagnostic
+from trafficlab.comparison.diagnostics import (
+    AndersonDarlingDiagnostic,
+    CramerVonMisesDiagnostic,
+    EcdfFeatureDiagnostic,
+)
 from trafficlab.comparison.schema import MethodComparison
 from trafficlab.comparison.similarity.common import SimilarityResult
 from trafficlab.comparison.similarity.ecdf import (
@@ -296,3 +300,82 @@ def test_typed_diagnostics_reject_inconsistent_empty_status_and_stratum_arithmet
     cast(dict[str, object], strata["inbound"])["discrepancy"] = 0.5
     with pytest.raises(ValueError, match="strata.inbound.discrepancy"):
         MethodComparison.model_validate({"score": result.score, "weight": 0.125, "diagnostics": diagnostics})
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    (
+        ({"reference_tie_count": 1}, "reference tie"),
+        ({"generated_tie_count": 1}, "generated tie"),
+        ({"status": "both_empty", "generated_sample_count": 0}, "two empty"),
+        (
+            {
+                "status": "both_empty",
+                "reference_sample_count": 0,
+                "generated_sample_count": 0,
+                "discrepancy": 0.5,
+            },
+            "zero arithmetic",
+        ),
+        (
+            {
+                "status": "one_sided_empty",
+                "reference_sample_count": 0,
+                "generated_sample_count": 0,
+                "discrepancy": 1.0,
+            },
+            "exactly one empty",
+        ),
+        (
+            {"status": "one_sided_empty", "generated_sample_count": 0, "discrepancy": 0.0},
+            "maximum discrepancy",
+        ),
+        ({"reference_sample_count": 0}, "two nonempty"),
+        ({"normalization_weight": 0.0, "raw_sum": 1.0}, "raw sum"),
+    ),
+)
+def test_ecdf_feature_diagnostic_rejects_every_inconsistent_status_branch(
+    changes: dict[str, object], message: str
+) -> None:
+    """Every empty/tie/arithmetic status mutation must fail at the strict diagnostic boundary."""
+    document: dict[str, object] = {
+        "status": "compared",
+        "reference_sample_count": 1,
+        "generated_sample_count": 1,
+        "reference_tie_count": 0,
+        "generated_tie_count": 0,
+        "raw_sum": 0.0,
+        "normalization_weight": 1.0,
+        "discrepancy": 0.0,
+    }
+    document.update(changes)
+
+    with pytest.raises(ValueError, match=message):
+        EcdfFeatureDiagnostic.model_validate(document)
+
+
+@pytest.mark.parametrize(
+    ("similarity", "diagnostic_type", "normalization", "message"),
+    (
+        (cramer_von_mises_similarity, CramerVonMisesDiagnostic, 0.5, "normalization weights"),
+        (anderson_darling_similarity, AndersonDarlingDiagnostic, 1.0, "normalization weight"),
+    ),
+)
+def test_method_specific_ecdf_diagnostics_reject_invalid_empirical_normalization(
+    similarity: _SimilarityMethod,
+    diagnostic_type: type[CramerVonMisesDiagnostic] | type[AndersonDarlingDiagnostic],
+    normalization: float,
+    message: str,
+) -> None:
+    """The generic feature arithmetic cannot weaken each method's distinct normalization contract."""
+    trace = _events((0.0, 1.0, 2.0), (10, 20, 30))
+    result = similarity(trace, trace, 2.0, 0.5, 0.5, 1.0, 0.0, 0.0)
+    diagnostics = cast(dict[str, object], result.as_dict()["diagnostics"])
+    strata = cast(dict[str, object], diagnostics["strata"])
+    overall = cast(dict[str, object], strata["global"])
+    feature = cast(dict[str, object], overall["iat"])
+    feature["normalization_weight"] = normalization
+    feature["raw_sum"] = cast(float, feature["discrepancy"]) * normalization
+
+    with pytest.raises(ValueError, match=message):
+        diagnostic_type.model_validate(diagnostics)
