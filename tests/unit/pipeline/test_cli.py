@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import cast
 
 import pytest
@@ -129,6 +129,96 @@ def test_cli_run_returns_130_after_interruption(capsys: pytest.CaptureFixture[st
     assert captured.err == "run: interrupted by user; inspect run.log and retry run\n"
 
 
+def test_cli_import_run_uses_one_injected_boundary_and_reports_run_summary(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Dropping either path or formatting a different summary would break the imported-run contract."""
+    calls: list[tuple[Path, Path]] = []
+
+    def import_run(experiment: Path, dump_directory: Path) -> RunResult:
+        calls.append((experiment, dump_directory))
+        return _run_result()
+
+    assert main(["import-run", "experiment.toml", "dumps/example"], import_run=import_run) == 0
+    assert calls == [(Path("experiment.toml"), Path("dumps/example"))]
+    captured = capsys.readouterr()
+    assert captured.out == (
+        "import-run: family=mmpp fitness=0.800000 reference_packets=10 generated_packets=12 "
+        "aggregate_score=0.750000 output=/abs/run\n"
+    )
+    assert captured.err == ""
+
+
+def test_cli_import_run_formats_package_error_with_exact_status(capsys: pytest.CaptureFixture[str]) -> None:
+    """Replacing imported acquisition's status or action would conceal its actionable failure."""
+
+    def fail(_experiment: Path, _dump_directory: Path) -> RunResult:
+        raise TrafficlabError("source changed", corrective_action="select a fresh run", exit_code=29)
+
+    assert main(["import-run", "experiment.toml", "dumps/example"], import_run=fail) == 29
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "import-run: source changed; select a fresh run\n"
+
+
+def test_cli_import_run_returns_130_after_interruption(capsys: pytest.CaptureFixture[str]) -> None:
+    """An interruption must retain its status after imported acquisition cleans its temporary files."""
+
+    def interrupt(_experiment: Path, _dump_directory: Path) -> RunResult:
+        raise KeyboardInterrupt
+
+    assert main(["import-run", "experiment.toml", "dumps/example"], import_run=interrupt) == 130
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "import-run: interrupted by user; inspect run.log and retry import-run\n"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["import-run"],
+        ["import-run", "experiment.toml"],
+        ["import-run", "experiment.toml", "dumps/example", "extra"],
+        ["import-run", "experiment.toml", "dumps/example", "--config-only"],
+    ],
+)
+def test_cli_import_run_rejects_arguments_outside_two_positionals(
+    arguments: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Accepting missing, extra, or option arguments would enlarge the exact public command surface."""
+    assert main(arguments) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("usage: trafficlab")
+    assert "import-run" in captured.err
+
+
+def test_cli_import_run_lazily_loads_production_boundary_after_selection(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Selecting another command must not load imported acquisition, while import-run resolves it on demand."""
+    import sys
+
+    calls: list[tuple[Path, Path]] = []
+    imported = ModuleType("trafficlab.pipeline.imported")
+
+    def import_run(experiment: Path, dump_directory: Path) -> RunResult:
+        calls.append((experiment, dump_directory))
+        return _run_result()
+
+    imported.run_imported_experiment = import_run  # type: ignore[attr-defined]
+    monkeypatch.delitem(sys.modules, "trafficlab.pipeline.imported", raising=False)
+
+    assert main(["run", "experiment.toml"], run=lambda _path: _run_result()) == 0
+    assert "trafficlab.pipeline.imported" not in sys.modules
+    capsys.readouterr()
+
+    monkeypatch.setitem(sys.modules, "trafficlab.pipeline.imported", imported)
+    assert main(["import-run", "experiment.toml", "dumps/example"]) == 0
+    assert calls == [(Path("experiment.toml"), Path("dumps/example"))]
+    assert capsys.readouterr().out.startswith("import-run: family=mmpp")
+
+
 @pytest.mark.parametrize(
     "arguments", [["run", "experiment.toml", "--config-only"], ["run", "experiment.toml", "--unknown"]]
 )
@@ -177,6 +267,31 @@ def test_cli_plain_preflight_lazily_uses_production_boundary(
 
     assert main(["preflight", "experiment.toml"]) == 0
     assert calls == [(Path("experiment.toml"), False)]
+    assert capsys.readouterr().out == "preflight: prepared /abs/run\n"
+
+
+@pytest.mark.parametrize("config_only", [False, True])
+def test_cli_preflight_selects_only_the_requested_injected_boundary(
+    config_only: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Confusing local and full preflight would cross the Docker boundary for config-only calls."""
+    prepared = cast(PreparedExperiment, SimpleNamespace(run_directory=Path("/abs/run")))
+    calls: list[str] = []
+
+    def local(_path: Path) -> PreparedExperiment:
+        calls.append("local")
+        return prepared
+
+    def full(_path: Path) -> PreparedExperiment:
+        calls.append("full")
+        return prepared
+
+    arguments = ["preflight", "experiment.toml"]
+    if config_only:
+        arguments.append("--config-only")
+
+    assert main(arguments, prepare=local, full_preflight=full) == 0
+    assert calls == ["local" if config_only else "full"]
     assert capsys.readouterr().out == "preflight: prepared /abs/run\n"
 
 

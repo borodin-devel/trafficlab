@@ -24,6 +24,7 @@ CaptureExperiment = Callable[[Path], "CaptureResult"]
 GenerateExperiment = Callable[[Path], "GenerationStageResult"]
 FitExperiment = Callable[[Path], "FitStageResult"]
 RunExperiment = Callable[[Path], "RunResult"]
+ImportRunExperiment = Callable[[Path, Path], "RunResult"]
 
 
 def _prepare_experiment(path: Path) -> "PreparedExperiment":
@@ -62,7 +63,21 @@ def build_parser() -> argparse.ArgumentParser:
     fit_parser.add_argument("experiment", type=Path, metavar="EXPERIMENT")
     run_parser = commands.add_parser("run")
     run_parser.add_argument("experiment", type=Path, metavar="EXPERIMENT")
+    import_run_parser = commands.add_parser("import-run")
+    import_run_parser.add_argument("experiment", type=Path, metavar="EXPERIMENT")
+    import_run_parser.add_argument("dump_directory", type=Path, metavar="DUMP_DIRECTORY")
     return parser
+
+
+def _print_run_summary(command: str, completed: "RunResult") -> None:
+    print(
+        f"{command}: family={completed.fit.outcome.winner.family} "
+        f"fitness={completed.fit.outcome.winner.fitness:.6f} "
+        f"reference_packets={completed.capture.packet_count} "
+        f"generated_packets={len(completed.generation.trace)} "
+        f"aggregate_score={completed.comparison.aggregate_score:.6f} "
+        f"output={completed.run_directory}"
+    )
 
 
 def main(
@@ -75,6 +90,7 @@ def main(
     generate: GenerateExperiment | None = None,
     fit: FitExperiment | None = None,
     run: RunExperiment | None = None,
+    import_run: ImportRunExperiment | None = None,
 ) -> int:
     """Parse command-line arguments and return an exit status."""
     parser = build_parser()
@@ -135,24 +151,27 @@ def main(
             )
             return 0
 
-        if command == "run":
-            if run is None:
-                from trafficlab.pipeline.stage import run_experiment
-
-                run = run_experiment
+        if command in {"run", "import-run"}:
             try:
-                completed = run(parsed.experiment)
+                if command == "run":
+                    if run is None:
+                        from trafficlab.pipeline.stage import run_experiment
+
+                        run = run_experiment
+                    completed = run(parsed.experiment)
+                else:
+                    if import_run is None:
+                        from trafficlab.pipeline.imported import run_imported_experiment
+
+                        import_run = run_imported_experiment
+                    completed = import_run(parsed.experiment, parsed.dump_directory)
             except KeyboardInterrupt:
-                print("run: interrupted by user; inspect run.log and retry run", file=sys.stderr)
+                print(
+                    f"{command}: interrupted by user; inspect run.log and retry {command}",
+                    file=sys.stderr,
+                )
                 return 130
-            print(
-                f"run: family={completed.fit.outcome.winner.family} "
-                f"fitness={completed.fit.outcome.winner.fitness:.6f} "
-                f"reference_packets={completed.capture.packet_count} "
-                f"generated_packets={len(completed.generation.trace)} "
-                f"aggregate_score={completed.comparison.aggregate_score:.6f} "
-                f"output={completed.run_directory}"
-            )
+            _print_run_summary(command, completed)
             return 0
 
         run_directory = load_experiment(parsed.experiment).run.directory

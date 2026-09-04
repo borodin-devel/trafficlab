@@ -176,6 +176,34 @@ command. They are not evaluated by a shell.
 
 ## Quick start
 
+### Imported capture (recommended)
+
+When you already have a capture, the shortest workflow is one command from the
+repository root:
+
+```bash
+cp examples/configs/balanced.toml examples/configs/my-dump.toml
+# Set a fresh run.directory in my-dump.toml.
+uv run --locked trafficlab import-run \
+  examples/configs/my-dump.toml dumps/my-dump
+```
+
+`dumps/my-dump` must be a real directory containing exactly two files: one
+Ethernet `.pcap` or `.pcapng` capture and one `capture.json`. Trafficlab leaves
+both source files unchanged, uses the supplied target MAC without re-inferring
+it, and converts supported formats and packet ordering to canonical PCAPNG
+entirely in process. It does not use Docker, a shell, Wireshark executables, or
+repository scripts.
+
+The command performs local preflight, import, fit, generate, comparison, and
+final validation, retaining the nine artifacts below under the configured
+`run.directory`. On failure, inspect its `run.log` and repeat the same command
+with the unchanged TOML and source pair: compatible checkpoints and completed
+stages are reused. A changed source or incompatible retained run is preserved
+and rejected; choose a fresh `run.directory` when starting a different run.
+
+### Live Docker capture
+
 The safest first command validates configuration, local paths, output capacity,
 and disk space without contacting Docker:
 
@@ -256,10 +284,22 @@ Export preserves the current aspect, visible datasets, viewport, labels,
 annotations, and legend. Export writes only to the path you choose and never to
 the run directory unless you explicitly select it.
 
-## Workflow stages
+## Advanced staged and resume workflow
 
-All commands take the experiment TOML path. The stages share the same validated
-configuration and run directory.
+Use the standalone commands below to inspect, diagnose, or resume a particular
+stage. For a supplied capture, prefer `import-run`; manual config-only
+preflight, copying the pair into the run directory, `fit`, `generate`, and
+`compare` are the advanced path. All standalone commands take the experiment
+TOML path and share its validated configuration and run directory.
+
+### Imported run
+
+```bash
+uv run --locked trafficlab import-run EXPERIMENT DUMP_DIRECTORY
+```
+
+Imported run owns the complete no-Docker flow described in Quick start. It is
+separate from `run`, whose acquisition stage remains live Docker capture.
 
 ### [Preflight](architecture/SYSTEM.md#preflight)
 

@@ -164,7 +164,10 @@ Unit tests are deterministic and do not start Docker. They cover:
 - atomic JSON/checkpoint replacement, `best_model.json`
   `observation_window_seconds` serialization/loading, and rejection of invalid
   resume state;
-- CLI stage selection and errors using injected subprocess boundaries;
+- CLI stage selection and errors using injected in-process boundaries,
+  including the exact two-positional `import-run` surface, lazy imported-module
+  loading, shared success summary, structured error status/action, and
+  interruption status 130;
 - table-driven capture event arbitration for every simultaneous pair in the
   fixed order: user interruption, natural target stop, unexpected capture stop,
   stage-specific timeout, and total-run timeout. A simultaneous target stop,
@@ -528,7 +531,12 @@ access, acquisition failure after preflight to append the ordinary capture-stage
 `run_failed` record, and successful acquisition to reach fitting while patched
 subprocess, Docker-module, and repository-script boundaries fail if touched.
 The source bytes remain unchanged and only owned run-side temporaries may be
-cleaned.
+cleaned. One complete public-coordinator case continues through real fitting,
+generation, comparison, and final validation; it requires the exact nine-file
+inventory and `run_completed`. Repeating the same call must exactly reuse the
+normalized reference, compatible checkpoint, generated capture, and comparison
+without changing scientific artifacts. Changing one source byte must preserve
+the run and fail in acquisition before another scientific artifact changes.
 
 14. Run the dashboard against the checked example run copied from
     `examples/scientific_stack/example_run_artifacts/`. Require the window shell

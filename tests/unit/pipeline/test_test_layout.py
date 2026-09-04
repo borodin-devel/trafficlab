@@ -174,6 +174,11 @@ EXPECTED_DECOMPOSED_OWNER_TREES = {
 }
 
 EXPECTED_DECOMPOSED_ROOT_TESTS = {
+    "integration/pipeline": {
+        "test_import_run.py",
+        "test_pipeline_equivalence.py",
+        "test_run_pipeline.py",
+    },
     "unit/fitting/genetic": {
         "__init__.py",
         "test_coordinates.py",

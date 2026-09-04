@@ -436,7 +436,7 @@ git commit -m "feat(pipeline): import captured references"
 - Produces: `trafficlab import-run [-h] EXPERIMENT DUMP_DIRECTORY` and one copyable English/Russian workflow.
 - Consumes: Task 3 `run_imported_experiment` and the existing `RunResult` summary fields.
 
-- [ ] **[STEP-35-4d85b1d6] Write failing parser, dispatch, output, error, and interruption tests**
+- [x] **[STEP-35-4d85b1d6] Write failing parser, dispatch, output, error, and interruption tests**
 
 Add `ImportRunExperiment = Callable[[Path, Path], RunResult]`, inject it through `main`, and test desired behavior before implementation:
 
@@ -448,7 +448,7 @@ assert output.startswith("import-run: family=")
 
 Require missing/extra positional rejection, `--config-only` rejection, exact `TrafficlabError` status/action, interruption 130, and lazy import of `trafficlab.pipeline.imported` only after command selection.
 
-- [ ] **[STEP-36-d48ce06c] Run CLI RED**
+- [x] **[STEP-36-d48ce06c] Run CLI RED**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/pipeline/test_cli.py -k import_run
@@ -456,19 +456,19 @@ uv run --locked pytest -q -n 0 tests/unit/pipeline/test_cli.py -k import_run
 
 Expected: parser or `main(import_run=...)` interface failure.
 
-- [ ] **[STEP-37-a38bd0fa] Implement the exact two-positional CLI surface**
+- [x] **[STEP-37-a38bd0fa] Implement the exact two-positional CLI surface**
 
 Register `import-run`, lazily load `run_imported_experiment`, call one injected boundary, and share the existing summary formatting without broad CLI refactoring. Error prefixes and interruption guidance use `import-run` exactly.
 
-- [ ] **[STEP-38-3334cd6b] Write failing in-process complete-run integration**
+- [x] **[STEP-38-3334cd6b] Write failing in-process complete-run integration**
 
 Create a real temporary source directory from checked fixtures and a small deterministic config. Forbid `subprocess.run`, Docker adapter imports, and any `scripts` import. Invoke the public coordinator and require config-only preflight, normalized reference identities, real fit/generate/compare, `run_completed`, and exactly nine final files.
 
-- [ ] **[STEP-39-4433fdfd] Make complete import-run integration green and cover resume**
+- [x] **[STEP-39-4433fdfd] Make complete import-run integration green and cover resume**
 
 Use Task 3 production code without a second pipeline. Repeat the same command to prove exact reference reuse and compatible checkpoint/stage reuse. Change one source byte and require preserved-run rejection before another scientific artifact changes.
 
-- [ ] **[STEP-40-72aed39e] Update root README with the shortest English workflow**
+- [x] **[STEP-40-72aed39e] Update root README with the shortest English workflow**
 
 Place this before the advanced standalone-stage walkthrough:
 
@@ -481,15 +481,15 @@ uv run --locked trafficlab import-run \
 
 Explain the exact two-file input, automatic in-process format/order repair, supplied-MAC semantics, no Docker, retained run directory, retry behavior, and when to use advanced standalone stages.
 
-- [ ] **[STEP-41-05a9e308] Update QUICK_START_RU.md with the easiest Russian workflow**
+- [x] **[STEP-41-05a9e308] Update QUICK_START_RU.md with the easiest Russian workflow**
 
 Make the same one-command sequence the recommended first path in Russian. State plainly that no manual `preflight`, copying, `fit`, `generate`, or `compare` is needed, and that Trafficlab neither changes the source files nor re-infers the supplied MAC. Keep the manual sequence under an advanced/resume heading.
 
-- [ ] **[STEP-42-9ca0b2b2] Update CLI and integration architecture contracts**
+- [x] **[STEP-42-9ca0b2b2] Update CLI and integration architecture contracts**
 
 Add the exact command surface and imported flow to `SYSTEM.md`; add CLI/in-process/no-Docker/nine-artifact cases to `TESTING.md`. Do not duplicate implementation prose or include progress state.
 
-- [ ] **[STEP-43-eba78224] Run CLI, in-process integration, docs, and structural gates**
+- [x] **[STEP-43-eba78224] Run CLI, in-process integration, docs, and structural gates**
 
 ```bash
 uv run --locked ruff format --check src/trafficlab/cli.py tests/unit/pipeline/test_cli.py tests/integration/pipeline/test_import_run.py
@@ -509,7 +509,7 @@ git diff --check
 
 Review command ergonomics, lazy imports, exact output/errors, Docker/subprocess exclusion, real-stage composition, resume, documentation ease, and English/Russian consistency.
 
-- [ ] **[STEP-45-02c42711] Commit the public imported-run workflow**
+- [x] **[STEP-45-02c42711] Commit the public imported-run workflow**
 
 ```bash
 git add src/trafficlab/cli.py tests/unit/pipeline/test_cli.py \

@@ -118,13 +118,16 @@ trafficlab fit EXPERIMENT
 trafficlab generate EXPERIMENT
 trafficlab compare EXPERIMENT
 trafficlab run EXPERIMENT
+trafficlab import-run EXPERIMENT DUMP_DIRECTORY
 ```
 
-`EXPERIMENT` is a TOML file path. The bracketed option is accepted only by
-`preflight`; every other command rejects it. These commands are the final public
-surface, and each is owned by its corresponding subsystem. Every command calls
-an in-process stage function. `run` composes those same functions and does not
-implement an alternate path.
+`EXPERIMENT` is a TOML file path. `DUMP_DIRECTORY` is the supplied capture-pair
+directory. The bracketed option is accepted only by `preflight`; every other
+command rejects it. `import-run` accepts exactly its two positionals and `-h`.
+These commands are the final public surface, and each is owned by its
+corresponding subsystem. Every command calls an in-process stage function.
+`run` and `import-run` compose the same scientific stages rather than alternate
+implementations.
 
 ### `preflight`
 
@@ -242,7 +245,14 @@ There is no new resume switch or manifest. `genetic.resume = true` permits only
 a compatible checkpoint resume; all other reuse requires strict validation and
 identity comparison.
 
-### Imported reference acquisition
+### `import-run` and imported reference acquisition
+
+`trafficlab import-run EXPERIMENT DUMP_DIRECTORY` invokes one public
+coordinator boundary. Success prints the same family, selection fitness,
+reference/generated packet counts, aggregate score, and run-directory summary
+as `run`, prefixed `import-run:`. A structured error retains its exit status and
+corrective action. User interruption returns 130 after owned temporary cleanup
+and directs the user to inspect `run.log` before retrying.
 
 The imported-reference workflow composes the existing coordinator as
 `config-only preflight -> imported reference -> fit -> generate -> compare`.
