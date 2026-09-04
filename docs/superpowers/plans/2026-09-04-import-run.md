@@ -505,7 +505,7 @@ uv run --locked trafficlab import-run --help
 git diff --check
 ```
 
-- [ ] **[STEP-44-75c31787] Request independent public-flow review and fix blockers**
+- [x] **[STEP-44-75c31787] Request independent public-flow review and fix blockers**
 
 Review command ergonomics, lazy imports, exact output/errors, Docker/subprocess exclusion, real-stage composition, resume, documentation ease, and English/Russian consistency.
 
