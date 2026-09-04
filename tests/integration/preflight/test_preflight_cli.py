@@ -4,11 +4,13 @@ import importlib
 import json
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import tomli_w
+from pydantic import ValidationError
 
 import trafficlab
 import trafficlab.capture as capture_package
@@ -16,6 +18,7 @@ import trafficlab.capture.docker as docker_package
 import trafficlab.cli as cli
 import trafficlab.preflight.stage as preflight_module
 from trafficlab.cli import main
+from trafficlab.common.config import ExperimentConfig
 from trafficlab.common.config_io import load_configuration_pair, load_experiment
 from trafficlab.common.errors import TrafficlabError
 from trafficlab.preflight.types import PreparedExperiment
@@ -616,6 +619,22 @@ def test_checked_in_external_reference_search_profiles_are_config_only_runnable(
     assert config.genetic.early_stopping_generations == early_stopping_generations
     assert config.genetic.early_stopping_tolerance == 0.0001
     assert population_size * (generation_count + 1) * len(trial_seeds) == maximum_simulations
+    assert config.genetic.tournament_size == 5
+    assert config.genetic.elite_count == 2
+    assert config.genetic.duplicate_mutation_attempts == 10
+
+    balanced = load_configuration_pair(repository / "examples" / "configs" / "balanced.toml").realized
+    assert config.run.model_copy(update={"directory": balanced.run.directory}) == balanced.run
+    assert config.target == balanced.target
+    assert config.capture == balanced.capture
+    assert config.generation == balanced.generation
+    assert config.models == balanced.models
+    assert config.similarity == balanced.similarity
+
+    unknown = tomllib.loads(checked.read_text(encoding="utf-8"))
+    unknown["unknown_profile_setting"] = True
+    with pytest.raises(ValidationError, match="extra"):
+        ExperimentConfig.model_validate(unknown)
 
 
 def test_default_external_reference_search_matches_balanced_profile() -> None:
@@ -629,3 +648,14 @@ def test_default_external_reference_search_matches_balanced_profile() -> None:
     )
 
     assert default == normalized_balanced
+
+
+def test_external_reference_profile_documentation_counts_only_selection_trials() -> None:
+    """The profile budget table must disclose simulations outside genetic selection."""
+    repository = Path(__file__).parents[3]
+    readme = (repository / "examples" / "configs" / "README.md").read_text(encoding="utf-8")
+    normalized = " ".join(readme.split())
+
+    assert "maximum selection/trial simulations" in normalized
+    assert "one additional final-validation simulation" in normalized
+    assert "standalone `generate` stage performs another simulation" in normalized

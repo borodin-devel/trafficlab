@@ -54,10 +54,11 @@ max_wall_seconds = 300.0
 [genetic]
 # Thirty-five individuals give each of the seven families five initial lanes.
 # One hundred generations and five common simulation seeds permit at most
-# 17,675 full-window simulations per run.  Resume preserves every
-# whole-generation checkpoint.  Early stopping requires 25 consecutive
-# generations without an absolute best-fitness improvement greater than
-# 0.0001; no finite stochastic search guarantees the global optimum.
+# 17,675 full-window selection simulations per run; fit adds one final
+# validation.  Resume preserves every whole-generation checkpoint.  Early
+# stopping requires 25 consecutive generations without an absolute best-fitness
+# improvement greater than 0.0001; no finite stochastic search guarantees the
+# global optimum.
 population_size = 35
 generation_count = 100
 tournament_size = 5

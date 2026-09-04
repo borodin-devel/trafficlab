@@ -6,16 +6,20 @@ seven classical model families and all eight mandatory fitness similarity
 methods.  `default.toml` is intentionally equivalent to the recommended
 `balanced.toml` search apart from its run directory.
 
-| profile | population | generations | trial seeds | early-stop patience | maximum full-window simulations |
+| profile | population | generations | trial seeds | early-stop patience | maximum selection/trial simulations |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | `fast_routine.toml` | 14 | 10 | 1 | 3 | 154 |
 | `balanced.toml` / `default.toml` | 28 | 50 | 3 | 12 | 4,284 |
 | `maximum_quality.toml` | 35 | 100 | 5 | 25 | 17,675 per run |
 
-The maximum is `population × (generations + 1) × trial seeds`; early stopping
-can finish earlier.  All profiles use an absolute early-stopping tolerance of
-`0.0001` and identical model, similarity, post-fit, and resource-limit
-settings, so their search budgets are directly comparable.
+The selection maximum is
+`population × (generations + 1) × trial seeds`; early stopping can finish
+earlier.  A successful `fit` performs one additional final-validation
+simulation with `final_seed`, and the standalone `generate` stage performs
+another simulation from the saved winner.  All profiles use an absolute
+early-stopping tolerance of `0.0001` and identical model, similarity, post-fit,
+and resource-limit settings, so their selection budgets are directly
+comparable.
 
 The checked file is intentionally safe: `example.invalid` cannot resolve to a
 live endpoint. To run a capture, copy the file, then change the target image,
