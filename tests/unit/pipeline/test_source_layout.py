@@ -13,7 +13,6 @@ EXPECTED_MODULES = {
         "config_io.py",
         "errors.py",
         "json.py",
-        "scapy_io.py",
         "scientific_schema.py",
         "statistics.py",
         "trace.py",
@@ -84,6 +83,7 @@ EXPECTED_NESTED_PACKAGES = {
         "transitions.py",
     },
     "capture/docker": {"__init__.py", "compose.py", "image.py", "process.py", "types.py"},
+    "common/scapy_io": {"__init__.py", "trace.py"},
     "fitting/genetic/checkpoint": {
         "__init__.py",
         "codec.py",
@@ -119,7 +119,6 @@ FORBIDDEN_ROOT_MODULES = {
     "fitting.py",
     "generation.py",
     "preflight.py",
-    "scapy_io.py",
     "scientific_schema.py",
     "statistics.py",
     "study_evidence.py",

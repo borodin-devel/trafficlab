@@ -11,9 +11,16 @@ import numpy as np
 import pytest
 
 from tests.support.pcapng_oracle import oracle_trace
-from trafficlab.common import scapy_io
 from trafficlab.common.errors import DeadlineExceededError, TrafficlabError
-from trafficlab.common.scapy_io import EncodedPcapng, encode_pcapng, read_pcapng, read_pcapng_bytes, read_pcapng_packets
+from trafficlab.common.scapy_io import (
+    EncodedPcapng,
+    PcapngPacket,
+    encode_pcapng,
+    read_pcapng,
+    read_pcapng_bytes,
+    read_pcapng_packets,
+)
+from trafficlab.common.scapy_io import trace as scapy_io
 from trafficlab.common.trace import CaptureMetadata, Direction, TraceEvent, TrafficTrace, load_capture_metadata
 
 _REPOSITORY = Path(__file__).resolve().parents[3]
@@ -23,6 +30,19 @@ _TARGET_BYTES = bytes.fromhex("0242ac110002")
 _PEER_BYTES = bytes.fromhex("020000000001")
 
 type Endian = Literal["<", ">"]
+
+
+def test_scapy_io_keeps_every_public_export_importable() -> None:
+    exports = {
+        "EncodedPcapng": EncodedPcapng,
+        "PcapngPacket": PcapngPacket,
+        "encode_pcapng": encode_pcapng,
+        "read_pcapng": read_pcapng,
+        "read_pcapng_bytes": read_pcapng_bytes,
+        "read_pcapng_packets": read_pcapng_packets,
+    }
+
+    assert {value.__name__ for value in exports.values()} == set(exports)
 
 
 def _block(block_type: int, body: bytes, endian: Endian) -> bytes:
