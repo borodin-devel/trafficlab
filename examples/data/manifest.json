@@ -21,8 +21,8 @@
     {
       "mode": 420,
       "path": "fit/best_model.json",
-      "sha256": "ad9a7aecc2b65f5cff0d9e6d04dd9f42a6836da1d89e09324402136c0b6f8852",
-      "size": 9200
+      "sha256": "329732a26d3fb6353116606069d2c4cade36074563ffd6d07806b70d0dbaa4a8",
+      "size": 6098
     },
     {
       "mode": 420,
@@ -33,20 +33,20 @@
     {
       "mode": 420,
       "path": "fit/checkpoint.json",
-      "sha256": "2ed8fe17106df469fee694203625db6dbb94282715284b77df057aac99c1cd37",
-      "size": 119848
+      "sha256": "42688b4edc63028ccc0f245e02f311c2819da8e49051664153893e878acef3c5",
+      "size": 124425
     },
     {
       "mode": 420,
       "path": "fit/experiment.toml",
-      "sha256": "f99d833f887206acafccff2213a504828ca233eaa9e6ed58b7faed8a28d2d003",
-      "size": 3653
+      "sha256": "1a23a54739734a3085550d8fca14708655f4ca2eb4b9ac298a879786fac6c9d7",
+      "size": 3802
     },
     {
       "mode": 420,
       "path": "fit/ga_history.csv",
-      "sha256": "d2d79ee29e960a333fef420d0e6c059dc20efd48d2904632169302943a3ca531",
-      "size": 1097
+      "sha256": "0996e5da785b3bed4a23beb0fe07d180be28a0c66164ccc7526bd624ed0d6799",
+      "size": 1037
     },
     {
       "mode": 420,
@@ -93,8 +93,8 @@
     {
       "mode": 420,
       "path": "similarity.json",
-      "sha256": "67154cc6bddc92e1ce7a3513e8f49bda70dbb3ee74c4d56a114e56d6301520d1",
-      "size": 188412
+      "sha256": "1a4be3bd3d0aab869e6c0176ffa24b92cdef70e84136d4a32eda85974a01af51",
+      "size": 190841
     }
   ],
   "schema_version": 1

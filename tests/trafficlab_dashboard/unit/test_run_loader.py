@@ -407,9 +407,7 @@ def test_impossible_history_mean_disables_ga_history_at_load_time(tmp_path: Path
     assert family_original in content
     assert overall_original in content
     history_path.write_text(
-        content.replace(family_original, family_replacement, 1).replace(
-            overall_original, overall_replacement, 1
-        ),
+        content.replace(family_original, family_replacement, 1).replace(overall_original, overall_replacement, 1),
         encoding="utf-8",
     )
 

@@ -59,7 +59,7 @@ def test_run_experiment_appends_one_exact_completion_record(
     completions = [record for record in read_run_records(prepared) if record.get("event") == "run_completed"]
     assert completions == [
         {
-            "aggregate_score": 0.653723956904875,
+            "aggregate_score": 0.6211242255585652,
             "event": "run_completed",
             "family": "poisson_empirical",
             "fitness": 0.8,

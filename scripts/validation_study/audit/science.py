@@ -9,6 +9,7 @@ from pathlib import Path
 from statistics import variance
 from typing import TYPE_CHECKING, cast
 
+from scripts.validation_study.audit import profile_checks
 from scripts.validation_study.audit.artifacts import (
     config_pair,
     fixture_profile,
@@ -38,18 +39,6 @@ from scripts.validation_study.audit.common import (
     workload_name,
 )
 from scripts.validation_study.audit.environment import config_semantics
-from scripts.validation_study.audit.profile_checks import (
-    capture_lineage as _capture_lineage,
-)
-from scripts.validation_study.audit.profile_checks import (
-    require_config_images as _require_config_images,
-)
-from scripts.validation_study.audit.profile_checks import (
-    require_config_workload_argv as _require_config_workload_argv,
-)
-from scripts.validation_study.audit.profile_checks import (
-    require_frozen_profile as _require_frozen_profile,
-)
 from scripts.validation_study.audit.report_values import (
     comparison_score,
 )
@@ -72,14 +61,16 @@ from trafficlab.comparison.metrics import compare_final_traces, compare_traces
 from trafficlab.fitting.genetic.checkpoint import parse_checkpoint, render_history_csv
 from trafficlab.fitting.genetic.population import rank_candidates
 from trafficlab.fitting.genetic.strategy import make_strategy_context
-from trafficlab.generation.models.fitted_model import (
-    load_best_model,
-    render_best_model,
-)
+from trafficlab.generation.models.fitted_model import load_best_model, render_best_model
 from trafficlab.generation.stage import reproduce_generated_pcapng
 
 if TYPE_CHECKING:
     from scripts.validation_study.records import HeldOutEvaluation
+
+_capture_lineage = profile_checks.capture_lineage
+_require_config_images = profile_checks.require_config_images
+_require_config_workload_argv = profile_checks.require_config_workload_argv
+_require_frozen_profile = profile_checks.require_frozen_profile
 
 
 def _validation_profile(*, workload: str, url: str, environment: Mapping[str, object]) -> ExperimentConfig:
