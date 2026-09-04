@@ -407,7 +407,7 @@ uv run --locked pytest -q -n 0 \
 git diff --check
 ```
 
-- [ ] **[STEP-33-a4e614e3] Request independent import-stage review and fix blockers**
+- [x] **[STEP-33-a4e614e3] Request independent import-stage review and fix blockers**
 
 Review source immutability, identity races, reuse authority, failure preservation, deadline continuity, artifact ownership, and absence of hidden subprocess/Docker/script paths.
 
