@@ -156,7 +156,7 @@ uv run --locked pytest -q -n 0 tests/unit/pipeline/test_source_layout.py
 git diff --check
 ```
 
-- [ ] **[STEP-7-3fd73a6a] Request independent review and fix every blocking finding**
+- [x] **[STEP-7-3fd73a6a] Request independent review and fix every blocking finding**
 
 Review the exact Task 1 range for import compatibility, cycles, changed exception text, and accidental byte changes. Repeat only the affected focused gate after fixes.
 
