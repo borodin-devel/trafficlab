@@ -312,11 +312,11 @@ git commit -m "feat(io): normalize raw traffic captures"
 - Produces: `ImportSource`, `discover_import_source(directory)`, `import_reference(source, prepared) -> CaptureResult`, and `run_imported_experiment(experiment_path, dump_directory) -> RunResult`.
 - Consumes: Task 2 `normalize_raw_capture`, stable content identities, config-only preflight, capture-pair publication, and `run_experiment` dependency injection.
 
-- [ ] **[STEP-21-53f3448e] Write failing exact-directory discovery tests**
+- [x] **[STEP-21-53f3448e] Write failing exact-directory discovery tests**
 
 Cover missing path, file instead of directory, directory symlink, no capture, two captures, wrong-case `capture.json`, extra file, nested directory, FIFO/symlink entries, relative/absolute aliases, and source/run overlap. The accepted table covers `.pcap`, `.PCAP`, `.pcapng`, and `.PCAPNG` with exactly two regular files.
 
-- [ ] **[STEP-22-cafa1534] Run discovery RED**
+- [x] **[STEP-22-cafa1534] Run discovery RED**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/pipeline/test_imported.py -k discover
@@ -324,7 +324,7 @@ uv run --locked pytest -q -n 0 tests/unit/pipeline/test_imported.py -k discover
 
 Expected: `trafficlab.pipeline.imported` or its public discovery interface is absent.
 
-- [ ] **[STEP-23-bdfd25a2] Implement strict discovery and overlap validation**
+- [x] **[STEP-23-bdfd25a2] Implement strict discovery and overlap validation**
 
 Use `stat(..., follow_symlinks=False)`, a sorted complete direct inventory, and resolved paths. Define:
 
@@ -338,23 +338,23 @@ class ImportSource:
 
 All stored paths are absolute direct children of `directory`. Error text says how many capture/metadata/unexpected entries were found.
 
-- [ ] **[STEP-24-2399b001] Write failing stable-snapshot and publication tests**
+- [x] **[STEP-24-2399b001] Write failing stable-snapshot and publication tests**
 
 Use real small fixtures and injected file-operation boundaries only for forced failures. Require source identities before/copy/after, metadata parsing before normalization, same-filesystem temporary ownership, final pair validation, `CaptureResult(..., target_status=0, reused=False)`, source immutability, no residue, and one exact `reference_imported` record.
 
-- [ ] **[STEP-25-549e8097] Implement snapshot, normalization, and capture-pair publication**
+- [x] **[STEP-25-549e8097] Implement snapshot, normalization, and capture-pair publication**
 
 Use one absolute deadline derived from `prepared.config.capture.total_timeout_seconds`. Snapshot both files, call Task 2 normalization on the capture snapshot, call `validate_capture_pair`, then delegate final publication to `publish_capture_pair`. The log record contains source/output content identities, source paths, `normalization_version="scapy-raw-v1"`, packet count, output path, stage `capture`, and `reused=false`.
 
-- [ ] **[STEP-26-cd97d12d] Write failing exact-reuse and mismatch tests**
+- [x] **[STEP-26-cd97d12d] Write failing exact-reuse and mismatch tests**
 
 Cover exact retry without calling normalization, changed source capture, changed metadata, replaced source path with equal bytes, changed effective config, changed normalization version, changed canonical output, missing log record, duplicate/contradictory record, metadata-only output, reference-only output, and malformed existing pair. Every non-exact case preserves all preexisting run bytes.
 
-- [ ] **[STEP-27-ba90e1bb] Implement nonmutating reuse validation**
+- [x] **[STEP-27-ba90e1bb] Implement nonmutating reuse validation**
 
 Inspect existing path identities without the ordinary capture recovery deletion path. Reuse only a valid pair plus one authoritative matching `reference_imported` lineage. Append `reused=true` after revalidating current source identities and output identities. Do not normalize on exact reuse and never overwrite or remove a non-exact existing artifact.
 
-- [ ] **[STEP-28-2a2ffc2a] Compose config-only acquisition with the existing coordinator**
+- [x] **[STEP-28-2a2ffc2a] Compose config-only acquisition with the existing coordinator**
 
 Build production dependencies without copying coordinator logic:
 
@@ -377,11 +377,11 @@ def run_imported_experiment(experiment_path: Path, dump_directory: Path) -> RunR
 
 Use a named nested function rather than an assigned lambda in production. Discovery occurs before preflight; all post-preflight errors use the existing coordinator failure path.
 
-- [ ] **[STEP-29-5d28ccbc] Add interruption, deadline, cleanup, and no-subprocess tests**
+- [x] **[STEP-29-5d28ccbc] Add interruption, deadline, cleanup, and no-subprocess tests**
 
 Raise at every snapshot/normalize/publish/log boundary and require owned temporary cleanup plus preservation of authoritative paths. Patch `subprocess.run`, Docker imports, and repository-script imports to raise if reached; a real import path must remain green.
 
-- [ ] **[STEP-30-3def4559] Prove imported-stage failed-function coverage**
+- [x] **[STEP-30-3def4559] Prove imported-stage failed-function coverage**
 
 ```bash
 uv run --locked pytest -q -n 0 tests/unit/pipeline/test_imported.py \
@@ -390,11 +390,11 @@ uv run --locked pytest -q -n 0 tests/unit/pipeline/test_imported.py \
 
 If module-only 100% is impractical because trivial process entry code is absent, inspect function regions and require 100% for every function exposed by RED while keeping total project coverage policy unchanged.
 
-- [ ] **[STEP-31-4ae875cf] Update source/test ownership and normative acquisition docs**
+- [x] **[STEP-31-4ae875cf] Update source/test ownership and normative acquisition docs**
 
 Add `imported.py` to the pipeline module inventory and `test_imported.py` to the unit pipeline owner. Update `SYSTEM.md`, `CAPTURE.md`, and `TESTING.md` with discovery, snapshots, deadline, lineage, exact reuse, preservation, and coordinator composition. State explicitly that imported acquisition creates no Docker resource or subprocess.
 
-- [ ] **[STEP-32-d3e12475] Run the imported-stage focused gate**
+- [x] **[STEP-32-d3e12475] Run the imported-stage focused gate**
 
 ```bash
 uv run --locked ruff format --check src/trafficlab/pipeline/imported.py tests/unit/pipeline/test_imported.py
@@ -411,7 +411,7 @@ git diff --check
 
 Review source immutability, identity races, reuse authority, failure preservation, deadline continuity, artifact ownership, and absence of hidden subprocess/Docker/script paths.
 
-- [ ] **[STEP-34-3a828140] Commit imported acquisition**
+- [x] **[STEP-34-3a828140] Commit imported acquisition**
 
 ```bash
 git add src/trafficlab/pipeline/imported.py tests/unit/pipeline/test_imported.py \
