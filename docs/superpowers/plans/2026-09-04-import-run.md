@@ -581,7 +581,7 @@ git add docs/evidence/2026-09-04-import-run.md
 git commit -m "test(evidence): validate imported reference runs"
 ```
 
-- [ ] **[STEP-54-6cd826c6] Obtain final whole-branch review and leave a clean local branch**
+- [x] **[STEP-54-6cd826c6] Obtain final whole-branch review and leave a clean local branch**
 
 Request one final independent review over `c503f77..HEAD`, including all task-review findings and the evidence document. Fix every Critical/Important finding, rerun its affected focused owner plus any invalidated final check, commit coherent fixes without amending, and verify:
 
