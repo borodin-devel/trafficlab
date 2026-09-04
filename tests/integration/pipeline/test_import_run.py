@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,7 +17,6 @@ import tomli_w
 
 from trafficlab.common.compatibility import identify_file
 from trafficlab.common.errors import TrafficlabError
-from trafficlab.pipeline.imported import run_imported_experiment
 
 pytestmark = pytest.mark.integration
 
@@ -100,22 +100,92 @@ def _forbid_external_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
 
+def test_fresh_interpreter_guards_before_importing_imported_coordinator() -> None:
+    """An eager subprocess, Docker-adapter, or repository-script import must fail in a clean process."""
+    script = textwrap.dedent(
+        """
+        import builtins
+        import pathlib
+        import sys
+
+        original_import = builtins.__import__
+        blocked = []
+        def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+            forbidden = (
+                name == "subprocess"
+                or name.startswith("subprocess.")
+                or name.startswith("trafficlab.capture.docker")
+                or name == "scripts"
+                or name.startswith("scripts.")
+            )
+            if forbidden:
+                blocked.append(name)
+                raise AssertionError(f"forbidden import: {name}")
+            return original_import(name, globals, locals, fromlist, level)
+
+        builtins.__import__ = guarded_import
+        import trafficlab.pipeline.imported as imported
+        assert callable(imported.run_imported_experiment)
+        assert "subprocess" not in sys.modules
+        assert not any(name.startswith("trafficlab.capture.docker") for name in sys.modules)
+        assert not any(name == "scripts" or name.startswith("scripts.") for name in sys.modules)
+
+        for forbidden_name in (
+            "subprocess",
+            "trafficlab.capture.docker.compose",
+            "scripts.prepare_traffic_dumps",
+        ):
+            try:
+                __import__(forbidden_name)
+            except AssertionError:
+                pass
+            else:
+                raise AssertionError(f"guard accepted {forbidden_name}")
+        assert blocked == [
+            "subprocess",
+            "trafficlab.capture.docker.compose",
+            "scripts.prepare_traffic_dumps",
+        ]
+        print(pathlib.Path(imported.__file__).resolve())
+        """
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[3],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == str(
+        Path(__file__).resolve().parents[3] / "src" / "trafficlab" / "pipeline" / "imported.py"
+    )
+
+
 def test_imported_run_normalizes_and_completes_real_pipeline_with_compatible_retry(
     valid_config_data: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Bypassing real stages, Docker isolation, exact reuse, or final validation must break this workflow."""
+    """Bypassing real stages, process guards, exact reuse, or final validation must break this workflow."""
     source_directory = tmp_path / "source"
     shutil.copytree(_FIXTURES / "classic-pcap-source", source_directory)
+    source_paths = (source_directory / "capture.json", source_directory / "source.pcap")
+    original_source_bytes = {path.name: path.read_bytes() for path in source_paths}
     run_directory = tmp_path / "run"
     experiment_path = tmp_path / "experiment.toml"
     experiment_path.write_text(
         tomli_w.dumps(_small_config(valid_config_data, run_directory)),
         encoding="utf-8",
     )
+    assert "run_imported_experiment" not in globals()
     _forbid_external_execution(monkeypatch)
+
+    from trafficlab.pipeline.imported import run_imported_experiment
 
     first = run_imported_experiment(experiment_path, source_directory)
 
+    assert {path.name: path.read_bytes() for path in source_paths} == original_source_bytes
     records = _records(run_directory)
     assert [record["event"] for record in records[:2]] == ["effective_config_published", "run_prepared"]
     publication = next(record for record in records if record.get("event") == "reference_imported")
@@ -135,6 +205,7 @@ def test_imported_run_normalizes_and_completes_real_pipeline_with_compatible_ret
 
     retried = run_imported_experiment(experiment_path, source_directory)
 
+    assert {path.name: path.read_bytes() for path in source_paths} == original_source_bytes
     retry_records = _records(run_directory)
     assert retried.capture.reused is True
     assert retried.fit.reused_best_model is True
@@ -153,10 +224,12 @@ def test_imported_run_normalizes_and_completes_real_pipeline_with_compatible_ret
     changed_source = bytearray(capture_path.read_bytes())
     changed_source[-1] ^= 1
     capture_path.write_bytes(changed_source)
+    changed_source_bytes = {path.name: path.read_bytes() for path in source_paths}
 
     with pytest.raises(TrafficlabError, match="not an exact imported-reference reuse"):
         run_imported_experiment(experiment_path, source_directory)
 
     assert {name: (run_directory / name).read_bytes() for name in _SCIENTIFIC_ARTIFACTS} == first_scientific
+    assert {path.name: path.read_bytes() for path in source_paths} == changed_source_bytes
     assert _records(run_directory)[-1]["event"] == "run_failed"
     assert _records(run_directory)[-1]["failed_stage"] == "capture"

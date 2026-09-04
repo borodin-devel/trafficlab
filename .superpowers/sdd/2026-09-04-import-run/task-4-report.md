@@ -91,3 +91,52 @@ Plan Step 44 remains unchecked exactly as requested for controller-led
 independent public-flow review. The deferred Task 2 spool diagnostic Minor was
 not changed. No remote operation, merge, tag movement, or other worktree change
 was performed.
+
+## [REPORT-7-3613bc40] Review fix round 1 evidence
+
+The import-isolation RED restored the former module-level coordinator import
+against the new isolation assertion:
+
+```text
+uv run --locked pytest -q -n 0 tests/integration/pipeline/test_import_run.py -k normalizes_and_completes
+1 failed, 1 deselected in 0.28s
+failure: run_imported_experiment was already present in module globals
+```
+
+Removing that eager import made the guarded in-process import local. A separate
+fresh-interpreter case installs its import guard before importing any Trafficlab
+coordinator, verifies the production module path, verifies forbidden modules
+are absent, and self-probes rejection of `subprocess`,
+`trafficlab.capture.docker.compose`, and `scripts.prepare_traffic_dumps`.
+
+```text
+uv run --locked pytest -q -n 0 tests/integration/pipeline/test_import_run.py
+2 passed in 1.88s
+```
+
+Source immutability now uses test-owned `Path.read_bytes()` snapshots for both
+`capture.json` and the supplied capture. It compares the original snapshot
+after success and exact retry, then compares a new snapshot after the deliberate
+one-byte source change and rejection. Production content-identity output is
+retained only as a lineage correctness assertion, not the immutability oracle.
+Two temporary test-local mutations demonstrated that both new byte oracles fail:
+
+```text
+after-success oracle RED: 1 failed, 1 deselected in 2.83s
+after-rejection oracle RED: 1 failed, 1 deselected in 1.41s
+```
+
+After removing each intentional mutation, the final focused integration result
+was `2 passed in 1.58s`. No production or documentation file changed in this
+review round; Step 44 remains unchecked for controller disposition.
+
+The complete review-round focused gate then produced:
+
+```text
+ruff format --check: 3 files already formatted
+ruff check: All checks passed
+pyright: 0 errors, 0 warnings, 0 informations
+pytest CLI/import/integration/static/layout: 107 passed in 3.17s
+trafficlab import-run --help: usage: trafficlab import-run [-h] EXPERIMENT DUMP_DIRECTORY
+git diff --check: clean
+```
