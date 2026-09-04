@@ -186,6 +186,8 @@ The canonical run contains exactly nine regular files, all link count one:
 | `generated.pcapng` | 3,589,048 | `a6649cf6e8776d4329784bc0274d5965415e182f18ff344cc8e4f3271890cf9a` |
 | `similarity.json` | 984,467 | `abe7ccecaf561b34cc3a7627c08dbb3e8d71298792c0481f980417ed8d24ac47` |
 
-Independent final scoped specification/code-quality re-review is pending.
-Plan Steps 124 and 125 remain open, and this evidence makes no clean-review or
-push claim.
+Independent final scoped specification/code-quality re-review of the complete
+fix wave approved all eight Important findings and the one Minor finding, found
+no new Critical or Important breakage, and explicitly accepted the Big
+packet-cap correction. Plan Steps 124 and 125 are complete. This verdict adds no
+causal, held-out, or global-superiority claim to the recorded development evidence.
