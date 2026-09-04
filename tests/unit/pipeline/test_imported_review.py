@@ -585,7 +585,7 @@ def test_import_reads_bind_nonfollowing_nonblocking_descriptor_before_validation
 
     def racing_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777) -> int:
         nonlocal raced
-        if Path(path) == source and not raced:
+        if Path(os.fsdecode(path)) == source and not raced:
             raced = True
             source.unlink()
             if replacement_kind == "symlink":
@@ -686,7 +686,7 @@ def test_import_resolves_publisher_cleanup_warnings_before_success_lineage(
     def fail_creator_temp_once(
         path: str | bytes | os.PathLike[str] | os.PathLike[bytes], *args: object, **kwargs: object
     ) -> None:
-        candidate = Path(path)
+        candidate = Path(os.fsdecode(path))
         if candidate.name.startswith(".capture-pair."):
             attempts[candidate] = attempts.get(candidate, 0) + 1
             if persistent or attempts[candidate] == 1:

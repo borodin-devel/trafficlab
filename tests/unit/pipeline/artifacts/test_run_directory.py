@@ -255,7 +255,7 @@ def test_log_publication_failure_reports_cleanup_without_broad_deletion(
     def fail_snapshot_unlink(
         path: str | bytes | os.PathLike[str] | os.PathLike[bytes], *, dir_fd: int | None = None
     ) -> None:
-        if Path(path).name == "experiment.toml":
+        if Path(os.fsdecode(path)).name == "experiment.toml":
             raise OSError("injected unlink failure")
         real_unlink(path, dir_fd=dir_fd)
 

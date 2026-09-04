@@ -220,10 +220,10 @@ def _resolve_publication_warnings(run_directory: Path, publication: CapturePubli
     ]
     if any(identity not in owned for identity in identities):
         raise _io_error("capture publisher cleanup warning refers to a temporary without proven ownership")
-    try:
-        for path in candidates:
+    for path in candidates:
+        try:
             os.unlink(path)
-    except OSError as error:
-        raise _io_error(f"capture publisher cleanup retry failed for {path}: {error}") from error
+        except OSError as error:
+            raise _io_error(f"capture publisher cleanup retry failed for {path}: {error}") from error
     if any(file_identity(path) is not None for path in candidates):
         raise _io_error("capture publisher cleanup retry left a creator-owned temporary")
