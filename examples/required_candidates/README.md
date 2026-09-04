@@ -13,6 +13,9 @@ They are bounded development checks only: no result from `small.toml`,
 
 All generation packet, byte, and wall-clock values are bounded guards. Guard
 exhaustion invalidates the candidate instead of publishing a partial trace.
+The Big profile uses a 10,000-packet cap for both selection and the fresh-seed
+final validation because final validation normatively reuses trial limits; the
+cap is a safety bound, not the 3,649-packet reference count.
 The configs use an unexecuted external-reference target and therefore support
 only the standalone `preflight --config-only`, `fit`, `generate`, and
 `compare` stages.

@@ -202,7 +202,7 @@ def test_profiles_are_exact_and_strict(
     assert list(config.genetic.trial_seeds) == seeds
     assert config.genetic.early_stopping_generations == {"small": 0, "medium": 2, "big": 3}[name]
     assert config.genetic.early_stopping_tolerance == {"small": 0.0, "medium": 0.0001, "big": 0.0001}[name]
-    assert config.generation.trial.max_packets == {"small": 256, "medium": 512, "big": 3649}[name]
+    assert config.generation.trial.max_packets == {"small": 256, "medium": 512, "big": 10000}[name]
     assert config.generation.trial.max_output_bytes == {"small": 1000000, "medium": 1000000, "big": 10000000}[name]
     assert config.generation.trial.max_wall_seconds == {"small": 5.0, "medium": 10.0, "big": 30.0}[name]
     assert config.generation.final.max_packets == {"small": 1000, "medium": 1500, "big": 10000}[name]

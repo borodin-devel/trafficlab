@@ -42,6 +42,9 @@ full capture, population 21, ten generations, and seeds `[17, 29, 43]`.
 Generation packet/byte/wall limits are bounded guards. Early stopping is
 disabled for small and enabled for medium and big. A guard exhaustion is a
 failed run, not a partial result.
+The Big profile's trial and final packet caps are both 10,000 so its distinct
+final seed is evaluated under the normative trial-limit policy without treating
+the 3,649-packet reference count as a stochastic upper bound.
 
 Derive the two bounded local inputs from the existing source capture (the
 source and metadata are read-only):
