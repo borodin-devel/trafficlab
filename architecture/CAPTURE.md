@@ -238,9 +238,30 @@ Trafficlab never edits host routes, forwarding flags, firewall rules, network
 namespaces, DNS files, users, groups, or sudo configuration. Consequently it
 needs no backup manifest or host rollback procedure.
 
+## Imported reference acquisition
+
+Imported acquisition is separate from Docker capture. It accepts one supplied
+real directory containing exactly one regular PCAP/PCAPNG file and the regular
+file `capture.json`, with no links, nested directories, special files, or extra
+entries. The supplied tree is read-only. Trafficlab takes stable content- and
+path-identity-bound snapshots into an owned temporary directory on the run
+filesystem, parses the supplied metadata before capture decoding, normalizes
+the capture in process, and validates the pair before the ordinary publisher
+creates `capture.json` and `reference.pcapng`.
+
+The whole imported acquisition shares one absolute
+`capture.total_timeout_seconds` deadline. Every owned temporary path is cleaned
+after success, ordinary failure, expiry, or interruption. Existing canonical
+capture artifacts are inspected without the live-capture recovery deletion
+path: only a complete, valid pair with one exact authoritative import lineage
+may be reused, and all other states are preserved and rejected. Imported
+acquisition creates no Compose project or other Docker resource and does not
+invoke a subprocess, shell, external packet tool, or repository script.
+
 A crash between the two publication renames may leave `capture.json` without
 `reference.pcapng`. This is not a reusable capture. A later capture retry or
-strict reuse check validates the pair and safely replaces the incomplete stage.
+strict live-capture reuse check validates the pair and safely replaces the
+incomplete stage. Imported acquisition instead preserves and rejects it.
 
 ## Integration-test topology
 

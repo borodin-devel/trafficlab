@@ -199,6 +199,7 @@ EXPECTED_DECOMPOSED_ROOT_TESTS = {
         "test_artifact_schemas.py",
         "test_cli.py",
         "test_final_validation.py",
+        "test_imported.py",
         "test_package.py",
         "test_source_layout.py",
         "test_stage.py",

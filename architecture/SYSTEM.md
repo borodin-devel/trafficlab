@@ -242,6 +242,46 @@ There is no new resume switch or manifest. `genetic.resume = true` permits only
 a compatible checkpoint resume; all other reuse requires strict validation and
 identity comparison.
 
+### Imported reference acquisition
+
+The imported-reference workflow composes the existing coordinator as
+`config-only preflight -> imported reference -> fit -> generate -> compare`.
+It discovers the supplied directory before preflight. Before preflight may
+create `run.directory`, it loads the configuration read-only and rejects a run
+path that equals, contains, is contained by, or aliases the supplied directory.
+The authoritative config-only preflight reloads the configuration and rejects
+any concurrent change. Acquisition and every later failure therefore use the
+ordinary coordinator failure path once a run has been prepared.
+
+The supplied path must be a real directory rather than a symlink. Its complete
+direct inventory contains exactly one regular, non-symlink file with a
+case-insensitive `.pcap` or `.pcapng` suffix and one regular, non-symlink file
+named exactly `capture.json`; all other files, nested directories, links, and
+special entries are errors. Trafficlab resolves and retains the three paths but
+never writes below the supplied directory.
+
+Acquisition uses one monotonic absolute deadline derived from
+`capture.total_timeout_seconds`. It identifies both source files, copies them
+to an owned same-filesystem temporary directory below the run, re-identifies
+both the sources and snapshots, and reparses supplied metadata before raw
+normalization. It normalizes only the capture snapshot in process, validates
+the normalized snapshot with the metadata snapshot, then delegates canonical
+publication to the existing capture-pair publisher. Owned temporary paths are
+removed on success, failure, deadline expiry, and interruption.
+
+Fresh publication appends exactly one authoritative `reference_imported`
+record with `reused=false`. It binds the effective configuration,
+normalization version, source paths, source content and file identities,
+published metadata and reference content identities, packet count, and
+canonical output path. A later retry appends `reused=true` without normalization
+only when a valid complete pair, the current source/output identities, the
+effective configuration, the normalization version, the sole authoritative
+publication record, and every earlier reuse record agree exactly. A missing,
+malformed, changed, duplicate, or contradictory input preserves every existing
+run byte and fails; imported acquisition never invokes live-capture recovery.
+It creates no Docker resource and invokes no subprocess, shell, Wireshark
+executable, or repository script.
+
 Capture reuse is exact: both files are absent, so capture starts; one absent or either
 corrupt reruns capture; both valid with matching effective configuration and
 capture identity are reused without Docker; valid files with a different

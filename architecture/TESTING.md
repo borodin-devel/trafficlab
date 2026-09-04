@@ -120,6 +120,14 @@ Unit tests are deterministic and do not start Docker. They cover:
   ordering, unsupported interfaces/link types, frame and wire lengths,
   microsecond truncation, PCAP versions, PCAPNG section and fixed-block
   boundaries, outbound/inbound round trips, and stable actionable errors;
+- imported-reference discovery over the complete direct inventory, including
+  every supported suffix case and missing, extra, nested, linked, special, and
+  aliased paths; source/run overlap before preflight publication; stable source
+  and same-filesystem snapshot identities; metadata-before-normalization order;
+  one shared deadline; cleanup after every injected boundary and interruption;
+  sole non-reused publication lineage; exact reuse without normalization; and
+  nonmutating rejection of changed source/config/version/output, incomplete or
+  malformed pairs, and missing, duplicate, or contradictory lineage;
 - source-MAC classification for outbound, inbound unicast, and inbound broadcast
   frames;
 - canonical trace ordering, direction values, IAT extraction, reference
@@ -505,6 +513,16 @@ These tests join real modules without Docker:
     schema. Reject every case before publication and name the first mismatching
     field. Also reject an old otherwise well-formed schema before fit resume,
     generation, or any stage reuse.
+
+Imported-coordinator integration uses real discovery, config-only preflight,
+snapshotting, normalization, capture-pair validation/publication, and the
+ordinary coordinator dependency seam. It requires discovery to precede config
+access, acquisition failure after preflight to append the ordinary capture-stage
+`run_failed` record, and successful acquisition to reach fitting while patched
+subprocess, Docker-module, and repository-script boundaries fail if touched.
+The source bytes remain unchanged and only owned run-side temporaries may be
+cleaned.
+
 14. Run the dashboard against the checked example run copied from
     `examples/scientific_stack/example_run_artifacts/`. Require the window shell
     to load one valid run, keep every first-release aspect selectable, and leave

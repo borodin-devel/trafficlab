@@ -92,7 +92,7 @@ EXPECTED_NESTED_PACKAGES = {
         "schema.py",
         "state.py",
     },
-    "pipeline": {"__init__.py", "stage.py", "types.py", "validation.py"},
+    "pipeline": {"__init__.py", "imported.py", "stage.py", "types.py", "validation.py"},
     "generation/models/markov_renewal": {
         "__init__.py",
         "family.py",
